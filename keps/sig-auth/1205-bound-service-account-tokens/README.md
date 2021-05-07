@@ -3,24 +3,29 @@
 ## Table Of Contents
 
 <!-- toc -->
-
 - [Summary](#summary)
 - [Background](#background)
 - [Motivation](#motivation)
 - [Design Details](#design-details)
-  - [Token attenuations](#token-attenuations)
-    - [Audience binding](#audience-binding)
-    - [Time binding](#time-binding)
-    - [Object binding](#object-binding)
-  - [API Changes](#api-changes)
-    - [Add <code>tokenrequests.authentication.k8s.io</code>](#add-)
-    - [Modify <code>tokenreviews.authentication.k8s.io</code>](#modify-)
-    - [Example Flow](#example-flow)
-  - [Service Account Authenticator Modification](#service-account-authenticator-modification)
-  - [ACLs for TokenRequest](#acls-for-tokenrequest)
+  - [TokenRequest](#tokenrequest)
+    - [Token Attenuations](#token-attenuations)
+      - [Audience binding](#audience-binding)
+      - [Time Binding](#time-binding)
+      - [Object Binding](#object-binding)
+    - [API Changes](#api-changes)
+      - [Add <code>tokenrequests.authentication.k8s.io</code>](#add-)
+      - [Modify <code>tokenreviews.authentication.k8s.io</code>](#modify-)
+      - [Example Flow](#example-flow)
+    - [Service Account Authenticator Modification](#service-account-authenticator-modification)
+    - [ACLs for TokenRequest](#acls-for-tokenrequest)
+  - [TokenRequestProjection](#tokenrequestprojection)
+    - [API Change](#api-change)
+    - [File Permission](#file-permission)
+      - [Proposed Heuristics](#proposed-heuristics)
+      - [Alternatives Considered](#alternatives-considered)
   - [ServiceAccount Admission Controller Migration](#serviceaccount-admission-controller-migration)
     - [Prerequisites](#prerequisites)
-    - [Safe rollout of time-bound token](#safe-rollout-of-time-bound-token)
+    - [Safe Rollout of Time-bound Token](#safe-rollout-of-time-bound-token)
   - [Test Plan](#test-plan)
     - [TokenRequest/TokenRequestProjection](#tokenrequesttokenrequestprojection)
     - [RootCAConfigMap](#rootcaconfigmap)
@@ -40,12 +45,15 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
-  <!-- /toc -->
+<!-- /toc -->
 
 ## Summary
 
 This KEP describes an API that would allow workloads running on Kubernetes to
-request JSON Web Tokens that are audience, time and eventually key bound.
+request JSON Web Tokens that are audience, time and eventually key bound. In
+addition, this KEP introduces a new mechanism of distribution with support for
+bound service account tokens and explores how to migrate from the existing
+mechanism backwards compatibly.
 
 ## Background
 
@@ -74,14 +82,16 @@ requirements.
 
 ## Design Details
 
+### TokenRequest
+
 Infrastructure to support on demand token requests will be implemented in the
 core apiserver. Once this API exists, a client of the apiserver will request an
 attenuated token for its own use. The API will enforce required attenuations,
 e.g. audience and time binding.
 
-### Token attenuations
+#### Token Attenuations
 
-#### Audience binding
+##### Audience binding
 
 Tokens issued from this API will be audience bound. Audience of requested tokens
 will be bound by the `aud` claim. The `aud` claim is an array of strings
@@ -90,7 +100,7 @@ recipient of a token is responsible for verifying that it identifies as one of
 the values in the audience claim, and should otherwise reject the token. The
 TokenReview API will support this validation.
 
-#### Time binding
+##### Time Binding
 
 Tokens issued from this API will be time bound. Time validity of these tokens
 will be claimed in the following fields:
@@ -108,7 +118,7 @@ for expiring tokens. During the migration off of the old service account tokens,
 clients of this API may request tokens that are valid for many years. These
 tokens will be drop in replacements for the current service account tokens.
 
-#### Object binding
+##### Object Binding
 
 Tokens issued from this API may be bound to a Kubernetes object in the same
 namespace as the service account. The name, group, version, kind and uid of the
@@ -123,9 +133,9 @@ kinds that will be supported are:
 
 The TokenRequest API will validate this binding.
 
-### API Changes
+#### API Changes
 
-#### Add `tokenrequests.authentication.k8s.io`
+##### Add `tokenrequests.authentication.k8s.io`
 
 We will add an imperative API (a la TokenReview) to the `authentication.k8s.io`
 API group:
@@ -180,7 +190,7 @@ This API will be exposed as a subresource under a serviceaccount object. A
 requestor for a token for a specific service account will `POST` a
 `TokenRequest` to the `/token` subresource of that serviceaccount object.
 
-#### Modify `tokenreviews.authentication.k8s.io`
+##### Modify `tokenreviews.authentication.k8s.io`
 
 The TokenReview API will be extended to support passing an additional audience
 field which the service account authenticator will validate.
@@ -194,7 +204,7 @@ type TokenReviewSpec struct {
 }
 ```
 
-#### Example Flow
+##### Example Flow
 
 ```
 > POST /apis/v1/namespaces/default/serviceaccounts/default/token
@@ -259,17 +269,146 @@ The token payload will be:
 }
 ```
 
-### Service Account Authenticator Modification
+#### Service Account Authenticator Modification
 
 The service account token authenticator will be extended to support validation
 of time and audience binding claims.
 
-### ACLs for TokenRequest
+#### ACLs for TokenRequest
 
 The NodeAuthorizer will allow the kubelet to use its credentials to request a
 service account token on behalf of pods running on that node. The
 NodeRestriction admission controller will require that these tokens are pod
 bound.
+
+### TokenRequestProjection
+
+A ServiceAccountToken volume projection that maintains a service account token
+requested by the node from the TokenRequest API.
+
+#### API Change
+
+A new volume projection will be implemented with an API that closely matches the
+TokenRequest API.
+
+```go
+type ProjectedVolumeSource struct {
+  Sources []VolumeProjection
+  DefaultMode *int32
+}
+
+type VolumeProjection struct {
+  Secret *SecretProjection
+  DownwardAPI *DownwardAPIProjection
+  ConfigMap *ConfigMapProjection
+  ServiceAccountToken *ServiceAccountTokenProjection
+}
+
+// ServiceAccountTokenProjection represents a projected service account token
+// volume. This projection can be used to insert a service account token into
+// the pods runtime filesystem for use against APIs (Kubernetes API Server or
+// otherwise).
+type ServiceAccountTokenProjection struct {
+  // Audience is the intended audience of the token. A recipient of a token
+  // must identify itself with an identifier specified in the audience of the
+  // token, and otherwise should reject the token. The audience defaults to the
+  // identifier of the apiserver.
+  Audience string
+  // ExpirationSeconds is the requested duration of validity of the service
+  // account token. As the token approaches expiration, the kubelet volume
+  // plugin will proactively rotate the service account token. The kubelet will
+  // start trying to rotate the token if the token is older than 80 percent of
+  // its time to live or if the token is older than 24 hours.Defaults to 1 hour
+  // and must be at least 10 minutes.
+  ExpirationSeconds int64
+  // Path is the relative path of the file to project the token into.
+  Path string
+}
+```
+
+A volume plugin implemented in the kubelet will project a service account token
+sourced from the TokenRequest API into volumes created from
+ProjectedVolumeSources. As the token approaches expiration, the kubelet volume
+plugin will proactively rotate the service account token. The kubelet will start
+trying to rotate the token if the token is older than 80 percent of its time to
+live or if the token is older than 24 hours.
+
+To replace the current service account token secrets, we also need to inject the
+clusters CA certificate bundle. We will deploy it as a configmap per-namespace
+and reference it using a ConfigMapProjection.
+
+A projected volume source that is equivalent to the current service account
+secret:
+
+```yaml
+- name: kube-api-access-xxxxx
+  projected:
+    defaultMode: 420 # 0644
+    sources:
+      - serviceAccountToken:
+          expirationSeconds: 3600
+          path: token
+      - configMap:
+          items:
+            - key: ca.crt
+              path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+```
+
+#### File Permission
+
+The secret projections are currently written with world readable (0644,
+effectively 444) file permissions. Given that file permissions are one of the
+oldest and most hardened isolation mechanisms on unix, this is not ideal.
+We would like to opportunistically restrict permissions for projected service
+account tokens as long we can show that they won’t break users if we are to
+migrate away from secrets to distribute service account credentials.
+
+##### Proposed Heuristics
+
+- _Case 1_: The pod has an fsGroup set. We can set the file permission on the
+  token file to 0600 and let the fsGroup mechanism work as designed. It will
+  set the permissions to 0640, chown the token file to the fsGroup and start
+  the containers with a supplemental group that grants them access to the
+  token file. This works today.
+- _Case 2_: The pod’s containers declare the same runAsUser for all containers
+  (ephemeral containers are excluded) in the pod. We chown the token file to
+  the pod’s runAsUser to grant the containers access to the token. All
+  containers must have UID either specified in container security context or
+  inherited from pod security context. Preferred UIDs in container images are
+  ignored.
+- _Fallback_: We set the file permissions to world readable (0644) to match
+  the behavior of secrets.
+
+This gives users that run as non-root greater isolation between users without
+breaking existing applications. We also may consider adding more cases in the
+future as long as we can ensure that they won’t break users.
+
+##### Alternatives Considered
+
+- We can create a volume for each UserID and set the owner to be that UserID
+  with mode 0400. If user doesn't specify runAsUser, fetching UserID in image
+  requires a re-design of kubelet regarding volume mounts and image pulling.
+  This has significant implementation complexity because:
+  - We would have to reorder container creation to introspect images (that
+    might declare USER or GROUP directives) to pass this information to the
+    projected volume mounter.
+  - Further, images are mutable so these directives may change over the
+    lifetime of the pod.
+  - Volumes are shared between all pods that mount them today. Mapping a
+    single logical volume in a pod spec to distinct mount points is likely a
+    significant architectural change.
+- We pick a random group and set fsGroup on all pods in the service account
+  admission controller. It’s unclear how we would do this without conflicting
+  with usage of groups and potentially compromising security.
+- We set token files to be world readable always. Problems with this are
+  discussed above.
 
 ### ServiceAccount Admission Controller Migration
 
@@ -324,7 +463,7 @@ If anything goes wrong, please file a bug and CC @kubernetes/sig-auth-bugs. More
 contact information
 [here](https://github.com/kubernetes/community/tree/master/sig-auth#contact).
 
-#### Safe rollout of time-bound token
+#### Safe Rollout of Time-bound Token
 
 Legacy service account tokens distributed via secrets are not time-bound. Many
 client libraries have come to depend on this behavior. After time-bound service
@@ -439,7 +578,8 @@ are properly reloading tokens by:
     https://github.com/kubernetes/kubernetes/issues/68164
   - [x] Pods running as non root may not access the service account token.
     - Fixed in https://github.com/kubernetes/kubernetes/pull/89193
-  - [ ] Dynamic clientbuilder does not invalidate token.
+  - [x] Dynamic clientbuilder does not invalidate token.
+    - Fixed in https://github.com/kubernetes/kubernetes/pull/99324
 
 * [x] Tests passing
 
@@ -452,9 +592,10 @@ are properly reloading tokens by:
 
 ##### Beta -> GA Graduation
 
-- [ ] Allow kube-apiserver to recognize multiple issuers to enable non
+- [x] Allow kube-apiserver to recognize multiple issuers to enable non
       disruptive issuer change.
-- [ ] New `ServiceAccount` admission controller work as intended in Beta
+  - Fixed in https://github.com/kubernetes/kubernetes/pull/101155
+- [x] New `ServiceAccount` admission controller work as intended in Beta
       for >= 1 minor release without significant issues.
 
 ## Production Readiness Review Questionnaire
