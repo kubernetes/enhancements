@@ -185,7 +185,8 @@ overage.
 
 - **What happens if we reenable the feature if it was previously rolled back?**
 
-It should continue to work as expected.
+New objects with expanded DNS configuration will be accepted by the apiserver
+and new Pods with expanded configuration will be created by the kubelet.
 
 - **Are there any tests for feature enablement/disablement?**
 
@@ -195,83 +196,94 @@ We will add unit tests.
 
 - **How can a rollout fail? Can it impact already running workloads?**
 
-N/A
+If a kubelet starts with invalid `resolvConf`, new workloads will fail DNS
+lookups.
 
 - **What specific metrics should inform a rollback?**
 
-N/A
+If new workloads start to fail DNS lookups due to a corrupted resolv.conf, or
+due to older resolver libraries, that would be an indication to rollback the
+enablement.
 
 - **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-N/A
+We will do test.
 
 - **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
 
-N/A
+No
 
 ### Monitoring Requirements
 
 - **How can an operator determine if the feature is in use by workloads?**
 
-N/A
+There is no metric to indicate the enablement. The operator has to check if
+there are objects or DNS resolver configuration files with expanded
+configuration to determine if the feature is in use.
 
 - **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - [ ] Metrics
     - Metric name:
     - [Optional] Aggregation method:
     - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
-
-N/A
+  - [x] Other (treat as last resort)
+    - Success of DNS lookups
 
 - **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-N/A
+DNS lookups should not fail as before the feature was enabled.
 
 - **Are there any missing metrics that would be useful to have to improve observability of this feature?**
 
-N/A
+TBD
 
 ### Dependencies
 
 - **Does this feature depend on any specific services running in the cluster?**
 
-N/A
+No
 
 ### Scalability
 
 - **Will enabling / using this feature result in any new API calls?**
 
-N/A
+No
 
 - **Will enabling / using this feature result in introducing new API types?**
 
-N/A
+No
 
 - **Will enabling / using this feature result in any new calls to the cloud provider?**
 
-N/A
+No
 
 - **Will enabling / using this feature result in increasing size or count of the existing API objects?**
 
-N/A
+The sum of the lengths of `PodSpec.DNSConfig.Searches` can be increased to 2048.
 
 - **Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?**
 
-N/A
+The DNS lookup time can be increased, but it will be negligible.
 
 - **Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
-N/A
+No
 
 ### Troubleshooting
 
 - **How does this feature react if the API server and/or etcd is unavailable?**
 
+N/A
+
 - **What are other known failure modes?**
 
+N/A
+
 - **What steps should be taken if SLOs are not being met to determine the problem?**
+
+If DNS lookups fail, you can check error messages. And then, validate the
+kubelet's `resolvConf` if it is corrupted or use newer DNS resolver libraries if
+they are too old.
 
 ## Implementation History
 
