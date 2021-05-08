@@ -52,6 +52,15 @@
   - [Add Bucket Instance Name to BucketAccessClass (brownfield)](#add-bucket-instance-name-to-bucketaccessclass-brownfield)
     - [Motivation](#motivation-1)
     - [Problems](#problems)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
+  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+    - [Monitoring Requirements](#monitoring-requirements)
+    - [Dependencies](#dependencies)
+    - [Scalability](#scalability)
+  - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 # Release Signoff Checklist
@@ -126,7 +135,7 @@ When a workload (app pod, deployment, configs) is moved to another cluster, as l
 + _greenfield bucket_ - a new backend bucket created by COSI.
 + _green-to-brownfield_ - a use-case where COSI creates a new bucket on behalf of a user, and then supports ways for other users in the cluster to share this bucket.
 + _provisioner_ - a generic term meant to describe the combination of a sidecar and driver. "Provisioning" a bucket can mean creating a new bucket or granting access to an existing bucket.
-+ _sidecar_ - a Kubernetes-aware container (usually paired with a driver) that is responsible for fullfilling COSI requests with the driver via gRPC calls. The sidecar's access should be restricted to the namespace where it resides, which is expected to be the same namespace as the provisioner. The COSI sidecar is provided by the Kubernetes community.
++ _sidecar_ - a Kubernetes-aware container (usually paired with a driver) that fulfills COSI requests with the driver via gRPC calls. The sidecar's access should be restricted to the namespace where it resides, which is expected to be the same namespace as the provisioner. The COSI sidecar is provided by the Kubernetes community.
 + _static provisioning_ - the admin manually creates the `Bucket` instance representing properties of the target backend bucket.
 
 # Proposal
@@ -137,9 +146,9 @@ When a workload (app pod, deployment, configs) is moved to another cluster, as l
 
 #### BucketRequest
 
-A user facing, namespaced, immutable, custom resource requesting the creation of a new bucket. A `BucketRequest` (BR) lives in the app's namespace.  In addition to a BR, a [BucketAccessRequest](#bucketaccessrequest) is necessary in order to grant credentials to access the bucket. BRs are used only for greenfield.
+A user-facing, namespaced, immutable, custom resource requesting the creation of a new bucket. A `BucketRequest` (BR) lives in the app's namespace.  In addition to a BR, a [BucketAccessRequest](#bucketaccessrequest) is necessary in order to grant credentials to access the bucket. BRs are used only for greenfield.
 
-There is a 1:1 mapping of a `BucketRequest` and the cluster scoped [Bucket](#bucket) instance, meaning there is a single `Bucket` instance for every BR. **Note**: in brownfield uses, where a `Bucket` is manually created, there is no need for a BR.
+There is a 1:1 mapping of a `BucketRequest` and the cluster scoped [Bucket](#bucket) instance, meaning there is a single `Bucket` instance for every BR. **Note**: in brownfield uses, where a `Bucket` is manually created, there is no need for a BR; `BucketAccessRequests` are used in this case.
 
 ```yaml
 apiVersion: objectstorage.k8s.io/v1alpha1
@@ -150,7 +159,7 @@ metadata:
   labels:
     - objectstorage.k8s.io/provisioner: [1]
   finalizers:
-    - objectstorage.k8s.io/user-protect [2]
+    - objectstorage.k8s.io/bucketrequest-protection [2]
 spec:
   bucketPrefix: [3]
   bucketClassName: [4]
@@ -161,14 +170,14 @@ status:
 
 1. `labels`: added by COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: added by COSI to defer `BucketRequest` deletion until backend deletion succeeds.
-1. `bucketPrefix`: (optional) prefix prepended to a COSI generated, random, backend bucket name, eg. “yosemite-photos-".
-1. `bucketClassName`: (optional) name of the `BucketClass` used to provision this request. If omitted a default bucket class is used. If the bucket class is missing and a default cannot be found, an error is logged and the request is retried (with exponential backoff).
+1. `bucketPrefix`: (optional) prefix prepended to a COSI-generated, random, backend bucket name, eg. “yosemite-photos-".
+1. `bucketClassName`: (optional) name of the `BucketClass` used to provision this request. If omitted, a default bucket class is used. If the bucket class is missing and a default cannot be found, an error is logged and the request is retried (with exponential backoff).
 1. `bucketName`: name of the cluster-wide `Bucket` instance. 
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### Bucket
 
-A cluster-scoped, custom resource representing the abstraction of a single backend bucket. The relevant [BucketClass](#bucketlcass) fields are copied to the `Bucket`, so that the `Bucket` instance reflects the `BucketClass` at the time of `Bucket` creation.
+A cluster-scoped, custom resource representing the abstraction of a single backend bucket. The relevant [BucketClass](#bucketclass) fields are copied to the `Bucket`, so that the `Bucket` instance reflects the `BucketClass` at the time of `Bucket` creation.
 
 There is a 1:1 mapping between a (BucketRequest)[#bucketrequest] and a `Bucket`, but a `Bucket` can exist without a BR, which is the brownfield use case. There is a 1:many mapping between a `Bucket` and [BucketAccess](#bucketaccess) instances.
 
@@ -214,12 +223,12 @@ status:
 
 1. `name`: when created by COSI, the `Bucket` name is generated in one of these formats: _"br-"+uuid_ (if BR.prefix is empty), or BR.prefix+"-"+uuid (if prefix is supplied). If an admin creates a `Bucket`, as is necessary for static brownfield access, any unique name is allowed.
 1. `labels`: added by COSI. The "objectstorage.k8s.io/provisioner" key's value is the provisioner name. The "objectstorage.k8s.io/bucket-prefix" key's value is the `BucketRequest.bucketPrefix` value when specified. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
-1. `finalizers`: added by COSI to defer `Bucket` deletion until backend deletion succeed. Implementation may add one finalizer for the BR and one for each BA pointing to this `Bucket`. **Note**: a `BucketAccess` object has one finalizer per accessing pod. So there is no access to a bucket when all `Bucket` finalizers have been removed.
+1. `finalizers`: added by COSI to defer `Bucket` deletion until backend deletion succeeds. Implementation may add one finalizer for the BR and one for each BA pointing to this `Bucket`. **Note**: a `BucketAccess` object has one finalizer per accessing pod. So there is no access to a bucket when all `Bucket` finalizers have been removed.
 1. `provisioner`: (optional) The provisioner field as defined in the `BucketClass`.
-1. `deletionPolicy`: defines the outcome when a greenfield `BucketRequest` is deleted, and is ignored for brownfield buckets. A `Bucket` cannot be deleted if it is linked to a `BucketRequest`.
-   - _Retain_: keep both the `Bucket` instance and the backend bucket and its contents. The `Bucket` instance may be marked as unavailable but it potentially may be reused (post MVP).
-   - _Delete_: when all access to the `Bucket` is complete, delete both the `Bucket` instance and the backend bucket, including all content in that bucket. If, for example, a running pod or a `BucketAccess` instance refer to the `Bucket` instance, then the delete is deferred until all accessors have been deleted.
-   - _ForceDelete_: delete both the `Bucket` instance and the backend bucket, including all content in that bucket, ignoring any accessors or workloads that may be referencing the `Bucket`.
+1. `deletionPolicy`: defines the outcome when a greenfield `BucketRequest` is deleted, and is ignored for brownfield buckets. 
+   - _Retain_: keep both the `Bucket` instance and the backend bucket along with its contents. This allows for admins to cleanup/migrate the data before manually deleting the `Bucket` instance and subsequently the backend bucket.
+   - _Delete_: Wait for all access to the `Bucket` to complete, then delete both the `Bucket` instance and the backend bucket. This includes all content in that bucket. If, for example, a running pod or a `BucketAccess` instance refer to the `Bucket` instance, then the delete is deferred until all accessors have been deleted.
+   - _ForceDelete_: Don't wait for accessors/workloads to complete using the bucket, but force-delete both the `Bucket` instance and the backend bucket, including all content in that bucket. BucketAccess referencing this bucket and their generated credentials are also forcibly deleted. The remaining accessors to that Bucket are eventually cleaned up by controllers listening for `BucketAccess` events.
 1. `bucketClassName`: (set by COSI for greenfield, and ignored for brownfield) Name of the associated bucket class.
 1. `bucketRequest`: (set by COSI for greenfield, ignored for brownfield) an `objectReference` structure referencing the associated `BucketRequest`.
 1. `allowedNamespaces`: an array of namespaces that are permitted to create new buckets.
@@ -230,7 +239,6 @@ status:
      - `s3`: data required to target a provisioned S3 bucket.
 1. `parameters`: a copy of the BucketClass parameters.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
-1. `bucketID`: the driver-specific, unique string ID of the backend bucket.
 
 #### BucketClass
 
@@ -245,8 +253,8 @@ apiVersion: objectstorage.k8s.io/v1alpha1
 kind: BucketClass
 metadata:
   name: 
-  annotation:
-    isDefault: [1]
+  annotations:
+    objectstorage.k8s.io/is-default-class: [1]
 provisioner: [2]
 protocol: [3]
   azureBlob:
@@ -273,8 +281,8 @@ parameters: [6]
 1. `deletionPolicy`: (required) defines the outcome when a greenfield `BucketRequest` is deleted, and is ignored for brownfield buckets.
    - _Retain_: keep both the `Bucket` instance and the backend bucket and its contents. The `Bucket` instance may be marked unavailable and it may potentially be reused (post MVP).
    - _Delete_: when all access to the `Bucket` is complete, delete both the `Bucket` instance and the backend bucket, including all content in that bucket. If, for example, a running pod or a `BucketAccess` instance refer to the `Bucket` instance, then the delete is deferred until all accessors have been deleted.
-   - _ForceDelete_: delete both the `Bucket` instance and the backend bucket, including all content in that bucket, ignoring any accessors or workloads that may be referencing the `Bucket`.
-1. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets. This list is static for the life of the `BucketClass`, but the `Bucket` instance's list of allowed namespaces can be mutated by the admin.
+   - _ForceDelete_: delete both the `Bucket` instance and the backend bucket, including all content in that bucket, ignoring any accessors or workloads that may be referencing the `Bucket`. BucketAccess referencing this bucket and their generated credentials are also forcibly deleted. 
+1. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets. This list is static for the life of the `BucketClass`, but the `Bucket` instance's list of allowed namespaces can be mutated by the admin. 
 1. `parameters`: (optional) a map of string:string key values.  Allows admins to set provisioner key-values.
 
 > Note: these protocol details are defined in the `Bucket` instance.
@@ -285,7 +293,7 @@ The Access APIs abstract the backend policy system.  Access policy and user iden
 
 #### BucketAccessRequest
 
-A user namespaced, immutable custom resource representing a request to access an existing backend bucket. A `BucketAccessRequest`(BAR) triggers the instantiation of a [BucketAccess](#bucketaccess) object, which is is the access connection to the backend bucket. A BAR references a [BucketAccessClass](#bucketaccessclass) which defines access policy. A BAR optionally defines a ServiceAccount, which supports provisioners that implement cloud provider identity integration with their respective Kubernetes offerings. To connect a BAR to the target backend bucket, it can either reference a [BucketRequest](#bucketrequest) (BR) in its namespace, or a [Bucket](#bucket) instance directly when residing in a different namespace from that of the BR. The workload pod references the BAR in its `volumes.csi.volumeAttributes` section.
+A user namespaced, immutable custom resource representing a request to access an existing backend bucket. A `BucketAccessRequest`(BAR) triggers the instantiation of a [BucketAccess](#bucketaccess) object, which is the access connection to the backend bucket. A BAR references a [BucketAccessClass](#bucketaccessclass) which defines access policy. A BAR optionally defines a ServiceAccount, which supports provisioners that implement cloud provider identity integration with their respective Kubernetes offerings. To connect a BAR to the target backend bucket, it can either reference a [BucketRequest](#bucketrequest) (BR) in its namespace, or a [Bucket](#bucket) instance directly when residing in a different namespace from that of the BR. The workload pod references the BAR in its `volumes.csi.volumeAttributes` section.
 
 There is a 1:1 mapping between a BAR and a `BucketAccess`instance. Many workload pods can reference the same BAR within the same namespace.
 
@@ -298,7 +306,7 @@ metadata:
   labels:
     objectstorage.k8s.io/provisioner: [1]
   finalizers:
-  - objectstorage.k8s.io/user-protect [2]
+  - objectstorage.k8s.io/bucketaccessrequest-protection [2]
 spec:
   bucketAccessClassName: [3]
   serviceAccountName: [4]
@@ -370,7 +378,7 @@ metadata:
 
 #### BucketAccessClass
 
-An immutable, cluster-scoped, brownfield-only, custom resource providing a way for admins to specify policies used to access buckets. A `BucketAccessClass` (BAC) is referenced by a user [BucketAccessRequest](#bucketaccessrequest) and is used to populate the [BucketAccess](#bucketaccess) instance. A BAC references a config map which is expected to define the access policy for a given provider. It is typical for these config maps to reside in each provisioner's namespace, though this is not required. Unlike a [BucketClass](#bucketclass), there is no default BAC.
+An immutable, cluster-scoped, custom resource providing a way for admins to specify policies used to access buckets. A `BucketAccessClass` (BAC) is referenced by a user [BucketAccessRequest](#bucketaccessrequest) and is used to populate the [BucketAccess](#bucketaccess) instance. A BAC references a config map which is expected to define the access policy for a given provider. It is typical for these config maps to reside in each provisioner's namespace, though this is not required. Unlike a [BucketClass](#bucketclass), there is no default BAC.
 
 ```yaml
 apiVersion: objectstorage.k8s.io/v1alpha1
@@ -449,9 +457,9 @@ Prep for brownfield:
 + admin creates `Bucket` instances representing backend buckets.
 
 ### Finalizers
-The following finalizers are added by COSI to orchestrate deletion of the various COSI resources. Of note is that a finalizer is added to the two user created instances (BR and BAR) so that these intances remain available until the deletion of the associated resources (Bucket and BA) and the backend bucket have completed.
+The following finalizers are added by COSI to orchestrate the deletion of the various COSI resources. Of note is that a finalizer is added to the two user-created instances (BR and BAR) so that these instances remain available until the deletion of the associated resources (Bucket and BA) and the backend bucket have completed.
 
-+ _objectstorage.k8s.io/user-protect_, added to BRs and BARs.
++ _objectstorage.k8s.io/{bucketrequest|bucketaccessrequest}-protect_, added to BRs and BARs.
 + _objectstorage.k8s.io/br-protect_, added to a `Bucket` indicating a BR created it.
 + _objectstorage.k8s.io/ba-\<name1> ba-\<name2>..._, added to a `Bucket` for each BA referencing the `Bucket.`
 + _objectstorage.k8s.io/bar-protect_, added to `BucketAccess` indicating a BAR created it.
@@ -532,7 +540,7 @@ Here is the delete workflow:
          + COSI removes the "objectstorage.k8s.io/br-protect" finalizer from the `Bucket`, which allows it to be garbage collected.
       + If >0, COSI does not call the driver and does no further processing.
 
-+ If the deletion policy is "_ForceDeletea"_:
++ If the deletion policy is "_ForceDelete"_:
    + COSI deletes the `Bucket` instance which is deferred due to finalizers.
       + Note: new BARs cannot access the `Bucket` now.
    + COSI gets all BAs referencing the `Bucket`.
@@ -542,7 +550,7 @@ Here is the delete workflow:
    + COSI deletes all `Bucket` finalizers and the `Bucket` is garbage collected.
       + Note: pods may still try to access the backend bucket but will likely fail.
 
-+ COSI removes the BR's "objectstorage.k8s.io/user-protect" finalizer and the BR is garbage collected.
++ COSI removes the BR's "objectstorage.k8s.io/bucketrequest-protect" finalizer and the BR is garbage collected.
 
 When the pod teminates:
 + The cosi-node-adapter receives the _NodeUnstageVolume_ request from the kubelet.
@@ -583,11 +591,11 @@ Here is the workflow:
 In addition, the cosi-node-adapter sees the app pod is terminating:
 + The adapter receives a _NodeUnstageVolume_ request from the kubelet.
 + The adapter checks for pods referencing the BA.
-   + If none then it removes the "objectstorage.k8s.io/pod-\<uuid>" finalizer from the BA, which may cause it to be garbage collected.
-   + Note: when the finalizer of last BA referencing a `Bucket` is removed (and thus the last BA is deleted), the `Bucket` may be garbage collected.
+   + If none, then it removes the "objectstorage.k8s.io/pod-\<uuid>" finalizer from the BA, which may cause it to be garbage collected.
+   + Note: when the finalizer of the last BA referencing a `Bucket` is removed (and thus the last BA is deleted), the `Bucket` may be garbage collected.
 
 ## Delete BucketAccess 
-The above workflows are triggered by the user. Now we cover worflows caused by the admin, which may be necessary to handle situations where COSI doesn't clean up properly, or where, for example, a credential needs to be immediately revoked.
+The above workflows are triggered by the user. Now we cover worflows caused by the admin, which may be necessary to handle situations where COSI doesn't clean up properly or where, for example, a credential needs to be immediately revoked.
 
 The most common scenario is likely the case where a token is compromised and the admin needs to stop its use. In this case the admin may terminate the app pod(s) and delete the `BucketAccess` instances.
 
@@ -807,7 +815,7 @@ message ProvisionerRevokeBucketAccessResponse {
 
 ## Alpha -> Beta
 - Basic unit and e2e tests as outlined in the test plan.
-- Metrics in k/k for bucket create and delete, and granting and revoking bucket access.
+- Metrics in kubernetes/kubernetes for bucket create and delete, and granting and revoking bucket access.
 - Metrics in provisioner for bucket create and delete, and granting and revoking bucket access.
 
 ## Beta -> GA
@@ -830,3 +838,331 @@ This KEP has had a long journey and many revisions. Here we capture the main alt
 1. App portability is still a concern but we believe that deterministic, unique `Bucket` and `BucketAccess` names can be generated and referenced in BRs and BARs.
 
 1. Since, presumably, all or most BACs will be known to users, there is no real "control" offered to the admin with this approach. Instead, adding _allowedNamespaces_ or similar to the BAC may help with this.
+
+### Upgrade / Downgrade Strategy
+
+No changes are required on upgrade to maintain previous behaviour.
+
+### Version Skew Strategy
+
+COSI is out-of-tree, so version skew strategy is N/A
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
+
+### Feature Enablement and Rollback
+
+<!--
+This section must be completed when targeting alpha to a release.
+-->
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+<!--
+Pick one of these and delete the rest.
+-->
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [X] Other
+  - Describe the mechanism: Create Deployment and DaemonSet resources (along with supporting secrets, configmaps etc.) for the three controllers that COSI requires
+  - Will enabling / disabling the feature require downtime of the control
+    plane? No
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No
+
+###### Does enabling the feature change any default behavior?
+
+<!--
+Any change of default behavior may be surprising to users or break existing
+automations, so be extremely careful here.
+-->
+No
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+<!--
+Describe the consequences on existing workloads (e.g., if this is a runtime
+feature, can it break the existing applications?).
+
+NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+-->
+
+Yes. Delete the resources created when installing COSI
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+###### Are there any tests for feature enablement/disablement?
+
+<!--
+The e2e framework does not currently support enabling or disabling feature
+gates. However, unit tests in each component dealing with managing data, created
+with and without the feature, are necessary. At the very least, think about
+conversion tests if API types are being modified.
+-->
+
+N/A since we are only targeting alpha for this Kubernetes release
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
+
+###### What specific metrics should inform a rollback?
+
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+<!--
+Even if applying deprecation policies, they may still surprise some users.
+-->
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+<!--
+Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+checking if there are objects with field X set) may be a last resort. Avoid
+logs or events for this purpose.
+-->
+
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
+
+### Dependencies
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### Does this feature depend on any specific services running in the cluster?
+
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
+
+No
+
+### Scalability
+
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
+
+For beta, this section is required: reviewers must answer these questions.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### Will enabling / using this feature result in any new API calls?
+
+<!--
+Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+Focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+-->
+
+Existing components will not make any new API calls.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+<!--
+Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+-->
+
+Yes, the following cluster scoped resources
+
+- Bucket
+- BucketClass
+- BucketAccess
+- BucketAccessClass
+
+and the following namespaced scoped resources
+
+- BucketRequest
+- BucketAccessRequest
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+<!--
+Describe them, providing:
+  - Which API(s):
+  - Estimated increase:
+-->
+
+Not by the framework itself. Calls to external systems will be made by vendor drivers for COSI.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+<!--
+Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+-->
+
+No
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+<!--
+Look at the [existing SLIs/SLOs].
+
+Think about adding additional work or introducing new steps in between
+(e.g. need to do X to start a container), etc. Please describe the details.
+
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+-->
+
+Yes. Containers requesting Buckets will not start until Buckets have been provisioned. This is similar to dynamic volume provisioning
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+<!--
+Things to keep in mind include: additional in-memory state, additional
+non-trivial computations, excessive access to disks (including increased log
+volume), significant amount of data sent and/or received over network, etc.
+This through this both in small and large cases, again with respect to the
+[supported limits].
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+Not likely to increase resource consumption in a significant manner
+
+## Infrastructure Needed (Optional)
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
+
+We need Linux VMs for e2e testing in CI.

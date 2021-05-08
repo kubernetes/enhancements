@@ -18,7 +18,14 @@ reviewers:
 approvers:
   - "@saad-ali"
   - "@xing-yang"
-editor: TBD
+prr-approvers:
+  - "@ehashman"
+editor: "@wlan0"
+stage: "alpha"
+latest-milestone: "v1.22"
+milestone:
+  alpha: "v1.22"  
 creation-date: 2019-11-25
-last-updated: 2020-09-10
-status: provisional
+last-updated: 2021-05-10
+status: implementable
+
