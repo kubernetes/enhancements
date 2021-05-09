@@ -280,7 +280,8 @@ No changes needed
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?** Kubelet may fail to start. The kubelet may crash.
-* **What specific metrics should inform a rollback?** Not applicable
+* **What specific metrics should inform a rollback?**
+  - the number of pod ending up in Failed for SMTAlignmentError could be used to decide a rollback.
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?** Not Applicable.
 * **Is the rollout accompanied by any deprecations and/or removals of features,  APIs, fields of API types, flags, etc.?** No.
 
