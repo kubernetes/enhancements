@@ -15,6 +15,7 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -128,6 +129,11 @@ DNS configuration
 - Add unit tests of validating expanded DNS config
 
 ### Graduation Criteria
+
+#### Alpha
+
+- Implement the feature
+- Add appropriate unit tests
 
 #### Alpha -> Beta Graduation
 
