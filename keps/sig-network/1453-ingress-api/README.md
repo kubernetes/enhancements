@@ -290,7 +290,7 @@ implementation.  The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-- See [Goals]{#goals) and  [Motivation](#motivation)
+- See [Goals](#goals) and  [Motivation](#motivation)
 
 ### Risks and Mitigations
 
