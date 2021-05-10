@@ -200,11 +200,14 @@ continue to be supported as a means of configuring this feature.
 
 #### Interoperability
 
-If any of the following are true, topology hints will be ignored:
+Topology hints will be ignored if the TopologyKeys field has at least one entry.
+This field is deprecated and will be removed soon.
 
-- ExternalTrafficPolicy is set to Local
-- InternalTrafficPolicy is set to Local
-- TopologyKeys field has at least one entry
+Both ExternalTrafficPolicy and InternalTrafficPolicy will be given precedence
+over topology aware routing. For example, if `ExternalTrafficPolicy=Local` and
+topology was enabled, external traffic would be routed using the
+ExternalTrafficPolicy configuration while internal traffic would be routed with
+topology.
 
 #### Feature Gate
 
@@ -444,6 +447,7 @@ EndpointSliceSyncs = metrics.NewCounterVec(
 
 ### Graduation Criteria
 - Alpha should provide basic functionality covered with tests described above.
+- Interoperability with Internal and External TrafficPolicy fields.
 
 ### Version Skew Strategy
 This KEP requires updates to both the EndpointSlice Controller and kube-proxy.
