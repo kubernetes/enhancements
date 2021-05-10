@@ -28,6 +28,8 @@
   - [Audit Annotations](#audit-annotations)
   - [PodSecurityPolicy Migration](#podsecuritypolicy-migration)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -666,7 +668,7 @@ The following audit annotations will be added:
 
 <<[UNRESOLVED]>>
 
-_Targetting Beta or GA, non-blocking for Alpha._
+_Targeting Beta or GA, non-blocking for Alpha._
 
 Migrating to the replacement policy from PodSecurityPolicies can be done effectively using a
 combination of dry-run and audit/warn modes (although this becomes harder if mutating PSPs are
@@ -706,60 +708,35 @@ this, with the items tagged (automated) having support from the PSP migration to
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+Maturity level of this feature is defined by:
+- `PodSecurity` feature gate
+- Documented maturity of the feature repo (library & webhook implementations)
 
 #### Alpha -> Beta Graduation
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
+We are targeting Beta in v1.23.
+
+1. Resolve the following sections:
+    - [ ] [Restricted policy support for Windows pods](#windows-restricted-profile-support)
+    - [ ] [Deprecation / removal policy for old profile versions](#versioning)
+    - [ ] [Ephemeral containers support](#ephemeral-containers)
+    - [ ] [PSP migration workflow & support](#podsecuritypolicy-migration)
+2. Collect feedback from the alpha, analyze usage of the webhook implementation.
+3. Thorough testing is already expected for alpha, but we will review our test coverage and fill any
+   gaps prior to beta.
+4. Admission plugin included in the default enabled set (enforcement is still opt-in per-namespace).
 
 #### Beta -> GA Graduation
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
+<<[UNRESOLVED]>>
 
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
+We are targeting GA in v1.24 to allow for migration off PodSecurityPolicy before it is removed in
+v1.25.
 
-#### Removing a Deprecated Flag
+- Examples of real world usage and positive user feedback.
+- [Conformance test plan](#conformance)
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
--->
+<<[/UNRESOLVED]>>
 
 ### Upgrade / Downgrade Strategy
 
