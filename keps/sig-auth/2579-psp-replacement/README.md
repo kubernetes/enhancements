@@ -28,8 +28,9 @@
   - [Audit Annotations](#audit-annotations)
   - [PodSecurityPolicy Migration](#podsecuritypolicy-migration)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -712,7 +713,15 @@ Maturity level of this feature is defined by:
 - `PodSecurity` feature gate
 - Documented maturity of the feature repo (library & webhook implementations)
 
-#### Alpha -> Beta Graduation
+#### Alpha
+
+The initial alpha implementation targetting v1.22 includes:
+
+- Initial implementation is protected by the default-disabled feature gate `PodSecurity`
+- The built-in PodSecurity admission controller is defalut-disabled.
+- Initial set of E2E feature tests implemented and enabled in an alpha test job
+
+#### Beta
 
 We are targeting Beta in v1.23.
 
@@ -724,9 +733,10 @@ We are targeting Beta in v1.23.
 2. Collect feedback from the alpha, analyze usage of the webhook implementation.
 3. Thorough testing is already expected for alpha, but we will review our test coverage and fill any
    gaps prior to beta.
+   - Feature tests are moved to the main test jobs (may postpone to GA)
 4. Admission plugin included in the default enabled set (enforcement is still opt-in per-namespace).
 
-#### Beta -> GA Graduation
+#### GA
 
 <<[UNRESOLVED]>>
 
