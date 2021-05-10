@@ -110,6 +110,7 @@ func runQuery(opts *repo.QueryOpts) error {
 	if err != nil {
 		return errors.Wrap(err, "creating repo client")
 	}
+	rc.TokenPath = rootOpts.TokenPath
 
 	return rc.Query(opts)
 }
