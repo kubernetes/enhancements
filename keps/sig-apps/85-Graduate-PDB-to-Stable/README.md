@@ -455,3 +455,4 @@ details). For now, we leave it here.
 - PodDisruptionBudget was introduced in Kubernetes 1.4 as an alpha version.
 - PodDisruptionBudget was graduated to beta in Kubernetes 1.5.
 - PodDisruptionBudget was graduated to GA in Kubernetes 1.21.
+- Eviction subresource was graduated to GA in Kubernetes 1.22.
