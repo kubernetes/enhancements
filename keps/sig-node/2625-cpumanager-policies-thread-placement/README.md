@@ -1,4 +1,4 @@
-# SMT-aligned cpu manager
+# cpu manager extension to reject non SMT-aligned workload
 
 ## Table of Contents
 
