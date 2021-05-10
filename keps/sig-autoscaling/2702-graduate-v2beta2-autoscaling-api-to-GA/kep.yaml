@@ -1,0 +1,17 @@
+title: Graduate v2beta2 Autoscaling API to GA
+kep-number: 2702
+authors:
+  - "@supriya-premkumar"
+owning-sig: sig-autoscaling
+reviewers:
+  - "@josephburnett"
+  - "@gjtempleton"
+approvers:
+  - "@josephburnett"
+  - "@gjtempleton"
+creation-date: 2021-05-10
+last-updated: 2021-05-10
+status: implementable
+
+latest-milestone: "1.22"
+stage: "stable"
