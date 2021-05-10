@@ -22,13 +22,13 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.21"
+latest-milestone: "v1.22"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.20"
-  beta: "v1.21"
-  stable: "v1.22"
+  beta: "v1.22"
+  stable: "v1.23"
 
 feature-gates:
   - name: ServiceLBNodePortControl
