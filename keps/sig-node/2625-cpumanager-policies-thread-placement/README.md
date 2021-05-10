@@ -14,7 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Proposed Change](#proposed-change)
-  - [Implementation strategy of smtalign CPU Manager policy option](#implementation-strategy-of-smtalign-cpu-manager-policy-option)
+  - [Implementation strategy of reject-non-smt-aligned CPU Manager policy option](#implementation-strategy-of-reject-non-smt-aligned-cpu-manager-policy-option)
   - [Resource Accounting](#resource-accounting)
   - [Alternatives](#alternatives)
     - [Add extra resources](#add-extra-resources)
@@ -70,8 +70,8 @@ to consider thread-level allocation, to avoid physical CPU sharing and prevent p
 
 ### Goals
 
-* Allow the workload to request the core allocation at hardware-thread level, avoiding noisy neighbours situations
-* Allow the workload to request full physical core allocation, to enable more efficient cache sharing
+* Prevent workloads from requesting cores that don't consume a full CPU by rejecting them.
+  This guarantees that no physical core is shared among different containers, which improves cache efficiency and mitigates the noisy neighbours problem.
 
 ## Proposal
 
@@ -109,7 +109,7 @@ The impact in the shared codebase will be addressed enhancing the current testsu
 
 ### Proposed Change
 
-We propose to add a new flag in Kubelet called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` which allows the user to specify the CPU Manager policy option. If the value of this option is specified to be `smtalign`, it results in further refinements of the existing static policy.
+We propose to add a new flag in Kubelet called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` which allows the user to specify the CPU Manager policy option. If the value of this option is specified to be `reject-non-smt-aligned`, it results in further refinements of the existing static policy.
 The static policy allocates CPUs using a topology-aware best-fit allocation. This enhancement wants to provide stronger guarantees by restricting the allocation of threads.
 The aim is to achieve the isolation for workloads managed by Kubernetes. The other part of isolation is (as of now) not managed by Kubernetes, as described in [Explicitly Reserved CPU List](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#explicitly-reserved-cpu-list) and [Static policy](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#static-policy).
 
@@ -119,20 +119,20 @@ Key properties:
 - With this requirement enforced, the cpumanager allocation algorithm will guarantee avoidance of physical core sharing.
 - Should the node not have enough free physical cores, the Pod will be put in Failed state, with `SMTAlignmentError` as reason.
 
-### Implementation strategy of smtalign CPU Manager policy option
+### Implementation strategy of reject-non-smt-aligned CPU Manager policy option
 
-- In order to introduce SMT-alignment in CPU Manager, we introduce a new flag in Kubelet to allow the user to specify `cpumanager-policy-options` which when specified with `smtalign` as its value provides the capability to modify the behaviour of static policy to strictly guarantee allocation of whole cores to a workload.  
+- In order to introduce SMT-alignment in CPU Manager, we introduce a new flag in Kubelet to allow the user to specify `cpumanager-policy-options` which when specified with `reject-non-smt-aligned` as its value provides the capability to modify the behaviour of static policy to strictly guarantee allocation of whole cores to a workload.
 - The `CPUManagerPolicyOptions` received from the kubelet config/command line args is propogated to the Container Manager.
 - The responsibility of admission control is centralized in containermanager. The resource managers and/or the resource allocation orchestrator (Topology Manager) still have the responsibility of running the checks to admit the pods, but the handling of these errors and the building of the pod lifecycle result are now factored in containermanager.
 - Prior to this feature, the Container Manager admission handler was delegated to the topology manager if the latter was enabled. This worked well under the assumption that only Topology Manager had the ability to reject admissions with pods. But with the introduction of this feature, the CPU Manager also needs the ability to possibly reject pods if strict SMT alignment is requested. In order to do so, we introduce a new error and let it drive the rejection. Due to an already existing dependency between cpumanager and topologymanager as the former imports the latter in order to support the topologymanager.HintProvider interface, container manager is considered as the appropriate for performing admission control.
-- When `smtalign` policy option is specified along with `static` CPU Manager policy, an additional check in the allocation logic of the `static` policy ensures that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores.
+- When `reject-non-smt-aligned` policy option is specified along with `static` CPU Manager policy, an additional check in the allocation logic of the `static` policy ensures that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores.
 - In case request translates to partial occupancy of the cores, the Pod will not be admitted and would fail with `SMTAlignmentError`.
 
 
 
 ### Resource Accounting
 
-To illustrate the behaviour of the `smtalign` policy option, we will consider the following CPU topology. We will use as example a CPU package with 16 physical cores, 2-way SMT-capable.
+To illustrate the behaviour of the `reject-non-smt-aligned` policy option, we will consider the following CPU topology. We will use as example a CPU package with 16 physical cores, 2-way SMT-capable.
 
 ![Example Topology](smtalign-topology.png)
 
@@ -157,9 +157,11 @@ spec:
         cpu: "5"
 ```
 
-The `smtalign` policy option would need to make sure the remaining core on the half-allocated physical CPU is left unallocated to avoid noisy neighbours.
+The `reject-non-smt-aligned` policy option will cause the pod to be rejected since it doesn't request enough cores to consume all virtual threads exposed by the CPU.
 
-![Example core allocation with the smtalign policy option when requesting a odd number of cores](smtalign-allocation-odd-cores.png)
+ would need to make sure the remaining core on the half-allocated physical CPU is left unallocated to avoid noisy neighbours.
+
+![Example core allocation with the reject-non-smt-aligned policy option when requesting a odd number of cores](smtalign-allocation-odd-cores.png)
 
 The container will then actually get more virtual cores (6) than what is requesting (5).
 
@@ -175,7 +177,11 @@ This approach follows what the Topology Manager already does.
 
 ### Alternatives
 
-The only drawback of the proposed admission handler is that pods might have to overallocate resources.
+We acknowledge few drawbacks of the proposed approach:
+- pods that are rejected due to an AdmissionError do not get automatically rescheduled. Workloads which wants to make sure to be rescheduled need to
+  use extra kubernetes facilities, for example Deployments.
+- pods might have to overallocate resources.
+
 We evaluated possible alternatives to the extra admission control, but we eventually discarded all of them. We document them in this section.
 
 #### Add extra resources
@@ -229,7 +235,7 @@ We would like to mention a further extension of this work, which we are *not* pr
 A further subset of the latency sensitive class of workload we identified (CNF, HFT) benefits most of non-SMT system, delivering the best possible performance here.
 For these applications, just disabling SMT at machine level solves the need of the workload, but overall creates worse usage of hardware resources and poorer container density.
 
-Another policy option, or a further refinement of `smtalign`, which enables non-SMT emulation on SMT-enabled system would allow to accommodate these needs, but this would cause even more significant resource accounting mismatches
+Another policy option, or a further refinement of `reject-non-smt-aligned`, which enables non-SMT emulation on SMT-enabled system would allow to accommodate these needs, but this would cause even more significant resource accounting mismatches
 as described above. Furthermore, at the moment of writing we are still assessing how large is the set of the classes which benefit of these extra guarantees.
 
 For all these reasons we postponed this work to a later date.
@@ -267,7 +273,7 @@ No changes needed
   - [X] Feature gate (also fill in values in `kep.yaml`).
     - Feature gate name: `CPUManagerPolicyOptions`.
     - Components depending on the feature gate: kubelet
-  - [X] Change the kubelet configuration to set the cpumanager policy option to `smtalign`
+  - [X] Change the kubelet configuration to set the cpumanager policy option to `reject-non-smt-aligned`
 * **Does enabling the feature change any default behavior?**
   - Yes, it makes the behaviour of the `cpumanager` static policy more restrictive and can lead to pod admission rejection.
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
@@ -324,3 +330,4 @@ No changes needed
 - 2021-04-22: KEP updated to clarify the `smtaware` policy after discussion on sig-node and to postpone the `smtisolate` policy
 - 2021-05-04: KEP updated to change name from `smtaware` to `smtalign`. In addition to this we capture changes in the implmentation details including the introduction of a new flag in Kubelet called `cpumanager-policy-options` to allow the user to specify `smtalign` as a value to enable this capability.
 - 2021-05-06: KEP update to add the feature gate and clarify PRR answers.
+- 2021-05-10: KEP update to add to rename the `smtalign` to `reject-non-smt-aligned` for better clarity and address review comments
