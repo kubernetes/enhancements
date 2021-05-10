@@ -24,6 +24,7 @@
   - [Test Plan](#test-plan)
     - [Controller Unit Tests](#controller-unit-tests)
     - [Kube-Proxy Unit Tests](#kube-proxy-unit-tests)
+  - [e2e Tests](#e2e-tests)
   - [Observability](#observability)
   - [Graduation Criteria](#graduation-criteria)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -75,15 +76,9 @@ routing at zone level but could be expanded to include region.
 
 In the short term, this is taking the place of two closely related KEPs that
 were never implemented. These KEPs relate to EndpointSlice subsetting and are
-still relevant, just deferred to a later point in time. For more info on this
-transition refer to the following resources:
-
-- [Doc: Updates to Topology in Kubernetes
-  1.21](https://docs.google.com/document/d/1ZzUoFY1SrdjVefl7gVOJZJLt1I1LHttw8pcX95nlgMY/edit)
-- [KEP 2004: Topology Aware
-  Subsetting](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2004-topology-aware-subsetting).
-- [KEP 2030: Topology Aware
-  Proxying](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2030-topology-aware-proxying).
+still relevant, just deferred to a later point in time. This
+[doc](https://docs.google.com/document/d/1ZzUoFY1SrdjVefl7gVOJZJLt1I1LHttw8pcX95nlgMY/edit)
+has more info on this transition.
 
 ## Motivation
 
@@ -151,8 +146,7 @@ hints help ensure that each zone will have a single endpoint to consume by
 adding a hint to the third endpoint that it should be consumed by "zone-c".
 
 This functionality will be enabled by a `TopologyAwareHints` feature gate along
-with the `trafficPolicy` field on Service that will be added as part of KEP
-2086.
+with a new Service annotation.
 
 ### Risks and Mitigations
 
@@ -196,20 +190,21 @@ updated to read the same information to identify which zone it is running in.
 
 ### Configuration
 
-The new Service `trafficPolicy` field will be expanded to support a new value:
+A new `service.kubernetes.io/topology-aware-routing` annotation  can be used to
+enable or disable Topology Aware Routing (and by extension, hints) for a
+Service. This may be set to "Auto" or "Disabled". Any other value is treated as
+"Disabled".
 
-- `PreferZone`: When there are a sufficient number of endpoints for the Service,
-  the EndpointSlice controller will add topology hints for each endpoint that
-  will ensure a proportional amounts are available to each zone in a cluster.
-
-A future KEP will explore changing the default value of this field to
-`PreferZone`.
+The previous `service.kubernetes.io/topology-aware-hints` annotation will
+continue to be supported as a means of configuring this feature.
 
 #### Interoperability
 
-Validation will ensure that `trafficPolicy` can not be set to `PreferZone` when
-the deprecated `topologyKeys` field is also set. This will be true until the
-`topologyKeys` field is removed in the future.
+If any of the following are true, topology hints will be ignored:
+
+- ExternalTrafficPolicy is set to Local
+- InternalTrafficPolicy is set to Local
+- TopologyKeys field has at least one entry
 
 #### Feature Gate
 
@@ -250,7 +245,6 @@ type ForZone struct {
 }
 ```
 
-
 #### Future API Expansion
 This approach would allow for future API expansion that enabled specifying
 multiple zones per endpoint with weights. That level of complexity may never be
@@ -277,7 +271,7 @@ conditions are true:
 
 - Kube-Proxy is able to determine the zone it is running within (likely based
   on node labels).
-- The `trafficPolicy` field is set to `PreferZone` for the Service.
+- The annotation is set to `Auto`.
 - At least one endpoint for the Service has a hint pointing to the zone
   Kube-Proxy is running within.
 - All endpoints for the Service have zone hints.
@@ -293,10 +287,10 @@ had not yet propagated to all of them.
 
 ### EndpointSlice Controller
 
-When the `TopologyAwareHints` feature gate is enabled and the `trafficPolicy`
-field is set to `PreferZone` for a Service, the EndpointSlice controller will
-add hints to EndpointSlices. These hints will indicate where an endpoint should
-be consumed by proxy implementations to enable topology aware routing.
+When the `TopologyAwareHints` feature gate is enabled and the annotation is set
+to `Auto` for a Service, the EndpointSlice controller will add hints to
+EndpointSlices. These hints will indicate where an endpoint should be consumed
+by proxy implementations to enable topology aware routing.
 
 The EndpointSlice controller will determine how many endpoints should be
 available for each zone based on the proportion of CPU cores in each zone. If
@@ -370,13 +364,10 @@ In the future we may expand this functionality if needed. This could include:
 #### Controller Unit Tests
 | Test Description | Expected Result |
 | :--- | :--- |
-| Feature Gate On, TrafficPolicy == 'PreferZone', 2+ zones | Hints set |
-| Feature Gate On, TrafficPolicy == 'PreferZone', 1 zone | No hints set |
-| Feature Gate On, TrafficPolicy == 'Local', 2+ zones | No hints |
-| Feature Gate On, TrafficPolicy Unset, 2+ zones | No hints |
-| Feature Gate Off, TrafficPolicy == 'PreferZone', 2+ zones | No hints |
-| Feature Gate Off, TrafficPolicy Unset, 2+ zones | No hints |
-| Feature Gate Off, TrafficPolicy Unset, 2+ zones | No hints |
+| Feature On, 2+ zones | Hints set |
+| Feature Off, 2+ zones | No hints |
+| Feature On, 1 zone | No hints set |
+| Feature On, ExternalTrafficPolicy == 'Local', 2+ zones | No hints |
 | 2 endpoints, 3 zones | No hints |
 | 3 endpoints, 3 zones | Hints set |
 | 4 endpoints, 3 zones | No hints |
@@ -393,10 +384,28 @@ In the future we may expand this functionality if needed. This could include:
 #### Kube-Proxy Unit Tests
 | Test Description | Expected Result |
 | :--- | :--- |
-| Feature Gate On, TrafficPolicy == 'PreferZone', hints matching zone | Endpoints filtered |
-| Feature Gate On, TrafficPolicy == 'Local', hints matching zone | Endpoints not filtered |
-| Feature Gate Off, TrafficPolicy == 'PreferZone', hints matching zone | Endpoints not filtered |
-| Feature Gate On, TrafficPolicy == 'PreferZone', no hints matching zone | Endpoints not filtered |
+| Feature On, hints matching zone | Endpoints filtered |
+| Feature On, ExternalTrafficPolicy == 'Local', hints matching zone | Endpoints not filtered |
+| Feature Off, hints matching zone | Endpoints not filtered |
+| Feature On, no hints matching zone | Endpoints not filtered |
+
+### e2e Tests
+This represents the largest and most uncertain part of the testing effort. We
+need to find a way to run e2e tests on multizone clusters. To limit flakiness,
+those clusters likely need to have a consistent distribution of nodes across
+zones. This will enable us to write predictable tests for topology aware
+routing.
+
+At a minimum, we likely want the following test:
+
+- 3 zone cluster, with 1 equivalent node per zone
+- Deploy a single pod to each node with a daemonset
+- Create a Service that targets that daemonset
+- Make requests from each zone and ensure that the request is routed to a pod in
+  the same zone
+
+We'll likely need more tests to properly vet this feature, but this one should
+be straightforward to write and unlikely to be flaky.
 
 ### Observability
 We can reuse some of the metrics of EndpointSlice Controller that we already
@@ -448,7 +457,7 @@ Thus there could be two potential version skew scenarios:
    of the new controller functionality.
 
 Each scenario described above will end up behaving as if this feature is not
-enabled even if the `trafficPolicy` has been set on Service.
+enabled even if the annotation has been set on the Service.
 
 ## Production Readiness Review Questionnaire
 
@@ -467,7 +476,7 @@ enabled even if the `trafficPolicy` has been set on Service.
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
   Yes. It can easily be disabled universally by turning off the feature gate or
-  setting the `trafficPolicy` field to some other value for a Service.
+  setting the annotation to some other value for a Service.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   EndpointSlices hints will be added again resulting in changes to existing
