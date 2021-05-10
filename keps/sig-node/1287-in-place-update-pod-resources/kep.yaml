@@ -9,6 +9,8 @@ owning-sig: sig-node
 participating-sigs:
   - sig-autoscaling
   - sig-scheduling
+status: implementable
+creation-date: 2018-11-06
 reviewers:
   - "@bsalamat"
   - "@dashpole"
@@ -21,18 +23,21 @@ approvers:
   - "@derekwaynecarr"
   - "@ahg-g"
   - "@mwielgus"
-editor: TBD
-creation-date: 2018-11-06
-last-updated: 2021-02-05
-status: implementable
+prr-approvers:
+  - "@ehashman"
 see-also:
   - "/keps/sig-node/2273-kubelet-container-resources-cri-api-changes"
 replaces:
-superseded-by:
 
-# PRR
-prr-approvers:
-  - "@ehashman"
+stage: "alpha"
+
+latest-milestone: "v1.22"
+
+milestone:
+  alpha: "v1.22"
+  beta: "v1.24"
+  stable: "v1.26"
+
 feature-gates:
   - name: InPlacePodVerticalScaling
     components:
@@ -40,9 +45,3 @@ feature-gates:
       - kube-scheduler
       - kubelet
 disable-supported: true
-milestone:
-  alpha: "v1.22"
-  beta: "v1.23"
-  stable: "v1.25"
-latest-milestone: "v1.22"
-stage: "alpha"

@@ -3,11 +3,14 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [API Changes](#api-changes)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Expected Behavior of CRI Runtime](#expected-behavior-of-cri-runtime)
   - [Test Plan](#test-plan)
@@ -25,7 +28,51 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -78,6 +125,8 @@ passed in the API specific to the target runtime.
 Another change in this proposal is to extend ContainerStatus CRI API such that
 Kubelet can query and discover the CPU and memory resources that are presently
 applied to a Container.
+
+### API Changes
 
 To accomplish aforementioned goals:
 
@@ -147,6 +196,10 @@ message UpdateContainerResourcesRequest {
 ```
 
 * Kubelet code is modified to leverage these changes.
+
+### Risks and Mitigations
+
+There are no risks that we are aware of as this KEP will be implemented simultaneously with In-place update KEP.
 
 ## Design Details
 
@@ -454,3 +507,16 @@ _This section must be completed when targeting beta graduation to a release._
 - 2019-10-25 - Initial KEP draft created
 - 2020-01-14 - Test plan and graduation criteria added
 
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+
+## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->

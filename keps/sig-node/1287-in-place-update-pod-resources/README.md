@@ -3,6 +3,7 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -13,6 +14,8 @@
     - [Container Resize Policy](#container-resize-policy)
     - [Resize Status](#resize-status)
     - [CRI Changes](#cri-changes)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
   - [Kubelet and API Server Interaction](#kubelet-and-api-server-interaction)
     - [Kubelet Restart Tolerance](#kubelet-restart-tolerance)
   - [Scheduler and API Server Interaction](#scheduler-and-api-server-interaction)
@@ -22,7 +25,6 @@
     - [Notes](#notes)
   - [Affected Components](#affected-components)
   - [Future Enhancements](#future-enhancements)
-  - [Risks and Mitigations](#risks-and-mitigations)
   - [Test Plan](#test-plan)
     - [Unit Tests](#unit-tests)
     - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
@@ -43,8 +45,51 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
+## Release Signoff Checklist
+
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -208,6 +253,25 @@ CPU and memory limit configurations from runtime.
 
 These CRI changes are a separate effort that does not affect the design
 proposed in this KEP.
+
+### Risks and Mitigations
+
+1. Backward compatibility: When Pod.Spec.Containers[i].Resources becomes
+   representative of desired state, and Pod's true resource allocations are
+   tracked in Pod.Status.ContainerStatuses[i].ResourcesAllocated, applications
+   that query PodSpec and rely on Resources in PodSpec to determine resource
+   allocations will see values that may not represent actual allocations. As a
+   mitigation, this change needs to be documented and highlighted in the
+   release notes, and in top-level Kubernetes documents.
+1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
+   could be in use, and approaches such as setting limit near current usage may
+   be required. This issue needs further investigation.
+1. Older client versions: Previous versions of clients that are unaware of the
+   new ResourcesAllocated and ResizePolicy fields would set them to nil. To
+   keep compatibility, PodResourceAllocation admission controller mutates such
+   an update by copying non-nil values from the old Pod to current Pod.
+
+## Design Details
 
 ### Kubelet and API Server Interaction
 
@@ -488,23 +552,6 @@ Other components:
 1. Allow resizing local ephemeral storage.
 1. Allow resource limits to be updated (VPA feature).
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
-
-### Risks and Mitigations
-
-1. Backward compatibility: When Pod.Spec.Containers[i].Resources becomes
-   representative of desired state, and Pod's true resource allocations are
-   tracked in Pod.Status.ContainerStatuses[i].ResourcesAllocated, applications
-   that query PodSpec and rely on Resources in PodSpec to determine resource
-   allocations will see values that may not represent actual allocations. As a
-   mitigation, this change needs to be documented and highlighted in the
-   release notes, and in top-level Kubernetes documents.
-1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
-   could be in use, and approaches such as setting limit near current usage may
-   be required. This issue needs further investigation.
-1. Older client versions: Previous versions of clients that are unaware of the
-   new ResourcesAllocated and ResizePolicy fields would set them to nil. To
-   keep compatibility, PodResourceAllocation admission controller mutates such
-   an update by copying non-nil values from the old Pod to current Pod.
 
 ### Test Plan
 
@@ -875,3 +922,22 @@ _This section must be completed when targeting beta graduation to a release._
 - 2020-11-06 - Updated with feedback from reviews
 - 2020-12-09 - Add "Deferred"
 - 2021-02-05 - Final consensus on resourcesAllocated[] and resize[]
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+
+There are no drawbacks that we are aware of.
+
+## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
+
+We considered having scheduler approve the resize. We also considered PodSpec as
+the location to checkpoint allocated resources.
