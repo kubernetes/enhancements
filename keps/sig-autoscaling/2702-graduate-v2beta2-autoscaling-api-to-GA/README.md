@@ -34,7 +34,7 @@ This document outlines required steps to graduate autoscaling v2beta2 API to GA.
 ### Goals
 
 * Promote all of v2beta2 to stable
-    HPA behavior and container resource targets need work to meet stable requirements.
+* HPA behavior and container resource targets need work to meet stable requirements.
 * Deprecate v2beta2 as soon as v2 stable is landed
 * Deprecate v2beta1 immediately
 * Container Resource Targets
