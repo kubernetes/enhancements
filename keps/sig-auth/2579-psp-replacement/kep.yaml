@@ -6,10 +6,16 @@ authors:
 owning-sig: sig-auth
 participating-sigs:
   - sig-security
+  - sig-windows          # For Windows support
+  - sig-node             # For Pod Security Standards definition
+  - sig-instrumentation  # For metrics definition
 status: implementable
 creation-date: 2021-03-19
 reviewers:
-  - TBD
+  - "@mrunalp"  # SIG-Node representative, Pod Security Standards
+  - "@dashpole" # SIG-Instrumentation representative, metrics
+  - "@marosset" # SIG-Windows representative
+  - "@ritazh"
 approvers:
   - "@deads2k"
   - "@enj"
