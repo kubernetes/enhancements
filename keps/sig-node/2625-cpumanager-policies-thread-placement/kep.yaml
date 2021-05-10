@@ -11,7 +11,8 @@ reviewers:
   - "@klueska"
 approvers:
   - "@sig-node-leads"
-prr-approvers: []
+prr-approvers:
+  - "@johnbelamaric"
 see-also: []
 replaces: []
 

@@ -242,7 +242,7 @@ For all these reasons we postponed this work to a later date.
 
 ### Test Plan
 
-The implementation PR will extend both the unit test suite and the E2E test suite to cover the policy changes described in this KEP.
+The [implementation PR](https://github.com/kubernetes/kubernetes/pull/101432) will extend both the unit test suite and the E2E test suite to cover the policy changes described in this KEP.
 
 ### Graduation Criteria
 
