@@ -26,8 +26,8 @@ latest-milestone: "v1.22"
 
 milestone:
   alpha: "v1.22"
-  beta: "v1.24"
-  stable: "v1.26"
+  beta: "v1.23"
+  stable: "v1.25"
 
 feature-gates:
   - name: InPlacePodVerticalScaling

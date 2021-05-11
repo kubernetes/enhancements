@@ -695,8 +695,15 @@ Downgrade involves doing the above in reverse.
 
 ### Version Skew Strategy
 Kubelet and the CRI runtime versions are expected to match so we don't have to worry about.
+
 Previous versions of clients that are unaware of the new ResizePolicy fields would set them
-to nil. API server mutates such updates by copying non-nil values from old Pod to current Pod
+to nil. API server mutates such updates by copying non-nil values from old Pod to the current
+Pod.
+
+A previous version of kubelet interprets mutation to Pod Resources as a Container definition
+change and will restart the container with the new Resources. This could lead to Node resource
+over-subscription. In order to address this, the feature-gate will remain default false for
+atleast two versions after the initial release that carries it.
 
 ## Production Readiness Review Questionnaire
 
