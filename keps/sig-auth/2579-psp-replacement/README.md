@@ -735,7 +735,7 @@ Maturity level of this feature is defined by:
 
 #### Alpha
 
-The initial alpha implementation targetting v1.22 includes:
+The initial alpha implementation targeting v1.22 includes:
 
 - Initial implementation is protected by the default-disabled feature gate `PodSecurity`
 - The built-in PodSecurity admission controller is defalut-disabled.
