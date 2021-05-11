@@ -355,7 +355,15 @@ requirement, we would be put in a hard place. Hopefully the adoption of this pro
 discourage such fields from being added.
 
 **Scope creep:** How do we decide which fields are in-scope for policy restrictions? There are a
-number of fields that are relevant to local-DoS prevention that are somewhat ambiguous.
+number of fields that are relevant to local-DoS prevention that are somewhat ambiguous. To mitigate
+this, we are explicitly making the following out-of-scope:
+  - Fields that only affect scheduling, and not runtime. E.g. `nodeSelector`, scheduling
+    `tolerations`, `topologySpreadConstraints`.
+  - Fields that only affect the control plane. E.g. `labels`, `finalizers`, `ownerReferences`.
+  - Fields under the `PodStatus`, since users are not expected to have write permissions to the
+    `status` subresource.
+  - Fields that don't have a reasonable universal (unconfigurable) constraint. E.g. container image,
+    resource requests, `runtimeClassName`.
 
 **Ecosystem suppression:** In the discussions of PodSecurityPolicy replacements, there was a concern
 that whatever we picked would become not only an ecosystem standard best-practice, but practically a
@@ -450,6 +458,8 @@ immutable and the seccomp annotations are deprecated and slated for removal in v
 Policy level definitions are hardcoded and unconfigurable out of the box. However, the [Pod Security
 Standards] leave open ended guidance on a few items, so we must make a static decision on how to
 handle these elements:
+
+_Note: all baseline policies also apply to restricted._
 
 **HostPorts** - (baseline) HostPorts will be forbidden. This is a more niche feature, and violates
 the container-host boundary.
@@ -730,7 +740,9 @@ We are targeting Beta in v1.23.
     - [ ] [Deprecation / removal policy for old profile versions](#versioning)
     - [ ] [Ephemeral containers support](#ephemeral-containers)
     - [ ] [PSP migration workflow & support](#podsecuritypolicy-migration)
-2. Collect feedback from the alpha, analyze usage of the webhook implementation.
+2. Collect feedback from the alpha, analyze usage of the webhook implementation. In particular, re-assess these API decisions:
+    - Distinct `audit` and `warn` modes
+    - Whether `enforce` should warn on templated pod resources
 3. Thorough testing is already expected for alpha, but we will review our test coverage and fill any
    gaps prior to beta.
    - Feature tests are moved to the main test jobs (may postpone to GA)
