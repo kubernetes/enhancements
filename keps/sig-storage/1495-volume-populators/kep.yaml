@@ -21,11 +21,11 @@ prr-approvers:
 replaces:
   - "/keps/sig-storage/20200120-generic-data-populators.md"
 stage: beta
-latest-milestone: "v1.18"
+latest-milestone: "v1.22"
 milestone:
   alpha: "v1.18"
-  beta: "v1.21"
-  stable: "v1.22"
+  beta: "v1.22"
+  stable: "v1.23"
 feature-gates:
   - name: AnyVolumeDataSource
     components:
