@@ -59,19 +59,20 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We propose a change in cpumanager to make the behaviour of latency-sensitive applications more predictable when running on SMT-enabled systems.
+We propose a change in CPUManager to make the behaviour of latency-sensitive applications more predictable when running on SMT-enabled systems.
 
 ## Motivation
 
-Latency-sensitive applications want to have exclusive CPU allocation to enable performance isolation and to meet their latency requirements.
-The static policy of the cpumanager already allows to prevent virtual CPU sharing.
+Latency-sensitive applications want to have exclusive CPU allocation to enable better isolation to meet application's latency and performance requirements.
+The static policy of the CPUManager already allows to prevent virtual CPU sharing.
 However, for some classes of these latency-sensitive applications running on simultaneous multithreading (SMT) enabled system, it is also beneficial
 to consider thread-level allocation, to avoid physical CPU sharing and prevent possible interferences caused by noisy neighborhoods.
 
 ### Goals
 
 * Prevent workloads from requesting cores that don't consume a full CPU by rejecting them.
-  This guarantees that no physical core is shared among different containers, which improves cache efficiency and mitigates the noisy neighbours problem.
+  This guarantees that no physical core is shared among different containers, which improves cache efficiency and mitigates the interference
+  with other workloads that can consume resources of the same physical core, e.g. first level caches.
 
 ## Proposal
 
@@ -109,25 +110,35 @@ The impact in the shared codebase will be addressed enhancing the current testsu
 
 ### Proposed Change
 
-We propose to add a new flag in Kubelet called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` which allows the user to specify the CPU Manager policy option. If the value of this option is specified to be `reject-non-smt-aligned`, it results in further refinements of the existing static policy.
+We propose to
+- add a new _alias_ to the existing static policy, called `configurable`
+- add a new flag in Kubelet called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` which allows the user to specify the CPU Manager policy option.
+- finally, add a new cpu manager option called `reject-non-smt-aligned`; if present, this option will enable further refinements of the existing static policy.
+
+The addition of an alias for the `static` policy is motivated by the fact the new CPUManager options can alter the behaviour of the policy in a backward incompatible way.
+While the change we are proposing in this KEP is fully backward compatible, other future options may introduce changes in behaviour.
+Thus, some operators may not notice the extra flags that potentially change the behaviour of the static policy.
+An example of these aforementioned operators are software components who vendored older kubelet configuration.
+By adding the new policy name, we make it possible for those operators to trivially detect the change, and to not make wrong assumptions.
+
 The static policy allocates CPUs using a topology-aware best-fit allocation. This enhancement wants to provide stronger guarantees by restricting the allocation of threads.
 The aim is to achieve the isolation for workloads managed by Kubernetes. The other part of isolation is (as of now) not managed by Kubernetes, as described in [Explicitly Reserved CPU List](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#explicitly-reserved-cpu-list) and [Static policy](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#static-policy).
 
-Key properties:
+Let's summarize the key properties of the `reject-non-smt-aligned` option:
 - Preserve all the properties of the `static` policy.
 - Never allocate less than a physical-cpu worth amount of cores.
-- With this requirement enforced, the cpumanager allocation algorithm will guarantee avoidance of physical core sharing.
+- With this requirement enforced, the CPUManager allocation algorithm will guarantee avoidance of physical core sharing.
 - Should the node not have enough free physical cores, the Pod will be put in Failed state, with `SMTAlignmentError` as reason.
 
 ### Implementation strategy of reject-non-smt-aligned CPU Manager policy option
 
-- In order to introduce SMT-alignment in CPU Manager, we introduce a new flag in Kubelet to allow the user to specify `cpumanager-policy-options` which when specified with `reject-non-smt-aligned` as its value provides the capability to modify the behaviour of static policy to strictly guarantee allocation of whole cores to a workload.
+- In order to introduce the SMT-alignment check in CPU Manager, we introduce a new flag in Kubelet to allow the user to specify `cpumanager-policy-options` which when specified with `reject-non-smt-aligned` as its value provides the capability to modify the behaviour of static policy to strictly guarantee allocation of whole cores to a workload.
+- We add a new policy called `configurable`. Only if this policy is selected the options, if given, will be considered. Otherwise, they will be ignored.
 - The `CPUManagerPolicyOptions` received from the kubelet config/command line args is propogated to the Container Manager.
 - The responsibility of admission control is centralized in containermanager. The resource managers and/or the resource allocation orchestrator (Topology Manager) still have the responsibility of running the checks to admit the pods, but the handling of these errors and the building of the pod lifecycle result are now factored in containermanager.
-- Prior to this feature, the Container Manager admission handler was delegated to the topology manager if the latter was enabled. This worked well under the assumption that only Topology Manager had the ability to reject admissions with pods. But with the introduction of this feature, the CPU Manager also needs the ability to possibly reject pods if strict SMT alignment is requested. In order to do so, we introduce a new error and let it drive the rejection. Due to an already existing dependency between cpumanager and topologymanager as the former imports the latter in order to support the topologymanager.HintProvider interface, container manager is considered as the appropriate for performing admission control.
+- Prior to this feature, the Container Manager admission handler was delegated to the topology manager if the latter was enabled. This worked well under the assumption that only Topology Manager had the ability to reject admissions with pods. But with the introduction of this feature, the CPU Manager also needs the ability to possibly reject pods if strict SMT alignment is requested. In order to do so, we introduce a new error and let it drive the rejection. Due to an already existing dependency between CPUManager and TopologyManager as the former imports the latter in order to support the `topologymanager.HintProvider` interface, container manager is considered as the appropriate for performing admission control.
 - When `reject-non-smt-aligned` policy option is specified along with `static` CPU Manager policy, an additional check in the allocation logic of the `static` policy ensures that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores.
 - In case request translates to partial occupancy of the cores, the Pod will not be admitted and would fail with `SMTAlignmentError`.
-
 
 
 ### Resource Accounting
@@ -137,7 +148,7 @@ To illustrate the behaviour of the `reject-non-smt-aligned` policy option, we wi
 ![Example Topology](smtalign-topology.png)
 
 
-Let's consider a single container, requesting 5 isolated cores.
+Let's consider a single container, requesting 5 exclusive cores.
 
 ```yaml
 apiVersion: v1
@@ -172,7 +183,7 @@ The container will then actually get more virtual cores (6) than what is request
 
 With `threads_per_cpu` is typical 2 on x86_64 with SMT enabled - but this number is not fixed and can change in future hardware implementation.
 
-In order to make the resource reporting consistent, and avoiding cascading changes in the system, we enforce the request constraints ad admission time.
+In order to make the resource reporting consistent, and avoiding cascading changes in the system, we enforce the request constraints at admission time.
 This approach follows what the Topology Manager already does.
 
 ### Alternatives
@@ -187,7 +198,7 @@ We evaluated possible alternatives to the extra admission control, but we eventu
 #### Add extra resources
 
 We can add a new extended resource alongside `cpu` - [which on baremetal represents virtual threads](https://kubernetes.io/docs/tasks/configure-pod-container/assign-cpu-resource/#cpu-units), to represent
-physical CPUs. However having two resources to represent the same hardware entity is confusing and cumbersome. We believe cpumanager should keep consuming the core `cpu` resource for consistency reasons.
+physical CPUs. However having two resources to represent the same hardware entity is confusing and cumbersome. We believe CPUManager should keep consuming the core `cpu` resource for consistency reasons.
 
 Just considering the new extended resource, is not feasible as well, because it will prevent the pod to be in the guaranteed QoS class, and will void the desirable property of keeping all the guarantees
 the static policy provides.
@@ -273,9 +284,10 @@ No changes needed
   - [X] Feature gate (also fill in values in `kep.yaml`).
     - Feature gate name: `CPUManagerPolicyOptions`.
     - Components depending on the feature gate: kubelet
-  - [X] Change the kubelet configuration to set the cpumanager policy option to `reject-non-smt-aligned`
+  - [X] Change the kubelet configuration to set the CPUManager policy to `configurable`
+  - [X] Change the kubelet configuration adding the CPUManager policy option to `reject-non-smt-aligned`
 * **Does enabling the feature change any default behavior?**
-  - Yes, it makes the behaviour of the `cpumanager` static policy more restrictive and can lead to pod admission rejection.
+  - Yes, it makes the behaviour of the CPUManager static policy more restrictive and can lead to pod admission rejection.
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
   - Yes, disabling the feature gate shuts down the feature completely; alternatively,
   - Yes, through kubelet configuration - switch to a different policy.
@@ -331,3 +343,4 @@ No changes needed
 - 2021-05-04: KEP updated to change name from `smtaware` to `smtalign`. In addition to this we capture changes in the implmentation details including the introduction of a new flag in Kubelet called `cpumanager-policy-options` to allow the user to specify `smtalign` as a value to enable this capability.
 - 2021-05-06: KEP update to add the feature gate and clarify PRR answers.
 - 2021-05-10: KEP update to add to rename the `smtalign` to `reject-non-smt-aligned` for better clarity and address review comments
+- 2021-05-11: KEP update to add to the `configurable` alias and address review comments
