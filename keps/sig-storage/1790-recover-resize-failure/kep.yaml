@@ -21,12 +21,12 @@ see-also:
 replaces:
 superseded-by:
 
-latest-milestone: "v1.19"
+latest-milestone: "v1.22"
 stage: "alpha"
 milestone:
-  alpha: "v1.19"
-  beta: "v1.20"
-  stable: "v1.21"
+  alpha: "v1.22"
+  beta: "v1.23"
+  stable: "v1.25"
 feature-gates:
   - name: RecoverExpansionFailure
     components:

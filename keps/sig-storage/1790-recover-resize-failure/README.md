@@ -12,6 +12,9 @@
   - [Implementation](#implementation)
     - [User flow stories](#user-flow-stories)
       - [Case 0 (default PVC creation):](#case-0-default-pvc-creation)
+      - [Case 1 (controller+node expandable):](#case-1-controllernode-expandable)
+      - [Case 2 (controller+node expandable with no GET_VOLUME capability):](#case-2-controllernode-expandable-with-no-get_volume-capability)
+      - [Case 3 (Malicious user)](#case-3-malicious-user)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
   - [Test Plan](#test-plan)
@@ -74,8 +77,7 @@ the user is using less storage than he/she actually is.
 To solve this problem - we propose that although users are allowed to reduce size of their
 PVC (as long as requested size >= `pvc.Status.Capacity`), quota calculation
 will use `max(pvc.Spec.Capacity, pvc.Status.AllocatedResources)` and reduction in `pvc.Status.AllocatedResources`
-is only done by resize-controller after verifying volume size using `GET_VOLUME` csi RPC call.
-
+is only done by resize-controller after verifying volume size using `ControllerGetVolume` csi RPC call.
 
 ### Goals
 
@@ -108,14 +110,15 @@ When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Statu
 
 If CSI driver does not have `GET_VOLUME` controller capability and `pvc.Spec.Resources` < `pvc.Status.AllocatedResources` (i.e user is attempting to reduce size of a volume that expansion controller previously tried to expand) - then although expansion-controller will try volume expansion with value in `pvc.Spec.Resources` - it will not reduce reported value in `pvc.Status.AllocatedResources`, which will result in no quota being restored to the user. In other words - for CSI drivers that don't have `GET_VOLUME` controller capability - `pvc.Status.AllocatedResources` will report highest requested value and reducing `pvc.Spec.Resources` will not result in reduction of used quota.
 
-#### User flow stories
+*Note:* This proposal expects that users can not modify `pvc.Status` directly and cheat quota system. In general this should be fine because users should not have access to edit status of almost anything. Link to discussion on slack - https://kubernetes.slack.com/archives/CJUQN3E4T/p1620059624022100
 
+#### User flow stories
 
 ##### Case 0 (default PVC creation):
 - User creates a 10Gi PVC by setting - `pvc.spec.resources.requests["storage"] = "10Gi"`.
 - API server sets `pvc.Status.AllocatedResources` to "10Gi" on creation.
 
-###### Case 1 (controller+node expandable):
+##### Case 1 (controller+node expandable):
 - User increases 10Gi PVC to 100Gi by changing - `pvc.spec.resources.requests["storage"] = "100Gi"`.
 - `pvc.Status.AllocatedResources` still reports `10Gi`.
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
@@ -129,7 +132,7 @@ If CSI driver does not have `GET_VOLUME` controller capability and `pvc.Spec.Res
 - Quota controller sees a reduction in used quota because `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` is 20Gi.
 - Expansion succeeds and `pvc.Status.Capacity` and `pv.Spec.Capacity` report new size as `20Gi`.
 
-###### Case 2 (controller+node expandable with no GET_VOLUME capability):
+##### Case 2 (controller+node expandable with no GET_VOLUME capability):
 - User increases 10Gi PVC to 100Gi by changing - `pvc.spec.resources.requests["storage"] = "100Gi"`
 - `pvc.Status.AllocatedResources` still reports `10Gi`.
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
@@ -143,7 +146,7 @@ If CSI driver does not have `GET_VOLUME` controller capability and `pvc.Spec.Res
 - Expansion succeeds and `pvc.Status.Capacity` and `pv.Spec.Capacity` report new size as `20Gi`.
 - `pvc.Status.AllocatedResources` however keeps reporting `100Gi`.
 
-###### Case 3 (Malicious user)
+##### Case 3 (Malicious user)
 - User increases 10Gi PVC to 100Gi by changing `pvc.spec.resources.requests["storage"] = "100Gi"`
 - `pvc.Status.AllocatedResources` still reports `10Gi`.
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
@@ -160,8 +163,8 @@ If CSI driver does not have `GET_VOLUME` controller capability and `pvc.Spec.Res
 ## Graduation Criteria
 
 * *Alpha* in 1.22 behind `RecoverExpansionFailure` feature gate with set to a default of `false`. The limitation about quota and CSI capability should be clearly documented.
-* *Beta* in 1.23: Since this feature is part of general `ExpandPersistentVolumes` feature which is in beta, we are going to move this to beta with confirmed production usage.
-* *GA* in 1.24 along with `ExpandPersistentvolumes` feature. The list of issues for volume expansion going GA can be found at - https://github.com/orgs/kubernetes-csi/projects/12.
+* *Beta* in 1.23: Since this feature is part of general `ExpandPersistentVolumes` feature which is in beta, we are going to move this to beta with enhanced e2e and more stability improvements.
+* *GA* in 1.25 along with `ExpandPersistentvolumes` feature. The list of issues for volume expansion going GA can be found at - https://github.com/orgs/kubernetes-csi/projects/12.
 
 ### Test Plan
 
