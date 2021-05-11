@@ -21,7 +21,7 @@
   - [Enabling swap as an end user](#enabling-swap-as-an-end-user)
   - [API Changes](#api-changes)
     - [KubeConfig addition](#kubeconfig-addition)
-  - [CRI Changes](#cri-changes)
+    - [CRI Changes](#cri-changes)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -40,6 +40,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Just set <code>--fail-swap-on=false</code>](#just-set-)
+  - [Restrict swap usage at the cgroup level](#restrict-swap-usage-at-the-cgroup-level)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -108,7 +109,7 @@ node.
 
 ### Scenarios
 
-1. Swap is enabled on a node's host system, but the CRI does not permit
+1. Swap is enabled on a node's host system, but the kubelet does not permit
    Kubernetes workloads to use swap. (This scenario is a prerequisite for the
    following use cases.)
 1. Swap is enabled at the node level. The CRI can be globally configured to
@@ -125,20 +126,23 @@ will be necessary to implement the third scenario.
 
 - On Linux systems, when swap is provisioned and available, Kubelet can start
   up with swap on.
-- Configuration is available for CRI to set swap utilization available to
+- Configuration is available for kubelet to set swap utilization available to
   Kubernetes workloads, defaulting to 0 swap.
-- Cluster administrators can enable and configure CRI swap utilization on a
+- Cluster administrators can enable and configure kubelet swap utilization on a
   per-node basis.
 - Use of swap memory with both cgroupsv1 and cgroupsv2 is supported.
 
 ### Non-Goals
 
+- Addressing non-Linux operating systems. Swap support will only be available
+  for Linux.
 - Provisioning swap. Swap must already be available on the system.
 - Setting [swappiness]. This can already be set on a system-wide level outside
   of Kubernetes.
 - Allocating swap on a per-workload basis with accounting (e.g. pod-level
   specification of swap). If desired, this should be designed and implemented
-  as part of a follow-up KEP. This KEP is a prerequisite for that work.
+  as part of a follow-up KEP. This KEP is a prerequisite for that work. Hence,
+  swap will be an overcommitted resource in the context of this KEP.
 - Supporting zram, zswap, or other memory types like SGX EPC. These could be
   addressed in a follow-up KEP, and are out of scope.
 
@@ -147,12 +151,12 @@ will be necessary to implement the third scenario.
 ## Proposal
 
 We propose that, when swap is provisioned and available on a node, cluster
-administrators can configure the Kubelet and CRI such that:
+administrators can configure the kubelet such that:
 
-- The kubelet can start with swap on.
-- The CRI is updated such that by default, workloads will use 0 swap.
-- The CRI will have configuration available such that swap utilization can be
-  configured for the entire node.
+- It can start with swap on.
+- It will direct the CRI to allocate Kubernetes workloads 0 swap by default.
+- It will have configuration options to configure swap utilization for the
+  entire node.
 
 This proposal enables scenarios 1 and 2 above, but not 3.
 
@@ -334,10 +338,8 @@ type KubeletConfiguration struct {
 type MemorySwapConfiguration struct {
 	// Configure swap memory available to container workloads. May be one of
 	// "", "NoSwap": workloads cannot use swap
-	// "WorkloadSpecifiedSwapLimit": workloads can use as much swap as their memory limit.
-	// "UnlimitedSwap": workloads can use unlimited swap, up to the system limit.
-	// "LimitedSwap": workloads can use a total of memory and swap up to this
-	// limit. When containers request more memory than this limit, they cannot use swap.
+	// "UnlimitedSwap": workloads can use unlimited swap, up to the allocatable limit.
+	// "LimitedSwap": workloads can use up to this limit of swap.
 	SwapBehavior string
 
 	LimitedSwap *LimitedSwapConfiguration
@@ -348,33 +350,25 @@ type LimitedSwapConfiguration struct {
 }
 ```
 
-We want to expose all possible swap settings based on the [Docker] and open
+We want to expose common swap configurations based on the [Docker] and open
 container specification for the `--memory-swap` flag. Thus, the
 `MemorySwapConfiguration.SwapBehavior` setting will have the following effects:
 
 * If `SwapBehavior` is not set or set to `"NoSwap"`, containers do not have
   access to swap. This value effectively prevents a container from using swap,
   even if it is enabled on a system.
-* If `SwapBehavior` is set to `"WorkloadSpecifiedSwapLimit"`, then for
-  containers with memory limit is set, the container can use as much swap as
-  its memory limit setting. For instance, if a container requests 300Mi memory
-  and `MemorySwapLimit` is not set, the container can use 600Mi total memory
-  and swap.
 * If `SwapBehavior` is set to `"UnlimitedSwap"`, the container is allowed to
   use unlimited swap, up to the maximum amount available on the host system.
 * If `SwapBehavior` is set to `"LimitedSwap"`, then the `LimitedSwap`
   configuration must also be set. `LimitedSwap.PerWorkloadMemorySwapLimit`
-  represents the system-wide maximum limit for combined memory and swap usage
-  of a container. For example, if the limit is set to `1Gi`:
-  * If the container's memory limit is 300Mi, it can use 1Gi combined memory
-    and swap (e.g. up to 700Mi swap).
-  * If the container's memory limit is 700Mi, it can use 1Gi combined memory
-    and swap (e.g. up to 300Mi swap).
-  * If the container's memory limit is 1Gi or greater, it cannot use swap.
+  represents the system-wide maximum limit for swap usage of a container. Note
+  that this limit applies to individual containers, and not at the pod-level,
+  in order to be set via the CRI rather than e.g. a [pod cgroup limit].
 
 [docker]: https://docs.docker.com/config/containers/resource_constraints/#--memory-swap-details
+[pod cgroup limit]: #restrict-swap-usage-at-the-cgroup-level
 
-### CRI Changes
+#### CRI Changes
 
 The CRI requires a corresponding change in order to allow the kubelet to set
 swap usage in container runtimes.  We will introduce a parameter
@@ -416,7 +410,6 @@ phase of graduation.
 - KubeletConfig allows CRI to be configured with a percentage of swap available
   to workloads. This will default to 0.
 - e2e test jobs are configured for Linux systems with swap enabled.
-
 
 #### Beta
 
@@ -824,6 +817,24 @@ sets swap available for workloads to 0. The CRI does not restrict it at all.
 This inconsistency makes it difficult or impossible to use swap in production,
 particularly if a user wants to restrict workloads from using swap when using
 the CRI rather than dockershim.
+
+### Restrict swap usage at the cgroup level
+
+Setting a swap limit at the cgroup level would allow us to restrict the usage
+of swap on a pod-level, rather than container-level basis.
+
+For alpha, we are opting for the container-level basis to simplify the
+implementation (as the container runtimes already support configuration of swap
+with the `memory-swap-limit` parameter). This will also provide the necessary
+plumbing for container-level accounting of swap, if that is proposed in the
+future.
+
+In beta, we may want to revisit this.
+
+See the [Pod Resource Management design proposal] for more background on the
+cgroup limits the kubelet currently sets based on each QoS class.
+
+[Pod Resource Management design proposal]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/pod-resource-management.md#pod-level-cgroups
 
 ## Infrastructure Needed (Optional)
 
