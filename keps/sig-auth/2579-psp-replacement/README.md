@@ -329,6 +329,12 @@ plugins:
 The default policy level and version for each mode (when no label is present) can be statically
 configured. The default for the static configuration is `privileged` and `latest`.
 
+While a more restricted default would be preferable from a security perspective, the initial
+priority for this feature is enabling broad adoption across clusters, and a restrictive default
+would hinder this goal. See [Rollout of baseline-by-default for unlabeled
+namespaces](#rollout-of-baseline-by-default-for-unlabeled-namespaces) for a potential path to a more
+restrictive default post-GA.
+
 #### Exemptions
 
 Policy exemptions can be statically configured. Exemptions must be explicitly enumerated, and don’t
