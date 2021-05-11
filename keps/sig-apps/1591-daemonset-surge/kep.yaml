@@ -9,14 +9,17 @@ participating-sigs:
 reviewers:
   - "@kow3ns"
   - "@janetkuo"
+  - "@soltysh"
 approvers:
   - "@kow3ns"
   - "@janetkuo"
+  - "@soltysh"
 prr-approvers:
   - "@deads2k"
+  - "@ehashman"
 editor: TBD
 creation-date: 2020-03-02
-last-updated: 2020-03-02
+last-updated: 2020-05-06
 status: implementable
 replaces:
 superseded-by:
@@ -26,8 +29,8 @@ feature-gates:
       - kube-apiserver
       - kube-controller-manager
 disable-supported: true
-stage: "alpha"
-latest-milestone: "v1.21"
+stage: "beta"
+latest-milestone: "v1.22"
 milestone:
   alpha: "v1.21"
   beta: "v1.22"

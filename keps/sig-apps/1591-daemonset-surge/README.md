@@ -213,28 +213,31 @@ you need any help or guidance.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+  It shouldn't impact already running workloads. This is an opt-in feature since users need to explicitly set the MaxSurge parameter in the DaemonSetSet spec's RollingUpdate i.e `.spec.strategy.rollingUpdate.maxSurge` field.
+  if the feature is disabled the field is preserved if it was already set in the presisted DaemonSetSet object, otherwise it is silently dropped.
 
 * **What specific metrics should inform a rollback?**
+  MaxSurge in DaemonSet doesn't get respected and additional surge pods won't be
+  created. We consider the feature to be failing if enabling the featuregate and giving
+  appropriate value to MaxSurge doesn't cause additional surge pods to be created.
+
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  Manually tested. No issues were found when we enabled the feature gate -> disabled it ->
+  re-enabled the feature gate. We still need to test upgrade -> downgrade -> upgrade scenario.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  None
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+  By checking the DaemonSetSet's `.spec.strategy.rollingUpdate.maxSurge` field. The additional workload pods created should be respecting the value specified in the
+  maxSurge field.
+
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
@@ -242,17 +245,14 @@ the health of the service?**
     - Metric name:
     - [Optional] Aggregation method:
     - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - [x] Other (treat as last resort)
+    - Details: The number of pods that are created above the desired amount of pods during an update when this feature is enabled can be compared to maxSurge value available in
+    the DaemonSetSet definition. This can be used to determine the health of this feature.
+    The existing metrics like `kube_daemonset_status_number_available` and `kube_daemonset_status_number_unavailable` can be used to track additional pods created
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  All the surge pods created should be within the value(% or number) of maxSurge field provided 99.99% of the time. The additinal pods created should ensure that the workload
+  service is available 99.99% of time during updates.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
@@ -264,18 +264,7 @@ of this feature?**
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  None. It is part of kube-controller-manager.
 
 
 ### Scalability
@@ -328,18 +317,24 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+This feature will not work if the API server or etcd is unavailable as the controller-manager won't be even able get events or updates for DaemonSetSets. If the API server and/or etcd is unavailable during the mid-rollout, the featuregate would not be enabled and controller-manager wouldn't start since it cannot communicate with the API server
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  - MaxSurge not respected and too many pods are created
+    - Detection: Looking at `kube_daemonset_status_number_available` and `kube_daemonset_status_number_unavailable` metrics.
+    - Mitigations: Disable the `DaemonSetUpdateSurge` feature flag
+    - Diagnostics: Controller-manager when starting at log-level 4 and above
+    - Testing: Yes, e2e tests are already in place
+  - MaxSurge not respected and very few pods are created. This causes the workloads to be not be available at 99.99%
+    - Detection: Looking at `kube_daemonset_status_number_available` and `kube_daemonset_status_number_unavailable` metrics.
+    - Mitigations: Disable the `DaemonSetUpdateSurge` feature flag
+    - Diagnostics: Controller-manager when starting at log-level 4 and above
+    - Testing: Yes, e2e tests are already in place
+  - maxUnavailable should be set to 0 even when maxSurge is configured
+    - Detection: Looking at the `.spec.strategy.rollingUpdate.maxSurge` and `.spec.strategy.rollingUpdate.maxUnavailable`
+    - Mitigations: Setting maxUnavailable to appropriate value
+    - Diagnostics: Controller-manager when starting at log-level 4 and above
+    - Testing: Yes, e2e tests are already in place
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
@@ -348,4 +343,6 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-- Initial PR:
+- 2021-02-09: Initial KEP merged
+- 2021-03-05: Initial implementation merged
+- 2021-04-30: Graduate the feature to Beta proposed
