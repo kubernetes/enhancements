@@ -1,5 +1,5 @@
 title: Configure FQDN as Hostname for Pods
-kep-number: 1792
+kep-number: 1797
 authors:
   - "@javidiaz"
   - "@clrkio"
@@ -25,12 +25,12 @@ replaces:
   - "N/A"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.19"
+latest-milestone: "v1.22"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -44,9 +44,9 @@ feature-gates:
   - name: setHostnameAsFQDN
     components:
       - kubelet
+      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
   - run_podsandbox_errors_total
-
