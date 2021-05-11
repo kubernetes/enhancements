@@ -7,7 +7,7 @@ participating-sigs:
   - sig-api-machinery
 status: implementable
 creation-date: 2021-03-02
-last-updated: 2021-03-02
+last-updated: 2021-05-11
 reviewers:
   - "@thockin"
   - "@saad-ali"
@@ -15,7 +15,7 @@ approvers:
   - "@thockin"
   - "@saad-ali"
 stage: stable
-latest-milestone: "v1.21"
+latest-milestone: "v1.22"
 milestone:
-  stable: "v1.21"
+  stable: "v1.22"
 disable-supported: false
