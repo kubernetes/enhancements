@@ -22,12 +22,12 @@ approvers:
 
 stage: alpha
 
-latest-milestone: "v1.21"
+latest-milestone: "v1.22"
 
 milestone:
-  alpha: "v1.21"
-  beta: "v1.22"
-  stable: "v1.23"
+  alpha: "v1.22"
+  beta: "v1.23"
+  stable: "v1.24"
 
 feature-gates:
   - name: StatefulSetAutoDeletePVC
