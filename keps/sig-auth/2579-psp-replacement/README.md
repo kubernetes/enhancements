@@ -627,7 +627,7 @@ A single metric will be added to track policy evaluations against pods and [temp
 [Namespace evaluations](#namespace-policy-update-warnings) are not counted.
 
 ```
-<component_name>_evaluations_total
+pod_security_evaluations_total
 ```
 
 The metric will use the following labels:
@@ -644,6 +644,8 @@ The metric will use the following labels:
    enabled, every every create request and in-scope update request will at least increment the
    `enforce` total.
 6. `request_operation {create, update}` - The operation of the request being checked.
+7. `resource {pod, controller}` - Whether the request object is a Pod, or a [templated
+   pod](#podtemplate-resources) resource.
 
 <<[UNRESOLVED]>>
 
@@ -869,21 +871,24 @@ fields of API types, flags, etc.?**
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+  - non-zero `pod_security_evaluations_total` metrics indicate the feature is in use
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - [x] Metrics
+    - Metric name: `pod_security_evaluations_total`
+    - Components exposing the metric: `kube-apiserver`
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  - `pod_security_evaluations_total{decision=error}`
+    - any rising count of these metrics indicates an unexpected problem evaluating the policy
+  - `pod_security_evaluations_total{decision=error,mode=enforce}`
+    - any rising count of these metrics indicates an unexpected problem evaluating the policy that
+      is preventing pod write requests
+  - `pod_security_evaluations_total{decision=deny,mode=enforce}`
+    - a rising count indicates that the policy is preventing pod creation as intended, but is
+      preventing a user or controller from successfully writing pods
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   At a high level, this usually will be in the form of "high percentile of SLI
