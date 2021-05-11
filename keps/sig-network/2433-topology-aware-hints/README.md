@@ -446,7 +446,11 @@ EndpointSliceSyncs = metrics.NewCounterVec(
 ```
 
 ### Graduation Criteria
-- Alpha should provide basic functionality covered with tests described above.
+**Alpha:**
+- Basic functionality covered with unit tests described above.
+
+**Beta:**
+- Tests expanded to include e2e coverage described above.
 - Interoperability with Internal and External TrafficPolicy fields.
 
 ### Version Skew Strategy
@@ -599,6 +603,7 @@ enabled even if the annotation has been set on the Service.
 ## Implementation History
 
 - KEP Merged: February 2021
+- Alpha release: Kubernetes 1.21
 
 ## Drawbacks
 1. Increased complexity in EndpointSlice controller
