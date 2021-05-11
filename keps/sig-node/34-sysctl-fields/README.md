@@ -425,7 +425,9 @@ SLOs do not apply, N/A.
 - 2018-06-06: [Promote sysctl annotations to fields](https://github.com/kubernetes/kubernetes/pull/63717)
 - 2018-06-14: [Update sysctls to beta on website](https://github.com/kubernetes/website/pull/8804)
 - 2019-07-02: [Add allowed sysctl to KubeletConfiguration](https://github.com/kubernetes/kubernetes/pull/72974)
-- 2021-02-08: Update KEP with final graduation criteria/complete PRR questionnaire
+- 2021-02-08: [Update KEP with final graduation criteria/complete PRR questionnaire](https://github.com/kubernetes/enhancements/pull/2471)
+- 2021-02-24: [Sysctls graduated to GA](https://github.com/kubernetes/kubernetes/pull/99158)
+- 2021-03-26: [Sysctls added to conformance tests](https://github.com/kubernetes/kubernetes/pull/99734)
 
 ## Drawbacks / Alternatives
 
