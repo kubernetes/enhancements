@@ -208,12 +208,10 @@ other than latest are applied:
 - Specifying a version more recent than the current Kubernetes version is allowed (for rollback &
   version skew reasons), but is treated as `latest`.
 - Under an older version X of a policy:
-    - Allow pods that were allowed under policy version X running on cluster version X
-    - Allow pods that set new fields that the policy level has no opinion about (e.g. pod overhead
-      fields)
-    - Allow pods that set new fields that the policy level has an opinion about if the value is the
-      default (explicit or implicit) value OR the value is allowed by newer versions of the policy
-      level (e.g. a less privileged value of a new field)
+    - Allow pods and resources that were allowed under policy version X running on cluster version X
+    - For new fields that are irrelevant, allow all values (e.g. pod overhead fields)
+    - For new fields that are relevant to pod security, allow the default (explicit or implicit)
+      value OR values allowed by newer profiles (e.g. a less privileged value).
 - Under the webhook implementation, policy versions are tied to the webhook version, not the cluster
   version. This means that it is recommended for the webhook to updated prior to updating the
   cluster. Note that policies are not guaranteed to be backwards compatible, and a newer restricted
@@ -1002,11 +1000,11 @@ conservative rollout path, potentially with multiple releases between steps. Ste
 or combined for a more aggressive rollout:
 
 1. Admission plugin goes to GA
-2. Admission plugin enabled by default; Unlabeled namespaces treated as enforce=privileged,
-   audit=baseline, warn=privileged; Privileged pod (or PodTemplate controller) creation in an
-   unlabeled namespace triggers the namespace to be labeled as privileged
+2. Admission plugin enabled by default; Unlabeled namespaces treated as: `enforce=privileged`.
+   Privileged pod (or PodTemplate controller) creation in an unlabeled namespace triggers the
+   namespace to be labeled as privileged (`pod-security.kubernetes.io/enforce: privileged`).
 3. Same as (2) but new namespaces are automatically labeled as unprivileged
-   (`security.kubernetes.io/privileged: false`), warn=baseline
+   (`pod-security.kubernetes.io/enforce: baseline`).
 4. Default unlabeled namespaces to enforce=baseline
 
 Each step in the rollout could be overridden with a flag (e.g. force the admission plugin to step N)
