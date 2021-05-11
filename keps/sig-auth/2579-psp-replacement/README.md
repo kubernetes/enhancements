@@ -148,6 +148,10 @@ pod-security.kubernetes.io/warn: <policy level>
 pod-security.kubernetes.io/warn-version: <policy version>
 ```
 
+These labels are considered part of the versioned Kubernetes API ([well-known
+labels](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/core/v1/well_known_labels.go)),
+with their maturity tracking the maturity level of the PodSecurity feature.
+
 **Enforce:** Pods meeting the requirements of the enforced level are allowed. Violations are rejected
 in admission.
 
