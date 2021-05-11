@@ -105,7 +105,7 @@ The following components vary behavior based on the presence of the node-role la
 
 The service load balancer implementation previously implemented a heuristic where `node-role.kubernetes.io/master` is used to exclude masters from the candidate nodes for a service. This is an implementation detail of the cluster and is not allowed. Since there is value in excluding nodes from service load balancer candidacy in some deployments, an alpha feature gated label `alpha.service-controller.kubernetes.io/exclude-balancer` was added in Kubernetes 1.9.
 
-This label should be moved to beta in Kube 1.17 at its final name `node.kubernetes.io/exclude-from-external-load-balancers`, its feature gate `ServiceNodeExclusion` should default on in 1.18, the gate `ServiceNodeExclusion` should be declared GA in 1.19, and the gate will be removed in 1.20. The old alpha label should be honored in 1.17 and removed in 1.18.
+This label should be moved to beta in Kube 1.19 at its final name `node.kubernetes.io/exclude-from-external-load-balancers`, its feature gate `ServiceNodeExclusion` should default on in 1.19, the gate `ServiceNodeExclusion` should be declared GA in 1.21, and the gate will be removed in 1.22. The old alpha label should be honored in 1.21 and removed in 1.22.
 
 Starting in 1.16 the legacy code block should be gated on `LegacyNodeRoleBehavior=true`
 
@@ -147,7 +147,7 @@ Therefore, for each change we recommend the following process to adopt the new l
   * Early adopters may label their nodes to opt in to the features, even in the absence of the gate.
 * Release 2 (1.17):
   * The legacy alpha label `alpha.service-controller.kubernetes.io/exclude-balancer` is marked as deprecated
-  * Deprecation of node role behavior in tree is announced for 1.20, with a detailed plan for cluster administrators and deployers
+  * Deprecation of node role behavior in tree is announced for 1.21, with a detailed plan for cluster administrators and deployers
   * Gates are officially alpha
 * Release 3 (1.19):
   * The old label `alpha.service-controller.kubernetes.io/exclude-balancer` is removed
@@ -155,10 +155,10 @@ Therefore, for each change we recommend the following process to adopt the new l
   * All Kubernetes deployments should be updated to add node labels as appropriate: `kubectl label nodes -l node-role.kubernetes.io/master LABEL_A=VALUE_A`
   * Documentation will be provided on making the transition
   * Deployments may set `LegacyNodeRoleBehavior=false` after they have set the appropriate labels.
-* Release 4 (1.20):
+* Release 4 (1.21):
   * Default the legacy gate `LegacyNodeRoleBehavior` to off. Admins whose deployments still use the old labels may set `LegacyNodeRoleBehavior=true` during 1.19 to get the legacy behavior.
   * Deployments should stop setting `LegacyNodeRoleBehavior=false` if they opted out early.
-* Release 5 (1.21):
+* Release 5 (1.22):
   * The `LegacyNodeRoleBehavior` gate and all feature-level gates are removed, components that attempt to set these gates will fail to start.
   * Code that references node-roles within Kubernetes will be removed.
 
@@ -181,7 +181,7 @@ Cluster deployers that rely on the existing behavior where master nodes are not 
 
 After setting these labels in 1.18, administrators will need to take no further action.
 
-Cluster deployers that wish to manage this migration during the 1.17 to 1.18 upgrade should label nodes and set feature gates before upgrading to 1.18. If `LegacyNodeRoleBehavior=false` is set, it must be removed prior to the 1.19 to 1.20 upgrade.
+Cluster deployers that wish to manage this migration during the 1.17 to 1.18 upgrade should label nodes and set feature gates before upgrading to 1.18. If `LegacyNodeRoleBehavior=false` is set, it must be removed prior to the 1.21 to 1.22 upgrade.
 
 
 ### Test Plan
@@ -199,7 +199,7 @@ As described in the migration process, deployers and administrators have 2 relea
 
 ### Version Skew Strategy
 
-Controllers are updated after the control plane, so consumers must update the labels on their nodes before they update controller processes in 1.19.
+Controllers are updated after the control plane, so consumers must update the labels on their nodes before they update controller processes in 1.21.
 
 ## Production Readiness Review Questionnaire
 
@@ -308,6 +308,7 @@ Not applicable
 - 2019-07-16: Created
 - 2020-04-15: Labels promoted to beta in 1.19 in https://github.com/kubernetes/kubernetes/pull/90126
 - 2020-06-01: Updated for 1.19 with details of production readiness
+- 2021-01-06: GA in 1.21 and marked to be removed in 1.22
 
 ## Future work
 
