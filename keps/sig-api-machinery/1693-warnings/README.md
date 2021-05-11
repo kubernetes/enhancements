@@ -18,6 +18,13 @@
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [References](#references)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -302,6 +309,141 @@ Note that client-go already [logs warning messages](https://grep.app/search?q=kl
 Old clients making requests to a new API server ignore `Warning` headers.
 
 New clients making requests to old API servers handle requests without `Warning` headers normally.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `WarningHeaders`
+  - Components depending on the feature gate: `kube-apiserver`
+
+###### Does enabling the feature change any default behavior?
+
+Yes. API requests to deprecated APIs return `Warning` headers to API clients.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes. When disabled, warning headers are no longer sent to API clients.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Warning headers are once again sent to API clients.
+
+###### Are there any tests for feature enablement/disablement?
+
+The code gated by the `WarningHeader` feature gate is stateless, so there are no enablement/disablement tests.
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+No functional behavior changes are driven by the warnings returned from the server.
+
+During a rollout, a client making substantially identical requests to skewed API servers
+will receive warnings from servers with the feature enabled, and not receive warnings 
+from the server with the feature disabled.
+
+This might be slightly confusing but resolves once the cluster has the feature enabled
+coherently across API servers, and does not impact any workloads or programmatic behavior.
+
+Feature enablement/disablement has no impact on running workloads.
+
+###### What specific metrics should inform a rollback?
+
+It's hard to imagine a problem with this feature that would require a rollback,
+but `apiserver_request_total` and `apiserver_request_duration_seconds`
+are the most relevant metrics for the API request pipeline this feature touches.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Upgrade/downgrade/upgrade was not tested because the returned warning headers are stateless.
+
+New API servers returning warning headers to older clients was tested manually and confirmed
+that the old API clients tolerated/ignored the warning headers.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+This feature does not deprecate or remove any features/APIs/fields/flags/etc.
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+This feature is not used by workloads.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [x] User-visible warnings are returned when making requests to deprecated APIs
+- [x] `apiserver_requested_deprecated_apis` metrics returned by the API server are populated 
+- [x] audit logs contain `"k8s.io/deprecated": "true"` annotations for requests to deprecated APIs
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+Identical SLOs for API server request metrics are expected with this feature enabled.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+As part of the kube-apiserver request pipeline, normal metrics for kube-apiserver request health 
+indicate this feature (along with all other features in the request pipeline)is healthy.
+For example:
+- `apiserver_request_total`
+- `apiserver_request_duration_seconds`
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+No
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+CustomResourceDefinition objects have two new fields per version they define, increasing their size slightly:
+- `deprecated bool`
+- `deprecationWarning string` (bounded to 256 characters)
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+This feature is part of the API server.
+
+###### What are other known failure modes?
+
+Discussed and mitigated in the (Risks and Mitigations)[#risks-and-mitigations] section
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Determine if warnings are being returend from the problematic API requests. If not, this feature is not involved.
+- If many warnings are being returned, determine the source. The only source for large numbers of warnings is admission webhooks.
 
 ## References
 
