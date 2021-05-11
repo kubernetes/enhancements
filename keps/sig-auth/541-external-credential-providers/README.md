@@ -161,6 +161,16 @@ users:
       # very large CA data, to this exec plugin as a part of the KUBERNETES_EXEC_INFO
       # environment variable. Optional. Defaults to false.
       provideClusterInfo: true
+
+      # The contract between the exec plugin and the standard input I/O stream. If the
+      # contract cannot be satisfied, this plugin will not be run and an error will be
+      # returned. Valid values are "Never" (this exec plugin never uses standard input),
+      # "IfAvailable" (this exec plugin wants to use standard input if it is available),
+      # or "Always" (this exec plugin requires standard input to function).
+      #
+      # In v1alpha1 and v1beta1, this is optional and defaults to IfAvailable. It is
+      # required otherwise.
+      interactiveMode: IfAvailable
 clusters:
 - name: my-cluster
   cluster:
@@ -213,7 +223,39 @@ type ExecConfig struct {
   // to false. Package k8s.io/client-go/tools/auth/exec provides helper methods for
   // reading this environment variable.
   ProvideClusterInfo bool `json:"provideClusterInfo"`
+
+  // InteractiveMode determines this plugin's relationship with standard input. Valid
+  // values are "Never" (this exec plugin never uses standard input), "IfAvailable" (this
+  // exec plugin wants to use standard input if it is available), or "Always" (this exec
+  // plugin requires standard input to function). See ExecInteractiveMode values for more
+  // details.
+  //
+  // If APIVersion is client.authentication.k8s.io/v1alpha1 or
+  // client.authentication.k8s.io/v1beta1, then this field is optional and defaults
+  // to "IfAvailable" when unset. Otherwise, this field is required.
+  // +optional
+  InteractiveMode ExecInteractiveMode `json:"interactiveMode,omitempty"`
 }
+
+// ExecInteractiveMode is a string that describes an exec plugin's relationship with standard input.
+type ExecInteractiveMode string
+
+const (
+  // NeverExecInteractiveMode declares that this exec plugin never needs to use standard
+  // input, and therefore the exec plugin will be run regardless of whether standard input is
+  // available for user input.
+  NeverExecInteractiveMode ExecInteractiveMode = "Never"
+  // IfAvailableExecInteractiveMode declares that this exec plugin would like to use standard input
+  // if it is available, but can still operate if standard input is not available. Therefore, the
+  // exec plugin will be run regardless of whether stdin is available for user input. If standard
+  // input is available for user input, then it will be provided to this exec plugin.
+  IfAvailableExecInteractiveMode ExecInteractiveMode = "IfAvailable"
+  // AlwaysExecInteractiveMode declares that this exec plugin requires standard input in order to
+  // run, and therefore the exec plugin will only be run if standard input is available for user
+  // input. If standard input is not available for user input, then the exec plugin will not be run
+  // and an error will be returned by the exec plugin runner.
+  AlwaysExecInteractiveMode ExecInteractiveMode = "Always"
+)
 ```
 
 `apiVersion` specifies the expected version of this API that the plugin
@@ -234,6 +276,14 @@ is missing.
 potentially contain very large CA data, to this exec plugin as a part
 of the `KUBERNETES_EXEC_INFO` environment variable.
 
+`interactiveMode` specifies the contract between the exec plugin and the
+standard input I/O stream. If the contract cannot be satisfied, this plugin will
+not be run and an error will be returned. Valid values are "Never" (this exec
+plugin never uses standard input), "IfAvailable" (this exec plugin wants to use
+standard input if it is available), or "Always" (this exec plugin requires
+standard input to function). In v1alpha1 and v1beta1, this is optional and
+defaults to IfAvailable. It is required otherwise.
+
 ### Provider input format
 
 In JSON:
@@ -243,6 +293,7 @@ In JSON:
   "apiVersion": "client.authentication.k8s.io/v1beta1",
   "kind": "ExecCredential",
   "spec": {
+    "interactive": true,
     "cluster": {
       "server": "https://1.2.3.4:8080",
       "tls-server-name": "bar",
@@ -281,6 +332,9 @@ type ExecCredentialSpec struct {
   // ExecConfig.ProvideClusterInfo).
   // +optional
   Cluster *Cluster `json:"cluster,omitempty"`
+
+  // Interactive declares whether stdin has been passed to this exec plugin.
+  Interactive bool `json:"interactive"`
 }
 
 // Cluster contains information to allow an exec plugin to communicate with the
@@ -437,6 +491,11 @@ func LoadExecCredentialFromEnv() (runtime.Object, *rest.Config, error)
 func LoadExecCredential(data []byte) (runtime.Object, *rest.Config, error)
 ```
 
+The `interactive` field is used to communicate to the exec plugin whether
+standard input is available for use. This is helpful for plugins that can
+operate with and without standard input so that they can easily distinguish
+between the two cases.
+
 ### Provider output format
 
 In JSON:
@@ -550,9 +609,12 @@ var (
   execPluginCalls = k8smetrics.NewCounterVec(
     &k8smetrics.CounterOpts{
       Name: "rest_client_exec_plugin_call_total",
-      Help: "Number of calls to an exec plugin, partitioned by exit code.",
+      Help: "Number of calls to an exec plugin, partitioned by the type of " +
+        "event encountered (no_error, plugin_execution_error, plugin_not_found_error, " +
+        "client_internal_error) and an optional exit code. The exit code will " +
+        "be set to 0 if and only if the plugin call was successful.",
     },
-    []string{"code"},
+    []string{"code", "call_status"},
   )
 )
 ```
@@ -572,8 +634,8 @@ type ExpiryMetric interface {
 
 // CallsMetric counts calls that take place for a specific exec plugin.
 type CallsMetric interface {
-  // Increment increments a counter per exitCode.
-  Increment(exitCode int)
+  // Increment increments a counter per exitCode and callStatus.
+  Increment(exitCode int, callStatus string)
 }
 
 var (
@@ -582,13 +644,13 @@ var (
   // ClientCertRotationAge is the age of a certificate that has just been rotated.
   ClientCertRotationAge DurationMetric = noopDuration{}
   // ExecPluginCalls is the number of calls made to an exec plugin, partitioned by
-  // exit code.
+  // exit code and call status.
   ExecPluginCalls CallsMetric = noopCalls{}
 )
 ```
 
-The `"code"` label of these metrics is an attempt to elucidate the exec plugin
-failure mode to the user.
+The `"code"` and `"call_status"` labels of these metrics are an attempt to
+elucidate the exec plugin failure mode to the user.
 
 ### Risks and Mitigations
 
@@ -644,6 +706,8 @@ Integration (or e2e CLI) tests to confirm:
   + Cert based auth
 - Interactive login flows work
   + TTY forwarding between client and executable works
+  + `kubectl` commands and exec credential plugins do not fight for standard input
+  + All `InteractiveMode` values are supported
 - Metrics are reported as they should
 
 ### Graduation Criteria
