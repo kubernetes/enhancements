@@ -13,6 +13,8 @@ reviewers:
 approvers:
   - "@saad-ali"
   - "@xing-yang"
+prr-approvers:
+  - "@deads2k"
 editor: TBD
 creation-date: 2020-01-27
 last-updated: 2020-05-18
@@ -23,13 +25,15 @@ superseded-by:
 
 latest-milestone: "v1.22"
 stage: "alpha"
+
 milestone:
   alpha: "v1.22"
-  beta: "v1.23"
-  stable: "v1.25"
+
+
 feature-gates:
   - name: RecoverExpansionFailure
     components:
       - kube-apiserver
       - kube-controller-manager
       - external-resizer
+disable-supported: true
