@@ -351,35 +351,17 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- Feb 2 2021: KEP merged into kubernetes/enhancements repo
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+- N/A
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+- An alternative to supplying fsgroup of the pod to the CSI driver is to mount volumes with 777 permissions or run pods. Both of these alternatives are not
+  great and not backward compatible.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+- Azure Cloudprovider access
