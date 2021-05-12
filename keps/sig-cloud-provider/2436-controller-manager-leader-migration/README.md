@@ -27,6 +27,11 @@
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -44,7 +49,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -314,6 +319,7 @@ unsetting the `--enable-migration-config` flag.
 ##### Alpha -> Beta Graduation
 
 Leader migration configuration is tested end-to-end on at least 2 cloud providers.
+The default migration configuration is implemented and tested.
 
 ##### Beta -> GA Graduation
 
@@ -321,7 +327,7 @@ Leader migration configuration works on all in-tree cloud providers.
 
 ### Upgrade / Downgrade Strategy
 
-See [Example Walkthrough of Controller Migration](#example-walkthrough-of-controller-migratoin) for upgrade strategy.
+See [Example Walkthrough of Controller Migration](#example-walkthrough-of-controller-migration-with-default-configuration) for upgrade strategy.
 Clusters can be downgraded and migration can be disabled by reversing the steps in the upgrade strategy assuming the behavior of each controller
 does not change incompatibly across those versions.
 
@@ -349,10 +355,125 @@ feature without providing a configuration, the default configuration will reflec
 Yes. Once the feature is enabled via feature gate, it can be disabled by unsetting `--enable-leader-migration` on KCM
 and CCM.
 
+###### What happens if we reenable the feature if it was previously rolled back?
+
+This feature can be re-enabled without side effects.
+
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. Unit & integration tests include flag/configuration parsing. E2E test will have cases with the feature enabled and
 disabled.
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+The rollout may fail if the configuration file does not represent correct controller-to-manager.
+This can cause controllers referred in the configuration file to either be unavailable or run in multiple instances.
+
+The rollback may fail if the leader election of the controller manager is not properly configured.
+For example, multiple instances of the same controller manager are running without election, or none of the instances become the leader.
+In these situations, all controllers will be either unavailable or conflict among multiple instances.
+
+###### What specific metrics should inform a rollback?
+
+If neither controller managers show `leader_active` for the main leader lock or the migration lock, Leader Migration may fail to activate and thus needs rollback.
+If any of the controllers indicate they are unavailable through their per-controller metric, Leader Migration may need reconfiguration.
+The metrics of each controller are specific to the implementation of each cloud provider and out of scope of this KEP,
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+The manual testing showed a clean takeover of the migration leader during both upgrade and downgrade process.
+This process will be tested as part of the e2e suite, required by [Graduation Criteria](#graduation-criteria).
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+None.
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+N/A. This feature is never used by any user workloads.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [X] Other (treat as last resort)
+  - The `Lease` resource used in the migration can be watched for transition of leadership and timing information. 
+  - logs and metrics can directly indicate the status of migration.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+Leader Migration is designed to ensure availability of controller managers during upgrade,
+and this feature will not affect SLOs of controller managers.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [X] Metrics
+  - leader_active
+  - other per-controller availability metrics.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+It would help if every controller that the controller manager hosts expose metrics about their availability.
+However, per-controller metrics are out of scope of this KEP.
+
+Status of the migration lease, provided by the API server, can help observe the transition of holders
+if exposed as resource metrics.
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+- API Server
+  - needed for leader election
+    - Impact of its outage on the feature: when leader election timeout, controller managers will lose the leader and exit, causing outage.
+    - Impact of its degraded performance or high-error rates on the feature: delayed or retried operations of leader election.
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+Leader Migration uses exactly one more resource of `coordination.k8s.io/v1.Lease` using the standard leader election process.
+Both `kube-controller-manager` and `cloud-controller-manager` will create, update, and watch on the lease.
+
+If the service accounts are not granted access to the lease resources, the RBAC roles of each controller manager may need to modified before the upgrade.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+Type: `controllermanager.config.k8s.io/v1alpha1.LeaderMigrationConfiguration`
+This resource is only for configuration file parsing. The resource should never reach the API server.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+This feature uses exactly one more `coordination.k8s.io/v1.Lease` resource. The RBAC roles of both controller managers will 
+gain additional ~50 bytes because of the new lease under `resourceName`.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+Both `kube-controller-manager` and `cloud-controller-manager` runs another leader election process,
+which cause negligible increases of CPU and memory usages, both during upgrade and under normal operations.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+The existing implementation of controller managers will `klog.Fatal` once the leader times out, which eventually happens if API server is unavailable.
+Leader Migration will not change such behavior.
+
+###### What are other known failure modes?
+
+None. Leader Migration is known to fail only because of misconfiguration or unavailability of the API server, both of which are discussed above.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+N/A.
 
 ## Implementation History
 
@@ -361,6 +482,9 @@ disabled.
 - 09-30-2020 `LeaderMigrationConfiguration` and `ControllerLeaderConfiguration` schemas merged as #94205.
 - 11-04-2020 Registration of both types merged as #96133
 - 12-28-2020 Parsing and validation merged as #96226
+- 03-10-2021 Implementation for alpha state completed, released in 1.21.
+- 03-30-2021 User guide published as kubernetes/website#26970
+- 05-11-2021 KEP updated to target beta. 
 
 ## Drawbacks
 
