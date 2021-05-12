@@ -198,17 +198,19 @@ If CSI driver does not have `GET_VOLUME` controller capability(or `ControllerGet
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Yes the feature gate can be disabled once enabled. The quota code will use new field to calculate quota if available. This will allow quota code to use
-  `pvc.Status.AllocatedResources` even if feature gate is disabled.
+  Yes the feature gate can be disabled once enabled. However quota resources present in the cluster will be based off a field(`pvc.Status.AllocatedResources`) which is no longer updated.
+  Currently without this feature - quota calculation is entirely based on `pvc.Spec.Resources` and when feature is enabled it will based off `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)`
+  so when the feature is disabled, cluster might be reporting stale quota.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  This KEP proposes a new field in pvc and it will be used if available for quota calculation. So when feature is rolled back, it will be possible to reduce pvc capacity and quota will use `pvc.Status.AllocatedResources`.
+  It should be possible to re-enable the feature after disabling it. When feature is disabled and re-enabled, users will be able to
+  reduce size of `pvc.Spec.Resources` to cancel previously issued expansion but in case `pvc.Spec.Resources` reports lower value than
+  what was reported in `pvc.Status.AllocatedResources` (which would mean resize controller tried to expand this volume to bigger size previously)
+  quota calculation will be based off `pvc.Status.AllocatedResources`.
 
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling and disabling feature
-  gates. However, unit tests in each component dealing with managing data created
-  with and without the feature are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+  gates. However, we will write extensive unit tests to test behaviour of code when feature gate is disabled and when feature gate is enabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
