@@ -308,7 +308,7 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
 1. Unit tests
 
 1. e2e/integration tests
-    - DeleteOnScaleDown
+    - With `Delete` policies for `OnSetDeletion` and `OnScaleDown`
       1. Create 2 pod statefulset, scale to 1 pod, confirm PVC deleted
       1. Create 2 pod statefulset, add data to PVs, scale to 1 pod, scale back to 2, confirm PV empty.
       1. Create 2 pod statefulset, delete stateful set, confirm PVCs deleted.
@@ -317,7 +317,7 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
       1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, confirm PVC is deleted.
       1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, scale back to two pods, confirm PV is empty.
       1. Create 2 pod statefulset, add data to PVs, perform rolling confirm PVC don't get deleted and PV contents remain intact and useful in the updated pods.
-    - DeleteOnStatefulSetDeletion
+    - With `Delete` policy for `OnSetDeletion` only
       1. Create 2 pod statefulset, scale to 1 pod, confirm PVC still exists,
       1. Create 2 pod statefulset, add data to PVs, scale to 1 pod, scale back to 2, confirm PV has data (PVC not deleted).
       1. Create 2 pod statefulset, delete stateful set, confirm PVCs deleted
@@ -328,12 +328,8 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
     - Retain: 
       1. same tests as above, but PVCs not deleted in any case and confirm data intact on the PV.
     - Pod restart tests:
-      1. Create statefulset, perform rolling update 
+      1. Create statefulset, perform rolling update, confirm PVC data still exists.
     - `--casecade=false` tests.
-      1. Manual pod deletion
-      1. The OnScaleDown tests
-      1. The OnSetDeletion tests.
-    - TODO: some of these tests may be suitable for unit tests.
 1. Upgrade/Downgrade tests
     1. Create statefulset in previous version and upgrade to the version 
        supporting this feature. The PVCs should remain intact.
