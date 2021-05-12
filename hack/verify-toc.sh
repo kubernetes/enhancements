@@ -46,4 +46,7 @@ echo "Checking table of contents are up to date..."
 # Verify tables of contents are up-to-date
 find keps -name '*.md' \
     | grep -Fxvf hack/.notableofcontents \
-    | xargs mdtoc --inplace --max-depth=5 --dryrun
+    | xargs mdtoc --inplace --max-depth=5 --dryrun || (
+      echo "Table of content not up to date. If this failed silently and you are on mac, try 'brew install grep'"
+      exit 1
+    )
