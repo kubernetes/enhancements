@@ -28,7 +28,7 @@ A proposal to add support for cgroups v2 to kubernetes.
 
 The new kernel cgroups v2 API was declared stable more than two years
 ago. Newer features in the kernel such as PSI depend upon cgroups
-v2. groups v1 will eventually become obsolete in favor of cgroups v2.
+v2. cgroups v1 will eventually become obsolete in favor of cgroups v2.
 Some distros are already using cgroups v2 by default, and that
 prevents Kubernetes from working as it is required to run with cgroups
 v1.
