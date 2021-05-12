@@ -200,7 +200,8 @@ If CSI driver does not have `GET_VOLUME` controller capability(or `ControllerGet
   the enablement)?**
   Yes the feature gate can be disabled once enabled. However quota resources present in the cluster will be based off a field(`pvc.Status.AllocatedResources`) which is no longer updated.
   Currently without this feature - quota calculation is entirely based on `pvc.Spec.Resources` and when feature is enabled it will based off `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)`
-  so when the feature is disabled, cluster might be reporting stale quota.
+  so when the feature is disabled, cluster might be reporting stale quota. To fix this issue - cluster admins can re-create `ResourceQuota` objects so as quota controller can recompute the
+  quota using `pvc.Spec.Resources`.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   It should be possible to re-enable the feature after disabling it. When feature is disabled and re-enabled, users will be able to
