@@ -5,19 +5,14 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
-status: provisional
+status: implementable
 creation-date: 2021-04-20
 reviewers:
-  - TBD
+  - "@liggitt"
+  - "@xing-yang"
 approvers:
-  - TBD
-#prr-approvers:
-# - TBD
-#see-also:
-#  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-#  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
-#replaces:
-#  - "/keps/sig-ccc/3456-replaced-kep"
+  - "@xing-yang"
+  - "@saad-ali"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -38,14 +33,8 @@ milestone:
 feature-gates:
   - name: SecretInUseProtection
     components:
-      - kube-controller-manager (in-tree)
-      - secret-protection-controllerr (in-tree)
-      - storageobjectinuseprotection admission plugin (in-tree)
-      - secret-protection-volumesnapshot-controller (out-of-tree)
-      - storageobjectinuseprotection volumesnapshot admission plugin (out-of-tree)
+      - kube-controller-manager
+      - secret-protection-controller (part of kube-controller-manager)
+      - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
 
 disable-supported: true
-
-# The following PRR answers are required at beta release
-metrics:
-  - my_feature_metric

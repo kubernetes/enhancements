@@ -132,34 +132,78 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+There is a corner case when Reclaim Policy is Retain and PV is referencing secrets in a certain user namespace.
+In such a case, when PVC is deleted, the PV referencing secrets remains as a resource not managed by the namespace, as a result, deletion of the secrets is blocked.
+However, the user of the namespace won't notice why it is blocked and won't find a way to delete the secrets other than manually deleting finalizer.
+In addition, to make things worse, provisioner secrets that are defined by using template with PVC information,
+like "${pvc.name}", would be deleted in above case, due to the failure in finding a reference to the secret,
+because the reference to provisioner secret is not stored in PV and needs to be resolved on deletion time with PVC information that is already deleted.
+This behavior is inconsistent with other secrets, like node publish secret whose reference is stored in PV.
 
 ## Design Details
 
-This feature would be able to implement in the same way as `pv-protection/pvc-protection`.
+This feature can be implemented in the same way as `pv-protection/pvc-protection`.
 Protection logics for in-tree resources and out-of-tree resources are separeted and independently work.
 It is due to the restriction that CRDs can't be handled from in-tree controller.
 
 - In-tree resources(`Pod` and `PersistentVolume`):
   - The deletion is blocked by using newly introduced `kubernetes.io/secret-protection` finalizer,
-  - The `kubernetes.io/secret-protection` finalizer will be added on creation of the secret by using admission controller for in-tree resources,
-  - The `kubernetes.io/secret-protection` finalizer will be deleted by newly introduced in-tree `secret-protection-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
+  - The `kubernetes.io/secret-protection` finalizer will be always added on creation of the secret by using admission controller for in-tree resources,
+  - After the secret is requested to be deleted (`deletionTimestamp` is set), the `kubernetes.io/secret-protection` finalizer will be deleted by newly introduced in-tree `secret-protection-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
+  - If the `SecretInUseProtection` feature gate is disalbed, finalizer is added on creation, but deleted regardless of whether it is in-use after `deletionTimestamp` is set. This will allow users to avoid manually deleting finalizers on the downgrading by disabling the feature.
 - Out-of-tree resources(`VolumeSnapshot`):
   - The deletion is blocked by using newly introduced `snapshot.storage.kubernetes.io/secret-protection` finalizer,
-  - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be added on creation of the secret by using admission controller for `VolumeSnapshot`,
-  - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be deleted by newly introduced out-of-tree `secret-protection-volumesnapshot-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
+  - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be always added on creation of the secret by using admission controller for `VolumeSnapshot`,
+  - After the secret is requested to be deleted (`deletionTimestamp` is set), the `snapshot.storage.kubernetes.io/secret-protection` finalizer will be deleted by newly introduced out-of-tree `secret-protection-volumesnapshot-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
 
-Feature gate `SecretInUseProtection` is shared between in-tree and out-of-tree. Therefore, users won't be able to choose enabling secret portection for either in-tree or out-of-tree. On the other hand, users that doesn't install `VolumeSnapshot` feature won't be affected by secret protection for `VolumeSnapshot`.
+Feature gate `SecretInUseProtection` is used only for in-tree controller. Out-of-tree controller will be always enabled when the `secret-protection-volumesnapshot-controller` is deployed.
+
+For users to force delete the secret, users need to do either:
+1. manually delete the finalizer, by below command:
+    ```
+    kubectl patch secret/secret-to-be-deleted -p '{"metadata":{"finalizers":[]}}' --type=merge
+    ```
+2. add `secret.kubernetes.io/disable-protection: "yes"` annotation to opt-out this feature per secret
+
+Annotation will more user friendly than directly deleting finalizer. However, it can't be used in the case that this feature is once enabled and disabled later by deleting the controller. For this case, it may be needed to provide a script to delete the finalizer on all the secret.
 
 ### Test Plan
 
 - For Alpha, unit tests and e2e tests verifying that a secret used by other resources is protected by this feature are added.
+  - unit tests:
+    - SecretInUseProtection enabled:
+      - Verify immediate deletion of a secret that is not used
+      - Verify that secret used by a Pod is not removed immediately
+      - Verify that secret used by a CSI PV as controllerPublishSecret is not removed immediately
+      - Verify that secret used by a CSI PV as nodeStageSecret is not removed immediately
+      - Verify that secret used by a CSI PV as nodePublishSecret is not removed immediately
+      - Verify that secret used by a CSI PV as controllerExpandSecret is not removed immediately
+      - Verify that secret used by a CSI PV as provisionerSecret is not removed immediately
+      - Verify that secret used by a CSI PV as provisionerSecret via template is not removed immediately
+      - Verify that secret used by a VolumeSnapshot is not removed immediately
+      - Verify that secret used by a VolumeSnapshot as snapshotterSecret via template is not removed immediately
+    - SecretInUseProtection disabled:
+      - Verify immediate deletion of a secret that is not used
+      - Verify immediate deletion of a secret that is used by a Pod
+      - Verify immediate deletion of a secret with finalizer that is used by a Pod
+  - e2e tests:
+    - Verify immediate deletion of a secret that is not used
+    - Verify that secret used by a Pod is not removed immediately
+    - Verify that secret used by a CSI PV as controllerPublishSecret is not removed immediately
+    - Verify that secret used by a CSI PV as nodeStageSecret is not removed immediately
+    - Verify that secret used by a CSI PV as nodePublishSecret is not removed immediately
+    - Verify that secret used by a CSI PV as controllerExpandSecret is not removed immediately
+    - Verify that secret used by a CSI PV as provisionerSecret is not removed immediately
+    - Verify that secret used by a CSI PV as provisionerSecret via template is not removed immediately
+    - Verify that secret used by a VolumeSnapshot is not removed immediately
+    - Verify that secret used by a VolumeSnapshot as snapshotterSecret via template is not removed immediately
 - For Beta, scalability tests are added to exercise this feature.
 - For GA, the introduced e2e tests will be promoted to conformance.
 
 ### Graduation Criteria
 #### Alpha -> Beta Graduation
 
-- Gather feedback from developers and surveys
+- Gather feedback from developers and surveys of users
 - Tests are in Testgrid and linked in KEP
 
 #### Beta -> GA Graduation
@@ -168,10 +212,7 @@ Feature gate `SecretInUseProtection` is shared between in-tree and out-of-tree. 
 
 #### Removing a Deprecated Flag
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
+N/A
 
 ### Upgrade / Downgrade Strategy
 
@@ -232,15 +273,13 @@ you need any help or guidance.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: SecretInUseProtection
   - Components depending on the feature gate:
-    - kube-controller-manager (in-tree)
-    - secret-protection-controllerr (in-tree)
-    - storageobjectinuseprotection admission plugin (in-tree)
-    - secret-protection-volumesnapshot-controller (out-of-tree)
-    - storageobjectinuseprotection volumesnapshot admission plugin (out-of-tree)
+    - kube-controller-manager
+    - secret-protection-controller (part of kube-controller-manager)
+    - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
 
 ###### Does enabling the feature change any default behavior?
 
-Secrets aren't deleted until the resources using them are deleted.
+Yes. Secrets aren't deleted until the resources using them are deleted.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -369,7 +408,7 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 - API type(s): Secret
-- Estimated increase in size: the size of `kubernetes.io/secret-protection` finalizer and `snapshot.storage.kubernetes.io/secret-protection` finalizer per secret
+- Estimated increase in size: the size of `kubernetes.io/secret-protection` finalizer, `snapshot.storage.kubernetes.io/secret-protection` finalizer, and `secret.kubernetes.io/disable-protection` annotation per secret
 - Estimated amount of new objects: N/A
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -443,7 +482,7 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-- Manually adding/deleting finalizer to/from secrets that shouldn't be deleted in certain life cycle
+- Manually adding/deleting finalizer to/from secrets that are not deleted automatically in certain life cycle
 - Introduce a new kind of reference, like usedReference, and leave addition/deletion of it to users
   (Similar to ownerReference, but just block deletion and won't try to delete referenced resources through GC, like deleting child on parent's deletion).
 
