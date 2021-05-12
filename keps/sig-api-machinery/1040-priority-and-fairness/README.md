@@ -188,6 +188,17 @@ should be preventable when this KEP is in place.
     tenants.  Each user belongs to exactly one of the
     tenant-identifying groups.
 
+This KEP introduces a new functionality that is supposed to address the
+problems above. The goals/requirements for the solution (in the priority
+order) are the following:
+1. overload protection
+1. fairness
+1. throughput
+
+So in other words, first of all we want to protect Kubernetes from overload,
+within these boundaries make it fair across tenants and only with those
+constraints optimize throughput.
+
 This KEP introduces new functionality in apiservers, and it should be
 possible to monitor this functionality through Prometheus metrics
 available from the apiservers.
