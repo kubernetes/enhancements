@@ -528,7 +528,7 @@ This can be promoted to beta when it is a drop-in replacement for the existing
 kubectl apply, and has no regressions (which aren't bug fixes). This KEP will be
 updated when we know the concrete things changing for beta.
 
-A GA version of this is targeted for 1.21.
+A GA version of this is targeted for 1.22.
 
 - E2E tests are created and graduate to conformance
 - [Apply for client-go's typed client](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2144-clientgo-apply) is implemented and at least one kube-controller-manager uses that client
