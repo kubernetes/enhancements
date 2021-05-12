@@ -319,6 +319,7 @@ unsetting the `--enable-migration-config` flag.
 ##### Alpha -> Beta Graduation
 
 Leader migration configuration is tested end-to-end on at least 2 cloud providers.
+The default migration configuration is implemented and tested.
 
 ##### Beta -> GA Graduation
 
