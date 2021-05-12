@@ -108,7 +108,7 @@ and when expansion-controller starts volume expansion - it will set `pvc.Status.
 
 When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Status.AllocatedResources` to lower value (thereby giving quota back to the user) - only if current actual size of volume is less than or equal to `pvc.Spec.Resources`. It will do that only after fetching current size of the volume by using `ControllerGetVolume` CSI RPC call.
 
-If CSI driver does not have `GET_VOLUME` controller capability and `pvc.Spec.Resources` < `pvc.Status.AllocatedResources` (i.e user is attempting to reduce size of a volume that expansion controller previously tried to expand) - then although expansion-controller will try volume expansion with value in `pvc.Spec.Resources` - it will not reduce reported value in `pvc.Status.AllocatedResources`, which will result in no quota being restored to the user. In other words - for CSI drivers that don't have `GET_VOLUME` controller capability - `pvc.Status.AllocatedResources` will report highest requested value and reducing `pvc.Spec.Resources` will not result in reduction of used quota.
+If CSI driver does not have `GET_VOLUME` controller capability(or `ControllerGetVolume` does not report volume size) and `pvc.Spec.Resources` < `pvc.Status.AllocatedResources` (i.e user is attempting to reduce size of a volume that expansion controller previously tried to expand) - then although expansion-controller will try volume expansion with value in `pvc.Spec.Resources` - it will not reduce reported value in `pvc.Status.AllocatedResources`, which will result in no quota being restored to the user. In other words - for CSI drivers that don't have `GET_VOLUME` controller capability - `pvc.Status.AllocatedResources` will report highest requested value and reducing `pvc.Spec.Resources` will not result in reduction of used quota.
 
 *Note:* This proposal expects that users can not modify `pvc.Status` directly and cheat quota system. In general this should be fine because users should not have access to edit status of almost anything. Link to discussion on slack - https://kubernetes.slack.com/archives/CJUQN3E4T/p1620059624022100
 
@@ -158,7 +158,7 @@ If CSI driver does not have `GET_VOLUME` controller capability and `pvc.Spec.Res
 
 ### Risks and Mitigations
 
-- One risk as mentioned above is, if expansion failed and user retried expansion(successfully) with smaller value, the quota code will keep reporting higher value unless CSI driver in question has `GET_VOLUME` controller capability.
+- One risk as mentioned above is, if expansion failed and user retried expansion(successfully) with smaller value, the quota code will keep reporting higher value unless CSI driver in question has `GET_VOLUME` controller capability and `ControllerGetVolume` actually reports real size of the underlying volume.
 
 ## Graduation Criteria
 
