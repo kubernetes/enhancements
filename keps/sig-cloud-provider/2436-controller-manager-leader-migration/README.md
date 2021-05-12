@@ -397,11 +397,13 @@ N/A. This feature is never used by any user workloads.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] Other (treat as last resort)
-  - Details: The cluster administrator SHOULD have access to logs and metrics during cluster upgrade.
+  - The `Lease` resource used in the migration can be watched for transition of leadership and timing information. 
+  - logs and metrics can directly indicate the status of migration.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A. This feature is short-lived and only active during cluster upgrade.
+Leader Migration is designed to ensure availability of controller managers during upgrade,
+and this feature will not affect SLOs of controller managers.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -413,6 +415,9 @@ N/A. This feature is short-lived and only active during cluster upgrade.
 
 It would help if every controller that the controller manager hosts expose metrics about their availability.
 However, per-controller metrics are out of scope of this KEP.
+
+Status of the migration lease, provided by the API server, can help observe the transition of holders
+if exposed as resource metrics.
 
 ### Dependencies
 
@@ -453,7 +458,7 @@ No.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 Both `kube-controller-manager` and `cloud-controller-manager` runs another leader election process,
-which may slightly increase CPU usages during leader changes, and it needs extra memory to hold another lease.
+which cause negligible increases of CPU and memory usages, both during upgrade and under normal operations.
 
 ### Troubleshooting
 
