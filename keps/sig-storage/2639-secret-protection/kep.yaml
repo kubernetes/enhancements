@@ -11,8 +11,8 @@ reviewers:
   - TBD
 approvers:
   - TBD
-prr-approvers:
-  - TBD
+#prr-approvers:
+# - TBD
 #see-also:
 #  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
 #  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
@@ -38,8 +38,12 @@ milestone:
 feature-gates:
   - name: SecretInUseProtection
     components:
-      - secret-protection-controller
-      - storageobjectinuseprotection admission plugin
+      - kube-controller-manager (in-tree)
+      - secret-protection-controllerr (in-tree)
+      - storageobjectinuseprotection admission plugin (in-tree)
+      - secret-protection-volumesnapshot-controller (out-of-tree)
+      - storageobjectinuseprotection volumesnapshot admission plugin (out-of-tree)
+
 disable-supported: true
 
 # The following PRR answers are required at beta release

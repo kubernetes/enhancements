@@ -55,14 +55,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes a feature to protect secrets while it is in use. Currently, user can delete a Secret that is being used by other resources, like Pods and PVs. This may have negative impact on the resouces using the Secret and it may result in data loss.
+This KEP proposes a feature to protect secrets while it is in use. Currently, user can delete a Secret that is being used by other resources, like Pods, PVs, and VolumeSnapshots. This may have negative impact on the resouces using the Secret and it may result in data loss.
 
 Similar features for protecting PV and PVC already exist as [pv-protection](https://github.com/kubernetes/enhancements/issues/499) and [pvc-protection](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/postpone-pvc-deletion-if-used-in-a-pod.md).
 
 
 ## Motivation
 
-This feature aims to protect secrets from deleting while they are in-use.
+This feature aims to protect secrets from being deleted while they are in-use.
 Secrets can be used by below ways:
 - From Pod:
   - [Mounted as data volumes](https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod)
@@ -78,17 +78,17 @@ Secrets can be used by below ways:
     - controller expand secret
   - non-CSI:
     - dependent on each storage driver and will be deprecated soon (Out of scope)
-- [From Snapshot](https://kubernetes-csi.github.io/docs/secrets-and-credentials-volume-snapshot-class.html):
+- [From VolumeSnapshot](https://kubernetes-csi.github.io/docs/secrets-and-credentials-volume-snapshot-class.html):
   - snapshotter secret
 
 ### Goals
 
-- Protect secrets from deleting while they are in use.
+- Protect secrets from being deleted while they are in use.
 
 ### Non-Goals
 
-- Protect important secrets that aren't in use from deleting
-- Protect other resources than secret from deleting.
+- Protect important secrets that aren't in use from being deleted
+- Protect resources other than secrets from being deleted.
 
 ## Proposal
 
@@ -108,7 +108,7 @@ The secret is protected until the volume using the secret is deleted and the del
 
 #### Story 3
 
-A user really would like to delete a secret inspite that it is used by other resources.
+A user really would like to delete a secret despite that it is used by other resources.
 The user force delete the secret while it is used by other resources, and the secret isn't protected and is actually deleted.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -135,10 +135,20 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-This feature would be able to implement by the same way to pv-protection/pvc-protection.
-- The deletion is blocked by using newly introduced `kubernetes.io/secret-protection` finalizer,
-- The finalizer will be added on creation of the secret by using admission controller,
-- The finalizer will be deleted by newly introduced `secret-protection-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resrouces.
+This feature would be able to implement in the same way as `pv-protection/pvc-protection`.
+Protection logics for in-tree resources and out-of-tree resources are separeted and independently work.
+It is due to the restriction that CRDs can't be handled from in-tree controller.
+
+- In-tree resources(`Pod` and `PersistentVolume`):
+  - The deletion is blocked by using newly introduced `kubernetes.io/secret-protection` finalizer,
+  - The `kubernetes.io/secret-protection` finalizer will be added on creation of the secret by using admission controller for in-tree resources,
+  - The `kubernetes.io/secret-protection` finalizer will be deleted by newly introduced in-tree `secret-protection-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
+- Out-of-tree resources(`VolumeSnapshot`):
+  - The deletion is blocked by using newly introduced `snapshot.storage.kubernetes.io/secret-protection` finalizer,
+  - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be added on creation of the secret by using admission controller for `VolumeSnapshot`,
+  - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be deleted by newly introduced out-of-tree `secret-protection-volumesnapshot-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
+
+Feature gate `SecretInUseProtection` is shared between in-tree and out-of-tree. Therefore, users won't be able to choose enabling secret portection for either in-tree or out-of-tree. On the other hand, users that doesn't install `VolumeSnapshot` feature won't be affected by secret protection for `VolumeSnapshot`.
 
 ### Test Plan
 
@@ -176,14 +186,20 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
-- Upgrade: Secret that doesn't have `kubernetes.io/secret-protection` finalizer will be added the finalizer on Update/Delete events, therefore no additional user operation will be needed.
+- Upgrade: Secret that doesn't have `kubernetes.io/secret-protection` finalizer and/or `snapshot.storage.kubernetes.io/secret-protection` finalizer will be added the finalizers on Update/Delete events, therefore no additional user operation will be needed.
 - Downgrade:
-  - Feature disabled case: If the secret-protection-controller exists and the feature is disabled, `kubernetes.io/secret-protection` finalizer will always be deleted, therefore no additional user operation will be needed,
-  - Downgraded to no secret-protection-controller case: If no secret-protection-controller exists but `kubernetes.io/secret-protection` finalizer is added to the secrets, no one remove the finalizer. Therefore, user needs to remove the `kubernetes.io/secret-protection` finalizer from all the secrets manually.
+  - Feature disabled case:
+    - If the `secret-protection-controller` exists and the feature is disabled, `kubernetes.io/secret-protection` finalizer will always be deleted, therefore no additional user operation will be needed,
+    - If the `secret-protection-volumesnapshot-controller` exists and the feature is disabled, `snapshot.storage.kubernetes.io/secret-protection` finalizer will always be deleted, therefore no additional user operation will be needed,
+  - Downgraded to no controller case:
+    - If no `secret-protection-controller` exists but `kubernetes.io/secret-protection` finalizer is added to the secrets, no one remove the finalizer. Therefore, user needs to remove the `kubernetes.io/secret-protection` finalizer from all the secrets manually.
+    - If no `secret-protection-volumesnapshot-controller` exists but `snapshot.storage.kubernetes.io/secret-protection` finalizer is added to the secrets, no one remove the finalizer. Therefore, user needs to remove the `kubernetes.io/secret-protection` finalizer from all the secrets manually.
 
 ### Version Skew Strategy
 
-- As for components, this feature involves only admission controller and secret-protection-controller, so version skew won't happen unless these components are available with different versions,
+- As for the difference between in-tree components and out-of-tree components, they work independently, so they won't affect each other,
+- As for in-tree components, the protection logic involves only in-tree admission controller and in-tree secret-protection-controller, so version skew won't happen unless these components are available with different versions,
+- As for out-of-tree components, the protection logic involves only out-of-tree admission controller and out-of-tree secret-protection-volumesnapshot-controller, so version skew won't happen unless these components are available with different versions,
 - As for resources, CSI Volume and CSI Snapshot are involved, changes in the API/CRD of these resources especially for their secret fields might cause issue. Howerver, this should be compatibility issue for these API/CRDs.
 
 ## Production Readiness Review Questionnaire
@@ -216,24 +232,27 @@ you need any help or guidance.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: SecretInUseProtection
   - Components depending on the feature gate:
-    - secret-protection-controller
-    - storageobjectinuseprotection admission plugin
+    - kube-controller-manager (in-tree)
+    - secret-protection-controllerr (in-tree)
+    - storageobjectinuseprotection admission plugin (in-tree)
+    - secret-protection-volumesnapshot-controller (out-of-tree)
+    - storageobjectinuseprotection volumesnapshot admission plugin (out-of-tree)
 
 ###### Does enabling the feature change any default behavior?
 
-Secrets aren't deleted until the resources using them aren't deleted.
+Secrets aren't deleted until the resources using them are deleted.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, by disabling the feature gates.
+Yes, by disabling the feature gate. After the feature gate is disabled, users need to manually delete the `kubernetes.io/secret-protection` finalizer and the `snapshot.storage.kubernetes.io/secret-protection` finalizer to make secret deleted properly.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Secrets aren't deleted until the resources using them aren't deleted, again.
+Secrets aren't deleted until the resources using them are deleted, again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, unit tests for the secret-protection-controller cover scenarios where the feature is disabled or enabled.
+Yes, unit tests for the secret-protection-controller and secret-protection-volumesnapshot-controller cover scenarios where the feature is disabled or enabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -277,14 +296,17 @@ This section must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-There will be secrets which have `kubernetes.io/secret-protection` finalizer.
+There will be secrets which have `kubernetes.io/secret-protection` finalizer and `snapshot.storage.kubernetes.io/secret-protection` finalizer.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
   - Metric name: secret_protection_controller
-  - [Optional] Aggregation method: prometheus
-  - Components exposing the metric: secret-protection-controller
+    - Aggregation method: prometheus
+    - Components exposing the metric: secret-protection-controller
+  - Metric name: secret_protection_volumesnapshot_controller
+    - Aggregation method: prometheus
+    - Components exposing the metric: secret-protection-volumesnapshot-controller
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
@@ -331,10 +353,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 ### Scalability
 ###### Will enabling / using this feature result in any new API calls?
 
-- API call type: Update Secret, List Pod/PV/Snapshot, Get PVC/SC
+- API call type: Update Secret, List Pod/PV/VolumeSnapshot, and Get PVC/SC
 - estimated throughput: TBD
-- originating component: secret-protection-controller
-- API calls are triggered by changes of secrets, Pod, PV, Snapshot
+- originating component: secret-protection-controller and secret-protection-volumesnapshot-controller
+- API calls are triggered by changes of secrets, Pod, PV, VolumeSnapshot
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -347,7 +369,7 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 - API type(s): Secret
-- Estimated increase in size: the size of `kubernetes.io/secret-protection` finalizer per secret
+- Estimated increase in size: the size of `kubernetes.io/secret-protection` finalizer and `snapshot.storage.kubernetes.io/secret-protection` finalizer per secret
 - Estimated amount of new objects: N/A
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
