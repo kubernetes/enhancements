@@ -32,6 +32,9 @@
     - [Dispatching the request](#dispatching-the-request)
   - [Support for WATCH requests](#support-for-watch-requests)
     - [Watch initialization](#watch-initialization)
+      - [Getting the initialization signal](#getting-the-initialization-signal)
+      - [Passing the initialization signal to the filter](#passing-the-initialization-signal-to-the-filter)
+      - [Width of the request](#width-of-the-request-1)
     - [Keeping the watch up-to-date](#keeping-the-watch-up-to-date)
       - [Estimating cost of the request](#estimating-cost-of-the-request)
       - [Multiple apiservers](#multiple-apiservers)
@@ -210,7 +213,7 @@ stake in the ground.
 - The fairness does not have to be highly precise.  Any rough fairness
   will be good enough.
 
-- WATCH and CONNECT requests are out of scope.  These are of a fairly
+- CONNECT requests are out of scope.  These are of a fairly
   different nature than the others, and their management will be more
   complex.  Also they are arguably less of an observed problem.
 
@@ -1274,15 +1277,64 @@ that has to be considered and addressed.
 
 #### Watch initialization
 
-While this is an important piece to address, to allow incremental progress
-we are leaving addressing this problem for the future release.
+The first problem is initialization of watch requests.  In this phase we
+initialize all the structures, start goroutines, etc. and sync the watch
+to "now".  Given that watch requests may be called with potentially quite
+old resource version, we may need to go over many events, filter them out
+and send the ones that are matching selectors.
 
-Note for the future when we get to this:
+We will solve this problem by also handling watch requests by our priority
+and fairness kube-apiserver filter.  The queueing and admitting of watch
+requests will be happening exactly the same as for all non-longrunning
+requests.  However, as soon as watch is initialized, it will be sending
+an articial `finished` signal to the APF dispatcher - after receiving this
+signal dispatcher will be treating the request as already finished (i.e.
+the concurrency units it was occupying will be released and new requests
+may potentially be immediately admitted), even though the request itself
+will be still running.
 
-The most compatible approach would be to simply include WATCH requests as
-ones that are processed by APF dispatcher, but allow them to send an artificial
-`request finished` signal to the dispatcher once their initialization is done.
-However, that requires more detailed design.
+However, there are still some aspects that require more detail discussion.
+
+##### Getting the initialization signal
+
+The first question to answer is how we will know that watch initialization
+has actually been done.  However, the answer for this question is different
+depending on whether the watchcache is on or off.
+
+In watchcache, the initialization phase is clearly separated - we explicily
+compute `init events` and process them.  What we don't control at this level
+is the process of serialization and sending out the events.
+In the initial version we will ignore this and simply send the `initialization
+done` signal as soon as all the init events are in the result channel.  In the
+future, we can estimate it by assuming some constant (or proportional to
+event size) time for an event and delay delivering the signal by the sum of
+those across all init events.
+
+If watchcache is disabled, the watch is just proxied to the etcd.  In this
+case we don't have an easy way to answer the question whether the watch has
+already catch up.  Given that watchcache is enabled by default for all
+resources except from events, in the initial version we will simply deliver
+the `initialization done` signal as soon as etcd watch is started.  We will
+explore how to improve it in the future.
+
+##### Passing the initialization signal to the filter
+
+The second aspect is passing the `initialization done` signal from watchcache
+or etcd3 storage layer to the priority and fairness filter.  We will do that
+using a synchronization primitives (either channel or WaitGroup) and putting
+that into request context.  Given that context is passed down with the request,
+watchcache/etcd3 storage will have access to it and will be able to pass the
+signal.
+
+##### Width of the request
+
+The performance characteristics of the watch initialization is very different
+than processing a regular single-object request, we should (similarly as for
+LIST requests) adjust the `width` of the request.  However, in the initial
+version, we will just use `width=1` for all watch requests.  In the future,
+we are going to evolve it towards a function that will be better estimating
+the actual cost (potentially somewhat similarly to how LIST requests are done)
+but we first need to a machanism to allow us experiment and tune it better.
 
 #### Keeping the watch up-to-date
 
