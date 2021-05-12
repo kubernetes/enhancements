@@ -11,6 +11,7 @@
   - [Implementation Details](#implementation-details)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Renames](#renames)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria) 
   - [Version Skew Strategy](#version-skew-strategy)
@@ -34,16 +35,18 @@ This document outlines required steps to graduate autoscaling v2beta2 API to GA.
 ### Goals
 
 * Promote all of v2beta2 to stable
-* HPA behavior and container resource targets need work to meet stable requirements.
+* HPA behavior and container resource targets have E2E tests in order to meet stable requirements.
 * Deprecate v2beta2 as soon as v2 stable is landed
 * Deprecate v2beta1 immediately
 * Container Resource Targets
     * Rename `Resource` to `PodResource` to match new ContainerResource target
-
+* Behavior
+    Rename behavior select policy values from `Min` to `MinChange` and `Max` to `MaxChange`
+    
 ### Non-Goals
 
 * Promote scale-to-zero feature as a part of this effort. Since it requires additional effort
-  to deprecate the special flag meaning of scaling subresource replicas=0 (disable autoscaling).
+  to deprecate the special flag meaning of scaling subresource `replicas=0` (disable autoscaling).
   [Progress](https://github.com/kubernetes/enhancements/issues/2021) has been made. However,
   it is not part of HPA v2 stable effort since APIs cannot introduce breaking changes.
   
@@ -58,17 +61,22 @@ This document outlines required steps to graduate autoscaling v2beta2 API to GA.
 
 * v1-v2 [conversion loss](https://github.com/kubernetes/kubernetes/issues/80481) of multiple CPU targets
 * v2beta1 has the significant amount of boilerplate and overhead in maintaining conversion routines for multiple public APIs.
-* Avoid existing confusion with `SelectPolicy` [enumeration](https://github.com/kubernetes/api/blob/2c3c141c931c0ab1ce1396c3152c72852b3d37ee/autoscaling/v2beta2/types.go#L149-L156)
-  by replacing `Min` and `Max` with respective `MinChange` and `MaxChange` in v2 stable.
-* Replace the value `Disabled` with `ScalingDisabled` for better [understanding](https://github.com/kubernetes/kubernetes/pull/95647#discussion_r507563282)
+
 
 ## Design Details
+
+### Renames
+
+* Rename `Min` and `Max` with respective `MinChange` and `MaxChange` in v2 stable to eliminate confusion with `SelectPolicy` [enumeration](https://github.com/kubernetes/api/blob/2c3c141c931c0ab1ce1396c3152c72852b3d37ee/autoscaling/v2beta2/types.go#L149-L156)
+* Rename the value `Disabled` with `ScalingDisabled` for better [understanding](https://github.com/kubernetes/kubernetes/pull/95647#discussion_r507563282)
+* Rename Container Resource Targets `Resource` to `PodResource` to match new ContainerResource target
 
 ### Test Plan
 
 * Add e2e tests for HPA behavior
 * The KEP [test plan](https://github.com/kubernetes/enhancements/blob/15d330a932e0aae220ff719c391f7d815492088f/keps/sig-autoscaling/20190307-configurable-scale-velocity-for-hpa.md#test-plan) includes unit tests
 * Add e2e tests for container resource targets
+* Add conformance tests
 
 ### Graduation Criteria
 
@@ -83,6 +91,10 @@ The following code changes must be made to take <TBD> GA
 ### Version Skew Strategy
 
 ### Upgrade/Downgrade Strategy
+
+All HPA APIs to date are forward and backward conversion without loss by serializing
+all unsupported fields to annotations. HPA v2 stable will be the same, verified by unit
+tests.
 
 ## Production Readiness Review
 <!--
@@ -106,12 +118,16 @@ team. Please reach out on the
 [#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
 you need any help or guidance.
 -->
-
 ### Feature Enablement and Rollback
+All HPA objects are losslessly converted between API versions, which are just a view of the data on disk.
+Neither the deprecation of `v2beta1` nor the addition of `v2` requires any changes or conversion on the
+server side.  They will continue being stored in disk in v1 format as always, with new v2 fields serialized
+to annotiations.
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
+However any HPA objects stored in the user's code repository (all your YAML files) must stop using the
+v2beta1 format.  You should migrate all your HPA objects to the v2 format.  See the types.go files or just
+run `kubectl get hpa.v2.autoscaling -oyaml` to see your objects in the v2 format.
+
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -314,6 +330,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -332,6 +349,7 @@ Describe them, providing:
   - Estimated increase:
 -->
 
+
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 <!--
@@ -340,6 +358,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+No. Data on disk remains as-in, in v1 format.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -351,6 +370,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -363,6 +383,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No
 
 ### Troubleshooting
 
