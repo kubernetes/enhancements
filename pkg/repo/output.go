@@ -17,6 +17,7 @@ limitations under the License.
 package repo
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -129,4 +130,26 @@ func (r *Repo) PrintJSON(proposals []*api.Proposal) {
 	}
 
 	fmt.Fprintln(r.Out, string(data))
+}
+
+// PrintCSV outputs keps array as CSV to r.Out
+func (r *Repo) PrintCSV(configs []PrintConfig, proposals []*api.Proposal) {
+	w := csv.NewWriter(r.Out)
+	defer w.Flush()
+
+	var headers []string
+	for _, c := range configs {
+		headers = append(headers, c.Title())
+	}
+	w.Write(headers)
+
+	for _, p := range proposals {
+		var row []string
+		for _, c := range configs {
+			row = append(row, c.Value(p))
+		}
+		if err := w.Write(row); err != nil {
+			fmt.Fprintf(r.Err, "error printing keps as CSV: %s", err)
+		}
+	}
 }
