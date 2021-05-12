@@ -14,6 +14,8 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha:](#alpha)
+    - [Beta:](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -42,9 +44,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] (R) User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -172,11 +174,17 @@ E2E tests:
 
 ### Graduation Criteria
 
-Alpha:
+#### Alpha:
+
 * the `loadBalancerClass` field is added to Service with an alpha feature gate.
 * when enabled, service controller will ignore Service LBs with a non-empty class name.
 * unit tests for service controller.
 * unit tests for API strategy (drop disabled fields).
+
+#### Beta:
+
+* Feature gate is on by default.
+* E2E tests checking that default load balancer implementation ignores LoadBalancer type of Services when `loadBalancerClass` set.
 
 ### Upgrade / Downgrade Strategy
 
@@ -232,20 +240,21 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
 
-   TBD for beta
+	* By default this should not impact any existing Services since we are not changing any default behaviors.
+	* Enabling this feature on new clusters can impact workloads only if the user wants to use a custom load balancer implementation and sets `service.spec.loadBalancerClass`.
+
 
 * **What specific metrics should inform a rollback?**
-
-   TBD for beta
+	* None, if the user doesn't want to use a custom load balancer implementation, user can simply ignore this field.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-   TBD for beta
+   * No, upgrade->downgrade->upgrade has not been tested yet. Like any new API field, on downgrade any existing Services using the field will continue to have the field set. For these LoadBalancer type of Services, any default load balancer implementation (e.g. cloud providers) would ignore them. New Services cannot use the new field unless the feature gate is enabled in the old version when the feature was alpha.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
 
-   TBD for beta
+   * No.
 
 ### Monitoring Requirements
 
@@ -253,28 +262,21 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  TBD for beta
+  * Service should have `spec.loadBalancerClass` set.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
-  TBD for beta
-
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+	* N/A
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-   TBD for beta
+   * N/A
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-   TBD for beta
+   * N/A
 
 ### Dependencies
 
@@ -282,8 +284,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
 
-  TBD for beta
-
+  * This feature is dependent on the Service LoadBalancer implementation of a cluster. This feature should only be used if the user doesn't want to use default load balancer implementation.
 
 ### Scalability
 
@@ -336,15 +337,15 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
-TBD for beta.
+   * N/A
 
 * **What are other known failure modes?**
 
-TBD for beta.
+   * If `service.spec.loadBalancerClass` set, but there is no load balancer implementation watches the set value. 
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-TBD for beta.
+   * N/A
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
