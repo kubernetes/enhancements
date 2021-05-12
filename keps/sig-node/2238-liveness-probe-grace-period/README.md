@@ -12,9 +12,9 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
-    - [Graduation](#graduation)
+    - [Alpha (1.21)](#alpha-121)
+    - [Beta (1.22)](#beta-122)
+    - [Graduation (1.25)](#graduation-125)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -183,23 +183,27 @@ quickly.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Alpha (1.21)
 
 - New probe field, `terminationGracePeriodSeconds`, is implemented and
   available behind a feature flag.
 - Appropriate tests are written.
 
-#### Beta
+#### Beta (1.22)
 
-- Feature flag is defaulted on.
+- Feature flag will default to off.
 - Remove feature gate from [kubelet](https://github.com/kubernetes/kubernetes/pull/99375#issuecomment-794680869).
+- Ensure that when feature gate is off in API server, probe-level
+  `TerminationGracePeriodSeconds` is blanked out.
 - Add validation to ensure `terminationGracePeriodSeconds` is non-negative.
+- Feature flag is defaulted to on after kube-apiserver is +2 versions of the
+  kubelet having the support (1.24).
 
 _Below graduation criteria are tentative._
 
-#### Graduation
+#### Graduation (1.25)
 
-- Feature flag is removed, feature is graduated.
+- Feature flag is removed, feature is graduated (1.25).
 
 ### Upgrade / Downgrade Strategy
 
@@ -238,7 +242,11 @@ enhancement:
 n-2 kubelet without this feature will default to the old behaviour, using the
 pod-level `terminationGracePeriodSeconds`.
 
-Only when feature gate is enabled for all components will we use the new field.
+Feature gate will be removed from kubelet in 1.22, ensuring support for n-2
+version skew on a 1.24+ API server.
+
+Only when feature gate is enabled for all components will we use the new field,
+so we delay defaulting the feature flag on until then.
 
 ## Production Readiness Review Questionnaire
 
@@ -292,7 +300,8 @@ _This section must be completed when targeting alpha to a release._
   Describe the consequences on existing workloads (e.g., if this is a runtime
   feature, can it break the existing applications?).
 
-  Yes: disable feature flag.
+  Yes: disable feature flag. API server will blank out values if it is set in
+  etcd while feature flag is disabled.
 
   While feature flag is enabled, the feature can also be disabled by unsetting
   the field on the Probe specification, which will restore the default
