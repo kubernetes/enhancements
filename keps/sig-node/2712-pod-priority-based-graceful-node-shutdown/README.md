@@ -154,8 +154,9 @@ e.g. the config could also be
 In the above case, the pods with custom-class-b will go into the same bucket
 as custom-class-c for shutdown.
 
-If there are no pods in a particular range, then the kubelet will skip
-over the range entirely.
+If there are no pods in a particular range, then the kubelet does not wait
+for pods in that priority range. Instead, the kubelet immediately skips to the
+next priority class value range.
 
 If this feature is enabled and no configuration is provided, then no ordering
 action will be taken. The rationale is to allow some users to opt out of this
