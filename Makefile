@@ -86,10 +86,10 @@ test-go-integration: ## Runs Golang integration tests
 
 .PHONY: tools
 
-KEP_TOOLS ?=
+WHAT ?= kepctl kepify
 
-tools: ## Compiles a set of KEP tools, specified by $KEP_TOOLS
-	./compile-tools $(KEP_TOOLS)
+tools: ## Installs all KEP tools, can select via e.g. WHAT=kepctl
+	./compile-tools $(WHAT)
 
 ##@ Dependencies
 

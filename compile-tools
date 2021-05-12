@@ -29,10 +29,11 @@ setup_env() {
 
   if [[ -z "${TOOL_BIN:-}" ]]; then
     if [ -n "${GOBIN:-}" ]; then
-      export TOOL_BIN="${GOBIN}"
+      TOOL_BIN="${GOBIN}"
     else
-      export TOOL_BIN="${GOPATH}/bin"
+      TOOL_BIN="$(go env GOPATH)/bin"
     fi
+    export TOOL_BIN
   fi
 
   export PATH="${PATH}:${TOOL_BIN}"
@@ -89,20 +90,22 @@ main() {
   setup_env
   check_deps
 
-  if [ $# -gt 0 ]; then
-    for tool in "$@"; do
-      if [[ ${tool} =~ github.com\/ ]]; then
-        compile "${tool}"
-      else
-        compile_with_flags "${tool}"
-      fi
-    done
-  else
-    for tool in "${TOOLS[@]}"; do
-      echo "Compiling default tools..."
-      compile_with_flags "${tool}"
-    done
+  if [ $# = 0 ]; then
+    # default to all tools
+    set -- "${TOOLS[@]}"
   fi
+
+  for tool; do
+    if ! (printf '%s\n' "${TOOLS[@]}" | grep -q "^${tool}$"); then
+      echo "Skipping unrecognized tool name: ${tool}" >&2
+      continue
+    fi
+    if [[ ${tool} =~ github.com\/ ]]; then
+      compile "${tool}"
+    else
+      compile_with_flags "${tool}"
+    fi
+  done
 }
 
 main "$@"
