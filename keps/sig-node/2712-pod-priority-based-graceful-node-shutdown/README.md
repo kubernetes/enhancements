@@ -128,13 +128,13 @@ We could set kubelet configuration to stop the pods as:
 
 |Pod priority class value|Shutdown period|
 |------------------------|---------------|
-| 100000                 |300 seconds    |
+| 100000                 |10 seconds     |
 | 10000                  |180 seconds    |
 | 1000                   |120 seconds    |
 | 0                      |60 seconds     |
 
 The above table implies that any pod with priority value >= 100000 will get
-300 seconds to stop, any pod with value >= 10000 and < 100000 will get 180
+just 10 seconds to stop, any pod with value >= 10000 and < 100000 will get 180
 seconds to stop, any pod with value >= 1000 and < 10000 will get 120 seconds to stop. 
 Finally, all other pods will get 60 seconds to stop.
 
