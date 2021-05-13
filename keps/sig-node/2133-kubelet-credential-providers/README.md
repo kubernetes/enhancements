@@ -341,6 +341,7 @@ can be achieved using the exec plugin.
 
 * integration or e2e tests.
 * at least one working plugin implementation.
+   - there are two implementation currently for [ECR](https://github.com/kubernetes/cloud-provider-aws/tree/master/cmd/ecr-credential-provider) and [GCR](https://github.com/kubernetes/cloud-provider-gcp/tree/master/cmd/auth-provider-gcp).
 * kubelet metrics for failed calls to exec plugins.
 * improvements to concurrency and caching:
    - use `singleflight.Group` to ensure only a single call per image. Today the kubelet holds a single lock for every call to `Provide`.
@@ -397,7 +398,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-  No, upgrade->downgrade->upgrade were not tested. Manual validation will be done prior to promoting this feature to beta in v1.21.
+  No, upgrade->downgrade->upgrade were not tested. Manual validation will be done prior to promoting this feature to beta in v1.22.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
