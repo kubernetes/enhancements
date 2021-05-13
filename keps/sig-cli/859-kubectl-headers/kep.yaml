@@ -2,6 +2,7 @@ title: Kubectl Commands In Headers
 kep-number: 859
 authors:
   - "@pwittrock"
+  - "@seans3"
 owning-sig: sig-cli
 participating-sigs:
   - sig-api-machinery
@@ -10,25 +11,25 @@ reviewers:
   - "@kow3ns"
   - "@lavalamp"
 approvers:
-  - "@seans3"
   - "@soltysh"
 prr-approvers:
   - "@deads2k"
 editor: TBD
 creation-date: 2019-02-22
-last-updated: 2019-02-22
+last-updated: 2019-05-11
 status: implementable
 see-also:
 replaces:
 superseded-by:
-stage: alpha
-latest-milestone: "v1.21"
+stage: beta
+latest-milestone: "v1.22"
 milestone:
   alpha:  "v1.21"
   beta:   "v1.22"
   stable: "v1.24"
-# This "Kubectl Commands In Headers" feature is initially opt-in using
-# an environment variable. This feature is not user facing.
+# kubectl-commands-in-headers is on by default, but it can be
+# disabled by setting the feature gate (environment variable)
+# to false.
 feature-gates:
   - name: kubectl-commands-in-headers
     components:

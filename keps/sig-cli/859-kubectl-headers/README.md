@@ -11,12 +11,12 @@
   - [Non-Goals](#non-goals)
   - [Anti-Goals](#anti-goals)
 - [Proposal](#proposal)
-  - [X-Kubectl-Command Header](#x-kubectl-command-header)
-  - [X-Kubectl-Flags Header](#x-kubectl-flags-header)
+  - [Kubectl-Command Header](#kubectl-command-header)
+  - [Kubectl-Flags Header](#kubectl-flags-header)
     - [Enumerated Flag Values](#enumerated-flag-values)
-  - [X-Kubectl-Session Header](#x-kubectl-session-header)
-  - [X-Kubectl-Deprecated Header](#x-kubectl-deprecated-header)
-  - [X-Kubectl-Build Header](#x-kubectl-build-header)
+  - [Kubectl-Session Header](#kubectl-session-header)
+  - [Kubectl-Deprecated Header](#kubectl-deprecated-header)
+  - [Kubectl-Build Header](#kubectl-build-header)
   - [Example](#example)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -44,7 +44,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -123,23 +123,23 @@ Include in http requests made from kubectl to the apiserver:
 - if the command is deprecated, add a header including when which release it will be removed in (if known)
 - allow users and organizations that compile their own kubectl binaries to define a build metadata header
 
-### X-Kubectl-Command Header
+### Kubectl-Command Header
 
-The `X-Kubectl-Command` Header contains the kubectl sub command.
+The `Kubectl-Command` Header contains the kubectl sub command.
 
 It contains the path to the subcommand (e.g. `create secret tls`) to disambiguate sub commands
 that might have the same name and different paths.
 
 Examples:
 
-- `X-Kubectl-Command: apply`
-- `X-Kubectl-Command: create secret tls` 
-- `X-Kubectl-Command: delete`
-- `X-Kubectl-Command: get`
+- `Kubectl-Command: kubectl apply`
+- `Kubectl-Command: kubectl create secret tls`
+- `Kubectl-Command: kubectl delete`
+- `Kubectl-Command: kubectl get`
 
-### X-Kubectl-Flags Header
+### Kubectl-Flags Header
 
-The `X-Kubectl-Flags` Header contains a list of the kubectl flags that were provided to the sub
+The `Kubectl-Flags` Header contains a list of the kubectl flags that were provided to the sub
 command.  It does *not* contain the raw flag values, but may contain enumerations for
 whitelisted flag values.  (e.g. for `-f` it may contain whether a local file, stdin, or remote file
 was provided).  It does not normalize into short or long form.  If a flag is
@@ -148,10 +148,10 @@ alpha-numerically and separated by a ',' to simplify human readability.
 
 Examples:
 
-- `X-Kubectl-Flags: --filename=local,--recursive,--context`
-- `X-Kubectl-Flags: -f=local,-f=local,-f=remote,-R` 
-- `X-Kubectl-Flags: -f=stdin` 
-- `X-Kubectl-Flags: --dry-run,-o=custom-columns`
+- `Kubectl-Flags: --filename=local,--recursive,--context`
+- `Kubectl-Flags: -f=local,-f=local,-f=remote,-R`
+- `Kubectl-Flags: -f=stdin`
+- `Kubectl-Flags: --dry-run,-o=custom-columns`
 
 #### Enumerated Flag Values
 
@@ -159,38 +159,38 @@ Examples:
 - `-o`, `--output`: `json`,`yaml`,`wide`,`name`,`custom-columns`,`custom-columns-file`,`go-template`,`go-template-file`,`jsonpath`,`jsonpath-file`
 - `--type` (for patch subcommand): `json`, `merge`, `strategic`
 
-### X-Kubectl-Session Header
+### Kubectl-Session Header
 
-The `X-Kubectl-Session` Header contains a Session ID that can be used to identify that multiple
+The `Kubectl-Session` Header contains a Session ID that can be used to identify that multiple
 requests which were made from the same kubectl command invocation.  The Session Header is generated
 once and used for all requests for each kubectl process.
 
-- `X-Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca`
+- `Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca`
 
-### X-Kubectl-Deprecated Header
+### Kubectl-Deprecated Header
 
-The `X-Kubectl-Deprecated` Header is set to inform cluster admins that the command being run
+The `Kubectl-Deprecated` Header is set to inform cluster admins that the command being run
 has been deprecated.  This may be used by organizations to determine if they are likely
 to be impacted by command deprecation and removal before they upgrade.
 
-The `X-Kubectl-Deprecated` Header is set if the command that was run is marked as deprecated.
+The `Kubectl-Deprecated` Header is set if the command that was run is marked as deprecated.
 
 - The Header may have a value of `true` if the command has been deprecated, but has no removal date.
 - The Header may have a value of a specific Kubernetes release.  If it does, this is the release
   that the command will be removed in.
 
-- `X-Kubectl-Deprecated: true`
-- `X-Kubectl-Deprecated: v1.16`
+- `Kubectl-Deprecated: true`
+- `Kubectl-Deprecated: v1.16`
 
 
-### X-Kubectl-Build Header
+### Kubectl-Build Header
 
-The `X-Kubectl-Build` Header may be set by building with a specific `-ldflags` value.  By default the Header
+The `Kubectl-Build` Header may be set by building with a specific `-ldflags` value.  By default the Header
 is unset, but may be set if kubectl is built from source, forked, or vendored into another command.
 Organizations that distribute one or more versions of kubectl which they maintain internally may
 set a flag at build time and this header will be populated with the value.
 
-- `X-Kubectl-Build: some-value`
+- `Kubectl-Build: some-value`
 
 ### Example
 
@@ -199,9 +199,9 @@ $ kubectl apply -f - -o yaml
 ```
 
 ```
-X-Kubectl-Command: apply
-X-Kubectl-Flags: -f=stdin,-o=yaml
-X-Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca
+Kubectl-Command: apply
+Kubectl-Flags: -f=stdin,-o=yaml
+Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca
 ```
 
 
@@ -210,9 +210,9 @@ $ kubectl apply -f ./local/file -o=custom-columns=NAME:.metadata.name
 ```
 
 ```
-X-Kubectl-Command: apply
-X-Kubectl-Flags: -f=local,-o=custom-columns
-X-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+Kubectl-Command: apply
+Kubectl-Flags: -f=local,-o=custom-columns
+Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
 ```
 
 ```sh
@@ -221,9 +221,9 @@ image"}]'
 ```
 
 ```
-X-Kubectl-Command: patch
-X-Kubectl-Flags: --type=json,-p
-X-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+Kubectl-Command: patch
+Kubectl-Flags: --type=json,-p
+Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
 ```
 
 
@@ -232,10 +232,10 @@ kubectl run nginx --image nginx
 ```
 
 ```
-X-Kubectl-Command: run
-X-Kubectl-Flags: --image
-X-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
-X-Kubectl-Deprecated: true
+Kubectl-Command: run
+Kubectl-Flags: --image
+Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+Kubectl-Deprecated: true
 ```
 
 ### Risks and Mitigations
@@ -279,20 +279,23 @@ can be no version skew.
 
 * **How can this feature be enabled / disabled in a live cluster?**
 
-  This feature is enabled with the KUBECTL_COMMANDS_HEADER environment
-  variable set on the client command line. Since it only affects the client
-  kubectl, it does not affect any cluster components.
+  This feature is enabled by default in kubectl, and it be turned
+  off by setting the KUBECTL_COMMAND_HEADERS environment variable
+  to false.
 
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: KUBECTL_COMMANDS_HEADERS
+    - Feature gate name: KUBECTL_COMMAND_HEADERS
     - Components depending on the feature gate: kubectl
+
   - [X] Other
-    - Describe the mechanism: setting an client-side environment variable for kubectl.
+    - Describe the mechanism: To disable the default addition of the kubectl
+    extra headers, set the environment variable KUBECTL_COMMAND_HEADERS to false.
     - Will enabling / disabling the feature require downtime of the control
-      plane? No
+      plane?
+    No. This environment variable only affects the kubectl client.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-      No.
+    No. This environment variable only affects the kubectl client.
 
 * **Does enabling the feature change any default behavior?**
 
@@ -301,12 +304,12 @@ can be no version skew.
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
 
-  Yes. This feature can be disabled by simply removing an environment variable
-  on the client command line.
+  Yes. This feature can be disabled by simply setting the KUBECTL_COMMAND_HEADERS
+  environment variable to false on the command line.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
-  Re-enabling this feature is simply accomplished by setting the feature
+  Re-enabling this feature is simply accomplished by removing the feature
   environment variable on the client command line. There is no state, and there
   is no consequence for re-enabling the feature.
 
@@ -348,44 +351,46 @@ fields of API types, flags, etc.?**
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can an operator determine if the feature is in use by workloads?**
   Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
 
-  Operators will see this feature in use when the **X-Kubectl-Command** header
-  arrives with REST calls to the API Server.
+  N/A.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
-  Since the cardinality is low, we will initially support the kubectl subcommand
-  header (X-Kubectl-Command) in this feature. This simple metric will provide valuable
-  insight into kubectl usage, and allow users to see if the feature is being used.
+  The risk of network performance degradation because of increased REST call
+  size is minimal, since the additional header size is modest, and it is
+  capped at MAX_HEADERS size. Determination of this network performance degradation
+  would be increased network latency, while testing using a control of kubectl
+  version 1.21 or previous to compare against.
 
-  - [X] Metrics
-    - Metric name: X-Kubectl-Command header
+  - [ ] Metrics
+    - Metric name:
     - [Optional] Aggregation method:
-    - Components exposing the metric: kubectl
+    - Components exposing the metric:
+
   - [ ] Other (treat as last resort)
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-  TBD
+  TBD. In order to mitigate risk of inordinately increasing the size of the REST
+  call, we use MAX_HEADERS to limit the size of the additional headers. The maximum
+  size of the current two headers (largest kubectl command) is approximately 72
+  bytes (including the header keys). This modest addition to the size of the REST
+  calls should translate to a minor performance degradation risk.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-  We believe all the other specified **X-Header** will be useful, but we are starting
-  out simply in alpha to prove the value and feasibility of the feature. We will add
-  others as we approach beta.
+  We believe all the other specified **Kubectl** headers will be useful, but we are starting
+  out simply with two headers in beta to prove the value and feasibility of the feature. We
+  will add others as we approach GA.
 
 ### Dependencies
-
-_This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
   Think about both cluster-level services (e.g. metrics-server) as well
@@ -394,12 +399,7 @@ _This section must be completed when targeting beta graduation to a release._
   a cloud provider API, or upon an external software-defined storage or network
   control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  No
 
 ### Scalability
 
@@ -425,16 +425,20 @@ the existing API objects?**
 operations covered by [existing SLIs/SLOs]?**
 
   Possibly. This feature increases the size of the REST call from kubectl
-  to the API Server by adding more headers to the calls. We will monitor
-  this request size increase to ensure there is no deleterious effect.
+  to the API Server by adding more headers to the calls. Constraining the
+  size of the added headers through MAX_HEADERS will reduce the risk of
+  any performance degradation. We will monitor this request size increase
+  to ensure there is no deleterious effect.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
   Possibly. This feature increases the size of the REST call from kubectl
-  to the API Server by adding more headers to the calls. We will monitor
-  this request size increase to ensure there is no deleterious effect.
+  to the API Server by adding more headers to the calls. Constraining the
+  size of the added headers through MAX_HEADERS will reduce the risk of
+  any performance degradation. We will monitor this request size increase
+  to ensure there is no deleterious effect.
 
 ## Implementation History
 
-
+[(Alpha) Kubectl command headers in requests: KEP 859](https://github.com/kubernetes/kubernetes/pull/98952)
