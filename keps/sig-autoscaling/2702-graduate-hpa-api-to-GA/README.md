@@ -12,11 +12,11 @@ To get started with this template:
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [ x ] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [ x ] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
 - [ x ] **Fill out this file as best you can.**
