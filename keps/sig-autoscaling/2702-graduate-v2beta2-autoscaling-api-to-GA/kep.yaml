@@ -10,13 +10,11 @@ reviewers:
 approvers:
   - "@josephburnett"
   - "@gjtempleton"
-prr-approvers:
-  - "@johnbelamaric"
 creation-date: 2021-05-10
 last-updated: 2021-05-10
 status: implementable
 
-latest-milestone: "1.22"
+latest-milestone: "v1.22"
 stage: "stable"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
