@@ -80,19 +80,38 @@ problem is that current API validation logic uses a white list of object types, 
 feature gates for each object type. This approach won't scale to generic populators, which
 will by their nature be too numerous and varied.
 
-This proposal recommends that we relax validation (in core Kubernetes) on the `DataSource`
-field to allow arbitrary object types to be data sources, and rely on new controllers to
-perform the validation on those data sources and provide feedback to users. We will introduce
-a new CRD to register valid datasource kinds, and individual volume populators will
-create a CR for each kind of data source that it understands.
+For historical reasons (not intentional), the validation of the `DataSource` field caused
+unsupported objects to be ignored, rather than rejected, and for the request to yield an
+empty volume, as if no data source had been requested. It's not possible to update this
+behavior in a backwards-compatible way, which forces us to use a different mechanism for
+populators.
+
+This proposal recommends that we replace the `DataSource` field with a new `DataSourceRef`
+field with expanded semantics. The existing `DataSource` field will be deprecated and
+maintained only for backwards compatibility. The new `DataSourceRef` field will allow
+objects other than existing data sources (PVC and VolumeSnapshots), and crucially will
+never ignore inputs.
+
+Because volume populators will be implemented as new out-of-tree controllers, the in-tree
+validation of data sources will be limited to rejecting definitely-invalid values. All
+potentially-valid data sources will result in successful PVC creation, followed by either
+the PVC binding to a volume with the desired contents, or events explaining why that hasn't
+happened yet.
+
+We will introduce a new CRD to register valid datasource kinds, and individual volume
+populators will create a CR for each kind of data source that it understands. A new
+`volume-data-source-validator` controller will generate events on PVCs with data sources
+that don't match any registered volume populator.
 
 ## Motivation
 
 ### Goals
 
+- Don't break any existing behavior, even obviously unintentional behavior that currently
+  works.
 - Enable users to create pre-populated volumes in a manner consistent with current practice
 - Enable developers to innovate with new an interesting data sources
-- Avoid changing existing workflows and breaking existing tools with new behavior
+- Minimize change to existing workflows and breaking existing tools with new behavior
 - Ensure that users continue to get accurate error messages and feedback about volume
   creation progress, whether using existing methods of volume creation or specifying a
   data source associated with a volume populator.
@@ -110,11 +129,32 @@ create a CR for each kind of data source that it understands.
 
 ## Proposal
 
-Validation for the `DataSource` field will be relaxed so that any API object (except
-core API objects other than PVCs) may be specified. For objects that are not valid data
-source, rather than relying the the API server to reject them or ignore them (the prior
-behavior was to ignore them by clearing the field) allow them and provide feedback to
-API users with events.
+Introduce a new field on PVCs called `DataSourceRef`. This new field operates like
+`DataSource` except that it never ignores input -- contents are always accepted or the
+entire PVC is rejected if the contents are deemed invalid.
+
+Deprecate the `DataSource` field, but continue to support it in a backwards-compatible
+way. In particular:
+
+1. If `DataSource` and `DataSourceRef` are both unset; accept
+1. If `DataSource` is set valid (PVC or VolumeSnapshot) AND `DataSourceRef` is not set;
+   set `DataSourceRef` from `DataSource`
+1. If `DataSource` is set valid AND `DataSourceRef` is set the same; accept
+1. If `DataSource` is set valid AND `DataSourceRef` is set differently; reject
+1. If `DataSource` is set invalid (anything but PVC or VolumeSnapshot) and `DataSourceRef`
+   is not set; wipe `DataSource` (as today)
+1. If `DataSource` is set invalid and `DataSourceRef` is set; reject
+1. If `DataSource` is not set and `DataSourceRef` is set invalid (any core object other
+   than PVC); reject
+1. If `DataSource` is not set and `DataSourceRef` is set PVC or VolumeSnapshot; set
+   `DataSource` from `DataSourceRef` and accept
+1. If `DataSource` is not set and `DataSourceRef` is set some other valid value (not
+   core object and not VolumeSnapshot); leave `DataSource` unset and accept
+   
+The last case is the one that enables using new types of data sources. Existing data
+sources continue to work, either through the old interface or the new interface. New
+data sources only work through the new interface, and additional validation is
+performed after the PVC is created.
 
 A new controller will be introduced called `data-source-validator` which will watch PVCs
 objects and generate events on objects with data sources that are not considered valid. To
@@ -137,11 +177,10 @@ sourceKind:
 ```
 
 In this model there will be 4 sources of feedback to the end user:
-1. The API server will reject core objects other than PVCs with it current behavior, which
-   is to accept the PVC but to blank out the data source. This is backwards compatible, and
+1. The API server will reject core objects other than PVCs. This is backwards compatible, and
    appropriate because we don't expect any existing core object (other than a PVC) to be a
    valid data source.
-1. For data sources that refer to a unknown group/kind, the data-source-validator will emit
+1. For data sources that refer to a unknown group/kind, the `volume-data-source-validator` will emit
    an event on the PVC informing the user that the PVC is currently not being acted on, so
    the user can fix any errors, and so the user doesn't wait forever wondering why the PVC
    is not binding. Alternatively, the event might remind the user that they forgot to
@@ -205,14 +244,19 @@ restoring from various kinds of things.
 
 ### Implementation Details/Notes/Constraints
 
-As noted above, the proposal is extremely simple -- just remove the validation on
-the `DataSource` field. This raises the question of WHAT will happen when users
+As noted above, the proposal recommends a modest change to the PVC API which
+creates a new more flexible field to specify data sources without breaking any
+existing behaviors. Mostly the new `DataSourceRef` will never ignore user input,
+so that arbitrary CRDs can be used as data sources.
+This raises the question of WHAT will happen when users
 put new things in that field, and HOW populators will actually work with so small
 a change.
 
 It's first important to note that only consumers of the `DataSource` field today
 are the various dynamic provisioners, most notably the external-provisioner CSI
-sidecar. If the external-provisioner sidecar sees a data source it doesn't
+sidecar. Due to the API change, these consumers will need to switch to consume the
+`DataSourceRef` field, but will otherwise continue to function mostly the same.
+Currently, if the external-provisioner sidecar sees a data source it doesn't
 understand, it simply ignores the request, which is both important for forward
 compatibility, and also perfect for the purposes of a data populator. This allows
 developers to add new types of data sources that the dynamic provisioners will
@@ -236,21 +280,18 @@ common controller logic should be reusable.
 
 ### Risks and Mitigations
 
-Clearly there is concern that bad things might happen if we don't restrict
-the contents of the `DataSource` field, otherwise the validation wouldn't
-have been added. The main risk that I'm aware of is that badly-coded dynamic
-provisioners might crash if they see something they don't understand.
-Fortunately, the external-provisioner sidecar correctly handles this case,
-and so would any other dynamic provisioner designed with forward compatibility
-in mind.
+The replacement of `DataSource` with `DataSourceRef` greatly reduces risk
+relative to earlier designs. It leaves existing behavior the same and
+requires all clients to understand and use the new fields to enable the
+new functionality. The main risk is that if we eventually change our minds
+about this functionality, we've introduced a new field that we might
+need to carry into the future.
 
-Removing validation of the field relinquishes control over what kind of
-data sources are okay, and gives developers the freedom to decide. The biggest
-problem this leads to is that users might attempt to use a data source that's
-not supported (on a particular cluster), and they won't get any feedback
-telling them that their request will never succeed. This is not unlike a
-situation where a storage class refers to a provisioner that doesn't exist,
-but it's something that will need to be solved eventually. 
+We are not concerned about backwards compatibility problems, as any existing
+request should continue to behave the same, and existing controllers will
+continue to work the same. Nevertheless we need to be careful about
+implementing the admission control logic that ensures backwards compatibility
+and we need good tests to cover all of the possible cases.
 
 Security issues are hard to measure, because any security issues would be the
 result of badly designed data populators that failed to put appropriate
@@ -273,18 +314,27 @@ the uses and implications of any populators they chose to install.
 
 ### Test Plan
 
-The test for this feature gate is to create a PVC with a data source
-that's not a PVC or VolumeSnapshot, and verify that the data source reference
-becomes part of the PVC API object. Any very simple CRD would be okay
-for this purpose. We would expect such a PVC to be ignored by existing
-dynamic provisioners.
+To test the API changes to PVC, we need test cases for each of the data source
+situations outlined above, focusing especially on backwards compatibility.
+- Create PVC with `DataSource` and `DataSourceRef` both unset; except success and both unset
+- Create PVC with `DataSource` is set to PVC and `DataSourceRef` not set; expect success and `DataSourceRef` contains PVC
+- Create PVC with `DataSource` is set to VolumeSnapshot and `DataSourceRef` not set; expect success and `DataSourceRef` contains VolumeSnapshot
+- Create PVC with `DataSource` is set valid AND `DataSourceRef` is set the same; expect success
+- Create PVC with `DataSource` is set valid AND `DataSourceRef` is set differently; expect error
+- Create PVC with `DataSource` is set to Pod and `DataSourceRef` is not set; expect success and both unset
+- Create PVC with `DataSource` is set to CRD and `DataSourceRef` is not set; expect success and both unset
+- Create PVC with `DataSource` is set invalid and `DataSourceRef` valid; expect error
+- Create PVC with `DataSource` is not set and `DataSourceRef` is set to Pod, expect error
+- Create PVC with `DataSource` is not set and `DataSourceRef` is set to PVC; expect success and `DataSource` contains PVC
+- Create PVC with `DataSource` is not set and `DataSourceRef` is set to VolumeSnapshot; expect success and `DataSource` contains VolumeSnapshot
+- Create PVC with `DataSource` is not set and `DataSourceRef` is set to CRD; expect success and `DataSource` empty
 
-To test the data-source-validator, we need to check the following cases:
-- Creation of a PVC with no datasource causes no events.
-- Creation of a PVC with a VolumeSnapshot or PVC datasource causes no events.
-- Creation of a PVC with a CRD datasource that's not registered by any
+To test the `volume-data-source-validator`, we need to check the following cases:
+- Creation of a PVC with no `DataSourceRef` causes no events.
+- Creation of a PVC with a VolumeSnapshot or PVC `DataSourceRef` causes no events.
+- Creation of a PVC with a CRD `DataSourceRef` that's not registered by any
   volume populator causes UnrecognizedDataSourceKind events.
-- Creation of a PVC with a CRD datasource that's registered by a
+- Creation of a PVC with a CRD `DataSourceRef` that's registered by a
   volume populator causes no events.
 
 ### Graduation Criteria
@@ -300,8 +350,8 @@ To test the data-source-validator, we need to check the following cases:
   any other required functionality for data population is working.
 - We will need to see several implementations of working data populators that
   solve real world problems implemented in the community.
-- Data-source-validator and associated VolumePopulator CRD should be released
-  with versions available.
+- `volume-data-source-validator` and associated VolumePopulator CRD should be released
+  with beta versions available.
 
 #### Beta -> GA Graduation
 
@@ -311,16 +361,14 @@ To test the data-source-validator, we need to check the following cases:
 
 ### Upgrade / Downgrade Strategy
 
-Data sources are only considered at provisioning time -- once the PVC becomes
-bound, the `DataSource` field becomes merely a historical note.
+On upgrade, a new field is added, the contents of which can be reliably
+determined for existing objects. New objects could put new contents into
+that field, but the admission controllers will keep the old field in sync
+with it for backwards compatibility.
 
-On upgrade, there are no potential problems because this change merely
-relaxes an existing limitation.
-
-On downgrade, there is a potential for unbound (not yet provisioned) PVCs to
-have data sources that never would have been allowed on the lower version. In
-this case we might want to revalidate the field and possibly wipe it out on
-downgrade. 
+On downgrade, simply dropping the new field would be safe because any
+clients accessing the new alpha field would have caused the
+backwards-compatible values to be set in the existing field.
 
 ### Version Skew Strategy
 
@@ -345,28 +393,22 @@ _This section must be completed when targeting alpha to a release._
       of a node? no
 
 * **Does enabling the feature change any default behavior?**
-  Before this feature, kube API server would silently drop any PVC data source
-  that it didn't recognize, as if the client never populated the field. After
-  enabling this feature, the API server allows any object to be specified.
-  The data-source-validator controller will emit events for PVCs if the data
-  source is not recognized as one which is be handled by another controller.
-
+  A new field is introduced on PVCs, but existing clients can safely ignore it.
+  New clients that use the new field can cause PVCs to be created which can be
+  used by volume populators.
+  
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Turning off the feature gate should causes the API server to go back to dropping
-  data sources for new PVCs. An admin would also want to remove any data populator
-  controllers, and the data-source-validator controller, and the VolumePopulator
-  CRD. Lastly, and unbound PVCs with data sources should be deleted, as they
-  will never bind.
+  Yes, dropping or ignoring the new field returns the system to it's previous
+  state. Worst case, some PVCs which were trying to use the new field might need
+  to be deleted because they will never have anything happen to them after the
+  feature is disaabled.
   
-  Alternatively, just disable the feature gate and remove the populator controllers,
-  but leave the data-source-validator controller and the VolumePopulator CRD,
-  and it will generate events on any PVCs which need to be deleted. Then it
-  could be left up to end users to delete their own PVCs which will never bind.
-
 * **What happens if we reenable the feature if it was previously rolled back?**
-  PVC which previously had data sources that were invalided by the rollback
-  would be empty volumes. Users would need to delete and re-create those PVCs.
+  As long as the alpha field was not dropped, things will go back to how they
+  were. If the alpha field is dropped, and then re-added, the same PVCs which
+  were defunct after the disablement will need to be deleted, but nothing else
+  bad will happen.
 
 * **Are there any tests for feature enablement/disablement?**
   Not at this time.
@@ -505,6 +547,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - KEP updated to new format September 2020
 - Webhook replaced with controller in December 2020
 - KEP updated Feb 2021 for v1.21
+- Resign with new `DataSourceRef` field in May 2021 for v1.22, still alpha
 
 ## Alternatives
 
