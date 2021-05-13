@@ -132,7 +132,7 @@ yes, it is enough to restart the node on cgroup v1
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-it should work seamlessly without any difference
+It should work seamlessly without any difference
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -149,7 +149,8 @@ cgroup file system, then also the workload must be enabled for cgroup v2.
 
 ###### What specific metrics should inform a rollback?
 
-Pods not being healthy.
+Pods not being healthy. One could inspect if the pods are getting the cgroups
+set correctly referencing the conversion table in this KEP.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -163,8 +164,8 @@ The cgroup file system inside of the containers will use cgroup v2 instead of cg
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Looking at the node configuration.  If the node is using cgroup v2, then also the pods
-running on that node are using it.
+An operator could run `cat /proc/self/cgroup` on a node to check if it is running in cgroups v2 mode.
+If the node is using cgroup v2, then also the pods running on that node are using it.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -192,7 +193,7 @@ N/A.  Same as when running on cgroup v1.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N.
+No
 
 ### Dependencies
 
@@ -240,7 +241,7 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Reboot the node on cgroup v1
+If SLOs are not being met, reboot the node in cgroup v1 to disable this feature.
 
 ## Proposal
 
