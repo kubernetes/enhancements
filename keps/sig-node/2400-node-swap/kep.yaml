@@ -1,0 +1,43 @@
+title: Node system swap support
+kep-number: 2400
+authors:
+  - "@ehashman"
+  - "@ike-ma"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: implementable
+creation-date: 2021-04-06
+reviewers:
+  - "@SergeyKanzhelev"
+  - "@anguslees"
+  - "@deads2k"
+  - "@sftim"
+approvers:
+  - "@derekwaynecarr"
+  - "@dchen1107"
+prr-approvers:
+  - "@deads2k"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.22"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.22"
+  beta: "v1.23"
+  stable: "v1.24"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: NodeSwapEnabled
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: false
