@@ -48,7 +48,7 @@ denote sections that are under active debate as follows:
 - [Design Details](#design-details)
   - [Renames](#renames)
   - [Test Plan](#test-plan)
-  - [Graduation Criteria](#graduation-criteria) 
+  - [Graduation Criteria](#graduation-criteria)
   - [Version Skew Strategy](#version-skew-strategy)
   - [Upgrade/Downgrade Strategy](#upgradedowngrade-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
