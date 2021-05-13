@@ -118,7 +118,7 @@ team. Please reach out on the
 [#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
 you need any help or guidance.
 -->
-### Feature Enablement and Rollback
+### Requirements for migration
 All HPA objects are losslessly converted between API versions, which are just a view of the data on disk.
 Neither the deprecation of `v2beta1` nor the addition of `v2` requires any changes or conversion on the
 server side.  They will continue being stored in disk in v1 format as always, with new v2 fields serialized
