@@ -69,10 +69,17 @@ and `StartupProbe`. Example:
 
 This will result in the use of gRPC (using HTTP/2 over TLS) to use the
 standard healthcheck service to determine the health of the
-container. As spec'd, the `kublet` probe will not allow use of client
+container. As spec'd, the `kubelet` probe will not allow use of client
 certificates nor verify the certificate on the container.  We do not
 support other protocols for the time being (unencrypted HTTP/2, QUIC).
 
+Note that `readinessProbe.grpc.service` may be confusing, some
+alternatives:
+
+- `serviceName`
+- `healthCheckServiceName`
+- `grpcService`
+- `grpcServiceName`
 
 These options can be added in Beta with user feedback.
 
