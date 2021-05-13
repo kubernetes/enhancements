@@ -57,6 +57,7 @@ denote sections that are under active debate as follows:
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 ## Release Signoff Checklist
@@ -175,7 +176,7 @@ All HPA APIs to date are forward and backward conversion without loss by seriali
 all unsupported fields to annotations. HPA v2 stable will be the same, verified by unit
 tests.
 
-## Production Readiness Review
+## Production Readiness Review Questionnaire
 <!--
 
 Production readiness reviews are intended to ensure that features merging into
