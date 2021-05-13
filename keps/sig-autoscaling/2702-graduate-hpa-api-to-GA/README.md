@@ -53,12 +53,15 @@ denote sections that are under active debate as follows:
   - [Upgrade/Downgrade Strategy](#upgradedowngrade-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Requirements for migration](#requirements-for-migration)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 ## Release Signoff Checklist
 
@@ -207,6 +210,9 @@ to annotiations.
 However any HPA objects stored in the user's code repository (all your YAML files) must stop using the
 v2beta1 format.  You should migrate all your HPA objects to the v2 format.  See the types.go files or just
 run `kubectl get hpa.v2.autoscaling -oyaml` to see your objects in the v2 format.
+
+### Feature Enablement and Rollback
+N/A
 
 ###### Does enabling the feature change any default behavior?
 
@@ -567,3 +573,7 @@ For each of them, fill in the following information by copying the below templat
 * Container Resource Targets
     * [Proposed](https://github.com/kubernetes/enhancements/blob/master/keps/sig-autoscaling/0001-container-resource-autoscaling.md) on Mar 30, 2020
       (Implementation is pending)
+
+## Drawbacks
+
+## Alternatives
