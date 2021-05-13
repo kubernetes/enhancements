@@ -75,7 +75,7 @@ shrink on underlying volume, but it can fool the quota system in believing
 the user is using less storage than he/she actually is.
 
 To solve this problem - we propose that although users are allowed to reduce size of their
-PVC (as long as requested size >= `pvc.Status.Capacity`), quota calculation
+PVC (as long as requested size > `pvc.Status.Capacity`), quota calculation
 will use `max(pvc.Spec.Capacity, pvc.Status.AllocatedResources)` and reduction in `pvc.Status.AllocatedResources`
 is only done by resize-controller after verifying volume size using `ControllerGetVolume` csi RPC call.
 
@@ -92,7 +92,7 @@ is only done by resize-controller after verifying volume size using `ControllerG
 
 As part of this proposal, we are mainly proposing three changes:
 
-1. Relax API validation on PVC update so as reducing `pvc.Spec.Resoures` is allowed, as long as requested size is `>=pvc.Status.Capacity`.
+1. Relax API validation on PVC update so as reducing `pvc.Spec.Resoures` is allowed, as long as requested size is `>pvc.Status.Capacity`.
 2. Add a new field in PVC API called - `pvc.Status.AllocatedResources` for the purpose of tracking used storage size. By default only api-server or resize-controller can set this field.
 3. Update quota code to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` when evaluating usage for PVC.
 
