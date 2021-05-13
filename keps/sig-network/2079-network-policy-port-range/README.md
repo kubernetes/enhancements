@@ -199,7 +199,7 @@ validation should be done by CNIs.
 
 #### Beta
 - `EndPort` has been supported for at least 1 minor release
-- Four commonly used NetworkPolicy (or CNI providers) implement the new field, 
+- Three commonly used NetworkPolicy (or CNI providers) implement the new field, 
 with generally positive feedback on its usage.
 - Feature Gate is enabled by Default.
 
@@ -220,7 +220,6 @@ start working incorrectly. This is a fail-closed failure, so it is acceptable.
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
@@ -253,7 +252,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **Are there any tests for feature enablement/disablement?**
  
-  No - unit tests will be added later.
+  Yes and they can be found [here](https://github.com/kubernetes/kubernetes/blob/release-1.21/pkg/registry/networking/networkpolicy/strategy_test.go#L284)
 
  ### Rollout, Upgrade and Rollback Planning
 
@@ -266,7 +265,8 @@ _This section must be completed when targeting beta graduation to a release._
   The increase of 5xx http error count on Network Policies Endpoint
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  This will be done.
+  Yes, with unit tests.
+  There's still some need to make manual tests, that will be done in a follow up.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
   None
@@ -280,13 +280,25 @@ _This section must be completed when targeting beta graduation to a release._
   an object specifying the range and validating if the traffic is allowed within 
   the specified range
 
+* **How can someone using this feature know that it is working for their instance?
+  - [x] Other
+   - Details:
+      The API Field must be present when a NetworkPolicy is created with that field.
+      The feature working correctly depends on the CNI implementation, so the operator can
+      look into CNI metrics to check if the rules are being applied correctly, like Calico 
+      that provides metrics like `felix_iptables_restore_errors` that can be used to 
+      verify if the amount of restoring errors raised after the feature being applied.
+      We might need in a future to add some Status field that allows CNI providers to provide
+      feedback about the functionality
+ 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  Operators would need to monitor the traffic of the Pods to verify if a 
-  specified port range is applied and allowed in their workloads
+  Operators can use metrics provided by the CNI to use as SLI, like 
+  `felix_iptables_restore_errors` from Calico to verify if the errors rate
+  has raised.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
- N/A
+ - per-day percentage of API calls finishing with 5XX errors <= 1% is a reasonable SLO
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
@@ -296,18 +308,10 @@ of this feature?**
 ### Dependencies
 
 * **Does this feature depend on any specific services running in the cluster?**
-  No
+  Yes, a CNI supporting the new feature 
 
 
 ### Scalability
-
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
   No
@@ -337,8 +341,6 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 ### Troubleshooting
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How does this feature react if the API server and/or etcd is unavailable?**
   As this feature is mainly used by CNI providers, the reaction with API server 
   and/or etcd being unavailable will be the same as before.
@@ -347,9 +349,11 @@ _This section must be completed when targeting beta graduation to a release._
   N/A
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
-  N/A
+  Remove EndPort field and check if the number of errors reduce, although this might 
+  lead to undesired Network Policy, blocking previously working rules. 
 
 ## Implementation History
+- 2021-05-11 Propose Beta graduation and add more Performance Review data
 - 2020-10-08 Initial [KEP PR](https://github.com/kubernetes/enhancements/pull/2079)
 
 ## Drawbacks
