@@ -105,27 +105,31 @@ type Handler struct {
   // ...
   TCPSocket *TCPSocketAction `json...`
 
-  // GRPC specifies an action involving a TCP port.          //+
-  // +optional                                               //+
-  GRPC *GRPCAction `json...`                                 //+
+  // GRPC specifies an action involving a TCP port. //+
+  // +optional                                      //+
+  GRPC *GRPCAction `json...`                        //+
 
   // ...
 }
 
-type GRPCAction struct {
-  // Port number of the gRPC service. Number must be in the range 1 to 65535.
-  Port int `json:"port" protobuf:"bytes,1,opt,name=port"`
-
-  // Service is the name of the service to place in the gRPC HealthCheckRequest
-  // (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-  //
-  // The service name can be the empty string (i.e. "").
-  Service string `json:"service" protobuf:"bytes,2,opt,name=service"`
-
-  // Host is the host name to connect to, defaults to the Pod's IP.
-  Host string `json,omitempty", protobuf:"bytes,3,opt,name=host"`
-}
+type GRPCAction struct {                                                         //+
+  // Port number of the gRPC service. Number must be in the range 1 to 65535.    //+
+  Port int32 `json:"port" protobuf:"bytes,1,opt,name=port"`                      //+
+                                                                                 //+
+  // Service is the name of the service to place in the gRPC HealthCheckRequest  //+
+  // (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).      //+
+  //                                                                             //+
+  // The service name can be the empty string (i.e. "").                         //+
+  Service string `json:"service" protobuf:"bytes,2,opt,name=service"`            //+
+                                                                                 //+
+  // Host is the host name to connect to, defaults to the Pod's IP.              //+
+  Host string `json,omitempty", protobuf:"bytes,3,opt,name=host"`                //+
+}                                                                                //+
 ```
+
+Note that `GRPCAction.Port` is an int32, which is inconsistent with
+the other existing probe definitions. This is on purpose -- we want to
+move users away from using the (portNum, portName) union type.
 
 ### Test Plan
 
@@ -206,7 +210,8 @@ Pick one of these and delete the rest.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `GRPCContainerProbe`
-  - Components depending on the feature gate: `kubelet`
+  - Components depending on the feature gate: `kubelet` (probing), API
+    server (API changes).
 
 ###### Does enabling the feature change any default behavior?
 
@@ -214,15 +219,18 @@ No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes.
+Yes. This would require restarting kubelet, and so probes for existing
+Pods would no longer run.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-It becomes enabled.
+It becomes enabled again after the `kubelet` restart.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, alpha.
+Y
+es, unit tests for the feature when enabled and disabled will be
+implemented in both kubelet and api server.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -291,10 +299,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 ->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -437,6 +445,7 @@ Major milestones might include:
 * Original PR for k8 Prober: https://github.com/kubernetes/kubernetes/pull/89832
 * 2020-04-04: MR for k8 Prober
 * 2021-05-12: Cloned to this KEP to move the probe forward.
+* 2021-05-13: Updates.
 
 ## Alternatives
 
