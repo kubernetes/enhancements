@@ -163,9 +163,9 @@ For users to force delete the secret, users need to do either:
     ```
     kubectl patch secret/secret-to-be-deleted -p '{"metadata":{"finalizers":[]}}' --type=merge
     ```
-2. add `secret.kubernetes.io/disable-protection: "yes"` annotation to opt-out this feature per secret
+2. add `secret.kubernetes.io/skip-secret-protection: "yes"` annotation to opt-out this feature per secret
 
-Annotation will more user friendly than directly deleting finalizer. However, it can't be used in the case that this feature is once enabled and disabled later by deleting the controller. For this case, it may be needed to provide a script to delete the finalizer on all the secret.
+Annotation will be more user friendly than directly deleting finalizer. However, it can't be used in the case that this feature is once enabled and disabled later by deleting the controller. For this case, it may be needed to provide a script to delete the finalizer on all the secrets.
 
 ### Test Plan
 
@@ -233,8 +233,8 @@ enhancement:
     - If the `secret-protection-controller` exists and the feature is disabled, `kubernetes.io/secret-protection` finalizer will always be deleted, therefore no additional user operation will be needed,
     - If the `secret-protection-volumesnapshot-controller` exists and the feature is disabled, `snapshot.storage.kubernetes.io/secret-protection` finalizer will always be deleted, therefore no additional user operation will be needed,
   - Downgraded to no controller case:
-    - If no `secret-protection-controller` exists but `kubernetes.io/secret-protection` finalizer is added to the secrets, no one remove the finalizer. Therefore, user needs to remove the `kubernetes.io/secret-protection` finalizer from all the secrets manually.
-    - If no `secret-protection-volumesnapshot-controller` exists but `snapshot.storage.kubernetes.io/secret-protection` finalizer is added to the secrets, no one remove the finalizer. Therefore, user needs to remove the `kubernetes.io/secret-protection` finalizer from all the secrets manually.
+    - If no `secret-protection-controller` exists but `kubernetes.io/secret-protection` finalizer is added to the secrets, no one removes the finalizer. Therefore, user needs to remove the `kubernetes.io/secret-protection` finalizer from all the secrets manually.
+    - If no `secret-protection-volumesnapshot-controller` exists but `snapshot.storage.kubernetes.io/secret-protection` finalizer is added to the secrets, no one removes the finalizer. Therefore, user needs to remove the `kubernetes.io/secret-protection` finalizer from all the secrets manually.
 
 ### Version Skew Strategy
 
@@ -276,6 +276,8 @@ you need any help or guidance.
     - kube-controller-manager
     - secret-protection-controller (part of kube-controller-manager)
     - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
+
+Secret protection for volume snapshot will be enabled when those relevant out-of-tree controllers are deployed, but no feature gate is needed.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -408,7 +410,7 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 - API type(s): Secret
-- Estimated increase in size: the size of `kubernetes.io/secret-protection` finalizer, `snapshot.storage.kubernetes.io/secret-protection` finalizer, and `secret.kubernetes.io/disable-protection` annotation per secret
+- Estimated increase in size: the size of `kubernetes.io/secret-protection` finalizer, `snapshot.storage.kubernetes.io/secret-protection` finalizer, and `secret.kubernetes.io/skip-secret-protection` annotation per secret
 - Estimated amount of new objects: N/A
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
