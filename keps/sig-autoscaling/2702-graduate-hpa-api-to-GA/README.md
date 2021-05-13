@@ -262,7 +262,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-All HPA objects are stored in v1 format on disk. They are up converted the requested version. And down converted upon update.
+All HPA objects are stored in v1 format on disk. They are up converted the requested version and down converted upon update.
+The document on how to run [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) includes
+quite a bit of background,algorithm details, and some good [operator notes](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-metrics-apis).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -400,7 +402,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
-No
+No, not in comparison to using the existing v2beta2 APIs, but of course using HPA results in new API calls as described above.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
