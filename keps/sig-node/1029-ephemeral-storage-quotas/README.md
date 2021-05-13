@@ -797,6 +797,7 @@ Yes.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 LocalStorageCapacityIsolationFSQuotaMonitoring should be turned on only if LocalStorageCapacityIsolation is enabled as well.
+If LocalStorageCapacityIsolationFSQuotaMonitoring is turned on but LocalStorageCapacityIsolation is false, the check will be skipped.
 
 ### Monitoring Requirements
 
@@ -813,8 +814,7 @@ the health of the service?**
   - N/A.
 
 * **Are there any missing metrics that would be useful to have to improve observability of this feature? **
-  - No.
-
+  - Yes, there is a kubelet metrics `kubelet_evictions{eviction_signal="ephemeralpodfs.limit"}`([ALPHA] Cumulative number of pod evictions by eviction signal).
 
 ### Dependencies
 * **Does this feature depend on any specific services running in the cluster? **
