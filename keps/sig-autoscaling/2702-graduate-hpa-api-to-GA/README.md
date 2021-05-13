@@ -421,7 +421,10 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
-
+Configuring custom metrics (the difference from v1 to v2) will result in API calls to the installed custom metrics adapter
+and the backing metrics store (which might be hosted in the cloud provider). These calls will happen every 15 seconds
+for each configured metric. Targets of type Value will retrieve for a single metric.
+Targets of type AverageValue will retrieve a metric for each pod.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -469,6 +472,12 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+If the API server or etcd are not available the HPA will not reconcile the scale subresource to the target metrics.
+This feature depends on other APIs served not from etcd but Metrics Server and custom metrics adapters.
+These are referenced in another section for monitoring to keep them alive. When one of the metrics is unavailable
+(e.g. a custom metric along side a resource metric) the HPA will continue to scale up if the other metric indicates
+to do so,this is for safety. However if one of the metrics is unavailable the HPA will not scale down
+in case the unavailable metric would have prevented a scale down. This is again for safety.
 
 ###### What are other known failure modes?
 
