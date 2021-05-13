@@ -84,33 +84,15 @@ func (r *Repo) Validate() (
 		return warnings, valErrMap, errors.New("must find more than zero KEPs")
 	}
 
-	kepHandler, prrHandler := r.KEPHandler, r.PRRHandler
 	prrDir := r.PRRApprovalPath
 	logrus.Infof("PRR directory: %s", prrDir)
 
 	for _, filename := range files {
-		kepFile, err := os.Open(filename)
-		if err != nil {
-			return warnings, valErrMap, errors.Wrapf(err, "could not open file %s", filename)
-		}
-
-		defer kepFile.Close()
-
-		logrus.Infof("parsing %s", filename)
-		kep, kepParseErr := kepHandler.Parse(kepFile)
-		if kepParseErr != nil {
-			return warnings, valErrMap, errors.Wrap(kepParseErr, "parsing KEP file")
-		}
-		kep.Filename = filename
-
-		// TODO: This shouldn't be required once we push the errors into the
-		//       parser struct
-		if kep.Error != nil {
-			return warnings, valErrMap, errors.Wrapf(kep.Error, "%v has an error", filename)
-		}
-
-		err = kepval.ValidatePRR(kep, prrHandler, prrDir)
-		if err != nil {
+		if err := validateFile(r, prrDir, filename); err != nil {
+			fvErr := &fatalValidationError{}
+			if errors.As(err, fvErr) {
+				return warnings, valErrMap, err
+			}
 			valErrMap[filename] = append(valErrMap[filename], err)
 		}
 	}
@@ -118,7 +100,6 @@ func (r *Repo) Validate() (
 	if len(valErrMap) > 0 {
 		for filename, errs := range valErrMap {
 			logrus.Infof("the following PRR validation errors occurred in %s:", filename)
-
 			for _, e := range errs {
 				logrus.Infof("%v", e)
 			}
@@ -126,4 +107,36 @@ func (r *Repo) Validate() (
 	}
 
 	return warnings, valErrMap, nil
+}
+
+// fatalValidationError will short-circuit KEP parsing and return early.
+type fatalValidationError struct{ Err error }
+
+func (e fatalValidationError) Error() string { return e.Err.Error() }
+func (e fatalValidationError) Unwrap() error { return e.Err }
+
+// validateFile runs a validation and returns an error if validation fails.
+// fatalValidationError will be returned if further parsing should be stopped.
+func validateFile(r *Repo, prrDir, filename string) error {
+	kepFile, err := os.Open(filename)
+	if err != nil {
+		return &fatalValidationError{Err: errors.Wrapf(err, "could not open file %s", filename)}
+	}
+	defer kepFile.Close()
+
+	logrus.Infof("parsing %s", filename)
+	kepHandler, prrHandler := r.KEPHandler, r.PRRHandler
+	kep, kepParseErr := kepHandler.Parse(kepFile)
+	if kepParseErr != nil {
+		return errors.Wrap(kepParseErr, "parsing KEP file")
+	}
+	kep.Filename = filename
+
+	// TODO: This shouldn't be required once we push the errors into the
+	//       parser struct
+	if kep.Error != nil {
+		return &fatalValidationError{Err: errors.Wrapf(kep.Error, "%v has an error", filename)}
+	}
+
+	return kepval.ValidatePRR(kep, prrHandler, prrDir)
 }
