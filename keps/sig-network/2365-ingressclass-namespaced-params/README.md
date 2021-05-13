@@ -40,8 +40,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
@@ -194,7 +194,9 @@ See unit tests above.
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  N/A
+  Users can check if the `Scope` and `Namespace` fields are set on IngressClass
+  resources. These fields being set do not guarantee that the controller responsible
+  for the class is using them or not.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -251,6 +253,8 @@ See unit tests above.
 ## Implementation History
 
 - January 28, 2021: KEP written
+- March 6, 2020: [PR](https://github.com/kubernetes/kubernetes/pull/99275) adding
+  the feature merged in alpha state in v1.21
 
 ## Drawbacks
 
