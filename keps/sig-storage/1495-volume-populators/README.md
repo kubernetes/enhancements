@@ -146,12 +146,12 @@ way. In particular:
 1. If `DataSource` is set invalid and `DataSourceRef` is set; reject
 1. If `DataSource` is not set and `DataSourceRef` is set invalid (any core object other
    than PVC); reject
-1. If `DataSource` is not set and `DataSourceRef` is set PVC or VolumeSnapshot; set
-   `DataSource` from `DataSourceRef` and accept
-1. If `DataSource` is not set and `DataSourceRef` is set some other valid value (not
-   core object and not VolumeSnapshot); leave `DataSource` unset and accept
-   
-The last case is the one that enables using new types of data sources. Existing data
+1. If `DataSource` is not set and `DataSourceRef` is set valid (PVC or any non-core
+   object); set `DataSource` from `DataSourceRef` and accept
+
+Note that in the last case, we allow setting the CRD data sources, which enables
+volume populators to work. This is the only way that the `DataSource` field could get
+filled in with something not currently valid, like a CRD. Existing data
 sources continue to work, either through the old interface or the new interface. New
 data sources only work through the new interface, and additional validation is
 performed after the PVC is created.
@@ -327,7 +327,7 @@ situations outlined above, focusing especially on backwards compatibility.
 - Create PVC with `DataSource` is not set and `DataSourceRef` is set to Pod, expect error
 - Create PVC with `DataSource` is not set and `DataSourceRef` is set to PVC; expect success and `DataSource` contains PVC
 - Create PVC with `DataSource` is not set and `DataSourceRef` is set to VolumeSnapshot; expect success and `DataSource` contains VolumeSnapshot
-- Create PVC with `DataSource` is not set and `DataSourceRef` is set to CRD; expect success and `DataSource` empty
+- Create PVC with `DataSource` is not set and `DataSourceRef` is set to CRD; expect success and `DataSource` contains CRD
 
 To test the `volume-data-source-validator`, we need to check the following cases:
 - Creation of a PVC with no `DataSourceRef` causes no events.
@@ -395,14 +395,17 @@ _This section must be completed when targeting alpha to a release._
 * **Does enabling the feature change any default behavior?**
   A new field is introduced on PVCs, but existing clients can safely ignore it.
   New clients that use the new field can cause PVCs to be created which can be
-  used by volume populators.
+  used by volume populators. Clients using the new field can cause the existing
+  `DataSource` field to contain values not otherwise possible, but clients
+  already cope with this by ignore unknown values, which is exactly the intended
+  behvior.
   
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
   Yes, dropping or ignoring the new field returns the system to it's previous
   state. Worst case, some PVCs which were trying to use the new field might need
   to be deleted because they will never have anything happen to them after the
-  feature is disaabled.
+  feature is disabled.
   
 * **What happens if we reenable the feature if it was previously rolled back?**
   As long as the alpha field was not dropped, things will go back to how they
