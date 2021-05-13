@@ -106,7 +106,7 @@ We however do have a problem with quota calculation because if a previously issu
 To solve aforementioned problem - we propose that, a new field will be added to PVC, called `pvc.Status.AllocatedResources`. When a PVC is created - this field defaults to `pvc.Spec.Resources` but when user expands the PVC,
 and when expansion-controller starts volume expansion - it will set `pvc.Status.AllocatedResources` to user requested value in `pvc.Spec.Resources` before performing expansion. The quota calculation will be updated to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` which will ensure that abusing quota will not be possible.
 
-When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Status.AllocatedResources` to lower value (thereby giving quota back to the user) - only if current actual size of volume is less than or equal to `pvc.Spec.Resources` after entire control-plane and node side expansion is finished. It will fetch actual size of the volume by using `ControllerGetVolume` CSI RPC call. It is possible to track completion of resizing operation in external-resizer via function - https://github.com/kubernetes-csi/external-resizer/blob/master/pkg/controller/controller.go#L394.
+When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Status.AllocatedResources` to lower value (thereby giving quota back to the user) - only if current actual size of volume is less than or equal to `pvc.Spec.Resources` after entire control-plane and node side expansion is successfully finished. It will fetch actual size of the volume by using `ControllerGetVolume` CSI RPC call. It is possible to track completion of resizing operation in external-resizer via function - https://github.com/kubernetes-csi/external-resizer/blob/master/pkg/controller/controller.go#L394.
 
 If CSI driver does not have `GET_VOLUME` controller capability(or `ControllerGetVolume` does not report volume size) and `pvc.Spec.Resources` < `pvc.Status.AllocatedResources` (i.e user is attempting to reduce size of a volume that expansion controller previously tried to expand) - then although expansion-controller will try volume expansion with value in `pvc.Spec.Resources` - it will not reduce reported value in `pvc.Status.AllocatedResources`, which will result in no quota being restored to the user. In other words - for CSI drivers that don't have `GET_VOLUME` controller capability - `pvc.Status.AllocatedResources` will report highest requested value and reducing `pvc.Spec.Resources` will not result in reduction of used quota.
 
@@ -163,7 +163,9 @@ If CSI driver does not have `GET_VOLUME` controller capability(or `ControllerGet
 
 ### Risks and Mitigations
 
+- Once expansion is initiated, the lowering of requested size is only allowed upto a value *greater* than `pvc.Status`. It is not possible to entirely go back to previously requested size. This should not be a problem however in-practice because user can retry expansion with slightly higher value than `pvc.Status` and still recover from previously failing expansion request.
 - One risk as mentioned above is, if expansion failed and user retried expansion(successfully) with smaller value, the quota code will keep reporting higher value unless CSI driver in question has `GET_VOLUME` controller capability and `ControllerGetVolume` actually reports real size of the underlying volume.
+
 
 ## Graduation Criteria
 
