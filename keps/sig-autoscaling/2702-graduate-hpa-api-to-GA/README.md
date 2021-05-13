@@ -1,5 +1,39 @@
 # Graduate v2beta2 Autoscaling API to GA
 
+**Note:** When your KEP is complete, all of these comment blocks should be removed.
+
+To get started with this template:
+
+- [ x ] **Pick a hosting SIG.**
+  Make sure that the problem space is something the SIG is interested in taking
+  up. KEPs should not be checked in without a sponsoring SIG.
+- [ x ] **Create an issue in kubernetes/enhancements**
+  When filing an enhancement tracking issue, please make sure to complete all
+  fields in that template. One of the fields asks for a link to the KEP. You
+  can leave that blank until this KEP is filed, and then go back to the
+  enhancement and add the link.
+- [ ] **Make a copy of this template directory.**
+  Copy this template into the owning SIG's directory and name it
+  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
+  leading-zero padding) assigned to your enhancement above.
+- [ ] **Fill out as much of the kep.yaml file as you can.**
+  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
+  "Status", and date-related fields.
+- [ x ] **Fill out this file as best you can.**
+  At minimum, you should fill in the "Summary" and "Motivation" sections.
+  These should be easy if you've preflighted the idea of the KEP with the
+  appropriate SIG(s).
+- [ ] **Create a PR for this KEP.**
+  Assign it to people in the SIG who are sponsoring this process.
+- [ ] **Merge early and iterate.**
+  Avoid getting hung up on specific details and instead aim to get the goals of
+  the KEP clarified and merged quickly. The best way to do this is to just
+  start with the high-level sections and fill out details incrementally in
+  subsequent PRs.
+
+Just because a KEP is merged does not mean it is complete or approved. Any KEP
+marked as `provisional` is a working document and subject to change. You can
+denote sections that are under active debate as follows:
 ## Table of Contents
 
 <!-- toc -->
@@ -30,7 +64,11 @@
 This document outlines required steps to graduate autoscaling v2beta2 API to GA.
 
 ## Motivation
-
+The HPA v2 series APIs were first introduced in November, 2016 (5 years ago).
+The primary feature of the v2 series is adding support for multiple and custom metrics. The structure was improved
+slightly in the v2beta2 API which became available in May 2018 and has remained largely unchanged since then.
+The v2beta2 API has been used extensively and informally treated as stable.
+The motivation for this KEP is to push it over the line to make it formally so.
 
 ### Goals
 
@@ -84,9 +122,8 @@ The following code changes must be made for graduating to GA
 
 * Move API objects to `v2` and support conversion internally
 
-The following code changes must be made to take <TBD> GA
+* Add behavior and container target E2E tests.
 
-* TBD
 
 ### Version Skew Strategy
 
@@ -143,6 +180,12 @@ feature, can it break the existing applications?).
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+The feature can be enabled by adding `autoscaling/v2` to the `--runtime-config` flag:
+https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/staging/src/k8s.io/apiserver/pkg/server/options/api_enablement.go#L45
+
+Adding `api/all` will also include `autoscaling/v2`.
+
+The feature can be disabled by removing the `--runtime-config` entry.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -199,6 +242,18 @@ Even if applying deprecation policies, they may still surprise some users.
 <!--
 This section must be completed when targeting beta to a release.
 -->
+The HPA requires the `metrics.k8s.io` APIs to be available in the cluster to operate. This API is served by the
+Metrics Server. An operator can verify the Metrics Server is available to provide resource metrics to the HPA by running
+the command `kubectl get apiservices` and looking for the status of `v1beta1.metrics.k8s.io` (version subject to change).
+Operators should take care to make sure Metrics Server is up and running to maintain resource autoscaling.
+
+The v2 HPA requires the `custom.metrics.k8s.io` and `external.metrics.k8s.io` APIs as well to retrieve custom and
+external metrics. There is no default implementation of these APIs and cluster operators must install an "adapter" for
+their metrics backend (e.g. [Prometheus](https://github.com/kubernetes-sigs/prometheus-adapter)).
+
+An operator can verify the adapter is working properly by running the same kubectl for apiservices and looking for the
+`v1beta1.custom.metrics.k8s.io` and `v1beta1.external.metrics.k8s.io` APIs (usually served by the same adapter).
+Care should be taken to ensure the adapter and specific metrics backend is available to maintain custom metric autoscaling.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -207,6 +262,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+All HPA objects are stored in v1 format on disk. They are up converted the requested version. And down converted upon update.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -219,13 +275,28 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
+- [ x ] Events
   - Event Reason: 
-- [ ] API .status
+  The event type `Normal`, reason `SuccessfulRescale`, note `New size: N; reason: FOO` indicates autoscaling is operating normally.
+  Abnormal events type `Warning` include reasons such as `FailedRescale` and `FailedComputeMetricsReplicas` and
+  will include details about the error in the note.
+- [ x ] API .status
   - Condition name: 
+  There are three condition types which indicate the operating status of the HPA.  They are `ScalingEnabled`, `AbleToScale`
+  and `ScalingLimited` (see type [comments](https://pkg.go.dev/k8s.io/api/autoscaling/v2beta2#HorizontalPodAutoscalerConditionType))
+  Under normal operating circumstances `ScalingEnabled` and `AbleToScale` should be status `true`, indicating the HPA is
+  successfully reconciling the scale. `ScalingLimited` indicates user configuration is limiting the "ideal" scale with a
+  minimum, maximum, rate or delay. Which limit is the cause will be indicated in the message.
+  It's normal for this to be `true` or `false` periodically.
   - Other field: 
-- [ ] Other (treat as last resort)
+- [ x ] Other (treat as last resort)
   - Details:
+  The HPA status includes the current observed metric values, one for each given target. Using these
+  values an operator can verify the HPA is maintaining the desired target for the dominant metric.
+  The operator can also see the number of pods the HPA observed under `status.currentReplicas` and the most
+  recent recommendation under `status.desiredReplicas`.
+  The latest observed generation is echoed back in status so an operator can verify the HPA is keeping up-to-date
+  with configuration changes.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -298,6 +369,22 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+The HPA v2 APIs allow users to configure multiple metrics, each with a separate target. A recommendation is calculated
+for each metric and the largest recommendation is used.  The more metrics are added to a given HPA the longer it will
+take to reconcile. The HPA is single-threaded processing recommendations one-at-a-time. When default reconciliation
+period is 15 seconds.  If there is too much work to do reconciliation will slow down and happen less frequently than
+every 15 seconds.  This will cause autoscaling to be less responsive at high scale.
+
+Previously v1 scaled along two dimensions, number of HPA and number of pods selected by each HPA (linearly).
+Now it will scale with the number of metrics defined in HPAs and the number of pods selected each metric (linearly).
+
+Additionally, v2 adds a behavior structure which allows the user configure that rate and delay of scaling and down.
+Enforcing these constraints require storing previous recommendations and scaling events in memory. The longer the
+configured interval the more memory is used. The maximum window allows is 60 minutes ([code](https://pkg.go.dev/k8s.io/api/autoscaling/v2beta2#HPAScalingRules))
+so 240 recommendations / events per configured metric. Each recommendation is an `int32` and `time.Time`.
+Each scaling event is an `int32`, a `time.Time` and a `bool` ([code](https://pkg.go.dev/k8s.io/api/autoscaling/v2beta2#HPAScalingRules))
+so the memory footprint is relatively small.
+It will scale linearly with the number of metrics defined and the size of the HPA's configured window.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -323,6 +410,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+Yes.  It will introduce the new autoscaling/v2 API types.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -394,9 +482,6 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
-
-###### What steps should be taken if SLOs are not being met to determine the problem?
-
 
 ## Implementation History
 
