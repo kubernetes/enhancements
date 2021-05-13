@@ -366,19 +366,6 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
-
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
