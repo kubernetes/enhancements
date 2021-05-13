@@ -156,7 +156,7 @@ It is due to the restriction that CRDs can't be handled from in-tree controller.
   - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be always added on creation of the secret by using snapshot controller,
   - After the secret is requested to be deleted (`deletionTimestamp` is set), the `snapshot.storage.kubernetes.io/secret-protection` finalizer will be deleted by newly introduced out-of-tree `secret-protection-volumesnapshot-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
 
-Feature gate `SecretInUseProtection` is used only for in-tree controller. Out-of-tree controller will be always enabled when the `secret-protection-volumesnapshot-controller` is deployed.
+Feature gate `SecretInUseProtection` is used only for in-tree controller. Out-of-tree controller will be enabled when the `secret-protection-volumesnapshot-controller` is deployed with `--secret-protection=enabled` flag.
 
 For users to force delete the secret, users need to do either:
 1. manually delete the finalizer, by below command:
@@ -180,12 +180,18 @@ Annotation will be more user friendly than directly deleting finalizer. However,
       - Verify that secret used by a CSI PV as controllerExpandSecret is not removed immediately
       - Verify that secret used by a CSI PV as provisionerSecret is not removed immediately
       - Verify that secret used by a CSI PV as provisionerSecret via template is not removed immediately
-      - Verify that secret used by a VolumeSnapshot is not removed immediately
-      - Verify that secret used by a VolumeSnapshot as snapshotterSecret via template is not removed immediately
     - SecretInUseProtection disabled:
       - Verify immediate deletion of a secret that is not used
       - Verify immediate deletion of a secret that is used by a Pod
       - Verify immediate deletion of a secret with finalizer that is used by a Pod
+    - `--secret-protection=enabled`:
+      - Verify immediate deletion of a secret that is not used
+      - Verify that secret used by a VolumeSnapshot is not removed immediately
+      - Verify that secret used by a VolumeSnapshot as snapshotterSecret via template is not removed immediately
+    - `--secret-protection=disabled`:
+      - Verify immediate deletion of a secret that is not used
+      - Verify immediate deletion of a secret used by a VolumeSnapshot
+      - Verify immediate deletion of a secret used by a VolumeSnapshot as snapshotterSecret via template
   - e2e tests:
     - Verify immediate deletion of a secret that is not used
     - Verify that secret used by a Pod is not removed immediately
@@ -278,7 +284,7 @@ you need any help or guidance.
     - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
 
 Secret protection controllers for in-tree are deployed automatically, if the Kubernetes version is later than the version where secret protection feature is marked as alpha.
-Secret protection for volume snapshot will be enabled when those relevant out-of-tree controllers are deployed, but no feature gate is needed.
+Secret protection for volume snapshot will be enabled when those relevant out-of-tree controllers are deployed with `--secret-protection=enabled`, but no feature gate is needed.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -296,8 +302,11 @@ Yes. Detailed steps are as follows:
     1. Disable the `SecretInUseProtection` feature gate.
 
 - Out-of-tree controller:
-  1. Delete the out-of-tree secret protection controller,
-  2. Manually delete the `snapshot.storage.kubernetes.io/secret-protection` finalizer from all the secrets.
+  - Recommended method:
+    1. Redeploy out-of-tree controllers with `--secret-protection=disabled`
+  - Alternative method:
+    1. Delete the out-of-tree secret protection controller,
+    2. Manually delete the `snapshot.storage.kubernetes.io/secret-protection` finalizer from all the secrets.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
