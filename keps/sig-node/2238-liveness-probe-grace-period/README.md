@@ -8,15 +8,13 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Configuration example](#configuration-example)
-  - [User Stories (Optional)](#user-stories-optional)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
-    - [Graduation](#graduation)
+    - [Alpha (1.21)](#alpha-121)
+    - [Beta (1.22)](#beta-122)
+    - [Graduation (1.25)](#graduation-125)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -29,7 +27,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -43,9 +40,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -140,12 +137,6 @@ spec:
       terminationGracePeriodSeconds: 60
 ```
 
-### User Stories (Optional)
-
-N/A - bugfix
-
-### Notes/Constraints/Caveats (Optional)
-
 ### Risks and Mitigations
 
 This should be a low-risk API change as it is backwards-compatible. If the
@@ -192,21 +183,27 @@ quickly.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Alpha (1.21)
 
 - New probe field, `terminationGracePeriodSeconds`, is implemented and
   available behind a feature flag.
 - Appropriate tests are written.
 
+#### Beta (1.22)
+
+- Feature flag will default to off.
+- Remove feature gate from [kubelet](https://github.com/kubernetes/kubernetes/pull/99375#issuecomment-794680869).
+- Ensure that when feature gate is off in API server, probe-level
+  `TerminationGracePeriodSeconds` is blanked out.
+- Add validation to ensure `terminationGracePeriodSeconds` is non-negative.
+- Feature flag is defaulted to on after kube-apiserver is +2 versions of the
+  kubelet having the support (1.24).
+
 _Below graduation criteria are tentative._
 
-#### Beta
+#### Graduation (1.25)
 
-- Feature flag is defaulted on.
-
-#### Graduation
-
-- Feature flag is removed, feature is graduated.
+- Feature flag is removed, feature is graduated (1.25).
 
 ### Upgrade / Downgrade Strategy
 
@@ -245,7 +242,11 @@ enhancement:
 n-2 kubelet without this feature will default to the old behaviour, using the
 pod-level `terminationGracePeriodSeconds`.
 
-Only when feature gate is enabled for all components will we use the new field.
+Feature gate will be removed from kubelet in 1.22, ensuring support for n-2
+version skew on a 1.24+ API server.
+
+Only when feature gate is enabled for all components will we use the new field,
+so we delay defaulting the feature flag on until then.
 
 ## Production Readiness Review Questionnaire
 
@@ -299,7 +300,8 @@ _This section must be completed when targeting alpha to a release._
   Describe the consequences on existing workloads (e.g., if this is a runtime
   feature, can it break the existing applications?).
 
-  Yes: disable feature flag.
+  Yes: disable feature flag. API server will blank out values if it is set in
+  etcd while feature flag is disabled.
 
   While feature flag is enabled, the feature can also be disabled by unsetting
   the field on the Probe specification, which will restore the default
@@ -329,16 +331,33 @@ _This section must be completed when targeting beta graduation to a release._
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
 
+  This change is purely additive. Already-running workloads on a node will not
+  have this field set.
+
 * **What specific metrics should inform a rollback?**
+
+  Increases in error rates on shutdowns initiated by probes; unexpected
+  shutdown times for pods with containers that have probes configured.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
 
+  For the API server, rollback can be tested by:
+
+  - Turning on the feature flag
+  - Creating a workload with the field
+  - Disabling the feature flag
+
+  We will remove the feature flag from the kubelet for beta to avoid worrying
+  about the n-2 skew case.
+
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
+
+  No.
 
 ### Monitoring Requirements
 
@@ -349,10 +368,15 @@ _This section must be completed when targeting beta graduation to a release._
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
 
+  On kube-api-server: `ProbeTerminationGracePeriod` is turned on.
+
+  On individual workloads: a probe-level `TerminationGracePeriodSeconds` value
+  is set.
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+  - [X] Metrics
+    - Metric name: existing cluster metrics for measuring container shutdown time and errors
     - [Optional] Aggregation method:
     - Components exposing the metric:
   - [ ] Other (treat as last resort)
@@ -367,10 +391,16 @@ the health of the service?**
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 
+  A cluster administrator could set SLO targets for pod shutdown latency due to
+  probe failure, as well as error rates on pod shutdown due to probe failure.
+
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
+
+  I believe this should be covered by existing metrics. Adding new metrics for
+  this should not be in scope.
 
 ### Dependencies
 
@@ -390,6 +420,7 @@ _This section must be completed when targeting beta graduation to a release._
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 
+  N/A.
 
 ### Scalability
 
@@ -464,6 +495,9 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  Kubelet will already have cached/watched the pod spec. There will not be new
+  failure modes for the kubelet responding to API server/etcd unavailability.
+
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
@@ -476,7 +510,16 @@ _This section must be completed when targeting beta graduation to a release._
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 
+  Cluster administrators can monitor this by checking kubelet logs, which note
+  grace periods on pod termination. Application developers can monitor this by
+  observing shutdown behaviour of their pods for probe failures and for normal
+  shutdown events.
+
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  Application developers have the option of unsetting the pod-level
+  `TerminationGracePeriodSeconds` for their application. Cluster-wide, the
+  feature gate could be disabled for the API server.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -484,6 +527,8 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 - 2021-01-07: Initial draft KEP
+- 2021-03-11: Alpha implementation
+  ([kubernetes/kubernetes#99375](https://github.com/kubernetes/kubernetes/pull/99375))
 
 ## Drawbacks
 
@@ -532,11 +577,3 @@ Introduce a similar field, but at the pod-level, next to the existing field.
 - PRO: similar values are grouped together
 - CON: logically, liveness probes operate on a per-container basis, and thus we
   may need different thresholds for different containers
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
