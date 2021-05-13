@@ -145,11 +145,11 @@ will in turn proxy the connection back to the client.
 3. release **1.20**
    1. `--redirect-container-streaming` can no longer be enabled. If the flag is set, log an error
       and continue as though it is unset.
-4. release **1.21** _(extra safe alternative: 1.22)_
+4. release **1.22** 
    1. Default `StreamingProxyRedirects` to disabled. If there is a >= 2 version skew between master
       and nodes, and the old nodes were enabling `--redirect-container-streaming`, this **will break
       them**. In this case, the `StreamingProxyRedirects` can still be manually enabled.
-5. release **1.22** _(extra safe alternative: 1.24)_
+5. release **1.24**
    1. Remove the `--redirect-container-streaming` flag.
    2. Remove the `StreamingProxyRedirects` feature.
 
