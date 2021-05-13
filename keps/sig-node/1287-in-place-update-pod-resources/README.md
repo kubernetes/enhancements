@@ -3,6 +3,7 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -13,6 +14,8 @@
     - [Container Resize Policy](#container-resize-policy)
     - [Resize Status](#resize-status)
     - [CRI Changes](#cri-changes)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
   - [Kubelet and API Server Interaction](#kubelet-and-api-server-interaction)
     - [Kubelet Restart Tolerance](#kubelet-restart-tolerance)
   - [Scheduler and API Server Interaction](#scheduler-and-api-server-interaction)
@@ -22,19 +25,71 @@
     - [Notes](#notes)
   - [Affected Components](#affected-components)
   - [Future Enhancements](#future-enhancements)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Test Plan](#test-plan)
-  - [Unit Tests](#unit-tests)
-  - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
-  - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
-  - [Resize Policy Tests](#resize-policy-tests)
-  - [Backward Compatibility and Negative Tests](#backward-compatibility-and-negative-tests)
-- [Graduation Criteria](#graduation-criteria)
-  - [Alpha](#alpha)
-  - [Beta](#beta)
-  - [Stable](#stable)
+  - [Test Plan](#test-plan)
+    - [Unit Tests](#unit-tests)
+    - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
+    - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
+    - [Resize Policy Tests](#resize-policy-tests)
+    - [Backward Compatibility and Negative Tests](#backward-compatibility-and-negative-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Stable](#stable)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -198,6 +253,25 @@ CPU and memory limit configurations from runtime.
 
 These CRI changes are a separate effort that does not affect the design
 proposed in this KEP.
+
+### Risks and Mitigations
+
+1. Backward compatibility: When Pod.Spec.Containers[i].Resources becomes
+   representative of desired state, and Pod's true resource allocations are
+   tracked in Pod.Status.ContainerStatuses[i].ResourcesAllocated, applications
+   that query PodSpec and rely on Resources in PodSpec to determine resource
+   allocations will see values that may not represent actual allocations. As a
+   mitigation, this change needs to be documented and highlighted in the
+   release notes, and in top-level Kubernetes documents.
+1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
+   could be in use, and approaches such as setting limit near current usage may
+   be required. This issue needs further investigation.
+1. Older client versions: Previous versions of clients that are unaware of the
+   new ResourcesAllocated and ResizePolicy fields would set them to nil. To
+   keep compatibility, PodResourceAllocation admission controller mutates such
+   an update by copying non-nil values from the old Pod to current Pod.
+
+## Design Details
 
 ### Kubelet and API Server Interaction
 
@@ -479,31 +553,14 @@ Other components:
 1. Allow resource limits to be updated (VPA feature).
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
 
-### Risks and Mitigations
+### Test Plan
 
-1. Backward compatibility: When Pod.Spec.Containers[i].Resources becomes
-   representative of desired state, and Pod's true resource allocations are
-   tracked in Pod.Status.ContainerStatuses[i].ResourcesAllocated, applications
-   that query PodSpec and rely on Resources in PodSpec to determine resource
-   allocations will see values that may not represent actual allocations. As a
-   mitigation, this change needs to be documented and highlighted in the
-   release notes, and in top-level Kubernetes documents.
-1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
-   could be in use, and approaches such as setting limit near current usage may
-   be required. This issue needs further investigation.
-1. Older client versions: Previous versions of clients that are unaware of the
-   new ResourcesAllocated and ResizePolicy fields would set them to nil. To
-   keep compatibility, PodResourceAllocation admission controller mutates such
-   an update by copying non-nil values from the old Pod to current Pod.
-
-## Test Plan
-
-### Unit Tests
+#### Unit Tests
 
 Unit tests will cover the sanity of code changes that implements the feature,
 and the policy controls that are introduced as part of this feature.
 
-### Pod Resize E2E Tests
+#### Pod Resize E2E Tests
 
 End-to-End tests resize a Pod via PATCH to Pod's Spec.Containers[i].Resources.
 The e2e tests use docker as container runtime.
@@ -561,7 +618,7 @@ E2E tests for Guaranteed class Pod with three containers (c1, c2, c3):
 1. Increase CPU for c1 & c3, decrease c2 - net CPU increase for Pod.
 1. Increase memory for c1 & c3, decrease c2 - net memory increase for Pod.
 
-### Resource Quota and Limit Ranges
+#### Resource Quota and Limit Ranges
 
 Setup a namespace with ResourceQuota and a single, valid Pod.
 1. Resize the Pod within resource quota - CPU only.
@@ -578,7 +635,7 @@ Setup a namespace with min and max LimitRange and create a single, valid Pod.
 1. Increase memory to exceed max value.
 1. Decrease memory to go below min value.
 
-### Resize Policy Tests
+#### Resize Policy Tests
 
 Setup a guaranteed class Pod with two containers (c1 & c2).
 1. No resize policy specified, defaults to RestartNotRequired. Verify that CPU and
@@ -592,7 +649,7 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
 1. RestartNotRequired cpu, Restart memory policy for c1. Resize c1 CPU & memory,
    verify container is resized with restart.
 
-### Backward Compatibility and Negative Tests
+#### Backward Compatibility and Negative Tests
 
 1. Verify that Node is allowed to update only a Pod's ResourcesAllocated field.
 1. Verify that only Node account is allowed to udate ResourcesAllocated field.
@@ -607,27 +664,257 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
 
 TODO: Identify more cases
 
-## Graduation Criteria
+### Graduation Criteria
 
-### Alpha
+#### Alpha
 - In-Place Pod Resouces Update functionality is implemented for running Pods,
 - LimitRanger and ResourceQuota handling are added,
 - Resize Policies functionality is implemented,
 - Unit tests and E2E tests covering basic functionality are added,
 - E2E tests covering multiple containers are added.
 
-### Beta
+#### Beta
 - VPA alpha integration of feature completed and any bugs addressed,
 - E2E tests covering Resize Policy, LimitRanger, and ResourceQuota are added,
 - Negative tests are identified and added.
 - A "/resize" subresource is defined and implemented.
 - Pod-scoped resources are handled if that KEP is past alpha
 
-### Stable
+#### Stable
 - VPA integration of feature moved to beta,
 - User feedback (ideally from atleast two distinct users) is green,
 - No major bugs reported for three months.
 - Pod-scoped resources are handled if that KEP is past alpha
+
+### Upgrade / Downgrade Strategy
+Scheduler and API server should be updated before Kubelets in that order.
+Kubelet and the runtime versions should use the same CRI version in lock-step.
+Upgrade involves draining all pods from a node, installing a CRI runtime with this
+version of the API and update to a matching kubelet and making node schedulable again.
+Downgrade involves doing the above in reverse.
+
+### Version Skew Strategy
+Kubelet and the CRI runtime versions are expected to match so we don't have to worry about.
+
+Previous versions of clients that are unaware of the new ResizePolicy fields would set them
+to nil. API server mutates such updates by copying non-nil values from old Pod to the current
+Pod.
+
+A previous version of kubelet interprets mutation to Pod Resources as a Container definition
+change and will restart the container with the new Resources. This could lead to Node resource
+over-subscription. In order to address this, the feature-gate will remain default false for
+atleast two versions after the initial release that carries it.
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/20190731-production-readiness-review-process.md.
+
+The production readiness review questionnaire must be completed for features in
+v1.19 or later, but is non-blocking at this time. That is, approval is not
+required in order to be in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+
+-->
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: InPlacePodVerticalScaling
+    - Components depending on the feature gate: kubelet, kube-apiserver, kube-scheduler
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane? No.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
+
+* **Does enabling the feature change any default behavior?** No
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?** Yes
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  - API will once again permit modification of Resources for 'cpu' and 'memory'.
+  - Actual resources applied will be reflected in in Pod's ContainerStatuses.
+
+* **Are there any tests for feature enablement/disablement?**
+  Unit tests and E2E tests.
+   - Unit tests verify that feature does not introduce any regression.
+   - E2E tests run against a local cluster verify that feature works as expected.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+
+* **What specific metrics should inform a rollback?**
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and can't do that now.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  At a high level, this usually will be in the form of "high percentile of SLI
+  per day <= X". It's impossible to provide comprehensive guidance, but at the very
+  high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99,9% of /health requests per day finish with 200 code
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+  implementation difficulties, etc.).
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  For each of these, fill in the following—thinking about running existing user workloads
+  and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?** Yes
+  Describe them, providing:
+  - API call type (e.g. PATCH pods)
+    - One new PATCH PodStatus API call in response to Pod resize request.
+    - No additional overhead unless Pod resize is invoked.
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+    - Kubelet
+  focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+
+* **Will enabling / using this feature result in introducing new API types?** No
+  Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?** No
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?** Yes
+  Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+    - type Container has new field ResizePolicy, a list that adds upto 50 bytes.
+    - type PodStatus has a new field, a list that adds upto 32 bytes.
+    - type ContainerStatus has new field of type v1.ResourceList that mirrors
+      Container.Resources.Requests in size.
+    - type ContainerStatus has new field of type v1.ResourceRequirements that
+      mirrors Container.Resources in size.
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?** No
+  Think about adding additional work or introducing new steps in between
+  (e.g. need to do X to start a container), etc. Please describe the details.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?** No
+  Things to keep in mind include: additional in-memory state, additional
+  non-trivial computations, excessive access to disks (including increased log
+  volume), significant amount of data sent and/or received over network, etc.
+  This through this both in small and large cases, again with respect to the
+  [supported limits].
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+* **What are other known failure modes?**
+  For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
@@ -642,3 +929,22 @@ TODO: Identify more cases
 - 2020-11-06 - Updated with feedback from reviews
 - 2020-12-09 - Add "Deferred"
 - 2021-02-05 - Final consensus on resourcesAllocated[] and resize[]
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+
+There are no drawbacks that we are aware of.
+
+## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
+
+We considered having scheduler approve the resize. We also considered PodSpec as
+the location to checkpoint allocated resources.
