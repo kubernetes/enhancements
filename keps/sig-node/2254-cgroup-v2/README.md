@@ -9,6 +9,18 @@
 - [Non-Goals](#non-goals)
 - [User Stories](#user-stories)
 - [Implementation Details](#implementation-details)
+- [Design](#design)
+  - [Test Plan](#test-plan)
+    - [Needed Tests](#needed-tests)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Proposal](#proposal)
   - [Dependencies on OCI and container runtimes](#dependencies-on-oci-and-container-runtimes)
   - [Current status of dependencies](#current-status-of-dependencies)
@@ -17,7 +29,6 @@
   - [Phase 1: Convert from cgroups v1 settings to v2](#phase-1-convert-from-cgroups-v1-settings-to-v2)
   - [Phase 2: Use cgroups v2 throughout the stack](#phase-2-use-cgroups-v2-throughout-the-stack)
 - [Risk and Mitigations](#risk-and-mitigations)
-- [Graduation Criteria](#graduation-criteria)
 <!-- /toc -->
 
 ## Summary
@@ -51,6 +62,186 @@ This proposal aims to:
 *   Have features parity between cgroup v2 and v1.
 
 ## Implementation Details
+
+## Design
+
+### Test Plan
+
+#### Needed Tests
+
+- Run E2E tests on a cgroup v2 enabled host.
+
+### Graduation Criteria
+
+- Alpha: Phase 1 completed and basic support for running Kubernetes on
+  a cgroups v2 host,  e2e tests coverage or have a plan for the
+  failing tests.
+  A good candidate for running cgroup v2 test is Fedora 31 that has
+  already switched to default to cgroup v2.
+
+- Beta: e2e tests coverage and performance testing.  Verify that both
+  the CPU and Memory Manager work.
+
+- GA: Assuming no negative user feedback based on production
+  experience, promote after 2 releases in beta.
+  *TBD* whether phase 2 must be implemented for GA.
+
+### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
+
+N/A.  Not relevant to upgrades.  If the host is running with cgroup v2 then
+it will be automatically detected and used.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [X] Other
+  - Describe the mechanism:
+    configure the hosts to use cgroup v2
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+    No, each host can be restarted to cgroup v2 separately
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    It requires downtime of a node since it needs to be rebooted
+
+###### Does enabling the feature change any default behavior?
+
+N/A.  It must work in the same way as on cgroup v1
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+yes, it is enough to restart the node on cgroup v1
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+It should work seamlessly without any difference
+
+###### Are there any tests for feature enablement/disablement?
+
+The same E2E tests that work on cgroup v1 should work on cgroup v2
+
+### Rollout, Upgrade and Rollback Planning
+
+N/A.  Each node can be configured separately.
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+N/A.  It requires a reboot to be enabled.  If the workload accesses directly the
+cgroup file system, then also the workload must be enabled for cgroup v2.
+
+###### What specific metrics should inform a rollback?
+
+Pods not being healthy. One could inspect if the pods are getting the cgroups
+set correctly referencing the conversion table in this KEP.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+N/A.  It depends on the node configuration and it is stateless.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+The cgroup file system inside of the containers will use cgroup v2 instead of cgroup v1.
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+An operator could run `cat /proc/self/cgroup` on a node to check if it is running in cgroups v2 mode.
+If the node is using cgroup v2, then also the pods running on that node are using it.
+
+###### How can someone using this feature know that it is working for their instance?
+
+
+- [ ] Events
+  - Event Reason:
+- [ ] API .status
+  - Condition name:
+  - Other field:
+- [X] Other (treat as last resort)
+  - Details: pods are healthy.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+N/A.  Same as when running on cgroup v1.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [X] Other (treat as last resort)
+  - Details: not a service
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No
+
+### Dependencies
+
+The container runtime must also support cgroup v2
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+No
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+N/A
+
+###### What are other known failure modes?
+
+N/A
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+If SLOs are not being met, reboot the node in cgroup v1 to disable this feature.
 
 ## Proposal
 
@@ -201,17 +392,3 @@ Some cgroups v1 features are not available with cgroups v2:
 Some cgroups v1 controllers such as _device_ and _net_cls_,
 _net_prio_ are not available with the new version.  The alternative to
 these controllers is to use eBPF.
-
-## Graduation Criteria
-
-- Alpha: Phase 1 completed and basic support for running Kubernetes on
-  a cgroups v2 host,  e2e tests coverage or have a plan for the
-  failing tests.
-  A good candidate for running cgroup v2 test is Fedora 31 that has
-  already switched to default to cgroup v2.
-
-- Beta: e2e tests coverage and performance testing.
-
-- GA: Assuming no negative user feedback based on production
-  experience, promote after 2 releases in beta.
-  *TBD* whether phase 2 must be implemented for GA.
