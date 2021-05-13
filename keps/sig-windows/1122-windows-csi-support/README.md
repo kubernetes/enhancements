@@ -17,9 +17,8 @@
     - [New Component: CSI Proxy](#new-component-csi-proxy)
       - [CSI Proxy Named Pipes](#csi-proxy-named-pipes)
       - [CSI Proxy Configuration](#csi-proxy-configuration)
-      - [CSI Proxy GRPC API](#csi-proxy-grpc-api)
+      - [CSI Proxy GRPC API Groups](#csi-proxy-grpc-api-groups)
       - [CSI Proxy GRPC API Graduation and Deprecation Policy](#csi-proxy-grpc-api-graduation-and-deprecation-policy)
-      - [CSI Proxy Event Logs](#csi-proxy-event-logs)
     - [Enhancements in Kubernetes/Utils/mounter](#enhancements-in-kubernetesutilsmounter)
     - [Enhancements in CSI Node Plugins](#enhancements-in-csi-node-plugins)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -54,13 +53,13 @@
 ## Release Signoff Checklist
 
 - [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -74,11 +73,11 @@ Support for containerized Windows workloads on Windows nodes in a Kubernetes clu
 
 Support for CSI in Kubernetes reached GA status in v1.13. CSI plugins provide several benefits to Linux workloads in Kubernetes today over plugins whose code lives in kubernetes/kubernetes as well as plugins that implement the Flexvolume plugin interface. Some of these benefits are:
 
-1. The GRPC based CSI interface allow CSI plugins to be distributed as containers and fully managed through standard Kubernetes constructs like StatefulSets and DaemonSets. This is a superior mechanism compared to the exec model used by the Flexvolume interface where the plugins are distributed as scripts or binaries that need to be installed on each node and maintained. 
+1. The GRPC based CSI interface allow CSI plugins to be distributed as containers and fully managed through standard Kubernetes constructs like StatefulSets and DaemonSets. This is a superior mechanism compared to the exec model used by the Flexvolume interface where the plugins are distributed as scripts or binaries that need to be installed on each node and maintained.
 
-2. CSI offers a rich set of volume management operations (although not at a GA state in Kubernetes yet): resizing of volumes, backup/restore of volumes using snapshots and cloning besides the basic volume life-cycle operations (GA since v1.13): provisioning of storage volumes, attaching/detaching volumes to a node and mounting/dismounting to/from a pod. 
+2. CSI offers a rich set of volume management operations (although not at a GA state in Kubernetes yet): resizing of volumes, backup/restore of volumes using snapshots and cloning besides the basic volume life-cycle operations (GA since v1.13): provisioning of storage volumes, attaching/detaching volumes to a node and mounting/dismounting to/from a pod.
 
-3. CSI plugins are maintained and released independent of the Kubernetes core. This allows features and bug fixes in the CSI plugins to be delivered in a more flexible schedule relative to Kubernetes releases. Transitioning the code for existing in-tree plugins (especially those targeting specific cloud environments or vendor-specific storage systems) to external CSI plugins can also help reduce the volume of vendor-ed code that needs to be maintained in Kubernetes core. 
+3. CSI plugins are maintained and released independent of the Kubernetes core. This allows features and bug fixes in the CSI plugins to be delivered in a more flexible schedule relative to Kubernetes releases. Transitioning the code for existing in-tree plugins (especially those targeting specific cloud environments or vendor-specific storage systems) to external CSI plugins can also help reduce the volume of vendor-ed code that needs to be maintained in Kubernetes core.
 
 Given the above context, the main motivations for this KEP are:
 
@@ -122,7 +121,7 @@ Besides the above enhancements, a new "privileged proxy" binary, named csi-proxy
 
 With the KEP implemented, administrators should be able to deploy CSI Node Plugins that support staging, publishing and other storage management operations on Windows nodes. Operators will be able to schedule Windows workloads that consume persistent storage surfaced by CSI plugins on Windows nodes.
 
-#### Deploy CSI Node Plugin DaemonSet targeting Windows nodes 
+#### Deploy CSI Node Plugin DaemonSet targeting Windows nodes
 
 An administrator should be able to deploy a CSI Node Plugin along with the CSI Node Driver Registrar container targeting Windows nodes with a DaemonSet YAML like the following:
 
@@ -150,7 +149,7 @@ spec:
         kubernetes.io/os: windows
       containers:
         - name: csi-driver-registrar
-          image: gke.gcr.io/csi-node-driver-registrar:win-v1 
+          image: gke.gcr.io/csi-node-driver-registrar:win-v1
           args:
             - "--v=5"
             - "--csi-address=unix://C:\\csi\\csi.sock"
@@ -166,7 +165,7 @@ spec:
             - name: registration-dir
               mountPath: C:\registration
         - name: gce-pd-driver
-          image: gke.gcr.io/gcp-compute-persistent-disk-csi-driver:win-v1 
+          image: gke.gcr.io/gcp-compute-persistent-disk-csi-driver:win-v1
           args:
             - "--v=5"
             - "--endpoint=unix:/csi/csi.sock"
@@ -175,12 +174,24 @@ spec:
               mountPath: C:\var\lib\kubelet
             - name: plugin-dir
               mountPath: C:\csi
-            - name: csi-proxy-pipe
-              mountPath: \\.\pipe\csi-proxy-v1alpha1
+            - name: csi-proxy-volume-v1beta1
+              mountPath: \\.\pipe\csi-proxy-volume-v1beta1
+            - name: csi-proxy-filesystem-v1beta1
+              mountPath: \\.\pipe\csi-proxy-filesystem-v1beta1
+            - name: csi-proxy-disk-v1beta2
+              mountPath: \\.\pipe\csi-proxy-disk-v1beta2
       volumes:
-        - name: csi-proxy-pipe
-          hostPath: 
-            path: \\.\pipe\csi-proxy-v1alpha1
+        - name: csi-proxy-disk-v1beta2
+          hostPath:
+            path: \\.\pipe\csi-proxy-disk-v1beta2
+            type: ""
+        - name: csi-proxy-volume-v1beta1
+          hostPath:
+            path: \\.\pipe\csi-proxy-volume-v1beta1
+            type: ""
+        - name: csi-proxy-filesystem-v1beta1
+          hostPath:
+            path: \\.\pipe\csi-proxy-filesystem-v1beta1
             type: ""
         - name: registration-dir
           hostPath:
@@ -284,16 +295,16 @@ The code for the CSI Node Driver Registrar needs to be refactored a bit so that 
 
 Once compiled for Windows, container images based on Window Base images (like NanoServer) needs to be published and maintained.
 
-#### New Component: CSI Proxy 
+#### New Component: CSI Proxy
 
 A "privileged proxy" binary, csi-proxy.exe, will need to be developed and maintained by the Kubernetes CSI community to allow containerized CSI Node Plugins to perform privileged operations at the Windows host OS layer. Kubernetes administrators will need to install and maintain csi-proxy.exe on all Windows nodes in a manner similar to dockerd.exe today or containerd.exe in the future. A Windows node will typically be expected to be configured to run only one instance of csi-proxy.exe as a Windows Service that can be used by all CSI Node Plugins.
 
 ##### CSI Proxy Named Pipes
-A CSI Node Plugin will interact with csi-proxy.exe using named pipe: `\\.\pipe\csi-proxy-v[N]` (exposed by csi-proxy.exe). The `v[N]` suffix in the pipe name corresponds to the version of the CSIProxyService (described below) that is required by the CSI plugin. Specific example of named pipes corresponding to versions include: `\\.\pipe\csi-proxy-v1`, `\\.\pipe\csi-proxy-v2alpha1`, `\\.\pipe\csi-proxy-v3beta1`, etc. The pipe will need to be mounted into the Node Plugin container from the host using the pod's volume mount specifications. Note that domain sockets cannot be used in this scenario since Windows blocks a containerized process from interacting with a host process that is listening on a domain socket. If such support is enabled on Windows in the future, we may consider switching CSI Proxy to use domain sockets however Windows named pipes is a common mechanism used by containers today to interact with host processes like docker daemon.
+A CSI Node Plugin will interact with csi-proxy.exe using named pipes of the form: `\\.\pipe\csi-proxy-[api-group]-[version]`. These named pipes will be surfaced by csi-proxy.exe as it initializes. The `api-group` and `version` suffix in the pipe name corresponds to a specific version of an API Group that is required by a CSI plugin. Specific examples of named pipes corresponding to versions include: `\\.\pipe\csi-proxy-volume-v1beta1`, `\\.\pipe\csi-proxy-disk-v2`, `\\.\pipe\csi-proxy-iscsi-v3beta1`, etc. Each pipe (corresponding to a API group and version) will need to be mounted into the Node Plugin container from the host using the pod's volume mount specifications. Note that domain sockets cannot be used in this scenario since Windows blocks a containerized process from interacting with a host process that is listening on a domain socket. If such support is enabled on Windows in the future, we may consider switching CSI Proxy to use domain sockets however Windows named pipes is a common mechanism used by containers today to interact with host processes like docker daemon.
 
 ![Kubernetes CSI Node Components and Interactions](csi-proxy3.png?raw=true "Kubernetes CSI Node Components and Interactions")
 
-A GRPC based interface, CSIProxyService, will be used by CSI Node Plugins to invoke privileged operations on the host through csi-proxy.exe. CSIProxyService will be versioned and any release of csi-proxy.exe binary will strive to maintain backward compatibility across as many prior stable versions of the API as possible. This avoids having to run multiple versions of the csi-proxy.exe binary on the same Windows host if multiple CSI Node Plugins (that do not depend on APIs in Alpha or Beta versions) have been configured and the version of the csi-proxy API required by the plugins are different. For every version of the API supported, csi-proxy.exe will first probe for and then expose a `\\.\pipe\csi-proxy-v[N]` pipe where v[N] can be v1, v2alpha1, v3beta1, etc. If during the initial probe phase, csi-proxy.exe determines that another process is already listening on a `\\.\pipe\csi-proxy-v[N]` named pipe, it will not try to create and listen on that named pipe. This allows multiple versions of csi-proxy.exe to run side-by-side if absolutely necessary to support multiple CSI Node Plugins that require widely different versions of CSIProxyService that no single version of csi-proxy.exe can support.
+Groups of GRPC based APIs will be used by CSI Node Plugins to invoke privileged operations on the host through csi-proxy.exe. Each API group will be versioned and any release of csi-proxy.exe binary will strive to maintain backward compatibility across as many prior stable versions of an API group as possible. This avoids having to run multiple versions of the csi-proxy.exe binary on the same Windows host if multiple CSI Node Plugins have been configured and the version of the API group required by the plugins are different.
 
 ##### CSI Proxy Configuration
 There will be two command line parameters that may be passed to csi-proxy.exe:
@@ -301,198 +312,291 @@ There will be two command line parameters that may be passed to csi-proxy.exe:
 
 2. kubelet-pod-path: String parameter pointing to the path used by the kubelet to store pod specific information. This should map to the value returned by [getPodsDir](https://github.com/kubernetes/kubernetes/blob/e476a60ccbe25581f5a6a9401081dcee311a066e/pkg/kubelet/kubelet_getters.go#L48). By default it will be set to: `C:\var\lib\kubelet\pods` Parameters to `LinkPath` (detailed below) will need to be under this path.
 
-##### CSI Proxy GRPC API
-The following are the main RPC calls that will comprise a v1alpha1 version of the CSI Proxy API Group. A preliminary structure for Request and Response associated with each RPC is described below. Note that the specific structures as well as restrictions on them are expected to evolve during Alpha phase and are expected to be in a final form at the end of Beta. As the API evolves, the section below will be kept up-to-date
+##### CSI Proxy GRPC API Groups
+The following are the main RPC API groups and Request/Response structures that will be supported by CSI Proxy at v1.  Note that the specific structures as well as restrictions on them are expected to evolve over time.
 
 ```
-service CSIProxyService {
 
-    // PathExists checks if the given path exists in the host already
-    rpc PathExists(PathExistsRequest) returns (PathExistsResponse) {}
-
-    // Mkdir creates a directory at the requested absolute path in the host. Relative path is not supported.
-    rpc Mkdir(MkdirRequest) returns (MkdirResponse) {}
-
-    // Rmdir removes the directory at the requested absolute path in the host. Relative path is not supported.
-    // This may be used for unlinking a symlink created through LinkVolume
-    rpc Rmdir(RmdirRequest) returns (RmdirResponse) {}
-
-    // Rescan refreshes the host storage cache
-    rpc Rescan(RescanRequest) returns (RescanResponse) {}
-
-    // PartitionDisk initializes and partitions a disk device (if the disk has not
-    // been partitioned already) and returns the resulting volume object
-    rpc PartitionDisk(PartitionDiskRequest) returns (PartitionDiskResponse) {}
-
-    // FormatVolume formats a volume with the provided file system.
-    // The resulting volume is mounted at the requested global staging path.
-    rpc FormatVolume(FormatVolumeRequest) returns (FormatVolumeResponse) {}
-
-    // MountSMBShare mounts a remote share over SMB on the host at the requested global staging path.
-    rpc MountSMBShare(MountSMBShareRequest) returns (MountSMBShareResponse) {}
-
-    // MountISCSILun mounts a remote LUN over iSCSI and returns the OS disk device number.
-    rpc MountISCSILun(MountISCSILunRequest) returns (MountISCSILunResponse) {}
-
-    // LinkPath invokes mklink on the global staging path of a volume linking it to a path within a container
-    rpc LinkPath(LinkPathRequest) returns (LinkPathResponse) {}
-
-    // ListDiskLocations returns locations <Adapter, Bus, Target, LUN ID> of all disk devices enumerated by Windows
+service Disk {
+    // ListDiskLocations returns locations <Adapter, Bus, Target, LUN ID> of all
+    // disk devices enumerated by the host
     rpc ListDiskLocations(ListDiskLocationsRequest) returns (ListDiskLocationsResponse) {}
 
-    // ListDiskIDs returns all IDs (from IOCTL_STORAGE_QUERY_PROPERTY) of all disk devices enumerated by Windows
-    rpc ListDiskIDs(GetDiskIDsRequest) returns (ListDiskIDsResponse) {}
+    // ListDiskIDs returns a map of DiskID objects where the key is the disk number
+    rpc ListDiskIDs(ListDiskIDsRequest) returns (ListDiskIDsResponse) {}
 
-    // ListDiskVolumeMappings returns a map of all disk devices and volumes GUIDs
-    rpc ListDiskVolumeMappings(ListDiskVolumeMappingsRequest) returns (ListDiskVolumeMappingsResponse) {}
+    // PartitionDisk initializes and partitions a disk device (if the disk has not
+    // been partitioned already) and returns the resulting volume device number
+    rpc PartitionDisk(PartitionDiskRequest) returns (PartitionDiskResponse) {}
+
+    // DiskStats returns the size in bytes for the entire disk
+    rpc GetDiskStats(GetDiskStatsRequest) returns (GetDiskStatsResponse) {}
+
+    // SetDiskState sets the offline/online state of a disk
+    rpc SetDiskState(SetDiskStateRequest) returns (SetDiskStateResponse) {}
+
+    // GetDiskState gets the offline/online state of a disk
+    rpc GetDiskState(GetDiskStateRequest) returns (GetDiskStateResponse) {}
+}
+
+message ListDiskLocationsRequest {
+    // Intentionally empty
+}
+
+message DiskLocation {
+    string Adapter = 1;
+    string Bus = 2;
+    string Target = 3;
+    string LUNID = 4;
+}
+
+message ListDiskLocationsResponse {
+    // Map of disk device IDs and <adapter, bus, target, lun ID> associated with each disk device
+    map <string, DiskLocation> disk_locations = 1;
+}
+
+message PartitionDiskRequest {
+    // Disk device number of the disk to partition
+    int64 disk_number = 1;
+}
+
+message PartitionDiskResponse {
+    // Intentionally empty
+}
+
+message ListDiskIDsRequest {
+    // Intentionally empty
+}
+
+enum DiskIDType {
+    // Placeholder
+    NONE = 0;
+
+    // SCSI Page 83 IDs [https://www.t10.org/ftp/t10/document.02/02-419r6.pdf]
+    // retrieved through STORAGE_DEVICE_ID_DESCRIPTOR as described in
+    // https://docs.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-storage_device_id_descriptor
+    SCSI_PAGE_83 = 1;
+}
+
+message DiskIDs {
+    // Map of Disk ID types and Disk ID values
+    map <DiskIDType, string> identifiers = 1;
+}
+
+message ListDiskIDsResponse {
+    // Map of disk device numbers and IDs <page83> associated with each disk device
+    map <string, DiskIDs> disk_ids = 1;
+}
+
+message GetDiskStatsRequest {
+    // Disk device number of the disk to get the size from
+    int64 disk_number = 1;
+}
+
+message GetDiskStatsResponse {
+    // Total size of the volume in bytes
+    int64 disk_size_bytes = 1;
+}
+
+message SetDiskStateRequest {
+    // Disk device number of the disk whose state will change
+    int64 disk_number = 1;
+
+    // Online state to set for the disk. true for online, false for offline
+    bool is_online = 2;
+}
+
+message SetDiskStateResponse {
+    // Intentionally empty
+}
+
+message GetDiskStateRequest {
+    // Disk device number of the disk to query
+    int64 disk_number = 1;
+}
+
+message GetDiskStateResponse {
+    // Online state of the disk. true for online, false for offline
+    bool is_online = 1;
+}
+
+
+
+service Volume {
+    // ListVolumesOnDisk returns the volume IDs (in \\.\Volume{GUID} format) for
+    // all volumes on a Disk device
+    rpc ListVolumesOnDisk(ListVolumesOnDiskRequest) returns (ListVolumesOnDiskResponse) {}
+
+    // MountVolume mounts the volume at the requested global staging path
+    rpc MountVolume(MountVolumeRequest) returns (MountVolumeResponse) {}
+
+    // UnmountVolume gracefully dismounts a volume
+    rpc UnmountVolume(UnmountVolumeRequest) returns (UnmountVolumeResponse) {}
+
+    // IsVolumeFormatted checks if a volume is formatted with a known filesystem
+    rpc IsVolumeFormatted(IsVolumeFormattedRequest) returns (IsVolumeFormattedResponse) {}
+
+    // FormatVolume formats a volume with NTFS
+    rpc FormatVolume(FormatVolumeRequest) returns (FormatVolumeResponse) {}
 
     // ResizeVolume performs resizing of the partition and file system for a block based volume
     rpc ResizeVolume(ResizeVolumeRequest) returns (ResizeVolumeResponse) {}
 
-    // DismountVolume gracefully dismounts a volume
-    rpc DismountVolume(DismountVolumeRequest) return (DismountVolumeResponse) {}
+    // VolumeStats gathers total size and used size (in bytes) for a volume
+    rpc GetVolumeStats(GetVolumeStatsRequest) returns (GetVolumeStatsResponse) {}
+
+    // GetDiskNumberFromVolumeID gets the disk number of the disk where the volume is located
+    rpc GetDiskNumberFromVolumeID(GetDiskNumberFromVolumeIDRequest) returns (GetDiskNumberFromVolumeIDResponse) {}
+
+    // GetVolumeIDFromTargetPathRequest gets the volume id mounted at the given path
+    rpc GetVolumeIDFromTargetPathRequest(GetVolumeIDFromTargetPathRequest) returns (GetVolumeIDFromTargetPathResponse) {}
+
+    // WriteVolumeCache writes the file system cache of a volume (with given id) to disk
+    rpc WriteVolumeCache(WriteVolumeCacheRequest) returns (WriteVolumeCacheResponse) {}
 }
 
-message PathExistsRequest {
-    // The path to check in the host filesystem.
-    string path = 1;
+message ListVolumesOnDiskRequest {
+    // Disk number of the disk to query for volumes
+    string disk_number = 1;
 }
 
-message PathExistsResponse {
-    // Whether path already exists in host or not
-    bool exists = 1;
+message ListVolumesOnDiskResponse {
+    // Volume device IDs of volumes on the specified disk
+    repeated string volume_ids = 1;
 }
 
-// Context of the paths used for path prefix validation
-enum PathContext {
-    // plugin maps to the configured kubelet-csi-plugins-path path prefix
-    PLUGIN = 0;
-    // container maps to the configured kubelet-pod-path path prefix
-    CONTAINER = 1;
+message MountVolumeRequest {
+    // Volume device ID of the volume to mount
+    string volume_id = 1;
+    // Path in the host's file system where the volume needs to be mounted
+    string target_path = 2;
 }
 
-message MkdirRequest {
-    // The path to create in the host filesystem.
-    // All special characters allowed by Windows in path names will be allowed
-    // except for restrictions noted below. For details, please check:
-    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
-    // Non-existent parent directories in the path will NOT be created.
-    // Directories will be created with Read and Write privileges of the Windows
-    // User account under which csi-proxy is started (typically LocalSystem).
-    //
-    // Restrictions:
-    // Needs to be an absolute path under kubelet-csi-plugins-path
-    // or kubelet-pod-path based on context
-    // Cannot exist already in host
-    // Path needs to be specified with drive letter prefix: "X:\".
-    // UNC paths of the form "\\server\share\path\file" are not allowed.
-    // All directory separators need to be backslash character: "\".
-    // Characters: .. / : | ? * in the path are not allowed.
-    // Maximum path length will be capped to 260 characters (MAX_PATH).
-    string path = 1;
-
-    // Context of the path creation used for path prefix validation
-    PathContext context = 2;
+message MountVolumeResponse {
+    // Intentionally empty
 }
 
-message MkdirResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
+message UnmountVolumeRequest {
+    // Volume device ID of the volume to dismount
+    string volume_id = 1;
+    // Path where the volume has been mounted.
+    string target_path = 2;
 }
 
-message RmdirRequest {
-    // The path to remove in the host filesystem
-    // All special characters allowed by Windows in path names will be allowed
-    // except for restrictions noted below. For details, please check:
-    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
-    //
-    // Restrictions:
-    // Needs to be an absolute path under kubelet-csi-plugins-path
-    // or kubelet-pod-path based on context
-    // Path needs to be specified with drive letter prefix: "X:\".
-    // UNC paths of the form "\\server\share\path\file" are not allowed.
-    // All directory separators need to be backslash character: "\".
-    // Characters: .. / : | ? * in the path are not allowed.
-    // Path cannot be a file of type symlink
-    // Path needs to be a directory that is empty
-    // Maximum path length will be capped to 260 characters (MAX_PATH).
-    string path = 1;
-
-    // Context of the path creation used for path prefix validation
-    PathContext context = 2;
+message UnmountVolumeResponse {
+    // Intentionally empty
 }
 
-message RmdirResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
+message IsVolumeFormattedRequest {
+    // Volume device ID of the volume to check
+    string volume_id = 1;
 }
 
-message RescanRequest {
-    // Intentionally empty.
-}
-
-message RescanResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
-}
-
-message PartitionDiskRequest {
-    // The Windows disk device to partition and the paritioning mode: MBR/GPT.
-    // The whole disk will be partitioned
-    //
-    // Restrictions:
-    // Disk device needs to follow Win32 format for device names: \\.\PhysicalDriveX
-    // The prefix has to be: \\.\PhysicalDrive and the suffix is an integer in range:
-    // 0 to maximum number drives allowed by Windows OS.
-    string disk_device = 1;
-
-    // Disk partition type
-    enum ParitionType {
-        MBR = 0;
-        GPT = 1;
-    }
-    PartitionType type = 2;
-}
-
-message PartitionDiskResponse {
-    // Volume device resulting from the partition
-    // Volume device will follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
-    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
-    string volume_device = 1;
-
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 2;
+message IsVolumeFormattedResponse {
+    // Is the volume formatted with NTFS
+    bool formatted = 1;
 }
 
 message FormatVolumeRequest {
-    // The Windows volume device to format
-    // Typically Volume Device returned by PartitionDiskResponse
-    //
-    // Restrictions:
-    // Volume device needs to follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
-    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
-    string volume_device = 1;
-
-    // FileSystem type
-    enum FileSystemType {
-        NTFS = 0;
-        FAT = 1;
-    }
-    FileSystemType type = 2;
+    // Volume device ID of the volume to format with NTFS
+    string volume_id = 1;
 }
 
 message FormatVolumeResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
+    // Intentionally empty
 }
 
-message MountSMBShareRequest {
+message ResizeVolumeRequest {
+    // Volume device ID of the volume to dismount
+    string volume_id = 1;
+    // New size of the volume
+    int64 size = 2;
+}
+
+message ResizeVolumeResponse {
+    // Intentionally empty
+}
+
+message GetVolumeStatsRequest {
+    // Volume device Id of the volume to get the stats for
+    string volume_id = 1;
+}
+
+message GetVolumeStatsResponse {
+    // Capacity of the volume
+    int64 total_bytes = 1;
+    // Used bytes
+    int64 used_bytes = 2;
+}
+
+message GetDiskNumberFromVolumeIDRequest {
+    // Volume device Id of the volume to get the disk number for
+    string volume_id = 1;
+}
+
+message GetDiskNumberFromVolumeIDResponse {
+    // Corresponding disk number
+    int64 disk_number = 1;
+}
+
+message GetVolumeIDFromTargetPathRequest {
+    // Target mount path to query
+    string mount = 1;
+}
+
+message GetVolumeIDFromTargetPathResponse {
+    // Volume device ID of the volume mounted at the mount point
+    string volume_id = 1;
+}
+
+message WriteVolumeCacheRequest {
+    // Volume device ID of the volume to flush the cache
+    string volume_id = 1;
+}
+
+message WriteVolumeCacheResponse {
+    // Intentionally empty
+}
+
+
+
+service Smb {
+    // NewSmbGlobalMapping creates an SMB mapping on the SMB client to an SMB share.
+    rpc NewSmbGlobalMapping(NewSmbGlobalMappingRequest) returns (NewSmbGlobalMappingResponse) {}
+
+    // RemoveSmbGlobalMapping removes the SMB mapping to an SMB share.
+    rpc RemoveSmbGlobalMapping(RemoveSmbGlobalMappingRequest) returns (RemoveSmbGlobalMappingResponse) {}
+}
+
+
+message NewSmbGlobalMappingRequest {
     // A remote SMB share to mount
+    // All unicode characters allowed in SMB server name specifications are
+    // permitted except for restrictions below
+    //
+    // Restrictions:
+    // SMB remote path specified in the format: \\server-name\sharename, \\server.fqdn\sharename or \\a.b.c.d\sharename
+    // If not an IP address, share name has to be a valid DNS name.
+    // UNC specifications to local paths or prefix: \\?\ is not allowed.
+    // Characters: + [ ] " / : ; | < > , ? * = $ are not allowed.
+    string remote_path = 1;
+    // Optional local path to mount the smb on
+    string local_path = 2;
+
+    // Username credential associated with the share
+    string user_name = 3;
+
+    // Password credential associated with the share
+    string password = 4;
+}
+
+message NewSmbGlobalMappingResponse {
+    // Intentionally empty
+}
+
+
+message RemoveSmbGlobalMappingRequest {
+    // A remote SMB share mapping to remove
     // All unicode characters allowed in SMB server name specifications are
     // permitted except for restrictions below
     //
@@ -501,200 +605,271 @@ message MountSMBShareRequest {
     // If not an IP address, share name has to be a valid DNS name.
     // UNC specifications to local paths or prefix: \\?\ is not allowed.
     // Characters: + [ ] " / : ; | < > , ? * = $ are not allowed.
-    string remote_share = 1;
+    string remote_path = 1;
+}
 
-    // Local path in the host to stage the SMB share.
-    // All special characters allowed by Windows in path names will be allowed
-    // except for restrictions noted below. For details, please check:
-    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+message RemoveSmbGlobalMappingResponse {
+    // Intentionally empty
+}
+
+
+
+service Iscsi {
+    // AddTargetPortal registers an iSCSI target network address for later
+    // discovery.
+    // AddTargetPortal currently does not support selecting different NICs or
+    // a different iSCSI initiator (e.g a hardware initiator). This means that
+    // Windows will select the initiator NIC and instance on its own.
+    rpc AddTargetPortal(AddTargetPortalRequest)
+        returns (AddTargetPortalResponse) {}
+
+    // DiscoverTargetPortal initiates discovery on an iSCSI target network address
+    // and returns discovered IQNs.
+    rpc DiscoverTargetPortal(DiscoverTargetPortalRequest)
+        returns (DiscoverTargetPortalResponse) {}
+
+    // RemoveTargetPortal removes an iSCSI target network address registration.
+    rpc RemoveTargetPortal(RemoveTargetPortalRequest)
+        returns (RemoveTargetPortalResponse) {}
+
+    // ListTargetPortal lists all currently registered iSCSI target network
+    // addresses.
+    rpc ListTargetPortals(ListTargetPortalsRequest)
+        returns (ListTargetPortalsResponse) {}
+
+    // ConnectTarget connects to an iSCSI Target
+    rpc ConnectTarget(ConnectTargetRequest) returns (ConnectTargetResponse) {}
+
+    // DisconnectTarget disconnects from an iSCSI Target
+    rpc DisconnectTarget(DisconnectTargetRequest)
+        returns (DisconnectTargetResponse) {}
+
+    // GetTargetDisks returns the disk addresses that correspond to an iSCSI
+    // target
+    rpc GetTargetDisks(GetTargetDisksRequest) returns (GetTargetDisksResponse) {}
+
+    // SetMutualChapSecret sets the default CHAP secret that all initiators on
+    // this machine (node) use to authenticate the target on mutual CHAP
+    // authentication.
+    // NOTE: This method affects global node state and should only be used
+    //       with consideration to other CSI drivers that run concurrently.
+    rpc SetMutualChapSecret(SetMutualChapSecretRequest)
+        returns (SetMutualChapSecretResponse) {}
+}
+
+// TargetPortal is an address and port pair for a specific iSCSI storage
+// target.
+message TargetPortal {
+    // iSCSI Target (server) address
+    string target_address = 1;
+
+    // iSCSI Target port (default iSCSI port is 3260)
+    uint32 target_port = 2;
+}
+
+message AddTargetPortalRequest {
+    // iSCSI Target Portal to register in the initiator
+    TargetPortal target_portal = 1;
+}
+
+message AddTargetPortalResponse {
+    // Intentionally empty
+}
+
+message DiscoverTargetPortalRequest {
+    // iSCSI Target Portal on which to initiate discovery
+    TargetPortal target_portal = 1;
+}
+
+message DiscoverTargetPortalResponse {
+    // List of discovered IQN addresses
+    // follows IQN format: iqn.yyyy-mm.naming-authority:unique-name
+    repeated string iqns = 1;
+}
+
+message RemoveTargetPortalRequest {
+    // iSCSI Target Portal
+    TargetPortal target_portal = 1;
+}
+
+message RemoveTargetPortalResponse {
+    // Intentionally empty
+}
+
+message ListTargetPortalsRequest {
+    // Intentionally empty
+}
+
+message ListTargetPortalsResponse {
+    // A list of Target Portals currently registered in the initiator
+    repeated TargetPortal target_portals = 1;
+}
+
+// iSCSI logon authentication type
+enum AuthenticationType {
+    // No authentication is used
+    NONE = 0;
+
+    // One way CHAP authentication. The target authenticates the initiator.
+    ONE_WAY_CHAP = 1;
+
+    // Mutual CHAP authentication. The target and initiator authenticate each
+    // other.
+    MUTUAL_CHAP = 2;
+}
+
+message ConnectTargetRequest {
+    // Target portal to which the initiator will connect
+    TargetPortal target_portal = 1;
+
+    // IQN of the iSCSI Target
+    string iqn = 2;
+
+    // Connection authentication type, None by default
     //
-    // Restrictions:
-    // Needs to be an absolute path under kubelet-csi-plugins-path.
-    // Needs to exist already in host
-    // Path needs to be specified with drive letter prefix: "X:\".
-    // UNC paths of the form "\\server\share\path\file" are not allowed.
-    // All directory separators need to be backslash character: "\".
-    // Characters: .. / : | ? * in the path are not allowed.
-    // Maximum path length will be capped to 260 characters (MAX_PATH).
-    string host_path = 2;
+    // One Way Chap uses the chap_username and chap_secret
+    // fields mentioned below to authenticate the initiator.
+    //
+    // Mutual Chap uses both the user/secret mentioned below
+    // and the Initiator Chap Secret (See `SetMutualChapSecret`)
+    // to authenticate the target and initiator.
+    AuthenticationType auth_type = 3;
 
-    // Mount the share read-only
-    bool readonly = 3;
+    // CHAP Username used to authenticate the initiator
+    string chap_username = 4;
 
-    // Username credential associated with the share
-    string username = 4;
-
-    // Password credential associated with the share
-    string password = 5;
+    // CHAP password used to authenticate the initiator
+    string chap_secret = 5;
 }
 
-message MountSMBShareResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
+message ConnectTargetResponse {
+    // Intentionally empty
 }
 
-message MountISCSILunRequest {
-    // IQN address
-    // follows IQN format: iqn.yyyy-mm.naming-authority:unique name
-    string node_iqn = 1;
+message GetTargetDisksRequest {
+    // Target portal whose disks will be queried
+    TargetPortal target_portal = 1;
 
-    // Authentication Type
-    enum AuthType {
-        None = 0;
-        OneWay = 1;
-        Mutual = 2;
-    }
-    AuthType auth_type = 2;
-
-    // Discovery CHAP username
-    string discovery_chap_username = 3;
-
-    // Discovery CHAP secret
-    string discovery_chap_secret = 4;
-
-    // Session CHAP username
-    string session_chap_username = 5;
-
-    // Session CHAP secret
-    string session_chap_secret = 6;
-
-    // TargetPortal address
-    string target_portal_address = 7;
-
-    // TargetPortal port
-    string target_portal_port = 8;
-
-    // Readonly mount
-    bool readonly = 9;
+    // IQN of the iSCSI Target
+    string iqn = 2;
 }
 
-message MountISCSILunResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
+message GetTargetDisksResponse {
+    // List composed of disk ids (numbers) that are associated with the
+    // iSCSI target
+    repeated string diskIDs = 1;
+}
+
+message DisconnectTargetRequest {
+    // Target portal from which initiator will disconnect
+    TargetPortal target_portal = 1;
+
+    // IQN of the iSCSI Target
+    string iqn = 2;
+}
+
+message DisconnectTargetResponse {
+    // Intentionally empty
+}
+
+message SetMutualChapSecretRequest {
+    // the default CHAP secret that all initiators on this machine (node) use to
+    // authenticate the target on mutual CHAP authentication.
+    // Must be at least 12 byte long for non-Ipsec connections, at least one
+    // byte long for Ipsec connections, and at most 16 bytes long.
+    string MutualChapSecret = 1;
+}
+
+message SetMutualChapSecretResponse {
+    // Intentionally empty
+}
+
+
+
+service System {
+    // GetBIOSSerialNumber returns the device's serial number
+    rpc GetBIOSSerialNumber(GetBIOSSerialNumberRequest)
+        returns (GetBIOSSerialNumberResponse) {}
+
+    // Rescan refreshes the host's storage cache
+    rpc Rescan(RescanRequest) returns (RescanResponse) {}
+}
+
+message GetBIOSSerialNumberRequest {
+    // Intentionally empty
+}
+
+message GetBIOSSerialNumberResponse {
+    // Serial number
+    string serial_number = 1;
+}
+
+message RescanRequest {
+    // Intentionally empty
+}
+
+message RescanResponse {
+    // Intentionally empty
+}
+
+
+
+service Filesystem {
+    // LinkPath creates a local directory symbolic link between a source path
+    // and target path in the host's filesystem
+    rpc LinkPath(LinkPathRequest) returns (LinkPathResponse) {}
+
+    //IsMountPoint checks if a given path is mount or not
+    rpc IsMountPoint(IsMountPointRequest) returns (IsMountPointResponse) {}
 }
 
 message LinkPathRequest {
-    // Source of MkLink call to Windows
+    // The path where the symlink is created in the host's filesystem.
     // All special characters allowed by Windows in path names will be allowed
     // except for restrictions noted below. For details, please check:
     // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
     //
     // Restrictions:
-    // Needs to be an absolute path under kubelet-pod-path
-    // Needs to exist already in host
-    // Path needs to be specified with drive letter prefix: "X:\".
+    // Only absolute path (indicated by a drive letter prefix: e.g. "C:\") is accepted.
+    // The path prefix needs needs to match the paths specified as
+    // kubelet-csi-plugins-path parameter of csi-proxy.
     // UNC paths of the form "\\server\share\path\file" are not allowed.
     // All directory separators need to be backslash character: "\".
     // Characters: .. / : | ? * in the path are not allowed.
-    // Maximum path length will be capped to 260 characters (MAX_PATH).
+    // source_path cannot already exist in the host filesystem.
+    // Maximum path length will be capped to 260 characters.
     string source_path = 1;
 
-    // Target of MkLink call to Windows
+    // Target path in the host's filesystem used for the symlink creation.
     // All special characters allowed by Windows in path names will be allowed
     // except for restrictions noted below. For details, please check:
     // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
     //
     // Restrictions:
-    // Needs to be an absolute path under kubelet-csi-plugins-path.
-    // Needs to exist already in host
-    // Path needs to be specified with drive letter prefix: "X:\".
+    // Only absolute path (indicated by a drive letter prefix: e.g. "C:\") is accepted.
+    // The path prefix needs to match the paths specified as
+    // kubelet-pod-path parameter of csi-proxy.
     // UNC paths of the form "\\server\share\path\file" are not allowed.
     // All directory separators need to be backslash character: "\".
     // Characters: .. / : | ? * in the path are not allowed.
-    // Maximum path length will be capped to 260 characters (MAX_PATH).
+    // target_path needs to exist as a directory in the host that is empty.
+    // target_path cannot be a symbolic link.
+    // Maximum path length will be capped to 260 characters.
     string target_path = 2;
 }
 
 message LinkPathResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
-}
-
-message ListDiskLocationsRequest {
     // Intentionally empty
 }
 
-message ListDiskLocationsResponse {
-    // Map of disk device objects and <adapter, bus, target, lun ID> associated with each disk device
-    map <string, DiskLocation> disk_locations = 1;
-
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 2;
+message IsMountPointRequest {
+    // The path whose existence we want to check in the host's filesystem
+    string path = 1;
 }
 
-message DiskLocation {
-    string Adapter = 0;
-    string Bus = 1;
-    string Target = 2;
-    string LUNID = 3;
-}
-
-message ListDiskIDsRequest {
-    // Intentionally empty
-}
-
-message ListDiskIDsResponse {
-    // Map of disk device objects and IDs associated with each disk device
-    map <string, DiskIDs> disk_id = 1;
-
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 2;
-}
-
-message DiskIDs {
-    // list of Disk IDs of ascii characters associated with disk device
-    repeated strings IDs = 1;
-}
-
-message ListDiskVolumeMappingsRequest {
-    // Intentionally empty
-}
-
-message ListDiskVolumeMappingsResponse {
-    // Map of disk devices and volume objects of the form \\?\volume\{GUID} on the disk
-    map <string, string> disk_volume_pair = 1;
-
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 2;
-}
-
-message ResizeVolumeRequest {
-    // The Win32 volume device to resize
-    //
-    // Restrictions:
-    // Volume device needs to follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
-    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
-    string volume_device = 1;
-
-    // New size to resize FS to
-    int64 new_size = 2;
-}
-
-message ResizeVolumeResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
-}
-
-message DismountVolumeRequest {
-    // The Win32 volume device to dismount gracefully
-    //
-    // Restrictions:
-    // Volume device needs to follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
-    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
-    string volume_device = 1;
-}
-
-message DismountVolumeResponse {
-    // Windows error code
-    // Success is represented as 0
-    int32 error_code = 1;
+message IsMountPointResponse {
+    // Indicates whether the path in PathExistsRequest exists in the host's filesystem
+    bool is_mount_point = 2;
 }
 
 ```
@@ -708,13 +883,9 @@ Members of CSI Proxy API Group may be deprecated and then removed from csi-proxy
 2. 9 months or 3 releases (whichever is longer) if the API member is part of a Beta/vNbeta1 version.
 3. 0 releases if the API member is part of an Alpha/vNalpha1 version.
 
-To continue running CSI Node Plugins that depend on an old version of csi-proxy.exe, vN, some of whose members have been removed, Kubernetes administrators will be required to run the latest version of the csi-proxy.exe (that will be used by CSI Node Plugins that use versions of CSIProxyService more recent than vN) along with an old version of csi-proxy.exe that does support vN.
+To continue running CSI Node Plugins that depend on an old version of csi-proxy.exe (exposing vN of a certain API group, some of whose members have been removed), Kubernetes administrators will be required to run the latest version of the csi-proxy.exe (that will be used by CSI Node Plugins that use versions of the API group more recent than vN) along with an old version of csi-proxy.exe (that does support vN of API group).
 
 Introduction of new RPCs or enhancements to parameters is expected to be inspired by new requirements from plugin authors as well as CSI functionality enhancement.
-
-##### CSI Proxy Event Logs
-
-For all RPC invocations, csi-proxy.exe will log events to the Windows application event log. This will act as an audit trail that may be correlated with audit logs from Kubeneretes around operations involving PV creation to track potential unexpected invocation of CSIProxyService by a malicious pod or process.
 
 #### Enhancements in Kubernetes/Utils/mounter
 
@@ -722,7 +893,7 @@ Once the [PR](https://github.com/kubernetes/utils/pull/100/files) lands, a mount
 
 #### Enhancements in CSI Node Plugins
 
-Code for CSI Node Plugins need to be refactored to support CSI Node APIs in both Linux and Windows nodes. While the code targeting Linux nodes can assume privileged access to the host, the code targeting Windows nodes need to invoke the GRPC client API associated with the desired version of the CSIProxyService described above. CSI Node Plugins that will use the Kubernetes/Utils/mounter package introduced in this [PR](https://github.com/kubernetes/utils/pull/100/files) will require minimal platform specific code targeting Windows and Linux.
+Code for CSI Node Plugins need to be refactored to support CSI Node APIs in both Linux and Windows nodes. While the code targeting Linux nodes can assume privileged access to the host, the code targeting Windows nodes need to invoke the GRPC client API associated with the desired version of a csi-proxy API group described above. CSI Node Plugins that will use the Kubernetes/Utils/mounter package introduced in this [PR](https://github.com/kubernetes/utils/pull/100/files) will require minimal platform specific code targeting Windows and Linux.
 
 Once compiled for Windows, container images based on Window Base images (like NanoServer) needs to be published and maintained. Container images targeting Linux nodes will need to be based on the desired Linux distro base image.
 
@@ -783,7 +954,7 @@ Downgrading the version of csi-proxy.exe to one that is not supported by all ins
 
 Beyond the points in the above section (Upgrade/Downgrade strategy), there are no Kubernetes version skew considerations in the context of this KEP.
 
-The mininum Kubernetes version to support CSI Windows is 1.8. While the API versions in CSI proxy is independent of Kubernetes versions, we recommand the following versions between CSI proxy and Kubernetes. 
+The minimum Kubernetes version to support CSI Windows is 1.18. While the API versions in CSI proxy is independent of Kubernetes versions, we recommend the following versions of CSI proxy and Kubernetes.
 
 Status | Min K8s Version | Recommended K8s Version
 --|--|--
@@ -949,8 +1120,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [x] Events
   - Event Reason: Windows Pods which are using the PVCs (using CSI Node plugin) can start.
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details: CSI-proxy also generates logs
 
@@ -1177,7 +1348,7 @@ There are alternative approaches to the CSI Proxy API Group as well as the overa
 
 The CSI Proxy API Group will be a defined set of operations that will need to expand over time as new CSI APIs are introduced that require new operations on every node as well as desire for richer operations by CSI plugin authors. Unfortunately this comes with a maintenance burden associated with tracking and graduating new RPCs across versions.
 
-An alternative approach that simplifies the above involves exposing a single Exec interface in CSIProxyService that supports passing an arbitrary set of parameters to arbitrary executables and powershell cmdlets on the Windows host and collecting and returning the stdout and stderr back to the invoking containerized process. Since all the currently enumerated operations in the CSI Proxy API Group can be driven through the generic Exec interface, the set of desired privileged operations necessary becomes a decision for plugin authors rather than maintainers of csi-proxy. The main drawback of this highly flexible mechanism is that it drastically increases the potential for abuse in the host by 3rd party plugin authors. The ability to exploit bugs or vulnerabilities in individual plugins to take control of the host becomes much more trivial with a generic Exec RPC relative to exploiting other RPCs of the CSI Proxy API Group.
+An alternative approach that simplifies the above involves exposing a single Exec API that supports passing an arbitrary set of parameters to arbitrary executables and powershell cmdlets on the Windows host and collecting and returning the stdout and stderr back to the invoking containerized process. Since all the currently enumerated operations in the CSI Proxy API Group can be driven through the generic Exec interface, the set of desired privileged operations necessary becomes a decision for plugin authors rather than maintainers of csi-proxy. The main drawback of this highly flexible mechanism is that it drastically increases the potential for abuse in the host by 3rd party plugin authors. The ability to exploit bugs or vulnerabilities in individual plugins to take control of the host becomes much more trivial with a generic Exec RPC relative to exploiting other RPCs of the CSI Proxy API Group.
 
 Depending on the adoption of csi-proxy in the Alpha and Beta phases and the need for specialized privileged operations, we may consider adding a generic Exec interface in the future.
 
@@ -1199,4 +1370,4 @@ At some point in the future, a Windows LTS release may implement support for exe
 
 ## Infrastructure Needed
 
-The code for csi-proxy as well as the GRPC API will be maintained in a dedicated repo: github.com/kubernetes-csi/windows-csi-proxy 
+The code for csi-proxy as well as the GRPC API will be maintained in a dedicated repo: github.com/kubernetes-csi/windows-csi-proxy
