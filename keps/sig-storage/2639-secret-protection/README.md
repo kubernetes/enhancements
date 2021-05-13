@@ -153,7 +153,7 @@ It is due to the restriction that CRDs can't be handled from in-tree controller.
   - If the `SecretInUseProtection` feature gate is disalbed, finalizer is added on creation, but deleted regardless of whether it is in-use after `deletionTimestamp` is set. This will allow users to avoid manually deleting finalizers on the downgrading by disabling the feature.
 - Out-of-tree resources(`VolumeSnapshot`):
   - The deletion is blocked by using newly introduced `snapshot.storage.kubernetes.io/secret-protection` finalizer,
-  - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be always added on creation of the secret by using admission controller for `VolumeSnapshot`,
+  - The `snapshot.storage.kubernetes.io/secret-protection` finalizer will be always added on creation of the secret by using snapshot controller,
   - After the secret is requested to be deleted (`deletionTimestamp` is set), the `snapshot.storage.kubernetes.io/secret-protection` finalizer will be deleted by newly introduced out-of-tree `secret-protection-volumesnapshot-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
 
 Feature gate `SecretInUseProtection` is used only for in-tree controller. Out-of-tree controller will be always enabled when the `secret-protection-volumesnapshot-controller` is deployed.
@@ -277,6 +277,7 @@ you need any help or guidance.
     - secret-protection-controller (part of kube-controller-manager)
     - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
 
+Secret protection controllers for in-tree are deployed automatically, if the Kubernetes version is later than the version where secret protection feature is marked as alpha.
 Secret protection for volume snapshot will be enabled when those relevant out-of-tree controllers are deployed, but no feature gate is needed.
 
 ###### Does enabling the feature change any default behavior?
@@ -285,7 +286,18 @@ Yes. Secrets aren't deleted until the resources using them are deleted.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, by disabling the feature gate. After the feature gate is disabled, users need to manually delete the `kubernetes.io/secret-protection` finalizer and the `snapshot.storage.kubernetes.io/secret-protection` finalizer to make secret deleted properly.
+Yes. Detailed steps are as follows:
+
+- In-tree controller:
+  - Downgrade case:
+    1. Downgrade to the version where no secret-protection-controller exists,
+    2. Manually delete the `kubernetes.io/secret-protection` finalizer from all the secrets.
+  - Otherwise:
+    1. Disable the `SecretInUseProtection` feature gate.
+
+- Out-of-tree controller:
+  1. Delete the out-of-tree secret protection controller,
+  2. Manually delete the `snapshot.storage.kubernetes.io/secret-protection` finalizer from all the secrets.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
