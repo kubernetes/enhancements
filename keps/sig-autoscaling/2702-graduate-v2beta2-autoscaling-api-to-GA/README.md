@@ -128,23 +128,6 @@ However any HPA objects stored in the user's code repository (all your YAML file
 v2beta1 format.  You should migrate all your HPA objects to the v2 format.  See the types.go files or just
 run `kubectl get hpa.v2.autoscaling -oyaml` to see your objects in the v2 format.
 
-
-###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-
 ###### Does enabling the feature change any default behavior?
 
 <!--
