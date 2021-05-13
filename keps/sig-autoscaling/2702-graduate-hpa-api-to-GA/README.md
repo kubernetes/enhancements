@@ -278,8 +278,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ x ] Events
   - Event Reason: 
   The event type `Normal`, reason `SuccessfulRescale`, note `New size: N; reason: FOO` indicates autoscaling is operating normally.
-  Abnormal events type `Warning` include reasons such as `FailedRescale` and `FailedComputeMetricsReplicas` and
-  will include details about the error in the note.
+  Abnormal events type `Warning` include reasons such as `FailedRescale` and `FailedComputeMetricsReplicas` and will
+  include details about the error in the note.
 - [ x ] API .status
   - Condition name: 
   There are three condition types which indicate the operating status of the HPA.  They are `ScalingEnabled`, `AbleToScale`
@@ -295,8 +295,8 @@ Recall that end users cannot usually observe component logs or access metrics.
   values an operator can verify the HPA is maintaining the desired target for the dominant metric.
   The operator can also see the number of pods the HPA observed under `status.currentReplicas` and the most
   recent recommendation under `status.desiredReplicas`.
-  The latest observed generation is echoed back in status so an operator can verify the HPA is keeping up-to-date
-  with configuration changes.
+  The latest observed generation is echoed back in status so an operator can verify the HPA is keeping up-to-date with
+  configuration changes.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
