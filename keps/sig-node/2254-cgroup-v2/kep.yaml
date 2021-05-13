@@ -20,6 +20,6 @@ status: implementable
 see-also:
 replaces:
 superseded-by:
-
 latest-milestone: "v1.22"
 stage: "beta"
+disable-supported: true
