@@ -22,6 +22,7 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -257,11 +258,16 @@ included.
 
 ### Graduation Criteria
 
-- Determine if additional information would be valuable to operators of clusters.
-- Consider building and publishing tools for cluster operators to run which make use of the data
-  - Look for deprecated command invocations
-  - Build graphs of usage
-  - Identify most used commands
+#### Alpha -> Beta Graduation
+
+- [ ] Change feature gate from default **off** to default **on**
+- [ ] Documentation in kubectl section of [kubernetes.io] describes the
+extra headers sent and how to disable these headers if necessary.
+- [ ] kubectl headers remove the `X-` prefix to align with
+[IETF guidance](https://datatracker.ietf.org/doc/html/rfc6648).
+Example: `X-Kubectl-Command` header is changed to `Kubectl-Command`.
+- [ ] All other issues raised during alpha use of feature are resolved.
+- [ ] Completion of the test plan
 
 ### Upgrade / Downgrade Strategy
 
@@ -279,7 +285,7 @@ can be no version skew.
 
 * **How can this feature be enabled / disabled in a live cluster?**
 
-  This feature is enabled by default in kubectl, and it be turned
+  This feature is enabled by default in kubectl, and it can be turned
   off by setting the KUBECTL_COMMAND_HEADERS environment variable
   to false.
 
