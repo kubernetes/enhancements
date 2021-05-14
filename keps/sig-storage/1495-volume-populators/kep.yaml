@@ -20,7 +20,7 @@ prr-approvers:
   - "@deads2k"
 replaces:
   - "/keps/sig-storage/20200120-generic-data-populators.md"
-stage: beta
+stage: alpha
 latest-milestone: "v1.22"
 milestone:
   alpha: "v1.18"

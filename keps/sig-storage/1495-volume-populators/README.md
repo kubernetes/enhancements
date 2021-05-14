@@ -133,8 +133,8 @@ Introduce a new field on PVCs called `DataSourceRef`. This new field operates li
 `DataSource` except that it never ignores input -- contents are always accepted or the
 entire PVC is rejected if the contents are deemed invalid.
 
-Deprecate the `DataSource` field, but continue to support it in a backwards-compatible
-way. In particular:
+Deprecate the `DataSource` field once `DataSourceRef` reaches GA, but continue to
+support it in a backwards-compatible way, never removing it. In particular:
 
 1. If `DataSource` and `DataSourceRef` are both unset; accept
 1. If `DataSource` is set valid (PVC or VolumeSnapshot) AND `DataSourceRef` is not set;
@@ -550,7 +550,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - KEP updated to new format September 2020
 - Webhook replaced with controller in December 2020
 - KEP updated Feb 2021 for v1.21
-- Resign with new `DataSourceRef` field in May 2021 for v1.22, still alpha
+- Redesign with new `DataSourceRef` field in May 2021 for v1.22, still alpha
 
 ## Alternatives
 
