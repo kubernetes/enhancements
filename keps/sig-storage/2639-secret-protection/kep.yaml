@@ -1,4 +1,4 @@
-title: secret protection
+title: Secret/ConfigMap Protection
 kep-number: 2639
 authors:
   - "@mkimuram"
@@ -31,10 +31,10 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: SecretInUseProtection
+  - name: EphemeralInUseProtection
     components:
       - kube-controller-manager
-      - secret-protection-controller (part of kube-controller-manager)
+      - ephemeral-protection-controller (part of kube-controller-manager)
       - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
 
 disable-supported: true
