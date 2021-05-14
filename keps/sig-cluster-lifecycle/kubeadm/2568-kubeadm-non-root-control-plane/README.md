@@ -573,39 +573,38 @@ spec:
 
 Each of the components will run with a unique `UID` and `GID`. For each of the components we will create a unique user. For the shared files/resources we will create groups. The naming convention of these groups is tabulated below. It should be noted that `kubeadm` will take exclusive ownership of these users/groups and will throw erros if users/groups with these names exist and are not in the expected ID range of `SYS_UID_MIN`-`SYS_UID_MAX` for users and `SYS_GID_MIN`-`SYS_GID_MAX` for groups.
 
+Many of the components need shared access to certificate files, these are not protected by creating a group with read permissions because certificates are not secrets, protecting them and creating groups for them does not improve our security posture in anyway and only makes the change more complicated because we are adding unnecessary groups. Hence we only propose that we create a group with read access for the `/etc/kubernetes/pki/sa.key` file, which is the only secret that is shared between `kube-apiserver` and `kube-controller-manager`. `kubeadm` creates all certificate files with `0644` so we do not need to modify their owners as they are already world readable.
+
 | User/Group name | Explanation |
 |--------------|-------------|
 | kubeadm-etcd | The UID/GID that we will assign to `etcd` |
 | kubeadm-kas  | The UID/GID that we will assign to `kube-apiserver` |
 | kubeadm-kcm | The UID/GID that we will assign to `kube-controller-manager` |
 | kubeadm-ks | The UID/GID that we will assign to `kube-scheduler` |
-| kubeadm-etcd-ca-crt-readers | The GID we will assign to a group that allows you to read /etc/kubernetes/pki/etcd/ca.crt |
-| kubeadm-ca-crt-readers | The GID we will assign to a group that allows you to read /etc/kubernetes/pki/etcd/ca.crt |
 | kubeadm-sa-key-readers | The GID we will assign to a group that allows you to read /etc/kubernetes/pki/sa.key |
-| kubeadm-front-proxy-ca-crt-readers | The GID we will assign to a group that allows you to read /etc/kubernetes/pki/front-proxy-ca.crt |
 
 Here is a table of all the things that `kube-apiserver`, `kube-controller-manager`, `kube-scheduler` and `etcd` mount and the permissions that we will set for them.
 
 **Files that we care about for this kep:-**
 | file/directory                                   | Component(s) | File permission |
 | -------------------------------------------------|------------|-----------------|
-| /etc/kubernetes/pki/etcd/server.crt              | etcd       | 600 kubeadm-etcd kubeadm-etcd   |
+| /etc/kubernetes/pki/etcd/server.crt              | etcd       | 644 kubeadm-etcd kubeadm-etcd   |
 | /etc/kubernetes/pki/etcd/server.key              | etcd       | 600 kubeadm-etcd kubeadm-etcd   |
-| /etc/kubernetes/pki/etcd/peer.crt                | etcd       | 600 kubeadm-etcd kubeadm-etcd   |
+| /etc/kubernetes/pki/etcd/peer.crt                | etcd       | 644 kubeadm-etcd kubeadm-etcd   |
 | /etc/kubernetes/pki/etcd/peer.key                | etcd       | 600 kubeadm-etcd kubeadm-etcd   |
-| /etc/kubernetes/pki/etcd/ca.crt                  | etcd, kas  | 640 root kubeadm-etcd-ca-crt-readers |
+| /etc/kubernetes/pki/etcd/ca.crt                  | etcd, kas  | 644 root root |
 | /var/lib/etcd/                                   | etcd       | 600 kubeadm-etcd kubeadm-etcd   |
-| /etc/kubernetes/pki/ca.crt                       | kas, kcm   | 640 root kubeadm-ca-crt-readers |
-| /etc/kubernetes/pki/apiserver-etcd-client.crt    | kas        | 600 kubeadm-kas kubeadm-kas     |
+| /etc/kubernetes/pki/ca.crt                       | kas, kcm   | 644 root root |
+| /etc/kubernetes/pki/apiserver-etcd-client.crt    | kas        | 644 root root     |
 | /etc/kubernetes/pki/apiserver-etcd-client.key    | kas        | 600 kakubeadm-kas kubeadm-kas     |
-| /etc/kubernetes/pki/apiserver-kubelet-client.crt | kas        | 600 kubeadm-kas kubeadm-kas     |
+| /etc/kubernetes/pki/apiserver-kubelet-client.crt | kas        | 644 root root     |
 | /etc/kubernetes/pki/apiserver-kubelet-client.key | kas        | 600 kubeadm-kas kubeadm-kas     |
-| /etc/kubernetes/pki/front-proxy-client.crt       | kas        | 600 kubeadm-kas kubeadm-kas     |
-| /etc/kubernetes/pki/front-proxy-client.key       | kas        | 600 kubeadm-kas kubeadm-kas     |
-| /etc/kubernetes/pki/front-proxy-ca.crt           | kas, kcm   | 640 root kubeadm-front-proxy-ca-crt-readers |
+| /etc/kubernetes/pki/front-proxy-client.crt       | kas        | 644 root root     |
+| /etc/kubernetes/pki/front-proxy-client.key       | No-one        | 600 root root     |
+| /etc/kubernetes/pki/front-proxy-ca.crt           | kas, kcm   | 644 root root |
 | /etc/kubernetes/pki/sa.pub                       | kas        | 600 kkubeadm-kass kubeadm-kas     |
 | /etc/kubernetes/pki/sa.key                       | kas, kcm   | 640 kubeadm-sa-key-readers |
-| /etc/kubernetes/pki/apiserver.crt                | kas        | 600 kubeadm-kas kubeadm-kas     |
+| /etc/kubernetes/pki/apiserver.crt                | kas        | 644 root root     |
 | /etc/kubernetes/pki/apiserver.key                | kas        | 600 kubeadm-kas kubeadm-kas     |
 | /etc/kubernetes/pki/ca.key                       | kcm        | 600 kubeadm-kcm kubeadm-kcm     |
 | /etc/kubernetes/controller-manager.conf          | kcm        | 600 kubeadm-kcm kubeadm-kcm     |
