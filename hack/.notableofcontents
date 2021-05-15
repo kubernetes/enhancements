@@ -1,4 +1,5 @@
 keps/README.md
+keps/prod-readiness/README.md
 keps/sig-cli/FAQ.md
 keps/sig-cluster-lifecycle/clusterapi/FAQ.md
 keps/sig-cluster-lifecycle/kubeadm/970-kubeadm-config/documentation-for-images.md
