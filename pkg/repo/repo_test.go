@@ -29,21 +29,24 @@ import (
 
 func TestProposalValidate(t *testing.T) {
 	testcases := []struct {
-		name        string
-		file        string
-		expectError bool
+		name         string
+		file         string
+		expectErrors bool
 	}{
 		{
-			name:        "valid KEP passes validate",
-			file:        "testdata/valid-kep.yaml",
-			expectError: false,
+			name:         "valid KEP passes validate",
+			file:         "testdata/valid-kep.yaml",
+			expectErrors: false,
 		},
 		{
-			name:        "invalid KEP fails validate for owning-sig",
-			file:        "testdata/invalid-kep.yaml",
-			expectError: true,
+			name:         "invalid KEP fails validate for owning-sig",
+			file:         "testdata/invalid-kep.yaml",
+			expectErrors: true,
 		},
 	}
+
+	parser := api.KEPHandler{}
+	parser.Groups = []string{"sig-api-machinery"}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -54,9 +57,9 @@ func TestProposalValidate(t *testing.T) {
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
 
-			err = p.Validate()
-			if tc.expectError {
-				require.Error(t, err)
+			errs := parser.Validate(&p)
+			if tc.expectErrors {
+				require.NotEmpty(t, errs)
 			}
 
 			require.NoError(t, err)

@@ -80,12 +80,12 @@ func Create(opts *CreateOpts) error {
 
 	populateProposal(kep, opts)
 
-	err := kep.Validate()
-	if err != nil {
-		return err
+	errs := r.KEPHandler.Validate(kep)
+	if errs != nil {
+		return fmt.Errorf("invalid kep: %v", errs)
 	}
 
-	err = createKEP(kep, opts)
+	err := createKEP(kep, opts)
 	if err != nil {
 		return err
 	}
