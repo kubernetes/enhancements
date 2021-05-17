@@ -37,15 +37,12 @@ var (
 
 // TODO(lint): cyclomatic complexity 50 of func `ValidateStructure` is high (> 30) (gocyclo)
 //nolint:gocyclo
-func ValidateStructure(parsed map[interface{}]interface{}) error {
+func ValidateStructure(listGroups []string, prrApprovers []string, parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
 		if _, found := parsed[key]; !found {
 			return util.NewKeyMustBeSpecified(key)
 		}
 	}
-
-	listGroups := util.Groups()
-	prrApprovers := util.PRRApprovers()
 
 	for key, value := range parsed {
 		// First off the key has to be a string. fact.

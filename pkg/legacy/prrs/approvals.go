@@ -28,7 +28,9 @@ import (
 	"k8s.io/enhancements/pkg/legacy/prrs/validations"
 )
 
-type Parser struct{}
+type Parser struct {
+	PRRApprovers []string
+}
 
 func (p *Parser) Parse(in io.Reader) *api.PRRApproval {
 	scanner := bufio.NewScanner(in)
@@ -50,7 +52,7 @@ func (p *Parser) Parse(in io.Reader) *api.PRRApproval {
 		approval.Error = errors.Wrap(err, "error unmarshalling YAML")
 		return approval
 	}
-	if err := validations.ValidateStructure(test); err != nil {
+	if err := validations.ValidateStructure(p.PRRApprovers, test); err != nil {
 		approval.Error = errors.Wrap(err, "error validating PRR approval metadata")
 		return approval
 	}

@@ -63,15 +63,28 @@ type QueryOpts struct {
 	Output      string
 }
 
-// Validate checks the query options and cleans them up if needed
+// Validate returns an error if any QueryOpts fields are invalid
 func (o *QueryOpts) Validate() error {
-	groups, err := api.FetchGroups()
-	if err != nil {
-		return errors.Wrap(err, "fetching groups")
+	// check if the Output specified is one of "", "json" or "yaml"
+	// check if the Output specified is one of "", "json" or "yaml"
+	if !sliceContains(SupportedOutputOpts, o.Output) {
+		return fmt.Errorf("unsupported output format: %s. Valid values: %v", o.Output, SupportedOutputOpts)
 	}
 
-	if len(o.Groups) > 0 {
-		sigs, err := selectByRegexp(groups, o.Groups)
+	// TODO: check the valid values of stage, status, etc.
+	return nil
+}
+
+func (r *Repo) PrepareQueryOpts(opts *QueryOpts) error {
+	err := opts.Validate()
+	if err != nil {
+		return fmt.Errorf("invalid query opts: %w", err)
+	}
+
+	groups := r.KEPHandler.Groups
+
+	if len(opts.Groups) > 0 {
+		sigs, err := selectByRegexp(groups, opts.Groups)
 		if err != nil {
 			return err
 		}
@@ -80,18 +93,11 @@ func (o *QueryOpts) Validate() error {
 			return fmt.Errorf("no SIG matches any of the passed regular expressions")
 		}
 
-		o.Groups = sigs
+		opts.Groups = sigs
 	} else {
 		// if no SIGs are passed, list KEPs from all SIGs
-		o.Groups = groups
+		opts.Groups = groups
 	}
-
-	// check if the Output specified is one of "", "json" or "yaml"
-	if !sliceContains(SupportedOutputOpts, o.Output) {
-		return fmt.Errorf("unsupported output format: %s. Valid values: %v", o.Output, SupportedOutputOpts)
-	}
-
-	// TODO: check the valid values of stage, status, etc.
 	return nil
 }
 
@@ -110,6 +116,11 @@ func (r *Repo) Query(opts *QueryOpts) error {
 
 	if !suppressOutputs {
 		fmt.Fprintf(r.Out, "Searching for KEPs...\n")
+	}
+
+	err := r.PrepareQueryOpts(opts)
+	if err != nil {
+		return fmt.Errorf("unable to prepare query opts: %w", err)
 	}
 
 	if r.TokenPath != "" {
@@ -142,7 +153,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		}
 	}
 
-	logrus.Debugf("all KEPs collected: %v", allKEPs)
+	logrus.Debugf("all KEPs collected: %+v", allKEPs)
 
 	// filter the KEPs by criteria
 	allowedStatus := sliceToMap(opts.Status)

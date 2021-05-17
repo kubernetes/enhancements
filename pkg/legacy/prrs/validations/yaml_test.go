@@ -60,12 +60,13 @@ func TestValidateStructureSuccess(t *testing.T) {
 			},
 		},
 	}
+	prrApprovers := []string{"wojtek-t"}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Add required fields.
 			tc.input["kep-number"] = "12345"
 
-			err := ValidateStructure(tc.input)
+			err := ValidateStructure(prrApprovers, tc.input)
 			if err != nil {
 				t.Fatalf("did not expect an error: %v", err)
 			}
@@ -101,9 +102,10 @@ func TestValidateStructureFailures(t *testing.T) {
 			},
 		},
 	}
+	prrApprovers := []string{"wojtek-t"}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateStructure(tc.input)
+			err := ValidateStructure(prrApprovers, tc.input)
 			if err == nil {
 				t.Fatal("expecting an error")
 			}

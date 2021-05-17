@@ -26,7 +26,7 @@ import (
 
 var mandatoryKeys = []string{"kep-number"}
 
-func ValidateStructure(parsed map[interface{}]interface{}) error {
+func ValidateStructure(prrApprovers []string, parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
 		if _, found := parsed[key]; !found {
 			return util.NewKeyMustBeSpecified(key)
@@ -45,7 +45,7 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 		case "alpha", "beta", "stable":
 			switch v := value.(type) {
 			case map[string]interface{}:
-				if err := validateMilestone(v); err != nil {
+				if err := validateMilestone(prrApprovers, v); err != nil {
 					return fmt.Errorf("invalid %s field: %v", k, err)
 				}
 			default:
@@ -56,9 +56,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 	return nil
 }
 
-func validateMilestone(parsed map[string]interface{}) error {
+func validateMilestone(prrApprovers []string, parsed map[string]interface{}) error {
 	// prrApprovers must be sorted to use SearchStrings down below...
-	prrApprovers := util.PRRApprovers()
 	sort.Strings(prrApprovers)
 
 	for k, value := range parsed {

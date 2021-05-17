@@ -17,7 +17,10 @@ limitations under the License.
 package repo_test
 
 import (
+	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,7 +28,37 @@ import (
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
+	"k8s.io/release/pkg/log"
 )
+
+var fixture = struct {
+	validRepoPath string
+	validRepo     *repo.Repo
+}{}
+
+func TestMain(m *testing.M) {
+	err := log.SetupGlobalLogger("debug")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to setup global logger: %v: ", err)
+	}
+
+	fixture.validRepoPath = filepath.Join("testdata", "repos", "valid")
+
+	// NB: keep this in sync with testdata/repos/valid/keps
+	fetcher := &api.MockGroupFetcher{
+		Groups: []string{
+			"sig-architecture",
+		},
+	}
+	r, err := repo.NewRepo(fixture.validRepoPath, fetcher)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to load repo from %s: %v: ", fixture.validRepoPath, err)
+		os.Exit(1)
+	}
+	fixture.validRepo = r
+
+	os.Exit(m.Run())
+}
 
 func TestProposalValidate(t *testing.T) {
 	testcases := []struct {
@@ -84,8 +117,7 @@ func TestFindLocalKEPs(t *testing.T) {
 		},
 	}
 
-	r, repoErr := repo.New(validRepo)
-	require.Nil(t, repoErr)
+	r := fixture.validRepo
 
 	for i, tc := range testcases {
 		k, err := r.LoadLocalKEPs(tc.sig)

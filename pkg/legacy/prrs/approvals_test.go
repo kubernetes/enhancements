@@ -39,7 +39,9 @@ stable:
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := &Parser{}
+			p := &Parser{
+				PRRApprovers: []string{"wojtek-t", "johnbelamaric"},
+			}
 			contents := strings.NewReader(tc.fileContents)
 			out := p.Parse(contents)
 			if out.Error != nil {

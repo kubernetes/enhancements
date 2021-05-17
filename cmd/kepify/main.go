@@ -25,8 +25,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"k8s.io/enhancements/api"
 )
 
@@ -72,8 +70,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	fetcher := api.DefaultGroupFetcher()
+
+	groups, err := fetcher.FetchGroups()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unable to fetch groups: %v", err)
+		os.Exit(1)
+	}
+
+	prrApprovers, err := fetcher.FetchPRRApprovers()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unable to fetch PRR approvers: %v", err)
+		os.Exit(1)
+	}
+
+	kepHandler := &api.KEPHandler{Groups: groups, PRRApprovers: prrApprovers}
+
 	// Parse the files
-	proposals, err := parseFiles(files)
+	proposals, err := parseFiles(kepHandler, files)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing files: %q\n", err)
 		os.Exit(1)
@@ -112,14 +126,9 @@ func findMarkdownFiles(dirPath *string) ([]string, error) {
 	return files, err
 }
 
-func parseFiles(files []string) (api.Proposals, error) {
+func parseFiles(parser *api.KEPHandler, files []string) (api.Proposals, error) {
 	var proposals api.Proposals
 	for _, filename := range files {
-		parser, err := api.NewKEPHandler()
-		if err != nil {
-			return nil, errors.Wrap(err, "creating new KEP handler")
-		}
-
 		file, err := os.Open(filename)
 		if err != nil {
 			return nil, fmt.Errorf("could not open file: %v", err)

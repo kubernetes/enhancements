@@ -86,26 +86,6 @@ func (p *Proposal) IsMissingStage() bool {
 
 type KEPHandler Parser
 
-func NewKEPHandler() (*KEPHandler, error) {
-	handler := &KEPHandler{}
-
-	groups, err := FetchGroups()
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching groups")
-	}
-
-	handler.Groups = groups
-
-	approvers, err := FetchPRRApprovers()
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching PRR approvers")
-	}
-
-	handler.PRRApprovers = approvers
-
-	return handler, nil
-}
-
 // TODO(api): Make this a generic parser for all `Document` types
 func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
 	scanner := bufio.NewScanner(in)

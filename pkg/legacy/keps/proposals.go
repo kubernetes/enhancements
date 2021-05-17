@@ -31,7 +31,10 @@ import (
 	"k8s.io/enhancements/pkg/legacy/keps/validations"
 )
 
-type Parser struct{}
+type Parser struct {
+	Groups       []string
+	PRRApprovers []string
+}
 
 func (p *Parser) Parse(in io.Reader) *api.Proposal {
 	scanner := bufio.NewScanner(in)
@@ -71,7 +74,7 @@ func (p *Parser) Parse(in io.Reader) *api.Proposal {
 		return proposal
 	}
 
-	if err := validations.ValidateStructure(test); err != nil {
+	if err := validations.ValidateStructure(p.Groups, p.PRRApprovers, test); err != nil {
 		proposal.Error = errors.Wrap(err, "error validating KEP metadata")
 		return proposal
 	}

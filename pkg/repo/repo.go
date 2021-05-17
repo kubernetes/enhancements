@@ -79,6 +79,11 @@ type Repo struct {
 
 // New returns a new repo client configured to use the the normal os.Stdxxx and Filesystem
 func New(repoPath string) (*Repo, error) {
+	fetcher := api.DefaultGroupFetcher()
+	return NewRepo(repoPath, fetcher)
+}
+
+func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 	var err error
 	if repoPath == "" {
 		repoPath, err = os.Getwd()
@@ -138,6 +143,20 @@ func New(repoPath string) (*Repo, error) {
 		)
 	}
 
+	groups, err := fetcher.FetchGroups()
+	if err != nil {
+		return nil, fmt.Errorf("fetching groups: %w", err)
+	}
+
+	prrApprovers, err := fetcher.FetchPRRApprovers()
+	if err != nil {
+		return nil, fmt.Errorf("fetching PRR approvers: %w", err)
+	}
+
+	kepHandler := &api.KEPHandler{Groups: groups, PRRApprovers: prrApprovers}
+
+	prrHandler := &api.PRRHandler{PRRApprovers: prrApprovers}
+
 	repo := &Repo{
 		BasePath:        repoPath,
 		ProposalPath:    proposalPath,
@@ -146,6 +165,8 @@ func New(repoPath string) (*Repo, error) {
 		In:              os.Stdin,
 		Out:             os.Stdout,
 		Err:             os.Stderr,
+		KEPHandler:      kepHandler,
+		PRRHandler:      prrHandler,
 	}
 
 	proposalTemplate, err := repo.getProposalTemplate()
@@ -154,20 +175,6 @@ func New(repoPath string) (*Repo, error) {
 	}
 
 	repo.ProposalTemplate = proposalTemplate
-
-	kepHandler, err := api.NewKEPHandler()
-	if err != nil {
-		return nil, errors.Wrap(err, "creating KEP handler")
-	}
-
-	repo.KEPHandler = kepHandler
-
-	prrHandler, err := api.NewPRRHandler()
-	if err != nil {
-		return nil, errors.Wrap(err, "creating PRR handler")
-	}
-
-	repo.PRRHandler = prrHandler
 
 	// build a default client with normal os.Stdxx and Filesystem access. Tests can build their own
 	// with appropriate test objects
