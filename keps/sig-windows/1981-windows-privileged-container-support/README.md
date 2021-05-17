@@ -754,6 +754,7 @@ Alpha
 - Version of Kubernetes: Target 1.22
 - OS support: Windows 2019 LTSC and all future versions of Windows Server
 - Alpha Feature Gate for passing privileged flag **or** annotations to CRI calls.
+- Ensure that ephemeral containers are validated for HostProcess requirements
 
 Beta
 
