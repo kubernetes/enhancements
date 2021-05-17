@@ -1,0 +1,40 @@
+@startuml
+skinparam componentStyle rectangle
+
+cloud "3rd party\ncluster add-on" as 3rdparty {
+  component "resource controller" as vendorcontroller
+  component "resource node plugin" as vendornodeplugin
+}
+
+component Kubernetes {
+  component apiserver {
+      file Pod
+      file "..." as otherapi
+      file ResourceClaim
+  }
+  component scheduler {
+    component "resource plugin" as k8sresourceplugin
+  }
+  component "controller-manager" as controllermanager {
+    component "resource claim controller" as k8sresourceclaimcontroller
+  }
+  component kubelet {
+    component "plugin manager" as pluginmanager
+    component "resource manager" as resourcemanager
+  }
+}
+
+vendorcontroller -[hidden]> vendornodeplugin
+Pod -[hidden]> otherapi
+otherapi -[hidden]> ResourceClaim
+
+Pod -u-> k8sresourceclaimcontroller: read resource template\nfrom Pod spec
+ResourceClaim <-u- k8sresourceclaimcontroller: create
+
+Pod <--> scheduler
+ResourceClaim <--> k8sresourceplugin
+
+ResourceClaim <-> vendorcontroller
+pluginmanager <-> vendornodeplugin
+resourcemanager <-> vendornodeplugin
+@enduml
