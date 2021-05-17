@@ -14,10 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -euo pipefail
+set -o errexit
+set -o nounset
+set -o pipefail
+
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 
 # Default timeout is 1800s
-TEST_TIMEOUT=1800
+TEST_TIMEOUT=${TIMEOUT:-1800}
+
+# Write go test artifacts here
+ARTIFACTS=${ARTIFACTS:-"${REPO_ROOT}/tmp"}
 
 for arg in "$@"
 do
@@ -33,9 +40,20 @@ do
     esac
 done
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "${REPO_ROOT}"
 
-GO111MODULE=on go test -v -timeout="${TEST_TIMEOUT}s" -count=1 -cover -coverprofile coverage.out "$(go list ./... | grep -v k8s.io/enhancements/cmd)"
+mkdir -p "${ARTIFACTS}"
 
-go tool cover -html coverage.out -o coverage.html
+go_test_flags=(
+    -v
+    -count=1
+    -timeout="${TEST_TIMEOUT}s"
+    -cover -coverprofile "${ARTIFACTS}/coverage.out"
+)
+
+packages=()
+mapfile -t packages < <(go list ./... | grep -v k8s.io/enhancements/cmd)
+
+GO111MODULE=on go test "${go_test_flags[@]}" "${packages[@]}"
+
+go tool cover -html "${ARTIFACTS}/coverage.out" -o "${ARTIFACTS}/coverage.html"
