@@ -32,7 +32,7 @@ func TestValidateStructureSuccess(t *testing.T) {
 		{
 			name: "just alpha",
 			input: map[interface{}]interface{}{
-				"alpha": map[interface{}]interface{}{
+				"alpha": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
 			},
@@ -40,13 +40,13 @@ func TestValidateStructureSuccess(t *testing.T) {
 		{
 			name: "all milestones",
 			input: map[interface{}]interface{}{
-				"alpha": map[interface{}]interface{}{
+				"alpha": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
-				"beta": map[interface{}]interface{}{
+				"beta": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
-				"stable": map[interface{}]interface{}{
+				"stable": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
 			},
@@ -54,7 +54,7 @@ func TestValidateStructureSuccess(t *testing.T) {
 		{
 			name: "just stable",
 			input: map[interface{}]interface{}{
-				"stable": map[interface{}]interface{}{
+				"stable": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
 			},

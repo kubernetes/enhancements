@@ -107,8 +107,8 @@ func TestUnmarshalSuccess(t *testing.T) {
 		OwningSIG:    "sig-architecture",
 		Status:       "provisional",
 		Approvers:    []string{"my approvers"},
-		LastUpdated:  "at some point",
-		CreationDate: "a while ago",
+		LastUpdated:  "2020-03-04",
+		CreationDate: "2020-01-02",
 	}
 	p := map[interface{}]interface{}{}
 
