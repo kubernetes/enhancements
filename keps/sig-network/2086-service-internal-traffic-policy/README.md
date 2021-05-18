@@ -56,7 +56,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Add a new field `spec.trafficPolicy` to Service that allows node-local and topology-aware routing for Service traffic.
+Add a new field `spec.internalTrafficPolicy` to Service that allows node-local and topology-aware routing for Service traffic.
 
 ## Motivation
 
@@ -76,17 +76,15 @@ for internal Service traffic.
 
 ## Proposal
 
-Introduce a new field in Service `spec.trafficPolicy`. The field will have 4 codified values:
+Introduce a new field in Service `spec.internalTrafficPolicy`. The field will have 2 codified values:
 1. Cluster (default): route to all cluster-wide endpoints (or use topology aware subsetting if enabled).
-2. Topology: route to endpoints using topology-aware routing. See Topology Aware Hints KEP for more details.
-2. PreferLocal: route to node-local endpoints if it exists, otherwise fallback to behavior from Cluster.
-3. Local: only route to node-local endpoints, drop otherwise.
+2. Local: only route to node-local endpoints, drop otherwise.
 
-A feature gate `ServiceTrafficPolicy` will also be introduced for the alpha stage of this feature.
-The `trafficPolicy` field cannot be set on Service during the alpha stage unless the feature gate is enabled.
+A feature gate `ServiceInternalTrafficPolicy` will also be introduced this feature.
+The `internalTrafficPolicy` field cannot be set on Service during the alpha stage unless the feature gate is enabled.
 During the Beta stage, the feature gate will be on by default.
 
-The `trafficPolicy` field will not apply for headless Services or Services of type `ExternalName`.
+The `internalTrafficPolicy` field will not apply for headless Services or Services of type `ExternalName`.
 
 ### User Stories (Optional)
 
@@ -103,7 +101,6 @@ Traffic should never bounce to a daemon on another node.
 ### Risks and Mitigations
 
 * When the `Local` policy is set, it is the user's responsibility to ensure node-local endpoints are ready, otherwise traffic will be dropped.
-* Using the `Local` or `PreferLocal` policy may result in imbalanced traffic for pods in a Service. It is the user's responsibility to handle this.
 
 ## Design Details
 
@@ -113,8 +110,6 @@ type ServiceInternalTrafficPolicyType string
 
 const (
 	ServiceTrafficPolicyTypeCluster     ServiceTrafficPolicyType = "Cluster"
-	ServiceTrafficPolicyTypeTopology    ServiceTrafficPolicyType = "Topology"
-	ServiceTrafficPolicyTypePreferLocal ServiceTrafficPolicyType = "PreferLocal"
 	ServiceTrafficPolicyTypeLocal       ServiceTrafficPolicyType = "Local"
 )
 
@@ -123,51 +118,54 @@ type ServiceSpec struct {
 	...
 	...
 
-	// trafficPolicy denotes if the traffic for a Service should route
-	// to cluster-wide endpoints or node-local endpoints. "Cluster" routes traffic
-	// to a Service to all cluster-wide endpoints. "Topology" routes traffic based on
-	// topology hints. "PreferLocal" will route internal traffic to node-local endpoints
-	// if one exists, otherwise it will fallback to the same behavior as "Cluster".
-	// "Local" routes traffic to node-local endpoints only, traffic is dropped
-	// if no node-local endpoints are ready. When externalTrafficPolicy is "Cluster",
-	// traffic from external sources will be routed based on the trafficPolicy. When
-	// externalTrafficPolicy is "Local", trafficPolicy is ignored for traffic from
-	// external sources.
+	// InternalTrafficPolicy specifies if the cluster internal traffic
+	// should be routed to all endpoints or node-local endpoints only.
+	// "Cluster" routes internal traffic to a Service to all endpoints.
+	// "Local" routes traffic to node-local endpoints only, traffic is
+	// dropped if no node-local endpoints are ready.
+	// The default value is "Cluster".
+	// +featureGate=ServiceInternalTrafficPolicy
 	// +optional
-	// +feature-gate=ServiceTrafficPolicy
-	TrafficPolicy ServiceTrafficPolicyType `json:"trafficPolicy,omitempty"`
+	InternalTrafficPolicy *ServiceInternalTrafficPolicyType `json:"internalTrafficPolicy,omitempty" protobuf:"bytes,22,opt,name=internalTrafficPolicy"`
 }
 ```
 
-This new field will intersect with externalTrafficPolicy in the following ways:
-* if `externalTrafficPolicy=Cluster`, traffic will be routed based on `trafficPolicy` for external sources
-* if `externalTrafficPolicy=Local`, `externalTrafficPolicy` will take precedent over `trafficPolicy`, but only for external sources.
+This field will be independent from externalTrafficPolicy. In other words, internalTrafficPolicy only applies to traffic originating from internal sources.
 
 Proposed changes to kube-proxy:
-* when `trafficPolicy=Cluster`, default to existing behavior today.
-* when `trafficPolicy=Topology`, use topology hints from EndpointSlice API.
-* when `trafficPolicy=PreferLocal`, route to endpoints in EndpointSlice that matches the local node's topology (topology defined by `kubernetes.io/hostname`),
-fall back to "Cluster" behavior if there are no local endpoints.
-* when `trafficPolicy=Local`, route to endpoints in EndpointSlice that maches the local node's topology, drop traffic if none exist.
+* when `internalTrafficPolicy=Cluster`, default to existing behavior today.
+* when `internalTrafficPolicy=Local`, route to endpoints in EndpointSlice that maches the local node's topology, drop traffic if none exist.
+
+Overlap with topology-aware routing:
+
+| ExternalTrafficPolicy | InternalTrafficPolicy | Topology | External Result | Internal Result |
+| - | - | - | - | - |
+| - | - | Auto | Topology | Topology |
+| Local | - | Auto | Local | Topology |
+| Local | Local | Auto | Local | Local |
 
 ### Test Plan
 
 Unit tests:
-* unit tests validating API strategy/validation for when `trafficPolicy` is set on Service.
-* unit tests exercising kube-proxy behavior when `trafficPolicy` is set to all possible values.
+* unit tests validating API strategy/validation for when `internalTrafficPolicy` is set on Service.
+* unit tests exercising kube-proxy behavior when `internalTrafficPolicy` is set to all possible values.
 
 E2E test:
-* e2e tests validating default behavior with kube-proxy did not change when `trafficPolicy` defaults to `Cluster`. Existing tests should cover this.
-* e2e tests validating that traffic is preferred to local endpoints when `trafficPolicy` is set to `PreferLocal`.
-* e2e tests validating that traffic is only sent to node-local endpoints when `trafficPolicy` is set to `Local`.
+* e2e tests validating default behavior with kube-proxy did not change when `internalTrafficPolicy` defaults to `Cluster`. Existing tests should cover this.
+* e2e tests validating that traffic is only sent to node-local endpoints when `internalTrafficPolicy` is set to `Local`.
 
 ### Graduation Criteria
 
 Alpha:
-* feature gate `ServiceTrafficPolicy` _must_ be enabled for apiserver to accept values for `spec.trafficPolicy`. Otherwise field is dropped.
-* kube-proxy handles traffic routing for 4 initial internal traffic policies `Cluster`, `Topology`, `PreferLocal` and `Local`.
+* feature gate `ServiceInternalTrafficPolicy` _must_ be enabled for apiserver to accept values for `spec.internalTrafficPolicy`. Otherwise field is dropped.
+* kube-proxy handles traffic routing for 2 initial internal traffic policies `Cluster`, and `Local`.
 * Unit tests as defined in "Test Plan" section above. E2E tests are nice to have but not required for Alpha.
 
+Beta:
+* integration tests exercising API behavior for `spec.internalTrafficPolicy` field of Service.
+* e2e tests exercising kube-proxy routing when `internalTrafficPolicy` is `Local`.
+* feature gate `ServiceInternalTrafficPolicy` is enabled by default.
+* consensus on how internalTrafficPolicy overlaps with topology-aware routing.
 
 ### Upgrade / Downgrade Strategy
 
@@ -187,18 +185,12 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: `ServiceTrafficPolicy`
+    - Feature gate name: `ServiceInternalTrafficPolicy`
     - Components depending on the feature gate: kube-apiserver, kube-proxy
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 * **Does enabling the feature change any default behavior?**
 
-No, enabling the feature does not change any default behavior since the default value of `trafficPolicy` is `Cluster`.
+No, enabling the feature does not change any default behavior since the default value of `internalTrafficPolicy` is `Cluster`.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
@@ -207,11 +199,11 @@ Yes, the feature gate can be disabled, but Service resource that have set the ne
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
-New Services should be able to set the `trafficPolicy` field. Existing Services that have the field set already should not be impacted.
+New Services should be able to set the `internalTrafficPolicy` field. Existing Services that have the field set will begin to apply the policy again.
 
 * **Are there any tests for feature enablement/disablement?**
 
-There will be unit tests to verify that apiserver will drop the field when the `ServiceTrafficPolicy` feature gate is disabled.
+There will be unit tests to verify that apiserver will drop the field when the `ServiceInternalTrafficPolicy` feature gate is disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -219,20 +211,20 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
 
-TBD for beta.
+Rollout should have minimal impact because the default value of `internalTrafficPolicy` is `Cluster`, which is the default behavior today.
 
 * **What specific metrics should inform a rollback?**
 
-TBD for beta.
+Metrics representing Services being black-holed will be added. This metric can inform rollback.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-TBD for beta.
+No, but this will be manually tested prior to beta. Automated testing will be done if the test tooling is available.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
 
-TBD for beta.
+No.
 
 ### Monitoring Requirements
 
@@ -240,21 +232,24 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-TBD for beta.
+* Check Service to see if `internalTrafficPolicy` is set to `Local`.
+* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints).
+
+TODO: add metric name once it's decided
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
-TBD for beta.
+They can check the "blackhole" metric when internalTrafficPolicy=Local and there are no endpoints.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-TBD for beta.
+This will depend on Service topology and whether `internalTrafficPolicy=Local` is being used.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-TBD for beta.
+A new metric will be added to represent Services that are being "blackholed" (internalTrafficPolicy=Local and no endpoints).
 
 ### Dependencies
 
@@ -267,7 +262,7 @@ _This section must be completed when targeting beta graduation to a release._
   a cloud provider API, or upon an external software-defined storage or network
   control plane.
 
-TBD for beta.
+No.
 
 
 ### Scalability
@@ -325,15 +320,17 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
-TBD for beta.
+Services will not be able to update their internal traffic policy.
 
 * **What are other known failure modes?**
 
-TBD for beta.
+A Service `internalTrafficPolicy` is set to `Local` but there are no node-local endpoints.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-TBD for beta.
+* check Service for internal traffic policy
+* check EndpointSlice to ensure nodeName is set correctly
+* check iptables/ipvs rules on kube-proxy
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -341,6 +338,8 @@ TBD for beta.
 ## Implementation History
 
 2020-10-09: KEP approved as implementable in "alpha" stage.
+2021-03-08: alpha implementation merged for v1.21
+2021-05-12: KEP approved as implementable in "beta" stage.
 
 ## Drawbacks
 
