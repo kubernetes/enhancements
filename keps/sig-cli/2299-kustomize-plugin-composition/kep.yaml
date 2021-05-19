@@ -14,5 +14,7 @@ reviewers:
 approvers:
   - "@monopole"
   - "@pwittrock"
+see-also:
+- "/keps/sig-cli/993-kustomize-generators-transformers"
 stage: alpha
 latest-milestone: "v1.22"
