@@ -280,6 +280,31 @@ func TestQuery(t *testing.T) {
 				skip: true,
 			},
 		},
+		"participating-sig": {
+			{
+				name: "results",
+				queryOpts: repo.QueryOpts{
+					Participant: []string{"sig-participates-only"},
+				},
+				kepNames: []string{
+					"42-the-answer",
+					"404-question-not-found",
+				},
+			},
+			{
+				name: "no results",
+				queryOpts: repo.QueryOpts{
+					Participant: []string{"sig-owns-only"},
+				},
+			},
+			{
+				name: "invalid",
+				queryOpts: repo.QueryOpts{
+					Groups: []string{"sig-does-not-exist"},
+				},
+				err: fmt.Errorf("invalid query options: no SIGs match any of: [sig-does-not-exist]"),
+			},
+		},
 	}
 
 	r := fixture.validRepo

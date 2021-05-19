@@ -23,8 +23,9 @@ type Options struct {
 	TokenPath string
 
 	// KEP options
-	KEP    string // KEP name sig-xxx/xxx-name
-	Name   string
-	Number string
-	SIG    string
+	KEP              string // KEP name sig-xxx/xxx-name
+	Name             string
+	Number           string
+	SIG              string
+	ParticipatingSIG string
 }

@@ -88,6 +88,13 @@ func addQuery(topLevel *cobra.Command) {
 		"Author",
 	)
 
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.Participant,
+		"participating-sig",
+		nil,
+		"Participating SIG",
+	)
+
 	cmd.PersistentFlags().BoolVar(
 		&qo.IncludePRs,
 		"include-prs",

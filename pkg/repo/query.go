@@ -34,6 +34,7 @@ type QueryOpts struct {
 	PRRApprover []string
 	Author      []string
 	Approver    []string
+	Participant []string
 	IncludePRs  bool
 	Output      string
 }
@@ -122,6 +123,7 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 	allowedPRR := sliceToMap(opts.PRRApprover)
 	allowedAuthor := sliceToMap(opts.Author)
 	allowedApprover := sliceToMap(opts.Approver)
+	allowedParticipant := sliceToMap(opts.Participant)
 
 	results := make([]*api.Proposal, 0, 10)
 	for _, k := range allKEPs {
@@ -144,6 +146,9 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 			continue
 		}
 		if len(opts.Approver) > 0 && !atLeastOne(k.Approvers, allowedApprover) {
+			continue
+		}
+		if len(opts.Participant) > 0 && !atLeastOne(k.ParticipatingSIGs, allowedParticipant) {
 			continue
 		}
 
