@@ -178,7 +178,6 @@ func newTestClient(t *testing.T, repoPath string) testClient {
 	r, err := repo.NewRepo(repoPath, fetcher)
 	require.Nil(t, err)
 
-	r.Out = b
 	tc.r = r
 
 	// TODO: Parameterize

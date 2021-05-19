@@ -19,7 +19,6 @@ package repo
 import (
 	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -63,11 +62,6 @@ type Repo struct {
 	// Auth
 	TokenPath string
 	Token     string
-
-	// I/O
-	In  io.Reader
-	Out io.Writer
-	Err io.Writer
 
 	// Document handlers
 	KEPHandler *api.KEPHandler
@@ -162,9 +156,6 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 		ProposalPath:    proposalPath,
 		PRRApprovalPath: prrApprovalPath,
 		ProposalReadme:  proposalReadme,
-		In:              os.Stdin,
-		Out:             os.Stdout,
-		Err:             os.Stderr,
 		KEPHandler:      kepHandler,
 		PRRHandler:      prrHandler,
 	}
