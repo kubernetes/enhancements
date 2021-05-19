@@ -41,14 +41,14 @@ type CreateOpts struct {
 	SIG    string
 
 	// Create options
-	Title        string
-	Approvers    []string
-	Authors      []string
-	Reviewers    []string
-	Type         string
-	State        string
-	SIGS         []string
-	PRRApprovers []string
+	Title             string
+	Approvers         []string
+	Authors           []string
+	Reviewers         []string
+	Type              string
+	State             string
+	ParticipatingSIGs []string
+	PRRApprovers      []string
 }
 
 // Validate checks the args provided to the create command and parses the sig,
@@ -121,6 +121,8 @@ func createKEP(kep *api.Proposal, opts *CreateOpts) error {
 }
 
 func populateProposal(p *api.Proposal, opts *CreateOpts) {
+	p.Name = opts.Name
+
 	if opts.State != "" {
 		p.Status = opts.State
 	}
@@ -157,7 +159,7 @@ func populateProposal(p *api.Proposal, opts *CreateOpts) {
 
 	// TODO(lint): appendAssign: append result not assigned to the same slice (gocritic)
 	//nolint:gocritic
-	p.ParticipatingSIGs = append(opts.SIGS, opts.SIG)
+	p.ParticipatingSIGs = append(opts.ParticipatingSIGs, opts.SIG)
 	p.Filename = opts.Name
 	p.LastUpdated = "v1.19"
 

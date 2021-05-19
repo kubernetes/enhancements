@@ -28,10 +28,10 @@ func addCreate(topLevel *cobra.Command) {
 	co := proposal.CreateOpts{}
 
 	cmd := &cobra.Command{
-		Use:           "create [KEP]",
+		Use:           "create",
 		Short:         "Create a new KEP",
 		Long:          "Create a new KEP using the current KEP template for the given type",
-		Example:       `  kepctl create sig-architecture/000-mykep`,
+		Example:       `  kepctl create --name a-path --title "My KEP" --number 123 --owning-sig sig-foo`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -48,6 +48,20 @@ func addCreate(topLevel *cobra.Command) {
 		"title",
 		"",
 		"KEP Title",
+	)
+
+	cmd.PersistentFlags().StringVar(
+		&co.Number,
+		"number",
+		"",
+		"Number",
+	)
+
+	cmd.PersistentFlags().StringVar(
+		&co.Name,
+		"name",
+		"",
+		"Name",
 	)
 
 	cmd.PersistentFlags().StringArrayVar(
@@ -79,9 +93,16 @@ func addCreate(topLevel *cobra.Command) {
 		"KEP State",
 	)
 
+	cmd.PersistentFlags().StringVar(
+		&co.SIG,
+		"owning-sig",
+		"",
+		"Owning SIG",
+	)
+
 	cmd.PersistentFlags().StringArrayVar(
-		&co.SIGS,
-		"sigs",
+		&co.ParticipatingSIGs,
+		"participating-sigs",
 		[]string{},
 		"Participating SIGs",
 	)
