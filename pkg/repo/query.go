@@ -18,25 +18,14 @@ package repo
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
-)
-
-var (
-	// SupportedOutputOpts stores all allowed query output formats
-	SupportedOutputOpts = []string{
-		"table",
-		"json",
-		"yaml",
-		"csv",
-	}
-
-	// DefaultOutputOpt is the default output format for kepctl query
-	DefaultOutputOpt = "table"
+	"k8s.io/enhancements/pkg/output"
 )
 
 type QueryOpts struct {
@@ -59,10 +48,8 @@ type QueryOpts struct {
 
 // Validate returns an error if any QueryOpts fields are invalid
 func (o *QueryOpts) Validate() error {
-	// check if the Output specified is one of "", "json" or "yaml"
-	// check if the Output specified is one of "", "json" or "yaml"
-	if !sliceContains(SupportedOutputOpts, o.Output) {
-		return fmt.Errorf("unsupported output format: %s. Valid values: %v", o.Output, SupportedOutputOpts)
+	if !sliceContains(output.ValidFormats(), o.Output) {
+		return fmt.Errorf("unsupported output format: %s. Valid values: %v", o.Output, output.ValidFormats())
 	}
 
 	// TODO: check the valid values of stage, status, etc.
@@ -171,37 +158,11 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		results = append(results, k)
 	}
 
-	switch opts.Output {
-	case "table":
-		r.PrintTable(
-			DefaultPrintConfigs(
-				"LastUpdated",
-				"Stage",
-				"Status",
-				"SIG",
-				"Authors",
-				"Title",
-				"Link",
-			),
-			results,
-		)
-	case "yaml":
-		r.PrintYAML(results)
-	case "json":
-		r.PrintJSON(results)
-	case "csv":
-		r.PrintCSV(DefaultPrintConfigs("Title", "Authors", "SIG", "Stage", "Status", "LastUpdated", "Link"), results)
-	default:
-		// this check happens as a validation step in cobra as well
-		// added it for additional verbosity
-		return errors.New(
-			fmt.Sprintf(
-				"unsupported output format: %s. Valid values: %s",
-				opts.Output,
-				SupportedOutputOpts,
-			),
-		)
+	o, err := output.NewOutput(opts.Output, os.Stdout, os.Stderr)
+	if err != nil {
+		return err
 	}
+	o.PrintProposals(results)
 
 	return nil
 }

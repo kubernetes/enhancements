@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
+	"k8s.io/enhancements/pkg/output"
 	"k8s.io/enhancements/pkg/repo"
 )
 
@@ -96,10 +97,8 @@ func addQuery(topLevel *cobra.Command) {
 	cmd.PersistentFlags().StringVar(
 		&qo.Output,
 		"output",
-		repo.DefaultOutputOpt,
-		fmt.Sprintf(
-			"Output format. Can be %v", repo.SupportedOutputOpts,
-		),
+		output.DefaultFormat,
+		fmt.Sprintf("Output format. Can be %v", output.ValidFormats()),
 	)
 
 	topLevel.AddCommand(cmd)
