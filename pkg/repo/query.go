@@ -18,7 +18,6 @@ package repo
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 
 	"github.com/pkg/errors"
@@ -29,13 +28,6 @@ import (
 )
 
 type QueryOpts struct {
-	// Proposal options
-	KEP    string // KEP name sig-xxx/xxx-name
-	Name   string
-	Number string
-	SIG    string
-
-	// Queries
 	Groups      []string
 	Status      []string
 	Stage       []string
@@ -84,18 +76,18 @@ func (r *Repo) PrepareQueryOpts(opts *QueryOpts) error {
 
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
-func (r *Repo) Query(opts *QueryOpts) error {
+func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 	logrus.Info("Searching for KEPs...")
 
 	err := r.PrepareQueryOpts(opts)
 	if err != nil {
-		return fmt.Errorf("unable to prepare query opts: %w", err)
+		return nil, fmt.Errorf("unable to prepare query opts: %w", err)
 	}
 
 	if r.TokenPath != "" {
 		logrus.Infof("Setting GitHub token: %v", r.TokenPath)
 		if tokenErr := r.SetGitHubToken(r.TokenPath); tokenErr != nil {
-			return errors.Wrapf(tokenErr, "setting GitHub token")
+			return nil, errors.Wrapf(tokenErr, "setting GitHub token")
 		}
 	}
 
@@ -105,7 +97,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		// KEPs in the local filesystem
 		localKEPs, err := r.LoadLocalKEPs(sig)
 		if err != nil {
-			return errors.Wrap(err, "loading local KEPs")
+			return nil, errors.Wrap(err, "loading local KEPs")
 		}
 
 		allKEPs = append(allKEPs, localKEPs...)
@@ -134,7 +126,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 	results := make([]*api.Proposal, 0, 10)
 	for _, k := range allKEPs {
 		if k == nil {
-			return errors.New("one of the KEPs in query was nil")
+			return nil, errors.New("one of the KEPs in query was nil")
 		}
 
 		logrus.Debugf("current KEP: %v", k)
@@ -158,13 +150,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		results = append(results, k)
 	}
 
-	o, err := output.NewOutput(opts.Output, os.Stdout, os.Stderr)
-	if err != nil {
-		return err
-	}
-	o.PrintProposals(results)
-
-	return nil
+	return results, nil
 }
 
 func sliceToMap(s []string) map[string]bool {

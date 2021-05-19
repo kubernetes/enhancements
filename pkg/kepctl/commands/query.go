@@ -18,6 +18,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -111,5 +112,14 @@ func runQuery(opts *repo.QueryOpts) error {
 	}
 	rc.TokenPath = rootOpts.TokenPath
 
-	return rc.Query(opts)
+	results, err := rc.Query(opts)
+	if err != nil {
+		return err
+	}
+	o, err := output.NewOutput(opts.Output, os.Stdout, os.Stderr)
+	if err != nil {
+		return err
+	}
+	o.PrintProposals(results)
+	return nil
 }
