@@ -163,6 +163,15 @@ func TestQuery(t *testing.T) {
 				},
 			},
 			{
+				name: "none",
+				queryOpts: repo.QueryOpts{
+					Stage: []string{"none"},
+				},
+				kepNames: []string{
+					"1-the-bare-minimum",
+				},
+			},
+			{
 				name: "alpha",
 				queryOpts: repo.QueryOpts{
 					Stage: []string{"alpha"},

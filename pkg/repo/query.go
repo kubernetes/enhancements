@@ -72,6 +72,13 @@ func (r *Repo) PrepareQueryOpts(opts *QueryOpts) error {
 		// if no SIGs are passed, list KEPs from all SIGs
 		opts.Groups = groups
 	}
+
+	for i, v := range opts.Stage {
+		if v == "none" {
+			opts.Stage[i] = ""
+		}
+	}
+
 	return nil
 }
 
