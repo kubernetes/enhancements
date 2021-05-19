@@ -1,0 +1,20 @@
+title: KEPs as CRDs
+kep-number: 13
+authors:
+  - "@alice"
+owning-sig: sig-owns-participates
+participating-sigs:
+status: provisional
+# creation-date: yyyy-mm-dd
+reviewers:
+  - "@beth"
+approvers:
+  - "@carolyn"
+prr-approvers:
+  - "@dorothy"
+stage: stable
+latest-milestone: v1.4
+milestone:
+  alpha: v1.1
+  beta: v1.2
+  stable: v1.3

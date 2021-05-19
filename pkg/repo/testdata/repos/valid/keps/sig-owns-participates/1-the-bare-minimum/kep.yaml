@@ -1,0 +1,21 @@
+title: The Bare Minimum
+kep-number: a non-empty string
+# authors:
+#   - "@alice"
+# TODO: this should fail to load/validate unless owning-sig is sig-owns-participates
+owning-sig: a non-empty string
+# TODO: this should fail to load/validate unless status is one of...
+status: a non-empty string
+# creation-date: yyyy-mm-dd
+# reviewers:
+#   - "@beth"
+# approvers:
+#   - "@carolyn"
+# prr-approvers:
+#   - "@dorothy"
+# stage: stable
+# latest-milestone: v1.4
+# milestone:
+#   alpha: v1.1
+#   beta: v1.2
+#   stable: v1.3

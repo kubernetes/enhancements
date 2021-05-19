@@ -37,7 +37,7 @@ var fixture = struct {
 }{}
 
 func TestMain(m *testing.M) {
-	err := log.SetupGlobalLogger("debug")
+	err := log.SetupGlobalLogger("info")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to setup global logger: %v: ", err)
 	}
@@ -48,6 +48,10 @@ func TestMain(m *testing.M) {
 	fetcher := &api.MockGroupFetcher{
 		Groups: []string{
 			"sig-architecture",
+			"sig-does-nothing",
+			"sig-owns-only",
+			"sig-owns-participates",
+			"sig-participates-only",
 		},
 	}
 	r, err := repo.NewRepo(fixture.validRepoPath, fetcher)

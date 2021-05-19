@@ -63,7 +63,7 @@ func (r *Repo) PrepareQueryOpts(opts *QueryOpts) error {
 		}
 
 		if len(sigs) == 0 {
-			return fmt.Errorf("no SIG matches any of the passed regular expressions")
+			return fmt.Errorf("no SIGs match any of: %v", opts.Groups)
 		}
 
 		opts.Groups = sigs
@@ -81,7 +81,7 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 
 	err := r.PrepareQueryOpts(opts)
 	if err != nil {
-		return nil, fmt.Errorf("unable to prepare query opts: %w", err)
+		return nil, fmt.Errorf("invalid query options: %w", err)
 	}
 
 	if r.TokenPath != "" {

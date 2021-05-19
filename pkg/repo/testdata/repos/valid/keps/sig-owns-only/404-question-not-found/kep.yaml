@@ -1,0 +1,22 @@
+title: Using Deep Thought
+kep-number: 13
+authors:
+  - "@alice"
+owning-sig: sig-owns-only
+participating-sigs:
+  - sig-owns-participates
+  - sig-participates-only
+status: implemented
+# creation-date: yyyy-mm-dd
+reviewers:
+  - "@beth"
+approvers:
+  - "@carolyn"
+prr-approvers:
+  - "@dorothy"
+stage: beta
+latest-milestone: v1.4
+milestone:
+  alpha: v1.1
+  beta: v1.2
+  stable: v1.3
