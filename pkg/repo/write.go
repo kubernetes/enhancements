@@ -17,12 +17,13 @@ limitations under the License.
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 	"k8s.io/enhancements/api"
 )
@@ -44,25 +45,15 @@ func (r *Repo) WriteKEP(kep *api.Proposal) error {
 		return errors.New("KEP name must be populated")
 	}
 
-	if mkErr := os.MkdirAll(
-		filepath.Join(
-			r.ProposalPath,
-			sig,
-			kepName,
-		),
-		os.ModePerm,
-	); mkErr != nil {
-		return errors.Wrapf(mkErr, "creating KEP directory")
+	kepPath := filepath.Join(r.ProposalPath, sig, kepName)
+	logrus.Infof("creating KEP directory: %s", kepPath)
+	if err = os.MkdirAll(kepPath, os.ModePerm); err != nil {
+		return fmt.Errorf("unable to create KEP path %s: %w", kepPath, err)
 	}
 
-	newPath := filepath.Join(
-		r.ProposalPath,
-		sig,
-		kepName,
-		ProposalMetadataFilename,
-	)
+	kepYamlPath := filepath.Join(kepPath, ProposalMetadataFilename)
 
-	fmt.Fprintf(r.Out, "writing KEP to %s\n", newPath)
+	logrus.Infof("writing KEP metadata to %s", kepYamlPath)
 
-	return ioutil.WriteFile(newPath, b, os.ModePerm)
+	return ioutil.WriteFile(kepYamlPath, b, os.ModePerm)
 }

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
@@ -74,7 +75,7 @@ func (c *CreateOpts) Validate(args []string) error {
 func Create(opts *CreateOpts) error {
 	r := opts.Repo
 
-	fmt.Fprintf(r.Out, "Creating KEP %s %s %s\n", opts.SIG, opts.Number, opts.Name)
+	logrus.Infof("Creating KEP %s %s %s", opts.SIG, opts.Number, opts.Name)
 
 	kep := &api.Proposal{}
 
@@ -96,7 +97,7 @@ func Create(opts *CreateOpts) error {
 func createKEP(kep *api.Proposal, opts *CreateOpts) error {
 	r := opts.Repo
 
-	fmt.Fprintf(r.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
+	logrus.Infof("Generating new KEP %s in %s ===>", opts.Name, opts.SIG)
 
 	err := r.WriteKEP(kep)
 	if err != nil {

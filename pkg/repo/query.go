@@ -37,12 +37,6 @@ var (
 
 	// DefaultOutputOpt is the default output format for kepctl query
 	DefaultOutputOpt = "table"
-
-	StructuredOutputFormats = []string{
-		"json",
-		"yaml",
-		"csv",
-	}
 )
 
 type QueryOpts struct {
@@ -104,19 +98,7 @@ func (r *Repo) PrepareQueryOpts(opts *QueryOpts) error {
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
 func (r *Repo) Query(opts *QueryOpts) error {
-	// if output format is json/yaml, suppress other outputs
-	// json/yaml are structured formats, logging events which
-	// do not conform to the spec will create formatting issues
-	var suppressOutputs bool
-	if sliceContains(StructuredOutputFormats, opts.Output) {
-		suppressOutputs = true
-	} else {
-		suppressOutputs = false
-	}
-
-	if !suppressOutputs {
-		fmt.Fprintf(r.Out, "Searching for KEPs...\n")
-	}
+	logrus.Info("Searching for KEPs...")
 
 	err := r.PrepareQueryOpts(opts)
 	if err != nil {
@@ -145,7 +127,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		if opts.IncludePRs {
 			prKeps, err := r.loadKEPPullRequests(sig)
 			if err != nil {
-				fmt.Fprintf(r.Err, "error searching for KEP PRs from %s: %s\n", sig, err)
+				logrus.Warnf("error searching for KEP PRs from %s: %s", sig, err)
 			}
 			if prKeps != nil {
 				allKEPs = append(allKEPs, prKeps...)

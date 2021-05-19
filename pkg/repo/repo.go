@@ -414,7 +414,7 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		for k := range kepNames {
 			kep, err := r.ReadKEP(sig, k)
 			if err != nil {
-				fmt.Fprintf(r.Err, "ERROR READING KEP %s: %s\n", k, err)
+				logrus.Warnf("error reading KEP %v: %v", k, err)
 			} else {
 				kep.PRNumber = strconv.Itoa(pr.GetNumber())
 				allKEPs = append(allKEPs, kep)

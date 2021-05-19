@@ -19,6 +19,7 @@ package proposal
 import (
 	"fmt"
 
+	"github.com/sirupsen/logrus"
 	"k8s.io/enhancements/pkg/repo"
 )
 
@@ -48,7 +49,7 @@ func (o *PromoteOpts) Validate(args []string) error {
 func Promote(opts *PromoteOpts) error {
 	r := opts.Repo
 
-	fmt.Fprintf(r.Out, "Updating KEP %s/%s\n", opts.SIG, opts.Name)
+	logrus.Infof("Updating KEP %s/%s", opts.SIG, opts.Name)
 
 	p, err := r.ReadKEP(opts.SIG, opts.Name)
 	if err != nil {
@@ -65,7 +66,7 @@ func Promote(opts *PromoteOpts) error {
 	}
 
 	// TODO: Implement ticketing workflow artifact generation
-	fmt.Fprintf(r.Out, "KEP %s/%s updated\n", opts.SIG, opts.Name)
+	logrus.Infof("KEP %s/%s updated", opts.SIG, opts.Name)
 
 	return nil
 }
