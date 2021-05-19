@@ -9,16 +9,11 @@ reviewers:
   - "@monopole"
   - "@pwittrock"
 approvers:
-  - n/a
+  - "@monopole"
+  - "@pwittrock"
 creation-date: 2020-12-21
 last-updated: 2020-01-15
-status: implementable
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
+status: implemented
 
-latest-milestone: "0.0"
-stage: "alpha"
+latest-milestone: "1.22"
+stage: "beta"

@@ -435,11 +435,11 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### Alpha -> Beta Graduation
 
-- Complete features required for this functionality
-- read schema from openapi field of kustomization
-- kustomize openapi fetch command
-- Write appropriate unit tests for the above features
-- Add documentation for these features 
+- [x] Complete features required for this functionality
+- [x] Read schema from openapi field of kustomization
+- [x] kustomize openapi fetch command
+- [x] Write appropriate unit tests for the above features
+- [x] Add documentation for these features 
 
 
 <!--
@@ -467,5 +467,7 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- The `openapi` field is available in Kustomization as of kustomize [v4.1.0](https://github.com/kubernetes-sigs/kustomize/releases/tag/kustomize%2Fv4.1.0)
 
 
