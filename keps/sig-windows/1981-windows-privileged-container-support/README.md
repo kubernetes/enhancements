@@ -748,16 +748,16 @@ in back-to-back releases.
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
 
-Alpha
+Alpha plan
 
 - Version of containerd: Target v1.5
 - Version of Kubernetes: Target 1.22
 - OS support: Windows 2019 LTSC and all future versions of Windows Server
 - Alpha Feature Gate for passing privileged flag **or** annotations to CRI calls.
-- Ensure that ephemeral containers are validated for HostProcess requirements
 
-Beta
+Graduation to Beta
 
+(https://github.com/kubernetes/kubernetes/pull/99576#discussion_r635392090)
 - Go through PSP Linux test (e2e: validation & conformance) and make them relevant for Windows (which apply, which don't and where we need to write new tests).
 - Provide guidance similar to Pod Security Standards for Windows privileged containers
 - Containerd: v1.5
@@ -766,8 +766,10 @@ Beta
 - Beta Feature Gate for passing privilege flag to CRI
 - Extensive documentation around `HostProcess` containers on https://kubernetes.io/
   - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits)
+- Ensure that ephemeral containers are validated for HostProcess requirements
+- Remove the `windowsHostProcessContainer` label used for hostprocess annotations. Requires updating Containerd to support hostprocess directly.  
 
-GA:
+Graduation to GA:
 
 - Address any issues uncovered in alpha/beta
 - Remove feature gate for passing privileged flag
