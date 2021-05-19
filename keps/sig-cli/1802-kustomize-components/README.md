@@ -605,9 +605,9 @@ Add unit tests for all the points raised in the "Design details" section.
 
 #### Alpha -> Beta
 
-- [ ] Implement the necessary functionality for this feature
-- [ ] Write the appropriate unit tests, and make the
-  [`TestComplexComposition_*`] tests now pass
+- [x] Implement the necessary functionality for this feature
+- [x] Write the appropriate unit tests, and make the
+  [`TestComplexComposition_*`](https://github.com/kubernetes-sigs/kustomize/blob/701973b73ecfb2b96f53cb3f080b9caaa662a01f/api/krusty/complexcomposition_test.go) tests now pass
 - [x] Add a [user story] in Kustomize's examples
 - [ ] Extend Kustomize's glossary with a reference to components, as well as
       other places where overlays are mentioned
@@ -618,6 +618,8 @@ Add unit tests for all the points raised in the "Design details" section.
 [user story]: https://github.com/kubernetes-sigs/kustomize/pull/2438
 
 ## Implementation History
+
+- Available in Kustomize's alpha API group (`kustomize.config.k8s.io/v1alpha1`) in v3.7.0+. https://kubectl.docs.kubernetes.io/guides/config_management/components/
 
 ## Alternatives
 
