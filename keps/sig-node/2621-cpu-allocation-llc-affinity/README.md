@@ -105,28 +105,32 @@ We make a bench with `stream2` DAXPY, as we can see, cross ccx(cross uncore-cach
 ![stream2_daxpy](stream2_daxpy.png "stream2_daxpy")
 
 And, when workload is memory sensitive, this feature can improve memory bandwidth significantly(20% above).
-
+We also conduct tests in real applications like dpdk and redis, and get performance data. While in dpdk, with throughput degration from 19Mpps(share uncore-cache) to 12Mpps(cross uncore-cache).
 ### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
 
 + Currently no risks was found.
-+ Feature is enbled by a gate - a new kube feature with default false, potential risk effects could be limited.
++ Feature is enabled by a gate - a new kube feature with default false, potential risk effects could be limited.
 
 ## Design Details
 
 - Feature Gate
-  - Add `CPUManagerUncoreCacheAlign` to kubelet's feature-gates to enable(true)/disable(false) the feature.
-  - Also, more than one l3 cache should exist in a single socket/package.
-
+  - C1: Add `CPUManagerUncoreCacheAlign` to kubelet's feature-gates to enable(true)/disable(false) the feature.
+  - C2: More than one l3 cache should exist in a single socket/package(uncore-cache exists).
+  - And, we make a conclusion here,
+    - C1=true, C2=true -> Enabled
+    - C1=true, C2=false -> Disabled
+    - C1=false, C2=true -> Disabled
+    - C1=false, C2=false -> Disabled
 - General Design
   - Logic Elaboration
-  Try to allocate cpus sharing the same cache if demand is larger than one core. Add L3 cache affinity before tring core affinity best-fit.
+  Try to allocate cpus sharing the same cache if demand is larger than one core. Add L3 cache affinity before trying core affinity best-fit.
   If we cannot find llc-satisfied cpus, continue the original process(find available cores). 
 
-![design_overview](design_overview.png "design_overview")
+  ![design_overview](design_overview.png "design_overview")
 
-  - feature-gates `CPUManagerUncoreCacheAlign`
+  - Feature-gates `CPUManagerUncoreCacheAlign`
     `CPUManagerUncoreCacheAlign` should set `false` in `defaultKubernetesFeatureGates`. And make a judge in `takeByTopology`, `enable`->`(do l3 cache affinity best-fit)`,`disable`->`(skip)`.
 ### Test Plan
 - Unit tests for new added allocation algorithm.
