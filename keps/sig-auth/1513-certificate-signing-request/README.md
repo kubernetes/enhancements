@@ -75,10 +75,11 @@ signer can interact.
 
 ## Design Details
 
-A client requesting a certificate post a CertificateSigningRequest to the
+A client requesting a certificate posts a CertificateSigningRequest to the
 Certificates API. The client may only provide the encoded [Certificate
 Request](https://tools.ietf.org/html/rfc2986), usages of the certificate in
-the spec, the standard object metadata, and the requested signer on the initial creation of the
+the spec, the standard object metadata, a requested certificate lifetime duration,
+and the requested signer on the initial creation of the
 CertificateSigningRequest. The kube-apiserver also asserts authentication
 attributes of the requestor in the CertificateSigningRequest spec before
 committing it to storage so that they can be used later during CSR approval. The
@@ -150,7 +151,7 @@ CSRs have a `signerName` field which is used to specify which signer the CSR cre
 To support migration from v1beta1 to v1, this required field will be defaulted in v1beta1 (optional in openapi), but
 not defaulted and required in v1 :
  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".
- 2. If it's a kubelet serving certificate, it is assigned "kubernetes.io/kubelet-serving". 
+ 2. If it's a kubelet serving certificate, it is assigned "kubernetes.io/kubelet-serving".
  see https://github.com/kubernetes/kubernetes/blob/release-1.10/pkg/controller/certificates/approver/sarapprove.go#L211-L223 for details.
  3. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
 
@@ -161,14 +162,14 @@ This includes:
  1. Trust distribution - how trust (ca bundles) are distributed.
  2. Permitted subjects - (any? specific subtree?) and behavior when a disallowed subject is requested.
  3. Permitted x509 extensions - (IP SANs? DNS SANs? Email SANs? URI SANs? others?) and behavior when a disallowed
- extension is requested.
+    extension is requested.
  4. Permitted key usages / extended key usages - (client only? server only? any? signer-determined? CSR-determined?) and
- behavior when usages different than the signer-determined usages are specified in the CSR.
+    behavior when usages different than the signer-determined usages are specified in the CSR.
  5. Expiration/cert lifetime - (fixed by signer? configurable by admin? CSR-determined?) and behavior when an expiration
- different than the signer-determined expiration is specified in the CSR.
+    different than the signer-determined expiration is specified in the CSR via the `spec.durationHint` field.
  6. CA bit allowed/disallowed - and behavior if a CSR contains a request a for a CA cert when the signer does not permit it.
  7. (optional) Information about the meaning of additional CERTIFICATE PEM blocks in `status.certificate`, if different from the
- standard behavior of treating the additional certificates as intermediates, and presenting them in TLS handshakes.
+    standard behavior of treating the additional certificates as intermediates, and presenting them in TLS handshakes.
 
 
 sig-auth reserves all `kubernetes.io/*` `signerNames` and more may be added in the future.
@@ -179,11 +180,12 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
        is not distributed by any other means.
     2. Permitted subjects - no subject restrictions, but approvers and signers may choose not to approve or sign.
        Certain subjects like cluster-admin level users or groups vary between distributions and installations, but deserve
-       additional scrutiny before approval and signing.  An admission plugin is available to restrict system:masters, but
+       additional scrutiny before approval and signing.  An admission plugin is available to restrict `system:masters`, but
        it is often not the only cluster-admin subject in a cluster.
     3. Permitted x509 extensions - URI, DNS, IP, and Email SAN extensions are honored. Other extensions are discarded.
     4. Permitted key usages - must include `[]string{"client auth"}`.  Must not include key usages beyond `[]string{"digital signature", "key encipherment", "client auth"}`
-    5. Expiration/cert lifetime - minimum of CSR signer or request.  Sanity of the time is the concern of the signer.
+    5. Expiration/cert lifetime - minimum of kube-controller-manager `--cluster-signing-duration` flag and `spec.durationHint`.
+       Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
  2. kubernetes.io/kube-apiserver-client-kubelet - signs client certificates that will be honored as client-certs by the kube-apiserver.
     May be auto-approved by kube-controller-manager.
@@ -192,16 +194,18 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     2. Permitted subjects - organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`
     3. Permitted x509 extensions - URI, DNS, IP, and Email SAN extensions are not allowed. Other extensions are discarded.
     4. Permitted key usages - exactly `[]string{"key encipherment", "digital signature", "client auth"}`
-    5. Expiration/cert lifetime - minimum of CSR signer or request.  Sanity of the time is the concern of the signer.
+    5. Expiration/cert lifetime - minimum of kube-controller-manager `--cluster-signing-duration` flag and `spec.durationHint`.
+       Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
- 3. kubernetes.io/kubelet-serving - signs serving certificates that are honored as a valid kubelet serving certificate 
+ 3. kubernetes.io/kubelet-serving - signs serving certificates that are honored as a valid kubelet serving certificate
     by the kube-apiserver, but has no other guarantees.  Never auto-approved by kube-controller-manager.
     1. Trust distribution: signed certificates must be honored by the kube-apiserver as valid to terminate connections to a kubelet.
        The CA bundle is not distributed by any other means.
     2. Permitted subjects - organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`
     3. Permitted x509 extensions - DNS and IP SANs are allowed, and at least one DNS or IP SAN must be present. URI and Email SANs are not allowed. Other extensions are discarded.
     4. Permitted key usages - exactly `[]string{"key encipherment", "digital signature", "server auth"}`
-    5. Expiration/cert lifetime - minimum of CSR signer or request.
+    5. Expiration/cert lifetime - minimum of kube-controller-manager `--cluster-signing-duration` flag and `spec.durationHint`.
+       Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
  4. kubernetes.io/legacy-unknown - has no guarantees for trust at all.  Some distributions may honor these as client
     certs, but that behavior is not standard kubernetes behavior.  Never auto-approved by kube-controller-manager.
@@ -210,7 +214,8 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     2. Permitted subjects - any
     3. Permitted x509 extensions - URI, DNS, IP, and Email SAN extensions are honored. Other extensions are discarded.
     4. Permitted key usages - any
-    5. Expiration/cert lifetime - minimum of CSR signer or request.  Sanity of the time is the concern of the signer.
+    5. Expiration/cert lifetime - minimum of kube-controller-manager `--cluster-signing-duration` flag and `spec.durationHint`.
+       Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
 
 Distribution of trust happens out of band for these signers.  Any trust outside of those described above are strictly
@@ -227,14 +232,14 @@ Given multiple signers which may be implemented as "dumb" controllers that sign 
 to providing a simple way to subdivide approval powers through the API.  We will introduce an admission plugin that requires
  1. verb == `approve`
  2. resource == `signers`
- 3. name == `<.spec.signerName>` 
+ 3. name == `<.spec.signerName>`
  4. group == `certificates.k8s.io`
- 
+
 To support a use-case that wants a single rule to allow approving an entire domain (example.com in example.com/cool-signer),
 there will be a second check for
  1. verb == `approve`
  2. resource == `signers`
- 3. name == `<.spec.signerName domain part only>/*` 
+ 3. name == `<.spec.signerName domain part only>/*`
  4. group == `certificates.k8s.io`
 
 There are congruent check for providing a signature that use the verb=="sign" instead of "approve" above.
@@ -299,21 +304,21 @@ The individual authorization requirements are in the [docs](https://kubernetes.i
 ```go
 type CertificateSigningRequest struct {
   // spec information is immutable after the request is created.
-  // Only the request, usages, and signerName fields can be set on creation,
+  // Only the request, usages, durationHint, and signerName fields can be set on creation,
   // other fields are derived by Kubernetes and cannot be modified by users.
   Spec   CertificateSigningRequestSpec
   Status CertificateSigningRequestStatus
 }
 
 type CertificateSigningRequestSpec struct {
-  // requested signer for the request up to 571 characters long.  It is a qualified name in the form: `scope-hostname.io/name`.  
+  // requested signer for the request - up to 571 characters long.  It is a qualified name in the form: `scope-hostname.io/name`.
   // In v1beta1, it will be defaulted:
-  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".  This is determined by 
+  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".  This is determined by
   //     Seeing if organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`, and
   //     key usages are exactly `[]string{"key encipherment", "digital signature", "client auth"}`
   //  2. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
   // In v1, it will not be defaulted, is required, and `kubernetes.io/legacy-unknown` is not permitted when creating new requests.
-  // Distribution of trust for signers happens out of band. 
+  // Distribution of trust for signers happens out of band.
   // The following signers are known to the kube-controller-manager signer.
   //  1. kubernetes.io/kube-apiserver-client - signs certificates that will be honored as client-certs by the kube-apiserver. Never auto-approved by kube-controller-manager.
   //  2. kubernetes.io/kube-apiserver-client-kubelet - signs client certificates that will be honored as client-certs by the kube-apiserver. May be auto-approved by kube-controller-manager.
@@ -322,6 +327,11 @@ type CertificateSigningRequestSpec struct {
   // None of these usages are related to ServiceAccount token secrets `.data[ca.crt]` in any way.
   // You can select on this field using `.spec.signerName`.
   SignerName string
+
+  // durationHint is a hint to the signer in regards to when the issued certificate should expire.
+  // The signer may or may not honor this field.  The well-known kubernetes signers will honor this field
+  // as long as the requested duration is not later than the maximum duration they will honor.
+  DurationHint *metav1.Duration
 
   // Base64-encoded PKCS#10 CSR data
   Request []byte
@@ -464,7 +474,7 @@ control plane.
   - API validation
   - API round-tripping
   - Authorizing admission plugin
-  - Admission plugin limiting system:master client CSRs
+  - Admission plugin limiting `system:masters` client CSRs
   - Auto-approving controller
   - Auto-signing controller
   - v1beta1 behavior validation
@@ -489,7 +499,7 @@ control plane.
   - status subresource get/update behavior
   - creating, approving, and signing a CSR for a custom signerName (e.g. `k8s.example.com/e2e`)
 
-## Graduation Criteria	
+## Graduation Criteria
 
 ### Beta to GA Graduation
 
@@ -505,3 +515,4 @@ control plane.
 - 1.18: 2020-01-21: status.certificate field format validation added
 - 1.19: 2020-05-07: v1 details added
 - 1.19: 2020-08-26: v1 implementation released
+- 1.22: 2021-05-20: durationHint field added
