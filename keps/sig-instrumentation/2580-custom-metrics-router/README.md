@@ -155,6 +155,7 @@ const (
 )
 
 type CustomMetricsSourceSpec struct {
+  CABundle              String       `json:"caBundle"`
   Service               Service      `json:"service"`
   InsecureSkipTLSVerify bool         `json:"insecureSkipTLSVerify"`
   Priority              int          `json:"priority"`
