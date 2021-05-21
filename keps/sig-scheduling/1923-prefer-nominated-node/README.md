@@ -12,7 +12,8 @@
   - [Implementation Details](#implementation-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (v1.21):](#alpha-v121)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -34,7 +35,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -120,17 +121,82 @@ Following tests will be covered or considered:
   - preempt the victim pods on the nominated node
   - check pod will be scheduled on the nominated node
 - **Benchmark Tests**: A benchmark test which compares the performance before and after the change.
-  The performance improvement is visible by benchmark of `scheduling_algorithm_predicate_evaluation_seconds`.
-  Other benchmark will be created on-demand along with the code review process.
+  The performance improvement is visible by benchmark of `scheduler_framework_extension_point_duration_seconds{extension_point="Filter"}` in a large cluster
+  where preemption is expected to happen frequently.
 
 
 ### Graduation Criteria
 
-#### Alpha (v1.21):
+<!--
+**Note:** *Not required until targeted at a release.*
 
-- [x] New feature gate proposed to enable the feature.
-- [x] Implementation of the new feature in scheduling framework.
-- [x] Test cases mentioned in the [Test Plan](#test-plan).
+Define graduation milestones.
+
+These may be defined in terms of API maturity, or as something else. The KEP
+should keep this high-level with a focus on what signals will be looked at to
+determine graduation.
+
+Consider the following in developing the graduation criteria for this enhancement:
+- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
+- [Deprecation policy][deprecation-policy]
+
+Clearly define what graduation means by either linking to the [API doc
+definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
+or by redefining what graduation means.
+
+In general we try to use the same stages (alpha, beta, GA), regardless of how the
+functionality is accessed.
+
+[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
+[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
+
+Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
+
+**For non-optional features moving to GA, the graduation criteria must include
+[conformance tests].**
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+
+#### Deprecation
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+-->
+
+#### Alpha
+
+- New feature gate proposed to enable the feature.
+- Implementation of the new feature in scheduling framework.
+- Test cases mentioned in the [Test Plan](#test-plan).
+
+#### Beta
+
+- Gather feedback from developers and surveys.
+- The feature is guarded by a feature flag, and will be enabled by default in beta.
 
 ## Production Readiness Review Questionnaire
 
@@ -163,69 +229,49 @@ _This section must be completed when targeting alpha to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+  The rollout can always fail (e.g. if there is a bug and scheduler will start crashlooping on certain conditions).
+  It's a scheduler features, so it doesn't affect already running workloads.
 
 * **What specific metrics should inform a rollback?**
+  Noticeable and sustainable increase in `scheduler_framework_extension_point_duration_seconds{extension_point="Filter"}`
+  latency metric.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  Manually tested successfully.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+  N/A
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
+  - [x] Metrics
+    - Metric name: `scheduler_framework_extension_point_duration_seconds{extension_point="Filter"}`
+    - Components exposing the metric: kube-scheduler
   - [ ] Other (treat as last resort)
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  - 99% of filter latency for the pod scheduling is within x seconds.
+
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+  No.
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  No.
 
 ### Scalability
 
@@ -270,25 +316,16 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  No impact since the pod is already in the internal Queue.
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  N/A
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+  N/A
 
 ## Implementation History
 
 - 2020-09-29: Initial KEP sent out for review https://github.com/kubernetes/enhancements/pull/2026
 - 2020-12-17: Mark the KEP as implementable
+- 2021-05-21: Graduate the feature to Beta
