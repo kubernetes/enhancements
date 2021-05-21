@@ -267,10 +267,10 @@ With the proposed change in cadence, the notional schedules for the remainder of
 | 49 | 3 | 14 (December 06) |
 
 This KEP will be in the `alpha` stage for the Kubernetes 1.22 Release. During 
-this time, SIG-Release will focus on communication of the cadence change through
+this time, SIG Release will focus on communication of the cadence change through
 all available mechanisms. The KEP will promote to the `beta` stage for the 
 Kubernetes 1.23 Release, which will be the final release of 2021. After 
-the 1.23, 1.24, and  1.25 Releases, will will collect feedback and incorporate 
+the 1.23, 1.24, and 1.25 Releases, SIG Release will collect feedback and incorporate 
 that feedback into the lightweight framework surrounding release schedule 
 development and promote this KEP to `stable` for the 1.26 Release. 
 
@@ -369,7 +369,7 @@ Some downstream projects, such as Helm have already begun
 [planning](https://github.com/helm/community/blob/main/hips/hip-0002.md#minor-releases) 
 for this change.
 
-To mitigate this risk, SIG-Release will perform the following actions:
+To mitigate this risk, SIG Release will perform the following actions:
 
 * Once this KEP has merged, an email will be sent to the [k/dev](https://groups.google.com/g/kubernetes-dev) list
 * A community meeting occurring during the 1.22 Release Cycle will be used to communicate the change
