@@ -10,6 +10,7 @@
 - [When to Comment on an Enhancement Issue](#when-to-comment-on-an-enhancement-issue)
 - [Enhancements Tracking Spreadsheet](#enhancements-tracking-spreadsheet)
 - [Labels](#labels)
+- [Glossary](#glossary)
 
 Enhancement tracking repo for Kubernetes releases. Owned by [SIG Architecture](https://git.k8s.io/community/sig-architecture#enhancements).
 
@@ -95,3 +96,7 @@ Procedure:
 | `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
 | `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and will not actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
 | `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
+
+## Glossary
+
+Please refer to the [Glossary](docs/glossary.md) for definition of any terminology and acronyms used in Enhancements subproject.
