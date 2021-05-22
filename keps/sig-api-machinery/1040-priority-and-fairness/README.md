@@ -20,16 +20,31 @@
     - [Latency Protection](#latency-protection)
   - [Queuing](#queuing)
   - [Dispatching](#dispatching)
-    - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
-      - [The original story](#the-original-story)
-      - [Re-casting the original story](#re-casting-the-original-story)
-      - [From one to many](#from-one-to-many)
-      - [From packets to requests](#from-packets-to-requests)
-      - [Not knowing service duration up front](#not-knowing-service-duration-up-front)
+  - [Fair Queuing for Server Requests, initial definition](#fair-queuing-for-server-requests-initial-definition)
+  - [Problems with initial definition of Fair Queuing for Server Requests](#problems-with-initial-definition-of-fair-queuing-for-server-requests)
+  - [Fair Queuing for Server Requests, with max-min fairness](#fair-queuing-for-server-requests-with-max-min-fairness)
+    - [Fair Queuing for Server Requests Problem](#fair-queuing-for-server-requests-problem)
+    - [Fair Queuing for Server Requests Behavior](#fair-queuing-for-server-requests-behavior)
+  - [More or less efficient implementation of Fair Queuing for Server Requests](#more-or-less-efficient-implementation-of-fair-queuing-for-server-requests)
+    - [Computing the max-min fair allocation](#computing-the-max-min-fair-allocation)
+    - [Scheduling in the virtual world](#scheduling-in-the-virtual-world)
+      - [Simplest virtual-world scheduling implementation](#simplest-virtual-world-scheduling-implementation)
+      - [Simplest correct virtual-world scheduling implementation](#simplest-correct-virtual-world-scheduling-implementation)
+      - [Sorted executing requests](#sorted-executing-requests)
+      - [Sorted queues](#sorted-queues)
+    - [Picking the next request to dispatch in the real world](#picking-the-next-request-to-dispatch-in-the-real-world)
+  - [Derivation of Fair Queuing for Server Requests](#derivation-of-fair-queuing-for-server-requests)
+    - [The original story](#the-original-story)
+    - [Re-casting the original story](#re-casting-the-original-story)
+    - [From one to many](#from-one-to-many)
+    - [From packets to requests](#from-packets-to-requests)
+    - [Generalizing packet &quot;width&quot;](#generalizing-packet-width)
+    - [Not knowing service duration up front](#not-knowing-service-duration-up-front)
+    - [Extra time at the end of a request](#extra-time-at-the-end-of-a-request)
   - [Support for LIST requests](#support-for-list-requests)
     - [Width of the request](#width-of-the-request)
     - [Determining the width](#determining-the-width)
-    - [Dispatching the request](#dispatching-the-request)
+    - [Dispatching the request, as a modification to the initial Fair Queuing for Server Requests](#dispatching-the-request-as-a-modification-to-the-initial-fair-queuing-for-server-requests)
   - [Support for WATCH requests](#support-for-watch-requests)
     - [Watch initialization](#watch-initialization)
       - [Getting the initialization signal](#getting-the-initialization-signal)
@@ -39,7 +54,7 @@
       - [Estimating cost of the request](#estimating-cost-of-the-request)
       - [Multiple apiservers](#multiple-apiservers)
       - [Cost of the watch event](#cost-of-the-watch-event)
-      - [Dispatching the request](#dispatching-the-request-1)
+      - [Dispatching the request, as a modification to the initial Fair Queuing for Server Requests with LIST support](#dispatching-the-request-as-a-modification-to-the-initial-fair-queuing-for-server-requests-with-list-support)
   - [Example Configuration](#example-configuration)
   - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
@@ -652,7 +667,11 @@ The Fair Queuing for Server Requests algorithm below is used to pick a
 non-empty queue at that priority level.  Then the request at the head
 of that queue is dispatched.
 
-#### Fair Queuing for Server Requests
+### Fair Queuing for Server Requests, initial definition
+
+Following is the design that motivates the code that currently exists.
+There are problems with this design and the code, discussed in the
+next section.
 
 This is based on fair queuing but is modified to deal with serving
 requests in an apiserver instead of transmitting packets in a router.
@@ -666,14 +685,727 @@ ways.  One is that we are dispatching requests to be served rather
 than packets to be transmitted.  Another difference is that multiple
 requests may be served at once.  The third difference is that the
 actual service time (i.e., duration) is not known until a request is
-done being served.
+done being served.  The first two differences can easily be handled by
+straightforward adaptation of the concept called "R(t)" in the
+original paper and "virtual time" in the implementation outline.  In
+that implementation outline, the notation `now()` is used to mean
+reading the _virtual_ clock.  In the original paper’s terms, "R(t)" is
+the number of "rounds" that have been completed at real time t, where
+a round consists of virtually transmitting one bit from every
+non-empty queue in the router (regardless of which queue holds the
+packet that is really being transmitted at the moment); in this
+conception, a packet is considered to be "in" its queue until the
+packet’s transmission is finished.  For our problem, we can define a
+round to be giving one nanosecond of CPU to every non-empty queue in
+the apiserver (where emptiness is judged based on both queued and
+executing requests from that queue), and define R(t) = (server start
+time) + (1 ns) * (number of rounds since server start).  Let us write
+NEQ(t) for that number of non-empty queues in the apiserver at time t.
+For a given queue "q", let us also write "reqs(q, t)" for the number
+of requests of that queue at that time.  Let us also write C for the
+concurrency limit.  At a particular time t, the partial derivative of
+R(t) with respect to t is
+
+```
+min(sum[over q] reqs(q, t), C) / NEQ(t) .
+```
+
+In terms of the implementation outline, this is the rate at which
+virtual time (`now()`) is advancing at time t (in virtual nanoseconds
+per real nanosecond).  Where the implementation outline adds packet
+size to a virtual time, in our version this corresponds to adding a
+service time (i.e., duration) to virtual time.
+
+The third difference is handled by modifying the algorithm to dispatch
+based on an initial guess at the request’s service time (duration) and
+then make the corresponding adjustments once the request’s actual
+service time is known.  This is similar, although not exactly
+isomorphic, to the original paper’s adjustment by δ for the sake of
+promptness.
+
+For implementation simplicity (see below), let us use the same initial
+service time guess for every request; call that duration G.  A good
+choice might be the service time limit (1 minute).  Different guesses
+will give slightly different dynamics, but any positive number can be
+used for G without ruining the long-term behavior.
+
+As in ordinary fair queuing, there is a bound on divergence from the
+ideal.  In plain fair queuing the bound is one packet; in our version
+it is C requests.
+
+To support efficiently making the necessary adjustments once a
+request’s actual service time is known, the virtual finish time of a
+request and the last virtual finish time of a queue are not
+represented directly but instead computed from queue length, request
+position in the queue, and an alternate state variable that holds the
+queue’s virtual start time.  While the queue is empty and has no
+requests executing: the value of its virtual start time variable is
+ignored and its last virtual finish time is considered to be in the
+virtual past.  When a request arrives to an empty queue with no
+requests executing, the queue’s virtual start time is set to `now()`.
+The virtual finish time of request number J in the queue (counting
+from J=1 for the head) is J * G + (virtual start time).  While the
+queue is non-empty: the last virtual finish time of the queue is the
+virtual finish time of the last request in the queue.  While the queue
+is empty and has a request executing: the last virtual finish time is
+the queue’s virtual start time.  When a request is dequeued for
+service the queue’s virtual start time is advanced by G.  When a
+request finishes being served, and the actual service time was S, the
+queue’s virtual start time is decremented by G - S.
+
+### Problems with initial definition of Fair Queuing for Server Requests
+
+One is that it does not actually aim for max-min fairness; rather, it
+aims to give every non-empty queue the same concurrency (regardless of
+whether a given queue can use that much concurrency).  That is [issue
+95979](https://github.com/kubernetes/kubernetes/issues/95979), which
+is partially addressed by a hack that causes a queue's progress
+(`virtualStart`) to advance at the fair rate even when that queue is
+not actually doing that much work/time.
+
+Another problem is that the code removes a request from both the real
+and virtual worlds as soon as it completes in the real world.  In the
+original Fair Queuing technique for networking, a packet continues to
+get service (lowering dR/dt) until it completes in the virtual world
+--- even though that may be after the packet completes in the real
+world.  That aspect should be retained.  Removing a request before it
+finishes in the virtual world, causes the code to use a higher dR/dt
+than it should.  This looks similar to the previous problem, and is
+partially addressed by the same hack.
+
+### Fair Queuing for Server Requests, with max-min fairness
+
+This is based on fair queuing but is modified to deal with serving
+requests in an apiserver instead of transmitting packets in a router.
+
+#### Fair Queuing for Server Requests Problem
+
+The Fair Queuing for Server Requests problem is as follows.
+
+- Dispatch queued requests to a server that has a capacity of `C`
+  concurrent seats, with max-min fairness in concurrency usage.
+
+- Identify a request by the index `i` of its queue and the request's
+  sequence number `j` in that queue.  Request `(i,j)` is the `j`th
+  request to go into queue `i`.  For the sake of procedural
+  regularity, every request is put into its queue upon arrival.
+  Dispatch (that is, starting to execute the request) can happen
+  immediately, if allowed by the regular constraints.
+
+- Request `(i,j)` enters its queue at time `t_arrive(i,j)`.
+
+- Each request `(i,j)` comes tagged with `width(i,j)`, the integer
+  number of seats it occupies.  This is typically 1, but can be up to
+  a configured limit `A` (typically a double-digit number) in some cases.
+
+- At any given moment the sum of the widths of the executing requests
+  should be as high as it can be without exceeding `C`, but if that
+  would not allow any requests to be executing then instead there
+  should be one executing.
+
+- A request can be ejected before it has been dispatched.  This means
+  to remove the request and never execute it.
+
+- A request does _not_ come with an indication of how long it will
+  take to execute.  That is only known when the execution finishes.
+
+- A request _does_ come tagged with some extra time `Y(i,j)` to tack
+  onto the end its execution.  This extra time does not delay the
+  return from the request handler, but _does_ extend the time that the
+  request's seats are considered to be occupied.
+
+#### Fair Queuing for Server Requests Behavior
+
+The following behavior solves the problem.
+
+We imagine a virtual world in which request executions are scheduled
+and executed differently than in the real world.  In the virtual
+world, requests are generally executed with more concurrency (thus
+take longer) and with infinitesimal interleaving.  The virtual world
+uses the same clock as the real world.  Define the following.
+
+- `len(i,j)` is the execution duration for request `(i,j)` in the real
+  world, including `Y(i,j)`.  At first `len` is only a guess.  When
+  the real execution duration is eventually learned, `len` gets
+  updated with that information.
+
+- `B(i,j)` is the time when request `(i,j)` beings execution in the
+  virtual world.
+
+- `E(i,j)` is the time when request `(i,j)` ends execution in the
+  virtual world (this includes completion of `Y(i,j)`).  This is _not_
+  simply `B` plus `len` because requests generally execute more slowly
+  in the virtual world due to spreading the capacity `C` over more
+  concurrent requests.  Critically, this design does not involve
+  requests finishing sooner in the virtual world than in the real
+  world; this avoids requiring the implementation to revise the
+  schedule in the past.
+
+- `SAR(i,t) = {j such that B(i,j) <= t < E(i,j)}` is the Set of Active
+  Requests for queue `i` at time `t`.
+
+- `NOS(i,t) = Sum[over j in SAR(i,t)] width(i,j)` is the Number of
+  Occupied Seats by queue `i` at time `t`.
+
+At time `t`, queue `i` is requesting `rho(i,t)` concurrency in the
+virtual world.  This is the sum of the widths of the requests that
+have arrived but not yet finished executing.
+
+```
+rho(i,t) = Sum[over j such that t_arrive(i,j) <= t < E(i,j)] width(i,j)
+```
+
+The allocations of concurrency are written as `mu(i,t)` seats for
+queue `i` at time `t`.  These allocations are max-min fair when
+
+```
+mu(i,t) = min(rho(i,t), mu_fair(t))
+```
+
+and `mu_fair(t)` is the minimum non-negative value that solves the
+equation
+
+```
+min(C, Sum[over i] rho(i,t)) = Sum[over i] min(rho(i,t), mu_fair(t))
+```
+
+In English: every queue gets what it wants if that adds up to no more
+than `C`, otherwise queues that request less than the `mu_fair`
+solution get all that they ask for and each of the others gets
+`mu_fair`.
+
+Each non-empty queue divides its allocated concurrency `mu` evenly
+among the seats it occupies in the virtual world, so that the
+aggregate rate work gets done on all the queue's seats is `mu`.
+
+```
+rate(i,t) = if NOS(i,t) > 0 then mu(i,t) / NOS(i,t) else 0
+```
+
+In this design we always have `mu(i,t) <= NOS(i,t)`, because that is
+what is needed to guarantee that `rate(i,t) <= 1` --- which is the
+aforementioned property that requests execute no faster in the virtual
+world than in the real one.
+
+We use that rate and the concurrency limit to define the schedule in
+the virtual world.  In the virtual world a queue dispatches as if it
+is the only one consuming the server's concurrency; dispatches from
+other queues are ignored (except through their indirect effects on
+`mu`).  The scheduling is thus done with almost no interactions
+between queues.  The interactions are limited to updating the `mu`
+allocations whenever the `rho` requests change.
+
+To make the scheduling technically easy to speccify, we suppose that
+no two requests arrive at the same time and `epsilon` is something
+smaller than any interval between two arrivals.  The implementation
+will be serialized anyway, so this is no real restriction.
+
+```
+B(i,j) = if NOS(i,t_arrive(i,j)-epsilon) <  C
+         then t_arrive(i,j)
+         else Min[k in SAR(i,t_arrive(i,j)-epsilon)] E(i,k)
+```
+
+That is, a newly arrived request is dispatched immediately if the
+queue's occupied seats just before that was strictly less than C,
+otherwise the new request waits until the soonest completion of a
+conflicting request.  Note that the concurrency limit used here is
+more generous than in the real world, in two ways.  First: the limit
+`C` is applied to each queue independently.  Second: if any
+concurrency is available at all then dispatch happens, even if that
+takes the number of occupied seats above `C`.  We do these because
+dispatching less than `min(C, rho(i,t))` leaves open the door for `mu`
+to rise above `NOS` later (due to a change in a different queue `j`,
+at which point we do not consider additional dispatches from queue
+`i`).  The independent virtual-world scheduling for each queue also
+helps enable efficient implementations.
+
+The end of a packet's virtual execution (`E(i,j)`) is the solution to
+the following equation.
+
+```
+Integral[from tau=B(i,j) to tau=E(i,j)] rate(i,tau) dtau = len(i,j)
+```
+
+That is, each of a queue's packets is executed in the virtual world at
+the aforementioned `rate`.  Before the real completion, `len` is only
+a guess and the virtual completion is certainly in the future --- and
+so can be updated when the real value of `len` is learned.  The ease
+of this is why we insist on keepting that update out of the past.
+
+For a given request `(i,j)`, the initial guess at its execution
+duration is the sum of `Y(i,j)` and what the request context says is
+the available remaining time for serving the request.  If and whenever
+the passage of time later proves the current guessed `len` to be too
+small then it is increased by adding `G`.  That is the server's
+configured default request service time limit.
+
+The order of request dispatches in the real world is taken to be the
+order of request completions in the virtual world.  In the case of
+ties, round robin ordering is used starting from the queue that most
+closely follows the one last dispatched from.  Requests are dispatched
+as soon as allowed by that ordering, the concurrency bound in the
+problem statement, and of course not dispatching before arrival.
+
+### More or less efficient implementation of Fair Queuing for Server Requests
+
+We consider three issues in turn: (1) computing the max-min fair
+allocation for a given set of demands, (2) scheduling in the virtual
+world, and (3) picking the next request to execute in the real world.
+
+#### Computing the max-min fair allocation
+
+A single instance of the problem of finding the max-min fair
+allocations `mu(i,t1)` given capacity `C` and demands `rho(i,t1)`, for
+indices `0 <= i < N`, can be solved in `O(N log N)` time.  This is
+done by first sorting the indices according to increasing `rho`, then
+making one pass over the sorted indices to find the boundary between
+the demands that are fully met and those that are not.
+
+Fair Queuing for Server Requests is an on-line problem, and as such
+presents a series of max-min fair allocation problems --- each
+differing from the previous by a change in the demand of one queue.
+Thus we can use an incremental algorithm to solve each new instance
+based on the previous one, as follows.
+
+- Keep the queues in a data structure sorted by increasing `rho`.  Let
+  us say this is a permutation `RI`.  That is, at any given moment
+  `t`, `rho(RI(j),t) <= rho(RI(k),t)` for every `0 <= j < k < N`.
+  Also maintain the inverse permutation `IR` --- that is, `IR(RI(i)) =
+  i` for every `0 <= i < N`.
+
+- Maintain the sort index `L` of the first sorted queue that is
+  limited (does not get all it demands).  That is, `L` is the smallest
+  non-negative integer with the property that `mu(RI(j),t) <
+  rho(RI(j),t)` for all `j` such that `j >= L` and `j < N`.  Sort
+  index `L` can be as small as 0 (when no queue gets its full demand)
+  and as large as `N` (when every queue gets its full demand).
+
+- Maintain the quantity `CL = Sum[over j < L] rho(RI(j),t) * (N-j)`.
+  This is the capacity usage implied by all the fully granted demands,
+  including the implication that the queues with higher demands get at
+  least the highest fully granted demand.
+
+- The above imply that when `L < N`, `L` has the property that making
+  it one bigger would blow `CL` past the bound `C`: `CL +
+  rho(RI(L),t) * (N-L) > C`.
+
+- Given the above, `mu_fair(t)` is:
+
+  - `C / N` if `L = 0`
+  
+  - `rho(RI(L-1),t) + (C - CL) / (N - L)` if `0 < L < N`
+
+  - `rho(RI(N-1),t)` if `L = N`.
+
+The permutation `RI` and its inverse can be implemented in such a way
+that every operation we invoke on them costs no more than `O(N)` time.
+For example, use a [https://github.com/wangjia184/sortedset] where the
+keys are stringified `i` and the scores are `rho(i,t)`, making the
+rank for `i` be `IR(i) + 1` and thus `GetByRank(j+1,false).Score()`
+implements `rho(RI(j),t)`.
+
+With that representation, the time complexity of solving the next
+instance of the max-min fair allocation problem is `O((1 + N_Delta) *
+log N)` where `N_Delta` is the number of queues that cross the
+boundary.  Note that while the system stays out of overload, `N_Delta`
+is zero.  It also stays zero while the system stays overloaded by the
+same set of queues.
+
+#### Scheduling in the virtual world
+
+Next consider the problem of scheduling in the virtual world.  This is
+a matter of computing the `B` and `E` values in the virtual world.
+This is an on-line problem, and the relevant input events that come in
+from the real world are:
+- arrival of a request into a queue,
+- completion of execution of a request in the real world (causing an
+  update to its `len`), and
+- ejecting a request that, in the real world, is waiting in a queue
+  (in the virtual world this request could be waiting or executing).
+
+Requests get dispatched in the virtual world at the same moment when
+some request completes in the virtual world.  Note that a request's
+completion in the virtual world is a function of the fictitious
+execution schedule in the that world and so generally does _not_
+correspond in time with any real world event.
+
+There is a difficulty when a request is ejected from its queue at a
+time when it is not executing in the real world but has already
+started execution in the virtual world.  [TODO: describe how to handle
+this.]
+
+##### Simplest virtual-world scheduling implementation
+
+A request becomes known to the implementation when it arrives, and is
+deleted from the virtual world upon completion in the virtual world
+(which is guaranteed to happen no sooner than completion in the real
+world).
+
+We would not want to maintain the `B` and `E` value of every request
+known at the moment, because for ones not yet dispatched: (a) nothing
+consumes their `B` and `E` values (aside from computing some of those)
+and (b) those `B` and `E` can change whenever the `len` of a running
+request changes.  However, it is necessary to maintain an efficient
+representation of the `E` of each request that _is_ currently running
+in the virtual world: because a queue can have many of those, there is
+no `O(1)` summary of their implications for future dispatches.
+
+A queue's requests that are waiting (not executing) in the virtual
+world are held in a FIFO.  This should support efficient removal of
+any given request, if it should happen to be ejected while waiting; a
+linked list supports all the needed operations in `O(1)` coompute
+time.  Whenever a request arrives or completes in the virtual world
+--- the latter can happen when the clock reaches the request's `E` ---
+it is time to dispatch waiting requests.  These are pulled out of the
+FIFO, proceeding as long as the queue's number of occupied seats
+before each dispatch is less than `C`.  For each such dispatch, the
+`B` of the dispatched request is set to the current clock reading and
+the `E` can be estimated by assuming that nothing else changes until
+then; these cost `O(1)` compute time.
+
+The executing requests of a queue can be held in any data structure
+that supports efficient addition and removal of any given request.  A
+hash map or linked list can do these in `O(1)` time.
+
+However, there is also the problem of updating the `E` estimates
+whenever something relevant changes.  The events that are relevant to
+an executing request's `E` estimate are:
+- ejection or completion of the request in the real world (which
+  generally requires an update to the request's `len`),
+- arrival of the request's `E` without the request finishing execution
+  in the real world, which implies that the request's guessed `len`
+  has to be increased, and
+- arrivals, completions, and ejections of other requests (any that
+  changes the queue's `rate`, which is `mu / NOS`).
+
+To maintain and incrementally update these estimates in the face of
+`rate` varying over the course of a request's execution, it helps to
+define a notion of the "progresss" `P(i,t)` that queue `i` has made up
+to time `t`.
+
+```
+P(i,t) = Integral[from tau=epoch(i) to tau=t] rate(i,t) dtau
+```
+
+`P(i,t)` is similar to the `R(t)` meter in the original Fair Queuing
+design but is queue-specific.  This is the amount of work per seat
+that has been done by requests dispatched from that queue since an
+arbitrary starting time `epoch(i)`.  This is the meter of progress
+made in the virtual world on serving individual requests from that
+queue.  It has the virtue of _not_ being request-specific.
+
+```
+P(i,E(i,j)) - P(i,B(i,j)) = len(i,j)
+```
+
+Motivated by that, we define the convenient shorthand `PEnd(i,j) =
+P(i,E(i,j))`.  The really nice property of `PEnd(i,j)` is that it is
+only set or changed when the request is dispatched or its `len` is
+updated --- changes to the queue's `rate` do not affect `PEnd(i,j)`.
+
+We can use `P(i,t)` at time `t` to estimate the future completion time
+`EE(i,j,t)` for request `(i,j)` as follows.
+
+```
+EE(i,j,t) = t + ( PEnd(i,j) - P(i,t) ) / rate(i,t)
+```
+
+The simplest implementation explicitly represents each queue's `P` and
+updates them as needed.  Each `rate` change is instantaneous, itself
+having no direct impact on `P` values (because they are integrals over
+time); it is the passage of time that requires updating `P` values.
+Updating one queue's `P` to account for the passage of time during
+which `mu` and `NOS` did not change costs `O(1)` compute time.
+
+At any given moment, it is not actually necessary to know `EE` for
+every executing request.  All that is really needed for a given queue
+is the earliest `EE` among that queue's executing requests.  When that
+time arrives, stuff happens and then the wait is on for the next
+earliest `EE`.  Importantly, a change in a queue's `mu` causes a
+change in the value of the earliest `EE` but does _not_ change _which_
+requests will complete earliest (there could be multiple that complete
+at the same time).  That's because, for a given queue, `EE` is a
+linear function of `PEnd`.  So rather than maintain an `EE` for every
+executing request, we can maintain only that one lowest `PEnd` value
+`nextPE(i)` and the corresponding `EE` value `nextEE(i)`, and "set of
+requests that will complete earliest" `nextCompletes(i)`, for each
+queue `i`.  When that set becomes empty, it is time to find the next
+set and their `PEnd` and `EE`.  This can be done in `O(C)` compute
+time to look through the queue's executing requests to find those with
+minimal `PEnd`.  A change in one queue's `NOS` directly requires only
+recomuting `nextEE` from `nextPE`.  But there are indirect effects.
+Any change in some other queue that changes `mu(i,t)` also requires
+recomputing `nextEE(i)` from `nextPE(i)`.  Thus, updating all the
+`nextPE`, `nextEE`, and `nextCompletes` values in response to a
+virtual-world arrival, dispatch, completion, ejection, or `len` update
+can be done in the sum of:
+
+- `O((1 + N_Delta) * log N)` to compute the new max-min fair
+  allocation,
+
+- `O(C)` time to update the directly affected queue, and
+
+- `O(N_MuChange)` time to update the `P` and `nextEE` of the other
+  queues, where `N_MuChange` is the number of queues whose `mu`
+  changes.  While the system stays out of overload, each `N_MuChange`
+  is 0 or 1.  If the system stays more-than-just-barely overloaded by
+  the same set of queues, this also limits `N_MuChange` to 0 or 1.  In
+  the worst case, `N_MuChange` is a fraction of `N` --- that is,
+  `O(N)`.  A really simple implementation would simply recompute the
+  `nextEE` of every queue, taking `O(N)` compute time.
+
+To summarize the runtime costs so far: handling any request arrival,
+completion, `len` update, or ejection can be done in `O((1 +
+N_Delta) * log N + C + N)` compute time.
+
+However, there remains the problem of handling virtual completions
+when they happen, since these generally do not happen at the same time
+as the corresponding completions in the real world.  As mentioned
+before, we do not want to process virtual completions before their
+time comes because such early processing risks consequent dispatches
+that would have to be revised (along with all _their_ consequences,
+and so on to transitive closure) later when the virtual completion
+time advances due to learning the correct `len` of the request.  One
+approach to processing a completion at a good time is to use a clock
+abstraction to schedule these computations.  For a given queue `i`, we
+only need to keep one computation scheduled --- at `nextEE(i)`.  Once
+that computation is done, the wait is on for the next one, and so on.
+The covers all the asynchronous computations needed for that queue.
+However, the future computation for a given queue needs to be
+rescheduled whenever `nextEE` of that queue changes.  Thus, the
+runtime costs of these reschedulings has the same asymptotic form as
+the costs to keep the `nextEE` updated.
+
+In summary, the simplest implementation costs `O((1 + N_Delta) * log
+N + C + N)` compute time per request.
+
+##### Simplest correct virtual-world scheduling implementation
+
+However, there is a bug in the above approach to scheduling the
+computations about request completions in the virtual world.  When
+using a clock to schedule future computation, that computation can
+start _after_ the requested time --- and there is no guaranteed upper
+bound on _how much_ after.  Other relevant events could slip in
+between the requested time and the time when the scheduled computation
+actually starts.  But we need to handle the virtual world events in
+the order in which they nominally occur.  When starting a computation
+at time `tc`, we need to find the oldest not-yet-processed virtual
+world event, handle that, then find the next and handle that, and so
+on up through processing all the available events for `tc`.  With the
+ability to iterate through virtual world events like this, there is no
+need to bother trying to schedule computations for some ideal future
+time.  We can simply react to every real-world event, processing all
+the events that happened in the virtual world since the last
+real-world event.
+
+This iteration can be done as follows.  Maintain `tv`, the time of the
+last processed event in the virtual world.  When computing at some
+time `tc`, walk `tv` forward to `tc` by iterating through successive
+un-processed virtual world events.  Arrivals happen in the virtual
+world at the same time as in the real world.  Ejections are best
+processed as soon as possible.  The next dispatch in the virtual world
+happens at the same time as some completion in the virtual world.  The
+next completion in the virtual world is from the executing request
+`(i,j)` with the minimal `EE` if this is no later than `tc` (recall
+that this design does not involve revising the past).  If there is
+such a request then the assumptions made in computing its `E` estimate
+`EE` (namely constant `mu` and `NOS`) have held true.
+
+The problem of finding the minimal `EE` among the executing requests
+in _one_ queue is addressed above, but walking `tv` forward over
+successive virtual world events raises the problem of finding the
+executing requests with minimal `EE` among _all_ the queues.  BTW,
+this is isomorphic to the problem of finding the next request to
+dispatch in the real world except that here we do not filter out
+requests that have already been dispatched in the real world.  The
+simplest approach is to use only the data structures discussed above
+and iterate over the queues to find the one with minimal `nextEE`.
+This costs `O(N)` compute time for looking through all executing
+requests of all the queues, and this is paid `O(1)` times for every
+request.
+
+Thus we get the same asymptotic summary.  The simplest correct
+implementation's total compute time per request is `O((1 + N_Delta) *
+log N + C + N)`.
+
+##### Sorted executing requests
+
+The easiest target for improvement is the costs of finding the new
+values for `nextCompletes`, `nextPE`, and `nextEE`.  The simplest
+implementation iterates over all the executing requests, costing
+`O(C)` compute time.  A more efficient approach is to keep the
+executing requests in a data structure sorted by `PEnd`.  The cost of
+finding a new value for `nextCompletes` is `O(size(nextCompletes) *
+log C)`, and computing `nextPE` and `nextEE` is faster.  The cost of
+finding `nextCompletes` can be amortized over its members, making the
+cost `O(log C)` for each.
+
+In this implementation, the total compute time per request is `O((1 +
+N_Delta) * log N + log C + N)`.
+
+##### Sorted queues
+
+A more efficient approach is possible, based on using representations
+in which the data structure for a queue does not need to be updated in
+most cases when something happens in a different queue.  This enables
+the queues to be kept sorted according to their next estimated
+completion time.  This is done by dynamically splitting the queues
+into two categories, handling each in its own way, and handling a
+queue moving from one category to another whenever that happens.  To
+find the next-completing request among all the queues, we first find
+the next-completing request from each non-empty category of queues and
+then take the sooner of those two (when both categories are
+non-empty).
+
+The easier of the two categories is queues that are getting all the
+concurrency they demand.  That is, `i` for which `mu(i,t) = rho(i,t)`.
+Such a queue gets no interference from other queues.  Its completion
+time estimates need to be updated only when three is a change in that
+queue.  Maintaining such a queue's minimal estimated `E` is discussed
+above, it is the problem of knowing the next of a given queue's
+completions in the virtual world.  Keep the queues of this category in
+a data structure sorted by `nextEE`.  That adds a compute time cost of
+`O(log N)` for every request arrival and completion and every queue
+entry into, and departure from, this category of queues.
+
+The tougher category is queues that are _not_ getting all the
+concurrency they demand.  That is, `i` for which `mu(i,t) < rho(i,t)`.
+These queues all get the same allocation, `mu_fair(t)`.  BTW, we could
+alternatively distinguish the categories by comparing `mu` to
+`mu_fair` rather than `rho`; this will make a difference approximately
+never (i.e., only when some queue's demand exactly equals the fair
+allocation), and there is no significant consequence to that
+difference.  The fact that the allocations are equal is the key to an
+efficient representation for this category.  We use the same `R(t)`
+meter as the original Fair Queuing algorithm.
+
+```
+R(t) = Integral[from tau=epoch to tau=t] mu_fair(tau) dtau
+```
+
+For a given queue `i`, suppose that the equation `mu(i,t) =
+mu_fair(t)` has been true since `t = t_i0` and `NOS(i,t)` has been
+constant since that time.  We assume those will continue to hold and
+define `j_min` to be one of the queue's requests with minimal `PEnd`
+(finding which is discussed above), then estimate as follows.
+
+```
+Integral[t_i0 <= tau <= EE(i,j_min,t)] rate(i,tau) dtau
+        = PEnd(i,j_min) - P(i,t_i0)
+
+rate(i,tau) = mu_fair(tau) / NOS(i,t_i0)
+
+Integral[t_i0 <= tau <= EE(i,j_min,t)] mu_fair(tau) dtau / NOS(i,t_i0)
+        = PEnd(i,j_min) - P(i,t_i0)
+
+Integral[t_i0 <= tau <= EE(i,j_min,t)] mu_fair(tau) dtau
+        = NOS(i,t_i0) * (PEnd(i,j_min) - P(i,t_i0))
+
+R(EE(i,j_min,t)) = R(t_i0) + NOS(i,t_i0) * (PEnd(i,j_min) - P(i,t_i0))
+```
+
+Define "Estimated F" `EF(i,t) = R(EE(i,j_min,t))`.  These `EF` values
+do not change with the mere passage of time during which nothing
+changes.  They also do not change when `mu_fair(t)` and `mu(i,t)`
+change, as long as the equation `mu(i,t) = mu_fair(t)` continues to
+hold.  Thus, this representation is insulated from interference from
+other queues.
+
+Keep these queues in a data structure sorted by increasing `EF`.
+Picking the one of these queues with soonest estimated request
+completion (lowest `EF`) costs `O(log N)` compute time.  At time `t`,
+to translate a request's `EF` value to an expected clock reading `EE`
+(for comparison with the expected `E` value from the easier category
+of queues), assume `mu_fair(t)` and `NOS(i,t)` will hold steady into
+the future and reason as follows.
+
+```
+R(tau) - R(t) = (tau - t) * mu_fair(t)
+
+EF(i,t) = R(EE(i,j_min,t)) = R(t) + (EE(i,j_min,t) - t) * mu_fair(t)
+
+EE(i,j_min,t) = t + ( EF(i,t) - R(t) ) / mu_fair(t)
+```
+
+When using this representation, the `P(i,t_i0)` value for a queue
+needs to be updated only at those `t_i0` when the queue's `NOS`
+changes.  The update can be computed in `O(1)` time from just the
+change in R and the old `NOS` --- intervening changes in `mu` need no
+direct attention, thus maintaining the insulation from other queues.
+
+```
+P(i,t) - P(i,t_i0) = ( R(t) - R(t_i0) ) / NOS(i,t_i0)
+```
+
+By maintaining these two sorted sets of queues, the runtime cost to
+find the next request completion time in the virtual world reduces
+from `O(N)` to `O(log N)` compute time.
+
+Thus, this implementation costs `O((1 + N_Delta) * log N + log C)`
+compute time.
+
+
+#### Picking the next request to dispatch in the real world
+
+When request `(i,j)` completes execution in the real world, the APF
+handler returns but, for the sake of its own dispatching, considers
+that request to effectively occupy its seat(s) for another `Y(i,j)`.
+At any point in time, the next request to dispatch in the real world
+is the next one in the order specified at the end of [the behavior
+subsection above](#fair-queuing-for-server-requests-behavior) that has
+not already been dispatched in the real world.  This is like the other
+virtual completion iteration problem discussed above.  The main
+difference is simply that the iterator is advanced at different points
+in time (real world dispatch times rather than virtual world
+completion times).  [TODO: finish solving here; do we really need two
+iterators?  Rest of this subsection is fragments of old thoughts.]
+
+This iterator uses the same `B` and `E` values as the one above, and
+so does not have to repeat their calculation [TODO: make this true].
+
+but maintains its own `nextCompletes`, `nextPE`, and
+`nextEE` values.  The additional compute time cost per request is:
+
+- `O(C + N)` for the simplest correct implementation;
+- `O(log C + N)` if each queue's requests are kept in a sorted data
+  structure;
+- `O(log C + log N)` if additionally the queues are kept in a sorted
+  data structure.
+
+This iterator also has the added problem of respecting round-robin
+ordering.  This can be implemented in `O(1)` compute time per request.
+
+### Derivation of Fair Queuing for Server Requests
+
+You can find the original fair queuing paper at
+[ACM](https://dl.acm.org/citation.cfm?doid=75247.75248) or
+[MIT](http://people.csail.mit.edu/imcgraw/links/research/pubs/networks/WFQ.pdf),
+and an [implementation outline at
+Wikipedia](https://en.wikipedia.org/wiki/Fair_queuing).  Our problem
+differs from the normal fair queuing problem in the following ways.
+
+- We are dispatching requests to be served rather than packets to be
+  transmitted.
+
+- Multiple requests may be served at once.
+
+- The amount of time needed to serve a request is not known until the
+  server has finished handling that request.
+
+- Some requests might drive the server harder than others.  In other
+  words, how many requests can reasonably be handled concurrently
+  depends on aspects of the requests themselves.
+
+- A request can be tagged with some extra time to wait at the end of
+  its execution.
 
 To show how to cope with those differences, we start by re-casting the
 original fair queuing story in a way that is more amenable to the
 needed changes and has the same implementation.  Then we work through
 a series of three changes.
 
-##### The original story
+#### The original story
 
 We have a collection of FIFO queues of packets to be transmitted, one
 packet at a time, over one link that goes at a fixed rate of
@@ -709,22 +1441,44 @@ Now we can define `NAQ(t)` precisely: it is the number of queues `i`
 for which there exists a `j` such that `R(t) <= F(i,j)` and
 `t_arrive(i,j) <= t`.
 
+Dealing with R values rather than time directly is helpful because the
+R values of a packet's virtual start and finish do not change even
+though a given queue's rate of virtual transmission (`mu_single /
+NAQ(t)`) changes over time.
+
+Because of the dilution by `NAQ(t)`, no packet ever makes faster
+progress in the virtual world than in the real world.  Thus:
+- every packet that has completed (been fully sent) in the virtual
+  world has also completed in the real world, and
+- every packet that has not yet completed in the real world has also
+  not yet completed in the virtual world.
+  
+However, it is important to remember that a packet may remain active
+in the virtual world, thus diluting the virtual transmission rate from
+other queues, after it completes in the real world.  Note also that a
+queue can run out of work in the virtual world at a moment when no
+packet arrives, starts, or completes in the real world.
+
 When it is time to start transmitting the next packet in the real
-world, we pick the unsent packet with the smallest `F` value.  If
-there is a tie then we pick the one whose queue follows most closely
-in round-robin order the queue last picked from.
+world, we pick --- from the packets not yet sent in the real world ---
+one with the smallest `F` value.  If there is a tie then we pick the
+one whose queue follows most closely in round-robin order the queue
+last picked from.
 
 It is not necessary to explicitly represent the S and F values for
-every unsent packet in the virtual world.  It suffices to track R(t)
-and, for each queue, the contents of that queue and the S of the
-queue's oldest unsent packet.  This is enough to make the cost of
+every packet not yet completed in the virtual world.  It suffices to
+track R(t) and, for each queue: (1) the packets of that queue that
+have not yet completed in the real world and the `S` of the oldest one
+of those, if there are any, otherwise (2) the `F` of the packet last
+completed in the real world.  This is enough to make the cost of
 reacting to a packet arrival or completion O(1) with the exception of
 finding the next packet to send.  That costs O(num queues) in a
 straightforward implementation and O(log(num queues) + (num ties)) if
-the queues are kept in a data structure sorted by the F value of the
-queue's oldest packet that has not started transmission.
+the non-empty queues are kept in two data structures (one for the
+queues non-empty in the real world, one for the queues non-empty in
+the virtual world) sorted by the relevant `F` value.
 
-##### Re-casting the original story
+#### Re-casting the original story
 
 The original fair queuing technique can be understood in the following
 way, which corresponds more directly to max-min fairness.  We have a
@@ -764,12 +1518,13 @@ packets are divided into three subsets: those that have been
 completely sent, those that are in the process of being sent, and
 those that have not yet started being sent.  That number being sent is
 1 unless it is 0 and the queue has no unsent packets.  This virtual
-world uses the same clock as the real world.  Whenever a packet
-finishes being sent in the real world, the next packet to be
-transmitted is the one that is unsent in the real world and will
-finish being sent soonest in the virtual world.  If there is a tie
-among several, we pick the one whose queue is next in round-robin
-order (following the queue last picked).
+world uses the same clock as the real world; the original story does
+too, although some authors describe `R(t)` as "virtual" or "warped"
+time.  Whenever a packet finishes being sent in the real world, the
+next packet to be transmitted is the one that is unsent in the real
+world and will finish being sent soonest in the virtual world.  If
+there is a tie among several, we pick the one whose queue is next in
+round-robin order (following the queue last picked).
 
 We can define beginning and end times (B and E) for transmission of
 the j'th packet of queue i in the virtual world, with the following
@@ -842,7 +1597,8 @@ packet in the virtual world.  It suffices to track, for each queue
   (this is a superset of the packets that have not yet finished transmission
    in the real world);
 - B of the packet currently being sent
-- bits of that packet sent so far: `Integral[from tau=B to tau=now] mu(i,tau) dtau`
+- bits of that packet sent so far: `Integral[from tau=B to tau=now]
+  mu(i,tau) dtau`
 
 At any point in time the E of the packet being sent can be calculated,
 under the assumption that `mu(i,t)` will henceforth be constant, by
@@ -865,7 +1621,7 @@ is kept in the data structure.  A packet's F does not change as the
 system evolves over time, so an incremental step requires only
 manipulating the queue and packet directly involved.
 
-##### From one to many
+#### From one to many
 
 The first change is to suppose that transmission is being done on
 multiple parallel links.  Call the number of them `C`.  This allows
@@ -926,7 +1682,7 @@ effectively standing them apart in time even if the clock does not).
 
 ```
 B(i,j) = if NAP(i,t_arrive(i,j)) <= C then t_arrive(i,j)
-         else min[k in SAP(i,j)] E(i,k)
+         else min[k in SAP(i,t_arrive(i,j))] E(i,k)
 
 Integral[from tau=B(i,j) to tau=E(i,j)] rate(i,tau) dtau = len(i,j)
 ```
@@ -1051,7 +1807,7 @@ with O(1) complexity.  Finding the earliest from each of the two
 categories costs O(1).  Finding the earliest of those (at most) two
 also takes O(1).
 
-##### From packets to requests
+#### From packets to requests
 
 The next change is from transmitting packets to serving requests.  We
 no longer have a collection of C links; instead we have a server
@@ -1065,11 +1821,42 @@ the real world we pick from a queue with a request that will complete
 soonest in the virtual world, using round-robin ordering to break
 ties.
 
-##### Not knowing service duration up front
+The variable introduced above as "SAP" (for Set of Active Packets)
+would now be better called "SAR" (for Set of Active Requests).
+Similarly we rename "NAP" (Number of Active Packets") to "NOS" (Number
+of Occupied Seats).
 
-The final change removes the up-front knowledge of the service
-duration of a request.  Instead, we use a guess `G`.  If and when the
-guess turns out to be too short --- that is, its expected end time
+#### Generalizing packet "width"
+
+As motivated by LIST requests (see below), we generalize the number of
+seats occupied by a request from 1 to an integer in the range
+[1, A].  We generalize and extend the above design as follows.
+
+`rho(i,t)` is the sum of the widths of the requests that arrived by
+time `t` but did not yet complete in the virtual world.
+
+```
+NOS(i,t) = sum[j in SAR(i,t)] width(i,j)
+
+B(i,j) = if NOS(i,t_arrive(i,j)) <= C || NOS(i,t_arrive(i,j)) == width(i,j)
+         then t_arrive(i,j)
+		 else min[k in SAR(i,t_arrive(i,j))] E(i,k)
+```
+
+The exceptional dispatch when `NOS(i,t_arrive(i,j)) == width(i,j)`
+prevents the system from grinding to a halt when faced with the
+problem of dispatching a request that is wider than `C`.  This is a
+simple way of coping with that difficulty and preserves the property
+that requests execute no faster in the virtual world than in the real
+one.
+
+#### Not knowing service duration up front
+
+The penultimate change removes the up-front knowledge of the service
+duration of a request.  Instead, we use a guess.  We deliberately use
+a very generous guess: the amount of time that the request context
+says is available for the request to finish being served.  If and when
+the guess turns out to be too short --- that is, its expected end time
 arrives in the virtual world but the request has not finished in the
 real world --- the guess is increased.  Remember that the virtual
 world never serves a request faster than the real world, so whenever
@@ -1089,6 +1876,26 @@ this time is an accurate reflection of the true service duration `D`
 the remaining requests in that queue start getting faster service.  In
 both cases, the service delivery in the virtual world has reacted
 properly to the true service duration.
+
+#### Extra time at the end of a request
+
+To account for consequent work that is not done synchronously (i.e.,
+sending WATCH notifications that are consequences of a mutating
+request), we consider a request's execution to happen in two phases:
+the regular one, whose length we have been discussing in earlier
+subsections, and then an asynchronous one.  The duration of the
+asynchronous phase of request `(i,j)` --- let us call that `Y(i,j)`
+(think "Y" for "Yield") --- is an attribute of the incoming request
+(set in an earlier request handler).  In the real world, the APF
+handler for the request returns as soon as the inner handler finishes
+executing the request (so that the client does not suffer delay due to
+`Y`), but considers the request's seat(s) to be occupied for another
+`Y(i,j)`.  The initial guess of the request's service duration
+`len(i,j)` is `Y(i,j)` plus what the request context says is the
+remaining time available for servicing the request.  Once the real
+duration of the inner handler is learned, `len` is updated to that
+plus `Y`.
+
 
 ### Support for LIST requests
 
@@ -1193,6 +2000,8 @@ width_approx(n) = min(A, ceil(N / E)), where E = 1 / B
 Fortunately that logic will be well separated and purely in-memory so we
 can decide to arbitrarily adjust it in future releases.
 
+[TODO: describe how `N` is estimated.]
+
 Given that the estimation is well separated piece of logic, we can decide
 to replace with much more sophisticated logic later (e.g. whether it is
 served from etcd or from cache, whether it is namespaced or not, etc.).
@@ -1225,7 +2034,7 @@ Note that given the estimation for duration of processing the requests is
 automatically corrected (both up and down), there is no need to change that
 in the initial version.
 
-#### Dispatching the request
+#### Dispatching the request, as a modification to the initial Fair Queuing for Server Requests
 
 The hardest part of adding support for LIST requests is dispatching the
 requests.  Now in order to start processing a request, it has to accumulate
@@ -1468,7 +2277,7 @@ Obviously some normalization will be needed here, but it's impossible to assess
 it on paper, and we are leaving this for the implementation and tuning phase
 to figure out the details.
 
-##### Dispatching the request
+##### Dispatching the request, as a modification to the initial Fair Queuing for Server Requests with LIST support
 
 We described how we can estimate the cost of the request associated with
 watch events triggerred by it.  But we didn't yet said how this translates
