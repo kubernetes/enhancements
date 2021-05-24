@@ -143,7 +143,6 @@ used is not present, thus enforcing authentication / re-authentication.
 User with multiple tenants will be able to support all image pull policies without
 concern that one tenant will gain access to an image that they don't have rights to.
 
-
 #### Story 2
 User will will no longer have to inject the Pull Always Image Pull Policy to
 ensure all tenants have rights to the images that are already present on a host.
@@ -170,7 +169,10 @@ container runtime cache. To mitigate, images can be garbage collected at boot.
 
 ## Design Details
 
-See PR
+Kubelet will track, in memory, a hash map for the credentials that were successfully used to pull an image. The hash map
+will not be persisted to disk, in alpha. For alpha explicitly, we will not reuse or add other state manager concepts to kubelet.
+
+See PR for detailed design / behavior documentation.
 
 ### Test Plan
 
@@ -341,6 +343,8 @@ Why should this KEP _not_ be implemented. N/A
 - Make the behavior change enabled by default by changing the feature gate to true by default instead of false by default.
 - Discussions went back and forth on whether this should go directly to GA as a fix or alpha as a feature gate. It seems this should be the default security posture for pullIfNotPresent as it is not clear to admins/users that an image pulled by a first pod with authentication can be used by a second pod without authentication. The performance cost should be minimal as only the manifest needs to be re-authenticated. But after further review and discussion with MrunalP we'll go ahead and have a kubelet feature gate with default off for alpha in v1.22.
 - Set the flag at some other scope e.g. pod spec (doing it at the pod spec was rejected by SIG-Node).
+- For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extention to the CRI API for having the container runtime
+ensure the image instead of kubelet.
 
 ## Infrastructure Needed [optional]
 

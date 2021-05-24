@@ -27,5 +27,5 @@ feature-gates:
   - name: KubeletEnsureSecretPulledImages
     components:
       - kubelet
-disable-supported: true (disabled by default)
+disable-supported: true
 metrics:
