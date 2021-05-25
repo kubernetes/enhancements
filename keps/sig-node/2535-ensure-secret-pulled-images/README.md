@@ -9,7 +9,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -17,6 +17,8 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -27,9 +29,9 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -180,12 +182,10 @@ See PR (exhaustive unit tests added for alpha covering feature gate on and off f
 
 ### Graduation Criteria
 
-
 #### Alpha
 
 - Feature implemented behind a feature flag - KubeletEnsureSecretPulledImages
 - Initial e2e tests completed and enabled - No additional e2e identified as yet
-
 
 #### Deprecation
 
@@ -302,7 +302,7 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Yes. When enabled, and when container images have been pulled with image pull secrets (credentials), subsequent image
-pulls for pods that do not contain the image pull secret that sucessfully pulled the image will have to authenticate
+pulls for pods that do not contain the image pull secret that successfully pulled the image will have to authenticate
 by trying to pull the image manifests from the registry. The image layers do not have to be re-pulled, just the
 manifests for authentication purposes.
 
@@ -343,7 +343,7 @@ Why should this KEP _not_ be implemented. N/A
 - Make the behavior change enabled by default by changing the feature gate to true by default instead of false by default.
 - Discussions went back and forth on whether this should go directly to GA as a fix or alpha as a feature gate. It seems this should be the default security posture for pullIfNotPresent as it is not clear to admins/users that an image pulled by a first pod with authentication can be used by a second pod without authentication. The performance cost should be minimal as only the manifest needs to be re-authenticated. But after further review and discussion with MrunalP we'll go ahead and have a kubelet feature gate with default off for alpha in v1.22.
 - Set the flag at some other scope e.g. pod spec (doing it at the pod spec was rejected by SIG-Node).
-- For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extention to the CRI API for having the container runtime
+- For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extension to the CRI API for having the container runtime
 ensure the image instead of kubelet.
 
 ## Infrastructure Needed [optional]
