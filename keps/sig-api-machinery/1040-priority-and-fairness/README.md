@@ -1249,11 +1249,11 @@ based on the previous one, as follows.
   - `rho(RI(N-1),t)` if `L = N`.
 
 The permutation `RI` and its inverse can be implemented in such a way
-that every operation we invoke on them costs no more than `O(N)` time.
-For example, use a [https://github.com/wangjia184/sortedset] where the
-keys are stringified `i` and the scores are `rho(i,t)`, making the
-rank for `i` be `IR(i) + 1` and thus `GetByRank(j+1,false).Score()`
-implements `rho(RI(j),t)`.
+that every operation we invoke on them costs no more than `O(log N)`
+time.  For example, use a [https://github.com/wangjia184/sortedset]
+where the keys are stringified `i` and the scores are `rho(i,t)`,
+making the rank for `i` be `IR(i) + 1` and thus
+`GetByRank(j+1,false).Score()` implements `rho(RI(j),t)`.
 
 With that representation, the time complexity of solving the next
 instance of the max-min fair allocation problem is `O((1 + N_Delta) *
