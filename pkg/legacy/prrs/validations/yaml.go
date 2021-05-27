@@ -26,7 +26,7 @@ import (
 
 var mandatoryKeys = []string{"kep-number"}
 
-func ValidateStructure(parsed map[interface{}]interface{}) error {
+func ValidateStructure(prrApprovers []string, parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
 		if _, found := parsed[key]; !found {
 			return util.NewKeyMustBeSpecified(key)
@@ -44,29 +44,23 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 		switch strings.ToLower(k) {
 		case "alpha", "beta", "stable":
 			switch v := value.(type) {
-			case map[interface{}]interface{}:
-				if err := validateMilestone(v); err != nil {
+			case map[string]interface{}:
+				if err := validateMilestone(prrApprovers, v); err != nil {
 					return fmt.Errorf("invalid %s field: %v", k, err)
 				}
-			case interface{}:
-				return util.NewValueMustBeStruct(k, v)
+			default:
+				return fmt.Errorf("field %s value '%v' is of invalid type %v", key, value, v)
 			}
 		}
 	}
 	return nil
 }
 
-func validateMilestone(parsed map[interface{}]interface{}) error {
+func validateMilestone(prrApprovers []string, parsed map[string]interface{}) error {
 	// prrApprovers must be sorted to use SearchStrings down below...
-	prrApprovers := util.PRRApprovers()
 	sort.Strings(prrApprovers)
 
-	for key, value := range parsed {
-		// First off the key has to be a string. fact.
-		k, ok := key.(string)
-		if !ok {
-			return util.NewKeyMustBeString(k)
-		}
+	for k, value := range parsed {
 
 		// figure out the types
 		// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)

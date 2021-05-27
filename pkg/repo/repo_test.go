@@ -17,7 +17,10 @@ limitations under the License.
 package repo_test
 
 import (
+	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,25 +28,58 @@ import (
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
+	"k8s.io/release/pkg/log"
 )
+
+var fixture = struct {
+	validRepoPath string
+	validRepo     *repo.Repo
+}{}
+
+func TestMain(m *testing.M) {
+	err := log.SetupGlobalLogger("debug")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to setup global logger: %v: ", err)
+	}
+
+	fixture.validRepoPath = filepath.Join("testdata", "repos", "valid")
+
+	// NB: keep this in sync with testdata/repos/valid/keps
+	fetcher := &api.MockGroupFetcher{
+		Groups: []string{
+			"sig-architecture",
+		},
+	}
+	r, err := repo.NewRepo(fixture.validRepoPath, fetcher)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to load repo from %s: %v: ", fixture.validRepoPath, err)
+		os.Exit(1)
+	}
+	fixture.validRepo = r
+
+	os.Exit(m.Run())
+}
 
 func TestProposalValidate(t *testing.T) {
 	testcases := []struct {
-		name        string
-		file        string
-		expectError bool
+		name         string
+		file         string
+		expectErrors bool
 	}{
 		{
-			name:        "valid KEP passes validate",
-			file:        "testdata/valid-kep.yaml",
-			expectError: false,
+			name:         "valid KEP passes validate",
+			file:         "testdata/valid-kep.yaml",
+			expectErrors: false,
 		},
 		{
-			name:        "invalid KEP fails validate for owning-sig",
-			file:        "testdata/invalid-kep.yaml",
-			expectError: true,
+			name:         "invalid KEP fails validate for owning-sig",
+			file:         "testdata/invalid-kep.yaml",
+			expectErrors: true,
 		},
 	}
+
+	parser := api.KEPHandler{}
+	parser.Groups = []string{"sig-api-machinery"}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -54,9 +90,9 @@ func TestProposalValidate(t *testing.T) {
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
 
-			err = p.Validate()
-			if tc.expectError {
-				require.Error(t, err)
+			errs := parser.Validate(&p)
+			if tc.expectErrors {
+				require.NotEmpty(t, errs)
 			}
 
 			require.NoError(t, err)
@@ -81,8 +117,7 @@ func TestFindLocalKEPs(t *testing.T) {
 		},
 	}
 
-	r, repoErr := repo.New(validRepo)
-	require.Nil(t, repoErr)
+	r := fixture.validRepo
 
 	for i, tc := range testcases {
 		k, err := r.LoadLocalKEPs(tc.sig)

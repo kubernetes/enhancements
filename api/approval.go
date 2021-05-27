@@ -94,19 +94,6 @@ type PRRMilestone struct {
 
 type PRRHandler Parser
 
-func NewPRRHandler() (*PRRHandler, error) {
-	handler := &PRRHandler{}
-
-	approvers, err := FetchPRRApprovers()
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching PRR approvers")
-	}
-
-	handler.PRRApprovers = approvers
-
-	return handler, nil
-}
-
 // TODO(api): Make this a generic parser for all `Document` types
 func (p *PRRHandler) Parse(in io.Reader) (*PRRApproval, error) {
 	scanner := bufio.NewScanner(in)

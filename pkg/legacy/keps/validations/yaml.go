@@ -17,9 +17,11 @@ limitations under the License.
 package validations
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"k8s.io/enhancements/pkg/legacy/util"
 )
@@ -30,20 +32,17 @@ var (
 	reStatus      = regexp.MustCompile(strings.Join(statuses, "|"))
 	stages        = []string{"alpha", "beta", "stable"}
 	reStages      = regexp.MustCompile(strings.Join(stages, "|"))
-	reMilestone   = regexp.MustCompile(`v1\\.[1-9][0-9]*`)
+	reMilestone   = regexp.MustCompile(`v1\.[1-9][0-9]*`)
 )
 
 // TODO(lint): cyclomatic complexity 50 of func `ValidateStructure` is high (> 30) (gocyclo)
 //nolint:gocyclo
-func ValidateStructure(parsed map[interface{}]interface{}) error {
+func ValidateStructure(listGroups []string, prrApprovers []string, parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
 		if _, found := parsed[key]; !found {
 			return util.NewKeyMustBeSpecified(key)
 		}
 	}
-
-	listGroups := util.Groups()
-	prrApprovers := util.PRRApprovers()
 
 	for key, value := range parsed {
 		// First off the key has to be a string. fact.
@@ -107,9 +106,14 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				continue
 			}
 
-			fallthrough
-
-		case "title", "creation-date", "last-updated":
+		case "creation-date", "last-updated":
+			switch v := value.(type) {
+			case time.Time:
+				continue
+			default:
+				return fmt.Errorf("%s's value (%v) must parse to time.Time, got: %v", k, value, v)
+			}
+		case "title":
 			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
 			//nolint:gocritic
 			switch v := value.(type) {
@@ -201,13 +205,13 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			// TODO(lint): Error return value is not checked (errcheck)
 			//nolint:errcheck
 			v, _ := value.(string)
-			if !reMilestone.Match([]byte(v)) {
+			if !reMilestone.MatchString(v) {
 				return util.NewValueMustBeMilestone(k, v)
 			}
 
 		case "milestone":
 			switch v := value.(type) {
-			case map[interface{}]interface{}:
+			case map[string]interface{}:
 				if err := validateMilestone(v); err != nil {
 					return err
 				}
@@ -221,14 +225,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 	return nil
 }
 
-func validateMilestone(parsed map[interface{}]interface{}) error {
-	for key, value := range parsed {
-		// First off the key has to be a string. fact.
-		k, ok := key.(string)
-		if !ok {
-			return util.NewKeyMustBeString(k)
-		}
-
+func validateMilestone(parsed map[string]interface{}) error {
+	for k, value := range parsed {
 		// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
 		//nolint:gocritic
 		switch strings.ToLower(k) {

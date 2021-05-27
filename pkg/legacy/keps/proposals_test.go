@@ -75,7 +75,10 @@ metrics:
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := &keps.Parser{}
+			p := &keps.Parser{
+				Groups:       []string{"sig-api-machinery", "sig-architecture"},
+				PRRApprovers: []string{"wojtek-t"},
+			}
 			contents := strings.NewReader(tc.fileContents)
 			out := p.Parse(contents)
 			if out.Error != nil {

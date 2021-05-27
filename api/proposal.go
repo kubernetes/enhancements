@@ -76,15 +76,6 @@ type Proposal struct {
 	Contents string `json:"markdown" yaml:"-"`
 }
 
-func (p *Proposal) Validate() error {
-	v := validator.New()
-	if err := v.Struct(p); err != nil {
-		return errors.Wrap(err, "running validation")
-	}
-
-	return nil
-}
-
 func (p *Proposal) IsMissingMilestone() bool {
 	return p.LatestMilestone == ""
 }
@@ -94,26 +85,6 @@ func (p *Proposal) IsMissingStage() bool {
 }
 
 type KEPHandler Parser
-
-func NewKEPHandler() (*KEPHandler, error) {
-	handler := &KEPHandler{}
-
-	groups, err := FetchGroups()
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching groups")
-	}
-
-	handler.Groups = groups
-
-	approvers, err := FetchPRRApprovers()
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching PRR approvers")
-	}
-
-	handler.PRRApprovers = approvers
-
-	return handler, nil
-}
 
 // TODO(api): Make this a generic parser for all `Document` types
 func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
@@ -153,14 +124,73 @@ func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
 		return kep, errors.Wrap(err, "unmarshalling YAML")
 	}
 
-	if valErr := kep.Validate(); valErr != nil {
-		k.Errors = append(k.Errors, errors.Wrap(valErr, "validating KEP"))
-		return kep, errors.Wrap(valErr, "validating KEP")
+	if err := k.validateStruct(kep); err != nil {
+		k.Errors = append(k.Errors, err)
+		return kep, fmt.Errorf("validating KEP: %w", err)
 	}
 
 	kep.ID = hash(kep.OwningSIG + ":" + kep.Title)
 
 	return kep, nil
+}
+
+// validateStruct returns an error if the given Proposal has invalid fields
+// as defined by struct tags, or nil if there are no invalid fields
+func (k *KEPHandler) validateStruct(p *Proposal) error {
+	v := validator.New()
+	return v.Struct(p)
+}
+
+// validateGroups returns errors for each invalid group (e.g. SIG) in the given
+// Proposal, or nil if there are no invalid groups
+func (k *KEPHandler) validateGroups(p *Proposal) []error {
+	var errs []error
+	validGroups := make(map[string]bool)
+	for _, g := range k.Groups {
+		validGroups[g] = true
+	}
+	for _, g := range p.ParticipatingSIGs {
+		if _, ok := validGroups[g]; !ok {
+			errs = append(errs, fmt.Errorf("invalid participating-sig: %s", g))
+		}
+	}
+	if _, ok := validGroups[p.OwningSIG]; !ok {
+		errs = append(errs, fmt.Errorf("invalid owning-sig: %s", p.OwningSIG))
+	}
+	return errs
+}
+
+// validatePRRApprovers returns errors for each invalid PRR Approver in the
+// given Proposal, or nil if there are no invalid PRR Approvers
+func (k *KEPHandler) validatePRRApprovers(p *Proposal) []error {
+	var errs []error
+	validPRRApprovers := make(map[string]bool)
+	for _, a := range k.PRRApprovers {
+		validPRRApprovers[a] = true
+	}
+	for _, a := range p.PRRApprovers {
+		if _, ok := validPRRApprovers[a]; !ok {
+			errs = append(errs, fmt.Errorf("invalid prr-approver: %s", a))
+		}
+	}
+	return errs
+}
+
+// Validate returns errors for each reason the given proposal is invalid,
+// or nil if it is valid
+func (k *KEPHandler) Validate(p *Proposal) []error {
+	var allErrs []error
+
+	if err := k.validateStruct(p); err != nil {
+		allErrs = append(allErrs, fmt.Errorf("struct-based validation: %w", err))
+	}
+	if errs := k.validateGroups(p); errs != nil {
+		allErrs = append(allErrs, errs...)
+	}
+	if errs := k.validatePRRApprovers(p); errs != nil {
+		allErrs = append(allErrs, errs...)
+	}
+	return allErrs
 }
 
 type Milestone struct {

@@ -32,7 +32,7 @@ func TestValidateStructureSuccess(t *testing.T) {
 		{
 			name: "just alpha",
 			input: map[interface{}]interface{}{
-				"alpha": map[interface{}]interface{}{
+				"alpha": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
 			},
@@ -40,13 +40,13 @@ func TestValidateStructureSuccess(t *testing.T) {
 		{
 			name: "all milestones",
 			input: map[interface{}]interface{}{
-				"alpha": map[interface{}]interface{}{
+				"alpha": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
-				"beta": map[interface{}]interface{}{
+				"beta": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
-				"stable": map[interface{}]interface{}{
+				"stable": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
 			},
@@ -54,18 +54,19 @@ func TestValidateStructureSuccess(t *testing.T) {
 		{
 			name: "just stable",
 			input: map[interface{}]interface{}{
-				"stable": map[interface{}]interface{}{
+				"stable": map[string]interface{}{
 					"approver": "@wojtek-t",
 				},
 			},
 		},
 	}
+	prrApprovers := []string{"wojtek-t"}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Add required fields.
 			tc.input["kep-number"] = "12345"
 
-			err := ValidateStructure(tc.input)
+			err := ValidateStructure(prrApprovers, tc.input)
 			if err != nil {
 				t.Fatalf("did not expect an error: %v", err)
 			}
@@ -101,9 +102,10 @@ func TestValidateStructureFailures(t *testing.T) {
 			},
 		},
 	}
+	prrApprovers := []string{"wojtek-t"}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateStructure(tc.input)
+			err := ValidateStructure(prrApprovers, tc.input)
 			if err == nil {
 				t.Fatal("expecting an error")
 			}

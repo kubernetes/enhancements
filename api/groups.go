@@ -29,19 +29,65 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-const (
-	// URLs
-	sigListURL     = "https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml"
-	ownersAliasURL = "https://raw.githubusercontent.com/kubernetes/enhancements/master/OWNERS_ALIASES"
+// GroupFetcher is responsible for getting informationg about groups in the
+// Kubernetes Community
+type GroupFetcher interface {
+	// FetchGroups returns the list of valid Kubernetes Community groups
+	// e.g. (SIGs, WGs, UGs, Committees)
+	FetchGroups() ([]string, error)
+	// FetchPRRApprovers returns the list of valid PRR Approvers
+	FetchPRRApprovers() ([]string, error)
+}
 
-	// Aliases
-	prrApproversAlias = "prod-readiness-approvers"
-)
+// DefaultGroupFetcher returns the default GroupFetcher, which depends on GitHub
+func DefaultGroupFetcher() GroupFetcher {
+	return &RemoteGroupFetcher{
+		GroupsListURL:     "https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml",
+		OwnersAliasesURL:  "https://raw.githubusercontent.com/kubernetes/enhancements/master/OWNERS_ALIASES",
+		PRRApproversAlias: "prod-readiness-approvers",
+	}
+}
 
-// FetchGroups returns a list of Kubernetes governance groups
-// (SIGs, Working Groups, User Groups).
-func FetchGroups() ([]string, error) {
-	resp, err := http.Get(sigListURL)
+// MockGroupFetcher returns the given Groups and PRR Approvers
+type MockGroupFetcher struct {
+	Groups       []string
+	PRRApprovers []string
+}
+
+var _ GroupFetcher = &MockGroupFetcher{}
+
+func NewMockGroupFetcher(groups, prrApprovers []string) GroupFetcher {
+	return &MockGroupFetcher{Groups: groups, PRRApprovers: prrApprovers}
+}
+
+func (f *MockGroupFetcher) FetchGroups() ([]string, error) {
+	result := make([]string, len(f.Groups))
+	copy(result, f.Groups)
+	return result, nil
+}
+
+func (f *MockGroupFetcher) FetchPRRApprovers() ([]string, error) {
+	result := make([]string, len(f.PRRApprovers))
+	copy(result, f.PRRApprovers)
+	return result, nil
+}
+
+// RemoteGroupFetcher returns Groups and PRR Approvers from remote sources
+type RemoteGroupFetcher struct {
+	// Basically kubernetes/community/sigs.yaml
+	GroupsListURL string
+	// Basically kubernetes/enhancements/OWNERS_ALIASES
+	OwnersAliasesURL string
+	// The alias name to look for in OWNERS_ALIASES
+	PRRApproversAlias string
+}
+
+var _ GroupFetcher = &RemoteGroupFetcher{}
+
+// FetchGroups returns the list of valid Kubernetes Community groups as
+// fetched from a remote source
+func (f *RemoteGroupFetcher) FetchGroups() ([]string, error) {
+	resp, err := http.Get(f.GroupsListURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching SIG list")
 	}
@@ -78,8 +124,8 @@ func FetchGroups() ([]string, error) {
 }
 
 // FetchPRRApprovers returns a list of PRR approvers.
-func FetchPRRApprovers() ([]string, error) {
-	resp, err := http.Get(ownersAliasURL)
+func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
+	resp, err := http.Get(f.OwnersAliasesURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching owners aliases")
 	}
@@ -108,7 +154,7 @@ func FetchPRRApprovers() ([]string, error) {
 	}
 
 	var result []string
-	result = append(result, config.Data[prrApproversAlias]...)
+	result = append(result, config.Data[f.PRRApproversAlias]...)
 
 	if len(result) == 0 {
 		return nil, errors.New("retrieved zero PRR approvers, which is unexpected")

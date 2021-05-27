@@ -14,46 +14,44 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package repo
+package repo_test
 
 import (
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/enhancements/pkg/repo"
 )
 
 func TestValidateQueryOpt(t *testing.T) {
 	testcases := []struct {
 		name      string
-		queryOpts QueryOpts
+		queryOpts repo.QueryOpts
 		err       error
 	}{
 		{
-			name: "Valid SIG",
-			queryOpts: QueryOpts{
-				Name:       "1011-test",
-				Groups:     []string{"sig-multicluster"},
+			name: "groups: valid SIG",
+			queryOpts: repo.QueryOpts{
+				Groups:     []string{"sig-architecture"},
 				IncludePRs: true,
 				Output:     "json",
 			},
 			err: nil,
 		},
 		{
-			name: "Invalid SIG",
-			queryOpts: QueryOpts{
-				Name:       "1011-test-xyz",
-				Groups:     []string{"sig-xyz"},
+			name: "groups: invalid SIG",
+			queryOpts: repo.QueryOpts{
+				Groups:     []string{"sig-does-not-exist"},
 				IncludePRs: true,
 				Output:     "json",
 			},
 			err: fmt.Errorf("No SIG matches any of the passed regular expressions"),
 		},
 		{
-			name: "Unsupported Output format",
-			queryOpts: QueryOpts{
-				Name:       "1011-test-testing",
-				Groups:     []string{"sig-testing"},
+			name: "output: unsupported format",
+			queryOpts: repo.QueryOpts{
+				Groups:     []string{"sig-does-nothing"},
 				IncludePRs: true,
 				Output:     "PDF",
 			},
@@ -61,10 +59,12 @@ func TestValidateQueryOpt(t *testing.T) {
 		},
 	}
 
+	r := fixture.validRepo
+
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			queryOpts := tc.queryOpts
-			err := queryOpts.Validate()
+			err := r.PrepareQueryOpts(&queryOpts)
 
 			if tc.err == nil {
 				require.Nil(t, err)

@@ -107,15 +107,19 @@ func TestUnmarshalSuccess(t *testing.T) {
 		OwningSIG:    "sig-architecture",
 		Status:       "provisional",
 		Approvers:    []string{"my approvers"},
-		LastUpdated:  "at some point",
-		CreationDate: "a while ago",
+		LastUpdated:  "2020-03-04",
+		CreationDate: "2020-01-02",
 	}
 	p := map[interface{}]interface{}{}
 
 	if err := yaml.Unmarshal(yamlDoc.YAMLDoc(), p); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateStructure(p); err != nil {
+
+	groups := []string{"sig-architecture"}
+	prrApprovers := []string{}
+
+	if err := ValidateStructure(groups, prrApprovers, p); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -162,13 +166,15 @@ func TestValidateStructureSuccess(t *testing.T) {
 			},
 		},
 	}
+	groups := []string{"sig-architecture"}
+	prrApprovers := []string{}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			// TODO: Add required fields
 			tc.input["title"] = "this is a title"
 			tc.input["owning-sig"] = "sig-architecture"
 
-			err := ValidateStructure(tc.input)
+			err := ValidateStructure(groups, prrApprovers, tc.input)
 			if err != nil {
 				t.Fatalf("did not expect an error: %v", err)
 			}
@@ -218,9 +224,11 @@ func TestValidateStructureFailures(t *testing.T) {
 			},
 		},
 	}
+	groups := []string{}
+	prrApprovers := []string{}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateStructure(tc.input)
+			err := ValidateStructure(groups, prrApprovers, tc.input)
 			if err == nil {
 				t.Fatal("expecting an error")
 			}

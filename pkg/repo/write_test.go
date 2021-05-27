@@ -172,8 +172,10 @@ func newTestClient(t *testing.T, repoPath string) testClient {
 		T: t,
 		b: b,
 	}
-
-	r, err := repo.New(repoPath)
+	fetcher := &api.MockGroupFetcher{
+		Groups: []string{"sig-auth", "sig-api-machinery", "sig-architecture"},
+	}
+	r, err := repo.NewRepo(repoPath, fetcher)
 	require.Nil(t, err)
 
 	r.Out = b
@@ -188,7 +190,7 @@ func newTestClient(t *testing.T, repoPath string) testClient {
 
 func (tc *testClient) addTemplate(file string) {
 	src := filepath.Join(
-		validRepo,
+		fixture.validRepoPath,
 		repo.ProposalPathStub,
 		repo.ProposalTemplatePathStub,
 		file,
