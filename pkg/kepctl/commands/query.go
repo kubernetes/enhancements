@@ -18,10 +18,12 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
+	"k8s.io/enhancements/pkg/output"
 	"k8s.io/enhancements/pkg/repo"
 )
 
@@ -86,6 +88,13 @@ func addQuery(topLevel *cobra.Command) {
 		"Author",
 	)
 
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.Participant,
+		"participating-sig",
+		nil,
+		"Participating SIG",
+	)
+
 	cmd.PersistentFlags().BoolVar(
 		&qo.IncludePRs,
 		"include-prs",
@@ -96,10 +105,8 @@ func addQuery(topLevel *cobra.Command) {
 	cmd.PersistentFlags().StringVar(
 		&qo.Output,
 		"output",
-		repo.DefaultOutputOpt,
-		fmt.Sprintf(
-			"Output format. Can be %v", repo.SupportedOutputOpts,
-		),
+		output.DefaultFormat,
+		fmt.Sprintf("Output format. Can be %v", output.ValidFormats()),
 	)
 
 	topLevel.AddCommand(cmd)
@@ -112,5 +119,14 @@ func runQuery(opts *repo.QueryOpts) error {
 	}
 	rc.TokenPath = rootOpts.TokenPath
 
-	return rc.Query(opts)
+	results, err := rc.Query(opts)
+	if err != nil {
+		return err
+	}
+	o, err := output.NewOutput(opts.Output, os.Stdout, os.Stderr)
+	if err != nil {
+		return err
+	}
+	o.PrintProposals(results)
+	return nil
 }

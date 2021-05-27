@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
@@ -40,14 +41,14 @@ type CreateOpts struct {
 	SIG    string
 
 	// Create options
-	Title        string
-	Approvers    []string
-	Authors      []string
-	Reviewers    []string
-	Type         string
-	State        string
-	SIGS         []string
-	PRRApprovers []string
+	Title             string
+	Approvers         []string
+	Authors           []string
+	Reviewers         []string
+	Type              string
+	State             string
+	ParticipatingSIGs []string
+	PRRApprovers      []string
 }
 
 // Validate checks the args provided to the create command and parses the sig,
@@ -74,7 +75,7 @@ func (c *CreateOpts) Validate(args []string) error {
 func Create(opts *CreateOpts) error {
 	r := opts.Repo
 
-	fmt.Fprintf(r.Out, "Creating KEP %s %s %s\n", opts.SIG, opts.Number, opts.Name)
+	logrus.Infof("Creating KEP %s %s %s", opts.SIG, opts.Number, opts.Name)
 
 	kep := &api.Proposal{}
 
@@ -96,7 +97,7 @@ func Create(opts *CreateOpts) error {
 func createKEP(kep *api.Proposal, opts *CreateOpts) error {
 	r := opts.Repo
 
-	fmt.Fprintf(r.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
+	logrus.Infof("Generating new KEP %s in %s ===>", opts.Name, opts.SIG)
 
 	err := r.WriteKEP(kep)
 	if err != nil {
@@ -120,6 +121,8 @@ func createKEP(kep *api.Proposal, opts *CreateOpts) error {
 }
 
 func populateProposal(p *api.Proposal, opts *CreateOpts) {
+	p.Name = opts.Name
+
 	if opts.State != "" {
 		p.Status = opts.State
 	}
@@ -156,7 +159,7 @@ func populateProposal(p *api.Proposal, opts *CreateOpts) {
 
 	// TODO(lint): appendAssign: append result not assigned to the same slice (gocritic)
 	//nolint:gocritic
-	p.ParticipatingSIGs = append(opts.SIGS, opts.SIG)
+	p.ParticipatingSIGs = append(opts.ParticipatingSIGs, opts.SIG)
 	p.Filename = opts.Name
 	p.LastUpdated = "v1.19"
 
