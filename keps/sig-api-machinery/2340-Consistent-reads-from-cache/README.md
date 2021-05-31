@@ -147,7 +147,7 @@ kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
 reflectors and shared informers are kept up-to-date. The benefit of this is that
 it minimizes the chance that these clients will end up with an out-of-date
 resource version and need to relist (which can impact scalability). See [Watch
-Bookmarks](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190206-watch-bookmark.md)
+Bookmarks](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/956-watch-bookmark/README.md)
 for details.
 
 #### Determining if etcd is sending progress notify events
@@ -300,7 +300,7 @@ are forwarded to etcd.
 
 Since falling back to etcd won't work, we should fail the requests and rely on
 rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
-well behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
+well behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/ keps/sig-api-machinery/1040-priority-and-fairness/ README.md).
 
 ### Ability to Opt-out
 
