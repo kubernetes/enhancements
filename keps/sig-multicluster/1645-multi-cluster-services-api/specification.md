@@ -58,6 +58,8 @@ Following the existing specification, clusters implementing multicluster DNS wil
 
 #### 2.3.1 - `A`/`AAAA` Record
 
+_Note: This section refers to `A` and `AAAA` record requirements. For Service objects that have dual-stack networking enabled, both `A` and `AAAA` records must be created to cover both IPv4 and IPv6 assigned ClusterSetIPs._
+
 Given a ClusterIP type Service named `<service>` in Namespace `<ns>` that has been exported via a name-mapped ServiceExport with name `<service>`, given it is accessible across the clusterset by the IP address `<clusterset-ip>`, the following records must exist.
 
 If the `<clusterset-ip>` is an IPv4 address, an `A` record of the following form must exist.
@@ -143,6 +145,8 @@ ClusterSetIP Services should **NOT** have a record disambiguating to a single cl
 ### 2.4 - Records for a Multicluster Headless Service
 
 #### 2.4.1 - `A`/`AAAA` Records
+
+_Note: This section refers to `A` and `AAAA` record requirements. For Service objects that have dual-stack networking enabled, both `A` and `AAAA` records must be created to cover both IPv4 and IPv6 assigned pod IPs._
 
 Given a headless Service named `<service>` in Namespace `<ns>` that has been exported via a name-mapped ServiceExport with name `<service>`, for each _ready_ endpoint accessible across the cluster set with the IPv4 address `<endpoint-ip>` the following records must exist.
 
