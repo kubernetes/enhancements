@@ -55,14 +55,28 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This document presents an addition to the kubelet pod resources endpoint (pod resources API) which allows third party consumers to learn about the
-compute device allocation, thus, alongside the existing pod resources API endpoint, properly evaluate the node capacity.
+This document presents an addition to the kubelet pod resources endpoint (pod
+resources API) which allows third party consumers to learn about the resource
+allocation, thus, alongside the existing pod resources API endpoint, properly
+evaluate the available node capacity. The full node capacity (i.e. total amount
+of a Node) can be directly queried with `GetCapacity`. This information
+contains the resources both in terms of available Quantity as well as
+device/resource ids. It will also return the resources reserved for system
+services. The total amount of resources available for Pods can be queried
+`GetAllocatableResources`. Similarly to `GetCapacity` the resources are listed
+both as available Quantity and resource ids. With the combination of `List` and
+`Watch` the client can track the current resource usage (and availability) in
+detail.
 
 ## Motivation
 
 ### Goals
 
-* Enable node monitoring agents to know the allocatable compute resources on a node, thus properly calculate the node compute resource utilization.
+* Enable node monitoring agents to know the allocatable resources on a node,
+  thus properly calculate the node resource utilization and available capacity.
+* Enable gathering of all relevant information on pod resources from a node
+  local interface, without the need to have access to the Kubernetes control
+  plane API (e.g. enable proper tracking of non-exclusive cpu allocations).
 
 ## Proposal
 
@@ -76,7 +90,7 @@ Enable the Node Feature Discovery to [expose hardware topology information](http
 
 This interface can be used to track down allocated resources with information about the NUMA topology of the worker node in general way.
 This interface can be used to the available resources on the worker node. The kubelet is the best source of information because it manages concrete resources assignment. The information can then be used in NUMA aware scheduling.
-Combining the information reported by the `List` API, which pertains the current allocation, with the information reported by the `GetAllocatableResources` API, monitoring agent can reliably report the compute device
+Combining the information reported by the `List` API, which pertains the current allocation, with the information reported by the `GetAllocatableResources` API, monitoring agent can reliably report the resource
 utilization and availability.
 
 
@@ -108,11 +122,14 @@ NOTE:
 
 The extended interface is shown in proto below:
 ```protobuf
-/ PodResourcesLister is a service provided by the kubelet that provides information about the
+import "k8s.io/apimachinery/pkg/api/resource/generated.proto";
+
+// PodResourcesLister is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
 service PodResourcesLister {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
     rpc GetAllocatableResources(AllocatableResourcesRequest) returns (AllocatableResourcesResponse) {}
+    rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse) {}
 }
 
 message AllocatableResourcesRequest {}
@@ -122,6 +139,17 @@ message AllocatableResourcesResponse {
     repeated ContainerDevices devices = 1;
     repeated int64 cpu_ids = 2;
     repeated ContainerMemory memory = 3;
+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> quantity = 4;
+}
+
+// GetCapacityResponse contains informations about all the resources known by kubelet
+message GetCapacityResponse {
+    repeated ContainerDevices devices = 1;
+    repeated int64 cpu_ids = 2;
+    repeated ContainerMemory memory = 3;
+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> quantity = 4;
+    ReservedResources system_reserved = 5;
+    ReservedResources kube_reserved = 6;
 }
 
 // ListPodResourcesRequest is the request made to the PodResourcesLister service
@@ -130,6 +158,15 @@ message ListPodResourcesRequest {}
 // ListPodResourcesResponse is the response returned by List function
 message ListPodResourcesResponse {
     repeated PodResources pod_resources = 1;
+}
+
+// ReservedResources contains information about the resources reserved for
+// services outside Kubernetes Pods (system-reserved, kube-reserved)
+message ReservedResources {
+    repeated ContainerDevices devices = 1;
+    repeated int64 cpu_ids = 2;
+    repeated ContainerMemory memory = 3;
+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> quantity = 4;
 }
 
 // PodResources contains information about the node resources assigned to a pod
@@ -145,6 +182,8 @@ message ContainerResources {
     repeated ContainerDevices devices = 2;
     repeated int64 cpu_ids = 3;
     repeated ContainerMemory memory = 4;
+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 5;
+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> limits = 6;
 }
 
 // ContainerMemory contains information about memory and hugepages assigned to a container
