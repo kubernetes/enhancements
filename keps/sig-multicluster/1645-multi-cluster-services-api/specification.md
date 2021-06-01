@@ -42,7 +42,7 @@ clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): �
 
 ClusterSetIP / `<clusterset-ip>` / clusterset IP = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
 
-Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet identification](../2149-clusterid/README.md). Though this can be any valid DNS label, in this KEP the examples mimic the recommended value, a kube-system namespace uid ( such as `721ab723-13bc-11e5-aec2-42010af0021e`).
+Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet identification](../2149-clusterid/README.md). Though this can be any valid DNS label, the recommended value is  a kube-system namespace uid ( such as `721ab723-13bc-11e5-aec2-42010af0021e`). For ease of KEP readability, this document uses human readable names `clusterA` and `clusterB` to represent the cluster IDs of two clusters in a ClusterSet.
 
 
 ### 2.2 - Record for Schema Version
@@ -167,9 +167,9 @@ There must also be an `A` record of the following form for each ready endpoint w
 *   Record Format:
     *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN A <endpoint-ip>`
 *   Question Example:
-    *   `my-hostname.721ab723-13bc-11e5-aec2-42010af0021e.myservice.test.svc.clusterset.local. IN A`
+    *   `my-hostname.clusterA.myservice.test.svc.clusterset.local. IN A`
 *   Answer Example:
-    *   `my-hostname.721ab723-13bc-11e5-aec2-42010af0021e.myservice.test.svc.clusterset.local. 4 IN A 10.3.0.100`
+    *   `my-hostname.clusterA.myservice.test.svc.clusterset.local. 4 IN A 10.3.0.100`
 
 There must be an `AAAA` record for each _ready_ endpoint of the headless Service with IPv6 address `<endpoint-ip>` as shown below. If there are no _ready_ endpoints for the headless Service, the answer should be `NXDOMAIN`.
 
@@ -191,9 +191,9 @@ There must also be an `AAAA` record of the following form for each ready endpoin
 *   Record Format:
     *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN AAAA <endpoint-ip>`
 *   Question Example:
-    *   `my-hostname.721ab723-13bc-11e5-aec2-42010af0021e.test.svc.clusterset.local. IN AAAA`
+    *   `my-hostname.clusterA.test.svc.clusterset.local. IN AAAA`
 *   Answer Example:
-    *   `my-hostname.721ab723-13bc-11e5-aec2-42010af0021e.test.svc.clusterset.local. 4 IN AAAA 2001:db8::1`
+    *   `my-hostname.clusterA.test.svc.clusterset.local. 4 IN AAAA 2001:db8::1`
 
 #### 2.4.2 - `SRV` Records
 
@@ -210,14 +210,17 @@ The priority `<priority>` and weight `<weight>` are numbers as described in [RFC
 
 Unnamed ports do not have an `SRV` record.
 
-
+In the following example, the cluster ID for each answer example is in bold to emphasize that the union of records from all clusters are returned by a SRV record request.
 
 *   Question Example:
     *    `_https._tcp.headless.test.svc.clusterset.local. IN SRV`
 *   Answer Example:
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-1.721ab723-13bc-11e5-aec2-42010af0021e.headless.test.svc.clusterset.local.`
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-2.721ab723-13bc-11e5-aec2-42010af0021e.headless.test.svc.clusterset.local.`
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-3.721ab723-13bc-11e5-aec2-42010af0021e.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-1.`**`clusterA`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-2.`**`clusterA`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-3.`**`clusterA`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-1.`**`clusterB`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-2.`**`clusterB`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-3.`**`clusterB`**`.headless.test.svc.clusterset.local.`
 
 The Additional section of the response may include the `A`/`AAAA` records referred to in the `SRV` records.
 
@@ -232,7 +235,7 @@ Given a _ready_ endpoint with _hostname_ of `<hostname>`, member cluster ID of `
 *   Question Example:
     *    `100.0.3.10.in-addr.arpa. IN PTR`
 *   Answer Example:
-    *    `100.0.3.10.in-addr.arpa. 14 IN PTR my-pet.headless.721ab723-13bc-11e5-aec2-42010af0021e.test.svc.clusterset.local.`
+    *    `100.0.3.10.in-addr.arpa. 14 IN PTR my-pet.headless.clusterA.test.svc.clusterset.local.`
 
 Given a _ready_ endpoint with _hostname_ of `<hostname>` and IPv6 address in hexadecimal format without any simplification `<a1a2a3a4:b1b2b3b4:c1c2c3c4:d1d2d3d4:e1e2e3e4:f1f2f3f4:g1g2g3g4:h1h2h3h4>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record as a sequence of nibbles in reverse order of the following form must exist.
 
@@ -243,7 +246,7 @@ Given a _ready_ endpoint with _hostname_ of `<hostname>` and IPv6 address in hex
 *   Question Example:
     *    `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. IN PTR`
 *   Answer Example:
-    *    `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. 14 IN PTR my-pet.721ab723-13bc-11e5-aec2-42010af0021e.headless.test.svc.clusterset.local.`
+    *    `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. 14 IN PTR my-pet.clusterA.headless.test.svc.clusterset.local.`
 
 ##### Limitations
 
