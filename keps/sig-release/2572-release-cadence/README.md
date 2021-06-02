@@ -121,7 +121,7 @@ The LTS Working Group was
 [disbanded](https://github.com/kubernetes/community/pull/5240) on October 20, 2020.
 
 The outcome of their conversations was the proposal which established a
-[yearly support period](/keps/sig-release/1498-kubernetes-yearly-support-period/readme.md)
+[yearly support period](/keps/sig-release/1498-kubernetes-yearly-support-period/README.md)
 for minor releases of the project.
 
 While we may revisit the idea in the future, for now we trust the 2+ years of
