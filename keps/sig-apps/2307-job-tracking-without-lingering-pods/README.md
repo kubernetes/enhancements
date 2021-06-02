@@ -153,7 +153,8 @@ type JobStatus struct {
 
     // UncountedTerminatedPods holds UIDs of Pods that have finished but
     // haven't been accounted in the counters.
-    // If nil, Job tracking doesn't make use of this structure.
+    // Old jobs might not be tracked using this field, in which case this
+    // field remains null.
     // +optional
     UncountedTerminatedPods *UncountedTerminatedPods
 }
@@ -179,8 +180,8 @@ could be stopped at any point and executed again from the first step without
 losing information. Generally, all the steps happen in a single Job sync
 cycle.
 
-0. The Job controller adds a the `batch.kubernetes.io/job-completion` finalizer
-   to the Job.
+0. kube-apiserver adds the `batch.kubernetes.io/job-completion` finalizer
+   to newly created Jobs.
 1. The Job controller calculates the number of succeeded Pods as the sum of:
    - `.status.succeeded`,
    - the size of `job.status.uncountedTerminatedPods.succeeded` and
@@ -329,18 +330,21 @@ time, the cluster can have Jobs whose Pods don't have the
 `batch.kubernetes.io/job-completion` finalizer. It would be hard to add the
 finalizer to all Pods while preventing race conditions.
 
-We use `.status.uncountedTerminatedPods != nil` to indicate whether the Job
-was created after the feature was enabled. If this field is nil, the Job
-controller tracks Pods using the legacy tracking.
+The job controller uses the existence of the finalizer
+`batch.kubernetes.io/job-completion` to determine if it should use tracking with
+finalizers. If the finalizer is not present, and the Job is not yet completed,
+the job controllers tracks Pods using the legacy tracking (with lingering Pods).
 
-The kube-apiserver sets `.status.uncountedTerminatedPods` to an empty struct
-when the feature gate `JobTrackingWithFinalizers` is enabled, at Job
-creation.
+The kube-apiserver sets the `batch.kubernetes.io/job-completion` finalizer to
+newly created Jobs when the feature gate `JobTrackingWithFinalizers` is enabled.
 
 When the feature is disabled after being enabled for some time, the next time
 the Job controller syncs a Job:
-1. It removes finalizers from all Pods owned by the Job.
+1. It removes finalizers from the Job and all the Pods owned by it.
 2. Sets `.status.uncountedTerminatedPods` to nil.
+
+After this point, the Job will no longer be tracked using finalizers, even if
+the feature gate is re-enabled.
 
 ### Version Skew Strategy
 
@@ -476,8 +480,8 @@ previous answers based on experience in the field._
     - estimated throughput: one per Pod created by the Job controller, when Pod
       finishes or is removed.
     - originating component: kube-controller-manager
-  - PATCH Jobs, to add and remove finalizers.
-    - estimated throughput: two calls for each Job created.
+  - PATCH Jobs, to remove finalizers.
+    - estimated throughput: one call for each Job created.
     - originating component: kube-controller-manager
   - PUT Job status, to keep track of uncounted Pods.
     - estimated throughput: at least one per Job sync. The job controller
