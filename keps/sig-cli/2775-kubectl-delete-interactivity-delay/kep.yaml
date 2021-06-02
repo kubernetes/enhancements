@@ -1,0 +1,24 @@
+id: ""
+prnumber: ""
+name: 2775-kubectl-delete-interactivity-delay
+title: kubectl delete interactivity and delay
+kep-number: "2775"
+authors:
+  - "@eddiezane"
+owning-sig: sig-cli
+participating-sigs: [sig-cli]
+reviewers: []
+approvers: []
+prr-approvers: []
+creation-date: "2021-06-02"
+last-updated: v1.22
+status: provisional
+stage: ""
+latest-milestone: ""
+milestone:
+    alpha: ""
+    beta: ""
+    stable: ""
+feature-gates: []
+disable-supported: false
+metrics: []
