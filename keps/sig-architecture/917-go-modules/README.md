@@ -132,7 +132,8 @@ Update the staging component publishing bot:
 4. Generate synthetic `Godeps.json` files containing the SHA or git tag of module dependencies,
 for consumption by downstream consumers using dependency management tools like `glide`.
 Continue publishing these at least until our minimum supported version of go defaults to enabling
-module support (currently targeted for go 1.13, which is approximately Kubernetes 1.16-1.17 timeframe).
+module support. _Update (June 2021): Support for publishing these files was removed since Kubernetes now
+uses go 1.16.4 and module-aware mode is enabled by default_.
 
 See the [alternatives](#alternatives-to-publishing-staging-component-modules) section for other publishing methods considered.
 
@@ -199,8 +200,10 @@ See the [alternatives](#alternative-versioning-strategies) section for other pos
 * Move aggregated `Godeps/LICENSES` file to `vendor/LICENSES` (and ensure it is packaged correctly in build artifacts)
 * Remove `Godeps.json` files from `kubernetes/kubernetes` and staging component directories.
 With the change to go modules, the only use for these is as a hint to non-module-based downstream consumers of the published staging components.
-* Remove the custom `Godeps` fork from `kubernetes/kubernetes`
-* Remove all other `Godeps` references in scripts, comments, and configurations files
+* Remove the custom `Godeps` fork from `kubernetes/kubernetes`.
+* Remove all other `Godeps` references in scripts, comments, and configurations files.
+* _Update (June 2021)_: Remove the `Godeps` directory for all staging component directories.
+This completely removes Godeps from `kubernetes/kubernetes`.
 
 ## Design Details
 
