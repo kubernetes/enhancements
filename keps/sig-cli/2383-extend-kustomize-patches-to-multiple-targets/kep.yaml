@@ -13,11 +13,6 @@ approvers:
 editor: "@Liujingfang1"
 creation-date: 2019-03-14
 last-updated: 2019-03-18
-status: implementable
-see-also:
-replaces:
-superseded-by:
- - n/a
-
-latest-milestone: "0.0"
-stage: "alpha"
+status: implemented
+latest-milestone: "1.16"
+stage: "beta"

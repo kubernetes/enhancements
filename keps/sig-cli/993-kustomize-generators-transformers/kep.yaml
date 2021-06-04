@@ -9,9 +9,10 @@ reviewers:
   - "@sethpollack"
 approvers:
   - "@monopole"
-editor: TBD
+see-also:
+  - "/keps/sig-cli/2299-kustomize-plugin-composition"
 creation-date: 2019-03-25
 last-updated: 2019-04-30
-status: implementable
+status: implemented
 latest-milestone: "1.20"
 stage: "alpha"

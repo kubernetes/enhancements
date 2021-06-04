@@ -159,9 +159,11 @@ Update Kustomize and Kubectl docs with this new capability.
 Unit test matching Resources and performing customizations.
 
 ## Implementation History
-- Add `Patch` struct in `Kustomization` type.
-- Update the patching transformer to recognize `Patch` and match
+- [x] Add `Patch` struct in `Kustomization` type.
+- [x] Update the patching transformer to recognize `Patch` and match
   multiple resources
-- Add unit test and integration test
+- [x] Add unit test and integration test
+
+This feature was released in [v3.1.0](https://kubernetes-sigs.github.io/kustomize/blog/2019/07/26/v3.1.0/) of kustomize. 
 
 ## Alternatives

@@ -404,6 +404,7 @@ NA - Client side only
 
 ## Implementation History
 
+- Alpha available in Kustomize (standalone binary, not kubectl kustomize) v2.1.0+ behind the `--enable-alpha-plugins` flag. https://kubectl.docs.kubernetes.io/blog/2019/06/18/v2.1.0/#generator-and-transformer-plugins
 
 ## Drawbacks [optional]
 

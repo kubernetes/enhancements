@@ -194,7 +194,7 @@ better work with one another through transformation to a common format.
 ## Implementation History
 
 kustomize was implemented in the kubectl repo before subprojects became a first class thing in Kubernetes.
-The code has been fully implemented, but it must be moved to a proper location.
+It was later moved to its own repo: https://github.com/kubernetes-sigs/kustomize. It is published as an independent CLI, and `kustomize build` is also available as `kubectl kustomize`. Some kubectl subcommands (e.g. apply) support Kustomization input via the `-k` flag.
 
 ## Drawbacks
 
