@@ -912,6 +912,27 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+### Make it easier to validate CRDs using webhooks
+
+- TODO: explain ecosystem benefit of builtin vs a webhoo
+- TODO: explain limitations due to OpenAPIv3 extension restriction on CRDs
+
+### Rego
+
+See Open Policy Agent (https://github.com/open-policy-agent/opa/tree/main/rego).
+
+### WebAssembly
+
+TODO
+
+### jq
+
+TODO
+
+### Build our own
+
+TODO
+
 <!--
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
