@@ -150,92 +150,268 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-CRD development requires webhooks for all non-trivial validation and
-defaulting and for all version conversions.
+CRDs need direct support for non-trivial validation and defaulting.  While
+admission webhooks can handle the validation and defaulting use cases that CRDs
+cannot handle directly, they signficantly complicate the development and
+operability of CRDs.
 
-OpenAPIv3 validation only solves for validation of individual fields via
-regex and range restrictions, and for map and list size restrictions. All
-cross field validation requires webhooks.
+This KEP proposes that an inline expression language be integrated directly into
+CRDs such that a much larger portion of validation and defaulting use cases can
+be solved without the use of webhooks. Support for CRD conversions via
+the expression language will also be added.
 
-Version conversion requires a webhooks even for a basic change like a field
-rename.
-
-An embedded expression language can solve the vast majority of cases.
-
-[Common Expression Language (CEL)](https://github.com/google/cel-go) is an
-excellent fit because it is sufficiently expressive to satisfy a large set of uses cases
-while still being sufficiently constrainted to make it viable to be executed directly
-from within the kube-apiserver.
-
-
-
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
+We will use the [Common Expression Language
+(CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and
+safe to be run directly in the kube-apiserver, has a straight-forward and
+unsuprising grammar, and supports pre-parsing and typechecking of expressions,
+allowing syntax and type errors to be caught at CRD registration time.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+### Descriptive, self contained CRDs
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+This KEP will make CRDs more self contained. Instead of having
+validation/defaulting/conversion rules coded into webhooks that must be
+registered and upgraded independant of a CRD, the rules will be contained within
+the CRD object definition, making them easier to author and introspect by
+cluster administrators and users, and eliminating version skew issues that can
+happen between a CRD and webhook since they can be registered and
+upgraded/rolledback independently.
+
+### Webhooks: Development Complexity
+
+Introducing a production grade webhook is a substantial development task.
+Beyond authoring the actual core logic that a webhook must perform, the webhook
+must be instrumented for monitoring and alerting and integrated with the
+packaging/repleases processes for the environments it will be run it.
+
+The developer must also carefully consider the upgrade and rollback ordering
+between the webhook and CRD.
+
+### Webhooks: Operational Complexity
+
+Admission webhooks are part of the critical serving path of the kube-apiserver.
+Admission webhooks add latency to requests, and large numbers of webhooks
+can cause, or contribute to, request timeouts being exceeded.
+
+Webhooks must either be configured as FailPolicy.Fail or FailPolicy.Ignore. If
+FailPolicy.Ignore is used, there is potential for requests skip the webhook and
+be admitted.  If FailPolicy.Fail is used, a webhook outage can result in a
+localized or widespread Kubernetes control plane outage depending on which
+objects the webhook is configured to intercept.
+
+### Overview of existing validation
+
+CRDs currently support two major categories of validation:
+
+- [CRD structural
+schemas](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema):
+Provide type checking of custom resources against schemas.
+
+- OpenAPIv3 validation rules: Provide regex ('pattern' property), range
+limits ('minimum' and 'maximum' properties) on individual fields and size limits
+on maps and lists ('minItems', 'maxItems').
+
+Additionally the API Expression WG is working KEPs that would improve CRD validation:
+
+- OpenAPIv3 'formats' which could (and I believe should) be leveraged by
+Kubernetes to handle validation of string fields for cases where regex is poorly
+suited or insufficient.
+- Immutability
+- Unions
+
+These improvements are largely complementary to expression support and either
+are (or should be) addressed by in separate KEPs.
+
+[Common Expression Language (CEL)](https://github.com/google/cel-go) is an
+excellent supplement to the above because it is sufficiently expressive to
+satisfy a large set of remaining uses cases that none of the above can solve.
+For example, cross-field validation use cases can only be solved using
+expressions or webhooks.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
+- Make CRDs more self-contained and declarative
+- Simplify CRD development
+- Simplify CRD operations
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Support for formats, immutability or unions. These are all valuable improvements
+  but can be addressed in separate KEPs.
+- Eliminate the need for webhooks entirely. Webhooks will still be needed for
+  some use cases. For example, if a validation check requires making a network
+  request to some other system, it will still need to be implemented in a webhook.
+- Replace how Kubernetes native types are validated, defaulted and converted.
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
+### Validation
 
-### User Stories (Optional)
+CEL validation expressions will be allowed in CRD structural schemas via the
+`x-kubernetes-validator` extension.
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+...
+  schema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        spec:
+          x-kubernetes-validator: 
+		    - rule: "minReplicas <= maxReplicas"
+		      message: "minReplicas cannot be larger than maxReplicas"
+          type: object
+          properties:
+            minReplicas:
+              type: integer
+            maxReplicas:
+              type: integer
+```
 
-#### Story 1
+Each validator may have multiple validation rules.
 
-#### Story 2
+Each validation rule has an optional 'message' field for the error message that
+will be surfaced when the validation rule evaluates to false.
+
+The validator will be scoped to the location of the `x-kubernetes-validator`
+extension in the schema. In the above example, the validator is scoped to the
+'spec' field.
+
+For OpenAPIv3 object types, the expression will have direct access to all the
+fields of the object the validator is scoped to.
+TODO: is there also value to providing access to the scoped object via a variable name like 'this'?
+
+For OpenAPIv3 scalar types (integer, string & boolean), the expression will have
+access to the scalar data element the validator is scoped to. TODO: what
+variable name will the data element be accessable by? 'this' ?
+
+For OpenAPIv3 list and map types, the expression will have access to the data
+element of the list or map.
+TODO: what variable name will the data element be accessable by? 'this' ?
+
+
+TODO: Should the message also be an expression to allow for some basic variable
+substitution?
+
+TODO: Should a 'type' field also be required? If it is not 'cel', the validator
+could be skipped to future proof against addition of other ways to validate in
+the future, or to allow 3rd party validators to have a way to inline their
+valiation rules in CRDs.
+
+### Defaulting
+
+The `x-kubernetes-default` extension will be used. The location of the defaulter
+determins the scope of defaulter.
+
+The 'field' specifies which field is to be defaulted using a field path that is
+relative to the scope root. The defaulter will only be run if 'field' is unset
+and the result of the expression must match the type of the field to be
+defaulted.
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+...
+  schema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        spec:
+          x-kubernetes-default:
+		    - rule: "!has(spec.type) && spec.Type == 'LoadBalancer' ? 'ServiceExternalTrafficPolicy' : null"
+			  field: spec.externalTrafficPolicy
+```
+
+Each defaulter may have multiple rules.
+
+The 'field' is optional and defaults to the scope if not explicitly set.
+
+If the expression evaluates to null, the field is left unset.
+TODO: Any downsides to using null this way?
+
+### Conversion
+
+Conversion rules will be made available via a ConversionRules strategy. A set of
+rules can be provided for each supported source/destination version pair. Each rule will
+specify which field it sets using a field path. A 'scope' field *pattern* may
+also be used specify all locations in the object that the conversion rule should
+be applied.
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+...
+ conversion:
+    strategy: ConversionRules
+	converters:
+		- fromVersion: v1beta1
+		  toVersion: v1
+		  rules:
+		    - field: spec.xyz.podIPs
+			  rule: "has(spec.xyz.podIP) ? [spec.xyz.podIP] : []"
+		- fromVersion: v1
+		  toVersion: v1beta1
+		  rules:
+		    - field: xyz.podIP
+		      scope: spec
+			  rule: "size(xyz.podIPs) > 0 ? xyz.podIPs[0] : null"
+```
+
+Expressions that return object types will overwrite all fields that they return and
+leave all other fields to be auto-converted.
+
+The 'scope' is optional and defaults to the object root.
+
+The 'field' is optional and defaults to the scope? TODO: is it better to make it required for conversion?
+
+If the expression evaluates to null, the field is left unset.
+
+TODO: demonstrate writing fields into annotations for round trip
+TODO: demonstrate string <-> structured (label selector example & ServicePort example)
+
+#### field paths and field patterns
+
+A field path is a patch to a single node in the data tree. I.e. it specifies the
+exact indices of list items and the keys of map entries it traverses.
+
+TODO: What is the exact format? Can we use something a SMD representation?
+
+A field *pattern* is a path to all nodes in the data tree that match the pattern. I.e.
+it may wildcard list item and map keys.
+
+TODO: show example
+TODO: what is the exact format? Do we have something pre-existing that does this?
+
+#### Expression lifecycle
+
+When CRDs are written to the kube-apiserver, all expressions will be [parsed and
+typechecked](https://github.com/google/cel-go#parse-and-check) and the resulting
+program will be cached for later evaluation (CEL evaluation is thread-safe and
+side-effect free). Any parsing or type checking errors will cause the CRD write
+to fail with a descriptive error.
+
+#### Function library
+
+The function library available to expressions can be augmented using [extension
+functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions).
+
+TODO: we need to propose a list of functions to include.
+
+Considerations:
+- The functions will become VERY difficult to change as this feature matures. We
+  should limit ourselves initially to functions that we have a high level of
+  confidence will not need to be changed or rethought.
+- Support kubernetes specific concepts, like accessing associative lists by key
+  may be needed, we should review those cases carefully.
+
+
+### User Stories
+
+TODO: table out a wide range of validation, defaulting and conversion use cases and how
+they are supported
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -247,6 +423,14 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 ### Risks and Mitigations
+
+#### Accidental misuse
+
+TODO: breaking the control plane, overloading the api-server
+
+#### Malicious use
+
+TODO: jailbreaking, bitcoin mining, exfiltration attacks?
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -268,6 +452,23 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+### Type Checking
+
+CEL type checking requires "declarations" be registered for any types that are to
+be type checked.  In our case, the type information of interest is the CRD's
+structural schemas. So we need to translate structural schemas to declarations.
+
+"declarations" are registered via the go-genproto "checked" package
+(https://github.com/googleapis/go-genproto/blob/master/googleapis/api/expr/v1alpha1/checked.pb.go).
+
+(https://github.com/googleapis/googleapis/blob/master/google/api/expr/v1alpha1/checked.proto).
+
+There are a couple alternative ways to do this. Ideally, we could be able be
+able to both dereference into objects and construct objects in a typesafe way.
+In otder to construct objects in a typesafe way we need to be able to represent
+the structural schema types in CEL, e.g. "v1beta1.Foo{fieldname: value}", this
+is complicated by the way CEL relies on protobuf types.
 
 ### Test Plan
 
