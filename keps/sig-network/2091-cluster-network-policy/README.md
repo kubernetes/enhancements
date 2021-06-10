@@ -269,28 +269,28 @@ via the gateways.
 #### Story 3: Isolate multiple tenants in a cluster
 
 As a cluster admin, I want to isolate all the tenants (modeled as Namespaces)
-on my cluster from each other by default.
+on my cluster from each other by default. Tenancy may be modeled as 1:1, where
+1 tenant is mapped to a single Namespace, or 1:n, where a single tenant may
+own more than 1 Namespace.
 
 Many enterprises are creating shared Kubernetes clusters that are managed by a
 centralized platform team. Each internal team that wants to run their workloads
 gets assigned a Namespace on the shared clusters. Naturally, the platform team
-will want to make sure that, by default, all intra-namespace traffic is allowed
-and all inter-namespace traffic is denied.
-
-Cluster NetworkPolicies can help achieve namespace-level tenancy. However, if
-a tenant owns more than one namespace, admins must write specific
-ClusterNetworkPolicies to open up traffic for such tenants.
+will want to make sure that, by default, all intra-namespace traffic management
+is authorized by the Namespace owners and all inter-namespace traffic is denied.
 
 #### Story 4: Enforce network/security best practices
 
 As a cluster admin, I want all workloads to start with a network/security
 model that meets the needs of my company.
 
-A platform admin may want to factor out policies that each namespace would have
-to write individually in order to make deployment and auditability easier.
-Common examples include allowing all workloads to be able to talk to the cluster
-DNS service and, similarly, allowing all workloads to talk to the logging/monitoring
-pods running on the cluster.
+In order to follow best practices, an admin may want to begin the cluster
+lifecycle with a default zero-trust security model, where in the default policy
+of the cluster is to deny traffic. Only traffic that is essential to the cluster
+will be opened up with stricter cluster level policies. Namespace owners are therefore
+forced to use NetworkPolicies to explicitly allow only known traffic. This follows
+a model which is familiar to many security administrators, where in you deny by default
+and then poke holes in the cluster by adding explicit allow rules.
 
 #### Story 5: Restrict egress to well known destinations
 
@@ -381,26 +381,48 @@ also like to consider the following set of proposals as future work items:
 ## Design Details
 
 ### ClusterNetworkPolicy API Design
-The following new `ClusterNetworkPolicy` API will be added to the `networking.k8s.io` API group:
+The following new `ClusterNetworkPolicy` API will be added to the `netpol.networking.k8s.io` API group.
+
+**Note**: Much of the behavior of certain fields proposed below is intentionally aligned with K8s NetworkPolicy
+resource, wherever possible. For eg. the behavior of empty or missing fields matches the behavior specified in
+the NetworkPolicySpec.
 
 ```golang
 type ClusterNetworkPolicy struct {
 	metav1.TypeMeta
 	metav1.ObjectMeta
 
+    // Specification of the desired behavior of ClusterNetworkPolicy.
 	Spec ClusterNetworkPolicySpec
 }
 
 type ClusterNetworkPolicySpec struct {
-	// No implicit isolation of AppliedTo Pods.
+	// No implicit isolation of AppliedTo Pods/Namespaces.
+	// Required field.
 	AppliedTo    AppliedTo
 	Ingress      []ClusterNetworkPolicyIngressRule
 	Egress       []ClusterNetworkPolicyEgressRule
 }
 
 type ClusterNetworkPolicyIngress/EgressRule struct {
+	// Action specifies whether this rule must allow traffic or deny traffic. Deny rules take
+	// precedence over allow rules. Any exception to a deny rule must be written as an Authorize
+	// rule which takes highest precedence. i.e. Authorize > Deny > Allow
+	// Required field for any rule.
 	Action       RuleAction
+	// List of ports for incoming/outgoing traffic.
+	// Each item in this list is combined using a logical OR. If this field is
+	// empty or missing, this rule matches all ports (traffic not restricted by port).
+	// If this field is present and contains at least one item, then this rule allows/denies
+	// traffic only if the traffic matches at least one port in the list.
+	// +optional
 	Ports        []networkingv1.NetworkPolicyPort
+	// List of sources/dest which should be able to access the pods selected for this rule.
+	// Items in this list are combined using a logical OR operation. If this field is
+	// empty or missing, this rule matches all sources/dest (traffic not restricted by
+	// source/dest). If this field is present and contains at least one item, this rule
+	// allows/denies traffic only if the traffic matches at least one item in the from/to list.
+	// +optional
 	From/To      []ClusterNetworkPolicyPeer
 }
 
@@ -412,8 +434,13 @@ type ClusterNetworkPolicyPeer struct {
 }
 
 const (
-  RuleActionAuthorize RuleAction = "Authorize"
+	// RuleActionAuthorize is the highest priority allow rules which enables admins to provide exceptions to deny rules.
+	RuleActionAuthorize RuleAction = "Authorize"
+	// RuleActionDeny enables admins to deny specific traffic. Any exception to this deny rule must be overridden by
+	// creating a RuleActionAuthorize rule.
 	RuleActionDeny      RuleAction = "Deny"
+	// RuleActionAllow enables admins to specifically allow certain traffic. These rules will be enforced after
+	// Authorize and Deny rules.
 	RuleActionAllow     RuleAction = "Allow"
 )
 ```
@@ -423,13 +450,13 @@ traffic should be allowed or denied or always allowed from/to the ClusterNetwork
 This will be a required field.
 
 ### ClusterDefaultNetworkPolicy API Design
-The following new `ClusterDefaultNetworkPolicy` API will be added to the `networking.k8s.io` API group:
+The following new `ClusterDefaultNetworkPolicy` API will be added to the `netpol.networking.k8s.io` API group:
 
 ```golang
 type ClusterDefaultNetworkPolicy struct {
 	metav1.TypeMeta
 	metav1.ObjectMeta
-
+	// Specification of the desired behavior of ClusterDefaultNetworkPolicy.
 	Spec ClusterDefaultNetworkPolicySpec
 }
 
@@ -441,8 +468,20 @@ type ClusterDefaultNetworkPolicySpec struct {
 }
 
 type ClusterDefaultNetworkPolicyIngress/EgressRule struct {
-	Ports            []networkingv1.NetworkPolicyPort
-	OnlyFrom/OnlyTo  []ClusterDefaultNetworkPolicyPeer
+	// List of ports for incoming/outgoing traffic.
+	// Each item in this list is combined using a logical OR. If this field is
+	// empty or missing, this rule matches all ports (traffic not restricted by port).
+	// If this field is present and contains at least one item, then this rule allows
+	// traffic only if the traffic matches at least one port in the list.
+	// +optional
+	Ports       []networkingv1.NetworkPolicyPort
+	// List of sources/dest which should be able to access the pods selected for this rule.
+	// Items in this list are combined using a logical OR operation. If this field is
+	// empty or missing, this rule matches all sources/dest (traffic not restricted by
+	// source/dest). If this field is present and contains at least one item, this rule
+	// allows traffic only if the traffic matches at least one item in the from/to list.
+	// +optional
+	From/To     []ClusterDefaultNetworkPolicyPeer
 }
 
 type ClusterDefaultNetworkPolicyPeer struct {
@@ -453,14 +492,8 @@ type ClusterDefaultNetworkPolicyPeer struct {
 }
 ```
 
-Most structs above are very similar to NetworkPolicy and quite self-explanatory.
-One detail to notice is that in the ClusterDefaultNetworkPolicy Ingress/Egress rule spec,
-the peers are created in a field named `OnlyFrom`/`OnlyTo`, as opposed to `To`/`From`
-in ClusterNetworkPolicy. We chose this naming to better hint policy writers about
-the isolation effect of ClusterDefaultNetworkPolicy on the workloads it applies to.
-
 ### Shared API Design
-The following structs will be added to the `networking.k8s.io` API group and
+The following structs will be added to the `netpol.networking.k8s.io` API group and
 shared between `ClusterNetworkPolicy` and `ClusterDefaultNetworkPolicy`:
 
 ```golang
@@ -471,16 +504,30 @@ type AppliedTo struct {
 	PodSelector         *metav1.LabelSelector
 }
 
+// Namespaces define a way to select Namespaces in the cluster.
 type Namespaces struct {
-	// Self and Selector are mutually-exclusive
-	Self       bool
-	Selector   *metav1.LabelSelector
+	Scope       NamespaceMatchType
+	// Labels are set only when scope is "SameLabels".
+	Labels      []string
+	// Selector is only set when scope is "Selector".
+	Selector    *metav1.LabelSelector
 }
+
+// NamespaceMatchType describes Namespace matching strategy.
+type NamespaceMatchType string
+
+// This list can/might get expanded in the future (i.e. NotSelf etc.)
+const (
+	NamespaceMatchSelf          NamespaceMatchType = "Self"
+	NamespaceMatchSelector      NamespaceMatchType = "Selector"
+	NamespaceMatchSameLabels    NamespaceMatchType = "SameLabels"
+)
+
 ```
 
 #### AppliedTo
-The `AppliedTo` field replaces `PodSelector` in NetworkPolicy spec, as means to specify
-the target Pods that this cluster-scoped policy (either `ClusterNetworkPolicy` or
+The `AppliedTo` field in Cluster scoped network policies is what `Spec.PodSelector` field is to K8s NetworkPolicy spec,
+as means to specify the target Pods that this cluster-scoped policy (either `ClusterNetworkPolicy` or
 `ClusterDefaultNetworkPolicy`) applies to.
 Since the policy is cluster-scoped, the `NamespaceSelector` field is required.
 An empty `NamespaceSelector` (namespaceSelector: {}) selects all Namespaces in the Cluster.
@@ -488,16 +535,15 @@ An empty `NamespaceSelector` (namespaceSelector: {}) selects all Namespaces in t
 #### Namespaces
 The `Namespaces` field replaces `NamespaceSelector` in NetworkPolicyPeer, as
 means to specify the Namespaces of ingress/egress peers for cluster-scoped policies.
-For selecting Pods from specific Namespaces, the `Selector` field under `Namespaces`
-works exactly as `NamespaceSelector`. The `Self` field is added to satisfy the
-specific needs for cluster-scoped policies:
+The scope of the Namespaces to be selected is specified by the matching strategy chosen.
+For selecting Pods from specific Namespaces, the `Selector` scope works exactly as `NamespaceSelector`.
+The `Self` scope is added to satisfy the specific needs for cluster-scoped policies:
 
-__Self:__ An optional field, which evaluates to false by default.
-When `self: true` is set, no selectors can be present concurrently. This is a
-special keyword to indicate that the rule only applies to the Namespace for
+__Self:__
+This is a special strategy to indicate that the rule only applies to the Namespace for
 which the ingress/egress rule is currently being evaluated upon. Since the Pods
 selected by the ClusterNetworkPolicy appliedTo could be from multiple Namespaces,
-the scope of ingress/egress rules whose `namespace.self=true` will be the Pod's
+the scope of ingress/egress rules whose `namespace.scope=self` will be the Pod's
 own Namespace for each selected Pod.
 Consider the following example:
 
@@ -513,7 +559,7 @@ spec:
   ingress:
     - onlyFrom:
       - namespaces:
-          self: true
+          scope: self
         podSelector:
           matchLabels:
             app: b
@@ -523,6 +569,40 @@ The above ClusterDefaultNetworkPolicy should be interpreted as: for each Namespa
 the cluster, all Pods in that Namespace should only allow traffic from Pods in
 the _same Namespace_ who has label app=b. Hence, the policy above allows
 x/b1 -> x/a1 and y/b2 -> y/a2, but denies y/b2 -> x/a1 and x/b1 -> y/a2.
+
+__SameLabels:__
+This is a special strategy to indicate that the rule only applies to the Namespaces
+which share the same label value. Since the Pods selected by the ClusterNetworkPolicy appliedTo
+could be from multiple Namespaces, the scope of ingress/egress rules whose `namespace.scope=samelabels; labels: [tenant]`
+will be all the Pods from the Namespaces who have the same label value for the "tenant" key.
+Consider the following example:
+
+- Pods [a1, b1] exist in Namespace coke-1, which has label `tenant=coke`.
+- Pods [a2, b2] exist in Namespace coke-2, which has label `tenant=coke`.
+- Pods [a3, b3] exist in Namespace pepsi-1, which has label `tenant=pepsi`.
+- Pods [a4, b4] exist in Namespace pepsi-2, which has label `tenant=pepsi`.
+
+```yaml
+apiVersion: networking.k8s.io/v1alpha1
+kind: ClusterDefaultNetworkPolicy
+spec:
+  appliedTo:
+    namespaceSelector: {}
+  ingress:
+    - onlyFrom:
+      - namespaces:
+          scope: samelabels
+          labels:
+            - tenant
+```
+
+The above ClusterDefaultNetworkPolicy should be interpreted as: for each Namespace in
+the cluster, all Pods in that Namespace should only allow traffic from all Pods in
+the Namespaces who has the same label value for key `tenant`. Hence, the policy above allows
+all Pods in Namespaces labeled `tenant=coke` i.e. coke-1 and coke-2, to reach each other,
+similarly allow all Pods in Namespaces labeled `tenant=pepsi` i.e. pepsi-1 and pepsi-2, are allowed
+to talk to each other, however it does not allow any Pod in coke-1 or coke-2 to reach Pods in
+pepsi-1 or pepsi-2.
 
 #### IPBlock
 
@@ -742,14 +822,14 @@ spec:
 #### Alpha to Beta Graduation
 
 - Gather feedback from developers and surveys
-- At least 1 CNI provider must provide the implementation for the complete set
+- At least 2 CNI provider must provide the implementation for the complete set
   of alpha features
 - Evaluate "future work" items based on feedback from community
 
 #### Beta to GA Graduation
 
-- At least 2 CNI providers must provide the implementation for the complete set
-  of alpha features
+- At least 4 CNI providers must provide the implementation for the complete set
+  of beta features
 - More rigorous forms of testing
   — e.g., downgrade tests and scalability tests
 - Allowing time for feedback
