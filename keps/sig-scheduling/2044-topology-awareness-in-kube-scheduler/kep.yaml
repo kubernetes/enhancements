@@ -1,0 +1,41 @@
+---
+title: Topology awareness in Kube-scheduler
+kep-number: 2044
+authors:
+  - "@AlexeyPerevalov"
+  - "@swatisehgal"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+  - sig-scheduling
+reviewers:
+  - "@ahg-g"
+  - "@alculquicondor"
+  - "@huang-wei"
+  - "@derekwaynecarr"
+  - "@dchen1107"
+  - "@klueska"
+approvers:
+  - approvers:
+  - "@sig-node-leads"
+  - "@sig-scheduling-leads"
+editor: TBD
+milestone:
+  alpha: "v1.23"
+  beta: "v1.24"
+  stable: "v1.26"
+
+# TODO:
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+# feature-gates:
+#   - name: ""
+#     components:
+#       - kubelet
+#       - kube-scheduler
+creation-date: 2021-06-10
+last-updated: 2021-06-10
+status: implementable
+see-also:
+  - "https://github.com/kubernetes/enhancements/pull/1870"
+  - "https://github.com/kubernetes/enhancements/pull/1858"
