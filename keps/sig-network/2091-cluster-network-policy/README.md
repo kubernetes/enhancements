@@ -435,7 +435,7 @@ type ClusterNetworkPolicyPeer struct {
 }
 
 const (
-	// RuleActionEmpower is the highest priority allow rules which enables admins to provide exceptions to deny rules.
+	// RuleActionEmpower is the highest priority rules which enable admins to provide exceptions to deny rules.
 	RuleActionEmpower RuleAction = "Empower"
 	// RuleActionDeny enables admins to deny specific traffic. Any exception to this deny rule must be overridden by
 	// creating a RuleActionEmpower rule.
@@ -487,7 +487,9 @@ type ClusterDefaultNetworkPolicyIngress/EgressRule struct {
 
 type ClusterDefaultNetworkPolicyPeer struct {
 	PodSelector       *metav1.LabelSelector
-	// one of NamespaceSelector or Namespaces is required, if a PodSelector is specified
+	// One of NamespaceSelector or Namespaces is required, if a PodSelector is specified
+	// In the same ClusterDefaultNetworkPolicyPeer, NamespaceSelector and Namespaces
+	// fields are mutually exclusive.
 	NamespaceSelector *metav1.LabelSelector
 	Namespaces        *Namespaces
 	IPBlock           *networkingv1.IPBlock
@@ -512,6 +514,7 @@ type Namespaces struct {
 	// Labels are set only when scope is "SameLabels".
 	Labels      []string
 	// Selector is only set when scope is "Selector".
+	// Namespaces.Selector has the same effect as NamespaceSelector.
 	Selector    *metav1.LabelSelector
 }
 
