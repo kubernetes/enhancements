@@ -147,7 +147,7 @@ rules with action `Authorize` in the cluster combined) should be evaluated befor
 aggregated ClusterNetworkPolicy `Deny` rules, followed by aggregated ClusterNetworkPolicy
 `Allow` rules, followed by NetworkPolicy rules in all Namespaces. As such, the
 `Authorize` rules have the highest precedence, which in most cases shall only be
-used to provide exceptions to deny-all rules by authorizing traffic from/to well-known
+used to provide exceptions to deny-all rules and authorize traffic from/to well-known
 entities.
 
 ClusterNetworkPolicy `Deny` rules are useful for administrators to explicitly
@@ -485,10 +485,11 @@ type ClusterDefaultNetworkPolicyIngress/EgressRule struct {
 }
 
 type ClusterDefaultNetworkPolicyPeer struct {
-	PodSelector  *metav1.LabelSelector
-	// required if a PodSelector is specified
-	Namespaces   *Namespaces
-	IPBlock      *networkingv1.IPBlock
+	PodSelector       *metav1.LabelSelector
+	// one of NamespaceSelector or Namespaces is required, if a PodSelector is specified
+	NamespaceSelector *metav1.LabelSelector
+	Namespaces        *Namespaces
+	IPBlock           *networkingv1.IPBlock
 }
 ```
 
@@ -662,21 +663,23 @@ spec:
   ingress:
     - action: Authorize
       from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: dmz # ingress gateway
       - namespaces:
-          selector:
-            matchLabels:
-              kubernetes.io/metadata.name: dmz # ingress gateway
+          scope: self
     - action: Deny
       from:
       - ipBlock:
           cidr: 0.0.0.0/0
   egress:
     - action: Authorize
-      to:
+      from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: istio-egress # egress gateway
       - namespaces:
-          selector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-egress  # egress gateway
+          scope: self
     - action: Deny
       to:
       - ipBlock:
@@ -685,8 +688,8 @@ spec:
 
 __Note:__ The above policy is very restrictive, i.e. it rejects ingress/egress
 traffic between tenant Namespaces and `kube-system`. For `coredns` etc. to work,
-`kube-system` Namespace or at least the `coredns` pods needs to be added into
-the `Authorize` rule list.
+`kube-system` Namespace or at least the `app=kube-dns` pods needs to be added into
+the `Allow` rule list.
 
 #### Story 3: Isolate multiple tenants in a cluster
 
@@ -737,10 +740,9 @@ spec:
   ingress:
     - action: Allow
       from:
-      - namespaces:
-          selector:
-            matchLabels:
-                app: system  # which can include kube-system and logging/monitoring namespaces
+      - namespaceSelector:
+          matchLabels:
+              app: system  # which can include kube-system and logging/monitoring namespaces
 ```
 
 __Note:__ The above policy only ensures that traffic from `app=system` Namespaces
@@ -764,7 +766,7 @@ spec:
     - action: Authorize
       from:
       - namespaces:
-          self: true
+          scope: self
     - action: Deny
       from:
       - namespaces:
