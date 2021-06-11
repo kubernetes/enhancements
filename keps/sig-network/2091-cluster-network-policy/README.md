@@ -12,7 +12,7 @@
   - [Precedence model](#precedence-model)
   - [User Stories](#user-stories)
     - [Story 1: Deny traffic from certain sources](#story-1-deny-traffic-from-certain-sources)
-    - [Story 2: Funnel traffic through ingress/egress gateways](#story-2-funnel-traffic-through-ingressegress-gateways)
+    - [Story 2: Ensure traffic goes through ingress/egress gateways](#story-2-ensure-traffic-goes-through-ingressegress-gateways)
     - [Story 3: Isolate multiple tenants in a cluster](#story-3-isolate-multiple-tenants-in-a-cluster)
     - [Story 4: Enforce network/security best practices](#story-4-enforce-networksecurity-best-practices)
     - [Story 5: Restrict egress to well known destinations](#story-5-restrict-egress-to-well-known-destinations)
@@ -29,7 +29,7 @@
     - [IPBlock](#ipblock)
   - [Sample Specs for User Stories](#sample-specs-for-user-stories)
     - [Story 1: Deny traffic from certain sources](#story-1-deny-traffic-from-certain-sources-1)
-    - [Story 2: Funnel traffic through ingress/egress gateways](#story-2-funnel-traffic-through-ingressegress-gateways-1)
+    - [Story 2: Ensure traffic goes through ingress/egress gateways](#story-2-ensure-traffic-goes-through-ingressegress-gateways-1)
     - [Story 3: Isolate multiple tenants in a cluster](#story-3-isolate-multiple-tenants-in-a-cluster-1)
     - [Story 4: Enforce network/security best practices](#story-4-enforce-networksecurity-best-practices-1)
     - [Story 5: Restrict egress to well known destinations](#story-5-restrict-egress-to-well-known-destinations-1)
@@ -137,18 +137,20 @@ by creating NetworkPolicies that applies to the same workloads as the
 ClusterNetworkPolicy does.
 
 Unlike the NetworkPolicy resource in which each rule represents an allowed
-traffic, ClusterNetworkPolicy will enable administrators to set `Authorize`,
+traffic, ClusterNetworkPolicy will enable administrators to set `Empower`,
 `Deny` or `Allow` as the action of each rule. ClusterNetworkPolicy rules should
 be read as-is, i.e. there will not be any implicit isolation effects for the Pods
 selected by the ClusterNetworkPolicy, as opposed to what NetworkPolicy rules imply.
 
-In terms of precedence, the aggregated `Authorize` rules (all ClusterNetworkPolicy
-rules with action `Authorize` in the cluster combined) should be evaluated before
+In terms of precedence, the aggregated `Empower` rules (all ClusterNetworkPolicy
+rules with action `Empower` in the cluster combined) should be evaluated before
 aggregated ClusterNetworkPolicy `Deny` rules, followed by aggregated ClusterNetworkPolicy
 `Allow` rules, followed by NetworkPolicy rules in all Namespaces. As such, the
-`Authorize` rules have the highest precedence, which in most cases shall only be
-used to provide exceptions to deny-all rules and authorize traffic from/to well-known
-entities.
+`Empower` rules have the highest precedence, which shall only be used to provide
+exceptions to deny-all rules and authorize traffic from/to well-known entities.
+However, the `Empower` rules does not guarantee the traffic will not be dropped:
+it simply denotes that the packets matching those rules can bypass the
+ClusterNetworkPolicy `Deny` rule evaluation.
 
 ClusterNetworkPolicy `Deny` rules are useful for administrators to explicitly
 block traffic from malicious clients, or workloads that poses security risks.
@@ -156,10 +158,12 @@ Those traffic restrictions can only be lifted once the `Deny` rules are deleted
 or modified by the admin. In clusters where the admin requires total control over
 security postures of all workloads, the `Deny` rules can also be used to deny all
 incoming/outgoing traffic in the cluster, with few exceptions that's listed out
-by `Authorize` rules. On the other hand, the `Allow` rules can be used to call out
-traffic in the cluster that needs to be allowed for certain components to work
-as expected (egress to CoreDNS for example). Those traffic should not be blocked
-when developers apply NetworkPolicy to their Namespaces which isolates the workloads.
+by `Empower` rules.
+
+On the other hand, the `Allow` rules can be used to call out traffic in the cluster
+that needs to be allowed for certain components to work as expected (egress to
+CoreDNS for example). Those traffic should not be blocked when developers apply
+NetworkPolicy to their Namespaces which isolates the workloads.
 
 ### ClusterDefaultNetworkPolicy resource
 
@@ -181,17 +185,14 @@ In this case, the traffic allowed will be solely determined by the NetworkPolicy
 ### Precedence model
 
 ```
-                    Yes -------> [ Allow ]             
-                     |                                                             
-                     |                                                           
          +-----------------------+      
-  ---->  |    traffic matches    |   
-         | a CNP Authorize rule? |                 
-         +-----------------------+             
-                 |                                                                
-                 No                               Yes ------> [ Allow ]           Yes ------> [ Allow ]
-                 |                                 |                               |
-                 V                                 |                               |
+  ---->  |    traffic matches    | -------- Yes
+         | a CNP Empower rule?   |           |        
+         +-----------------------+           |  
+                 |                           |                                     
+                 No                          |    Yes ------> [ Allow ]           Yes ------> [ Allow ]
+                 |                           |     |                               |
+                 V                           v     |                               |
          +------------------+             +-------------------+              +------------------+
          | traffic matches  | --- No -->  | traffic matches   |  --- No -->  | traffic matches  |
          | a CNP Deny rule? |             | a CNP Allow rule? |              | a NetworkPolicy  |
@@ -225,14 +226,14 @@ Consider the following scenario:
 
 - Pod `server` exists in Namespace x. Each Namespace [a, b, c, d] has a Pod named `client`.
 The following policy resources also exist in the cluster:
-- (1) A ClusterNetworkPolicy `Authorize` rule selects Namespace x and allows ingress traffic from Namespace a.
+- (1) A ClusterNetworkPolicy `Empower` rule selects Namespace x and allows ingress traffic from Namespace a.
 - (2) A ClusterNetworkPolicy `Deny` rule selects Namespace x and denies all ingress traffic from Namespace a and b.
 - (3) A ClusterNetworkPolicy `Allow` rule selects Namespace x and allows all ingress traffic Namespace b and c.
 - (4) A NetworkPolicy rule isolates [x/server], only allows ingress traffic from its own Namespace.
 - (5) A ClusterDefaultNetworkPolicy rule isolates [x/server], only allows ingress traffic from Namespace d.
 
 Now suppose the client in each Namespace initiates traffic towards x/server.
-- a/client -> x/server is affected by rule (1), (2), (4) and (5). Since rule (1) has highest precedence, the request should be allowed.
+- a/client -> x/server is affected by rule (1), (2), (4) and (5). Since rule (1) denotes rule (2) should be bypassed, rule (4) applies and the request should be allowed.
 - b/client -> x/server is affected by rule (2), (3), (4) and (5). Since rule (2) has highest precedence, the request should be denied.
 - c/client -> x/server is affected by rule (3), (4) and (5). Since rule (3) has highest precedence, the request should be allowed.
 - d/client -> x/server is affected by rule (4) and (5). Since rule (4) has higher precedence, the request should be denied.
@@ -252,7 +253,7 @@ all the source IPs that should be denied in order to prevent that traffic from
 accidentally reaching workloads. Note that the inverse of this (allow traffic
 from well known source IPs) is also a valid use case.
 
-#### Story 2: Funnel traffic through ingress/egress gateways
+#### Story 2: Ensure traffic goes through ingress/egress gateways
 
 As a cluster admin, I want to ensure that all traffic coming into (going out of)
 my cluster always goes through my ingress (egress) gateway.
@@ -325,7 +326,7 @@ A potential risk of the ClusterNetworkPolicy resource is, when it's stacked on
 top of existing NetworkPolicies in the cluster, some existing allowed traffic
 patterns (which were regulated by those NetworkPolicies) may become blocked by
 ClusterNetworkPolicy `Deny` rules, while some isolated workloads may become
-accessible instead because of ClusterNetworkPolicy `Allow` or `Authorize` rules.
+accessible instead because of ClusterNetworkPolicy `Allow` or `Empower` rules.
 
 Developers could face some difficulties figuring out why the NetworkPolicies
 did not take effect, even if they know to look for ClusterNetworkPolicy rules
@@ -337,7 +338,7 @@ The same Pods, on the other hand, can appear as an AppliedTo, or an ingress/egre
 peer in any ClusterNetworkPolicy. This makes looking up policies that affect a
 particular Pod more challenging than when there's only NetworkPolicy resources.
 
-In addition, in an extreme case where a ClusterNetworkPolicy `Authorize` rule,
+In addition, in an extreme case where a ClusterNetworkPolicy `Empower` rule,
 ClusterNetworkPolicy `Deny` rule, ClusterNetworkPolicy `Allow` rule,
 NetworkPolicy rule and ClusterDefaultNetworkPolicy rule applies to an overlapping
 set of Pods, users will need to refer to the precedence model mentioned in the
@@ -406,8 +407,8 @@ type ClusterNetworkPolicySpec struct {
 
 type ClusterNetworkPolicyIngress/EgressRule struct {
 	// Action specifies whether this rule must allow traffic or deny traffic. Deny rules take
-	// precedence over allow rules. Any exception to a deny rule must be written as an Authorize
-	// rule which takes highest precedence. i.e. Authorize > Deny > Allow
+	// precedence over allow rules. Any exception to a deny rule must be written as an Empower
+	// rule which takes highest precedence. i.e. Empower > Deny > Allow
 	// Required field for any rule.
 	Action       RuleAction
 	// List of ports for incoming/outgoing traffic.
@@ -434,13 +435,13 @@ type ClusterNetworkPolicyPeer struct {
 }
 
 const (
-	// RuleActionAuthorize is the highest priority allow rules which enables admins to provide exceptions to deny rules.
-	RuleActionAuthorize RuleAction = "Authorize"
+	// RuleActionEmpower is the highest priority allow rules which enables admins to provide exceptions to deny rules.
+	RuleActionEmpower RuleAction = "Empower"
 	// RuleActionDeny enables admins to deny specific traffic. Any exception to this deny rule must be overridden by
-	// creating a RuleActionAuthorize rule.
+	// creating a RuleActionEmpower rule.
 	RuleActionDeny      RuleAction = "Deny"
 	// RuleActionAllow enables admins to specifically allow certain traffic. These rules will be enforced after
-	// Authorize and Deny rules.
+	// Empower and Deny rules.
 	RuleActionAllow     RuleAction = "Allow"
 )
 ```
@@ -646,7 +647,7 @@ spec:
           cidr: 192.0.2.0/24  # banned addresses
 ```
 
-#### Story 2: Funnel traffic through ingress/egress gateways
+#### Story 2: Ensure traffic goes through ingress/egress gateways
 As a cluster admin, I want to ensure that all traffic coming into (going out of)
 my cluster always goes through my ingress (egress) gateway.
 
@@ -661,7 +662,7 @@ spec:
       matchLabels:
         type: tenant  # assuming all tenant namespaces will be created with this label
   ingress:
-    - action: Authorize
+    - action: Empower
       from:
       - namespaceSelector:
           matchLabels:
@@ -673,7 +674,7 @@ spec:
       - ipBlock:
           cidr: 0.0.0.0/0
   egress:
-    - action: Authorize
+    - action: Empower
       from:
       - namespaceSelector:
           matchLabels:
@@ -719,7 +720,7 @@ rules.
 In this policy, tenant isolation (Namespace being the boundary) is not enforced,
 but rather provided as a cluster default for initial security postures in each
 tenant. Tenants can completely overwrite this based on the need of its namespaces,
-using NetworkPolicy. They cannot, however, overwrite Allow, Deny and Authorize
+using NetworkPolicy. They cannot, however, overwrite Allow, Deny and Empower
 rules which cluster admins listed out as guardrails (dns must be allowed, egress
 to some IPs must be denied etc.) If strict tenant isolation is desired, cluster
 admins should write a ClusterNetworkPolicy instead. See Story 4 below.
@@ -738,11 +739,18 @@ spec:
       matchLabels:
         type: tenant  # assuming all tenant namespaces will be created with this label
   ingress:
-    - action: Allow
+    # the Empower rule ensures that those traffic will not be dropped by deny rules, which has higher precedence than allow rules
+    - action: Empower
       from:
       - namespaceSelector:
           matchLabels:
-              app: system  # which can include kube-system and logging/monitoring namespaces
+            app: system  # which can include kube-system and logging/monitoring namespaces
+    # the allow rule ensures that those traffic will always be allowed
+    - action: Allow  
+      from:
+      - namespaceSelector:
+          matchLabels:
+            app: system  # which can include kube-system and logging/monitoring namespaces
 ```
 
 __Note:__ The above policy only ensures that traffic from `app=system` Namespaces
@@ -750,7 +758,7 @@ will not be blocked, if developers create NetworkPolicy which isolates the Pods 
 tenant Namespaces. When there's a ClusterNetworkPolicy like `ingress-egress-gateway`
 present in the cluster, the above policy will be overridden as `Deny` rules have
 higher precedence than `Allow` rules. In that case, the `app=system` Namespaces
-needs to be allowed using an `Authorize` action.
+needs to be allowed using an `Empower` action.
 
 A strict tenant isolation policy can also be written if that's required (for
 compliance purposes etc):
@@ -763,7 +771,7 @@ spec:
       matchLabels:
         type: tenant  # assuming all tenant namespaces will be created with this label
   ingress:
-    - action: Authorize
+    - action: Empower
       from:
       - namespaces:
           scope: self
@@ -799,8 +807,8 @@ spec:
 ### Test Plan
 
 - Add e2e tests for ClusterNetworkPolicy resource
-  - Ensure `Authorize`rules are always allowed
-  - Ensure `Deny` rules override all allowed traffic in the cluster, except for `Authorize` traffic.
+  - Ensure `Empower`rules are always allowed
+  - Ensure `Deny` rules override all allowed traffic in the cluster, except for `Empower` traffic.
   - Ensure `Allow` rules override K8s NetworkPolicies
   - Ensure that in stacked ClusterNetworkPolicies/K8s NetworkPolicies, the following precedence is maintained
     aggregated `Deny` rules > aggregated `Allow` rules > K8s NetworkPolicy rules
