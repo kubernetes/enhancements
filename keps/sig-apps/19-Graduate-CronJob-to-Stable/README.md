@@ -609,6 +609,8 @@ These conditions imply that people with just API access who want to predict when
 
 This is an optional field and when not present reverts to existing behavior of using the timezone of the `kube-controller-manager` process.
 
+There is also a [community request](https://github.com/kubernetes/kubernetes/issues/47202) for this. Including a working (external) [implementation, called CronJobber](https://github.com/hiddeco/cronjobber) based off the original controller implementation, also mentioned in the linked issue.
+
 ### CronJob umbrella issue
 
 Majority of the problems mentioned earlier are listed in this [umbrella issue](https://github.com/kubernetes/kubernetes/issues/82659). When adding additional capabilities to CronJobs it is advised to review this list and address all the problems identified there.
