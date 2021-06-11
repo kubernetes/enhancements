@@ -4,6 +4,7 @@ authors:
 - "@MikeSpreitzer"
 - "@yue9944882"
 - "@wojtek-t"
+- "@tkashem"
 owning-sig: sig-api-machinery
 participating-sigs:
 - wg-multitenancy

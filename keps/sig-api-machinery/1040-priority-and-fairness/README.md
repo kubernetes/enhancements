@@ -29,6 +29,7 @@
   - [Support for LIST requests](#support-for-list-requests)
     - [Width of the request](#width-of-the-request)
     - [Determining the width](#determining-the-width)
+    - [Estimate width of LIST request](#estimate-width-of-LIST-request)      
     - [Dispatching the request](#dispatching-the-request)
   - [Support for WATCH requests](#support-for-watch-requests)
     - [Watch initialization](#watch-initialization)
@@ -1224,6 +1225,97 @@ for `additional latence` after the request is processed.
 Note that given the estimation for duration of processing the requests is
 automatically corrected (both up and down), there is no need to change that
 in the initial version.
+
+
+#### Estimate width of LIST request
+
+Terms:
+- `W`: estimated width of the request
+- `N`: number of object(s) estimated to be processed for serving this `LIST` request
+- `L`: value of the user specified `limit` in the request URI
+- `S`: an integer value that represents the semantics of the `LIST` request, we use as a multiplying 
+   factor when we estimate the width.
+
+
+What's not in scope for this iteration:
+- `namespaced` or `cluster scoped`: we will not take this into account while estimating
+  the width of a `LIST`
+- We are not going to use to the Priority Level configuration assigned to this request for width estimation.   
+- Use the watch cache interface to know whether this `LIST` will be served from the cache.
+- The code site (inside p&f server filter) where we inspect the request query parameters for `LIST`
+  is well before these parameters are validated. We will not validate these parameters when we estimate
+  the width. We will ignore the fact that the user might have provided invalid data semantically.
+- We are going to treat `resourceVersion` as opaque, its value will not be used to estimate `N`.   
+
+While determining the width, we keep in sight the following goals:
+- We will inspect the request query parameters and estimate width for the `LIST` request.
+- Be pessimistic, assume the worst. We will possibly overestimate the `width` for certain LIST request.
+
+
+Estimate `S`:
+
+These are the semantics (from https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)
+- `Most Recent`: served from etcd via quorum read
+- `Not older than`: at least as new as the provided `resourceVersion`
+- `Exact`: at the exact resource version provided
+- `Continue Token, Exact`: return data at the resource version of the initial paginated list call  
+- `Any`: strong consistency is not required, data at any resource version may be served
+
+We want to feed the semantics in to the width estimation process, we can use the following back of the
+envelope mapping:
+```
+S = {'Most Recent'=4 | 'Not older than'=2 | Exact=2 | 'Continue Token, Exact'=2 | 'Any'=1} 
+```
+
+Estimate `N`:
+
+- If the specified value of `limit` is invalid then the apiserver will reject the request? in this case we can
+  set `N=1`.
+- For a valid value of `limit` we know the upper bound of the total number of objects that will be processed, so `N=L`.
+- If `limit` is not specified, we should default `N` (a pessimistic default is `500`?), or we can tune it based 
+  on metric data, see the section below.
+- Whether `continue` token is set should not have any sway on the width estimation:
+  - If it is not set, then it is the first of the `chunked` LIST request, depending on `resourceVersion` its semantics
+    could be `Most Recent` (most expensive).
+  - If it is set, it's a consecutive request and its semantics should be `Exact` which makes it more likely to be
+    served from watch cache. But due to HA configuration, the consecutive request(s) may land in a separate 
+    apiserver where the watch cache is stale.
+    
+
+Estimate `W`:
+```
+W = S * ceil(transform(N))
+```
+
+Serving the request gets exponentially more expensive as the number of objects increase.
+A rough version of `transform` can be:
+```go
+switch {
+case N < 10:
+  return 2
+case N < 100
+  return 8
+case N < 500
+  return 16
+case N < 1000
+  return 32
+default:
+  return 64   
+}
+```
+
+Defaulting `N`:
+
+The following metric tells us the total number of stored objects in etcd
+```
+name: apiserver_storage_objects
+description: Number of stored objects at the time of last check split by kind.",
+```
+- we can inspect `apiserver_storage_objects` metric with the `resource` associated with the `LIST` request
+- we can also check whether the request is `namespaced` or `cluster scoped`
+
+We can use the two data points above, in combination with `limit`, to default `N`
+
 
 #### Dispatching the request
 
