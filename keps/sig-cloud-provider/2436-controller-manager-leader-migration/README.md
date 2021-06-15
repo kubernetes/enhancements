@@ -178,6 +178,7 @@ type ControllerLeaderConfiguration struct {
 
 	// Component is the name of the component in which the controller will be running.
 	// E.g. kube-controller-manager, cloud-controller-manager, etc
+	// Or '*' meaning the controller can be run under any component that participates the migration
 	Component string `json:"component"`
 }
 
@@ -185,9 +186,9 @@ type ControllerLeaderConfiguration struct {
 
 #### Default LeaderMigrationConfiguration
 
-The `staging/controller-manager` package will provide `kube-controller-manager` and `cloud-controller-manager`
-each a default `LeaderMigrationConfiguration` that represents the situation where the controller manager is running with
-default assignments of controllers and lock type selection.
+The `staging/controller-manager` package will provide a default `LeaderMigrationConfiguration` which has the
+`component` filed of all controllers that need migrating set to `*`, indicating the controllers can be run under
+either party of the migration.
 
 Please refer to [an workthough](#example-walkthrough-of-controller-migration-with-default-configuration)
 of an example cloud controllers migration from KCM to CCM that use the default configuration.
@@ -204,7 +205,7 @@ Migration is enabled. Second, `--leader-migration-config` is an optional flag th
 the `LeaderMigrationConfiguration` type serialized in yaml.
 
 If `--enable-leader-migration` is `true` but `--leader-migration-config` flag is empty or not set, the
-default `LeaderMigrationConfiguration` for corresponding controller manager will be used.
+default `LeaderMigrationConfiguration` will be used.
 
 If `--enable-leader-migration` is not set or set to `false`, but `--leader-migration-config` is set and not empty, the
 controller manager will print an error at `FATAL` level and exit immediately. Additionally,
@@ -230,7 +231,7 @@ yet deployed.
 
 ##### Enable Leader Migration on Components
 
-The provided default configuration will be equivalent to the following:
+The default LeaderMigrationConfiguration can be represented as follows:
 
 ```yaml
 kind: LeaderMigrationConfiguration
@@ -238,14 +239,12 @@ apiVersion: controllermanager.config.k8s.io/v1alpha1
 leaderName: cloud-provider-extraction-migration
 resourceLock: leases
 controllerLeaders:
-  - name: route-controller
-    component: kube-controller-manager
-  - name: service-controller
-    component: kube-controller-manager
-  - name: cloud-node-controller
-    component: kube-controller-manager
-  - name: cloud-nodelifecycle-controller
-    component: kube-controller-manager
+  - name: route
+    component: *
+  - name: service
+    component: *
+  - name: cloud-node-lifecycle
+    component: *
 ```
 
 First, within 1.21 control plane, update the `kube-controller-manager` to set `--enable-leader-migration`
@@ -262,36 +261,19 @@ Upgrade each node of the control plane to 1.22 with the following updates:
 - CCM deployed with `--enable-leader-migration`
 - CCM has its `--cloud-provider` set to the correct cloud provider
 
-After upgrade, CCM will run `route-controller`, `service-controller`, `cloud-node-controller`,
-and `cloud-nodelifecycle-controller`. The Leader Migration support will ensure CCM cleanly take out these controllers
-during the control plane upgrade.
+Starting from version 1.22, a proper default that represents the most recent migration will be provided.
+`*` in the `component` field indicates that the controllers can be run under either `kube-controller-manager` or `cloud-controller-manager`. Because the migration happens between
+the 1.21 `kube-controller-manager` with built-in cloud provider and 1.22 `cloud-controller-manager`, the controllers
+can run under either controller manager, which is exactly as described in the default configuration.
 
-As a reference, the provided default configuration in version 1.22 should have the `component` field of all affected
-controllers changed to `cloud-controller-manager`. The resulting default configuration should be equivalent to the
-following:
-
-```yaml
-kind: LeaderMigrationConfiguration
-apiVersion: controllermanager.config.k8s.io/v1alpha1
-leaderName: cloud-provider-extraction-migration
-resourceLock: leases
-controllerLeaders:
-  - name: route-controller
-    component: cloud-controller-manager
-  - name: service-controller
-    component: cloud-controller-manager
-  - name: cloud-node-controller
-    component: cloud-controller-manager
-  - name: cloud-nodelifecycle-controller
-    component: cloud-controller-manager
-```
-
-Please take note on how component names across both versions differs for each controller.
+During the upgrade, either KCM or CCM may hold the migration lease and thus run migrated controllers.
+However, at any moment, there is one and only one of them running the migrated controllers.
+After upgrade, only CCM will run the `route`, `service`, `cloud-node-lifecycle` controllers.
 
 ##### Disable Leader Migration
 
 Once all nodes in the control plane are upgraded to 1.22, disable leader migration on the `cloud-controller-manager` by
-unsetting the `--enable-migration-config` flag.
+unsetting the `--enable-leader-migration` flag.
 
 ### Risks and Mitigations
 
