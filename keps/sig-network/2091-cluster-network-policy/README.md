@@ -14,7 +14,7 @@
     - [Story 1: Deny traffic from certain sources](#story-1-deny-traffic-from-certain-sources)
     - [Story 2: Ensure traffic goes through ingress/egress gateways](#story-2-ensure-traffic-goes-through-ingressegress-gateways)
     - [Story 3: Isolate multiple tenants in a cluster](#story-3-isolate-multiple-tenants-in-a-cluster)
-    - [Story 4: Enforce network/security best practices](#story-4-enforce-networksecurity-best-practices)
+    - [Story 4: Zero-trust default security posture for tenants](#story-4-zero-trust-default-security-posture-for-tenants)
     - [Story 5: Restrict egress to well known destinations](#story-5-restrict-egress-to-well-known-destinations)
   - [RBAC](#rbac)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
@@ -31,7 +31,7 @@
     - [Sample spec for Story 1: Deny traffic from certain sources](#sample-spec-for-story-1-deny-traffic-from-certain-sources)
     - [Sample spec for Story 2: Ensure traffic goes through ingress/egress gateways](#sample-spec-for-story-2-ensure-traffic-goes-through-ingressegress-gateways)
     - [Sample spec for Story 3: Isolate multiple tenants in a cluster](#sample-spec-for-story-3-isolate-multiple-tenants-in-a-cluster)
-    - [Sample spec for Story 4: Enforce network/security best practices](#sample-spec-for-story-4-enforce-networksecurity-best-practices)
+    - [Sample spec for Story 4: Zero-trust default security posture for tenants](#sample-spec-for-story-4-zero-trust-default-security-posture-for-tenants)
     - [Sample spec for Story 5: Restrict egress to well known destinations](#sample-spec-for-story-5-restrict-egress-to-well-known-destinations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -280,7 +280,7 @@ gets assigned a Namespace on the shared clusters. Naturally, the platform team
 will want to make sure that, by default, all intra-namespace traffic management
 is authorized by the Namespace owners and all inter-namespace traffic is denied.
 
-#### Story 4: Enforce network/security best practices
+#### Story 4: Zero-trust default security posture for tenants
 
 As a cluster admin, I want all workloads to start with a network/security
 model that meets the needs of my company.
@@ -733,7 +733,7 @@ Namespace depending on their needs. They cannot, however, overwrite Allow and De
 rules which cluster admins listed out as guardrails (dns must be allowed, egress
 to some IPs must be denied etc.)
 
-#### Sample Spec for Story 4: Enforce network/security best practices
+#### Sample Spec for Story 4: Zero-trust default security posture for tenants
 
 As a cluster admin, I want all workloads to start with a network/security
 model that meets the needs of my company.
@@ -784,7 +784,7 @@ spec:
 ### Test Plan
 
 - Add e2e tests for ClusterNetworkPolicy resource
-  - Ensure `Empower`rules are excepted
+  - Ensure `Empower` rules can provide exceptions to the `Deny` rules.
   - Ensure `Deny` rules override all allowed traffic in the cluster, except for `Empower` traffic.
   - Ensure `Allow` rules override K8s NetworkPolicies
   - Ensure that in stacked ClusterNetworkPolicies/K8s NetworkPolicies, the following precedence is maintained
