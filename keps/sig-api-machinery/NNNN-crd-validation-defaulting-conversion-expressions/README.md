@@ -923,7 +923,11 @@ See Open Policy Agent (https://github.com/open-policy-agent/opa/tree/main/rego).
 
 ### WebAssembly
 
-TODO
+WebAssembly was considered as an alternative to CEL, up to having a [proof-of-concept implementation](https://github.com/jpbetz/omni-webhook/blob/main/validators/wasm.go).
+However, all current WebAssembly runtimes require `cgo` to build, something that
+might be difficult to integrate into api-server. Additionally, passing strings across
+a WebAssembly boundary is currently dependent on the target language, so any supported
+target language would need a small shim library to be supported.
 
 ### jq
 
