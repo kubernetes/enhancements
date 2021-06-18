@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
+  - sig-scheduling
 status: implementable
 creation-date: 2021-02-10
 reviewers:
@@ -12,6 +13,7 @@ reviewers:
   - "@msau42"
   - "@gnufied"
   - "@jsafrane"
+  - "@alculquicondor"
 approvers:
   - "@msau42"
 prr-approvers:
