@@ -27,7 +27,12 @@ milestone:
   stable: "v1.23"
 
 
-feature-gates: []
-disable-supported: false
+feature-gates:
+  - name: CSRDuration
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
 
-metrics: []
+metrics:
+  - csr_duration_honored

@@ -89,6 +89,7 @@ that can be used to request a particular duration.
 ### Non-Goals
 
 - Requiring signers to honor the requested duration
+- Configuring existing in-tree consumers of the CSR API (i.e. kubelets) to make use of this feature
 
 ## Proposal
 
@@ -133,8 +134,10 @@ structs found in the `k8s.io/api/certificates/v1` and `k8s.io/api/certificates/v
 packages.
 
 A new optional `ExpirationSeconds` field will be added to this struct.  The go
-doc comment describes the behavior of this field.  A `*uint32` is used because
-the field is optional, must be positive and must not overflow JSON parsers.
+doc comment describes the behavior of this field.  A `*int32` is used because
+the field is optional and must not overflow JSON parsers (an unsigned type is
+avoided as we want to provide a detailed validation error on a negative input
+instead of a difficult to understand decoding error).
 
 ```go
 // CertificateSigningRequestSpec contains the certificate request.
@@ -164,7 +167,7 @@ type CertificateSigningRequestSpec struct {
   // The minimum valid value for expirationSeconds is 600, i.e. 10 minutes.
   //
   // +optional
-  ExpirationSeconds *uint32 `json:"expirationSeconds,omitempty" protobuf:"varint,8,opt,name=expirationSeconds"`
+  ExpirationSeconds *int32 `json:"expirationSeconds,omitempty" protobuf:"varint,8,opt,name=expirationSeconds"`
 
   // go doc omitted for brevity
   Usages []KeyUsage `json:"usages,omitempty" protobuf:"bytes,5,opt,name=usages"`
@@ -183,12 +186,17 @@ and signing is asynchronous which necessitates a buffer), `10` minutes seems lik
 appropriate minimum to prevent accidental DOS against the CSR API.  Furthermore,
 `10` minutes is a short enough lifetime that revocation is not of concern.
 
+Metrics will be included to show if requested expirations are being extended or
+truncated (i.e. is the requested duration being honored by the signer).
+
 ### Test Plan
 
 Unit tests covering:
 
 1. Validation logic for minimum duration
 2. `pkg/controller/certificates/authority.PermissiveSigningPolicy` updates to handle `expirationSeconds`
+3. Metrics
+4. CSR REST storage ignores `spec.expirationSeconds` when the feature gate is disabled
 
 Integration test covering:
 
@@ -200,8 +208,7 @@ Integration test covering:
 
 #### Alpha
 
-- This design will start at the beta phase and the functionality will always be enabled
-- There will be no feature gate associated with this design (discussed below)
+- This design will start at the beta phase and the functionality will be enabled by default
 
 This design represents a small, optional change to an existing GA API.  Thus it
 prioritizes rollout speed to allow clients to start using this functionality
@@ -217,7 +224,9 @@ during version skews (discussed below).
 
 #### GA
 
-- Confirm with cert-manager that the new functionality addresses their use case
+- Confirm with [cert-manager](https://github.com/jetstack/cert-manager/pull/3646) that the new functionality addresses their use case
+- Confirm with [pinniped](https://pinniped.dev) that the new functionality addresses their use case
+- Confirm that no other metrics are necessary
 - Wait one release after beta to allow bugs to be reported
 
 The existing conformance tests for the certificates API (`test/e2e/auth/certificates.go`)
@@ -237,7 +246,7 @@ could request a duration of a month but the signer could truncate the duration t
 its internal maximum of two weeks).  Thus this design emphasizes feature rollout
 speed to aid in ecosystem adoption instead of data durability.  Combined with the
 simplicity of implementation and low risk nature of the proposal, the alpha stage
-and related feature gate have been omitted from this design.
+has been omitted from this design.
 
 Clients that do not set the `spec.expirationSeconds` field will observe no change
 in behavior, even during upgrades and downgrades.
@@ -277,7 +286,7 @@ represents the status quo.
 
 In this scenario, the requested `spec.expirationSeconds` may be ignored because
 old API servers will silently drop the field on update.  This is harmless
-represents and the status quo.
+and represents the status quo.
 
 The CSR API is resilient to split brain scenarios as unknown fields are silently
 dropped and the `spec` fields are immutable after creation [1] [2] [3].
@@ -292,15 +301,11 @@ dropped and the `spec` fields are immutable after creation [1] [2] [3].
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- Other
-  - Describe the mechanism:
-      As written above, this functionality will be enabled by default with no configuration options.
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-      N/A
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-      N/A
+- Feature gate
+  - Feature gate name: `CSRDuration` (enabled by default)
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
@@ -309,13 +314,21 @@ would observe no difference in behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-N/A
+Yes, via the the `CSRDuration` feature gate.  Disabling this gate will cause the
+API server to remove the `spec.expirationSeconds` field on `create` and thus all
+clients would have their requested duration ignored.  This is a safe to do as the
+field is optional and represents the status quo.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-N/A
+Clients could set `spec.expirationSeconds` on newly created CSRs and signers may
+choose to honor them.  There are no specific issues caused by repeatedly enabling
+and disabling the feature.
 
 ###### Are there any tests for feature enablement/disablement?
+
+Unit tests will confirm that `spec.expirationSeconds` is ignored when the feature
+gate is disabled.
 
 Unit and integration tests will cover cases where `spec.expirationSeconds` is
 specified and cases where it is left unspecified.
@@ -326,14 +339,22 @@ specified and cases where it is left unspecified.
 
 Since it is optional for signers to honor `spec.expirationSeconds`, this design
 is fully tolerant of API server and controller manager rollouts/rollbacks that
-fail or get wedged in a partial state.  The worse case scenario is that the
-`spec.expirationSeconds` field is ignored, which mimics the status quo.  Clients
-must always check the duration of the issued certificate to determine if the
-requested `spec.expirationSeconds` was honored.
+fail or get wedged in a partial state.  The `spec.expirationSeconds` field being
+ignored just mimics the status quo.  Clients must always check the duration of the
+issued certificate to determine if the requested `spec.expirationSeconds` was honored.
+
+The worst case scenario is that the Kubernetes controller manager or a critical
+signer encounters a fatal error if this field is set (i.e. a nil pointer exception
+that causes the process to crash).  This would cause CSRs to stop being approved
+which would eventually lead to kubelet credentials expiring.  Kubelets would no
+longer be able to update pod status and the node controller would mark these
+kubelets as dead.  To mitigate the impact of any such scenario, the feature gate
+is included to allow this functionality to be disabled.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+The `csr_duration_honored` metric can be used to determine if signers and/or clients
+should be upgraded to handle the `spec.expirationSeconds` field.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -355,12 +376,20 @@ N/A
 Use `kubectl` to determine if CSRs with `spec.expirationSeconds` set are being
 created.  Audit logging could also be used to determine this.
 
+Once a target CSR has been located, check that the issued certificate in
+`.status.certificate` has the correct duration.  Audit logging could also be
+used to determine this.
+
+The `csr_duration_honored` can be used to determine if signers are honoring
+durations when explicitly requested by clients.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 - API `.status`
   - Condition name: `Approved` `=` `true`
   - Other field:
-      Check that the issued certificate in `.status.certificate` has the correct duration
+    - Check that CSR `spec.expirationSeconds` has the correct requested duration
+    - Check that the issued certificate in `.status.certificate` has the correct duration
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -368,6 +397,11 @@ This design does not make any meaningful change to the SLO of the Kubernetes CSR
 API.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- Metrics
+  - Metric name: `csr_duration_honored`
+  - Components exposing the metric:
+    - kube-apiserver
 
 - Details: Check the Kubernetes audit log from CRUD operations on CSRs.
 
@@ -385,17 +419,20 @@ N/A
     - Impact of its degraded performance or high-error rates on the feature:
       + Signers may have difficulty issuing certificates
       + Clients may have to wait a long time for certificates to be issued
+        and their credentials could expire which could cause an outage
 - etcd
   - Usage description: stores data for the CSR API
     - Impact of its outage on the feature: CSR API will be unavailable
     - Impact of its degraded performance or high-error rates on the feature:
       + Signers may have difficulty issuing certificates
       + Clients may have to wait a long time for certificates to be issued
+        and their credentials could expire which could cause an outage
 - Kubernetes controller manager
   - Usage description: hosts the in-tree signer controllers
     - Impact of its outage on the feature: in-tree signers will be unavailable
     - Impact of its degraded performance or high-error rates on the feature:
       + Clients may have to wait a long time for certificates to be issued
+        and their credentials could expire which could cause an outage
 
 ### Scalability
 
@@ -444,7 +481,14 @@ The semantics of the Kubernetes CSR API do not change in this regard.
 
 ###### What are other known failure modes?
 
-N/A
+- Signer does not honor requested duration
+  - Detection: See `csr_duration_honored` metric and `kubectl` discussion above.
+  - Mitigations: Upgrade signers to honor the new field.  Clients could also be
+    configured to set a requested duration that is within the signer's policy.
+  - Diagnostics: Audit logs could be used to capture full request and response
+    data in case the metrics are not sufficient.
+  - Testing: This scenario is fully covered by unit and integration tests as
+    honoring this field is optional.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -453,6 +497,7 @@ N/A
 ## Implementation History
 
 - 1.22: 2021-06-17: KEP written
+- 1.22: 2021-06-21: KEP review comments addressed
 
 ## Drawbacks
 
