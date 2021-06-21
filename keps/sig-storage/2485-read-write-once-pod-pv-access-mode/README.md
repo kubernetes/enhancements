@@ -93,6 +93,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Kubernetes Changes, Access Mode](#kubernetes-changes-access-mode)
+    - [Scheduler Enforcement](#scheduler-enforcement)
+    - [Mount Enforcement](#mount-enforcement)
   - [CSI Specification Changes, Volume Capabilities](#csi-specification-changes-volume-capabilities)
   - [Test Plan](#test-plan)
     - [Validation of PersistentVolumeSpec Object](#validation-of-persistentvolumespec-object)
@@ -385,14 +387,35 @@ access mode type if the feature gate is enabled.
 
 This access mode will be enforced in two places:
 
-- First is at the time a pod is scheduled. When scheduling a pod, if another pod
-  is found using the same PVC and the PVC uses ReadWriteOncePod, then scheduling
-  will fail and the pod will be considered unresolvable.
-- As an additional precaution this will also be enforced at the time a volume is
-  mounted for filesystem devices, and at the time a volume is mapped for block
-  devices. During the mount operation, kubelet will check the actual state of
-  the world to determine if the volume is already in-use by another pod. If it
-  is, kubelet will fail mounting with an appropriate error message.
+#### Scheduler Enforcement
+
+First is at the time a pod is scheduled. When scheduling a pod, if another pod
+is found using the same PVC and the PVC uses ReadWriteOncePod, then scheduling
+will fail and the pod will be considered unresolvable.
+
+In order to determine if a pod using a ReadWriteOncePod PVC can be scheduled, we
+need to enumerate all pods and check if any are already consuming this PVC. This
+logic will take place as part of the PreFilter extension point in the [volume
+restrictions plugin].
+
+The [node info cache] will be extended to map the PVC name to a reference count
+for the PVC. In the PreFilter extension point, if the pod's PVC is using
+ReadWriteOncePod, we will query this map for each node checking for references
+to the scheduled pod's PVC. If one is found the pod will fail scheduling and be
+marked unresolvable.
+
+[volume restrictions plugin]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/scheduler/framework/plugins/volumerestrictions/volume_restrictions.go#L29
+[node info cache]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/scheduler/framework/types.go#L357
+
+#### Mount Enforcement
+
+As an additional precaution this will also be enforced at the time a volume is
+mounted for filesystem devices, and at the time a volume is mapped for block
+devices. During the mount operation, kubelet will check the [actual state of the
+world cache] to determine if the volume is already in-use by another pod. If it
+is, kubelet will fail mounting with an appropriate error message.
+
+[actual state of the world cache]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/kubelet/volumemanager/cache/actual_state_of_world.go#L46
 
 ### CSI Specification Changes, Volume Capabilities
 

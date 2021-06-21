@@ -4,16 +4,20 @@ authors:
   - "@chrishenzie"
 owning-sig: sig-storage
 participating-sigs:
+  - sig-storage
+  - sig-scheduling
 status: implementable
 creation-date: 2021-02-10
 reviewers:
-  - TBD
   - "@saad-ali"
-  - "msau42"
+  - "@msau42"
+  - "@gnufied"
+  - "@jsafrane"
+  - "@alculquicondor"
 approvers:
-  - TBD
+  - "@msau42"
 prr-approvers:
-  - TBD
+  - "@ehashman"
 see-also:
 replaces:
 
