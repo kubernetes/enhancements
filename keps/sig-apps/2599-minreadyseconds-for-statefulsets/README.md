@@ -164,6 +164,12 @@ minReadySeconds is already available as an optional field for Deployments,
 DaemonSets, ReplicasSets and Replication Controllers. Enabling this option 
 helps in bringing StatefulSets on par with other workload controllers.
 
+Note: The important point to understand is when will a pod be considered
+`Ready` which might depend on the container probes configured. For example,
+for a pod with single container having a readiness check with `initialDelaySeconds`, 
+for the pod to considered `Available` it has to be implicitly `Ready` for 
+`initialDelaySeconds`+`minReadySeconds`.
+
 ### Goals
 
 StatefulSet Controller honoring minReadySeconds and mark Pod ready only if Pod 
@@ -173,12 +179,15 @@ is available for given time mentioned in minReadySeconds.
 
 Moving minReadySeconds to Pod Spec is beyond the scope of this KEP 
 because of following reasons:
-- The effort to change pod spec would be large.
+- The effort to change pod spec would be large. While this also helps other controllers like
+  endpoint controller to look at the pod status and propagate, the main goal of this KEP is to introduce
+  minReadySeconds field to StatefulSet spec to bring consistency.
 - Currently our workload controllers are inconsistent and we prioritize consistency of experience. 
 - StatefulSets are just different enough from daemonsets and deployments that real world use of minReadySeconds 
   for stateful sets might influence any future design or point in a more appropriate direction.
 
 More information about the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/65098)
+and why we are going ahead with this approach as there was consensus to bring consistency of experience.
 
 
 ## Proposal
