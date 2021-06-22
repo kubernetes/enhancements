@@ -73,8 +73,9 @@ Everything else related to the feature.
 
 ## Proposal
 
-We introduce a feature gate that enables a seccomp for all workloads by default.
-There are a few options for what should be the default seccomp profile.
+We introduce a feature gate as well as corresponding kubelet flag that enables a
+seccomp for all workloads by default. There are a few options for what should
+be the default seccomp profile.
 
 The most preferred solution is to promote the `RuntimeDefault` profile
 (previously the `runtime/default` annotation) to the new default one.
@@ -126,7 +127,9 @@ administrates may have to take action if they enable the feature.
 
 The feature gate `SeccompDefault` will ensure that the API graduation can be
 done in the standard Kubernetes way. The implementation will be mainly a switch
-from `Unconfined` to `RuntimeDefault`.
+from `Unconfined` to `RuntimeDefault`. This will only apply if the corresponding
+kubelet configuration `SeccompDefault` or the new CLI flag `--seccomp-default`
+is enabled together with the feature gate.
 
 Documentation around the feature will be added to the [k/website seccomp
 section](https://kubernetes.io/docs/tutorials/clusters/seccomp).
@@ -140,7 +143,7 @@ be extended to cover the new behavior if enabled.
 
 #### Alpha
 
-- [ ] Implement the new feature gate
+- [ ] Implement the new feature gate and kubelet configuration
 - [ ] Ensure proper tests are in place
 - [ ] Update documentation to make the feature visible
 
@@ -156,9 +159,51 @@ be extended to cover the new behavior if enabled.
 
 ### Upgrade / Downgrade Strategy
 
-It's recommended to test the existing workloads with the `RuntimeDefault`
-profile before turning the feature on. Beside that, the feature can be enabled
-on a per node basis to reduce the risk of failing production workloads.
+The strategy for enabling the feature should be done in multiple steps, whereas
+risks and mitigations are available for each one.
+
+1. **Feature gate enabling**:
+   Enabling the feature gate at the kubelet level will not turn on the feature,
+   but will make it possible by using the `SeccompDefault` kubelet configuration
+   or the `--seccomp-default` CLI flag.
+2. **Testing the Application**:
+   Before enabling the feature on a node, ensure in a dedicated test environment
+   that the application code does not trigger syscalls blocked by the
+   `RuntimeDefault` profile (for [CRI-O][default-crio] or
+   [containerd][default-containerd]). This can be done by:
+   - *Recommended*: Analyzing the code for any executed syscalls which may be
+     blocked by the default profiles. If that's the case, either craft a custom
+     seccomp profile based on the default or change the application deployment
+     to `Unconfined`.
+   - *Recommended*: Run the application against an e2e test suite to trigger
+     relevant code paths. Monitor the application hosts audit logs (via auditd
+     or `/var/log/audit/audit.log`) for blocking syscalls via `type=SECCOMP`. If
+     that's the case, use the same mitigation as mentioned above.
+   - *Optional*: Create a custom seccomp profile based on the default and change
+     their default action from `SCMP_ACT_ERRNO` to `SCMP_ACT_LOG`. This means
+     that the seccomp filter will have no effect on the application at all, but
+     the audit logs will now indicate which syscalls may be blocked.
+   - *Optional*: Use cluster additions like the [Security Profiles
+     Operator][spo] for profiling the application via its log enrichment feature
+     or recording a profile by using its recording feature.
+3. **Deploying the modified application**:
+   Based on the outcome of 2., it may be required the change the application
+   deployment by either specifying `Unconfined` or a custom seccomp profile.
+   This is not the case if the application works as intended with
+   `RuntimeDefault`.
+4. **Enable the kubelet configuration**:
+   The feature is now ready to be enabled by the kubelet configuration or its
+   corresponding CLI flag. This should be done on a per-node basis to reduce the
+   overall risk of missing a syscall during the investigations in point 2. If
+   it's possible to monitor audit logs within the cluster, then it's recommended
+   to do this for eventually missed seccomp events. If the application works as
+   intended then the feature can be enabled for further nodes within the
+   cluster.
+
+[default-crio]: https://github.com/cri-o/cri-o/blob/v1.21.0/vendor/github.com/containers/common/pkg/seccomp/seccomp.json
+[default-containerd]: https://github.com/containerd/containerd/blob/36cc874494a56a253cd181a1a685b44b58a2e34a/contrib/seccomp/seccomp_default.go#L51
+[spo]: https://github.com/kubernetes-sigs/security-profiles-operator
+[spo-log]: https://github.com/kubernetes-sigs/security-profiles-operator
 
 ### Version Skew Strategy
 
@@ -176,6 +221,7 @@ _This section must be completed when targeting alpha to a release._
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: `SeccompDefault`
     - Components depending on the feature gate: `kubelet`
+    - kubelet configuration `SeccompDefault` or CLI option `--seccomp-default`
 
 - **Does enabling the feature change any default behavior?**
 
@@ -376,7 +422,7 @@ feature at all. This means we fallback to the currently implemented "unconfined
 when not set" behavior.
 
 A possible starting point to defining this profile is to look at docker,
-containerd and cri-o default profiles.
+containerd and CRI-O default profiles.
 
 The advantages of defining a `KubernetesDefault` profile are:
 
