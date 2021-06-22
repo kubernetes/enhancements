@@ -456,10 +456,10 @@ will be invalid.
 
 The output for the 'kubectl get pods -o wide' command will not need
 modification and will only display the primary pod IP address as determined by
-the first IP address block configured via the `--cluster-cidr=` on
-kube-controller-manager. eg. The following is expected output for a cluster is
+the first IP address block configured via the `--node-ip=` on kubelet.
+eg. The following is expected output for a cluster is
 configured with an IPv4 address block as the first configured via the
-`--cluster-cidr=` on kube-controller-manager:
+`--node-ip=` on kubelet:
 
 ```
        kube-master# kubectl get pods -o wide
@@ -469,8 +469,7 @@ configured with an IPv4 address block as the first configured via the
 ```
 
 For comparison, here expected output for a cluster is configured with an IPv6
-address block as the first configured via the `--cluster-cidr=` on
-kube-controller-manager:
+address block as the first configured via the `--node-ip=` on kubelet:
 
 ```
        kube-master# kubectl get pods -o wide
