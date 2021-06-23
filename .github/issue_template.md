@@ -1,4 +1,5 @@
-# Enhancement Description
+### Enhancement Description
+
 - One-line enhancement description (can be used as a release note):
 - Kubernetes Enhancement Proposal: <!-- link to kubernetes/enhancements file; if none yet, link to PR -->
 - Discussion Link: <!-- link to SIG mailing list thread, meeting, or recording where the Enhancement was discussed before KEP creation -->
