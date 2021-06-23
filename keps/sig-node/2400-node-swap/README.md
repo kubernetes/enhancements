@@ -343,7 +343,7 @@ type KubeletConfiguration struct {
 
 type MemorySwapConfiguration struct {
 	// Configure swap memory available to container workloads. May be one of
-	// "", "NoSwap": workloads cannot use swap
+	// "", "LimitedSwap": workload combined memory and swap usage cannot exceed pod memory limit
 	// "UnlimitedSwap": workloads can use unlimited swap, up to the allocatable limit.
 	SwapBehavior string
 }
@@ -353,13 +353,22 @@ We want to expose common swap configurations based on the [Docker] and open
 container specification for the `--memory-swap` flag. Thus, the
 `MemorySwapConfiguration.SwapBehavior` setting will have the following effects:
 
-* If `SwapBehavior` is not set or set to `"NoSwap"`, containers do not have
-  access to swap. This value effectively prevents a container from using swap,
-  even if it is enabled on a system.
+* If `SwapBehavior` is not set or set to `"LimitedSwap"`, containers do not have
+  access to swap beyond their memory limit. This value prevents a container
+  from using swap in excess of their memory limit, even if it is enabled on a
+  system.
+  * With cgroups v1, it is possible for a container to use _some_ swap if its
+    combined memory and swap usage do not exceed the
+    [`memory.memsw.limit_in_bytes`] limit.
+  * With cgroups v2, swap is configured independently from memory. Thus, the
+    container runtimes can set [`memory.swap.max`] to 0 in this case, and _no_ swap
+    usage will be permitted.
 * If `SwapBehavior` is set to `"UnlimitedSwap"`, the container is allowed to
   use unlimited swap, up to the maximum amount available on the host system.
 
 [docker]: https://docs.docker.com/config/containers/resource_constraints/#--memory-swap-details
+[`memory.memsw.limit_in_bytes`]: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v1/memory.html
+[`memory.swap.max`]: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#memory
 
 #### CRI Changes
 
@@ -400,7 +409,7 @@ phase of graduation.
 #### Alpha
 
 - Kubelet can be started with swap enabled and will support two configurations
-  for Kubernetes workloads: `NoSwap` and `UnlimitedSwap`.
+  for Kubernetes workloads: `LimitedSwap` and `UnlimitedSwap`.
 - Kubelet can configure CRI to allocate swap to Kubernetes workloads. By
   default, workloads will not be allocated any swap.
 - e2e test jobs are configured for Linux systems with swap enabled.
