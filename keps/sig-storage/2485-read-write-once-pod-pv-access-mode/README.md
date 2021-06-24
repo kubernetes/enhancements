@@ -391,7 +391,7 @@ This access mode will be enforced in two places:
 
 First is at the time a pod is scheduled. When scheduling a pod, if another pod
 is found using the same PVC and the PVC uses ReadWriteOncePod, then scheduling
-will fail and the pod will be considered unresolvable.
+will fail and the pod will be considered UnschedulableAndUnresolvable.
 
 In order to determine if a pod using a ReadWriteOncePod PVC can be scheduled, we
 need to enumerate all pods and check if any are already consuming this PVC. This
@@ -402,7 +402,7 @@ The [node info cache] will be extended to map the PVC name to a reference count
 for the PVC. In the PreFilter extension point, if the pod's PVC is using
 ReadWriteOncePod, we will query this map for each node checking for references
 to the scheduled pod's PVC. If one is found the pod will fail scheduling and be
-marked unresolvable.
+marked UnschedulableAndUnresolvable.
 
 [volume restrictions plugin]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/scheduler/framework/plugins/volumerestrictions/volume_restrictions.go#L29
 [node info cache]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/scheduler/framework/types.go#L357
@@ -601,6 +601,8 @@ in back-to-back releases.
 
 #### Beta
 
+- Scheduler enforces ReadWriteOncePod access mode by marking pods as
+  Unschedulable, preemption logic added
 - ReadWriteOncePod access mode has end to end test coverage
 - Mock CSI driver supports `SINGLE_NODE_*_WRITER` access modes, relevant end to
   end tests updated to use this driver
