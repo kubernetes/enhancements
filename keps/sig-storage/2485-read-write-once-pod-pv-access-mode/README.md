@@ -376,9 +376,9 @@ proposal will be implemented, this is the place to discuss them.
 
 In Kubernetes, we should add a new ReadWriteOncePod persistent volume access
 mode to PersistentVolumes and PersistentVolumeClaims. This change will require
-adding a feature gate to the kube-apiserver, kube-controller-manager,
-kube-scheduler, and kubelet. Validation logic will need updating to accept this
-access mode type if the feature gate is enabled.
+adding a feature gate to the kube-apiserver, kube-scheduler, and kubelet.
+Validation logic will need updating to accept this access mode type if the
+feature gate is enabled.
 
 ```golang
        // can be mounted read/write mode to exactly 1 pod
@@ -627,10 +627,9 @@ enhancement:
 -->
 
 In order to upgrade a cluster to use this feature, the user will need to restart
-the kube-apiserver, kube-controller-manager, kube-scheduler, and kubelet with
-the ReadWriteOncePod feature gate enabled.  Additionally they will need to
-update their CSI drivers and sidecars to versions that depend on the new
-Kubernetes API and CSI spec.
+the kube-apiserver, kube-scheduler, and kubelet with the ReadWriteOncePod
+feature gate enabled.  Additionally they will need to update their CSI drivers
+and sidecars to versions that depend on the new Kubernetes API and CSI spec.
 
 When downgrading a cluster to disable this feature, the user will need to
 restart the kube-apiserver with the ReadWriteOncePod feature gate disabled. When
@@ -755,7 +754,6 @@ Pick one of these and delete the rest.
   - Feature gate name: ReadWriteOncePod
   - Components depending on the feature gate:
     - kube-apiserver
-    - kube-controller-manager
     - kube-scheduler
     - kubelet
 
