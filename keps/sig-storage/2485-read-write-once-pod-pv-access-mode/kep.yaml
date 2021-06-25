@@ -41,7 +41,6 @@ feature-gates:
   - name: ReadWriteOncePod
     components:
       - kube-apiserver
-      - kube-controller-manager
       - kube-scheduler
       - kubelet
 disable-supported: true
