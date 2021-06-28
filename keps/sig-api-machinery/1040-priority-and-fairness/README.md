@@ -43,7 +43,7 @@
       - [Sorted concurrent executing requests](#sorted-concurrent-executing-requests)
       - [Sorted queues with concurrent executing requests](#sorted-queues-with-concurrent-executing-requests)
       - [Picking the next request to dispatch in the real world](#picking-the-next-request-to-dispatch-in-the-real-world)
-    - [Derivation of Fair Queuing for Server Requests wit max-min fairness and concurrent virtual execution](#derivation-of-fair-queuing-for-server-requests-wit-max-min-fairness-and-concurrent-virtual-execution)
+    - [Derivation of Fair Queuing for Server Requests with max-min fairness and concurrent virtual execution](#derivation-of-fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution)
       - [The original story](#the-original-story)
       - [Re-casting the original story](#re-casting-the-original-story)
       - [From one to many](#from-one-to-many)
@@ -2048,7 +2048,7 @@ but maintains its own `nextCompletes`, `nextPE`, and
 This iterator also has the added problem of respecting round-robin
 ordering.  This can be implemented in `O(1)` compute time per request.
 
-#### Derivation of Fair Queuing for Server Requests wit max-min fairness and concurrent virtual execution
+#### Derivation of Fair Queuing for Server Requests with max-min fairness and concurrent virtual execution
 
 Finally, here is an explanation of how this solution was derived.  It
 starts with an old paper from the world of networking and makes a
