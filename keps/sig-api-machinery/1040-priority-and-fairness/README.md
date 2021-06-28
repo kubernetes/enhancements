@@ -31,11 +31,17 @@
     - [More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and serial virtual execution](#more-or-less-efficient-implementation-of-fair-queuing-for-server-requests-with-max-min-fairness-and-serial-virtual-execution)
       - [Computing the max-min fair allocation](#computing-the-max-min-fair-allocation)
       - [Serial scheduling in the virtual world](#serial-scheduling-in-the-virtual-world)
+      - [Simplest virtual-world serial scheduling implementation](#simplest-virtual-world-serial-scheduling-implementation)
+      - [Sorted queues with serial executing requests](#sorted-queues-with-serial-executing-requests)
   - [Fair Queuing for Server Requests, with max-min fairness and concurrent virtual execution](#fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution)
     - [Fair Queuing for Server Requests, with max-min fairness and concurrent virtual execution, behavior](#fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution-behavior)
     - [More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and concurrent virtual execution](#more-or-less-efficient-implementation-of-fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution)
       - [Computing the max-min fair allocation](#computing-the-max-min-fair-allocation-1)
       - [Concurrent scheduling in the virtual world](#concurrent-scheduling-in-the-virtual-world)
+      - [Simplest virtual-world concurrent scheduling implementation](#simplest-virtual-world-concurrent-scheduling-implementation)
+      - [Simplest correct virtual-world concurrent scheduling implementation](#simplest-correct-virtual-world-concurrent-scheduling-implementation)
+      - [Sorted concurrent executing requests](#sorted-concurrent-executing-requests)
+      - [Sorted queues with concurrent executing requests](#sorted-queues-with-concurrent-executing-requests)
       - [Picking the next request to dispatch in the real world](#picking-the-next-request-to-dispatch-in-the-real-world)
     - [Derivation of Fair Queuing for Server Requests wit max-min fairness and concurrent virtual execution](#derivation-of-fair-queuing-for-server-requests-wit-max-min-fairness-and-concurrent-virtual-execution)
       - [The original story](#the-original-story)
@@ -1327,7 +1333,10 @@ updated as more information comes in.  Sadly, sometimes relevant
 information comes in after it was first needed.  [TODO: summarize
 coping better.]
 
-###### Simplest virtual-world serial scheduling implementation
+The following subsections cover a progression of solutions for virtual
+world scheduling of one request at a time per queue.
+
+##### Simplest virtual-world serial scheduling implementation
 
 A queue has a linked list of requests.  When a request arrives, it is
 appended to the end of the list.  At some point, that request is
@@ -1428,7 +1437,7 @@ implementation looks through all the queue to find those with minimal
 In summary, the simplest implementation costs `O((1 + N_Delta) * log
 N + N)` compute time per request.
 
-###### Sorted queues with serial executing requests
+##### Sorted queues with serial executing requests
 
 A more efficient approach is possible, based on using representations
 in which the data structure for a queue does not need to be updated in
@@ -1695,7 +1704,10 @@ time when it is not executing in the real world but has already
 started execution in the virtual world.  [TODO: describe how to handle
 this.]
 
-###### Simplest virtual-world concurrent scheduling implementation
+The following subsections cover a progression of solutions for
+scheduling multiple requests at a time per queue in the virtual world.
+
+##### Simplest virtual-world concurrent scheduling implementation
 
 A request becomes known to the implementation when it arrives, and is
 deleted from the virtual world upon completion in the virtual world
@@ -1840,7 +1852,7 @@ the costs to keep the `nextEE` updated.
 In summary, the simplest implementation costs `O((1 + N_Delta) * log
 N + C + N)` compute time per request.
 
-###### Simplest correct virtual-world concurrent scheduling implementation
+##### Simplest correct virtual-world concurrent scheduling implementation
 
 However, there is a bug in the above approach to scheduling the
 computations about request completions in the virtual world.  When
@@ -1889,7 +1901,7 @@ Thus we get the same asymptotic summary.  The simplest correct
 implementation's total compute time per request is `O((1 + N_Delta) *
 log N + C + N)`.
 
-###### Sorted concurrent executing requests
+##### Sorted concurrent executing requests
 
 The easiest target for improvement is the costs of finding the new
 values for `nextCompletes`, `nextPE`, and `nextEE`.  The simplest
@@ -1904,7 +1916,7 @@ cost `O(log C)` for each.
 In this implementation, the total compute time per request is `O((1 +
 N_Delta) * log N + log C + N)`.
 
-###### Sorted queues with concurrent executing requests
+##### Sorted queues with concurrent executing requests
 
 A more efficient approach is possible, based on using representations
 in which the data structure for a queue does not need to be updated in
