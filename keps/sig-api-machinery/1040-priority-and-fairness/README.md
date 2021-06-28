@@ -897,8 +897,13 @@ non-empty queues, as follows.
 mu(i,t) = mu_equal(t)  if rho(i,t) > 0
         = 0            otherwise
 
-mu_equal(t) = min(C, Sum[over i] rho(i,t)) / NEQ(t)
+mu_equal(t) = min(C, Sum[over i] rho(i,t)) / NEQ(t)   if NEQ(t) > 0
+            = 0                                       otherwise
 ```
+
+In this design, a queue executes one request at a time in the virtual
+world.  Thus, `NOS(i,t) = width(i,j)` for that relevant `j` whenever
+there is one.
 
 Each non-empty queue divides its allocated concurrency `mu` evenly
 among the seats it occupies in the virtual world, so that the
@@ -908,10 +913,8 @@ aggregate rate work gets done on all the queue's seats is `mu`.
 rate(i,t) = if NOS(i,t) > 0 then mu_equal(t) / NOS(i,t) else 0
 ```
 
-In this design, a queue executes one request at a time in the virtual
-world.  Thus, `NOS(i,t) = width(i,j)` for that relevant `j` whenever
-there is one.  Since `mu_equal(t)` can be greater or less than
-`width(i,j)`, `rate(i,t)` can be greater or less than 1.
+Since `mu_equal(t)` can be greater or less than `width(i,j)`,
+`rate(i,t)` can be greater or less than 1.
 
 We use the above policy and rate to define the schedule in the virtual
 world.  The scheduling is thus done with almost no interactions
@@ -934,8 +937,10 @@ of the queue's earlier requests finish.  Note that the concurrency
 limit used here is different from the real world: a queue is allowed
 to run one request at a time, regardless of how many it has waiting to
 run and regardless of the server's concurrency limit `C`.  The
-independent virtual-world scheduling for each queue helps enable
-efficient implementations.
+independent virtual-world scheduling for each queue is crucial for
+fairness: a queue's virtual completions depend only on the queue's
+demand and allocated concurrency, not any detailed scheduling
+interaction.  This also helps enable efficient implementations.
 
 The end of a request's virtual execution (`E(i,j)`) is the solution to
 the following equation.
