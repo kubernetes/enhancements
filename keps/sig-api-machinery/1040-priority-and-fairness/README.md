@@ -20,6 +20,7 @@
     - [Latency Protection](#latency-protection)
   - [Queuing](#queuing)
   - [Dispatching](#dispatching)
+  - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
   - [Fair Queuing for Server Requests problem statement](#fair-queuing-for-server-requests-problem-statement)
   - [Fair Queuing for Server Requests, with equal allocations and serial virtual execution](#fair-queuing-for-server-requests-with-equal-allocations-and-serial-virtual-execution)
     - [Fair Queuing for Server Requests, with equal allocations and serial virtual execution, initial definition](#fair-queuing-for-server-requests-with-equal-allocations-and-serial-virtual-execution-initial-definition)
@@ -27,29 +28,23 @@
     - [Implementation of Fair Queuing for Server Requests with equal allocations and serial execution, technique and problems](#implementation-of-fair-queuing-for-server-requests-with-equal-allocations-and-serial-execution-technique-and-problems)
   - [Fair Queuing for Server Requests, with max-min fairness and serial virtual execution](#fair-queuing-for-server-requests-with-max-min-fairness-and-serial-virtual-execution)
     - [Fair Queuing for Server Requests, with max-min fairness and serial virtual execution, behavior](#fair-queuing-for-server-requests-with-max-min-fairness-and-serial-virtual-execution-behavior)
-  - [More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and serial virtual execution](#more-or-less-efficient-implementation-of-fair-queuing-for-server-requests-with-max-min-fairness-and-serial-virtual-execution)
-    - [Computing the max-min fair allocation](#computing-the-max-min-fair-allocation)
-    - [Serial scheduling in the virtual world](#serial-scheduling-in-the-virtual-world)
-      - [Simplest virtual-world serial scheduling implementation](#simplest-virtual-world-serial-scheduling-implementation)
-      - [Sorted queues with serial executing requests](#sorted-queues-with-serial-executing-requests)
+    - [More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and serial virtual execution](#more-or-less-efficient-implementation-of-fair-queuing-for-server-requests-with-max-min-fairness-and-serial-virtual-execution)
+      - [Computing the max-min fair allocation](#computing-the-max-min-fair-allocation)
+      - [Serial scheduling in the virtual world](#serial-scheduling-in-the-virtual-world)
   - [Fair Queuing for Server Requests, with max-min fairness and concurrent virtual execution](#fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution)
     - [Fair Queuing for Server Requests, with max-min fairness and concurrent virtual execution, behavior](#fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution-behavior)
-  - [More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and concurrent virtual execution](#more-or-less-efficient-implementation-of-fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution)
-    - [Computing the max-min fair allocation](#computing-the-max-min-fair-allocation-1)
-    - [Concurrent scheduling in the virtual world](#concurrent-scheduling-in-the-virtual-world)
-      - [Simplest virtual-world concurrent scheduling implementation](#simplest-virtual-world-concurrent-scheduling-implementation)
-      - [Simplest correct virtual-world concurrent scheduling implementation](#simplest-correct-virtual-world-concurrent-scheduling-implementation)
-      - [Sorted concurrent executing requests](#sorted-concurrent-executing-requests)
-      - [Sorted queues with concurrent executing requests](#sorted-queues-with-concurrent-executing-requests)
-    - [Picking the next request to dispatch in the real world](#picking-the-next-request-to-dispatch-in-the-real-world)
-  - [Derivation of Fair Queuing for Server Requests](#derivation-of-fair-queuing-for-server-requests)
-    - [The original story](#the-original-story)
-    - [Re-casting the original story](#re-casting-the-original-story)
-    - [From one to many](#from-one-to-many)
-    - [From packets to requests](#from-packets-to-requests)
-    - [Generalizing packet &quot;width&quot;](#generalizing-packet-width)
-    - [Not knowing service duration up front](#not-knowing-service-duration-up-front)
-    - [Extra time at the end of a request](#extra-time-at-the-end-of-a-request)
+    - [More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and concurrent virtual execution](#more-or-less-efficient-implementation-of-fair-queuing-for-server-requests-with-max-min-fairness-and-concurrent-virtual-execution)
+      - [Computing the max-min fair allocation](#computing-the-max-min-fair-allocation-1)
+      - [Concurrent scheduling in the virtual world](#concurrent-scheduling-in-the-virtual-world)
+      - [Picking the next request to dispatch in the real world](#picking-the-next-request-to-dispatch-in-the-real-world)
+    - [Derivation of Fair Queuing for Server Requests wit max-min fairness and concurrent virtual execution](#derivation-of-fair-queuing-for-server-requests-wit-max-min-fairness-and-concurrent-virtual-execution)
+      - [The original story](#the-original-story)
+      - [Re-casting the original story](#re-casting-the-original-story)
+      - [From one to many](#from-one-to-many)
+      - [From packets to requests](#from-packets-to-requests)
+      - [Generalizing packet &quot;width&quot;](#generalizing-packet-width)
+      - [Not knowing service duration up front](#not-knowing-service-duration-up-front)
+      - [Extra time at the end of a request](#extra-time-at-the-end-of-a-request)
   - [Support for LIST requests](#support-for-list-requests)
     - [Width of the request](#width-of-the-request)
     - [Determining the width](#determining-the-width)
@@ -676,6 +671,32 @@ The Fair Queuing for Server Requests algorithm below is used to pick a
 non-empty queue at that priority level.  Then the request at the head
 of that queue is dispatched.
 
+### Fair Queuing for Server Requests
+
+The following subsections cover the problem statements and three
+solutions.  The first one corresponds most closely with the current
+code, but is dissatisfying in the following two ways.
+
+1. By allocateing the available seats equally rather than with max-min
+fairness, the current solution sometimes pretends that a queue uses
+more seats than it can.
+
+2. By executing just one request at a time for a given queue in the
+virtual world, the current solution has many circumstances in which a
+fully accurate implementation would have to revise what happened in
+the past in the virtual world.  That would require an expensive amount
+of information retention and recalculation.  The current solution cuts
+those corners.
+
+Thus the solutions can be arranged into four quadrants according to
+which of those dissatisfactions are addressed.  Three of those four
+solutions are described in subsections below.  Each subsection is
+further divided, having both a definition of intended behavior and
+implementation discussions.  The last subsection, which covers the
+most ambitious solution, concludes with an explanation of how it was
+derived from the original Fair Queuing technique (which appeared in
+the field of networking).
+
 ### Fair Queuing for Server Requests problem statement
 
 The Fair Queuing for Server Requests problem is as follows.
@@ -726,13 +747,6 @@ create the initial implementation (which lacked generalizations for
 request width and extra latency), (b) equations that describe the
 intended behavior, and (c) implementation difficulties (solved and
 unsolved).
-
-After all that is a presentation of a solution for truly fair queuing,
-with max-min fairness.  There is also a confounding difference: the
-solution with equal allocations uses a virtual schedule with each
-queue running only one request at a time while the max-min fair
-solution allows a queue to run concurrent requests in the virtual
-world.  These are two corners of a quad of possible approaches.
 
 #### Fair Queuing for Server Requests, with equal allocations and serial virtual execution, initial definition
 
@@ -1217,13 +1231,13 @@ closely follows the one last dispatched from.  Requests are dispatched
 as soon as allowed by that ordering, the concurrency bound in the
 problem statement, and of course not dispatching before arrival.
 
-### More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and serial virtual execution
+#### More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and serial virtual execution
 
 We consider three issues in turn: (1) computing the max-min fair
 allocation for a given set of demands, (2) scheduling in the virtual
 world, and (3) picking the next request to execute in the real world.
 
-#### Computing the max-min fair allocation
+##### Computing the max-min fair allocation
 
 A single instance of the problem of finding the max-min fair
 allocations `mu(i,t1)` given capacity `C` and demands `rho(i,t1)`, for
@@ -1282,7 +1296,7 @@ boundary.  Note that while the system stays out of overload, `N_Delta`
 is zero.  It also stays zero while the system stays overloaded by the
 same set of queues.
 
-#### Serial scheduling in the virtual world
+##### Serial scheduling in the virtual world
 
 Next consider the problem of scheduling in the virtual world.  This is
 a matter of computing the `B` and `E` values in the virtual world.
@@ -1308,7 +1322,7 @@ updated as more information comes in.  Sadly, sometimes relevant
 information comes in after it was first needed.  [TODO: summarize
 coping better.]
 
-##### Simplest virtual-world serial scheduling implementation
+###### Simplest virtual-world serial scheduling implementation
 
 A queue has a linked list of requests.  When a request arrives, it is
 appended to the end of the list.  At some point, that request is
@@ -1409,7 +1423,7 @@ implementation looks through all the queue to find those with minimal
 In summary, the simplest implementation costs `O((1 + N_Delta) * log
 N + N)` compute time per request.
 
-##### Sorted queues with serial executing requests
+###### Sorted queues with serial executing requests
 
 A more efficient approach is possible, based on using representations
 in which the data structure for a queue does not need to be updated in
@@ -1643,17 +1657,17 @@ closely follows the one last dispatched from.  Requests are dispatched
 as soon as allowed by that ordering, the concurrency bound in the
 problem statement, and of course not dispatching before arrival.
 
-### More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and concurrent virtual execution
+#### More or less efficient implementation of Fair Queuing for Server Requests with max-min fairness and concurrent virtual execution
 
 We consider three issues in turn: (1) computing the max-min fair
 allocation for a given set of demands, (2) scheduling in the virtual
 world, and (3) picking the next request to execute in the real world.
 
-#### Computing the max-min fair allocation
+##### Computing the max-min fair allocation
 
 This is the same as [above](#computing-the-max-min-fair-allocation).
 
-#### Concurrent scheduling in the virtual world
+##### Concurrent scheduling in the virtual world
 
 Next consider the problem of scheduling in the virtual world.  This is
 a matter of computing the `B` and `E` values in the virtual world.
@@ -1676,7 +1690,7 @@ time when it is not executing in the real world but has already
 started execution in the virtual world.  [TODO: describe how to handle
 this.]
 
-##### Simplest virtual-world concurrent scheduling implementation
+###### Simplest virtual-world concurrent scheduling implementation
 
 A request becomes known to the implementation when it arrives, and is
 deleted from the virtual world upon completion in the virtual world
@@ -1821,7 +1835,7 @@ the costs to keep the `nextEE` updated.
 In summary, the simplest implementation costs `O((1 + N_Delta) * log
 N + C + N)` compute time per request.
 
-##### Simplest correct virtual-world concurrent scheduling implementation
+###### Simplest correct virtual-world concurrent scheduling implementation
 
 However, there is a bug in the above approach to scheduling the
 computations about request completions in the virtual world.  When
@@ -1870,7 +1884,7 @@ Thus we get the same asymptotic summary.  The simplest correct
 implementation's total compute time per request is `O((1 + N_Delta) *
 log N + C + N)`.
 
-##### Sorted concurrent executing requests
+###### Sorted concurrent executing requests
 
 The easiest target for improvement is the costs of finding the new
 values for `nextCompletes`, `nextPE`, and `nextEE`.  The simplest
@@ -1885,7 +1899,7 @@ cost `O(log C)` for each.
 In this implementation, the total compute time per request is `O((1 +
 N_Delta) * log N + log C + N)`.
 
-##### Sorted queues with concurrent executing requests
+###### Sorted queues with concurrent executing requests
 
 A more efficient approach is possible, based on using representations
 in which the data structure for a queue does not need to be updated in
@@ -1987,7 +2001,7 @@ Thus, this implementation costs `O((1 + N_Delta) * log N + log C)`
 compute time.
 
 
-#### Picking the next request to dispatch in the real world
+##### Picking the next request to dispatch in the real world
 
 When request `(i,j)` completes execution in the real world, the APF
 handler returns but, for the sake of its own dispatching, considers
@@ -2017,7 +2031,11 @@ but maintains its own `nextCompletes`, `nextPE`, and
 This iterator also has the added problem of respecting round-robin
 ordering.  This can be implemented in `O(1)` compute time per request.
 
-### Derivation of Fair Queuing for Server Requests
+#### Derivation of Fair Queuing for Server Requests wit max-min fairness and concurrent virtual execution
+
+Finally, here is an explanation of how this solution was derived.  It
+starts with an old paper from the world of networking and makes a
+series of modifications to get to the problem at hand.
 
 You can find the original fair queuing paper at
 [ACM](https://dl.acm.org/citation.cfm?doid=75247.75248) or
@@ -2046,7 +2064,7 @@ original fair queuing story in a way that is more amenable to the
 needed changes and has the same implementation.  Then we work through
 a series of three changes.
 
-#### The original story
+##### The original story
 
 We have a collection of FIFO queues of packets to be transmitted, one
 packet at a time, over one link that goes at a fixed rate of
@@ -2119,7 +2137,7 @@ the non-empty queues are kept in two data structures (one for the
 queues non-empty in the real world, one for the queues non-empty in
 the virtual world) sorted by the relevant `F` value.
 
-#### Re-casting the original story
+##### Re-casting the original story
 
 The original fair queuing technique can be understood in the following
 way, which corresponds more directly to max-min fairness.  We have a
@@ -2262,7 +2280,7 @@ is kept in the data structure.  A packet's F does not change as the
 system evolves over time, so an incremental step requires only
 manipulating the queue and packet directly involved.
 
-#### From one to many
+##### From one to many
 
 The first change is to suppose that transmission is being done on
 multiple parallel links.  Call the number of them `C`.  This allows
@@ -2448,7 +2466,7 @@ with O(1) complexity.  Finding the earliest from each of the two
 categories costs O(1).  Finding the earliest of those (at most) two
 also takes O(1).
 
-#### From packets to requests
+##### From packets to requests
 
 The next change is from transmitting packets to serving requests.  We
 no longer have a collection of C links; instead we have a server
@@ -2467,7 +2485,7 @@ would now be better called "SAR" (for Set of Active Requests).
 Similarly we rename "NAP" (Number of Active Packets") to "NOS" (Number
 of Occupied Seats).
 
-#### Generalizing packet "width"
+##### Generalizing packet "width"
 
 As motivated by LIST requests (see below), we generalize the number of
 seats occupied by a request from 1 to an integer in the range
@@ -2491,7 +2509,7 @@ simple way of coping with that difficulty and preserves the property
 that requests execute no faster in the virtual world than in the real
 one.
 
-#### Not knowing service duration up front
+##### Not knowing service duration up front
 
 The penultimate change removes the up-front knowledge of the service
 duration of a request.  Instead, we use a guess.  We deliberately use
@@ -2518,7 +2536,7 @@ the remaining requests in that queue start getting faster service.  In
 both cases, the service delivery in the virtual world has reacted
 properly to the true service duration.
 
-#### Extra time at the end of a request
+##### Extra time at the end of a request
 
 To account for consequent work that is not done synchronously (i.e.,
 sending WATCH notifications that are consequences of a mutating
