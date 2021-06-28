@@ -1166,6 +1166,10 @@ than `C`, otherwise queues that request less than the `mu_fair`
 solution get all that they ask for and each of the others gets
 `mu_fair`.
 
+In this design, a queue executes one request at a time in the virtual
+world.  Thus, `NOS(i,t) = width(i,j)` for that relevant `j` whenever
+there is one.
+
 Each non-empty queue divides its allocated concurrency `mu` evenly
 among the seats it occupies in the virtual world, so that the
 aggregate rate work gets done on all the queue's seats is `mu`.
@@ -1174,9 +1178,7 @@ aggregate rate work gets done on all the queue's seats is `mu`.
 rate(i,t) = if NOS(i,t) > 0 then mu(i,t) / NOS(i,t) else 0
 ```
 
-In this design, a queue executes one request at a time in the virtual
-world.  Thus, `NOS(i,t) = width(i,j)` for that relevant `j` whenever
-there is one.  Since `mu(i,t)` can be greater or less than
+Since `mu(i,t)` can be greater or less than
 `width(i,j)`, `rate(i,t)` can be greater or less than 1.
 
 We use the above policy and rate to define the schedule in the virtual
@@ -1200,8 +1202,8 @@ of the queue's earlier requests finish.  Note that the concurrency
 limit used here is different from the real world: a queue is allowed
 to run one request at a time, regardless of how many it has waiting to
 run and regardless of the server's concurrency limit `C`.  The
-independent virtual-world scheduling for each queue helps enable
-efficient implementations.
+independent virtual-world scheduling for each queue makes for fair
+completions and also helps enable efficient implementations.
 
 The end of a request's virtual execution (`E(i,j)`) is the solution to
 the following equation.
@@ -1264,10 +1266,10 @@ Thus we can use an incremental algorithm to solve each new instance
 based on the previous one, as follows.
 
 - Keep the queues in a data structure sorted by increasing `rho`.  Let
-  us say this is a permutation `RI`.  That is, at any given moment
-  `t`, `rho(RI(j),t) <= rho(RI(k),t)` for every `0 <= j < k < N`.
-  Also maintain the inverse permutation `IR` --- that is, `IR(RI(i)) =
-  i` for every `0 <= i < N`.
+  us say this is a variable permutation `RI`.  That is, at any given
+  moment `t`, `rho(RI(j),t) <= rho(RI(k),t)` for every `0 <= j < k <
+  N`.  Also maintain the inverse permutation `IR` --- that is,
+  `IR(RI(i)) = i` for every `0 <= i < N`.
 
 - Maintain the sort index `L` of the first sorted queue that is
   limited (does not get all it demands).  That is, `L` is the smallest
@@ -1276,14 +1278,14 @@ based on the previous one, as follows.
   index `L` can be as small as 0 (when no queue gets its full demand)
   and as large as `N` (when every queue gets its full demand).
 
-- Maintain the quantity `CL = Sum[over j < L] rho(RI(j),t) * (N-j)`.
-  This is the capacity usage implied by all the fully granted demands,
-  including the implication that the queues with higher demands get at
-  least the highest fully granted demand.
+- Maintain the quantity `CL = rho_K(t) * (N-L) + Sum[over j < L]
+  rho(RI(j),t)` where `rho_K(t)` is `rho(RI(L-1),t)` when `L>0` and
+  `0` otherwise.  This is the capacity usage implied by all the fully
+  granted demands, including the implication that the queues with
+  higher demands get at least the highest fully granted demand.
 
 - The above imply that when `L < N`, `L` has the property that making
-  it one bigger would blow `CL` past the bound `C`: `CL +
-  rho(RI(L),t) * (N-L) > C`.
+  it one bigger would blow `CL` past the bound `C`.
 
 - Given the above, `mu_fair(t)` is:
 
@@ -1641,8 +1643,8 @@ takes the number of occupied seats above `C`.  We do these because
 dispatching less than `min(C, rho(i,t))` leaves open the door for `mu`
 to rise above `NOS` later (due to a change in a different queue `j`,
 at which point we do not consider additional dispatches from queue
-`i`).  The independent virtual-world scheduling for each queue also
-helps enable efficient implementations.
+`i`).  The independent virtual-world scheduling for each queue makes
+for fair completions and also helps enable efficient implementations.
 
 The end of a request's virtual execution (`E(i,j)`) is the solution to
 the following equation.
