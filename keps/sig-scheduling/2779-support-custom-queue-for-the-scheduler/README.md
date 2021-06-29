@@ -55,29 +55,34 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Provide an interface so that user can implement a custom queue of scheduler,
-with such a queue, user can sort the pods in the queue with specified rules 
-and get some functions that are not supported now.
+Provide an interface so that users can implement a custom queue of scheduler.
+With such, users can build their custom queue implementation at will, and plumb into
+the scheduler seamlessly. This can satisfy the business needs such as sophisticated
+pods sorting and internal queuing mechanics.
 
 ## Motivation
-The current queue (PriorityQueue in pkg\scheduler\internal\queue\scheduling_queue.go) 
-for pod selection in the scheduler is good enough for most cases, while it cannot handle 
-all the requests even with a custom scheduler based on the kubernetes scheduler plugins.
+The current internal queue implementation ([scheduling_queue.go#PriorityQueue]
+(https://github.com/kubernetes/kubernetes/blob/ee459b8969ed2abfed79a07d4ac9d41f13f18ce6/pkg/scheduler/internal/queue/scheduling_queue.go#L126))
+works for most cases, but the limited interfaces exposure makes it hard to
+implement a scheduler plugin for sophisticated requirements.
 
-One example:
+One requirement in terms of multi-tenancy support:  
 There are many pods from 2 users (userA and userB), and the target is to ensure resource
 usage (E.g. userA gets x CPUs) ratio between userA and userB is 1:1. Sorting the pods by
-the resource usage in Less function cannot work, because the resource usage for 
+the resource usage in `Less` function doesn't work properly, because the resource usage for 
 userA/userB will be updated dynamically once a pod is selected and bound, while the 
 algorithm (heapsort) that used by the current queue to get the next pods depends on static
 data.
 
-Another example:
-The interval of function flushUnschedulableQLeftover is hard coded to 30 seconds, user
-cannot change it.
+Another requirement in terms of custom function support:  
+For example, the interval of function flushUnschedulableQLeftover cannot be updated dynamically, while
+user want it to be shorter or longer at different times as shorter interval can get pods to be scheduled
+faster and longer one can get less logs flushed.
 
-These issues can be resolved if user can implement the queue by themselves, then user
-can get what they want easily, and code maintainer needn't handle various requests.
+Given that the business needs may vary greatly, it'd be good to provide a replaceable
+`SchedulerQueue` interface and plumbing mechanics. So that the developers can
+implement their custom queue implementation, while the upstream maintainers focus
+on keeping the core small and extensible, and thus only maintain the internal queue piece
 
 ### Goals
 
@@ -85,20 +90,20 @@ Support custom queue of the scheduler.
 
 ### Non-Goals
 
-Support custom rules for pod selection in the current queue of scheduler
+Support custom rules for pod selection in the current internal queue of scheduler.
 
 ## Proposal
 
 Provide an interface like current scheduler plugins, users can provide a
 custom queue of scheduler and register it, then the kubernetes
-scheduler will use this custom queue for pod selection.
+scheduler will use this custom queue for pod management.
 
 This is an extension of the current scheduler plugins, users can control
 more details of the scheuler with this enhancement.
 
 Pros:  
-Users can get full control of the pod selection logic in the queue, they
-can select pods with custom logic.
+Users can get full control of the pod queuing logic, they can pop/re-queue/backoff pods with
+custom logic.
 
 The scheduler plugins design is enhanced, the custom queue and the extension
 points can work together to meet more requests.
@@ -109,8 +114,8 @@ functions now, it is not easy to implement a custom queue.
 
 ### Risks and Mitigations
 
-If custom queue is not enabled or provided, the current queue will work as
-before, no other users will be impacted.
+A poor-implemented queue may not function well, in both functionality and performance.
+But the default scheduler works as before and thus won't be impacted.
 
 ## Design Details
 
@@ -119,52 +124,52 @@ The codes will be updated as following:
 1. User implements a custom queue with the interface SchedulingQueue,
 the name is myQueue, and registers it
 
-  ```
+```
 	command := app.NewSchedulerCommand(
 		app.WithPlugin(coscheduling.Name, coscheduling.New),
-                        …...
+                        ......
 	+	app.WithCustomQueue(myQueue.New),
 	)
-  ```
+```
 
 2. The registered custom queue will be recorded by updated Registry struct.
 
-  ```
+```
   type Registry struct {
     Pf          map[string]PluginFactory
     CustomQueue schedulingQueue.SchedulingQueue
   }
-  ```
+```
 
 3. In function (c *Configurator) create(), pass the custom queue to the scheduler
 if it exists.
-  ```
+```
   if c.registry.CustomQueue != nil {
       podQueue = c.registry.CustomQueue
   } else {
       podQueue = schedulingQueue.NewSchedulingQueue()
   }
-   ```
+```
+
+4. Basic inputs for queue's initialization will not be changed, a new interface `Init` is added in
+SchedulingQueue, users must implement it.
+
+```
+-func NewPriorityQueue(
++func (p *PriorityQueue) Init(
+ 	lessFn framework.LessFunc,
+ 	informerFactory informers.SharedInformerFactory,
+ 	opts ...Option,
+)
+```
+
+5. For the scheduler internal packages under ([internal] (https://github.com/kubernetes/kubernetes/tree/b6c75bee15e150628fcc240ab32dba6190d254e4/pkg/scheduler/internal)), queue and heap will be moved out of this folder so that users can access and use the structures inside them, cache and parallelize will not be touched.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
+- **Unit Tests**: All core changes must be covered by unit tests.
+- **Integration Tests**: One integration test for the custom queue.
+- **Benchmark Tests**: The performance benchmark test result is same as before if custom queue is not used.
 
 ### Graduation Criteria
 
