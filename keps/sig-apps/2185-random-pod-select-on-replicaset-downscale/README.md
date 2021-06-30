@@ -206,7 +206,7 @@ Alpha (v1.21):
 
 Beta (v1.22): 
 - Enable LogarithmicScaleDown feature gate by default
-- Enable `deleted_pod_age_ratio` metric
+- Enable `sorting_deletion_age_ratio` metric
 
 Stable (v1.23):
 - Remove LogarithmicScaleDown feature gate
@@ -291,12 +291,12 @@ _This section must be completed when targeting beta graduation to a release._
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [x] Metrics
-    - Metric name: deleted_pod_age_ratio
+    - Metric name: sorting_deletion_age_ratio
     - [Optional] Aggregation method:
     - Components exposing the metric: kube-controller-manager
   - [ ] Other (treat as last resort)
   
-The metric `deleted_pod_age_ratio` will provide a histogram of the ratio between the 
+The metric `sorting_deletion_age_ratio` will provide a histogram of the ratio between the 
 chosen `deleted pod`'s age over the current `youngest pod`'s age, for pods where the sort 
 algorithm falls back to age. (Pod age is the final criteria in the sorting algorithm, so we don't 
 want to measure this ratio for deletions which don't use this feature, as those may validly fall 
