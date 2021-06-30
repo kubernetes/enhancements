@@ -103,8 +103,6 @@ is a valid feature gate.
 
 ### Non-Goals
 
-- Support publishing versioning information for built-in `Kind`s.
-This may be added in the future but is not in scope in the alpha status of this KEP.
 - Support publishing field-level versioning for custom resources in OpenAPI.
 - Publish the default status of a feature gate (enabled/disabled by default)
 in OpenAPI.
@@ -235,6 +233,12 @@ comment tags on API fields:
 - The `status` value must be one of `alpha`, `beta`, or `deprecated`.
 - The `featureGate` value is a valid feature gate as defined in
 [`kube_features.go`].
+
+3. The comment tags will be added to all fields that are not GA.
+Existing and new GA fields are listed as exceptions in [api rules].
+This ensures that `types.go` files are not spammed with comment tags and
+tooling can interpret absence of a comment tag as an error instead of
+assuming the fields to be GA.
 
 ### Test Plan
 
@@ -406,16 +410,8 @@ However, this introduces risk of vastly increasing the size of the OpenAPI schem
 CRDs with multiple embedded `PodTemplateSpec`s can easily blow past the 1MB etcd limit with
 this approach.
 
-4. An alternative was considered to add comment tags to all types that are not GA.
-Existing and new GA types would be listed as [exceptions].
-This ensures that `types.go` files are not spammed with comment tags an
-tooling can interpret absence of a comment tag as an error instead of
-assuming the types to be GA.
 
-Depending on the feedback of the initial proposal for fields, this option
-may be considered in the future.
-
-5. The following alternative syntax was considered but not used because
+4. The following alternative syntax was considered but not used because
 controller-gen treats the "name" part of the marker as static identifying information.
 E.g. In `// +name1:name2:option1=value1,option2=value2`, `name1:name2` is considered
 the static name.
@@ -436,5 +432,6 @@ Additionally, introducing the `component` keyword makes the comment tag easier t
 [exceptions]: https://github.com/kubernetes/kubernetes/tree/master/api/api-rules
 [`hack/verify-description.sh`]: https://github.com/kubernetes/kubernetes/blob/master/hack/verify-description.sh
 [prerelease-lifecycle-gen]: https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/code-generator/cmd/prerelease-lifecycle-gen
+[api rules]: https://github.com/kubernetes/kubernetes/tree/master/api/api-rules
 [discussion on the SIG Architecture mailing list]: https://groups.google.com/g/kubernetes-sig-architecture/c/UmPwm-J3ztE
 [#99307]: https://github.com/kubernetes/kubernetes/pull/99307
