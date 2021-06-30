@@ -61,32 +61,32 @@ the scheduler seamlessly. This can satisfy the business needs such as sophistica
 pods sorting and internal queuing mechanics.
 
 ## Motivation
-The current internal queue implementation ([scheduling_queue.go#PriorityQueue]
-(https://github.com/kubernetes/kubernetes/blob/ee459b8969ed2abfed79a07d4ac9d41f13f18ce6/pkg/scheduler/internal/queue/scheduling_queue.go#L126))
+
+The current internal queue implementation ([scheduling_queue.go#PriorityQueue](https://github.com/kubernetes/kubernetes/blob/ee459b8969ed2abfed79a07d4ac9d41f13f18ce6/pkg/scheduler/internal/queue/scheduling_queue.go#L126))
 works for most cases, but the limited interfaces exposure makes it hard to
 implement a scheduler plugin for sophisticated requirements.
 
 One requirement in terms of multi-tenancy support:  
 There are many pods from 2 users (userA and userB), and the target is to ensure resource
 usage (E.g. userA gets x CPUs) ratio between userA and userB is 1:1. Sorting the pods by
-the resource usage in `Less` function doesn't work properly, because the resource usage for 
-userA/userB will be updated dynamically once a pod is selected and bound, while the 
+the resource usage in `Less` function doesn't work properly, because the resource usage for
+userA/userB will be updated dynamically once a pod is selected and bound, while the
 algorithm (heapsort) that used by the current queue to get the next pods depends on static
 data.
 
-Another requirement in terms of custom function support:  
-For example, the interval of function flushUnschedulableQLeftover cannot be updated dynamically, while
-user want it to be shorter or longer at different times as shorter interval can get pods to be scheduled
-faster and longer one can get less logs flushed.
+Other requirements come from current semi-exposed functions/parameters:
+For example, the interval of function flushUnschedulableQLeftover, although configurable,
+is immutable after it gets initialized. A requirement is to adjust the interval dynamically
+based on the pressure of pending workloads (e.g., length of queue or other metrics).
 
-Given that the business needs may vary greatly, it'd be good to provide a replaceable
+Given that the business needs may vary greatly, it'd be desirable to provide a replaceable
 `SchedulerQueue` interface and plumbing mechanics. So that the developers can
 implement their custom queue implementation, while the upstream maintainers focus
-on keeping the core small and extensible, and thus only maintain the internal queue piece
+on keeping the core small and extensible, and thus only maintain the internal queue piece.
 
 ### Goals
 
-Support custom queue of the scheduler.
+Support custom queue implementation of the scheduler.
 
 ### Non-Goals
 
@@ -99,7 +99,7 @@ custom queue of scheduler and register it, then the kubernetes
 scheduler will use this custom queue for pod management.
 
 This is an extension of the current scheduler plugins, users can control
-more details of the scheuler with this enhancement.
+more details of the scheduler with this enhancement.
 
 Pros:  
 Users can get full control of the pod queuing logic, they can pop/re-queue/backoff pods with
@@ -124,46 +124,45 @@ The codes will be updated as following:
 1. User implements a custom queue with the interface SchedulingQueue,
 the name is myQueue, and registers it
 
-```
-	command := app.NewSchedulerCommand(
-		app.WithPlugin(coscheduling.Name, coscheduling.New),
-                        ......
-	+	app.WithCustomQueue(myQueue.New),
-	)
-```
+    ```go
+        command := app.NewSchedulerCommand(
+            app.WithPlugin(coscheduling.Name, coscheduling.New),
+            ......
+          + app.WithCustomQueue(myQueue.New),
+        )
+    ```
 
 2. The registered custom queue will be recorded by updated Registry struct.
 
-```
-  type Registry struct {
-    Pf          map[string]PluginFactory
-    CustomQueue schedulingQueue.SchedulingQueue
-  }
-```
+    ```go
+      type Registry struct {
+        Pf          map[string]PluginFactory
+        CustomQueue schedulingQueue.SchedulingQueue
+      }
+    ```
 
 3. In function (c *Configurator) create(), pass the custom queue to the scheduler
 if it exists.
-```
-  if c.registry.CustomQueue != nil {
-      podQueue = c.registry.CustomQueue
-  } else {
-      podQueue = schedulingQueue.NewSchedulingQueue()
-  }
-```
+
+    ```go
+      if c.registry.CustomQueue != nil {
+          podQueue = c.registry.CustomQueue
+      } else {
+          podQueue = schedulingQueue.NewSchedulingQueue()
+      }
+    ```
 
 4. Basic inputs for queue's initialization will not be changed, a new interface `Init` is added in
 SchedulingQueue, users must implement it.
 
-```
--func NewPriorityQueue(
-+func (p *PriorityQueue) Init(
- 	lessFn framework.LessFunc,
- 	informerFactory informers.SharedInformerFactory,
- 	opts ...Option,
-)
-```
-
-5. For the scheduler internal packages under ([internal] (https://github.com/kubernetes/kubernetes/tree/b6c75bee15e150628fcc240ab32dba6190d254e4/pkg/scheduler/internal)), queue and heap will be moved out of this folder so that users can access and use the structures inside them, cache and parallelize will not be touched.
+    ```go
+    -func NewPriorityQueue(
+    +func (p *PriorityQueue) Init(
+        lessFn framework.LessFunc,
+        informerFactory informers.SharedInformerFactory,
+        opts ...Option,
+    )
+    ```
 
 ### Test Plan
 
@@ -424,5 +423,5 @@ Why should this KEP _not_ be implemented?
 ## Alternatives
 
 An alternative is to enhance the current queue to meet some requests. The drawback
-is that we cannot handle all the potentail requests as the effort is big, we should 
+is that we cannot handle all the potential requests as the effort is big, we should
 give the ball to the users, and they can do what they want.
