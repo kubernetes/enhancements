@@ -1,19 +1,19 @@
 id: "2306"
 prnumber: ""
-name: additional-stability-classes
-title: Additional Metrics Stability Classes
+name: extending-stability
+title: Extending Metrics Stability
 kep-number: "4242"
-authors: ['@logicalhan,brancz,coffeepac']
+authors: ['@logicalhan', '@dgrisonnet', '@coffeepac']
 owning-sig: sig-instrumentation
 participating-sigs: [sig-architecture, sig-instrumentation]
-reviewers: ['@dashpole']
+reviewers: ['@dashpole', '@ehashman']
 approvers: []
-prr-approvers: []
+prr-approvers: ['@ehashman']
 creation-date: "2021-06-27"
-last-updated: v1.19
+last-updated: v1.24
 status: provisional
-stage: ""
-latest-milestone: ""
+stage: "ALPHA"
+latest-milestone: "v1.24"
 milestone:
     alpha: ""
     beta: ""
