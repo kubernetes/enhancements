@@ -1,47 +1,49 @@
 # KEP-2732: NetworkPolicy Versioning
 
 <!-- toc -->
+
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  * [User Stories](#user-stories)
-    + [Story 1 - Testing Features of Different NetworkPolicy Implementations](#story-1---testing-features-of-different-networkpolicy-implementations)
-    + [Story 2 - More Reliable NetworkPolicy Test Cases](#story-2---more-reliable-networkpolicy-test-cases)
-    + [Story 3 - Understanding Whether New Features Are Supported](#story-3---understanding-whether-new-features-are-supported)
-    + [Story 4 - Reporting NetworkPolicy Version](#story-4---reporting-networkpolicy-version)
-    + [Story 5 - Changing an Alpha NetworkPolicy API](#story-5---changing-an-alpha-networkpolicy-api)
-  * [Notes/Constraints/Caveats](#notes-constraints-caveats)
-    + [Feature Gates and NetworkPolicy](#feature-gates-and-networkpolicy)
-    + [Determining Whether a Network Plugin Implements NetworkPolicyStatus](#determining-whether-a-network-plugin-implements-networkpolicystatus)
-    + [Distributed and Delegating NetworkPolicy Implementations](#distributed-and-delegating-networkpolicy-implementations)
-  * [Risks and Mitigations](#risks-and-mitigations)
+  - [User Stories](#user-stories)
+    - [Story 1 - Testing Features of Different NetworkPolicy Implementations](#story-1---testing-features-of-different-networkpolicy-implementations)
+    - [Story 2 - More Reliable NetworkPolicy Test Cases](#story-2---more-reliable-networkpolicy-test-cases)
+    - [Story 3 - Understanding Whether New Features Are Supported](#story-3---understanding-whether-new-features-are-supported)
+    - [Story 4 - Reporting NetworkPolicy Version](#story-4---reporting-networkpolicy-version)
+    - [Story 5 - Changing an Alpha NetworkPolicy API](#story-5---changing-an-alpha-networkpolicy-api)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [Feature Gates and NetworkPolicy](#feature-gates-and-networkpolicy)
+    - [Determining Whether a Network Plugin Implements NetworkPolicyStatus](#determining-whether-a-network-plugin-implements-networkpolicystatus)
+    - [Distributed and Delegating NetworkPolicy Implementations](#distributed-and-delegating-networkpolicy-implementations)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  * [API](#api)
-  * [Semantics](#semantics)
-    + [The "Supported" Condition](#the--supported--condition)
-    + [The "Problem" Condition](#the--problem--condition)
-    + [Other Conditions](#other-conditions)
-  * [Test Plan](#test-plan)
-  * [Graduation Criteria](#graduation-criteria)
-    + [Alpha -> Beta Graduation](#alpha----beta-graduation)
-    + [Beta -> GA Graduation](#beta----ga-graduation)
-    + [Removing a Deprecated Flag](#removing-a-deprecated-flag)
-  * [Upgrade / Downgrade Strategy](#upgrade---downgrade-strategy)
-  * [Version Skew Strategy](#version-skew-strategy)
+  - [API](#api)
+  - [Semantics](#semantics)
+    - [The Supported Condition](#the-supported-condition)
+    - [The Problem Condition](#the-problem-condition)
+    - [Other Conditions](#other-conditions)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Removing a Deprecated Flag](#removing-a-deprecated-flag)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  * [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-  * [Rollout, Upgrade and Rollback Planning](#rollout--upgrade-and-rollback-planning)
-  * [Monitoring Requirements](#monitoring-requirements)
-  * [Dependencies](#dependencies)
-  * [Scalability](#scalability)
-  * [Troubleshooting](#troubleshooting)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed--optional-)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -361,7 +363,7 @@ implements this specification:
       - Otherwise the network plugin knows that it can correctly
         implement the policy, and does so.
 
-#### The "Supported" Condition
+#### The Supported Condition
 
 The `"Supported"` condition indicates whether the plugin supports the
 features used by a NetworkPolicy. Note that having a `{ type:
@@ -401,7 +403,7 @@ policy safely. (For example, a plugin that does not implement egress
 policies at all might choose to still implement the ingress side of a
 mixed ingress/egress policy.)
 
-#### The "Problem" Condition
+#### The Problem Condition
 
 A `"Problem"` condition with a status of `"True"` indicates some problem
 with the policy that the network plugin wants to report, which is not
@@ -483,6 +485,7 @@ functionality is accessed.
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+-->
 
 #### Alpha -> Beta Graduation
 
