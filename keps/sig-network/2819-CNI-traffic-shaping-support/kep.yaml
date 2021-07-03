@@ -1,0 +1,35 @@
+title: Support traffic shaping for CNI network plugin
+kep-number: 2819
+authors:
+    - "@Lion-Wei"
+    - "@m1093782566"
+owning-sig: sig-network
+participating-sigs:
+status: implemented
+creation-date: 2018-05-31
+reviewers:
+  - "@thockin"
+  - "@m1093782566"
+approvers:
+  - "@thockin"
+  - "@m1093782566"
+
+see-also:
+replaces:
+
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.9"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.9"
+  beta: "v1.23"
+  stable: "v1.24"
+
+feature-gates:
+disable-supported: false
+
