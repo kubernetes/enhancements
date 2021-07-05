@@ -180,8 +180,9 @@ could be stopped at any point and executed again from the first step without
 losing information. Generally, all the steps happen in a single Job sync
 cycle.
 
-0. kube-apiserver adds the `batch.kubernetes.io/job-completion` finalizer
-   to newly created Jobs.
+0. kube-apiserver adds the `batch.kubernetes.io/job-completion` annotation
+   to newly created Jobs. This annotation allows the distinction of new Jobs
+   from Jobs that are already tracked with the legacy algorithm.
 1. The Job controller calculates the number of succeeded Pods as the sum of:
    - `.status.succeeded`,
    - the size of `job.status.uncountedTerminatedPods.succeeded` and
@@ -210,9 +211,6 @@ cycle.
    The counts increment the `.status.failed` and `.status.succeeded` and clears
    counted Pods from `.status.uncountedTerminatedPods` lists. The controller
    sends a status update.
-5. The Job controller removes the `batch.kubernetes.io/job-completion` finalizer
-   from the Job if it has completed (succeeded or failed) and no Job Pod's have
-   finalizers.
 
 Steps 2 to 4 might deal with a potentially big number of Pods. Thus, status
 updates can potentially stress the kube-apiserver. For this reason, the Job
@@ -269,9 +267,11 @@ failures.
 
 ### Deleted Jobs
 
-When a user or another controller deletes a Job, the job controller scans
-associated Pods and removes finalizers from them without updating any Job
-status.
+When a user or another controller deletes a Job, the cascading makes sure that
+each Pods gets a deletion timestamp. The job controller captures this Pod
+update event, adding the orphan Pod (Pod for which the Job controller doesn't
+exist) to a separate work queue. A single worker scans this work queue to
+remove the finalizer from the Pod.
    
 ### Pod adoption
 
@@ -312,6 +312,8 @@ the owner reference.
 - Processing 5000 Pods per minute across any number of Jobs, with Pod creation
   having higher priority than status updates. This might depend on
   [Priority and Fairness](https://git.k8s.io/enhancements/keps/sig-api-machinery/1040-priority-and-fairness).
+- Ensure that tracking Jobs with big number of Pods doesn't cause starvation of
+  smaller jobs.
 - Metrics:
   - latency
   - errors
@@ -319,6 +321,11 @@ the owner reference.
 
 #### Beta -> GA Graduation
 
+- Established a plan to remove legacy tracking and the use of
+  `batch.kubernetes.io/job-completion` as an annotation. The tentative
+  expectation is to keep them for two releases after the graduation to GA.
+  This time can be reduced if we can envision an algorithm to safely transition
+  a Job from legacy to new tracking.
 - E2E test graduates to conformance.
 - Job tracking scales to 10^5 completions per Job processed within an order of
   minutes.
@@ -328,19 +335,23 @@ the owner reference.
 When the feature `JobTrackingWithFinalizers` is enabled for the first
 time, the cluster can have Jobs whose Pods don't have the
 `batch.kubernetes.io/job-completion` finalizer. It would be hard to add the
-finalizer to all Pods while preventing race conditions.
+finalizer to all Pods while preventing race conditions. That is, at the time
+of migration to the new tracking, a Pod could not have the finalizer for two
+reasons: it wasn't migrated yet, or it was already counted.
 
-The job controller uses the existence of the finalizer
+The job controller uses the existence of the Job annotation
 `batch.kubernetes.io/job-completion` to determine if it should use tracking with
-finalizers. If the finalizer is not present, and the Job is not yet completed,
+finalizers. If the annotation is not present, and the Job is not yet completed,
 the job controllers tracks Pods using the legacy tracking (with lingering Pods).
 
-The kube-apiserver sets the `batch.kubernetes.io/job-completion` finalizer to
+The kube-apiserver sets the `batch.kubernetes.io/job-completion` annotation to
 newly created Jobs when the feature gate `JobTrackingWithFinalizers` is enabled.
+This annotation cannot be added in a Job update.
 
 When the feature is disabled after being enabled for some time, the next time
 the Job controller syncs a Job:
-1. It removes finalizers from the Job and all the Pods owned by it.
+1. It removes finalizers from the Pods owned by it and the annotation from the
+   Job.
 2. Sets `.status.uncountedTerminatedPods` to nil.
 
 After this point, the Job will no longer be tracked using finalizers, even if
@@ -479,9 +490,6 @@ previous answers based on experience in the field._
   - PATCH Pods, to remove finalizers.
     - estimated throughput: one per Pod created by the Job controller, when Pod
       finishes or is removed.
-    - originating component: kube-controller-manager
-  - PATCH Jobs, to remove finalizers.
-    - estimated throughput: one call for each Job created.
     - originating component: kube-controller-manager
   - PUT Job status, to keep track of uncounted Pods.
     - estimated throughput: at least one per Job sync. The job controller
