@@ -394,7 +394,12 @@ list of queue indices excluding I[0].  I[2] is the A[2]’th entry in
 the list of queue indices excluding I[0] and I[1].  And so on.
 
 The lengths of the queues identified by I[0], I[1], … I[H-1] are
-examined, and the request is put in one of the shortest queues.
+examined, and the request is put in one of the queues holding the
+least amount of work.  Originally this was just a matter of examining
+queue length.  With the generalizations for width and extra latency,
+the work in a queue is the sum of the work in its waiting requsts.
+The work in a request is the product of its width and its total
+estimated execution duration (including extra latency).
 
 For example, if a RequestPriority has numQueues=128 and handSize=6,
 the hash value V is converted into 6 unique queue indices plus
