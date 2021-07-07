@@ -304,7 +304,7 @@ These correspond to some fields of the [ContainerStats](#summary-container-stats
 +    // Corresponds to Stats Summary API CPUStats UsageCoreNanoSeconds
 =    UInt64Value usage_core_nano_seconds = 2;
 +    // Total CPU usage (sum of all cores) averaged over the sample window.
-+    UInt64Value usage_nano_seconds = 3;
++    UInt64Value usage_nano_cores = 3;
 =}
 
 =// MemoryUsage provides the memory usage information.
@@ -331,58 +331,8 @@ These correspond to some fields of the [ContainerStats](#summary-container-stats
 +    // Cumulative number of major page faults.
 +    Uint64Value major_page_faults = 6;
 =}
-
-=// FilesystemUsage provides the filesystem usage information.
-=message FilesystemUsage {
-=    // Timestamp in nanoseconds at which the information were collected. Must be > 0.
-+    // Corresponds to Stats Summary API FsStats Time field
-=    int64 timestamp = 1;
-=    // The unique identifier of the filesystem.
-+    // Does not correspond to any field in Stats Summary API FsStats
-=    FilesystemIdentifier fs_id = 2;
-=    // UsedBytes represents the bytes used for images on the filesystem.
-=    // This may differ from the total bytes used on the filesystem and may not
-=    // equal CapacityBytes - AvailableBytes.
-=    // Corresponds to Stats Summary API FsStats UsedBytes field
-=    UInt64Value used_bytes = 3;
-=    // InodesUsed represents the inodes used by the images.
-=    // This may not equal InodesCapacity - InodesAvailable because the underlying
-=    // filesystem may also be used for purposes other than storing images.
-=    // Corresponds to Stats Summary API FsStats InodesUsed field
-=    UInt64Value inodes_used = 4;
-+    // TODO: Unclear how the remaining fields relate to container stats. Is it filled in cAdvisor?
-+    // AvailableBytes represents the storage space available (bytes) for the filesystem.
-+    UInt64Value available_bytes = 5;
-+    // CapacityBytes represents the total capacity (bytes) of the filesystems underlying storage.
-+    UInt64Value capacity_bytes = 6;
-+    // InodesFree represents the free inodes in the filesystem.
-+    UInt64Value inodes_free = 7;
-+    // Inodes represents the total inodes in the filesystem.
-+    UInt64Value inodes = 8;
-=}
 ```
 
-All together, below is the proposition for the new `ContainerStats` object:
-```
-=// ContainerStats provides the resource usage statistics for a container.
-=message ContainerStats {
-=    // Information of the container.
-+    // Corresponds to the Stats Summary API ContainerStats Name field
-=    ContainerAttributes attributes = 1;
-=    // CPU usage gathered from the container.
-+    // Corresponds to Stats Summary API ContainerStats CPUStats field
-=    CpuUsage cpu = 2;
-=    // Memory usage gathered from the container.
-+    // Corresponds to Stats Summary API ContainerStats MemoryStats field
-=    MemoryUsage memory = 3;
-=    // Usage of the writable layer.
-+    // Corresponds to Stats Summary API ContainerStats Rootfs field
-=    FilesystemUsage writable_layer = 4;
-+    // Stats pertaining to container logs usage of filesystem resources
-+    // Logs.UsedBytes is the number of bytes used for the container logs.
-+    FilesystemUsage logs = 5;
-=}
-```
 Notes:
 - In Stats Summary API ContainerStats object, there's a timestamp field. We do not need such a field, as each struct in the ContainerStats object
   has its own timestamp, allowing CRI implementations flexibility when they collect which metrics.
