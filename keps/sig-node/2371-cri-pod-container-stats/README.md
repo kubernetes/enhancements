@@ -316,21 +316,16 @@ These correspond to some fields of the [ContainerStats](#summary-container-stats
 =    // The amount of working set memory in bytes.
 +    // Corresponds to Stats Summary API MemoryStats WorkingSetBytes field
 =    UInt64Value working_set_bytes = 2;
-+    // Available memory for use.  This is defined as the memory limit = workingSetBytes.
-+    // If memory limit is undefined, the available bytes is omitted.
++    // Available memory for use. This is defined as the memory limit - workingSetBytes.
 +    UInt64Value available_bytes = 3;
 +    // Total memory in use. This includes all memory regardless of when it was accessed.
-+    UInt64Value usage_bytes
-+    // The amount of working set memory. This includes recently accessed memory,
-+    // dirty memory, and kernel memory. WorkingSetBytes is <= UsageBytes
-+    UInt64Value working_set_bytes = 4;
-+    // The amount of anonymous and swap cache memory (includes transparent
-+    // hugepages).
++    UInt64Value usage_bytes = 4;
++    // The amount of anonymous and swap cache memory (includes transparent hugepages).
 +    UInt64Value rss_bytes = 5;
 +    // Cumulative number of minor page faults.
-+    Uint64Value page_faults = 6;
++    UInt64Value page_faults = 6;
 +    // Cumulative number of major page faults.
-+    Uint64Value major_page_faults = 6;
++    UInt64Value major_page_faults = 7;
 =}
 ```
 
@@ -353,30 +348,27 @@ They will be defined as follows:
 // Runtime service defines the public APIs for remote pod runtimes
 service RuntimeService {
     ...
-    // PodSandboxStats returns stats of the pod. If the pod does not
+    // PodSandboxStats returns stats of the pod. If the pod sandbox does not
     // exist, the call returns an error.
     rpc PodSandboxStats(PodSandboxStatsRequest) returns (PodSandboxStatsResponse) {}
-    // ListPodSandboxStats returns stats of all running pods.
+    // ListPodSandboxStats returns stats of the pods matching a filter.
     rpc ListPodSandboxStats(ListPodSandboxStatsRequest) returns (ListPodSandboxStatsResponse) {}
     ...
 }
 ...
-
-message PodSandboxStatsRequest{
-    // ID of the pod for which to retrieve stats.
-    string pod_id = 1;
+message PodSandboxStatsRequest {
+    // ID of the pod sandbox for which to retrieve stats.
+    string pod_sandbox_id = 1;
 }
 
 message PodSandboxStatsResponse {
-    // Stats of the pod.
     PodSandboxStats stats = 1;
 }
 
-
-// PodSandboxStatsFilter is used to filter containers.
-// All those fields are combined with 'AND'
+// PodSandboxStatsFilter is used to filter the list of pod sandboxes to retrieve stats for.
+// All those fields are combined with 'AND'.
 message PodSandboxStatsFilter {
-    // ID of the container.
+    // ID of the pod sandbox.
     string id = 1;
     // LabelSelector to select matches.
     // Only api.MatchLabels is supported for now and the requirements
@@ -384,18 +376,17 @@ message PodSandboxStatsFilter {
     map<string, string> label_selector = 2;
 }
 
-message ListPodSandboxStatsRequest{
+message ListPodSandboxStatsRequest {
     // Filter for the list request.
     PodSandboxStatsFilter filter = 1;
 }
 
 message ListPodSandboxStatsResponse {
-    // Stats of the pod.
+    // Stats of the pod sandbox.
     repeated PodSandboxStats stats = 1;
 }
 
-
-// PodSandboxAttributes provides basic information of the container.
+// PodSandboxAttributes provides basic information of the pod sandbox.
 message PodSandboxAttributes {
     // ID of the pod.
     string id = 1;
@@ -421,53 +412,55 @@ message PodSandboxStats {
     WindowsPodSandboxStats windows = 3;
 }
 
-// LinuxPodSandboxStats provides the resource usage statistics for a pod on linux
+// LinuxPodSandboxStats provides the resource usage statistics for a pod sandbox on linux.
 message LinuxPodSandboxStats {
-    // CPU usage gathered from the pod.
+    // CPU usage gathered for the pod sandbox.
     CpuUsage cpu = 1;
-    // Memory usage gathered from the pod.
+    // Memory usage gathered for the pod sandbox.
     MemoryUsage memory = 2;
-    // Stats pertaining to CPU resources consumed by pod cgroup (which includes all containers' resource usage and pod overhead).
+    // Network usage gathered for the pod sandbox
     NetworkUsage network = 3;
-    // Stats pertaining to processes in the pod.
+    // Stats pertaining to processes in the pod sandbox.
     ProcessUsage process = 4;
-    // Stats of containers in the measured pod.
+    // Stats of containers in the measured pod sandbox.
     repeated ContainerStats containers = 5;
 }
 
-// WindowsPodSandboxStats provides the resource usage statistics for a pod on windows
+// WindowsPodSandboxStats provides the resource usage statistics for a pod sandbox on windows
 message WindowsPodSandboxStats {
-    // TODO: Add stats relevant to windows
+    // TODO: Add stats relevant to windows.
 }
 
 // NetworkUsage contains data about network resources.
 message NetworkUsage {
     // The time at which these stats were updated.
     int64 timestamp = 1;
-    // Stats for the default interface, if found
+    // Stats for the default network interface.
     NetworkInterfaceUsage default_interface = 2;
-    // Stats for all found interfaces
+    // Stats for all found network interfaces, excluding the default.
     repeated NetworkInterfaceUsage interfaces = 3;
 }
 
 // NetworkInterfaceUsage contains resource value data about a network interface.
-type NetworkInterfaceUsage struct {
-    // The name of the interface
+message NetworkInterfaceUsage {
+    // The name of the network interface.
     string name = 1;
     // Cumulative count of bytes received.
-    Uint64Value rx_bytes = 2;
+    UInt64Value rx_bytes = 2;
     // Cumulative count of receive errors encountered.
-    Uint64Value rx_errors = 2;
+    UInt64Value rx_errors = 3;
     // Cumulative count of bytes transmitted.
-    Uint64Value tx_bytes = 2;
+    UInt64Value tx_bytes = 4;
     // Cumulative count of transmit errors encountered.
-    Uint64Value tx_errors = 2;
+    UInt64Value tx_errors = 5;
 }
 
 // ProcessUsage are stats pertaining to processes.
 message ProcessUsage {
-    // Number of processes in the pod.
-    Uint64Value process_count = 1;
+    // The time at which these stats were updated.
+    int64 timestamp = 1;
+    // Number of processes.
+    UInt64Value process_count = 2;
 }
 ```
 
