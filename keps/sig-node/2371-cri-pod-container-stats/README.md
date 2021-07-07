@@ -445,13 +445,13 @@ message NetworkUsage {
     // The time at which these stats were updated.
     int64 timestamp = 1;
     // Stats for the default interface, if found
-    InterfaceUsage default_interface = 2;
+    NetworkInterfaceUsage default_interface = 2;
     // Stats for all found interfaces
-    repeated InterfaceUsage interfaces = 3;
+    repeated NetworkInterfaceUsage interfaces = 3;
 }
 
-// InterfaceUsage contains resource value data about interface.
-type InterfaceUsage struct {
+// NetworkInterfaceUsage contains resource value data about a network interface.
+type NetworkInterfaceUsage struct {
     // The name of the interface
     string name = 1;
     // Cumulative count of bytes received.
