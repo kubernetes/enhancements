@@ -183,9 +183,9 @@ We want to avoid using cAdvisor for container & pod level stats and move metric 
 * cAdvisor and metric dependency: CRI mission is not fully fulfilled - container runtime is not fully plugable.
 * Break the monolithic design of cAdvisor, which needs to be aware of the underlying container runtime.
 * Duplicate stats are collected by both cAdvisor and the CRI runtime, which can lead to:
-	* Different information from different sources
-	* Confusion from unclear origin of a given metric
-	* Performance degradations (increased CPU / Memory / etc) [xref][perf-issue]
+    * Different information from different sources
+    * Confusion from unclear origin of a given metric
+    * Performance degradations (increased CPU / Memory / etc) [xref][perf-issue]
 * Stats should be reported by the container runtime which knows behavior of the container/pod the best.
 * cAdvisor only supports runtimes that run processes on the host, not e.g. VM based runtime like Kata Containers.
 * cAdvisor only supports linux containers, not Windows ones.
@@ -377,7 +377,7 @@ message PodSandboxStatsResponse {
 message PodSandboxStatsFilter {
     // ID of the container.
     string id = 1;
-	// LabelSelector to select matches.
+    // LabelSelector to select matches.
     // Only api.MatchLabels is supported for now and the requirements
     // are ANDed. MatchExpressions is not supported yet.
     map<string, string> label_selector = 2;
@@ -511,18 +511,18 @@ The table above describes the various metrics that are in this endpoint.
 Each compliant CRI implementation must:
 - Have a location broadcasted about where these metrics can be gathered from. The endpoint name must not necessarily be `/metrics/cadvisor`, nor be gathererd from the same port as it was from cAdvisor
 - Implement *all* metrics within the set of metrics that are decided on.
-	- **TODO** How will we decide this set? We could support all, or take polls from the community and come up with a set of sufficiently useful metrics.
+    - **TODO** How will we decide this set? We could support all, or take polls from the community and come up with a set of sufficiently useful metrics.
 - Pass a set of tests in the critest suite that verify they report the correct values for *all* supported metrics labels (to ensure continued conformance and standardization).
 
 Below is the proposed strategy for doing so:
 
 1. The Alpha release will strictly cover research, performance testing and the creation of conformance tests.
-	- Initial research on the set of metrics required should be done. This will, possibly, allow the community to declare metrics that are not required to be moved to the CRI implementations.
-	- Testing on how performant cAdvisor+Kubelet are today should be done, to find a target, acceptable threshold of performance for the CRI implementations
-	- Creation of tests verifying the metrics are reported correctly should be created and verified with the existing cAdvisor implementation.
+    - Initial research on the set of metrics required should be done. This will, possibly, allow the community to declare metrics that are not required to be moved to the CRI implementations.
+    - Testing on how performant cAdvisor+Kubelet are today should be done, to find a target, acceptable threshold of performance for the CRI implementations
+    - Creation of tests verifying the metrics are reported correctly should be created and verified with the existing cAdvisor implementation.
 2. For the Beta release, add initial support for CRI implementations to report these metrics
-	- This set of metrics will be based on the research done in alpha
-	- Each will be validated against the conformance and performance tests created in alpha.
+    - This set of metrics will be based on the research done in alpha
+    - Each will be validated against the conformance and performance tests created in alpha.
 3. For the GA release, the CRI implementation should be the source of truth for all pod and container level metrics that external parties rely on (no matter how many endpoints the Kubelet advertises).
 
 #### cAdvisor
@@ -568,7 +568,7 @@ As a requirement for the Beta stage, cAdvisor must support optionally collecting
 ### Version Skew Strategy
 
 - Breaking changes between versions will be mitigated by the FeatureGate.
-	- By the time the FeatureGate is deprecated, it is expected the transition between CRI and cAdvisor is complete, and CRI has had at least one release to expose the required metrics (to allow for `n-1` CRI skew).
+    - By the time the FeatureGate is deprecated, it is expected the transition between CRI and cAdvisor is complete, and CRI has had at least one release to expose the required metrics (to allow for `n-1` CRI skew).
 - In general, CRI should be updated in tandem with or before the Kubelet.
 
 ## Production Readiness Review Questionnaire
@@ -725,13 +725,13 @@ operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
   - The process of collecting and reporting the metrics should not differ too much between cAdvisor and the CRI implementation:
-	- At a high level, both need to watch the changes to the stats (from cgroups, disk and network stats)
-	- Once collected, the CRI implementation will need to report them (both through the CRI and eventually through the prometheus endpoint).
-	- Both of these steps are already done by cAdvisor, so the work is changing hands, but not fundamentally changing.
+    - At a high level, both need to watch the changes to the stats (from cgroups, disk and network stats)
+    - Once collected, the CRI implementation will need to report them (both through the CRI and eventually through the prometheus endpoint).
+    - Both of these steps are already done by cAdvisor, so the work is changing hands, but not fundamentally changing.
   - It is possible the Alpha iteration of this KEP may affect CPU/memory usage on the node:
     - This may come because cAdvisor's performance has been fine-tuned, and changing the location of work may loose some optimizations.
-	- However, it is explicitly stated that a requirement for transition from Alpha->Beta is little to no performance degradation.
-	- The existence of the feature gate will allow users to mitigate this potential blip in performance (by not opting-in).
+    - However, it is explicitly stated that a requirement for transition from Alpha->Beta is little to no performance degradation.
+    - The existence of the feature gate will allow users to mitigate this potential blip in performance (by not opting-in).
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
   - It most likely will reduce resource utilization. Right now, there is duplicate work being done between CRI and cAdvisor.
@@ -768,6 +768,6 @@ Note: This is by design as this will enable to decouple runtime implementation d
 ## Alternatives
 
 - Instead of teaching CRI how to do *everything* cAdvisor does, we could instead have cAdvisor not do the work the CRI stats end up doing (specifically when reporting disk stats, which are the most expensive operation to report).
-	- However, this doesn't address the anti-pattern of having multiple parties confusingly responsible for a wide array of metrics and other issues described.
+    - However, this doesn't address the anti-pattern of having multiple parties confusingly responsible for a wide array of metrics and other issues described.
 - Have cAdvisor implement the summary API. A cAdvisor daemonset could be a drop-in replacement for the summary API.
 - Don't keep supporting the summary API. Replace it with a "better" format, like prometheus. Or help users migrate to equivalent APIs that container runtimes already expose for monitoring.
