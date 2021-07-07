@@ -428,9 +428,9 @@ message LinuxPodSandboxStats {
     // Memory usage gathered from the pod.
     MemoryUsage memory = 2;
     // Stats pertaining to CPU resources consumed by pod cgroup (which includes all containers' resource usage and pod overhead).
-    NetworkStats network = 3;
+    NetworkUsage network = 3;
     // Stats pertaining to processes in the pod.
-    ProcessStats process = 4;
+    ProcessUsage process = 4;
     // Stats of containers in the measured pod.
     repeated ContainerStats containers = 5;
 }
@@ -440,17 +440,18 @@ message WindowsPodSandboxStats {
     // TODO: Add stats relevant to windows
 }
 
-// NetworkStats contains data about network resources.
-message NetworkStats {
+// NetworkUsage contains data about network resources.
+message NetworkUsage {
     // The time at which these stats were updated.
     int64 timestamp = 1;
     // Stats for the default interface, if found
-    InterfaceStats default_interface = 2;
-    repeated InterfaceStats interfaces = 3;
+    InterfaceUsage default_interface = 2;
+    // Stats for all found interfaces
+    repeated InterfaceUsage interfaces = 3;
 }
 
-// InterfaceStats contains resource value data about interface.
-type InterfaceStats struct {
+// InterfaceUsage contains resource value data about interface.
+type InterfaceUsage struct {
     // The name of the interface
     string name = 1;
     // Cumulative count of bytes received.
@@ -463,8 +464,8 @@ type InterfaceStats struct {
     Uint64Value tx_errors = 2;
 }
 
-// ProcessStats are stats pertaining to processes.
-message ProcessStats {
+// ProcessUsage are stats pertaining to processes.
+message ProcessUsage {
     // Number of processes in the pod.
     Uint64Value process_count = 1;
 }
