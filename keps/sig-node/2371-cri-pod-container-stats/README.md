@@ -304,6 +304,7 @@ These correspond to some fields of the [ContainerStats](#summary-container-stats
 +    // Corresponds to Stats Summary API CPUStats UsageCoreNanoSeconds
 =    UInt64Value usage_core_nano_seconds = 2;
 +    // Total CPU usage (sum of all cores) averaged over the sample window.
++    // The "core" unit can be interpreted as CPU core-nanoseconds per second.
 +    UInt64Value usage_nano_cores = 3;
 =}
 
@@ -410,37 +411,41 @@ message PodSandboxAttributes {
 }
 
 // PodSandboxStats provides the resource usage statistics for a pod.
+// The linux or windows field will be populated depending on the platform.
 message PodSandboxStats {
     // Information of the pod.
-    // Corresponds to PodRef in SummaryAPI
     PodSandboxAttributes attributes = 1;
+    // Stats from linux.
+    LinuxPodSandboxStats linux = 2;
+    // Stats from windows.
+    WindowsPodSandboxStats windows = 3;
+}
+
+// LinuxPodSandboxStats provides the resource usage statistics for a pod on linux
+message LinuxPodSandboxStats {
     // CPU usage gathered from the pod.
-    // Corresponds to Stats SummaryAPI CPUStats field
-    CpuUsage cpu = 2;
+    CpuUsage cpu = 1;
     // Memory usage gathered from the pod.
-    // Corresponds to Stats SummaryAPI MemoryStats field
-    MemoryUsage memory = 3;
-    // TODO: do we want a start time field?
-    // The time at which data collection for the pod-scoped (e.g. network) stats was (re)started.
-    // int64 timestamp = 1;
-    // Stats of containers in the measured pod.
-    repeated ContainerStats containers
+    MemoryUsage memory = 2;
     // Stats pertaining to CPU resources consumed by pod cgroup (which includes all containers' resource usage and pod overhead).
-    NetworkStats network = 4;
-    // Note the specific omission of VolumeStats and EphemeralStorage
-    // Each of these fields will be calculated Kubelet-level
-    // ProcessStats pertaining to processes.
-    ProcessStats process = 5;
+    NetworkStats network = 3;
+    // Stats pertaining to processes in the pod.
+    ProcessStats process = 4;
+    // Stats of containers in the measured pod.
+    repeated ContainerStats containers = 5;
+}
+
+// WindowsPodSandboxStats provides the resource usage statistics for a pod on windows
+message WindowsPodSandboxStats {
+    // TODO: Add stats relevant to windows
 }
 
 // NetworkStats contains data about network resources.
 message NetworkStats {
     // The time at which these stats were updated.
     int64 timestamp = 1;
-
     // Stats for the default interface, if found
     InterfaceStats default_interface = 2;
-
     repeated InterfaceStats interfaces = 3;
 }
 
