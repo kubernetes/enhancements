@@ -119,49 +119,65 @@ But the default scheduler works as before and thus won't be impacted.
 
 ## Design Details
 
+The current internal queue is coupled with `cache`, `Option` and other implementations,
+this solution will not decouple them as this has no impact on the goal of custom queue.
+The coupled implementations will be exposed to users as custom queue needs to access them.
+
+To implement a custom queue, what an user needs to do is to copy the codes of the current
+internal queue (e.g., scheduling_queue.go, heap.go), update some logics to get the custom
+queue, and then pass the custom queue to the scheduler. With this way, user's logics will
+override the logics of the current internal queue.
+
 The codes will be updated as following:
 
-1. User implements a custom queue with the interface SchedulingQueue,
-the name is myQueue, and registers it
+1. Make the interface `SchedulingQueue` as a public one, so that users can implement it
+for the custom queue.
+
+2. Provide a new function `WithCustomQueue`, users can register the custom queue with this
+function like other plugins.
 
     ```go
-        command := app.NewSchedulerCommand(
-            app.WithPlugin(coscheduling.Name, coscheduling.New),
-            ......
-          + app.WithCustomQueue(myQueue.New),
-        )
+         command := app.NewSchedulerCommand(
+             app.WithPlugin(coscheduling.Name, coscheduling.New),
+             ......
+       +     app.WithCustomQueue(customQueue.New),
+         )
     ```
 
-2. The registered custom queue will be recorded by updated Registry struct.
+3. The registered custom queue will be recorded by updated `Registry` struct.
 
     ```go
       type Registry struct {
-        Pf          map[string]PluginFactory
-        CustomQueue schedulingQueue.SchedulingQueue
+          Pf          map[string]PluginFactory
+          CustomQueue schedulingQueue.SchedulingQueue
       }
     ```
 
-3. In function (c *Configurator) create(), pass the custom queue to the scheduler
-if it exists.
+4. In function `(c *Configurator) create()`, custom queue will be passed to the scheduler
+if it exists, or the current internal queue will be used.
 
     ```go
-      if c.registry.CustomQueue != nil {
-          podQueue = c.registry.CustomQueue
-      } else {
-          podQueue = schedulingQueue.NewSchedulingQueue()
-      }
+      - podQueue := internalqueue.NewSchedulingQueue(
+      -         lessFn,
+      +
+      + var podQueue framework.SchedulingQueue
+      + if c.registry.CustomQueue != nil {
+      +         podQueue = c.registry.CustomQueue
+      + } else {
+      +         podQueue = &internalqueue.PriorityQueue{}
+      + }
+      + podQueue.Init(...)
     ```
 
-4. Basic inputs for queue's initialization will not be changed, a new interface `Init` is added in
-SchedulingQueue, users must implement it.
+5. Basic inputs for queue's initialization will not be changed, a new method `Init` is added in
+the interface `SchedulingQueue`, users must implement it.
 
     ```go
-    -func NewPriorityQueue(
-    +func (p *PriorityQueue) Init(
-        lessFn framework.LessFunc,
-        informerFactory informers.SharedInformerFactory,
-        opts ...Option,
-    )
+      + func (p *PriorityQueue) Init(
+      +        lessFn framework.LessFunc,
+      +        informerFactory informers.SharedInformerFactory,
+      +        opts ...framework.Option,
+      + ) {
     ```
 
 ### Test Plan
