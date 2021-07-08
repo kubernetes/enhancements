@@ -34,7 +34,9 @@ Any DNS-based service discovery solution for Kubernetes clusters implementing th
 
 ### 2.1 - Definitions
 
-This proposal is intended as an extension of the [cluster-local Kubernetes DNS specification](https://github.com/kubernetes/dns/blob/master/docs/specification.md), and inherits its definitions from section 2.1 with the addition of the following:
+This proposal is intended as an extension of the [cluster-local Kubernetes DNS specification](https://github.com/kubernetes/dns/blob/master/docs/specification.md), and inherits its definitions from section 2.1  with the addition of the following:
+
+hostname = as already defined in the [cluster-local Kubernetes DNS specification](https://github.com/kubernetes/dns/blob/master/docs/specification.md), this refers (in brief): in order of precedence, to a) the value of the endpoint's `hostname` field, or b) a unique, system-assigned identifier for the endpoint. Of importance to highlight is that since the [default hostname of an endpoint is the Pod's `metadata.name` field](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-s-hostname-and-subdomain-fields), this will likely often be the podname, but not always, and implementations must prefer a directly specified `hostname` value.
 
 clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A placeholder name for a group of clusters with a high degree of mutual trust and shared ownership that share services amongst themselves. Membership in a clusterset is symmetric and transitive. The set of member clusters are mutually aware, and agree about their collective association. Within a clusterset, [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) applies and all namespaces with a given name are considered to be the same namespace.”
 
