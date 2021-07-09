@@ -119,14 +119,20 @@ But the default scheduler works as before and thus won't be impacted.
 
 ## Design Details
 
-The current internal queue is coupled with `cache`, `Option` and other implementations,
-this solution will not decouple them as this has no impact on the goal of custom queue.
-The coupled implementations will be exposed to users as custom queue needs to access them.
+The current internal queue is coupled with `cache`, `Option` and other implementations
+(e.g., the queue is initialized with specified parameters like `LessFunc`, `SharedInformerFactory`,
+and `Option` by [factory.go#create](https://github.com/kubernetes/kubernetes/blob/f1f0183d2bbcde33024b2a05d6f39df32f11e037/pkg/scheduler/factory.go#L172)),
+this solution will not decouple them as this has no impact on the goal of custom queue,
+and such logics can be enhanced in the future on demand.
+
+Some of the items like `SchedulingQueue`, `Option` that are only used by the internal
+queue now will be exposed at [interface.go](https://github.com/kubernetes/kubernetes/blob/fb9cafc99be94a73d9b92545164dbf336bbd230a/pkg/scheduler/framework/interface.go),
+users of custom queue can access them.
 
 To implement a custom queue, what an user needs to do is to copy the codes of the current
-internal queue (e.g., scheduling_queue.go, heap.go), update some logics to get the custom
-queue, and then pass the custom queue to the scheduler. With this way, user's logics will
-override the logics of the current internal queue.
+internal queue (e.g., scheduling_queue.go), update some logics to get the custom queue,
+and then pass the custom queue to the scheduler like the plugins. With this way, user's
+logics will override the logics of the current internal queue.
 
 The codes will be updated as following:
 
