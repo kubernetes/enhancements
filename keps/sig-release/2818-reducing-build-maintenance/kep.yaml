@@ -1,0 +1,15 @@
+title: Reducing Build Maintenance in CIP
+kep-number: 2818
+authors:
+  - "@tylerferrara"
+owning-sig: sig-release
+status: implemented
+creation-date: 2021-07-09
+reviewers:
+  - "@listx"
+  - "@amwat"
+  - "@justaugustus"
+approvers:
+  - "@listx"
+  - "@amwat"
+  - "@justaugustus"
