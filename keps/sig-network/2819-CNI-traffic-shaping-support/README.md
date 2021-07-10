@@ -1,4 +1,4 @@
-# KEP-0012: Support traffic shaping for Kubelet CNI network plugin
+# KEP-2819: CNI traffic shaping support
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)

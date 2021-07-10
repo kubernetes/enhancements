@@ -1,4 +1,4 @@
-title: Support traffic shaping for CNI network plugin
+title: CNI traffic shaping support
 kep-number: 2819
 authors:
     - "@Lion-Wei"
