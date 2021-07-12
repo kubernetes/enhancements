@@ -1,0 +1,59 @@
+title: Kubernetes Services ClusterIP and NodePort Allocators API
+kep-number: 1880
+authors:
+  - "@aojea"
+owning-sig: sig-network
+participating-sigs:
+  - sig-api-machinery
+  - sig-scalability
+  - sig-docs
+status: provisional
+creation-date: 2020-06-30
+reviewers:
+  - "@thockin"
+  - "@lavalamp"
+  - "@bowei"
+  - "@danwinship"
+  - "@dcbw"
+  - "@sftim"
+  - "@deads2k"
+approvers:
+  - "@thockin"
+  - "@lavalamp"
+  - "@wojtek-t"
+prr-approvers:
+  - "@thockin"
+  - "@lavalamp"
+  - "@wojtek-t"
+see-also:
+  - "https://github.com/kubernetes/kubernetes/pull/90115"
+  - "https://github.com/kubernetes/kubernetes/pull/91875"
+  - "https://github.com/kubernetes/kubernetes/issues/92451"
+  - "https://github.com/kubernetes/enhancements/pull/1534"
+
+stage: alpha
+
+latest-milestone: "v1.21"
+milestone:
+  alpha: "v1.21"
+  beta: ""
+  stable: ""
+
+feature-gates:
+  - name: ClusterIPAllocatorAPI
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+  - name: NodePortAllocatorAPI
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - clusterip_allocations_total
+  - clusterip_releases_total
+  - clusterip_allocation_tries_per_request
+  - nodeport_allocations_total
+  - nodeport_releases_total
+  - nodeport_allocation_tries_per_request
