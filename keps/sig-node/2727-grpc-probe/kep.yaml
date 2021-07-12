@@ -1,24 +1,31 @@
-title: Add gRPC probe to Pod.Spec.Container.{Liveness,Readiness,Startup}Probe
+title: "Add gRPC probe to Pod.Spec.Container.{Liveness,Readiness,Startup}Probe"
 kep-number: 2727
 authors:
   - "@bowei"
   - "@PxyUp"
-owning-sig: sig-node
+owning-sig: "sig-node"
 participating-sigs:
   - sig-node
   - sig-network
 status: implementable
 creation-date: 2020-04-04
-modified-date: 2021-05-12
 reviewers:
   - "@thockin"
   - "@mrunalp"
   - "@SergeyKanzhelev"
 approvers:
   - "@thockin"
+  - "@dchen1107"
 see-also:
 replaces:
-prr-approvers:
-  - "@johnbelarmic"
 stage: "alpha"
 latest-milestone: "v1.22"
+milestone:
+  alpha: "v1.22"
+feature-gates:
+  - name: GRPCContainerProbe
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+metrics:
