@@ -1,0 +1,32 @@
+title: Token Controller Deprecation
+kep-number: 2799
+authors:
+  - "@zshihang"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+status: implementable
+creation-date: 2021-06-25
+reviewers:
+  - "@liggitt"
+approvers:
+  - "@liggitt"
+prr-approvers:
+  - TBD
+stage: alpha
+latest-milestone: "v1.23"
+milestone:
+  alpha: "v1.23"
+feature-gates:
+  - name: TokenControllerOptOut
+    components:
+      - kube-controller-manager
+  - name: TokenControllerPurge
+    components:
+      - kube-controller-manager
+  - name: TokenControllerDeprecation
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+metrics:
+  - TBD
