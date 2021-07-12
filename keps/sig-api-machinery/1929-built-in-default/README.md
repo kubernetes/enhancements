@@ -271,17 +271,13 @@ example further down).
 
 ### Default publishing
 
-CRDs do not publish default via the OpenAPI spec on the /openapi/v2
-endpoint today, but we have to decide what to do with the new default
-values of built-in types. The kube-openapi generated schemas will
-include them.
+Before 1.22, CRDs and build-in types were not exposing their default values through the `/openapi/v2` endpoint but will expose them in Kubernetes v1.22.
 
-We proppose to:
-1. leave CRDs not publishing defaults
-2. filter out defaults in the built-in type schemas too in a first step
-3. but possibly reconsider this behaviour in the future when the
-necessity of defaults for client-side merging (e.g. through kustomize)
-and influences on the ecosystem of default mis-use is better understood.
+These default values can be valuable for generating documentation, and can be required for clients that are trying to merge associative lists with defaulted keys.
+
+Please note that clients absolutely MUST NOT use these default values to populate fields that haven't been otherwise specified, as noted in the OpenAPI documentation:
+> The default value is the one that the server uses if the client does not supply the parameter value in the request.
+
 
 ### Marker format
 
