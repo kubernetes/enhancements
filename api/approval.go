@@ -33,7 +33,7 @@ func (p *PRRApprovals) AddPRRApproval(prrApproval *PRRApproval) {
 }
 
 type PRRApproval struct {
-	Number string `json:"kep-number" yaml:"kep-number" validate:"required"`
+	Number string `json:"kep_number" yaml:"kep-number" validate:"required"`
 
 	// TODO: Need to validate these milestone pointers are not nil
 	Alpha  *PRRMilestone `json:"alpha" yaml:"alpha,omitempty"`
