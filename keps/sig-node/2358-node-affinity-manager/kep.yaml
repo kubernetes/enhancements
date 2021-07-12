@@ -1,0 +1,16 @@
+title: Execution Node Affinity Manager
+kep-number: "2358"
+authors:
+  - '@lingsamuel'
+owning-sig: sig-node
+participating-sigs: 
+  - sig-node
+  - sig-scheduling
+reviewers: 
+  - TBD
+approvers:
+  - TBD
+prr-approvers: 
+  - TBD
+creation-date: "2021-01-28"
+status: provisional
