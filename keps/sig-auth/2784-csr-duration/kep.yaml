@@ -35,4 +35,5 @@ feature-gates:
 disable-supported: true
 
 metrics:
-  - csr_duration_honored
+  - apiserver_certificates_registry_csr_honored_duration_total
+  - apiserver_certificates_registry_csr_requested_duration_total
