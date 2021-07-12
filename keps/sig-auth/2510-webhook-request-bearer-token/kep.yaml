@@ -1,0 +1,21 @@
+title: Request Bearer Token for Outgoing Webhook Requests
+kep-number: 2510
+authors:
+  - "@benhxy"
+  - "@pbarker"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+reviewers:
+  - "@mikedanese"
+  - "@liggitt"
+approvers:
+  - "@mikedanese"
+  - "@liggitt"
+creation-date: 2021-02-14
+last-updated: 2021-02-14
+see-also:
+  - "github.com/kubernetes/enhancements/pull/658"
+replaces:
+  - "github.com/kubernetes/enhancements/pull/658"
+status: created
