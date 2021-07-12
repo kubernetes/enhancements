@@ -32,8 +32,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -103,8 +103,6 @@ is a valid feature gate.
 
 ### Non-Goals
 
-- Support publishing versioning information for built-in `Kind`s.
-This may be added in the future but is not in scope in the alpha status of this KEP.
 - Support publishing field-level versioning for custom resources in OpenAPI.
 - Publish the default status of a feature gate (enabled/disabled by default)
 in OpenAPI.
@@ -123,14 +121,16 @@ feature gate associated with the field.
 This information is derived from comment tag on API fields with the format:
 
 ```
-// +lifecycle:kubernetes:minVersion=<k8s-version>,status=<prelease-status>,featureGate=<featuregate-name>
+// +lifecycle:component=<component-name>,minVersion=<version>,status=<prerelease-status>,featureGate=<featuregate-name>
 ```
 
 The following Kubernetes-specific constraints are validated by a linter:
 
-- The `+lifecycle:kubernetes:minVersion=<k8s-version>` tag denotes that the field is
-in the prerelease since the specified Kubernetes version. It must map to a
-Kubernetes release (e.g. `v1.20`).
+- The `+lifecycle:component=` value is always `kubernetes`, where `kubernetes` refers
+to [kubernetes/kubernetes] only and does not include any other out-of-tree projects
+(e.g. those in [kubernetes-sigs]).
+- The `minVersion` value denotes that the field is in the prerelease since the
+specified Kubernetes version. It must map to a Kubernetes release (e.g. `v1.20`).
 - The `status` value must be one of `alpha`, `beta`, or `deprecated`.
 - The `featureGate` value must be a valid feature gate as defined in [`kube_features.go`].
 
@@ -142,7 +142,7 @@ This method also provides us the extensibility to support CRDs in the future.
 For CRDs, multiple `// +lifecycle` comment lines may be added for custom types
 to denote the project's specific version.
 
-For example, an additional line `// +lifecycle:istio:minVersion=v3.0.0` may be added.
+For example, an additional line `// +lifecycle:component=istio,minVersion=v3.0.0` may be added.
 This allows capturing both the Kubernetes and the project's (istio) versions accurately.
 The specific syntax for CRDs will be defined later.
 
@@ -190,7 +190,7 @@ type Frobber struct {
   Param  string `json:"param"
   // width indicates how wide the object is.
   // +optional
-  // +lifecycle:kubernetes:minVersion=v1.20,status=alpha,featureGate=Frobber2D
+  // +lifecycle:component=kubernetes,minVersion=v1.20,status=alpha,featureGate=Frobber2D
   Width  *int32 `json:"width,omitempty"
 }
 ```
@@ -228,10 +228,17 @@ A linter ensures that comments for feature gates defined in
 2. Additionally, the following constraints are applied and validated for
 comment tags on API fields:
 
-- The `+lifecycle:kubernetes:minVersion` value must satisfy the regular expression `^v[1-9][0-9]*\.(0|[1-9][0-9]*)$`.
+- The `+lifecycle:component=` value is always `kubernetes`.
+- The `minVersion` value must satisfy the regular expression `^v[1-9][0-9]*\.(0|[1-9][0-9]*)$`.
 - The `status` value must be one of `alpha`, `beta`, or `deprecated`.
 - The `featureGate` value is a valid feature gate as defined in
 [`kube_features.go`].
+
+3. The comment tags will be added to all fields that are not GA.
+Existing and new GA fields are listed as exceptions in [api rules].
+This ensures that `types.go` files are not spammed with comment tags and
+tooling can interpret absence of a comment tag as an error instead of
+assuming the fields to be GA.
 
 ### Test Plan
 
@@ -403,19 +410,28 @@ However, this introduces risk of vastly increasing the size of the OpenAPI schem
 CRDs with multiple embedded `PodTemplateSpec`s can easily blow past the 1MB etcd limit with
 this approach.
 
-4. An alternative was considered to add comment tags to all types that are not GA.
-Existing and new GA types would be listed as [exceptions].
-This ensures that `types.go` files are not spammed with comment tags an
-tooling can interpret absence of a comment tag as an error instead of
-assuming the types to be GA.
 
-Depending on the feedback of the initial proposal for fields, this option
-may be considered in the future.
+4. The following alternative syntax was considered but not used because
+controller-gen treats the "name" part of the marker as static identifying information.
+E.g. In `// +name1:name2:option1=value1,option2=value2`, `name1:name2` is considered
+the static name.
 
+For the alternative syntax, the name would be `+lifecycle:kubernetes`. This would make it
+harder to support different component names in controller-gen.
+
+Additionally, introducing the `component` keyword makes the comment tag easier to understand.
+
+```
+// +lifecycle:kubernetes:minVersion=<k8s-version>,status=<prelease-status>,featureGate=<featuregate-name>
+```
+
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes-sigs]: https://github.com/kubernetes-sigs
 [`kube_features.go`]: https://github.com/kubernetes/kubernetes/blob/master/pkg/features/kube_features.go
 [server-side warnings]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1693-warnings
 [exceptions]: https://github.com/kubernetes/kubernetes/tree/master/api/api-rules
 [`hack/verify-description.sh`]: https://github.com/kubernetes/kubernetes/blob/master/hack/verify-description.sh
 [prerelease-lifecycle-gen]: https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/code-generator/cmd/prerelease-lifecycle-gen
+[api rules]: https://github.com/kubernetes/kubernetes/tree/master/api/api-rules
 [discussion on the SIG Architecture mailing list]: https://groups.google.com/g/kubernetes-sig-architecture/c/UmPwm-J3ztE
 [#99307]: https://github.com/kubernetes/kubernetes/pull/99307
