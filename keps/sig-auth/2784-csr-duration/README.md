@@ -39,18 +39,18 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -228,9 +228,13 @@ during version skews (discussed below).
 - Confirm with [pinniped](https://pinniped.dev) that the new functionality addresses their use case
 - Confirm that no other metrics are necessary
 - Wait one release after beta to allow bugs to be reported
-
-The existing conformance tests for the certificates API (`test/e2e/auth/certificates.go`)
-are sufficient coverage as the new functionality is optional.
+- Inform external signer implementations of the `spec.expirationSeconds` field
+  + [GCP controller manager](https://github.com/kubernetes/cloud-provider-gcp/blob/ce127135e3b5c71893afc4dbf996bb3144eea81e/cmd/gcp-controller-manager/csr_signer.go)
+  + [open-ness/edgeservices](https://github.com/open-ness/edgeservices/blob/e5f79c877a7fb16ee6078855a4674dcf0a23bf80/pkg/certsigner/certsigner.go)
+  + [SUSE/kucero](https://github.com/SUSE/kucero/blob/515e41a7599e518d8f39d79cd072ff443eb0de8f/pkg/pki/signer/signer.go)
+- Update conformance tests for the certificates API (`test/e2e/auth/certificates.go`) to assert that
+  the `spec.expirationSeconds` field is persisted.  We will not check if the field is honored as
+  this functionality is optional.
 
 ### Upgrade / Downgrade Strategy
 
@@ -353,8 +357,10 @@ is included to allow this functionality to be disabled.
 
 ###### What specific metrics should inform a rollback?
 
-The `csr_duration_honored` metric can be used to determine if signers and/or clients
-should be upgraded to handle the `spec.expirationSeconds` field.
+The `apiserver_certificates_registry_csr_honored_duration_total` and
+`apiserver_certificates_registry_csr_requested_duration_total` metrics can be used
+to determine if signers and/or clients should be upgraded to handle the
+`spec.expirationSeconds` field.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -380,8 +386,9 @@ Once a target CSR has been located, check that the issued certificate in
 `.status.certificate` has the correct duration.  Audit logging could also be
 used to determine this.
 
-The `csr_duration_honored` can be used to determine if signers are honoring
-durations when explicitly requested by clients.
+The `apiserver_certificates_registry_csr_honored_duration_total` and
+`apiserver_certificates_registry_csr_requested_duration_total` metrics can be used
+to determine if signers are honoring durations when explicitly requested by clients.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -399,8 +406,13 @@ API.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - Metrics
-  - Metric name: `csr_duration_honored`
-  - Components exposing the metric:
+  - Metric name: `apiserver_certificates_registry_csr_honored_duration_total`
+    + Total number of issued CSRs with a requested duration that was honored,
+      sliced by signer, only kubernetes.io signer names are specifically identified
+  - Metric name: `apiserver_certificates_registry_csr_requested_duration_total`
+    + Total number of issued CSRs with a requested duration, sliced by signer,
+      only kubernetes.io signer names are specifically identified
+  - Components exposing the metrics:
     - kube-apiserver
 
 - Details: Check the Kubernetes audit log from CRUD operations on CSRs.
@@ -482,7 +494,7 @@ The semantics of the Kubernetes CSR API do not change in this regard.
 ###### What are other known failure modes?
 
 - Signer does not honor requested duration
-  - Detection: See `csr_duration_honored` metric and `kubectl` discussion above.
+  - Detection: See metrics and `kubectl` discussion above.
   - Mitigations: Upgrade signers to honor the new field.  Clients could also be
     configured to set a requested duration that is within the signer's policy.
   - Diagnostics: Audit logs could be used to capture full request and response
@@ -498,6 +510,8 @@ N/A
 
 - 1.22: 2021-06-17: KEP written
 - 1.22: 2021-06-21: KEP review comments addressed
+- 1.22: 2021-07-02: Implementation [pull request](https://github.com/kubernetes/kubernetes/pull/99494) merged
+- 1.22: 2021-07-12: KEP updated with implementation details
 
 ## Drawbacks
 
