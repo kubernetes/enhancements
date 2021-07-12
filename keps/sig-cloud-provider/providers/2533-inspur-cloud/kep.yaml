@@ -1,0 +1,14 @@
+title: Cloud Provider For INSPUR CLOUD
+kep-number: 2533
+authors:
+  - "@ydcool"
+owning-sig: sig-cloud-provider
+reviewers:
+  - "@andrewsykim"
+  - "@cheftako"
+approvers:
+  - "@andrewsykim"
+  - "@cheftako"
+creation-date: 2020-02-24
+last-updated: 2021-02-24
+status: implementable
