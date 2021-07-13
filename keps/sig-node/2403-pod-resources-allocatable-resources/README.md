@@ -99,8 +99,13 @@ This API is read-only, which removes a large class of risks. The aspects that we
 We propose to extend the existing pod resources gRPC service of the Kubelet, listening on a unix socket at `/var/lib/kubelet/pod-resources/kubelet.sock`.
 
 The GRPC Service will expose an additional endpoint:
-- 'GetAllocatableResources`, which returns a single AllocatableResourcesResponse, enabling monitor applications to query for the allocatable set of resources available on the node.
+- `GetAllocatableResources`, which returns a single AllocatableResourcesResponse, enabling monitor applications to query for the allocatable set of resources available on the node.
 This endpoint will return error if the corresponding feature gate is disabled.
+
+NOTE:
+
+- `GetAllocatableResources` should only be used to evaluate [allocatable](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#node-allocatable) resources on a node. If the goal is to evaluate free/unallocated resources it should 
+be used in conjunction with the List() endpoint. The result obtained by `GetAllocatableResources` would remain the same unless the underlying resources exposed to kubelet change. This happens rarely but when it does (e.g. CPUs onlined/offlined, devices added/removed), client is expected to call `GetAlloctableResources` endpoint.
 
 The extended interface is shown in proto below:
 ```protobuf
@@ -253,6 +258,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2021-02-02: KEP extracted from [previous iteration](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2043-pod-resource-concrete-assigments)
 - 2021-02-04: KEP polished, added feature gate, clarified the graduation criteria.
 - 2021-02-08: KEP updated adding per-specific-endpoint metrics to the podresources API and clarifying failure modes.
+- 2021-05-21: KEP updated to explicitly clarify the behavior of `GetAllocatableResources`.
 
 ## Alternatives
 
