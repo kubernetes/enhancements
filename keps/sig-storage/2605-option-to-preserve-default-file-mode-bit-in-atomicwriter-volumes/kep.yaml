@@ -1,0 +1,29 @@
+title: Option to Preserve default file mode bit (Mode\DefaultMode) set in AtomicWriter volumes
+kep-number: 2605
+authors:
+  - "@abhisheksinghbaghel"
+owning-sig: sig-storage
+participating-sigs:
+reviewers:
+  - "@jiawei0227"
+approvers:
+  - "@jiawei0227"
+editor: "@abhisheksinghbaghel"
+creation-date: 2021-04-07
+last-updated: 2021-04-07
+status: implementable
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/57923"
+  - "https://github.com/kubernetes/enhancements/issues/2605"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.22"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.22"
