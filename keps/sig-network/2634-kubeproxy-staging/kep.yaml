@@ -1,0 +1,18 @@
+title: Move kubeproxy to staging
+kep-number: 2634
+authors:
+  - "@rikatz"
+  - "@aojea"
+  - "@jayunit100"
+owning-sig: sig-network
+status: implementable
+creation-date: "2021-04-18"
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+stage: stable
+latest-milestone: "v1.22"
+milestone:
+  stable: "v1.22"
