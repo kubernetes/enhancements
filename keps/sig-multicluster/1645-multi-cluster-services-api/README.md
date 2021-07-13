@@ -870,19 +870,18 @@ when drafting this test plan.
 - A detailed DNS spec for multi-cluster services.
 - NetworkPolicy either solved or explicitly ruled out.
 - API group chosen and approved.
-- Implementation strategy defined and approved.
-- Kube-proxy can consume ServiceImport and EndpointSlice.
 - E2E tests exist for MCS services.
 - Beta -> GA Graduation criteria defined.
 - At least one MCS DNS implementation.
 - A formal plan for a standard Cluster ID.
 - Finalize a name for the "supercluster" concept.
+- [Cluster ID KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid) is in beta
 
 #### Beta -> GA Graduation
 
 - Scalability/performance testing, understanding impact on cluster-local service
   scalability.
-- Cluster ID defined, with at least one other multi-cluster use case.
+- [Cluster ID KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid) is GA, with at least one other multi-cluster use case.
 
 <!--
 **Note:** *Not required until targeted at a release.*
