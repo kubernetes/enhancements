@@ -1,0 +1,25 @@
+title: Omit managedFields on the server-side
+kep-number: "2211"
+authors: ['@knight42']
+owning-sig: sig-api-machinery
+participating-sigs: [sig-cli]
+reviewers: ['@apelisse', '@kwiesmueller']
+approvers: ['@wojtek-t', '@lavalamp']
+prr-approvers: ['@wojtek-t']
+creation-date: "2020-12-23"
+last-updated: v1.21
+status: provisional
+see-also:
+  - https://github.com/kubernetes/kubernetes/issues/90066
+stage: alpha
+latest-milestone: v1.22
+milestone:
+  alpha: v1.22
+  beta: v1.23
+  stable: v1.24
+feature-gates:
+  - name: OmitManagedFields
+    components:
+    - kube-apiserver
+disable-supported: true
+metrics: []
