@@ -86,7 +86,9 @@ on keeping the core small and extensible, and thus only maintain the internal qu
 
 ### Goals
 
-Support custom queue implementation of the scheduler.
+1. Support custom queue implementation of the scheduler.
+2. Roll out the design gradually. In phase 1, keep current internal queue implementation
+intact.
 
 ### Non-Goals
 
@@ -119,27 +121,19 @@ But the default scheduler works as before and thus won't be impacted.
 
 ## Design Details
 
-The current internal queue is coupled with `cache`, `Option` and other implementations
-(e.g., the queue is initialized with specified parameters like `LessFunc`, `SharedInformerFactory`,
-and `Option` by [factory.go#create](https://github.com/kubernetes/kubernetes/blob/f1f0183d2bbcde33024b2a05d6f39df32f11e037/pkg/scheduler/factory.go#L172)),
-this solution will not decouple them as this has no impact on the goal of custom queue,
-and such logics can be enhanced in the future on demand.
+The scheduler internal queue, as its name implies, was originally implemented for internal
+usage. Due to that, some structs (like cache, Option) are not designed for external extension,
+and the internal queue is initialized with specified parameters like LessFunc,
+SharedInformerFactory, and Option by [factory.go#create](https://github.com/kubernetes/kubernetes/blob/f1f0183d2bbcde33024b2a05d6f39df32f11e037/pkg/scheduler/factory.go#L172). Although refactoring the internal queuing mechanics to be reusable/extensible is the eventual
+goal, we'd like to approach that gradually, and thus is not the goal of phase 1 of this design.
+In phase 1, we'd like to exercise the idea of "a replaceable scheduler queue" in a "minimal viable product"
+manner.
 
-Some of the items like `SchedulingQueue`, `Option` that are only used by the internal
-queue now will be exposed at [interface.go](https://github.com/kubernetes/kubernetes/blob/fb9cafc99be94a73d9b92545164dbf336bbd230a/pkg/scheduler/framework/interface.go),
-users of custom queue can access them.
+A practical design for phase 1 is described as below:
 
-To implement a custom queue, what an user needs to do is to copy the codes of the current
-internal queue (e.g., scheduling_queue.go), update some logics to get the custom queue,
-and then pass the custom queue to the scheduler like the plugins. With this way, user's
-logics will override the logics of the current internal queue.
+1. Make `SchedulingQueue` a public interface. Users can choose to implement their own queue.
 
-The codes will be updated as following:
-
-1. Make the interface `SchedulingQueue` as a public one, so that users can implement it
-for the custom queue.
-
-2. Provide a new function `WithCustomQueue`, users can register the custom queue with this
+2. Provide a new function `WithCustomQueue`, so users can register the custom queue with this
 function like other plugins.
 
     ```go
@@ -186,73 +180,28 @@ the interface `SchedulingQueue`, users must implement it.
       + ) {
     ```
 
+To get started with the implementation, an easy way is to copy the codes of the current
+internal queue (i.e., scheduling_queue.go), and then update the logic in-place to adapt to
+the business needs (it's very like how some out-of-tree PostFilter plugin refers to the
+defaultpreemption plugin). With the custom queue handle, users can pass it to the scheduler like the
+plugins. Following this way, the user's custom scheduler queue will override the upstream internal queue.
+
 ### Test Plan
 
 - **Unit Tests**: All core changes must be covered by unit tests.
-- **Integration Tests**: One integration test for the custom queue.
+- **Integration Tests**: At least one integration test to craft a custom queue to exercise an end-to-end flow.
 - **Benchmark Tests**: The performance benchmark test result is same as before if custom queue is not used.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
+#### Alpha -> Beta Graduation
 
-Define graduation milestones.
+- Users can implement their own custom queues.
+- No user complaints regarding correctness.
 
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
+#### Beta -> GA Graduation
 
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- Allowing time for feedback to ensure that the new interface sufficiently expresses users requirements.
 
 ### Upgrade / Downgrade Strategy
 
