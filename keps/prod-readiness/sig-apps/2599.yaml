@@ -1,3 +1,30 @@
 kep-number: 2599
 alpha:
   approver: "@ehashman"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-apps
+reviewers:
+  - "@soltysh"
+approvers:
+  - "@soltysh"
+prr-approvers:
+  - "@ehashman"
+editor: TBD
+creation-date: 2020-04-29
+last-updated: 2020-07-14
+status: implementable
+replaces:
+superseded-by:
+feature-gates:
+  - name: StatefulSetMinReadySeconds
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+stage: "beta"
+latest-milestone: "v1.23"
+milestone:
+  alpha: "v1.22"
+  beta: "v1.23"
+  stable: "v1.25"
