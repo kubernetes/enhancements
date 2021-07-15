@@ -162,14 +162,16 @@ As the community found in the [Metrics Stability Framework KEP](https://github.c
 
 ### Test Plan
 
-We will e2e test this feature by deploying an OpenTelemetry Collector on the control-plane node, and configure it to export traces using the [stdout exporter](https://github.com/open-telemetry/opentelemetry-go/tree/master/exporters/stdout), which logs the spans in json format.  We can then verify that the logs contain our expected traces when making calls to the API Server.
+We will test tracing added by this feature with an integration test.  The
+integration test will verify that spans exported by the apiserver match what is
+expected from the request.
 
 ## Graduation requirements
 
 Alpha
 
 - [] Implement tracing of incoming and outgoing http/grpc requests in the kube-apiserver
-- [] Tests are in testgrid and linked in KEP
+- [] Integration testing of tracing
 
 Beta
 
@@ -180,8 +182,6 @@ Beta
 - [] Revisit the format used to export spans.
 
 GA
-
-- [] Tracing e2e tests are promoted to conformance tests
 
 ## Production Readiness Review Questionnaire
 
