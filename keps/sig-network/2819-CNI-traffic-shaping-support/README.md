@@ -45,7 +45,7 @@ Make kubelet cni network plugin support basic traffic shapping capability `bandw
 Currently the kubenet code supports applying basic traffic shaping during pod setup.
 This will happen if bandwidth-related annotations have been added to the pod's metadata.
 
-Kubelet CNI code doesn't support it yet, though CNI has already added a [traffic sharping plugin](https://github.com/containernetworking/plugins/tree/master/plugins/meta/bandwidth).
+Kubelet CNI code doesn't support it yet, though CNI has already added a [traffic shaping plugin](https://github.com/containernetworking/plugins/tree/master/plugins/meta/bandwidth).
 We can replicate the behavior we have today in kubenet for kubelet CNI network plugin if we feel this is an important feature.
 
 ### Goals
