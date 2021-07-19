@@ -36,14 +36,14 @@
 
 ## Release Signoff Checklist
 
-- [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] KEP approvers have approved the KEP status as `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -129,7 +129,7 @@ users:
   user:
     exec:
       # API version to use when decoding the ExecCredentials resource. Required.
-      apiVersion: "client.authentication.k8s.io/v1beta1"
+      apiVersion: "client.authentication.k8s.io/v1"
 
       # Command to execute. Required.
       command: "example-client-go-exec-plugin"
@@ -290,7 +290,7 @@ In JSON:
 
 ```json
 {
-  "apiVersion": "client.authentication.k8s.io/v1beta1",
+  "apiVersion": "client.authentication.k8s.io/v1",
   "kind": "ExecCredential",
   "spec": {
     "interactive": true,
@@ -502,7 +502,7 @@ In JSON:
 
 ```json
 {
-  "apiVersion": "client.authentication.k8s.io/v1beta1",
+  "apiVersion": "client.authentication.k8s.io/v1",
   "kind": "ExecCredential",
   "status": {
     "expirationTimestamp": "$EXPIRATION",
@@ -910,3 +910,5 @@ _This section must be completed when targeting beta graduation to a release._
 - 2018-01-29: Proposal submitted https://github.com/kubernetes/community/pull/1503
 - 2018-02-28: Alpha (v1.10) implemented https://github.com/kubernetes/kubernetes/pull/59495
 - 2018-06-04: Promoted to Beta (v1.11) https://github.com/kubernetes/kubernetes/pull/64482
+- 2021-05-11: Stable API approved https://github.com/kubernetes/enhancements/pull/2587
+- 2021-07-06: Promoted to Stable (v1.22) https://github.com/kubernetes/kubernetes/pull/102890
