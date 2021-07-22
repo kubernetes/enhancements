@@ -910,5 +910,10 @@ _This section must be completed when targeting beta graduation to a release._
 - 2018-01-29: Proposal submitted https://github.com/kubernetes/community/pull/1503
 - 2018-02-28: Alpha (v1.10) implemented https://github.com/kubernetes/kubernetes/pull/59495
 - 2018-06-04: Promoted to Beta (v1.11) https://github.com/kubernetes/kubernetes/pull/64482
-- 2021-05-11: Stable API approved https://github.com/kubernetes/enhancements/pull/2587
+- 2019-11-22: `rest_client_exec_plugin_ttl_seconds` and `rest_client_exec_plugin_certificate_rotation_age` metrics added (v1.18) https://github.com/kubernetes/kubernetes/pull/84382
+- 2020-07-09: `InstallHint` added to Beta API (v1.19) https://github.com/kubernetes/kubernetes/pull/91305
+- 2020-10-29: `ProvideClusterInfo` added to Beta API (v1.20) https://github.com/kubernetes/kubernetes/pull/95489
+- 2021-03-04: `rest_client_exec_plugin_call_total` metric added (v1.21) https://github.com/kubernetes/kubernetes/pull/98892
+- 2021-06-15: `InteractiveMode` added to Beta API (v1.22) https://github.com/kubernetes/kubernetes/pull/99310
+- 2021-05-11: Stable API approved (v1.22) https://github.com/kubernetes/enhancements/pull/2587
 - 2021-07-06: Promoted to Stable (v1.22) https://github.com/kubernetes/kubernetes/pull/102890
