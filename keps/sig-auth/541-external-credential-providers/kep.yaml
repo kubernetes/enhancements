@@ -7,7 +7,7 @@ owning-sig: sig-auth
 participating-sigs:
   - sig-cli
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2019-07-11
 reviewers:
   - "@liggitt"
@@ -17,9 +17,13 @@ approvers:
   - "@mikedanese"
 prr-approvers:
   - "@deads2k"
-stage: beta
-latest-milestone: "v1.21"
+stage: stable
+latest-milestone: "v1.22"
 milestone:
   alpha: "v1.10"
   beta: "v1.11"
   stable: "v1.22"
+metrics:
+  - rest_client_exec_plugin_ttl_seconds
+  - rest_client_exec_plugin_certificate_rotation_age
+  - rest_client_exec_plugin_call_total
