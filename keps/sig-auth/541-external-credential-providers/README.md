@@ -170,7 +170,7 @@ users:
       #
       # In v1alpha1 and v1beta1, this is optional and defaults to IfAvailable. It is
       # required otherwise.
-      interactiveMode: IfAvailable
+      interactiveMode: Never
 clusters:
 - name: my-cluster
   cluster:
