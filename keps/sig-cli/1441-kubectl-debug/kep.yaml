@@ -14,8 +14,6 @@ reviewers:
 approvers:
   - "@pwittrock"
   - "@soltysh"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
   - "/keps/sig-node/20190212-ephemeral-containers.md"
   - "/keps/sig-release/20190316-rebase-images-to-distroless.md"
@@ -26,13 +24,13 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.20"
+latest-milestone: "v1.23"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.18"
   beta: "v1.20"
-  stable: "v1.22"
+  stable: "v1.24"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
