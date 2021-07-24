@@ -131,7 +131,7 @@ manner.
 
 A practical design for phase 1 is described as below:
 
-1. Make `SchedulingQueue` a public interface. Users can choose to implement their own queue.
+1. Make `SchedulingQueue` a public interface which is private now in ([scheduling_queue.go](https://github.com/kubernetes/kubernetes/blob/ee459b8969ed2abfed79a07d4ac9d41f13f18ce6/pkg/scheduler/internal/queue/scheduling_queue.go#L126)). Users can choose to implement their own queue.
 
 2. Provide a new function `WithCustomQueue`, so users can register the custom queue with this
 function like other plugins.
@@ -144,32 +144,10 @@ function like other plugins.
          )
     ```
 
-3. The registered custom queue will be recorded by updated `Registry` struct.
-
-    ```go
-      type Registry struct {
-          Pf          map[string]PluginFactory
-          CustomQueue schedulingQueue.SchedulingQueue
-      }
-    ```
-
-4. In function `(c *Configurator) create()`, custom queue will be passed to the scheduler
+3. The registered custom queue will be passed to the scheduler
 if it exists, or the current internal queue will be used.
 
-    ```go
-      - podQueue := internalqueue.NewSchedulingQueue(
-      -         lessFn,
-      +
-      + var podQueue framework.SchedulingQueue
-      + if c.registry.CustomQueue != nil {
-      +         podQueue = c.registry.CustomQueue
-      + } else {
-      +         podQueue = &internalqueue.PriorityQueue{}
-      + }
-      + podQueue.Init(...)
-    ```
-
-5. Basic inputs for queue's initialization will not be changed, a new method `Init` is added in
+4. Basic inputs for queue's initialization will not be changed, a new method `Init` is added in
 the interface `SchedulingQueue`, users must implement it.
 
     ```go
@@ -179,12 +157,6 @@ the interface `SchedulingQueue`, users must implement it.
       +        opts ...framework.Option,
       + ) {
     ```
-
-To get started with the implementation, an easy way is to copy the codes of the current
-internal queue (i.e., scheduling_queue.go), and then update the logic in-place to adapt to
-the business needs (it's very like how some out-of-tree PostFilter plugin refers to the
-defaultpreemption plugin). With the custom queue handle, users can pass it to the scheduler like the
-plugins. Following this way, the user's custom scheduler queue will override the upstream internal queue.
 
 ### Test Plan
 
@@ -201,6 +173,7 @@ plugins. Following this way, the user's custom scheduler queue will override the
 
 #### Beta -> GA Graduation
 
+- Only necessary interface and structs are exposed to users.
 - Allowing time for feedback to ensure that the new interface sufficiently expresses users requirements.
 
 ### Upgrade / Downgrade Strategy
@@ -396,3 +369,11 @@ Why should this KEP _not_ be implemented?
 An alternative is to enhance the current queue to meet some requests. The drawback
 is that we cannot handle all the potential requests as the effort is big, we should
 give the ball to the users, and they can do what they want.
+
+Another alternative is to suspend a job and don't let it go unless the resource
+sharing policy will not be broken. The drawback is that all the pods in the job will
+be impacted, it cannot handle the case that only some pods need to be touched.
+
+Another alternative is to make the pod that will break the resource sharing policy with
+`Unschedulable`. The drawback is that making such a decision needs the status of all other
+pods, the logic is complex, and the performance will be impacted.
