@@ -55,9 +55,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Provide an interface so that users can implement a custom queue of scheduler.
-With such, users can build their custom queue implementation at will, and plumb into
-the scheduler seamlessly. This can satisfy the business needs such as sophisticated
+Provide an interface so that users (custom scheduler developers) can implement a custom queue
+of scheduler. With such, users can build their custom queue implementation at will, and plumb
+into the scheduler seamlessly. This can satisfy the business needs such as sophisticated
 pods sorting and internal queuing mechanics.
 
 ## Motivation
@@ -97,7 +97,7 @@ Support custom rules for pod selection in the current internal queue of schedule
 ## Proposal
 
 Provide an interface like current scheduler plugins, users can provide a
-custom queue of scheduler and register it, then the kubernetes
+custom queue of scheduler at build time, then the kubernetes
 scheduler will use this custom queue for pod management.
 
 This is an extension of the current scheduler plugins, users can control
