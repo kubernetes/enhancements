@@ -100,7 +100,8 @@ intact.
 
 ### Non-Goals
 
-Support custom rules for pod selection in the current internal queue of scheduler.
+1. Support custom rules for pod selection in the current internal queue of scheduler.
+2. Enable scheduler developers to change the internal queue, or queue sorting plugin.
 
 ## Proposal
 
