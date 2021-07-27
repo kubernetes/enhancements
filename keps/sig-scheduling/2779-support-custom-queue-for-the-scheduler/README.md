@@ -375,5 +375,5 @@ sharing policy will not be broken. The drawback is that all the pods in the job 
 be impacted, it cannot handle the case that only some pods need to be touched.
 
 Another alternative is to make the pod that will break the resource sharing policy with
-`Unschedulable`. The drawback is that making such a decision needs the status of all other
-pods, the logic is complex, and the performance will be impacted.
+`Unschedulable`. The drawback is that making such a decision needs to know whether other
+pods can run or not, the logic is complex, and the performance will be impacted.
