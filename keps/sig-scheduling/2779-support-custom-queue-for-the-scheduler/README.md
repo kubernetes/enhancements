@@ -399,4 +399,7 @@ binding it with a node. This is the ideal solution as it is very clean and no ne
 that making such a decision needs to know whether other pods can run or not, we need a whole picture of all the
 pods and nodes, the relations for pods-to-pods, pods-to-nodes and nodes-to-nodes, and how to adjust the
 decision once there are changes (E.g., a node cannot be accessed anymore), the logic is complex, and the
-performance should be low when there are thousands of pods and nodes.
+performance should be low when there are thousands of pods and nodes. Another drawback is that this solution may
+conflict with developer's logic in scheduler plugin. This solution's decision should not be changed by other
+logic, or the decision is not correct, while the developer's logic in the plugin can have impact on pod's status
+(E.g., mark a `Schedulable` pod in the decision as `Unschedulable`), the decision can be changed.
