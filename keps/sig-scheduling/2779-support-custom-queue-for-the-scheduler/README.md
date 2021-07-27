@@ -84,6 +84,14 @@ Given that the business needs may vary greatly, it'd be desirable to provide a r
 implement their custom queue implementation, while the upstream maintainers focus
 on keeping the core small and extensible, and thus only maintain the internal queue piece.
 
+This KEP is not used to change the internal queue, or queue sorting plugin, quite the contrary,
+that logic will be kept as is. The main idea is to give scheduler developers an option to manage the whole
+queuing logic, including how to prioritize/pop/backoff/flush pods. It's all up to the scheduler developers.
+To ensure the developers can have full control of the queuing logic, the whole interface of the internal
+queue will be exposed instead of part of it that can only meet above examples. By exposing the whole interface,
+we needn't update the interface that need to be exposed again and again for coming demands, this can save
+developers' effort as they needn't raise a KEP for such requests, this can also save community's effort.
+
 ### Goals
 
 1. Support custom queue implementation of the scheduler.
@@ -173,7 +181,6 @@ the interface `SchedulingQueue`, users must implement it.
 
 #### Beta -> GA Graduation
 
-- Only necessary interface and structs are exposed to users.
 - Allowing time for feedback to ensure that the new interface sufficiently expresses users requirements.
 
 ### Upgrade / Downgrade Strategy
@@ -366,14 +373,30 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-An alternative is to enhance the current queue to meet some requests. The drawback
-is that we cannot handle all the potential requests as the effort is big, we should
-give the ball to the users, and they can do what they want.
+For the multi-tenancy support case the mentioned in `motivation` section, with this KEP, scheduler developers
+can add some sub-queues, one sub-queue is for one user and put the pods for this user into it, when the
+scheduler wants to pop a pod, the new logic will go through the sub-queues, get the most under-used sub-queue
+(by comparing the `target resources by ratio`/`allocated resources` of every sub-queue) and pop one pod from it.
+Instead of comparing all the pending pods, we only need to compare the sub-queues here, which is much faster.
+The most important benefit for the developers is that they have full control of this logic, they can update the
+logic at anytime at will, needn't talk with k8s community at all.
 
-Another alternative is to suspend a job and don't let it go unless the resource
-sharing policy will not be broken. The drawback is that all the pods in the job will
-be impacted, it cannot handle the case that only some pods need to be touched.
+An alternative is to enhance the current queue to meet this request, resorting all the pending pods when trying
+to get a pod to pop. The drawback is that this special change is only for the multi-tenancy case, and we need a way
+to control the impact (E.g., add a flag), the users who needn't multi-tenancy support cannot benefit from it.
+There will be many similar requests in the future as different customers have different requests, to meet all the
+requests, the changes will make the logic of internal queue complex and hard to maintain.
 
-Another alternative is to make the pod that will break the resource sharing policy with
-`Unschedulable`. The drawback is that making such a decision needs to know whether other
-pods can run or not, the logic is complex, and the performance will be impacted.
+Another alternative is to have a high level controller to suspend a job and don't let it go unless the resource
+sharing policy will not be broken, this is a good solution to support multi-tenancy case at job level, and needn't
+a KEP to update the current design. The drawback is that all the pods in a job will be impacted by this way, it
+cannot handle the case that only some pods in a job need to be touched. The controller needs to predict whether
+a job can run or not before resuming a job, or the resource sharing may be broken, and preemption need to be
+triggered to re-balance the resource sharing, some workload will be interrupted, this is another drawback.
+
+Another alternative is to make the pod that will break the resource sharing policy with `Unschedulable` before
+binding it with a node. This is the ideal solution as it is very clean and no negative impact. The drawback is
+that making such a decision needs to know whether other pods can run or not, we need a whole picture of all the
+pods and nodes, the relations for pods-to-pods, pods-to-nodes and nodes-to-nodes, and how to adjust the
+decision once there are changes (E.g., a node cannot be accessed anymore), the logic is complex, and the
+performance should be low when there are thousands of pods and nodes.
