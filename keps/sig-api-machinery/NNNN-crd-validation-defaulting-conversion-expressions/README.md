@@ -150,15 +150,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-CRDs need direct support for non-trivial validation and defaulting.  While
-admission webhooks can handle the validation and defaulting use cases that CRDs
-cannot handle directly, they signficantly complicate the development and
+CRDs need direct support for non-trivial validation.  While admission webhooks do support
+CRDs validation, they significantly complicate the development and
 operability of CRDs.
 
 This KEP proposes that an inline expression language be integrated directly into
-CRDs such that a much larger portion of validation and defaulting use cases can
+CRDs such that a much larger portion of validation use cases can
 be solved without the use of webhooks. Support for CRD conversions via
-the expression language will also be added.
+the expression language will also be added in the future.
 
 We will use the [Common Expression Language
 (CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and
@@ -171,19 +170,19 @@ allowing syntax and type errors to be caught at CRD registration time.
 ### Descriptive, self contained CRDs
 
 This KEP will make CRDs more self contained. Instead of having
-validation/defaulting/conversion rules coded into webhooks that must be
-registered and upgraded independant of a CRD, the rules will be contained within
+validation rules coded into webhooks that must be
+registered and upgraded independent of a CRD, the rules will be contained within
 the CRD object definition, making them easier to author and introspect by
 cluster administrators and users, and eliminating version skew issues that can
 happen between a CRD and webhook since they can be registered and
-upgraded/rolledback independently.
+upgraded/rolled-back independently.
 
 ### Webhooks: Development Complexity
 
 Introducing a production grade webhook is a substantial development task.
 Beyond authoring the actual core logic that a webhook must perform, the webhook
 must be instrumented for monitoring and alerting and integrated with the
-packaging/repleases processes for the environments it will be run it.
+packaging/releases processes for the environments it will be run it.
 
 The developer must also carefully consider the upgrade and rollback ordering
 between the webhook and CRD.
@@ -194,9 +193,9 @@ Admission webhooks are part of the critical serving path of the kube-apiserver.
 Admission webhooks add latency to requests, and large numbers of webhooks
 can cause, or contribute to, request timeouts being exceeded.
 
-Webhooks must either be configured as FailPolicy.Fail or FailPolicy.Ignore. If
-FailPolicy.Ignore is used, there is potential for requests skip the webhook and
-be admitted.  If FailPolicy.Fail is used, a webhook outage can result in a
+Webhooks must either be configured as `FailPolicy.Fail` or `FailPolicy.Ignore`. If
+`FailPolicy.Ignore` is used, there is potential for requests skip the webhook and
+be admitted. If `FailPolicy.Fail` is used, a webhook outage can result in a
 localized or widespread Kubernetes control plane outage depending on which
 objects the webhook is configured to intercept.
 
@@ -212,7 +211,7 @@ Provide type checking of custom resources against schemas.
 limits ('minimum' and 'maximum' properties) on individual fields and size limits
 on maps and lists ('minItems', 'maxItems').
 
-Additionally the API Expression WG is working KEPs that would improve CRD validation:
+In addition, the API Expression WG is working on KEPs that would improve CRD validation:
 
 - OpenAPIv3 'formats' which could (and I believe should) be leveraged by
 Kubernetes to handle validation of string fields for cases where regex is poorly
@@ -222,12 +221,6 @@ suited or insufficient.
 
 These improvements are largely complementary to expression support and either
 are (or should be) addressed by in separate KEPs.
-
-[Common Expression Language (CEL)](https://github.com/google/cel-go) is an
-excellent supplement to the above because it is sufficiently expressive to
-satisfy a large set of remaining uses cases that none of the above can solve.
-For example, cross-field validation use cases can only be solved using
-expressions or webhooks.
 
 ### Goals
 
@@ -246,10 +239,13 @@ expressions or webhooks.
 
 ## Proposal
 
-### Validation
+[Common Expression Language (CEL)](https://github.com/google/cel-go) is an
+excellent supplement to the current validation mechanism because it is sufficiently expressive to
+satisfy a large set of remaining uses cases that none of the above can solve.
+For example, cross-field validation use cases can only be solved using
+expressions or webhooks.
 
-CEL validation expressions will be allowed in CRD structural schemas via the
-`x-kubernetes-validator` extension.
+`x-kubernetes-validator` extension will be added to CRD structural schemas to allow CEL validation expressions.
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -271,119 +267,57 @@ kind: CustomResourceDefinition
               type: integer
 ```
 
-Each validator may have multiple validation rules.
+- Each validator may have multiple validation rules.
 
-Each validation rule has an optional 'message' field for the error message that
+- Each validation rule has an optional 'message' field for the error message that
 will be surfaced when the validation rule evaluates to false.
 
-The validator will be scoped to the location of the `x-kubernetes-validator`
+- The validator will be scoped to the location of the `x-kubernetes-validator`
 extension in the schema. In the above example, the validator is scoped to the
 'spec' field.
 
-For OpenAPIv3 object types, the expression will have direct access to all the
+- For OpenAPIv3 object types, the expression will have direct access to all the
 fields of the object the validator is scoped to.
-TODO: is there also value to providing access to the scoped object via a variable name like 'this'?
 
-For OpenAPIv3 scalar types (integer, string & boolean), the expression will have
-access to the scalar data element the validator is scoped to. TODO: what
-variable name will the data element be accessable by? 'this' ?
 
-For OpenAPIv3 list and map types, the expression will have access to the data
+- For OpenAPIv3 scalar types (integer, string & boolean), the expression will have
+access to the scalar data element the validator is scoped to.
+  
+
+- For OpenAPIv3 list and map types, the expression will have access to the data
 element of the list or map.
-TODO: what variable name will the data element be accessable by? 'this' ?
 
 
-TODO: Should the message also be an expression to allow for some basic variable
-substitution?
 
-TODO: Should a 'type' field also be required? If it is not 'cel', the validator
+`TODO: Should the message also be an expression to allow for some basic variable
+substitution?`
+
+`TODO: Should a 'type' field also be required? If it is not 'cel', the validator
 could be skipped to future proof against addition of other ways to validate in
 the future, or to allow 3rd party validators to have a way to inline their
-valiation rules in CRDs.
+validation rules in CRDs.`
 
-### Defaulting
 
-The `x-kubernetes-default` extension will be used. The location of the defaulter
-determins the scope of defaulter.
 
-The 'field' specifies which field is to be defaulted using a field path that is
-relative to the scope root. The defaulter will only be run if 'field' is unset
-and the result of the expression must match the type of the field to be
-defaulted.
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-...
-  schema:
-    openAPIV3Schema:
-      type: object
-      properties:
-        spec:
-          x-kubernetes-default:
-		    - rule: "!has(spec.type) && spec.Type == 'LoadBalancer' ? 'ServiceExternalTrafficPolicy' : null"
-			  field: spec.externalTrafficPolicy
-```
-
-Each defaulter may have multiple rules.
-
-The 'field' is optional and defaults to the scope if not explicitly set.
-
-If the expression evaluates to null, the field is left unset.
-TODO: Any downsides to using null this way?
-
-### Conversion
-
-Conversion rules will be made available via a ConversionRules strategy. A set of
-rules can be provided for each supported source/destination version pair. Each rule will
-specify which field it sets using a field path. A 'scope' field *pattern* may
-also be used specify all locations in the object that the conversion rule should
-be applied.
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-...
- conversion:
-    strategy: ConversionRules
-	converters:
-		- fromVersion: v1beta1
-		  toVersion: v1
-		  rules:
-		    - field: spec.xyz.podIPs
-			  rule: "has(spec.xyz.podIP) ? [spec.xyz.podIP] : []"
-		- fromVersion: v1
-		  toVersion: v1beta1
-		  rules:
-		    - field: xyz.podIP
-		      scope: spec
-			  rule: "size(xyz.podIPs) > 0 ? xyz.podIPs[0] : null"
-```
-
-Expressions that return object types will overwrite all fields that they return and
-leave all other fields to be auto-converted.
-
-The 'scope' is optional and defaults to the object root.
-
-The 'field' is optional and defaults to the scope? TODO: is it better to make it required for conversion?
-
-If the expression evaluates to null, the field is left unset.
-
-TODO: demonstrate writing fields into annotations for round trip
-TODO: demonstrate string <-> structured (label selector example & ServicePort example)
-
-#### field paths and field patterns
+#### Field paths and field patterns
 
 A field path is a patch to a single node in the data tree. I.e. it specifies the
-exact indices of list items and the keys of map entries it traverses.
-
-TODO: What is the exact format? Can we use something a SMD representation?
+exact indices of the list items and the keys of map entries it traverses.
 
 A field *pattern* is a path to all nodes in the data tree that match the pattern. I.e.
 it may wildcard list item and map keys.
 
-TODO: show example
-TODO: what is the exact format? Do we have something pre-existing that does this?
+`this` represents the field `x-kubernetes-validator` scopes to. In above example, the validator is scoped to the
+`spec` field. So `this.properties.minReplicas` represents to `minReplicas` field which the rule will apply.
+Having `this` will be beneficial for setting up rules like validating if there is a specific field available. 
+```yaml
+spec:
+          x-kubernetes-validator: 
+            - rule: this.hasField("properties")
+              message: "there has to be properties field under spec"
+          type: object
+          properties:
+```
 
 #### Expression lifecycle
 
@@ -398,7 +332,11 @@ to fail with a descriptive error.
 The function library available to expressions can be augmented using [extension
 functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions).
 
-TODO: we need to propose a list of functions to include.
+List of functions to include for the initial release:
+- Equality and Ordering
+- Regular Expressions
+- Some Standard Definitions
+
 
 Considerations:
 - The functions will become VERY difficult to change as this feature matures. We
@@ -443,6 +381,82 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+
+
+### Future Plan
+
+
+#### Defaulting
+
+The `x-kubernetes-default` extension will be used. The location of the defaulter
+determines the scope of defaulter.
+
+The 'field' specifies which field is to be defaulted using a field path that is
+relative to the scope root. The defaulter will only be run if 'field' is unset, 
+and the result of the expression must match the type of the field to be
+defaulted.
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+...
+  schema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        spec:
+          x-kubernetes-default:
+		    - rule: "!has(spec.type) && spec.Type == 'LoadBalancer' ? 'ServiceExternalTrafficPolicy' : null"
+			  field: spec.externalTrafficPolicy
+```
+
+- Each defaulter may have multiple rules.
+
+- The 'field' is optional and defaults to the scope if not explicitly set.
+
+If the expression evaluates to null, the field is left unset.
+TODO: Any downsides to using null this way?
+
+#### Conversion
+
+Conversion rules will be made available via a ConversionRules strategy. A set of
+rules can be provided for each supported source/destination version pair. Each rule will
+specify which field it sets using a field path. A 'scope' field *pattern* may
+also be used specify all locations in the object that the conversion rule should
+be applied.
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+...
+ conversion:
+    strategy: ConversionRules
+	converters:
+		- fromVersion: v1beta1
+		  toVersion: v1
+		  rules:
+		    - field: spec.xyz.podIPs
+			  rule: "has(spec.xyz.podIP) ? [spec.xyz.podIP] : []"
+		- fromVersion: v1
+		  toVersion: v1beta1
+		  rules:
+		    - field: xyz.podIP
+		      scope: spec
+			  rule: "size(xyz.podIPs) > 0 ? xyz.podIPs[0] : null"
+```
+
+Expressions that return object types will overwrite all fields that they return and
+leave all other fields to be auto-converted.
+
+The 'scope' is optional and defaults to the object root.
+
+The 'field' is optional and defaults to the scope? TODO: is it better to make it required for conversion?
+
+If the expression evaluates to null, the field is left unset.
+
+TODO: demonstrate writing fields into annotations for round trip
+TODO: demonstrate string <-> structured (label selector example & ServicePort example)
+
 
 ## Design Details
 
