@@ -84,6 +84,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Webhooks: Development Complexity](#webhooks-development-complexity)
   - [Webhooks: Operational Complexity](#webhooks-operational-complexity)
   - [Overview of existing validation](#overview-of-existing-validation)
+  - [Overview of ecosystem](#overview-of-ecosystem)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -175,17 +176,27 @@ CRDs such that a much larger portion of validation use cases can
 be solved without the use of webhooks. Support for defaulting and CRD conversions via
 the expression language will also be added in the future.
 
-We are currently focusing our attention on [Common Expression Language
+This KEP proposes the use the adoption of [Common Expression Language
 (CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and
 safe to be run directly in the kube-apiserver, has a straight-forward and
 unsurprising grammar, and supports pre-parsing and typechecking of expressions,
 allowing syntax and type errors to be caught at CRD registration time.
 
+<<[UNRESOLVED @jpbetz @cici37]>>
+There are alternatives to CEL that we have not yet ruled out. We are focusing
+on CEL because it appears to meet many of our needs, but we still need to
+verify that it:
+
+(1) sufficiently covers the validation needs of the community (need more use cases)
+(2) integrates well with kubernetes (type checking, support for associative lists...)
+(3) has the performance and sandbox properties it claims
+<<[/UNRESOLVED]>>
+
 ## Motivation
 
 ### Descriptive, self contained CRDs
 
-This KEP will make CRDs more self contained. Instead of having
+This KEP will make CRDs more self-contained. Instead of having
 validation rules coded into webhooks that must be
 registered and upgraded independent of a CRD, the rules will be contained within
 the CRD object definition, making them easier to author and introspect by
@@ -237,6 +248,13 @@ suited or insufficient.
 
 These improvements are largely complementary to expression support and either
 are (or should be) addressed by in separate KEPs.
+
+
+### Overview of ecosystem
+
+<<[UNRESOLVED @cici37 @leilajal]>>
+TODO
+<<[/UNRESOLVED]>>
 
 ### Goals
 
@@ -301,13 +319,17 @@ access to the scalar data element the validator is scoped to.
 - For OpenAPIv3 list and map types, the expression will have access to the data
 element of the list or map.
 
-`TODO: Should the message also be an expression to allow for some basic variable
-substitution?`
+<<[UNRESOLVED @cici37]>>
+Should the message also be an expression to allow for some basic variable
+substitution?
+<<[/UNRESOLVED]>>
 
-`TODO: Should a 'type' field also be required? If it is not 'cel', the validator
+<<[UNRESOLVED @cici37]>>
+Should a 'type' field also be required? If it is not 'cel', the validator
 could be skipped to future proof against addition of other ways to validate in
 the future, or to allow 3rd party validators to have a way to inline their
-validation rules in CRDs.`
+validation rules in CRDs.
+<<[/UNRESOLVED]>>
 
 #### Field paths and field patterns
 
@@ -358,8 +380,10 @@ Considerations:
 
 ### User Stories
 
-TODO: table out a wide range of validation, defaulting and conversion use cases and how
-they are supported
+<<[UNRESOLVED @cici37 @leilajal @jpbetz]>>
+Find validation use cases representative of community needs and show how they can
+be handled using CEL.
+<<[/UNRESOLVED]>>
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -374,27 +398,24 @@ This might be a good place to talk about core concepts and how they relate.
 
 #### Accidental misuse
 
-TODO: breaking the control plane, overloading the api-server
+Break the control plane by consuming excessive CPU and/or memory the api-server.
+
+Mitigation: CEL is specifically designed to constrain the running time of expressions
+and to limit the memory utilization. We will perform a security review of CEL and how
+it is integrated.
 
 #### Malicious use
 
-TODO: jailbreaking, bitcoin mining, exfiltration attacks?
+Breaking out of the sandbox to run untrusted code in the apiserver or exfiltrate data.
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+Mitigation: CEL is designed to sandbox code execution. We will perform a security review of CEL and how
+it is integrated.
 
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
+<<[UNRESOLVED @jpbetz]>>
+Find a security reviewer for CEL.
+<<[/UNRESOLVED]>>
 
 ### Future Plan
-
 
 #### Defaulting
 

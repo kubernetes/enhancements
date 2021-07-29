@@ -2,6 +2,9 @@ title: CRD validation expressions
 kep-number: NNNN
 authors:
   - "@jpbetz"
+  - "@cici37"
+  - "@DangerOnTheRanger"
+  - "@leilajal"
 owning-sig: sig-api-machinery
 status: provisional
 creation-date: 2021-05-26
