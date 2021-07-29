@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: CRD Validation, Defaulting and Conversion Expressions
+# KEP-NNNN: CRD Validation Expressions
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -80,15 +80,26 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Descriptive, self contained CRDs](#descriptive-self-contained-crds)
+  - [Webhooks: Development Complexity](#webhooks-development-complexity)
+  - [Webhooks: Operational Complexity](#webhooks-operational-complexity)
+  - [Overview of existing validation](#overview-of-existing-validation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Field paths and field patterns](#field-paths-and-field-patterns)
+    - [Expression lifecycle](#expression-lifecycle)
+    - [Function library](#function-library)
+  - [User Stories](#user-stories)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Accidental misuse](#accidental-misuse)
+    - [Malicious use](#malicious-use)
+  - [Future Plan](#future-plan)
+    - [Defaulting](#defaulting)
+    - [Conversion](#conversion)
 - [Design Details](#design-details)
+  - [Type Checking](#type-checking)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -103,6 +114,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Rego](#rego)
+  - [Expr](#expr)
+  - [WebAssembly](#webassembly)
+  - [Build our own](#build-our-own)
+  - [Make it easier to validate CRDs using webhooks](#make-it-easier-to-validate-crds-using-webhooks)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -156,13 +172,13 @@ operability of CRDs.
 
 This KEP proposes that an inline expression language be integrated directly into
 CRDs such that a much larger portion of validation use cases can
-be solved without the use of webhooks. Support for CRD conversions via
+be solved without the use of webhooks. Support for defaulting and CRD conversions via
 the expression language will also be added in the future.
 
-We will use the [Common Expression Language
+We are currently focusing our attention on [Common Expression Language
 (CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and
 safe to be run directly in the kube-apiserver, has a straight-forward and
-unsuprising grammar, and supports pre-parsing and typechecking of expressions,
+unsurprising grammar, and supports pre-parsing and typechecking of expressions,
 allowing syntax and type errors to be caught at CRD registration time.
 
 ## Motivation
@@ -230,12 +246,12 @@ are (or should be) addressed by in separate KEPs.
 
 ### Non-Goals
 
-- Support for formats, immutability or unions. These are all valuable improvements
-  but can be addressed in separate KEPs.
+- Support for validation formats, immutability or unions. These are all valuable improvements
+  but can be addressed orthogonally in separate KEPs.
 - Eliminate the need for webhooks entirely. Webhooks will still be needed for
   some use cases. For example, if a validation check requires making a network
   request to some other system, it will still need to be implemented in a webhook.
-- Replace how Kubernetes native types are validated, defaulted and converted.
+- Change how Kubernetes built-in types are validated, defaulted and converted.
 
 ## Proposal
 
@@ -257,8 +273,8 @@ kind: CustomResourceDefinition
       properties:
         spec:
           x-kubernetes-validator: 
-		    - rule: "minReplicas <= maxReplicas"
-		      message: "minReplicas cannot be larger than maxReplicas"
+            - rule: "minReplicas <= maxReplicas"
+              message: "minReplicas cannot be larger than maxReplicas"
           type: object
           properties:
             minReplicas:
@@ -278,16 +294,12 @@ extension in the schema. In the above example, the validator is scoped to the
 
 - For OpenAPIv3 object types, the expression will have direct access to all the
 fields of the object the validator is scoped to.
-
-
+  
 - For OpenAPIv3 scalar types (integer, string & boolean), the expression will have
 access to the scalar data element the validator is scoped to.
-  
 
 - For OpenAPIv3 list and map types, the expression will have access to the data
 element of the list or map.
-
-
 
 `TODO: Should the message also be an expression to allow for some basic variable
 substitution?`
@@ -296,8 +308,6 @@ substitution?`
 could be skipped to future proof against addition of other ways to validate in
 the future, or to allow 3rd party validators to have a way to inline their
 validation rules in CRDs.`
-
-
 
 #### Field paths and field patterns
 
@@ -926,36 +936,59 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-### Make it easier to validate CRDs using webhooks
-
-- TODO: explain ecosystem benefit of builtin vs a webhoo
-- TODO: explain limitations due to OpenAPIv3 extension restriction on CRDs
-
 ### Rego
 
 See Open Policy Agent (https://github.com/open-policy-agent/opa/tree/main/rego).
+The syntax is more extensive than CEL and is designed specifically to work well
+with kubernetes objects. It allows larger, multi-line programs and 
+includes a package and module system. It does not offer the same sandbox constraints
+as CEL, nor does it type check code.
+
+### Expr
+
+See github.com/antonmedv/expr. Has many similarities to CEL: type checking, minimalist syntax,
+good performance and sandboxing properties.
+
+This is used by the argo.
 
 ### WebAssembly
 
-WebAssembly was considered as an alternative to CEL, up to having a [proof-of-concept implementation](https://github.com/jpbetz/omni-webhook/blob/main/validators/wasm.go).
-However, all current WebAssembly runtimes require `cgo` to build, something that
-might be difficult to integrate into api-server. Additionally, passing strings across
-a WebAssembly boundary is currently dependent on the target language, so any supported
-target language would need a small shim library to be supported.
+We looked closely at WebAssembly and created a [proof-of-concept implementation](https://github.com/jpbetz/omni-webhook/blob/main/validators/wasm.go).
+The biggest problems with WebAssembly are:
+- It doesn't work well as an embedded expression language. With WebAssembly, we would really want to
+  have the binaries published somewhere (docker images?) and then referenced in CRD
+  declarations so the apiserver could then load and execute them. This would be
+  far less convenient for writing simple validation rules than just inlining expressions.
+- WebAssembly runtimes require `cgo` to build, something that
+  might be difficult to integrate into api-server.
+- Passing strings across a WebAssembly boundary is currently dependent on the target language, so any supported
+  target language would need a small shim library to be supported. This complicates the developer
+  workflow.
 
-### jq
-
-TODO
+See also github.com/chimera-kube/chimera-admission
 
 ### Build our own
 
-TODO
+Given that this would require a much larger engineering investment, we do not plan on entertaining
+unless there is strong evidence that none available expression languages are able to support CRD validation
+use cases well.
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+### Make it easier to validate CRDs using webhooks
+
+This has been explored by the community. There are examples in the ecosystem of Rego, Expr and WebAssembly
+in the ecosystem.
+
+Kubebuilder can automatically create and manage a webhook to run validation and defaulting code (
+https://book.kubebuilder.io/cronjob-tutorial/webhook-implementation.html).
+
+But for a CRD developer that just needs to add a simple validation, having direct access
+to an expression language is far simpler than exploring this ecosystem to find the easiest
+way to do validation and then investing in it (which may require buy-in to a larger framework)
+is a time consuming way to solve what should be a simple problem.
+
+For cluster operators, regardless of what extensions they install in their cluster,
+it is to their advantage to install the fewest webhooks possible since.
+
 
 ## Infrastructure Needed (Optional)
 
