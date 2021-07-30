@@ -134,9 +134,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -285,9 +285,9 @@ it may train developers to ignore issues.
 Additionally, *because* it is not initially blocking, it risks being overlooked
 as unimportant even when findings are relevant.
 
-Should issues reach master, either by the happenstance of a merge, ignored warnings, or analysis flakiness,
+Should issues reach a branch, either by the happenstance of a merge, overridden warnings, or analysis flakiness,
 reported findings may include those out of scope for the change set in a given PR.
-Such incidents are little more than confusing toil for developers.
+Such incidents would provide confusion and toil for developers, but could be quickly corrected, suppressed via configuration, or the offending commit reverted.
 
 Changes to `test-infra` carry with them the potential for inconvenience,
 should they introduce any instability to wider testing.  While diligent review
@@ -344,11 +344,11 @@ As part of testing of our testing process, these tests should belong to `kuberne
 #### Beta
 - Analysis runs as a non-blocking presubmit check, warning developers of any findings in their changes.
 
-#### Beta -> GA Graduation
+#### Beta -> Stable Graduation
 - Test is validated as running soundly at scale.
 - No false positives, test failures, or other concerning issues are raised for 1-2 weeks.
 
-#### GA
+#### Stable
 - Analysis runs as a blocking presubmit test.
 
 <!--
@@ -536,7 +536,9 @@ communicated clearly such that developer correction can proceed as smoothly as p
 During non-blocking release stages, this should include instructions for reporting false-positives if the PR author believes the findings are incorrect.
 During blocking release stages, this should include instructions for escalating possible false-positives to avoid blocking other PRs and how to contact contributors with `/override` permissions to approve bypass of analysis.
 
-Analyzer failures should be reported to [`go-flow-levee` Issues](http://github.com/google/go-flow-levee/issues).
+Assistance in resolving issues identified by the analyzer can be found in the [Verification Tests Documentation](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/verify-tests.md)
+
+Analyzer failures or bugs should be reported to [`go-flow-levee` Issues](http://github.com/google/go-flow-levee/issues).
 
 ## Implementation History
 
@@ -554,6 +556,7 @@ Major milestones might include:
 * 2020-08-13: Initial Proposal Merged (#1936)
 * 2020-09-10: Alpha state - Non-blocking, manually triggered test added to Prow (kubernetes/test-infra/pull/19181)
 * 2020-12-16: Beta state - Prow test converted to automatically trigger (kubernetes/test-infra/pull/20164)
+* 2020-02-11: Stable state - Prow test is now blocking (kubernetes/test-infra/pull/20836)
 
 ## Drawbacks
 
@@ -565,11 +568,10 @@ As a blocking test, there is a risk for developer toil in the event of any
 false-positive or test flakiness.
 This can be mitigated by any contributor with `/override` permissions.
 
-Similarly, depending the order in which PRs are tested and merged,
-it is theoretically possible that a merge would result in a violation reaching master.
-If this is not properly handled, all PRs made at that time could present as
-failing analysis.
-This can be mitigated by consistent scans of `master` as a baseline.
+In the unexpected event that Prow-bot merges two PR without first rebasing one to the HEAD of the target branch, it could be possible for an analysis violation to reach a given branch.
+Like any other failing test that could reach  `master`, all subsequent PRs would be blocked by spurious failure.
+This could be mitigated if analysis first executes a baseline against the target branch without the changes introduced by a PR.
+However, such additional testing has not proven necessary given the rarity of both such Prow-bot misbehavior and the sort of PR diffs necessary to introduce a new violation.
 
 As this analysis depends on project-specific considerations of what constitutes
 a secret or a sink, periodic review is required to ensure configuration is kept up-to-date.
@@ -587,8 +589,9 @@ information to express the idea and why it was not acceptable.
 -->
 
 [GitHub's CodeQL](https://securitylab.github.com/tools/codeql) includes taint analysis
-and permits general SSA graph queries.  I am currently investigating if it is viable for this usecase.
-If so, integration with CodeQL / lgtm.com may be better than embedding analysis into the Prow testing.
+and permits general SSA graph queries.  While CodeQL may provide similar testing, [its own documentation](https://lgtm.com/help/lgtm/about-automated-code-review) indicates that any findings would not be blocking.
+Given the intended scope of this KEP as a means to block potential security concerns, blocking on detection is of heightened interest.
+CodeQL could be used to augment coverage in the future, however.
 
 While other static analysis tools exist for Go, these tend towards more general linters.
 [`gosec`](https://github.com/securego/gosec), for instance, can be used to detect

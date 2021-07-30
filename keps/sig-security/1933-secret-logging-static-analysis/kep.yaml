@@ -25,9 +25,9 @@ see-also:
 - /keps/sig-instrumentation/1602-structured-logging
 replaces: []
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.21"
+latest-milestone: "v1.22"
 
 milestone:
   alpha: "v1.20"
