@@ -1,0 +1,27 @@
+title: Deprecate klog specific flags in Kubernetes components
+kep-number: 2845
+authors:
+  - "@serathius"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-arch
+status: provisional
+creation-date: 2021-07-30
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-instrumentation/1602-structured-logging"
+replaces: []
+stage: alpha
+latest-milestone: "v1.23"
+milestone:
+  alpha: "v1.23"
+  beta: "v1.24"
+  stable: "v1.25"
+
+feature-gates: []
+disable-supported: true
+metrics: []
