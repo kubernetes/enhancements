@@ -98,13 +98,15 @@ The second iteration, `kubescheduler.config.k8s.io/v1beta2`, includes the follow
   - Cleanup of validation hacks.
 
 The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the following changes:
-  - Change the weights of the following user configurable plugins.
+  - Change the weight of plugins that can be influenced by end users through the Pod specs.
     - `InterPodAffinity` to 2
     - `NodeAffinity` to 2
-    - `TaintToleration` to 3 as the usage of node tainting to group nodes in the cluster is increasing for many user workloads
+    - `TaintToleration` to 3 as the usage of node tainting to group nodes in the cluster is a increasingly becoming a use-case 
+       for many user workloads
 
-The main reason for increasing the weights of the above plugins is conflict with other plugins like image locality, utilization.
-More information can be found [here](https://github.com/kubernetes/kubernetes/issues/88174)     
+The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
+about user preferences, so should have more influence while making scheduling decisions.
+More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174)     
 ### Risks and Mitigations
 
 The major risk is around the removal of the `unreserve` extension point.
