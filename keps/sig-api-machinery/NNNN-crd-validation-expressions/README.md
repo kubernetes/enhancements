@@ -249,12 +249,22 @@ suited or insufficient.
 These improvements are largely complementary to expression support and either
 are (or should be) addressed by in separate KEPs.
 
+####Overview of YAML validation
 
-### Overview of ecosystem
+The ecosystem of static checking of Kubernetes YAML files can be grouped in the following categories:
+- API validators — Tools in this category validate a given YAML manifest against the Kubernetes API server.
+- Built-in checkers — Tools in this category bundle opinionated checks for security, best practices, etc.
+- Custom validators — Tools in this category allow writing custom checks in several languages such as Rego and Javascript.
 
-<<[UNRESOLVED @cici37 @leilajal]>>
-TODO
-<<[/UNRESOLVED]>>
+Existing tools for validation:
+- [Kubeval](https://learnk8s.io/validating-kubernetes-yaml#kubeval): 
+  The premise of kubeval is that any interaction with Kubernetes goes via its REST API. Hence, you can use the API schema to validate whether a given YAML input conforms to the schema.The advantage of a tool like kubeval is that you can catch such errors early in your deployment cycle.One important limitation of kubeval is that it is currently not able to validate against Custom Resource Definitions (CRDs).
+- [Kube-score](https://learnk8s.io/validating-kubernetes-yaml#kube-score): Kube-score analyses YAML manifests and scores them against in-built checks. These checks are selected based on security recommendations and best practices (such as running containers as a non-root user, specifying health checks for pods, or defining resource requests and limits). Kube-score isn't designed to be extendable and you can't add or tweak policies.
+- [Config-lint](https://learnk8s.io/validating-kubernetes-yaml#config-lint): Config-lint is a tool designed to validate configuration files written in YAML, JSON, Terraform, CSV, and Kubernetes manifests. The framework lets you write custom checks for Kubernetes YAML manifests using a YAML DSL. But it can’t be used to express more complex logic and checks.
+- [Copper](https://learnk8s.io/validating-kubernetes-yaml#copper): Copper is a framework that validates manifests using custom checks — just like config-lint. However, Copper doesn't use YAML to define the checks. Instead, tests are written in JavaScript and Copper provides a library with a few basic helpers to assist in reading Kubernetes objects and reporting errors.
+- [Conftest](https://learnk8s.io/validating-kubernetes-yaml#conftest): Conftest is a testing framework for configuration data that can be used to check and verify Kubernetes manifests. Tests are written using the purpose-built query language, Rego.
+- [Polaris](https://learnk8s.io/validating-kubernetes-yaml#polaris): Polaris can be either installed inside a cluster or as a command-line tool to analyse Kubernetes manifests statically.Polaris augments the built-in checks with your custom checks, thus combining the best of both worlds. However, not having access to more powerful languages like Rego or JavaScript may be a limitation to write more sophisticated checks.
+
 
 ### Goals
 
@@ -273,7 +283,7 @@ TODO
 
 ## Proposal
 
-[Common Expression Language (CEL)](https://github.com/google/cel-go) is an
+An inline expression language like [Common Expression Language (CEL)](https://github.com/google/cel-go) would be an
 excellent supplement to the current validation mechanism because it is sufficiently expressive to
 satisfy a large set of remaining uses cases that none of the above can solve.
 For example, cross-field validation use cases can only be solved using
@@ -339,17 +349,6 @@ exact indices of the list items and the keys of map entries it traverses.
 A field *pattern* is a path to all nodes in the data tree that match the pattern. I.e.
 it may wildcard list item and map keys.
 
-`this` represents the field `x-kubernetes-validator` scopes to. In above example, the validator is scoped to the
-`spec` field. So `this.properties.minReplicas` represents to `minReplicas` field which the rule will apply.
-Having `this` will be beneficial for setting up rules like validating if there is a specific field available. 
-```yaml
-spec:
-          x-kubernetes-validator: 
-            - rule: this.hasField("properties")
-              message: "there has to be properties field under spec"
-          type: object
-          properties:
-```
 
 #### Expression lifecycle
 
