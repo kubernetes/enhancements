@@ -387,7 +387,7 @@ Identical SLOs for API server request metrics are expected with this feature ena
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 As part of the kube-apiserver request pipeline, normal metrics for kube-apiserver request health 
-indicate this feature (along with all other features in the request pipeline)is healthy.
+indicate this feature (along with all other features in the request pipeline) is healthy.
 For example:
 - `apiserver_request_total`
 - `apiserver_request_duration_seconds`
