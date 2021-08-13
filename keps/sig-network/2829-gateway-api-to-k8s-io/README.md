@@ -51,6 +51,10 @@ provide greater quality and stability going forward.
 This is a large API, it would not be practical to include it within this KEP.
 Instead, the API review process will happen through a separate PR or set of PRs
 on the [Gateway API repo](https://github.com/kubernetes-sigs/gateway-api).
+Subproject maintainers will review PRs and API-changes on a per patch basis,
+while upstream k8s api-reviewers will review API changes on a release by release
+basis. In addition to this, subproject maintainers could involve k8s
+api-reviewers on a case-by-case as needed.
 
 ### Risks and Mitigations
 
@@ -72,6 +76,8 @@ N/A
 - Approval from subproject owners + KEP reviewers
 - Initial conformance tests are in place
 - Validating webhook for advanced validation
+- We know users of the API are deploying apps with this API and exercising most
+  of the API surface
 
 ## Production Readiness Review Questionnaire
 
