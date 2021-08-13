@@ -19,10 +19,10 @@ prr-approvers:
   - "@johnbelamaric"
 editor: TBD
 creation-date: "2018-05-21"
-last-updated: "2021-05-03"
-status: implementable
-stage: beta
-latest-milestone: v1.22
+last-updated: "2021-08-13"
+status: implemented
+stage: stable
+latest-milestone: v1.23
 milestone:
   alpha: "v1.20"
   beta: "v1.21"

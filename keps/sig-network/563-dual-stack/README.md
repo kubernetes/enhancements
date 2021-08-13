@@ -1243,7 +1243,7 @@ v1.21: Moved from `Alpha` to `Beta`
 
 v1.22: Gathering beta user feedback and making bugfixes as needed.
 
-v1.23: Planning to move from `Beta` to `Stable`
+v1.23: Moved from `Beta` to `Stable`
 
 ## Alternatives
 
