@@ -757,17 +757,17 @@ Alpha plan
 
 Graduation to Beta
 
-(https://github.com/kubernetes/kubernetes/pull/99576#discussion_r635392090)
+- Kubernetes Target 1.23 or later
 - Go through PSP Linux test (e2e: validation & conformance) and make them relevant for Windows (which apply, which don't and where we need to write new tests).
 - Provide guidance similar to Pod Security Standards for Windows privileged containers
-- Containerd: v1.5
-- Kubernetes Target 1.23 or later
+- CRI Support for HostProcess containers
+  - Containerd release is available with HostProcess support (Either v1.6 OR changes backported to a v1.5 patch) - (https://github.com/containerd/containerd/pull/5131)
+  - [Windows Host Process annotations](https://github.com/kubernetes/kubernetes/blob/7705b300e2085c3864bb1e49a7302bf17f080219/pkg/kubelet/kuberuntime/labels.go#L46-L50) removed from CRI. (Discussed at (https://github.com/kubernetes/kubernetes/pull/99576#discussion_r635392090))
 - OS support: Windows 2019 LTSC and all future versions of Windows Server
-- Beta Feature Gate for passing privilege flag to CRI
-- Extensive documentation around `HostProcess` containers on https://kubernetes.io/
-  - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits)
-- Ensure that ephemeral containers are validated for HostProcess requirements
-- Remove the `windowsHostProcessContainer` label used for hostprocess annotations. Requires updating Containerd to support hostprocess directly.  
+- Beta Feature Gate for passing privilege flag to CRI.
+- Extensive documentation around `HostProcess` containers on https://kubernetes.io/.
+  - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits).
+- Ensure that ephemeral containers are validated for HostProcess requirements.
 
 Graduation to GA:
 
@@ -841,7 +841,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: WindowsPrivilegedContainers
+    - Feature gate name: WindowsHostProcessContainers
     - Components depending on the feature gate: Kubelet, kube-apiserver
   - [ ] Other
     - Describe the mechanism:
@@ -994,6 +994,12 @@ _This section must be completed when targeting beta graduation to a release._
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
+
+- **2020-09-11:** [Issue #1981](https://github.com/kubernetes/enhancements/issues/1981) created.
+- **2021-12-17:** Initial KEP draft merged - [#2037](https://github.com/kubernetes/enhancements/pull/2037).
+- **2021-02-17:** KEP approved for alpha release - [#2288](https://github.com/kubernetes/enhancements/pull/2288).
+- **2021-05-20:** Alpha implementation PR merged - [kubernetes/kubernetes#99576](https://github.com/kubernetes/kubernetes/pull/99576).
+- **2021-08-05:** K8s 1.22 released with alpha support for HostProcess containers.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
