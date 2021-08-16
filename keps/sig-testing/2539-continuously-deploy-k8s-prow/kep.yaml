@@ -1,21 +1,21 @@
 title: Continuously Deploy K8s Prow
 kep-number: 2539
 authors:
-  - "@chaodaiG"
+- chaodaiG
 owning-sig: sig-testing
 participating-sigs:
-  - sig-testing
-  - sig-release
-status: implementable
+- sig-testing
+- sig-release
+status: implemented
 creation-date: 2021-02-23
+last-updated: 2021-08-16
 reviewers:
-  - "@spiffxp" # Sig-testing chair
-  - "@justaugustus" # Sig-release chair
-  - "@alvaroaleman" # Prow approver
+- spiffxp       # sig-testing chair
+- justaugustus  # sig-release chair
+- alvaroaleman  # prow approver
 approvers:
-  - "@spiffxp" # Sig-testing chair
-  - "@justaugustus" # Sig-release chair
-  - "@alvaroaleman" # Prow approver
-
-latest-milestone: "0.0"
-stage: "alpha"
+- spiffxp       # sig-testing chair
+- justaugustus  # sig-release chair
+- alvaroaleman  # prow approver
+latest-milestone: v1.21
+stage: beta
