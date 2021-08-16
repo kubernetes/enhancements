@@ -276,3 +276,5 @@ Similar discussion and work on the other release tarballs:
   created, deprecation notice included in mondo test tarball
 - 2019-02-22: implementation https://github.com/kubernetes/kubernetes/pull/74065
   merged
+- 2019-09-24: Stop building kubernetes-test.tar.gz: https://github.com/kubernetes/kubernetes/pull/83093
+- 2021-08-16: Retroactive stable declaration

@@ -1,17 +1,23 @@
 title: Breaking apart the Kubernetes test tarball
 kep-number: 714
 authors:
-  - "@ixdy"
+- ixdy
 owning-sig: sig-testing
 participating-sigs:
-  - sig-release
+- sig-release
 reviewers:
-  - "@akutz"
-  - "@amwat"
+- akutz
+- amwat
 approvers:
-  - "@spiffxp"
-  - "@tpepper"
-editor: TBD
+- spiffxp
+- tpepper
+editor: spiffxp
 creation-date: 2019-01-18
-last-updated: 2019-03-06
+last-updated: 2021-08-16
 status: implemented
+stage: stable
+latest-milestone: v1.17
+milestone:
+  alpha: v1.14
+  beta: v1.14
+  stable: v1.17
