@@ -1380,9 +1380,9 @@ This capability will move to beta when the following criteria have been met.
 This capability will move to stable when the following criteria have been met.
 
 * Support of at least one CNI plugin to provide multi-IP
-* e2e test successfully running on two platforms
+* e2e test successfully running on two platforms (Azure and kind)
 * testing ingress controller infrastructure with updated dual-stack services
-* dual-stack tests run as pre-submit blocking for PRs
+* dual-stack tests always run as pre-submit (non-blocking) for PRs
 
 
 ## Production Readiness Review Questionnaire
