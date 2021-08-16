@@ -88,7 +88,15 @@ N/A
 
 ## Graduation Criteria
 
-N/A
+Alpha:
+* `/ok-to-test` workflow live
+
+Beta:
+* `/ok-to-test` workflow fully documented
+* Comment parsing for `/ok-to-test` removed in favor of `ok-to-test` label presence
+
+Stable:
+* `/ok-to-test` workflow used without incident for more than 6 months
 
 ## Future evolutions
 
@@ -100,9 +108,13 @@ This would require adding automatically the `ok-to-test` label to member authore
 
 ## References
 
-* https://github.com/kubernetes/test-infra/issues/3827
-* https://github.com/kubernetes/test-infra/issues/7801
-* https://github.com/kubernetes/test-infra/pull/5246
+* Issues
+  * https://github.com/kubernetes/test-infra/issues/3827
+  * https://github.com/kubernetes/test-infra/issues/7801
+  * https://github.com/kubernetes/test-infra/issues/9754
+* PRs
+  * https://github.com/kubernetes/test-infra/pull/5246
+  * https://github.com/kubernetes/test-infra/pull/10991
 
 ## Implementation History
 
@@ -114,3 +126,4 @@ This would require adding automatically the `ok-to-test` label to member authore
 * 2018-10-08: start of implementation
 * 2018-10-10: `ok-to-test` label added
 * 2019-01-29: remove comment parsing code for PR trust
+* 2021-08-16: Retroactive stable declaration
