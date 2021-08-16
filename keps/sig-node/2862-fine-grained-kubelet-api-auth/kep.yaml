@@ -1,0 +1,21 @@
+title: Fine grained Kubelet API authorization
+kep-number: 2862
+authors:
+  - "@tallclair"
+  - "@pacoxu"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-auth
+status: implementable
+creation-date: 2021-08-16
+modified-date: 2021-08-30
+reviewers:
+  - "@serathius"
+approvers:
+see-also:
+replaces:
+prr-approvers:
+  - "@deads2k"
+stage: "alpha"
+latest-milestone: "v1.23"
