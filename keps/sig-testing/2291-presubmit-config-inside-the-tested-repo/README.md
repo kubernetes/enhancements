@@ -13,35 +13,17 @@
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Security](#security)
     - [Components that need the <code>Presubmit</code> configuration but do not have a <code>git ref</code> to work on](#components-that-need-the--configuration-but-do-not-have-a--to-work-on)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; Stable Graduation](#beta---stable-graduation)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
-[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
+N/A - this KEP is related to code solely in kubernetes/test-infra that is not
+being used as part of the development or release process for
+kubernetes/kubernetes
 
 ## Summary
 
@@ -149,11 +131,24 @@ Components that need the `Presubmit` config but do not have a git reference at h
 can not work as before with `inrepoconfig` because the list of Presubmits depends on
 the `ref`. This limitation will be documented.
 
+### Graduation Criteria
+
+#### Alpha -> Beta Graduation
+
+* Presubmits implemented
+* Actively used in production by at least one prow deployment
+
+#### Beta -> Stable Graduation
+
+* Postsubmits implemeneted
+* Actively used in production by at least one prow deployment for more than six months
+
 ## Implementation History
 
-* A basic but functioning [prototype](https://github.com/kubernetes/test-infra/pull/12836)
-  for this feature was created that served as initial basis for this KEP.
-* A non-working [sketch pull request](https://github.com/kubernetes/test-infra/pull/13342) that shows which parts of Prow need to be touched
-	and how the signatures for the newly-added functions look like was created to
-	be the basis for a discussion on how exactly an implementation could look like
-* Current work is being tracked via a [GitHub tracking issue](https://github.com/kubernetes/test-infra/issues/13370)
+* 2019-06-19 - Created [basic functional prototype](https://github.com/kubernetes/test-infra/pull/12836) as basis for this KEP
+* 2019-07-19 - Created [non-functional sketch PR](https://github.com/kubernetes/test-infra/pull/13342) for discussion on scope and implementation
+* 2019-07-19 - Created [GitHub tracking issue](https://github.com/kubernetes/test-infra/issues/13370)
+* 2019-11-27 - Implemented [Support for in-repo presubmits](https://github.com/kubernetes/test-infra/pull/14866)
+* 2020-01-14 - Implemented [Support for in-repo postsubmits](https://github.com/kubernetes/test-infra/pull/15667)
+* 2020-03-18 - Declared [done](https://github.com/kubernetes/test-infra/issues/13370#issuecomment-600578245)
+* 2021-08-16 - Retroactive stable declaration ([docs](https://github.com/kubernetes/test-infra/blob/master/prow/inrepoconfig.md))
