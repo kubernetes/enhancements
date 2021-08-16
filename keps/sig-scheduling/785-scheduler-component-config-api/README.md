@@ -46,8 +46,8 @@
 ## Summary
 
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
-for several releases. We graduated it to beta in 1.19 as `v1beta1`. In 1.22,
-we introduced `v1beta2`. In 1.23, we plan to introduce `v1beta3`
+for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced 
+`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively.
 
 ## Motivation
 
@@ -70,7 +70,7 @@ usage.
 
 - Introduce `kubescheduler.config.k8s.io/v1beta1` as a copy of
 `kubescheduler.config.k8s.io/v1alpha2` with minimal cleanup changes.
-- Iterate the API in `kubescheduler.config.k8s.io/v1beta3`, based on learnings.
+- Iterate the API in `kubescheduler.config.k8s.io/v1beta2`, `kubescheduler.config.k8s.io/v1beta3` based on learnings.
 - Use the newly created API objects to build the default configuration for kube-scheduler.
 
 ### Non-Goals
@@ -101,12 +101,11 @@ The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the followi
   - Change the weight of plugins that can be influenced by end users through the Pod specs.
     - `InterPodAffinity` to 2
     - `NodeAffinity` to 2
-    - `TaintToleration` to 3 as the usage of node tainting to group nodes in the cluster is a increasingly becoming a use-case 
-       for many user workloads
+    - `TaintToleration` to 3 as leveraging node tainting to group nodes in the cluster is becoming a widely-adopted practice
 
 The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
 about user preferences, so should have more influence while making scheduling decisions.
-More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174)     
+More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).     
 ### Risks and Mitigations
 
 The major risk is around the removal of the `unreserve` extension point.
@@ -147,7 +146,7 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 
 ### Upgrade/Downgrade Strategy
 
-Users are able to use the `v1beta1`, `v1beta2`, `v1beta3` APIs. Since they only affect
+Users are able to use the `v1beta1`, `v1beta2` or `v1beta3` API. Since they only affect
 the configuration of the scheduler, there is no impact to running workloads.
 
 The default configurations preserve the behavior of the scheduler.
