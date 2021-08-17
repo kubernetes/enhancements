@@ -26,7 +26,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
+
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 var ValidStages = []string{
@@ -119,7 +120,7 @@ func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
 		kep.Contents = ""
 	}
 
-	if err := yaml.Unmarshal(metadata, &kep); err != nil {
+	if err := yaml.UnmarshalStrict(metadata, &kep); err != nil {
 		k.Errors = append(k.Errors, errors.Wrap(err, "error unmarshalling YAML"))
 		return kep, errors.Wrap(err, "unmarshalling YAML")
 	}
@@ -194,9 +195,11 @@ func (k *KEPHandler) Validate(p *Proposal) []error {
 }
 
 type Milestone struct {
-	Alpha  string `json:"alpha" yaml:"alpha"`
-	Beta   string `json:"beta" yaml:"beta"`
-	Stable string `json:"stable" yaml:"stable"`
+	Alpha      string `json:"alpha" yaml:"alpha"`
+	Beta       string `json:"beta" yaml:"beta"`
+	Stable     string `json:"stable" yaml:"stable"`
+	Deprecated string `json:"deprecated" yaml:"deprecated,omitempty"`
+	Removed    string `json:"removed" yaml:"removed,omitempty"`
 }
 
 type FeatureGate struct {

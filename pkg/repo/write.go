@@ -24,8 +24,9 @@ import (
 	"path/filepath"
 
 	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
 	"k8s.io/enhancements/api"
+
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 func (r *Repo) WriteKEP(kep *api.Proposal) error {

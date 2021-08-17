@@ -24,11 +24,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"k8s.io/release/pkg/log"
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
-	"k8s.io/release/pkg/log"
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 var fixture = struct {
@@ -91,7 +91,7 @@ func TestProposalValidate(t *testing.T) {
 			require.NoError(t, err)
 
 			var p api.Proposal
-			err = yaml.Unmarshal(b, &p)
+			err = yaml.UnmarshalStrict(b, &p)
 			require.NoError(t, err)
 
 			errs := parser.Validate(&p)

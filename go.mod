@@ -18,5 +18,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 	k8s.io/release v0.7.1-0.20210218090651-d71805402dab
 	k8s.io/test-infra v0.0.0-20200813194141-e9678d500461
-	sigs.k8s.io/yaml v1.2.0
 )
