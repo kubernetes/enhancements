@@ -147,7 +147,10 @@ Before enabling Alpha phase, this will be announced:
 - Via email to the entire kubernetes-dev@googlegroups.com group
 
 ## Implementation History
-
+- 2021-02-23 - KEP [authored](https://github.com/kubernetes/enhancements/pull/2540)
+- 2021-03-31 - KEP [moved to implementable](https://github.com/kubernetes/enhancements/pull/2553)
+- 2021-04-01 - KEP implemented at alpha ([announcement](https://groups.google.com/g/kubernetes-dev/c/nke9PYaGTnY/m/nrQ6hVDfCgAJ))
+- 2021-08-16 - Retroactively declared beta
 
 ## Alternatives
 
