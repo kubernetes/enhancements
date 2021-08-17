@@ -34,6 +34,6 @@ func UnmarshalStrict(body []byte, v interface{}) error {
 
 // Marshal returns a byte array containing a YAML representation of the
 // given interface, and a non-nil error if there was an error
-func Marhsal(v interface{}) ([]byte, error) {
+func Marshal(v interface{}) ([]byte, error) {
 	return yaml.Marshal(v)
 }

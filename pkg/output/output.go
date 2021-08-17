@@ -24,9 +24,9 @@ import (
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
-	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 const (
