@@ -169,7 +169,7 @@ N/A
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: ReplicaSetPodDeletionCost
+    - Feature gate name: PodDeletionCost
     - Components depending on the feature gate: kube-controller-manager
   - [ ] Other
     - Describe the mechanism:
