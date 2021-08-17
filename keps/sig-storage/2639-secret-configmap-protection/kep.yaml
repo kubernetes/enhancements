@@ -20,21 +20,19 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.22"
+latest-milestone: "v1.23"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.22"
-  beta: "v1.23"
-  stable: "v1.24"
+  alpha: "v1.23"
+  beta: "v1.24"
+  stable: "v1.26"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: EphemeralInUseProtection
+  - name: InUseProtection
     components:
-      - kube-controller-manager
-      - ephemeral-protection-controller (part of kube-controller-manager)
-      - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
+      - kube-apiserver
 
 disable-supported: true

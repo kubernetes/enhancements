@@ -55,7 +55,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes a feature to protect Secrets/ConfigMaps while it is in use. Currently, user can delete a secret that is being used by other resources, like Pods, PVs, and VolumeSnapshots. This may have negative impact on the resouces using the secret and it may result in data loss. Also, ConfigMaps can be deleted while it is in use, which may lead to unexpected behavior in applications.
+This KEP proposes a feature to protect Secrets/ConfigMaps while it is in use. Currently, users can delete a secret that is being used by other resources, like Pods, PVs, and VolumeSnapshots. This may have negative impact on the resouces using the secret and it may result in data loss.
+
+For example, one of the worst case scenarios is deletion of a Node Stage Secret for CSI volumes while it is still in-use.
+If it happens, a CSI driver for the volume can't unstage the volume due to the lack of the Secret,
+as a result, the volume can't be detached from the node and the volume can't even be deleted.
+This issue will easily happen if a PVC for the volume and a Secret for the volume exist in the same namespace, and a user requests to delete the namespace, which starts deletion of all the resources in the namespace.
+When the Secret is deleted before the PVC is deleted, this issue happens.
+
+Also, ConfigMaps can be deleted while it is in use, which may lead to an unexpected behavior in applications.
 
 Similar features for protecting PV and PVC already exist as [pv-protection](https://github.com/kubernetes/enhancements/issues/499) and [pvc-protection](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/postpone-pvc-deletion-if-used-in-a-pod.md).
 
@@ -115,6 +123,7 @@ The secret is protected until the volume using the secret is deleted and the del
 
 A user really would like to delete a secret despite that it is used by other resources.
 The user force delete the secret while it is used by other resources, and the secret isn't protected and is actually deleted.
+An example of such use cases is to update an immutable secret, by deleting and recreating.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -139,89 +148,166 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 There is a corner case when Reclaim Policy is Retain and PV is referencing secrets in a certain user namespace.
 In such a case, when PVC is deleted, the PV referencing secrets remains as a resource not managed by the namespace, as a result, deletion of the secrets is blocked.
-However, the user of the namespace won't notice why it is blocked and won't find a way to delete the secrets other than manually deleting finalizer.
-In addition, to make things worse, provisioner secrets that are defined by using template with PVC information,
+On the other hand, provisioner secrets that are defined by using templates with PVC information,
 like "${pvc.name}", would be deleted in above case, due to the failure in finding a reference to the secret,
 because the reference to provisioner secret is not stored in PV and needs to be resolved on deletion time with PVC information that is already deleted.
 This behavior is inconsistent with other secrets, like node publish secret whose reference is stored in PV.
 
+To avoid this kind of case, an [issue](https://github.com/kubernetes-csi/external-provisioner/issues/654) for adding information on secrets in PersistentVolume as annotations is in progress. This change will allow protecting provisioner secrets from deletion even if PVC or SC for PV is deleted.
+
 ## Design Details
 
-This feature can be implemented in the same way as `pv-protection/pvc-protection`.
-Protection logics for in-tree resources and out-of-tree resources are separeted and independently work.
-It is due to the restriction that CRDs can't be handled from in-tree controller. Note that in-tree controller protect both Secrets and ConfigMaps, on the other hand, out-of-tree controller protect only Secrets because VoluemSnapshots never use ConfigMaps.
+This feature can be implemented by using Lien which is being discussed in [KEP-2839](https://github.com/kubernetes/enhancements/pull/2840).
+A newly introduced Secret protection controller and a newly introduced ConfigMap protection controller update the `Liens` field of Secrets and ConfigMaps when it finds a reference to them from other resources that the controllers are watching.
 
-- In-tree resources(`Pod` and `PersistentVolume`):
-  - The deletion is blocked by using newly introduced `kubernetes.io/ephemeral-protection` finalizer,
-  - The `kubernetes.io/ephemeral-protection` finalizer will be always added on creation of the Secret/ConfigMap by using admission controller for in-tree resources,
-  - After the Secret/ConfigMap is requested to be deleted (`deletionTimestamp` is set), the `kubernetes.io/ephemeral-protection` finalizer will be deleted by newly introduced in-tree `ephemeral-protection-controller` by checking whether the Secret/ConfigMap is in-use, on every change(Create/Update/Delete) events for Secrets/ConfigMaps and related resources.
-  - If the `EphemeralInUseProtection` feature gate is disalbed, finalizer is added on creation, but deleted regardless of whether it is in-use after `deletionTimestamp` is set. This will allow users to avoid manually deleting finalizers on the downgrading by disabling the feature.
-- Out-of-tree resources(`VolumeSnapshot`):
-  - The deletion is blocked by using newly introduced `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer,
-  - The `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer will be always added on creation of the secret by using snapshot controller,
-  - After the secret is requested to be deleted (`deletionTimestamp` is set), the `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer will be deleted by newly introduced out-of-tree `ephemeral-protection-volumesnapshot-controller` by checking whether the secret is in-use, on every change(Create/Update/Delete) events for secrets and related resources.
+Note that that Secret protection controller needs to handle `VolumeSnapshotContent`, which is out-of-tree resource.
+Due to the restriction of out-of-tree resources, it needs to be handled by an external controller.
+Therefore, it is designed to make the same external controller handle both in-tree resources and out-of-tree resources, instead of creating both an in-tree controller and an external controller, separately.
+Also, ConfigMap protection controller is implemented as an external controller.
 
-Feature gate `EphemeralInUseProtection` is used only for in-tree controller. Out-of-tree controller will be enabled when the `ephemeral-protection-volumesnapshot-controller` is deployed with `--ephemeral-protection=enabled` flag.
+To minimize the risk of unintentionally blocking the deletion, this feature is opt-in.
+Users need to add below to enable this feature per resource:
+- `kubernetes.io/enable-secret-protection` annotation to Secret
+- `kubernetes.io/enable-configmap-protection` annotation to ConfigMap
 
-For users to force delete the Secret, users need to do either:
-1. manually delete the finalizer, by below command:
+Basic flows of Secret protection controller and ConfigMap protection controller are as follows:
+
+- Secret protection controller:
+  - The controller watches `Pod`, `PersistentVolume`, and `VolumeSnapshotContent`
+    - Create/Update event:
+      - For all the `Secret`s referenced by the resource:
+        - If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, do nothing
+        - Update the `Secret`'s `Liens` field to add `kubernetes.io/secret-protection ${version}/${kind}/${namespace}/${name}`.
+    - Delete event:
+      - For all the `Secret`s referenced by the resource:
+        - Update the `Secret`'s `Liens` field to remove `kubernetes.io/secret-protection ${version}/${kind}/${namespace}/${name}`.
+  - The controller periodically check `Pod`, `PersistentVolume`, and `VolumeSnapshotContent`
+    - For each resource:
+      - For all the `Secret`s referenced by the resource:
+        - If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, do nothing
+        - Update the `Secret`'s `Liens` field to add `kubernetes.io/secret-protection ${version}/${kind}/${namespace}/${name}`.
+  - The controller preiodically check `Secret`
+    - For each `Secret`:
+      - If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation
+        - Remove all the `Liens` that is prefixed with `kubernetes.io/secret-protection`
+      - otherwise:
+        - For all the liens that are prefixed with `kubernetes.io/secret-protection`:
+        - Check if the resource with `${version}/${kind}/${namespace}/${name}` exists, and if it no longer exists, delete the lien.
+
+- ConfigMap protection controller:
+  - The controller watches `Pod`
+    - Create/Update event:
+      - For all the `ConfigMap`s referenced by the `Pod`:
+        - If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, do nothing
+        - Update the `ConfigMap`'s `Liens` field to add `kubernetes.io/configmap-protection ${version}/${kind}/${namespace}/${name}`.
+    - Delete event:
+      - For all the `ConfigMap`s referenced by the `Pod`:
+        - Update the `ConfigMap`'s `Liens` field to remove `kubernetes.io/configmap-protection ${version}/${kind}/${namespace}/${name}`.
+  - The controller periodically check `Pod`
+    - For each `Pod`:
+      - For all the `ConfigMap`s referenced by the `Pod`:
+        - If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, do nothing
+        - Update the `ConfigMap`'s `Liens` field to add `kubernetes.io/configmap-protection ${version}/${kind}/${namespace}/${name}`.
+  - The controller preiodically check the `ConfigMap`s
+    - For each `ConfigMap`:
+      - If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation
+        - Remove all the `Liens` that is prefixed with `kubernetes.io/configmap-protection`
+      - otherwise:
+        - For all the liens that are prefixed with `kubernetes.io/configmap-protection`:
+        - Check if the resource with `${version}/${kind}/${namespace}/${name}` exists, and if it no longer exists, delete the lien.
+
+Note that
+  - Periodical checks for referencing resources are needed for handling a case that the annotation is added after referecing resources are created,
+  - Periodical checks for `Secret` or `Configmap` are needed for handling a case that update for a referencing resource is done in a way that remove the reference to `Secret` or `Configmap`,
+  - What deletion event handling is doing is covered by the periodical checks for `Secret` or `Configmap`, but added intentionally to handle the event in a timely manner.
+
+Prototype implementation can be found [here](https://github.com/mkimuram/secret-protection/commits/lien).
+
+For users to force delete the Secret, users need to either:
+1. Remove `kubernetes.io/enable-secret-protection: "yes"` annotation
     ```
-    kubectl patch secret/secret-to-be-deleted -p '{"metadata":{"finalizers":[]}}' --type=merge
+    kubectl annotate secret secret-to-be-deleted kubernetes.io/enable-secret-protection-
     ```
-2. add `secret.kubernetes.io/skip-ephemeral-protection: "yes"` annotation to opt-out this feature per secret
 
-For users to force delete the ConfigMap, users need to do either:
-1. manually delete the finalizer, by below command:
+2. Remove the Liens, by below command:
     ```
-    kubectl patch configmap/configmap-to-be-deleted -p '{"metadata":{"finalizers":[]}}' --type=merge
+    kubectl patch secret secret-to-be-deleted -p '{"metadata":{"liens":[]}}' --type=merge
     ```
-2. add `secret.kubernetes.io/skip-ephemeral-protection: "yes"` annotation to opt-out this feature per ConfigMap
 
-Annotation will be more user friendly than directly deleting finalizer. However, it can't be used in the case that this feature is once enabled and disabled later by deleting the controller. For this case, it may be needed to provide a script to delete the finalizer on all the Secrets/ConfigMaps.
+For users to force delete the ConfigMap, users need to either:
+1. Remove `kubernetes.io/enable-configmap-protection: "yes"` annotation
+    ```
+    kubectl annotate configmap configmap-to-be-deleted kubernetes.io/enable-configmap-protection-
+    ```
+
+2. Remove the Liens, by below command:
+    ```
+    kubectl patch configmap configmap-to-be-deleted -p '{"metadata":{"liens":[]}}' --type=merge
+    ```
+
+Annotation will be more user friendly than directly deleting liens.
+However, annotation can't be used in the case that controllers are once deployed and undeployed later.
+On the other hand, directly deleting liens might not work, because liens may be added by the controllers again, even after users manually remove the liens.
+Therefore, directly deleting liens should be used after the controllers are undelpoyed.
+For this case, it may be needed to provide a script to delete all the related liens on all the Secrets/ConfigMaps.
+
+Note that above examples of removing liens remove all the liens from the resource.
+So, when running these commands, we need to care that other controllers or users may have been add another Liens for other purposes (For the case _to force delete_, it won't matter because the user really would like to delete the resource anyway).
+
 
 ### Test Plan
 
 - For Alpha, unit tests and e2e tests verifying that a Secret/ConfigMap used by other resources is protected by this feature are added.
   - unit tests:
-    - EphemeralInUseProtection enabled:
+    - Lien feature enabled:
       - Verify immediate deletion of a secret that is not used
-      - Verify that secret used by a Pod is not removed immediately
+      - Verify immediate deletion of a secret that is used but doesn't have annotation
+      - Verify that secret used by a Pod as volume is not removed immediately
+      - Verify that secret used by a Pod as EnvVar is not removed immediately
       - Verify that secret used by a CSI PV as controllerPublishSecret is not removed immediately
       - Verify that secret used by a CSI PV as nodeStageSecret is not removed immediately
       - Verify that secret used by a CSI PV as nodePublishSecret is not removed immediately
       - Verify that secret used by a CSI PV as controllerExpandSecret is not removed immediately
       - Verify that secret used by a CSI PV as provisionerSecret is not removed immediately
       - Verify that secret used by a CSI PV as provisionerSecret via template is not removed immediately
-      - Verify immediate deletion of a ConfigMap that is not used
-      - Verify that ConfigMap used by a Pod is not removed immediately
-    - EphemeralInUseProtection disabled:
-      - Verify immediate deletion of a secret that is not used
-      - Verify immediate deletion of a secret that is used by a Pod
-      - Verify immediate deletion of a secret with finalizer that is used by a Pod
-      - Verify immediate deletion of a ConfigMap that is not used
-      - Verify immediate deletion of a ConfigMap that is used by a Pod
-      - Verify immediate deletion of a ConfigMap with finalizer that is used by a Pod
-    - `--ephemeral-protection=enabled`:
-      - Verify immediate deletion of a secret that is not used
       - Verify that secret used by a VolumeSnapshot is not removed immediately
       - Verify that secret used by a VolumeSnapshot as snapshotterSecret via template is not removed immediately
-    - `--ephemeral-protection=disabled`:
+      - Verify immediate deletion of a ConfigMap that is not used
+      - Verify immediate deletion of a ConfigMap that is used but doesn't have annotation
+      - Verify that ConfigMap used by a Pod as volume is not removed immediately
+      - Verify that ConfigMap used by a Pod as EnvVar is not removed immediately
+    - Lien feature disabled:
+      - Verify immediate deletion of a secret that is not used
+      - Verify immediate deletion of a secret that is used by a Pod
+      - Verify immediate deletion of a ConfigMap that is not used
+      - Verify immediate deletion of a ConfigMap that is used by a Pod
       - Verify immediate deletion of a secret that is not used
       - Verify immediate deletion of a secret used by a VolumeSnapshot
       - Verify immediate deletion of a secret used by a VolumeSnapshot as snapshotterSecret via template
   - e2e tests:
-    - Verify immediate deletion of a secret that is not used
-    - Verify that secret used by a Pod is not removed immediately
-    - Verify that secret used by a CSI PV as controllerPublishSecret is not removed immediately
-    - Verify that secret used by a CSI PV as nodeStageSecret is not removed immediately
-    - Verify that secret used by a CSI PV as nodePublishSecret is not removed immediately
-    - Verify that secret used by a CSI PV as controllerExpandSecret is not removed immediately
-    - Verify that secret used by a CSI PV as provisionerSecret is not removed immediately
-    - Verify that secret used by a CSI PV as provisionerSecret via template is not removed immediately
-    - Verify that secret used by a VolumeSnapshot is not removed immediately
-    - Verify that secret used by a VolumeSnapshot as snapshotterSecret via template is not removed immediately
-    - Verify immediate deletion of a ConfigMap that is not used
-    - Verify that ConfigMap used by a Pod is not removed immediately
+    - secret-protection-controller deployed:
+      - Verify immediate deletion of a secret that is not used
+      - Verify immediate deletion of a secret that is used but doesn't have annotation
+      - Verify that secret used by a Pod as volume is not removed immediately
+      - Verify that secret used by a Pod as EnvVar is not removed immediately
+      - Verify that secret used by a CSI PV as controllerPublishSecret is not removed immediately
+      - Verify that secret used by a CSI PV as nodeStageSecret is not removed immediately
+      - Verify that secret used by a CSI PV as nodePublishSecret is not removed immediately
+      - Verify that secret used by a CSI PV as controllerExpandSecret is not removed immediately
+      - Verify that secret used by a CSI PV as provisionerSecret is not removed immediately
+      - Verify that secret used by a CSI PV as provisionerSecret via template is not removed immediately
+      - Verify that secret used by a VolumeSnapshot is not removed immediately
+      - Verify that secret used by a VolumeSnapshot as snapshotterSecret via template is not removed immediately
+    - secret-protection-controller not deployed:
+      - Verify immediate deletion of a secret that is used by Pod, PV, and VolumeSnapshot
+    - configmap-protection-controller deployed:
+      - Verify immediate deletion of a ConfigMap that is not used
+      - Verify immediate deletion of a ConfigMap that is used but doesn't have annotation
+      - Verify that ConfigMap used by a Pod as volume is not removed immediately
+      - Verify that ConfigMap used by a Pod as EnvVar is not removed immediately
+    - config-protection-controller not deployed:
+      - Verify immediate deletion of a ConfigMap that is used by Pod
+
 - For Beta, scalability tests are added to exercise this feature.
 - For GA, the introduced e2e tests will be promoted to conformance.
 
@@ -252,20 +338,18 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
-- Upgrade: Secret/ConfigMap that doesn't have `kubernetes.io/ephemeral-protection` finalizer and/or `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer will be added the finalizers on Update/Delete events, therefore no additional user operation will be needed.
+- Upgrade: 
+  - This feature requires that lien(InUseProtection feature gate) is enabled in the cluster.
+  - To enable Secret protection, deploy secret-protection-controller.
+  - To enable ConfigMap protection, deploy configmap-protection-controller.
 - Downgrade:
-  - Feature disabled case:
-    - If the `ephemeral-protection-controller` exists and the feature is disabled, `kubernetes.io/ephemeral-protection` finalizer will always be deleted, therefore no additional user operation will be needed,
-    - If the `ephemeral-protection-volumesnapshot-controller` exists and the feature is disabled, `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer will always be deleted, therefore no additional user operation will be needed,
-  - Downgraded to no controller case:
-    - If no `ephemeral-protection-controller` exists but `kubernetes.io/ephemeral-protection` finalizer is added to the secrets, no one removes the finalizer. Therefore, user needs to remove the `kubernetes.io/ephemeral-protection` finalizer from all the secrets manually.
-    - If no `ephemeral-protection-volumesnapshot-controller` exists but `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer is added to the secrets, no one removes the finalizer. Therefore, user needs to remove the `kubernetes.io/ephemeral-protection` finalizer from all the Secrets/ConfigMaps manually.
+  - To disable Secret protection, undeploy secret-protection-controller.
+  - To disable ConfigMap protection, undeploy configmap-protection-controller.
+  - If the cluster is downgraded to the version that doesn't support lien, this feature should be disabled, or controllers should be undeployed.
 
 ### Version Skew Strategy
 
-- As for the difference between in-tree components and out-of-tree components, they work independently, so they won't affect each other,
-- As for in-tree components, the protection logic involves only in-tree admission controller and in-tree ephemeral-protection-controller, so version skew won't happen unless these components are available with different versions,
-- As for out-of-tree components, the protection logic involves only out-of-tree admission controller and out-of-tree ephemeral-protection-volumesnapshot-controller, so version skew won't happen unless these components are available with different versions,
+- As for dependency on features, this feature depends on lien (InUseProtection feature gate), therefore, if the lien feature is disabled, this feature should also be disabled,
 - As for resources, CSI Volume and CSI Snapshot are involved, changes in the API/CRD of these resources especially for their Secret/ConfigMap fields might cause issue. Howerver, this should be compatibility issue for these API/CRDs.
 
 ## Production Readiness Review Questionnaire
@@ -295,15 +379,14 @@ you need any help or guidance.
 ### Feature Enablement and Rollback
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: EphemeralInUseProtection
-  - Components depending on the feature gate:
-    - kube-controller-manager
-    - ephemeral-protection-controller (part of kube-controller-manager)
-    - storageobjectinuseprotection admission plugin (part of kube-controller-manager)
-
-The ephemeral-protection-controller for in-tree are deployed automatically, if the Kubernetes version is later than the version where secret protection feature is marked as alpha.
-Ephemeral protection for volume snapshot will be enabled when those relevant out-of-tree controllers are deployed with `--ephemeral-protection=enabled`, but no feature gate is needed.
+- [x] Other
+  - Describe the mechanism: Deploy the controller for each feature:
+    - secret-protection-controller
+    - configmap-protection-controller
+  - Will enabling / disabling the feature require downtime of the control
+    plane? No.
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -311,21 +394,7 @@ Yes. Secrets/ConfigMaps aren't deleted until the resources using them are delete
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Detailed steps are as follows:
-
-- In-tree controller:
-  - Downgrade case:
-    1. Downgrade to the version where no ephemeral-protection-controller exists,
-    2. Manually delete the `kubernetes.io/ephemeral-protection` finalizer from all the Secrets/ConfigMaps.
-  - Otherwise:
-    1. Disable the `EphemeralInUseProtection` feature gate.
-
-- Out-of-tree controller:
-  - Recommended method:
-    1. Redeploy out-of-tree controllers with `--ephemeral-protection=disabled`
-  - Alternative method:
-    1. Delete the out-of-tree secret protection controller,
-    2. Manually delete the `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer from all the secrets.
+Yes. By undeploying the controllers.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -333,7 +402,7 @@ Secrets/ConfigMaps aren't deleted until the resources using them are deleted, ag
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, unit tests for the ephemeral-protection-controller and ephemeral-protection-volumesnapshot-controller cover scenarios where the feature is disabled or enabled.
+Yes, e2e tests for secret-protection-controller and configmap-protection-controller cover scenarios where the controller is deployed and undeployed.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -377,17 +446,17 @@ This section must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-There will be Secrets/ConfigMaps which have `kubernetes.io/ephemeral-protection` finalizer and `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer.
+There will be Secrets/ConfigMaps which have liens prefixed with `kubernetes.io/secret-protection` or `kubernetes.io/configmap-protection`.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
   - Metric name: secret_protection_controller
     - Aggregation method: prometheus
-    - Components exposing the metric: ephemeral-protection-controller
-  - Metric name: secret_protection_volumesnapshot_controller
+    - Components exposing the metric: secret-protection-controller
+  - Metric name: configmap_protection_controller
     - Aggregation method: prometheus
-    - Components exposing the metric: ephemeral-protection-volumesnapshot-controller
+    - Components exposing the metric: configmap-protection-controller
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
@@ -436,7 +505,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 - API call type: Update Secret/ConfigMap, List Pod/PV/VolumeSnapshot, and Get PVC/SC
 - estimated throughput: TBD
-- originating component: ephemeral-protection-controller and ephemeral-protection-volumesnapshot-controller
+- originating component: secret-protection-controller and configmap-protection-controller
 - API calls are triggered by changes of Secret/ConfigMap, Pod, PV, VolumeSnapshot
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -450,7 +519,7 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 - API type(s): Secret/ConfigMap
-- Estimated increase in size: the size of `kubernetes.io/ephemeral-protection` finalizer, `snapshot.storage.kubernetes.io/ephemeral-protection` finalizer, and `secret.kubernetes.io/skip-ephemeral-protection` annotation per Secret/ConfigMap
+- Estimated increase in size: the size of Liens field per Secret/ConfigMap
 - Estimated amount of new objects: N/A
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -525,7 +594,8 @@ Why should this KEP _not_ be implemented?
 ## Alternatives
 
 - Manually adding/deleting finalizer to/from Secrets/ConfigMaps that are not deleted automatically in certain life cycle
+- Implement in the same way as [pv-protection](https://github.com/kubernetes/enhancements/issues/499) and [pvc-protection](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/postpone-pvc-deletion-if-used-in-a-pod.md)
 - Introduce a new kind of reference, like usedReference, and leave addition/deletion of it to users
   (Similar to ownerReference, but just block deletion and won't try to delete referenced resources through GC, like deleting child on parent's deletion).
 
-Above ways will force users to do some additional works to protect Secrets/ConfigMaps. Also, they are inconsistent with pv-protection/pvc-protection concepts.
+Above ways will force users to do some additional works to protect Secrets/ConfigMaps.
