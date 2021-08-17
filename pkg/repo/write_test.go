@@ -27,7 +27,8 @@ import (
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
-	"sigs.k8s.io/yaml"
+
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 // TODO: Consider using afero to mock the filesystem here
@@ -126,7 +127,7 @@ func TestWriteKep(t *testing.T) {
 			require.NoError(t, err)
 
 			var p api.Proposal
-			err = yaml.Unmarshal(b, &p)
+			err = yaml.UnmarshalStrict(b, &p)
 			require.NoError(t, err)
 
 			p.OwningSIG = tc.sig

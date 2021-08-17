@@ -30,12 +30,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
+
+	krgh "k8s.io/release/pkg/github"
+	"k8s.io/test-infra/prow/git"
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval"
-	krgh "k8s.io/release/pkg/github"
-	"k8s.io/test-infra/prow/git"
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 const (
@@ -439,7 +440,7 @@ func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	}
 
 	var p api.Proposal
-	err = yaml.Unmarshal(b, &p)
+	err = yaml.UnmarshalStrict(b, &p)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
 	}
