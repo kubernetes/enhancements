@@ -472,13 +472,16 @@ Because Windows privileged containers will work much differently than Linux priv
 ![Privileged Container Diagram](Privileged.png)
 
 #### Networking
+
 - The container will be in the host’s network namespace (default network compartment) so it will have access to all the host’s network interfaces and have the host's IP as well.
 
 #### Resource Limits
+
 - Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
 - Disk resource tracking may work slightly differently for privileged Windows containers due to how these containers are bootstrapped. The extent of these differences are still being investigated but will be fully documented when understood. Resource usage will be trackable the differences would be in how resource usage is calculated.
 
-#### Container Lifecycle 
+#### Container Lifecycle
+
 - The container's lifecycle will be managed by the container runtime just like other Windows container types.
 
 #### Container users
@@ -889,50 +892,42 @@ fields of API types, flags, etc.?**
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  Kubelet metrics will be updated to report the number of HostProcess containers started and number of errors started.
+
+  TBD: Confirm the best way to acomplish this is to add new [values/metric labels](https://github.com/kubernetes/kubernetes/blob/fe099b2abdb023b21a17cd6a127e381b846c1a1f/pkg/kubelet/metrics/metrics.go#L96-L99) for `StartedContainersTotal` and `StartedContainersError` counters. Otherwise we could add new counters.
+
+
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+  - [x] Metrics
+    - Metric name: Add labels to report counts of HostProcess containers (host_process_container, host_process_init_container, and host_process_ephemeral_container) to `started_containers_total` and `started_containers_errors_total`
+    TODO: get confirmation from sig-node / ehashman
     - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - Components exposing the metric: Kubelet
   - [ ] Other (treat as last resort)
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+ The same SLOs for starting/stopping non-hostprocess containers would apply here.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+  N/A
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
+  - [ContainerD]
     - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+      - HostProcess containers support will not be added to dockershim.
+      - Containerd v1.5.6+ is required.
+      - Impact of its outage on the feature: Containers will fail to start.
+      - Impact of its degraded performance or high-error rates on the feature: Containers may behave expectantly and node may go into the NotReady state.
 
 ### Scalability
 
@@ -964,7 +959,7 @@ operations covered by [existing SLIs/SLOs]?**
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  No - Privileged containers will honor limits/reserves specified in the specs and will count against node quota just like unprivilged containers.
+  No - HostProcess containers will honor limits/reserves specified in the specs and will count against node quota just like unprivileged containers.
 
 ### Troubleshooting
 
@@ -975,23 +970,18 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  This feature will not change any behaviors around Pod scheduling if API server and/or etcd is unavailable.
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  N/A
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
+  Kubelet and/or containerd logs will need to inspected if problems are encountered creating HostProcess containers on Windows nodes.
 
 ## Implementation History
 
