@@ -3,10 +3,10 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
@@ -58,23 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: CRD Validation Expressions
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
+# KEP-NNNN: CRD Validation Expression Language
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -118,6 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Rego](#rego)
   - [Expr](#expr)
   - [WebAssembly](#webassembly)
+  - [Starlark (formeraly known as Skylark)](#starlark-formeraly-known-as-skylark)
   - [Build our own](#build-our-own)
   - [Make it easier to validate CRDs using webhooks](#make-it-easier-to-validate-crds-using-webhooks)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -167,20 +152,19 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-CRDs need direct support for non-trivial validation.  While admission webhooks do support
+CRDs need direct support for non-trivial validation. While admission webhooks do support
 CRDs validation, they significantly complicate the development and
 operability of CRDs.
 
-This KEP proposes that an inline expression language be integrated directly into
-CRDs such that a much larger portion of validation use cases can
-be solved without the use of webhooks. Support for defaulting and CRD conversions via
-the expression language will also be added in the future.
+This KEP proposes that an inline expression language be integrated directly into CRDs such that a
+much larger portion of validation use cases can be solved without the use of webhooks. When
+selecting an exression language, we want to be sure that it can support defaulting and CRD
+conversion in the future.
 
-This KEP proposes the use the adoption of [Common Expression Language
-(CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and
-safe to be run directly in the kube-apiserver, has a straight-forward and
-unsurprising grammar, and supports pre-parsing and typechecking of expressions,
-allowing syntax and type errors to be caught at CRD registration time.
+This KEP proposes the adoption of [Common Expression Language
+(CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and safe to be run directly
+in the kube-apiserver, has a straight-forward and unsurprising grammar, and supports pre-parsing and
+typechecking of expressions, allowing syntax and type errors to be caught at CRD registration time.
 
 <<[UNRESOLVED @jpbetz @cici37]>>
 There are alternatives to CEL that we have not yet ruled out. We are focusing
@@ -318,6 +302,11 @@ access to the scalar data element the validator is scoped to.
 
 - For OpenAPIv3 list and map types, the expression will have access to the data
 element of the list or map.
+
+<<[UNRESOLVED @jpbetz @deads2k @lavalamp]>>
+When performing an update, should the live state of a field also be readable by expressions? This could be used,
+for example, to enforce immutability.
+<<[/UNRESOLVED]>>
 
 <<[UNRESOLVED @cici37]>>
 Should the message also be an expression to allow for some basic variable
@@ -987,6 +976,18 @@ The biggest problems with WebAssembly are:
   workflow.
 
 See also github.com/chimera-kube/chimera-admission
+
+### Starlark (formeraly known as Skylark)
+
+Python dialect designed for scripts embedded in the Bazel build system. It is designed to allow for
+determinstic and hermetic execution. Implementations exist in Go, Java and Rust. It is used
+primarily in build and documentation generators. The language definition is much larger than the
+other embeddable expression languages considered.
+
+Cons:
+- Does not provide type checking
+- Indention aware grammar is not a good fix to single line expressions
+- Execution of untrusted code in a sandbox is not a top level project goal
 
 ### Build our own
 
