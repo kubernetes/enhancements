@@ -958,19 +958,13 @@ the solution to the following equation.
 
 ```
 Integral[from tau=t_dispatch_virtual(i,j)
-         to   tau=  t_finish_virtual(i,j)]  rate(i,tau) dtau  =  len(i,j)
+         to   tau=  t_finish_virtual(i,j)] rate(i,tau) dtau  =  len(i,j)
 ```
 
-That is, each of a queue's requests is executed in the virtual world at
-the aforementioned `rate`.  Before the real completion, `len` is only
-a guess.
-
-For a given request `(i,j)`, the initial guess at its execution
-duration is the sum of `tarry(i,j)` and what the request context says
-is the available remaining time for serving the request.  If and
-whenever the passage of time later proves the current guessed `len` to
-be too small then it is increased by adding `G` (which is the server's
-configured default request service time limit).
+That is, each of a queue's requests is executed in the virtual world
+at the aforementioned `rate`.  Before the real completion, `len` is
+only a guess.  We use the same guess for every request, and use the
+symbol `G` for that guess.
 
 Once a request `(i,j)` finishes executing in the real world, its
 actual execution duration is known and `len` gets set to that plus
@@ -993,6 +987,56 @@ closely follows the one last dispatched from.  Requests are dispatched
 as soon as allowed by that ordering and the concurrency bound in the
 problem statement.
 
+The following equation is an equivalent definition of
+`t_finish_virtual(i,j)`.
+
+```
+Integral[from tau=t_dispatch_virtual(i,j)
+         to   tau=  t_finish_virtual(i,j)] mu_equal(tau) dtau  =  width(i,j) * len(i,j)
+```
+
+For requests that have not yet begun executing in the real world, we
+can simplify the above equation to the following.
+
+```
+Integral[from tau=t_dispatch_virtual(i,j)
+         to   tau=  t_finish_virtual(i,j)] mu_equal(tau) dtau  =  width(i,j) * G
+```
+
+This means that when making real world dispatching decisions, the only
+distinctions among waiting requests are their width estimates (plus
+the previous history of their queue).  Originally we set `G` to a
+value that is normally a gross over-estimate: one minute.  That meant
+that differences in width estimates made grossly inordinate
+differences in dispatching order.  Consider the example where all
+requests actually take 100 ms to execute, and almost all have a width
+of 1.  When a queue has a request of width 2 at its head, that queue's
+estimated next completion time has a penalty compared to all the other
+queues that is equal to the time it takes to execute 600 requests.
+And once that width=2 request eventually is run and completes, that
+queue's following estimated completion times jump forward by 1198
+request's worth of time (as opposed to 599 in the usual case).
+
+If requests all had the same width, we could set `G` to any value and
+get the same behavior as any other value of `G`.  As far as
+dispatching `width=1` requests is concerned, the problem at any time
+is to pick a queue `i` for which the value of
+`t_dispatch_virtual(i,oldest_waiting_j(i)) + G` is minimal.  Clearly,
+the value of `G` does not matter to that ordering among queues.
+
+To remove the inordinate impact of width estimates, we have changed
+`G` to zero.  In other words, the differentiation among queues comes
+only from requests that have completed in the real world.
+
+If we wanted the waiting requests to have _some_ effect, we could set
+`G` to a small amount of time; 100 ms would not be bad.  Additionally,
+we could add `tarry(i,j)` when making the initial guess at `len(i,j)`.
+
+An alternative way to avoid an inordinate impact from width estimates
+is to guess not the execution time `len(i,j)` but rather the total
+work `width(i,j) * len(i,j)`.  But a constant guess at that just
+produces the same behavior as `G=0`, making the only differentiation
+among queues come from their completed requests.
 
 #### Implementation of Fair Queuing for Server Requests with equal allocations and serial execution, technique and problems
 
