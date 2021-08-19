@@ -511,12 +511,16 @@ Note: there will be no `chroot` equivalent.
 #### Container Images
 
 - Privileged containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
-- A slim base image may be introduced to act as a replacement for [scratch]. On windows graphdriver calls expect some files (mainly registry hives) and these would be included in the slim base image.
-- Privileged containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to skip OS version checks when pulling/starting these containers in the future. This will continue to be investigated as the feature matures.
+- A new Windows container base image will not be introduced for HostProcess containers.
+- It is recommended to use nanoserver as the base image for HostProcess containers since these have the smallest footprint.
+- Privileged containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to identify HostProcess containers and skip OS version checks when pulling/starting these containers in the future.
 
 #### Container Image Build/Definition
 
-- This is another ongoing area of investigation and open to feedback. Currently only a subset of dockerfile operations are supported (ADD, COPY, PATH, ENTRYPOINT, etc).
+- HostProcess container images can be built with Docker.
+- Only a subset of dockerfile operations will be supported (ADD, COPY, PATH, ENTRYPOINT, etc).
+  - Note: The subset of dockerfile operations supported for HostProcess containers is very close to the subset of operations supported when building images for other OS's with buildkit.
+- Documentation on building HostProcess containers will be added at either docs.microsoft.com or a new github repository.
 
 ### CRI Implementation Details
 
