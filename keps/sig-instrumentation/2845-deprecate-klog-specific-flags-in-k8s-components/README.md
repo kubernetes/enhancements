@@ -37,10 +37,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -55,29 +55,42 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes to deprecate and in the future to remove a subset of the klog
-command line flags from Kubernetes components to encourage more diverse 
-approaches to logging in kubernetes ecosystem logging.
+command line flags from Kubernetes components, with goal of making logging of
+k8s core components simpler, easier to maintain and extend by community.
 
 ## Motivation
 
-Early on Kubernetes adopted glog logging library for logging. Overtime the glog
-was forked to klog and multiple improvements were implemented, but features put
-into klog only piled up and were never removed. Introduction of alternative log
-formats like JSON created a conundrum, should we implement all klog features for
-JSON? Most of them don't make sense and method for their configuration leaves
-much to be desired. Klog features are controlled by set of global flags that
-remain last bastion of global state in k/k repository. Those flags don't have a
-single naming standard (some start with log prefix, some not), don't comply to
-k8s flag naming (use underscore instead of hyphen) and many other problems. We
-need to revisit how logging configuration is done in klog so it can work with
-alternative log formats and comply with current best practices.
+Early on Kubernetes adopted glog logging library for logging. There was no
+larger motivation for picking glog, as the Go ecosystem was in its infancy at
+that time and there were no alternatives. As Kubernetes community needs grew
+glog was not flexible enough, prompting creation of its fork klog. By forking we
+inherited a lot of glog features that we never intended to support. Introduction
+of alternative log formats like JSON created a conundrum, should we implement
+all klog features for JSON? Most of them don't make sense and method for their
+configuration leaves much to be desired. Klog features are controlled by set of
+global flags that remain last bastion of global state in k/k repository. Those
+flags don't have a single naming standard (some start with log prefix, some
+not), don't comply to k8s flag naming (use underscore instead of hyphen) and
+many other problems. We need to revisit how logging configuration is done in
+klog, so it can work with alternative log formats and comply with current best
+practices.
 
-Large number of features added to klog has lead to large drop in quality. 
-[#90804](https://github.com/kubernetes/kubernetes/pull/90804) shows example 
-where kubeup (canonical way to deploy kubernetes for testing) could not use 
-klog feature to write log files due to scalability issues. The maintainers of 
-klog decided it's easier to re-implementing a canonical klog feature in external
-project than debugging the underlying problem.
+Lack of investment and growing number of klog features impacted project quality.
+Klog has multiple problems, including:
+* performance is much worse than alternatives, for example 7-8x than
+  [JSON format](https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/1602-structured-logging#logger-implementation-performance)
+* doesn't support throughput to fulfill Kubernetes scalability requirements
+  [kubernetes/kubernetes#90804](https://github.com/kubernetes/kubernetes/pull/90804)
+* complexity and confusion caused by maintaining backward compatibility for
+  legacy glog features and flags. For example
+  [kuberrnetes/klog#54](https://github.com/kubernetes/klog/issues/54)
+
+Fixing all those issues would require big investment into logging, but would not
+solve the underlying problem of having to maintain a logging library. We have
+already seen cases like [kubernetes/kubernetes#90804](https://github.com/kubernetes/kubernetes/pull/90804)
+where it's easier to reimplement a klog feature in external project than fixing
+the problem in klog. To conclude, we should drive to reduce maintenance cost and
+improve quality by narrowing scope of logging library.
 
 As for what configuration options should be standardized for all logging formats
 I would look into 12 factor app standard (https://12factor.net/). It defines
@@ -91,8 +104,8 @@ best practices.
 ### Goals
 
 * Unblock development of alternative logging formats
-* Improve quality of logging in k8s core components
-* Logging should use configuration mechanism developed by WG component-standard
+* Narrow scope of logging with more opinionated approach and smaller set of features
+* Reduce complexity of logging configuration and follow standard component configuration mechanism.
 
 ### Non-Goals
 
@@ -102,24 +115,36 @@ best practices.
 
 I propose that Kubernetes core components (kube-apiserver, kube-scheduler,
 kube-controller-manager, kubelet) should drop flags that extend
-logging over events streams or klog specific features. This change should be 
+logging over events streams or klog specific features. This change should be
 scoped to only those components and not affect broader klog community.
+
+With removal of output stream manipulation flags we need to provide a set of sane
+defaults and convention that will prevent logging formats implementations to
+diverge and reintroduce their own flags. As logs should be treated as event
+streams I would propose that we separate two main streams "info" and "error"
+based on log method called. As error logs should usually be treated with higher
+priority, having two streams prevents single pipeline from being clogged down
+(for example [kubernetes/klog#209](https://github.com/kubernetes/klog/issues/209)). For
+logging formats writing to standard streams, we should follow UNIX standard
+of mapping "info" logs to stdout and "error" logs to stderr.
 
 Flags that should be deprecated:
 
-* --log-dir, --log-file, --log-flush-frequency - responsible for writing to 
-  files and syncs to disk. 
-  Motivation: Remove complexity to make alternative loggers easier to implement
-  and reducing feature surface to improve quality.
-* --logtostderr, --alsologtostderr, --one-output, --stderrthreshold - 
-  responsible enabling/disabling writing to stderr (vs file). 
+* --log-dir, --log-file, --log-flush-frequency - responsible for writing to
+  files and syncs to disk.
+  Motivation: Not critical as there are easy to set up alternatives like:
+  shell redirection, systemd service management or docker log driver. Removing
+  them reduces complexity and allows development of non-text loggers like one
+  writing to journal.
+* --logtostderr, --alsologtostderr, --one-output, --stderrthreshold -
+  responsible enabling/disabling writing to stderr (vs file).
   Motivation: Not needed if writing to files is removed.
-* --log-file-max-size, --skip-log-headers - responsible configuration of file 
-  rotation. 
+* --log-file-max-size, --skip-log-headers - responsible configuration of file
+  rotation.
   Motivation: Not needed if writing to files is removed.
-* --add-dir-header, --skip-headers - klog format specific flags . 
+* --add-dir-header, --skip-headers - klog format specific flags .
   Motivation: don't apply to other log formats
-* --log-backtrace-at - an legacy glog feature. 
+* --log-backtrace-at - an legacy glog feature.
   Motivation: No trace of anyone using this feature.
 
 Flag deprecation should comply with standard k8s policy and require 3 releases before removal.
@@ -129,16 +154,16 @@ This leaves that two flags that should be implemented by all log formats
 * -v - control global log verbosity of Info logs
 * --vmodule - control log verbosity of Info logs on per file level
 
-Those flags were chosen as they have direct effect of which logs are written, 
+Those flags were chosen as they have direct effect of which logs are written,
 directly impacting log volume and component performance.
 
 ### User Stories
 
 #### Writing logs to files
 
-We should use go-runner as a official fallback for users that want to retain 
-writing logs to files. go-runner runs as parent process to components binary 
-reading it's stdout/stderr and is able to route them to files. go-runner is 
+We should use go-runner as a official fallback for users that want to retain
+writing logs to files. go-runner runs as parent process to components binary
+reading it's stdout/stderr and is able to route them to files. go-runner is
 already released as part of official K8s images it should be as simple as changing:
 
 ```
@@ -153,9 +178,9 @@ to
 
 ### Caveats
 
-Is it ok for K8s components to drop support for subset of klog flags? 
+Is it ok for K8s components to drop support for subset of klog flags?
 
-Technically K8s already doesn't support klog flags. Klog flags are renamed to 
+Technically K8s already doesn't support klog flags. Klog flags are renamed to
 comply with K8s flag naming convention (underscores are replaced with hyphens).
 Full klog support was never promised to users and removal of those flags should
 be treated as removal of any other flag.
@@ -172,15 +197,33 @@ to community when compared to forcing closed list of features on everyone.
 
 #### Users don't want to use go-runner as replacement.
 
-TODO
+There are multiple alternatives that allow users to redirect logs to a file.
+Exact solution depends on users preferred way to run the process with one shared
+property, all of them supports consuming stdout/stderr. For example shell
+redirection, systemd service management or
+[docker logging driver](https://docs.docker.com/config/containers/logging/configure/).
+Not all of them support log rotation, but it's users responsibility to know
+complementary tooling that provides it. For example tools like
+[logrotate](https://linux.die.net/man/8/logrotate).
 
 #### Log processing in parent process causes performance problems
 
-TODO
+Passing logs through a parent process is a normal linux pattern used by
+systemd-run, docker or containerd. For kubernetes we already use go-runner in
+scalability testing to read apiserver logs and write them to file. Before we
+reach Beta we should conduct detailed throughput testing of go-runner to
+validate upper limit, but we don't expect any performance problem just based on
+architecture.
 
 ## Design Details
 
-TODO
+Splitting stdout from stderr would be a breaking change in both klog and
+kubernetes components. To avoid that I propose to introduce new logging flag
+`--logtostdout` in klog that will allow writing info logs to stdout. This flag
+will be used avoid introducing breaking change in klog. For Kubernetes components
+we would use this flag to start testing this change and delay enabling this flag
+by default by one release when we will hit Beta. As any other klog flag it
+should be deprecated when this effort hits GA.
 
 ### Test Plan
 
@@ -195,12 +238,15 @@ all existing klog features.
 - Kubernetes logging configuration drops global state
 - Go-runner is feature complementary to klog flags planned for deprecation
 - Projects in Kubernetes Org are migrated to go-runner
+- Add --logtostdout flag to klog disabled by default
+- Use --logtostdout in kubernetes tests
 
 #### Beta
 
-- Go-runner project is well maintained and documented 
-- Documentation on switching go-runner is publicly available
+- Go-runner project is well maintained and documented
+- Documentation on migrating off klog flags is publicly available
 - Kubernetes klog flags are marked as deprecated
+- Split stdout and stderr logs in Kubernetes components by default
 
 #### GA
 
@@ -221,19 +267,19 @@ N/A
 
 ## Drawbacks
 
-Deprecating klog features outside klog might create confusion in community. 
-Large part of community doesn't know that klog was created from necessity and 
-is not the end goal for logging in Kubernetes. We should do due diligence to 
-let community know about our plans and their impact on external components 
+Deprecating klog features outside klog might create confusion in community.
+Large part of community doesn't know that klog was created from necessity and
+is not the end goal for logging in Kubernetes. We should do due diligence to
+let community know about our plans and their impact on external components
 depending on klog.
 
 ## Alternatives
 
-### Continue supporting all klog features 
-At some point we should migrate all logging 
+### Continue supporting all klog features
+At some point we should migrate all logging
 configuration to Options or Configuration. Doing so while supporting all klog
 features makes their future removal much harder.
 
-### Release klog 3.0 with removed features 
+### Release klog 3.0 with removed features
 Removal of those features cannot be done without whole k8s community instead of
 just k8s core components

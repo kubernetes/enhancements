@@ -10,7 +10,7 @@ creation-date: 2021-07-30
 reviewers:
   - TBD
 approvers:
-  - TBD
+  - ehashman
 
 see-also:
   - "/keps/sig-instrumentation/1602-structured-logging"
