@@ -496,9 +496,16 @@ More information on Windows resource access can be found at https://docs.microso
 Note: there will be no `chroot` equivalent.
 - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted.
 - Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
-- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess`containers. This will be re-evaluated when transistioning from `alpha` to `beta` as we get more feedback.
-Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
-- Named Pipe mounts will **not** be supported. Instead named pipes should access via their path on the host (\\\\.\\pipe\\*). Unix domain sockets mounts **will** be supported.
+  - Note: We are prototyping a new approach to how the file system is created for HostProcess containers that would present the filesystem in a similar manner to non-HostProcess containers running on Windows (`c:\` would be the root instead of `c:\c\<container id>`).
+  This would make it so files from volume mounts would be accessible via static paths. HostProcess containers would still have full access to the host file-system.
+  https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
+  This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done while before this features becomes stable.
+- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers. This will be re-evaluated when transitioning from `alpha` to `beta` as we get more feedback.
+  - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
+  - TODO: Discuss updating some client libraries.
+- Named Pipe mounts will **not** be supported. Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
+- Unix domain sockets mounts support is still being investigated. The Windows APIs needed to support mounting unix domain socket mounts in HostProcess containers are not available on Windows Server 2019. Unix domain sockets can be accessed via their paths on the host like named pipes.
+  - TODO: Decide if we should enable this support for Windows Server Version 2004+ and have hcsshim return a detailed error message if domain socket mounts are used on unsupported OS version.
 - All other volume types supported for normal containers on Windows will work with privileged containers.
 
 #### Container Images
