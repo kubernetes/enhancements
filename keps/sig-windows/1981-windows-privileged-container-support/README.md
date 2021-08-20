@@ -478,7 +478,7 @@ Because Windows privileged containers will work much differently than Linux priv
 #### Resource Limits
 
 - Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
-- Disk resource tracking may work slightly differently for privileged Windows containers due to how these containers are bootstrapped. The extent of these differences are still being investigated but will be fully documented when understood. Resource usage will be trackable the differences would be in how resource usage is calculated.
+- Disk resource tracking may work slightly differently for `hostProcess` containers due to how these containers are bootstrapped.Resource usage will be trackable and the differences would be in how resource usage is calculated.
 
 #### Container Lifecycle
 
@@ -496,31 +496,31 @@ More information on Windows resource access can be found at https://docs.microso
 Note: there will be no `chroot` equivalent.
 - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted.
 - Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
-  - Note: We are prototyping a new approach to how the file system is created for HostProcess containers that would present the filesystem in a similar manner to non-HostProcess containers running on Windows (`c:\` would be the root instead of `c:\c\<container id>`).
+  - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` would be the root instead of `c:\c\<container id>`).
   This would make it so files from volume mounts would be accessible via static paths. HostProcess containers would still have full access to the host file-system.
   https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
   This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done while before this features becomes stable.
 - Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers. This will be re-evaluated when transitioning from `alpha` to `beta` as we get more feedback.
   - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
-  - TODO: Discuss updating some client libraries.
+  - TODO: Discuss updating GO client library in v1.23.
 - Named Pipe mounts will **not** be supported. Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
-- Unix domain sockets mounts support is still being investigated. The Windows APIs needed to support mounting unix domain socket mounts in HostProcess containers are not available on Windows Server 2019. Unix domain sockets can be accessed via their paths on the host like named pipes.
+- Unix domain sockets mounts support is still being investigated. The Windows APIs needed to support mounting unix domain socket mounts in `hostProcess` containers are not available on Windows Server 2019. Unix domain sockets can be accessed via their paths on the host like named pipes.
   - TODO: Decide if we should enable this support for Windows Server Version 2004+ and have hcsshim return a detailed error message if domain socket mounts are used on unsupported OS version.
-- All other volume types supported for normal containers on Windows will work with privileged containers.
+- All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
 
 #### Container Images
 
-- Privileged containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
-- A new Windows container base image will not be introduced for HostProcess containers.
-- It is recommended to use nanoserver as the base image for HostProcess containers since these have the smallest footprint.
-- Privileged containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to identify HostProcess containers and skip OS version checks when pulling/starting these containers in the future.
+- `HostProcss` containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
+- A new Windows container base image will not be introduced for `hostProcess` containers.
+- It is recommended to use nanoserver as the base image for `hostProcess` containers since it has the smallest footprint.
+- `HostProcess` containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to identify `hostProcess` containers and skip OS version checks when pulling/starting these containers in the future.
 
 #### Container Image Build/Definition
 
-- HostProcess container images can be built with Docker.
+- `HostProcess` container images can be built with Docker.
 - Only a subset of dockerfile operations will be supported (ADD, COPY, PATH, ENTRYPOINT, etc).
-  - Note: The subset of dockerfile operations supported for HostProcess containers is very close to the subset of operations supported when building images for other OS's with buildkit.
-- Documentation on building HostProcess containers will be added at either docs.microsoft.com or a new github repository.
+  - Note: The subset of dockerfile operations supported for `hostProcess` containers is very close to the subset of operations supported when building images for other OS's with buildkit (similar to how the [pause image](https://github.com/kubernetes/kubernetes/tree/master/build/pause) is built in kubernetes/kubernetes)
+- Documentation on building `hostProcess` containers will be added at either docs.microsoft.com or a new github repository.
 
 ### CRI Implementation Details
 
@@ -771,22 +771,25 @@ Alpha plan
 
 Graduation to Beta
 
-- Kubernetes Target 1.23 or later
+- Kubernetes Target 1.23
+- Set `WindowsHostProcessContainers` feature gate to `beta`
 - Go through PSP Linux test (e2e: validation & conformance) and make them relevant for Windows (which apply, which don't and where we need to write new tests).
-- Provide guidance similar to Pod Security Standards for Windows privileged containers
-- CRI Support for HostProcess containers
+- Provide guidance similar to Pod Security Standards for Windows privileged containers.
+- CRI Support for HostProcess containers.
   - Containerd release is available with HostProcess support (Either v1.6 OR changes backported to a v1.5 patch) - (https://github.com/containerd/containerd/pull/5131)
   - [Windows Host Process annotations](https://github.com/kubernetes/kubernetes/blob/7705b300e2085c3864bb1e49a7302bf17f080219/pkg/kubelet/kuberuntime/labels.go#L46-L50) removed from CRI. (Discussed at (https://github.com/kubernetes/kubernetes/pull/99576#discussion_r635392090))
-- OS support: Windows 2019 LTSC and all future versions of Windows Server
-- Beta Feature Gate for passing privilege flag to CRI.
-- Extensive documentation around `HostProcess` containers on https://kubernetes.io/.
+- OS support: Windows 2019 LTSC and all future versions of Windows Server.g
+- Documentation for `hostProcess` containers on https://kubernetes.io/.
   - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits).
-- Ensure that ephemeral containers are validated for HostProcess requirements.
+  - Documentation on docs.microsoft.com for building `hostProcess` container images.
+- Update validation logic for `hostProcess` containers in api-server to handle [ephemeral containers](https://github.com/kubernetes/enhancements/tree/d4aa2b45412bae677e14d44477a73288e3e987fc/keps/sig-node/277-ephemeral-containers)
+  - Note: If ephemeral container is also a `hostProcess` container then all containers in the pod must also be `hostProcess` containers (and vise versa).
 
 Graduation to GA:
 
 - Address any issues uncovered in alpha/beta
-- Remove feature gate for passing privileged flag
+- Set `WindowsHostProcessContainers` feature gate to `GA`
+- TBD
 
 ### Upgrade / Downgrade Strategy
 
