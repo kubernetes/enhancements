@@ -263,6 +263,7 @@ create new Pods or tracks finishing Pods.
 
 - [x] Metrics
   - Metric name: `job_sync_duration_seconds`, `job_sync_total`.
+  - Components exposing the metric: `kube-controller-manager`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -344,5 +345,9 @@ Pod created.
 
 - Add `Job.status.running`, counting Pods with `Running` phase. The `Running`
   phase doesn't take into account preparation work before the worker is ready
-  to accept connections. The `Ready` condition is configurable through a
-  readiness probe.
+  to accept connections. On the other hand, the `Ready` condition is
+  configurable through a readiness probe. If the Pod doesn't have a readiness
+  probe configured, the `Ready` condition is equivalent to the `Running` phase.
+  
+  In other words, `Job.status.active` provides as the same behavior as
+  `Job.status.running` with the advantage of it being configurable.
