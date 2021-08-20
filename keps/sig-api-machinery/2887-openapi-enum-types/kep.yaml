@@ -1,0 +1,45 @@
+title: KEP Template
+kep-number: 2887
+authors:
+  - "@jiahuif"
+owning-sig: sig-api-machinery
+participating-sigs: []
+status: implementable
+creation-date: 2021-08-20
+reviewers:
+  - "@apelisse"
+  - "@jpbetz"
+  - "@sttts"
+approvers:
+  - "@jpbetz"
+  - "@deads2k"
+  - "@lavalamp"
+prr-approvers:
+  - "@deads2k"
+
+see-also:
+  - https://github.com/kubernetes/enhancements/issues/2896
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.23"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.23"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: OpenAPIv3Enabled # must be the same of OpenAPI v3 KEP #2896
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: [] #TBD
