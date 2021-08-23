@@ -13,6 +13,7 @@
     - [Phase 1 API Changes](#phase-1-api-changes)
       - [Inline Definition - ContainerNotifier](#inline-definition---containernotifier)
       - [PodNotification](#podnotification)
+        - [PodNotificationStatus](#podnotificationstatus)
     - [Phase 2 API Additions](#phase-2-api-additions)
       - [Notification](#notification)
       - [ContainerNotifierHandler](#containernotifierhandler)
@@ -75,13 +76,13 @@ This is achieved by:
 
 ## Motivation
 
-Being able to take application consistent snapshots/backups is a hard requirement to protect stateful workloads in Kubernetes. It's required for many applications to temporally quiesce themselves before taking snapshots of their PersistentVolume(s) and unquiesce afterwards to ensure application consistency. A mechanism to send a quiesce/unquiesce command to `Pod`(s) is needed.
+Being able to take application consistent snapshots/backups is a requirement to protect stateful workloads in Kubernetes. It's required by many applications to temporally quiesce themselves before taking snapshots of their PersistentVolume(s) and unquiesce afterwards to ensure that an application consistent snapshot/backup can be creatd. A mechanism to send a quiesce/unquiesce command to `Pod`(s) is needed.
 
-The first attempt was to introduce an [ExecutionHook](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190120-execution-hook-design.md) CRD which allows arbitrary commands to be executed against containers, and a controller which manages the lifecycle of the custom resources. This approach, though solves the application quiesce/unquiesce use cases, has been considered neither secure nor generic enough. The controller needs to be granted super user privileges on nodes.
+The first attempt was to introduce an [ExecutionHook](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190120-execution-hook-design.md) CRD which allows arbitrary commands to be executed against containers, and a controller which manages the lifecycle of the custom resources. This approach, though solves the application quiesce/unquiesce use case, has been considered neither secure nor generic enough. On one hand, the controller needs to be granted super privileges on nodes in order to do kube-exec, on the other hand, the proposal does not allow sending scoped signals to `Pod`s.
 
-Meanwhile, there are other interesting use cases which requires a similar mechanism:
-* Users have been asking a feature to signal `Pod`s in this [issue](https://github.com/kubernetes/kubernetes/issues/24957). For example, sending a signal to a `Pod` to reload configuration, to flush/roll logs, to change log verbosity etc.
-* Mechanism to notify `Pod`s on a to-be-evicted node.
+There are other interesting use cases which require a similar mechanism:
+* Users have been asking a feature to signal `Pod`s in [issue](https://github.com/kubernetes/kubernetes/issues/24957). For example, sending a signal to a `Pod` to reload configuration, to flush/roll logs, to change log verbosity etc.
+* Mechanism to notify `Pod`s running on a to-be-evicted node.
 
 With these new motivations, we are proposing a more generic design in this KEP. As the eventual goal is to have Kubelet executing the commands against `Pod`s, this approach is considered to be more secure as it will not widen the scope to grant super user privileges.
 
@@ -91,7 +92,7 @@ With these new motivations, we are proposing a more generic design in this KEP. 
 
 - Users can specify an optional list of commands in `Pod`s specification at container level.
 - Users or upper level controllers can request to execute commands in `Pod`s by creation of an API object(`PodNotification`).
-- Implement a *trusted* controller which monitors requests to execute commands, notifies the corresponding `Pod`s to run those commands, and updates status of requests corresponding to the execution results.
+- Implement a *trusted* controller which monitors requests to execute commands, notifies the corresponding `Pod`s to run those commands, and updates status of `PodNotification` with the execution results.
 
 #### Phase 2
 
@@ -112,10 +113,10 @@ With these new motivations, we are proposing a more generic design in this KEP. 
 In phase 1, propose to introduce several API changes:
 - Adding an optional field `Notifiers` which is a list of `ContainerNotifier`s into `Container`.
 - Adding an inlined type `ContainerNotifierHandler` which defines a command.
-- Adding a core API type `PodNotification` which defines request type to trigger execution of `ContainerNotifier`(s) in a `Pod`.
+- Adding a core API type `PodNotification` which defines the request type to trigger execution of `ContainerNotifier`(s) in a `Pod`.
 - Introduce a new gate `ContainerNotifier` to toggle this feature.
 
-A SINGLE *trusted* controller(Pod Notification Controller) will be implemented to watch `PodNotification` resources, execute the command and update their statuses accordingly.
+A SINGLE *trusted* controller(Pod Notification Controller) will be implemented to watch `PodNotification` resources, execute the command and update `PodNotification`s' statuses accordingly.
 
 In phase 2, propose to:
 - Add a core API `Notification` type and a controller which processes `Notification` resources.
@@ -185,11 +186,11 @@ type ContainerNotifierHandler struct {
 
 ##### PodNotification
 
-The PodNotification object is a request for execution a ContainerNotifier in a `Pod`. It will be an in-tree API object in the core API group so that Kubelet can watch and trigger the actions.
+The PodNotification object is a request for execution a `ContainerNotifier` in a `Pod`. It will be an in-tree API object in the core API group so that Kubelet can watch and trigger the actions.
 
-All containers in the specified `Pod` which have the requested "ContainerNotifier" defined in their spec will have their corresponding "ContainerNotifierHandler" executed.
+All containers in the specified `Pod` which have the requested `ContainerNotifier` defined in their spec will have their corresponding `ContainerNotifierHandler` executed.
 
-Note that there is no guarantee of execution ordering between containers.
+**Note that there is no guarantee of execution ordering between containers.**
 
 ```
 type PodNotification struct {
@@ -205,32 +206,52 @@ type PodNotification struct {
 }
 
 type PodNotificationSpec struct {
-    // The name of the Pod to which notification will be addressed.
+    // The name of the Pod to which the notification will be addressed.
     // Note that a PodNotificaion only notifies a Pod in the same namespace.
-    // The PodNotification fails immediately if the specified Pod does not exist.
+    // The PodNotification fails immediately if the specified Pod does not exist
+    // or the specified Pod has a PodPhase other than PodPending and PodRunning.
     // Required.
     // Immutable.
     PodName string
 
-
     // The name of the ContainerNotifier to trigger.
-    // The PodNotification completes immediately if no Container in the
-    // Pod has the requested ContainerNotifier defined.
+    // The PodNotification completes with a PodNotificationStateSucceeded state
+    // immediately if no qualified Container in the Pod has the requested
+    // ContainerNotifier specified.
+    // Only Container(s) which has its Ready status set to True and Running
+    // will be notified.
+    // InitContainers and EphemeralContainers with the corresponding Notifier
+    // will be ignored.
     // Required.
     // Immutable.
     Notifier string
+
+    // TTLSecondsAfterCompletion limits the lifetime of a PodNotifiction that
+    // has completed execution(either Succeeded or Failed). If this field is set,
+    // ttlSecondsAfterCompletion after the PodNotification has been completed,
+    // it is eligible to be automatically deleted. When the PodNotification
+    // is being deleted, its lifecycle guarantees(e.g. finalizers) will be
+    // honored. If this field is unset, the PodNotification is not eligible for
+    // automatic deletion. If this field is set to zero, the PodNotification
+    // becomes eligible to be deleted immediately after it completes.
+	  // +optional
+	  TTLSecondsAfterCompletion *int32
 }
 ```
 
 ###### PodNotificationStatus
-`PodNotificationStatus` represents the current status of a `PodNotification`. It contains a list of `ContainerNotificationStatus`, a start time stamp suggesting the first time the `PodNotification` has been observed, a completion time stamp suggesting the end of the notification, and a succeeded flag representing the final state of the `PodNotification` upon completion.
+`PodNotificationStatus` represents the current status of a `PodNotification`.
 
-A `PodNotification` is considered to be successful(i.e., with succeeded flag set to `true`) only if the notification have been successfully executed in all qualified containers in the specified `Pod`.
+A `PodNotification` is considered to be successful(i.e., with `State` field set to `PodNotificationStateSucceeded`) **if and only if** the notification have been successfully executed in all containers which has a matching `Notifier` in the specified `Pod`.
 
-Note that the `PodNotification` controller (or Kubelet in phase 2) will NOT retry upon failures/errors returned from `ContainerNotifier`. Top level controllers or users can create another `PodNotification` to do retries.
+**Note that the `PodNotification` controller (or Kubelet in phase 2) will NOT retry upon failures/errors returned from `ContainerNotifier`.** Top level controllers or users can create another `PodNotification` to do retries.
 
 ```
 type PodNotificationStatus struct {
+    // UID is the metadata.UID of the referenced Pod.
+    // +optional
+    UID types.UID
+
     // A list of ContainerNotificationStatus, with each item representing the
     // execution result of the corresponding ContainerNotifier in Container(s)
     // in the specified Pod.
@@ -244,9 +265,10 @@ type PodNotificationStatus struct {
 
     // If set, it suggests the timestamp(UTC) at when the PodNotification has
     // been marked as completed. A PodNotification is completed when the
-    // action has been executed in all eligible Containers in this Pod.
+    // action has been executed in all eligible Containers in specified Pod.
     // Note that a completed PodNotification does NOT mean the notification
-    // has been executed successfully. Refer to `Succeeded` field for more details.
+    // has been executed successfully. Refer to `State` and `Containers` fields
+    // for more details.
     // +optional
     CompleteTime *metav1.Time
 
@@ -282,6 +304,13 @@ type ContainerNotificationStatus struct {
     // The name of the Container in which the handler has been executed.
     // Required.
     Name string
+
+    // The ContainerID of the Container in corresponding ContainerStatus.
+    // A notification will ONLY be executed once per Container Name, which
+    // means a notification will not be executed against restarted containers
+    // if it has been executed on their predecessors.
+    // Required.
+    ContainerID string
 
     // If set, it suggests the timestamp at when the first time the execution
     // of the action has started in UTC.
@@ -365,21 +394,40 @@ type NotificationSpec struct {
     Selector metav1.LabelSelector
 
     // Policy specifies pod selection policy. If not specified, default to
-    // "AllPods".
+    // PodSelectionPolicyAllPods.
     // +optional.
     Policy *PodSelectionPolicy
 
     // The name of the ContainerNotifier to trigger.
+    // Required.
     Notifier string
 
     // Parallelism specifies the maximum number of Pods to notify at any given
     // time concurrently, which effectively is the same as the number of
     // uncompleted PodNotifications created from this Notification.
-    // If not specified or set to 0, all eligible Pods will be notified.
+    // If not specified or set to 0, all eligible Pods will be notified
+    // concurrently.
     // If set to a number greater than the number of eligible Pods, all
     // eligible Pods will be notified concurrently.
     // Setting this field to a negative number fails the Notification immediately.
-    Parallelism int
+    // Required.
+    // Default to 0.
+    Parallelism int32
+
+    // TTLSecondsAfterCompletion limits the lifetime of a Notification that
+    // has completed execution(either Succeeded or Failed).
+    // This field should only be set when PodSelectionPolicy is
+    // PodSelectionPolicyPreExistingPods.
+    // If this field is set, TTLSecondsAfterCompletion after the Notification
+    // has been completed, it is eligible to be automatically deleted. When the
+    // Notification is being deleted, its lifecycle guarantees(e.g. finalizers)
+    // will be honored. If this field is unset, the Notification is not eligible
+    // for automatic deletion. If this field is set to zero, the Notification
+    // becomes eligible to be deleted immediately after it completes.
+    // Upon autopmatic deletion of the Notification object, all PodNotification
+    // objects created from this Notification object will also be deleted.
+	  // +optional
+	  TTLSecondsAfterCompletion *int32
 }
 
 // PodSelectionPolicy specifies a policy to scope Pods which are qualified for
