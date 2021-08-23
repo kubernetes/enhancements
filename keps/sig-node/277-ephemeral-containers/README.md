@@ -884,32 +884,27 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  We will create a new gauge metric that's updated during kubelet's reconcile
-  of `v1.Pod` to track the number containers scheduled to this node in the API.
-  This will be slightly different than the existing
-  `kubelet_running_containers`, which describes the kubelet's representation of
-  containers, and will be able to label the metrics with fields that are only
-  available in the API object, such as type of container.
+  This information is available by examining pod objects in the API server
+  for the field `pod.spec.ephemeralContainers`. Additionally, the kubelet surfaces
+  the following metrics, added in [#99000](https://issues.k8s.io/99000):
 
-  Note that these kubelet metrics are still in alpha.
-
-  This is tracked in [#97974](https://issues.k8s.io/97974).
+  - `kubelet_managed_ephemeral_containers`: The number of ephemeral containers
+    in pods managed by this kubelet.
+  - `kubelet_started_containers_total`: Counter of all containers started by
+    this kubelet, indexed by `container_type`. Ephemeral containers have a
+    `container_type` of `ephemeral_container`.
+  - `kubelet_started_containers_errors_total `: Counter of errors encountered
+    when this kubelet starts containers, idnexed by `container_type`.
+    Ephemeral containers have a `container_type` of `ephemeral_container`.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [x] Metrics
-    - Metric name: `apiserver_request_total{component="apiserver",resource="pods",subresource="ephemeralcontainers"}` (apiserver), `kubelet_container_errors_total{type="Ephemeral"}` (kubelet, Proposed)
+    - Metric name: `apiserver_request_total{component="apiserver",resource="pods",subresource="ephemeralcontainers"}` (apiserver), `kubelet_started_containers_errors_total{container_type="ephemeral_container"}`
     - [Optional] Aggregation method: Aggregate by container type
-    - Components exposing the metric: kubelet
+    - Components exposing the metric: apiserver, kubelet
   - [ ] Other (treat as last resort)
     - Details:
-
-  Note that the kubelet SLI for this feature is a counter that increments upon
-  failure to create an ephemeral container. Right now the kubelet only surfaces
-  runtime-level errors, so I'll propose adding a higher level counter to
-  encapsulate the entire container creation request, including container type.
-
-  This is tracked in [#97974](https://issues.k8s.io/97974).
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   At a high level, this usually will be in the form of "high percentile of SLI
@@ -962,11 +957,13 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in introducing new API types?**
 
-  There an no new Kinds for storage, but new types are used in API interactions
-  and in `v1.Pod`.
+  There an no new Kinds for storage, but new types are used in `v1.Pod`.
+  Ephemeral containers are added by writing a `v1.Pod` containing
+  `pod.spec.ephemeralContainers` to the pod's `/ephemeralcontainers`
+  subresource, similar to how the kubelet updates `pod.status`.
 
   - API type: 
-    - v1.EphemeralContainers (used for `/ephemeralcontainers` subresource)
+    - v1.Pod (with `/ephemeralcontainers` subresource)
   - Supported number of objects per cluster: same as Pods
   - Supported number of objects per namespace: same as Pods
 
@@ -980,21 +977,22 @@ the existing API objects?**
 
   - API type(s): v1.Pod
   - Estimated increase in size: Additional `Container` for each Ephemeral
-    container. This is expected to be negligible since these are created by
+    container. This is expected to be negligible since these are created
     manually by humans.
   - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
 
-  When people add additional containers to a Pod, the pod will have additional
+  When users add additional containers to a Pod, the pod will have additional
   containers to shut down and garbage collect when the Pod exits.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
   Not automatically. Use of this feature will result in additional containers
-  running on kubelets.
+  running on kubelets, but it does not change the amount of resources allocated
+  to pods.
 
 ### Troubleshooting
 
@@ -1030,6 +1028,11 @@ _This section must be completed when targeting beta graduation to a release._
     - Testing: No, testing for cluster misconfiguration at dev time doesn't
       prevent cluster misconfiguration at run time.
 
+  One may completely disable the feature using the `EphemeralContainers` feature
+  flag, but it's also possible to prevent the creation of new ephemeral containers
+  without a restart by removing authorization to `ephemeralcontainers` subresource
+  via [RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
   Troubleshoot using apiserver and kubelet error logs.
@@ -1050,6 +1053,9 @@ _This section must be completed when targeting beta graduation to a release._
 - *2020-09-29*: Ported KEP to directory-based template.
 - *2021-01-07*: Updated KEP for beta release in 1.21 and completed PRR section.
 - *2021-04-12*: Switched `/ephemeralcontainers` API to use `Pod`.
+- *2021-05-14*: Add additional graduation criteria
+- *2021-07-09*: Revert KEP to alpha because of the new API introduced in 1.22.
+- *2021-08-23*: Updated KEP for beta release in 1.23.
 
 ## Drawbacks
 
