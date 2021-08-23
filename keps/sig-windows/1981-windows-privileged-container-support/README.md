@@ -478,7 +478,7 @@ Because Windows privileged containers will work much differently than Linux priv
 #### Resource Limits
 
 - Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
-- Disk resource tracking may work slightly differently for `hostProcess` containers due to how these containers are bootstrapped.Resource usage will be trackable and the differences would be in how resource usage is calculated.
+- Disk resource tracking may work slightly differently for `hostProcess` containers due to how these containers are bootstrapped. Resource usage will be trackable and the differences would be in how resource usage is calculated.
 
 #### Container Lifecycle
 
