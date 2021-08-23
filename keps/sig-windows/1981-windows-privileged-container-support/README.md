@@ -510,7 +510,7 @@ Note: there will be no `chroot` equivalent.
 
 #### Container Images
 
-- `HostProcss` containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
+- `HostProcess` containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
 - A new Windows container base image will not be introduced for `hostProcess` containers.
 - It is recommended to use nanoserver as the base image for `hostProcess` containers since it has the smallest footprint.
 - `HostProcess` containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to identify `hostProcess` containers and skip OS version checks when pulling/starting these containers in the future.
