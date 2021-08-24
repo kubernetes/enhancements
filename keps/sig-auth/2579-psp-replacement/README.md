@@ -692,10 +692,10 @@ The initial alpha implementation targeting v1.22 includes:
 We are targeting Beta in v1.23.
 
 1. Resolve the following sections:
-    - [ ] [Restricted policy support for Windows pods](#windows-restricted-profile-support)
-    - [ ] [Deprecation / removal policy for old profile versions](#versioning)
-    - [ ] [Ephemeral containers support](#ephemeral-containers)
-    - [ ] [PSP migration workflow & support](#podsecuritypolicy-migration)
+    - [x] [Restricted policy support for Windows pods](#windows-restricted-profile-support)
+    - [x] [Deprecation / removal policy for old profile versions](#versioning)
+    - [x] [Ephemeral containers support](#ephemeral-containers)
+    - [x] [PSP migration workflow & support](#podsecuritypolicy-migration)
 2. Collect feedback from the alpha, analyze usage of the webhook implementation. In particular, re-assess these API decisions:
     - Distinct `audit` and `warn` modes
     - Whether `enforce` should warn on templated pod resources
@@ -1023,6 +1023,8 @@ As this feature progresses towards GA, we should think more about how it interac
 
 - 2021-03-16: [Initial proposal](https://docs.google.com/document/d/1dpfDF3Dk4HhbQe74AyCpzUYMjp4ZhiEgGXSMpVWLlqQ/edit?ts=604b85df#)
               provisionally accepted.
+- 2021-08-04: v1.22 Alpha version released
+- 2021-08-24: v1.23 Beta KEP updates
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
