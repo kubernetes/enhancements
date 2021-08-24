@@ -419,33 +419,10 @@ against audit & warn policies, independent of which fields are being modified.
 
 #### Ephemeral Containers
 
-In the initial implementation, ephemeral containers will be subject to the same policy restrictions,
+Ephemeral containers will be subject to the same policy restrictions,
 and adding or updating ephemeral containers will require a full policy check.
-
-<<[UNRESOLVED]>>
-
-_Non-blocking for alpha. This should be resolved for beta._
-
-Once ephemeral containers allow [custom security contexts], it may be desirable to run an ephemeral
-container with higher privileges for debugging purposes. For example, CAP_SYS_PTRACE is forbidden by
-the baseline policy but can be useful in debugging. We could introduce yet-another-mode-label that
-only applies enforcement to ephemeral containers (defaults to the enforce policy).
-
-[custom security contexts]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/277-ephemeral-containers#configurable-security-policy
-
-One way this could be handled under the current model is:
-1. Exempt a special username (not one that can be authenticated directly) from policy enforcement,
-   e.g. `ops:privileged-debugger`
-2. Grant the special user permission to ONLY operate on the ephemeral containers subresource (it is
-   critical that they cannot create or update pods directly).
-3. Grant (real) users that should have privileged debug capability the ability to impersonate the
-   exempt user.
-
-We could consider ways to streamline the user experience of this, for instance adding a special RBAC
-binding that exempts users when operating on the ephemeral containers subresource (e.g. an
-`escalate-privilege` verb on the ephemeral containers subresource).
-
-<<[/UNRESOLVED]>>
+This means that an existing pod which is not valid according to the current
+`enforce` policy will not be permitted to add or modify ephemeral containers.
 
 #### Other Pod Subresources
 
