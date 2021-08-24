@@ -43,11 +43,9 @@
 - [Optional Future Extensions](#optional-future-extensions)
   - [Automated PSP migration tooling](#automated-psp-migration-tooling)
   - [Rollout of baseline-by-default for unlabeled namespaces](#rollout-of-baseline-by-default-for-unlabeled-namespaces)
-  - [Custom Profiles](#custom-profiles)
   - [Custom Warning Messages](#custom-warning-messages)
   - [Windows restricted profile support](#windows-restricted-profile-support)
   - [Offline Policy Checking](#offline-policy-checking)
-  - [Event recording](#event-recording)
   - [Conformance](#conformance)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
@@ -976,13 +974,6 @@ or combined for a more aggressive rollout:
 
 Each step in the rollout could be overridden with a flag (e.g. force the admission plugin to step N)
 
-### Custom Profiles
-
-Allow custom profile levels to be statically configured. E.g.
-`--extra-pod-security-levels=host-network`. Custom profiles are ignored by the built-in admission
-plugin, and must be handled completely by a 3rd party webhook (including the dry-run implementation,
-if desired).
-
 ### Custom Warning Messages
 
 An optional `pod-security.kubernetes.io/warn-message` annotation can be used to return a custom
@@ -1017,10 +1008,6 @@ As part of that KEP:
 We could provide a standalone tool that is capable of checking the policies against resource files
 or through stdin. It should be capable of evaluating `AdmissionReview` resources, but also pod and
 templated pod resources. This could be useful in CI/CD pipelines and tests.
-
-### Event recording
-
-Allow recording an event in response to a pod creation attempt that exceeds a given level.
 
 ### Conformance
 
