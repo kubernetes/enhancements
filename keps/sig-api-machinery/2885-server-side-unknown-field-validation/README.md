@@ -343,9 +343,13 @@ This might make it more obvious to consumers of the API that strict schema
 validation is a choice of the client. On the other hand, query parameters are
 more typically used for filtering/sorting data returned from the API server.
 
-Precedent for using query parameters is that we already have CreateOptions,
-PatchOptions, UpdateOptions for write requests that are communicated via query
-parameters.
+Arguments for using query parameter include:
+* Being able version them with the API version (unlike content-type which must
+  be versioned with the type)
+* Parameters are more discoverable in openapi, less so for mime types.
+* We have precedent for using query parameters for write requests already (via CreateOptions,
+  PatchOptions, UpdateOptions)
+
 
 We believe that using a query parameter is the best approach.
 
@@ -432,10 +436,16 @@ boils down to this
 [mergeMap](https://github.com/kubernetes/kubernetes/blob/dadecb2c8932fd28de9dfb94edbc7bdac7d0d28f/staging/src/k8s.io/apimachinery/pkg/util/strategicpatch/patch.go#L1280) call that does the actual merge of the patch into
 the original.
 
-mergeMap takes a mergeOptions argument that we can update to have some
-configuration for strict validation. Within mergeMap, we can add a branch of
-code to fail with an error if mergeOptions specify strict validation and we
-encounter fields on the patch that do not exist on the original.
+`mergeMap` goest field-by-field through the existing object, checking to see if
+data should be merged in from the patch. Currently, if there are any
+extra/unknown fields in patch, they will never be encountered and will just be
+ignored.
+
+`mergeMap` takes a mergeOptions argument that we can update to have some
+configuration for strict validation. Within `mergeMap`, we can track the fields
+of the patch as they are meged in the existing object. After all fields that can
+be merged from the patch are, we will know that any fields on the patch that
+were not merged are unknown fields and can error out.
 
 #### Apply Patch
 
