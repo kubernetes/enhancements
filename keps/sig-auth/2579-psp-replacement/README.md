@@ -225,13 +225,7 @@ field wasn't added until Kubernetes v1.8, and all containers prior to v1.8 impli
 - `true` (equal in privilege to a v1.7 pod that didn't set the field)
 - `false` (strictly less privileged than other allowed values)
 
-<<[UNRESOLVED]>>
-
-_Blocking for Beta._
-
-How long will old profiles be kept for? What is the removal policy?
-
-<<[/UNRESOLVED]>>
+Definitions of policy levels for previous versions will be kept in place indefinitely.
 
 ### PodTemplate Resources
 
