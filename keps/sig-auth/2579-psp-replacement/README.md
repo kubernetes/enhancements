@@ -561,16 +561,14 @@ _Note: These fields should be unconditionally restricted, regardless of targeted
 
 ### Windows Support
 
-In the initial alpha implementation, Windows pods will be supported by both the `privileged` and
-`baseline` profiles. Windows pods _may_ be broken by the restricted field, which requires setting
-linux-specific settings (such as seccomp profile, run as non root, and disallow privilege
-escalation). If the Kubelet and/or container runtime choose to ignore these linux-specific values at
-runtime, then windows pods should still be allowed under the restricted profile, although the
-profile will not add additional enforcement over baseline (for Windows).
+The `privileged` and `baseline` levels do not require any OS-specific fields to be set.
 
-Windows support will be reevaluated prior to this policy feature going to beta, or if/when
-Kubernetes adds support to definitively distinguish between Windows and Linux workloads. See
-[Windows restricted profile support](#windows-restricted-profile-support) for more details.
+The `restricted` level currently requires fields that are Linux-specific, which may prevent
+Windows pods from running or require Windows kubelets to ignore those fields.
+
+A mechanism for Windows-specific exemptions or requirements in the `restricted` profile is
+described in the ["future work" section](#windows-restricted-profile-support) and addressed by
+[KEP-2802](https://github.com/kubernetes/enhancements/issues/2802).
 
 ### Flexible Extension Support
 
@@ -1041,6 +1039,14 @@ Risk: If a Windows RuntimeClass uses a runtime handler that is also configured o
 a user can just create a linux pod with the Windows RuntimeClass and manually schedule it to a linux
 node to bypass the policy checks. For example, this would be the case if the cluster was exclusively
 using the dockershim runtime, which requires the hardcoded `docker` runtime handler to be set.
+
+[KEP-2802](https://github.com/kubernetes/enhancements/issues/2802) proposes allowing a Pod to indicate its OS.
+As part of that KEP:
+* Pod validation will be adjusted to ensure values are not required
+  for OS-specific fields that are irrelevant to the Pod's OS.
+* Pod Security Standards will be reviewed and updated to indicate which Pod OSes they apply to
+* The `restricted` Pod Security Standard will be reviewed to see if there are Windows-specific requirements that should be added
+* The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS.
 
 ### Offline Policy Checking
 

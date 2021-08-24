@@ -24,7 +24,8 @@ approvers:
   - "@tabbysable"
 prr-approvers:
   - "@deads2k"
-see-also: []
+see-also:
+  - https://github.com/kubernetes/enhancements/issues/2802
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
