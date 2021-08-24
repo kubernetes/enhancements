@@ -630,22 +630,21 @@ The metric will use the following labels:
 
 The following audit annotations will be added:
 
-1. `pod-security.kubernetes.io/enforce-policy = <policy_level>:<resolved_version>` Record which policy was evaluated
+1. `pod-security.kubernetes.io/enforce-policy = "<policy_level>:<version>"` - Record which policy was evaluated
    for enforcing mode.
-    - Resolved version is the actual version of the policy that was evaluated, so in the case of
-      `latest` or future versions, it will be `latest@<version>` where `<version>` is the tagged
-      version of the apiserver or webhook (e.g. `latest@v1.22.5-build.8`).
+    - version is `latest` or a specific version in the form `v1.x`
     - This annotation is only recorded when a policy is enforced. Specifically, it will not be
       recorded for irrelevant updates or exempt requests.
-2. `pod-security.kubernetes.io/audit-policy = <policy_level>:<resolved_version>` Same as `enforce-policy`, but for
-   audit mode policies (only included when an audit policy is set).
-3. `pod-security.kubernetes.io/enforce-violations = <policy violations>` When an enforcing policy is violated, record
-   the violations here.
-4. `pod-security.kubernetes.io/audit-violations = <policy violations>` When an audit mode policy is violated, record
-   the violations here.
-5. `pod-security.kubernetes.io/exempt = [user, namespace, runtimeClass]` For exempt requests, record the parameters
-   that triggered the exemption here.
+2. `pod-security.kubernetes.io/audit-violations = "<policy violations>"` - When an audit mode policy is violated, record
+   the violation messages here.
+3. `pod-security.kubernetes.io/exempt = "namespace" | "user" | "runtimeClass"` - For exempt requests, record the parameter
+   that triggered the exemption here. If multiple parameters are exempt, the first in this ordered list will be returned:
+   - namespace
+   - user
+   - runtimeClass
+4. `pod-security.kubernetes.io/error = "<evaluation errors>"` - Errors evaluating policies are recorded here
 
+Violation messages returned by enforcing policies are included in the `responseStatus` portion of audit events in the `ResponseComplete` stage.
 
 ### PodSecurityPolicy Migration
 
