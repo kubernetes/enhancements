@@ -52,4 +52,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TBD
+  - pod_security_evaluations_total

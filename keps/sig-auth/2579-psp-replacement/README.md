@@ -609,38 +609,22 @@ pod_security_evaluations_total
 
 The metric will use the following labels:
 
-1. `decision {allow, deny, exempt, error}` - The policy decision. Error is reserved for panics or
+1. `decision {exempt, allow, deny, error}` - The policy decision. Error is reserved for panics or
    other errors in policy evaluation. Update requests that are out of scope (see [Updates](#updates)
    above) are not counted.
 3. `policy_level {privileged, baseline, restricted}` - The policy level that the request was
    evaluated against.
-4. `policy_version {latest, v1.YY, >v1.ZZ}` - The policy version that was used for the evaluation.
-   How to constrain cardinality is unresolved (see below).
+4. `policy_version {v1.X, v1.Y, latest, future}` - The policy version that was used for the evaluation.
+   Explicit versions less than or equal to the build of the API server or webhook are recorded in the form `v1.x` (e.g. `v1.22`).
+   Explicit versions greater than the build of the API server or webhook (which are evaluated as `latest`) are recorded as `future`.
+   Explicit use of the `latest` version or implicit use by omitting a version or specifying an unparseable version will be recorded as `latest`.
 5. `mode {enforce, warn, audit}` - The type of evaluation mode being recorded. Note that a single
    request can increment this metric 3 times, once for each mode. If this admission controller is
    enabled, every every create request and in-scope update request will at least increment the
-   `enforce` total.
+   `enforce` total. Privileged evaluations for warn and audit modes are not counted.
 6. `request_operation {create, update}` - The operation of the request being checked.
 7. `resource {pod, controller}` - Whether the request object is a Pod, or a [templated
    pod](#podtemplate-resources) resource.
-
-<<[UNRESOLVED]>>
-
-_Non-blocking: can be decided on the implementing PR_
-
-How should policy version labels be handled, to control cardinality? Specifically:
-- How should future versions be labeled?
-- How should (very old) past versions be labeled?
-
-Ideas:
-- If the version is set higher than `v{latest+1}`, then `>v{latest+1}`
-  will be used. In other words, if the current version of the admission controller is v1.22, then a
-  version of `v1.23` would be unchanged, but `v1.24` would be recorded as `>v1.23`.
-    - Concern that the sliding-window approach will cause issues with historical data.
-- If the version is set higher than latest, simply record it as `future`. Allow recording of all
-  past versions.
-
-<<[/UNRESOLVED]>>
 
 ### Audit Annotations
 
