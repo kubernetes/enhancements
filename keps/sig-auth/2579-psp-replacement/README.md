@@ -426,11 +426,18 @@ This means that an existing pod which is not valid according to the current
 
 #### Other Pod Subresources
 
-Aside from ephemeral containers, the policy is not checked for any other Pod subresources (status,
-bind, logs, exec, attach, port-forward).
+The policy is not checked for the following Pod subresources:
+- attach
+- binding
+- eviction
+- exec
+- log
+- portforward
+- proxy
+- status
 
 Although annotations can be updated through the status subresource, the apparmor annotations are
-immutable and the seccomp annotations are deprecated and slated for removal in v1.23.
+immutable and the seccomp annotations are validated to match the `seccompProfile` field present in the pod spec.
 
 ### Pod Security Standards
 
