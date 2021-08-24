@@ -798,30 +798,38 @@ _This section must be completed when targeting alpha to a release._
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+
+  If `pod-security.kubernetes.io/enforce` labels are already present on namespaces,
+  upgrading to enable the feature could prevent new pods violating the opted-into
+  policy level from being created. Existing running pods would not be disrupted.
 
 * **What specific metrics should inform a rollback?**
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  On a cluster that has not yet opted into enforcement, non-zero counts for either 
+  of the following metrics mean the feature is not working as expected:
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  * `pod_security_evaluations_total{decision=deny,mode=enforce}`
+  * `pod_security_evaluations_total{decision=error,mode=enforce}`
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+  * Manual upgrade of the control plane to a version with the feature enabled was tested.
+    Existing pods remained running. Creation of new pods in namespaces that did not opt into enforcement was unaffected.
+
+  * Manual downgrade of the control plane to a version with the feature disabled was tested.
+    Existing pods remained running. Creation of new pods in namespaces that had previously opted into enforcement was allowed once more.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
+  
+  No.
 
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
   - non-zero `pod_security_evaluations_total` metrics indicate the feature is in use
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
+* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - [x] Metrics
     - Metric name: `pod_security_evaluations_total`
     - Components exposing the metric: `kube-apiserver`
@@ -837,77 +845,63 @@ the health of the service?**
       preventing a user or controller from successfully writing pods
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  
+  - An error rate other than 0 means invalid policy levels or versions were configured 
+    on a namespace prior to the feature having been enabled. Until this is corrected, 
+    that namespace will use the latest version of the "restricted" policy for the mode 
+    that specified an invalid level/version.
 
-* **Are there any missing metrics that would be useful to have to improve observability
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+* **Are there any missing metrics that would be useful to have to improve observability of this feature?**
+  
+  - None we are aware of
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+  * It exists in the kube-apiserver process and makes use of pre-existing
+    capabilities (etcd, namespace/pod informers) that are already inherent to the
+    operation of the kube-apiserver.
 
 ### Scalability
-
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
 
 _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
-  - Updating namespace labels will trigger a list of pods in that namespace. With the built-in
-    admission plugin, this call will be local within the apiserver. There will be a hard cap on the
-    number of pods analyzed, and a timeout for the review of those pods. See [Namespace policy
-    update warnings](#namespace-policy-update-warnings).
+  - Updating namespace enforcement labels will trigger a list of pods in that namespace.
+    With the built-in admission plugin, this call will be local within the apiserver and will use the existing pod informer.
+    There will be a hard cap on the number of pods analyzed, and a timeout for the review of those pods 
+    that ensures evaluation does not exceed a percentage of the time allocated to the request.
+    See [Namespace policy update warnings](#namespace-policy-update-warnings).
 
 * **Will enabling / using this feature result in introducing new API types?**
   - No.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
+* **Will enabling / using this feature result in any new calls to the cloud provider?**
   - No.
 
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
+* **Will enabling / using this feature result in increasing size or count of the existing API objects?**
   Describe them, providing:
   - API type(s): Namespaces
   - Estimated increase in size: new labels, up to 300 bytes if all are provided
   - Estimated amount of new objects: 0
 
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  - This will require negligible additional work in Pod create/update admission. Namespace label
-    updates may heavier, but have limits in place.
+* **Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs]?**
+  - This will require negligible additional work in Pod create/update admission.
+  - Namespace label updates may heavier, but have limits in place.
 
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+* **Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?**
   - No. Resource usage will be negligible.
+  - Initial benchmark cost of pod admission to a fully privileged namespace (default on feature enablement without explicit opt-in)
+    - Time: 245.4 ns/op
+    - Memory: 112 B/op
+    - Allocs: 1 allocs/op
+  - Initial benchmark cost of pod admission to a namespace requiring both baseline and restricted evaluation
+    - Time: 4826 ns/op
+    - Memory: 4616 B/op
+    - Allocs: 22 allocs/op
 
 ### Troubleshooting
 
@@ -915,21 +909,27 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  - It blocks creation/update of Pod objects, which would have been unavailable anyway.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+
+  - Invalid admission configuration
+    - Detection: API server will not start / is unavailable
+    - Mitigations: Disable the feature or fix the configuration
+    - Diagnostics: API server error log
+    - Testing: unit testing on configuration validation
+
+  - Enforce mode rejects pods because invalid level/version defaulted to `restricted` level
+    - Detection: rising `pod_security_evaluations_total{decision=error,mode=enforce}` metric counts
+    - Mitigations: 
+    - Diagnostics:
+      - Locate audit logs containing `pod-security.kubernetes.io/error` annotations on affected requests
+      - Locate namespaces with malformed level labels:
+        - `kubectl get ns --show-labels -l "pod-security.kubernetes.io/enforce,pod-security.kubernetes.io/enforce notin (privileged,baseline,restricted)"`
+      - Locate namespaces with malformed version labels:
+        - `kubectl get ns --show-labels -l pod-security.kubernetes.io/enforce-version | egrep -v 'pod-security.kubernetes.io/enforce-version=v1\.[0-9]+(,|$)'`
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
