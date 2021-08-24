@@ -499,7 +499,7 @@ Note: there will be no `chroot` equivalent.
   - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` would be the root instead of `c:\c\<container id>`).
   This would make it so files from volume mounts would be accessible via static paths. HostProcess containers would still have full access to the host file-system.
   https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
-  This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done while before this features becomes stable.
+  This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done before this features becomes stable.
 - Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers. This will be re-evaluated when transitioning from `alpha` to `beta` as we get more feedback.
   - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
   - TODO: Discuss updating GO client library in v1.23.
@@ -511,7 +511,7 @@ Note: there will be no `chroot` equivalent.
 #### Container Images
 
 - `HostProcess` containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
-- A new Windows container base image will not be introduced for `hostProcess` containers.
+- A new Windows container base image will not be introduced for `HostProcess` containers.
 - It is recommended to use nanoserver as the base image for `hostProcess` containers since it has the smallest footprint.
 - `HostProcess` containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to identify `HostProcess` containers and skip OS version checks when pulling/starting these containers in the future.
 
@@ -519,8 +519,8 @@ Note: there will be no `chroot` equivalent.
 
 - `HostProcess` container images can be built with Docker.
 - Only a subset of dockerfile operations will be supported (ADD, COPY, PATH, ENTRYPOINT, etc).
-  - Note: The subset of dockerfile operations supported for `hostProcess` containers is very close to the subset of operations supported when building images for other OS's with buildkit (similar to how the [pause image](https://github.com/kubernetes/kubernetes/tree/master/build/pause) is built in kubernetes/kubernetes)
-- Documentation on building `hostProcess` containers will be added at either docs.microsoft.com or a new github repository.
+  - Note: The subset of dockerfile operations supported for `HostProcess` containers is very close to the subset of operations supported when building images for other OS's with buildkit (similar to how the [pause image](https://github.com/kubernetes/kubernetes/tree/master/build/pause) is built in kubernetes/kubernetes)
+- Documentation on building `HostProcess` containers will be added at either docs.microsoft.com or a new github repository.
 
 ### CRI Implementation Details
 
@@ -778,12 +778,12 @@ Graduation to Beta
 - CRI Support for HostProcess containers.
   - Containerd release is available with HostProcess support (Either v1.6 OR changes backported to a v1.5 patch) - (https://github.com/containerd/containerd/pull/5131)
   - [Windows Host Process annotations](https://github.com/kubernetes/kubernetes/blob/7705b300e2085c3864bb1e49a7302bf17f080219/pkg/kubelet/kuberuntime/labels.go#L46-L50) removed from CRI. (Discussed at (https://github.com/kubernetes/kubernetes/pull/99576#discussion_r635392090))
-- OS support: Windows 2019 LTSC and all future versions of Windows Server.g
-- Documentation for `hostProcess` containers on https://kubernetes.io/.
+- OS support: Windows 2019 LTSC and all future versions of Windows Server.
+- Documentation for `HostProcess` containers on https://kubernetes.io/.
   - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits).
-  - Documentation on docs.microsoft.com for building `hostProcess` container images.
-- Update validation logic for `hostProcess` containers in api-server to handle [ephemeral containers](https://github.com/kubernetes/enhancements/tree/d4aa2b45412bae677e14d44477a73288e3e987fc/keps/sig-node/277-ephemeral-containers)
-  - Note: If ephemeral container is also a `hostProcess` container then all containers in the pod must also be `hostProcess` containers (and vise versa).
+  - Documentation on docs.microsoft.com for building `HostProcess` container images.
+- Update validation logic for `HostProcess` containers in api-server to handle [ephemeral containers](https://github.com/kubernetes/enhancements/tree/d4aa2b45412bae677e14d44477a73288e3e987fc/keps/sig-node/277-ephemeral-containers)
+  - Note: If ephemeral container is also a `HostProcess` container then all containers in the pod must also be `HostProcess` containers (and vise versa).
 
 Graduation to GA:
 
@@ -916,7 +916,7 @@ _This section must be completed when targeting beta graduation to a release._
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [x] Metrics
-    - Metric name: Add labels to report counts of HostProcess containers (host_process_container, host_process_init_container, and host_process_ephemeral_container) to `started_containers_total` and `started_containers_errors_total`
+    - Metric name: Add labels to report counts of `HostProcess` containers (host_process_container, host_process_init_container, and host_process_ephemeral_container) to `started_containers_total` and `started_containers_errors_total`
     TODO: get confirmation from sig-node / ehashman
     - [Optional] Aggregation method:
     - Components exposing the metric: Kubelet
@@ -938,7 +938,7 @@ _This section must be completed when targeting beta graduation to a release._
 
   - [ContainerD]
     - Usage description:
-      - HostProcess containers support will not be added to dockershim.
+      - `HostProcess` containers support will not be added to dockershim.
       - Containerd v1.5.6+ is required.
       - Impact of its outage on the feature: Containers will fail to start.
       - Impact of its degraded performance or high-error rates on the feature: Containers may behave expectantly and node may go into the NotReady state.
@@ -973,7 +973,7 @@ operations covered by [existing SLIs/SLOs]?**
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  No - HostProcess containers will honor limits/reserves specified in the specs and will count against node quota just like unprivileged containers.
+  No - `HostProcess` containers will honor limits/reserves specified in the specs and will count against node quota just like unprivileged containers.
 
 ### Troubleshooting
 
@@ -995,7 +995,7 @@ _This section must be completed when targeting beta graduation to a release._
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
-  Kubelet and/or containerd logs will need to inspected if problems are encountered creating HostProcess containers on Windows nodes.
+  Kubelet and/or containerd logs will need to be inspected if problems are encountered creating HostProcess containers on Windows nodes.
 
 ## Implementation History
 
@@ -1003,7 +1003,7 @@ _This section must be completed when targeting beta graduation to a release._
 - **2021-12-17:** Initial KEP draft merged - [#2037](https://github.com/kubernetes/enhancements/pull/2037).
 - **2021-02-17:** KEP approved for alpha release - [#2288](https://github.com/kubernetes/enhancements/pull/2288).
 - **2021-05-20:** Alpha implementation PR merged - [kubernetes/kubernetes#99576](https://github.com/kubernetes/kubernetes/pull/99576).
-- **2021-08-05:** K8s 1.22 released with alpha support for HostProcess containers.
+- **2021-08-05:** K8s 1.22 released with alpha support for `HostProcess` containers.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
