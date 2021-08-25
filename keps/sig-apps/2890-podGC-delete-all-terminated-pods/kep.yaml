@@ -1,0 +1,37 @@
+title: Allow podGC to delete all terminated pods
+kep-number: 2890
+authors:
+  - "@mysunshine92"
+owning-sig: sig-apps
+participating-sigs:
+status: implementable
+creation-date: 2021-08-25
+reviewers:
+  - "@kow3ns"
+  - "@soltysh"
+  - "@liggitt"
+  - "@lavalamp"
+  - "@foxish"
+  - "@wojtek-t"
+approvers:
+  - "@wojtek-t"
+
+see-also:
+replaces:
+
+stage: alpha
+
+latest-milestone: "v1.23"
+
+milestone:
+  alpha: "v1.23"
+  beta: "v1.24"
+  stable: "v1.25"
+
+feature-gates:
+  - name: PodGCDeleteAllTerminatedPods
+    components:
+    - kube-controller-manager
+disable-supported: true
+
+metrics:
