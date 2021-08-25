@@ -46,8 +46,8 @@
 ## Summary
 
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
-for several releases. We graduated it to beta in 1.19 as `v1beta1`. In 1.22,
-we introduced `v1beta2`.
+for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced 
+`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively.
 
 ## Motivation
 
@@ -70,7 +70,7 @@ usage.
 
 - Introduce `kubescheduler.config.k8s.io/v1beta1` as a copy of
 `kubescheduler.config.k8s.io/v1alpha2` with minimal cleanup changes.
-- Iterate the API in `kubescheduler.config.k8s.io/v1beta2`, based on learnings.
+- Iterate the API in `kubescheduler.config.k8s.io/v1beta2`, `kubescheduler.config.k8s.io/v1beta3` based on learnings.
 - Use the newly created API objects to build the default configuration for kube-scheduler.
 
 ### Non-Goals
@@ -97,6 +97,15 @@ The second iteration, `kubescheduler.config.k8s.io/v1beta2`, includes the follow
     - `RequestedToCapacityRatio` (in favor of `NodeResourcesFit` plugin with a `RequestedToCapacityRatio` scoring strategy)
   - Cleanup of validation hacks.
 
+The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the following changes:
+  - Change the weight of plugins that can be influenced by end users through the Pod specs.
+    - `InterPodAffinity` to 2
+    - `NodeAffinity` to 2
+    - `TaintToleration` to 3 as leveraging node tainting to group nodes in the cluster is becoming a widely-adopted practice
+
+The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
+about user preferences, so should have more influence while making scheduling decisions.
+More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).     
 ### Risks and Mitigations
 
 The major risk is around the removal of the `unreserve` extension point.
@@ -121,6 +130,7 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 - [x] Tests for `RequestedToCapacityRatioArgs` that: (1) fail to pass with
   bad casing and (2) get encoded with lower case.
 - [x] Tests for parsing, conversion, defaulting and validation.
+- [] Tests which assert predictability of node assignment with increased weights.
 
 ### Graduation Criteria
 
@@ -136,7 +146,7 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 
 ### Upgrade/Downgrade Strategy
 
-Users are able to use the `v1beta1` or `v1beta2` APIs. Since they only affect
+Users are able to use the `v1beta1`, `v1beta2` or `v1beta3` API. Since they only affect
 the configuration of the scheduler, there is no impact to running workloads.
 
 The default configurations preserve the behavior of the scheduler.
@@ -172,7 +182,7 @@ N/A
 
   The e2e framework does not currently support changing configuration files.
   
-  There are intensive unit tests for both API versions.
+  There are intensive unit tests for all the API versions.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -202,6 +212,9 @@ N/A
   When `v1beta2` was introduced:
   - Some plugins are disabled. They continue to work in `v1beta1`; if used,
     kube-scheduler logs a Warning.
+
+  When `v1beta3` gets introduced:
+  - No changes to plugins enabled by default. Only their weights would change.  
 
 ### Monitoring requirements
 
@@ -284,3 +297,4 @@ N/A
   proposal, risks, test plan and graduation criteria.
 - 2020-05-13: KEP updated to remove v1alpha2 support.
 - 2021-07-08: Introducing `v1beta2`
+- 2021-08-06: Introducing `v1beta3` 
