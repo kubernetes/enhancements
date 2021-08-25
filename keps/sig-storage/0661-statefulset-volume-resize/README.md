@@ -423,9 +423,9 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
-* *Alpha* in 1.23 behind `StatefulSetVolumeExpansion` feature gate which will be set to `false` by default. Statefulset controller revision behavior will be explained in the documentation.
-* *Beta* in 1.24: Since this feature is part of general `ExpandPersistentVolumes` feature which is in beta, we are going to move this to beta with enhanced e2e and more stability improvements.
-* *GA* in 1.25 along with `ExpandPersistentvolumes` feature. 
+* *Alpha* in 1.24 behind `StatefulSetVolumeExpansion` feature gate which will be set to `false` by default. Statefulset controller revision behavior will be explained in the documentation.
+* *Beta* in 1.25: We are going to move this to beta with enhanced e2e and more stability improvements.
+* *GA* in 1.26  
 
 ### Upgrade / Downgrade Strategy
 
