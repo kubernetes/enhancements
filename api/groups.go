@@ -26,7 +26,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"sigs.k8s.io/yaml"
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 // GroupFetcher is responsible for getting informationg about groups in the
@@ -147,9 +147,10 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 	}
 
 	config := &struct {
-		Data map[string][]string `json:"aliases,omitempty"`
+		Data map[string][]string `json:"aliases,omitempty" yaml:"aliases,omitempty"`
 	}{}
-	if err := yaml.Unmarshal(body, config); err != nil {
+
+	if err := yaml.UnmarshalStrict(body, config); err != nil {
 		return nil, errors.Wrap(err, "unmarshalling owners aliases")
 	}
 

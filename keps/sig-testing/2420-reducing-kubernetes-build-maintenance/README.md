@@ -556,6 +556,7 @@ Major milestones might include:
 - 2020-02-08 - KEP Implementable [#2469](https://github.com/kubernetes/enhancements/pull/2469)
 - 2020-04-01 - KEP Alpha, Beta in Kubernetes 1.21
   - There is no distinct alpha/beta for this KEP, only alpha/beta (implemented at HEAD) vs stable (all supported branches)
+- 2020-08-16 - Retroactive implemented declaration
 
 See also PR listing: https://github.com/kubernetes/enhancements/issues/2420#issuecomment-791024902
 

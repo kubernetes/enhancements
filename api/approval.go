@@ -23,7 +23,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
+
+	"k8s.io/enhancements/pkg/yaml"
 )
 
 type PRRApprovals []*PRRApproval
@@ -108,7 +109,7 @@ func (p *PRRHandler) Parse(in io.Reader) (*PRRApproval, error) {
 		return approval, errors.Wrap(err, "reading file")
 	}
 
-	if err := yaml.Unmarshal(body.Bytes(), &approval); err != nil {
+	if err := yaml.UnmarshalStrict(body.Bytes(), &approval); err != nil {
 		p.Errors = append(p.Errors, errors.Wrap(err, "error unmarshalling YAML"))
 		return approval, errors.Wrap(err, "unmarshalling YAML")
 	}

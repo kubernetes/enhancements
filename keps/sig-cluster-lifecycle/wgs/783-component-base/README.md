@@ -61,7 +61,7 @@ flag names follow a consistent pattern? Are configuration sources consistently m
 and the config file correctly? Is the logging mechanism set up in a testable manner? Can it be verified that the HTTP server has the standard endpoints registered and working? Can it be 
 verified that authentication and authorization is set up correctly?).
 
-![component architecture](component-arch.png)
+![component architecture](../component-arch.png)
 
 This document proposes to create a new Kubernetes staging repository with minimal dependencies (_k8s.io/apimachinery_, _k8s.io/client-go_, and _k8s.io/api_) and good documentation on how 
 to write a Kubernetes-aware component that follows best practices. The code and best practices in this repo would be used by all the core components as well. Unifying the core components 

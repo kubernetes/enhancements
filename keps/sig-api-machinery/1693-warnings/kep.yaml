@@ -7,7 +7,7 @@ participating-sigs:
   - sig-architecture
   - sig-cli
   - sig-instrumentation
-status: implementable
+status: implemented
 creation-date: 2020-04-16
 prr-approvers:
   - "@ehashman"

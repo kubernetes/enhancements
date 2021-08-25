@@ -299,7 +299,7 @@ poses low risk to Kubernetes clusters that will not enable swap.
 
 We summarize the implementation plan as following:
 
-1. Add a feature gate `NodeSwapEnabled` to enable swap support.
+1. Add a feature gate `NodeSwap` to enable swap support.
 1. Leave the default value of kubelet flag `--fail-on-swap` to `true`, to avoid
    changing default behaviour.
 1. Introduce a new kubelet config parameter, `MemorySwap`, which configures how
@@ -336,7 +336,7 @@ type KubeletConfiguration struct {
 	metav1.TypeMeta
 ...
 	// Configure swap memory available to container workloads.
-	// +featureGate=NodeSwapEnabled
+	// +featureGate=NodeSwap
 	// +optional
 	MemorySwap MemorySwapConfiguration
 }
@@ -513,7 +513,7 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: NodeSwapEnabled
+  - Feature gate name: NodeSwap
   - Components depending on the feature gate: API Server, Kubelet
 - [x] Other
   - Describe the mechanism: `--fail-swap-on=false` flag for kubelet must also

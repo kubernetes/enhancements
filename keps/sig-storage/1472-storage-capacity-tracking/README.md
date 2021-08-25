@@ -479,6 +479,24 @@ involve volumes that need to be created by the driver.
 If not set or false, the scheduler makes such decisions without considering
 whether the driver really can create the volumes (the current situation).
 
+This field was initially immutable for the sake of consistency with
+the other fields. Deployments of a CSI driver had to delete and
+recreate the object to switch from "feature disabled" to "feature
+enabled". This turned out to be problematic:
+- Seamless upgrades from a driver version without support of the feature
+  to a version with support is harder (`kubectl apply` fails, operators
+  need special cases to handle `CSIDriver`).
+- Rolling out a driver without delaying pod scheduling and later
+  enabling the check when the driver had published
+  `CSIStorageCapacity` objects had to be done such that the driver was
+  temporarily active without a `CSIDriver` object, which may have
+  affected other aspects like skipping attach.
+
+Starting with Kubernetes 1.23, the field can be modified. Clients
+that assume that it is immutable work as before. The only consumer
+is the Kubernetes scheduler. It supports mutability because it always
+uses the current `CSIDriver` object from the informer cache.
+
 ### Updating capacity information with external-provisioner
 
 Most (if not all) CSI drivers already get deployed on Kubernetes
@@ -788,6 +806,7 @@ checks for events that describe the problem.
 - 5 installs
 - More rigorous forms of testing e.g., downgrade tests and scalability tests
 - Allowing time for feedback
+- Integration with [Cluster Autoscaler](https://github.com/kubernetes/autoscaler)
 
 ### Upgrade / Downgrade Strategy
 
@@ -1079,7 +1098,8 @@ to `CSIStorageCapacity` objects.
 ## Implementation History
 
 - Kubernetes 1.19: alpha
-
+- Kubernetes 1.21: beta
+- Kubernetes 1.23: `CSIDriver.Spec.StorageCapacity` became mutable.
 
 ## Drawbacks
 

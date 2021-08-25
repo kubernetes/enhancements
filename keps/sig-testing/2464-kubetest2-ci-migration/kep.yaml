@@ -6,14 +6,14 @@ owning-sig: sig-testing
 participating-sigs:
 - sig-release
 - sig-scalability
-status: implementable
+status: implemented
 creation-date: 2021-02-08
+last-updated: 2021-08-16
 reviewers:
 - BenTheElder
 approvers:
 - spiffxp
 - saschagrunert
-
 # NOTE: there's no production change in this KEP
 prr-approvers:
 - johnbelamaric 
@@ -26,14 +26,14 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.21"
+latest-milestone: v1.21
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.21"
+  alpha: v1.21
   # TODO: figure out if these are the right milestones for beta/stable.
-  beta: "v1.22"
-  stable: "v1.23"
+  beta: v1.23
+  stable: v1.24
 
 # N/A
 # The following PRR answers are required at alpha release
