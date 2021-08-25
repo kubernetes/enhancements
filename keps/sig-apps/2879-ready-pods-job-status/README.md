@@ -94,25 +94,8 @@ field based on the number of Pods that have the `Ready` condition.
 
 ### Risks and Mitigations
 
-During upgrades, a cluster can have apiservers with version skew, or the
-administrator might decide to do a rollback. This can cause:
-
-- Loss of the new API field value
-
-  This is acceptable for the first release. The value is only informative: the
-  kubernetes control plane doesn't use the value to influence behavior.
-  
-- Repeated Job status updates.
-
-  If one apiserver populates the value and another apiserver (running an older
-  version) drops the field, the job controller might try to update the field
-  again, potentially causing subsequent updates. This can be mitigated by only
-  updating the field if the job controller is already updating the status due
-  to changes in other fields. This check is only necessary in the first release.
-  
-For both problems, in the first release, the API documentation, can state that
-the field can remain at zero indefinitely even if pods have been Ready for a long
-time.
+An increase in Job status updates. This is capped by the number of times Pods
+reach the ready State, usually once in their lifetime.
 
 ## Design Details
 
@@ -134,43 +117,24 @@ The Job controller already lists the Pods to populate the `active`, `succeeded`
 and `failed` fields. To count `ready` pods, the job controller will filter the
 pods that have the `Ready` condition.
 
-In a first release, the Job controller counts the ready pods and updates the
-field if and only if:
-- The job controller is already updating other Job status fields.
-- The `JobReadyPods` feature gate is enabled.
-
-In the second release, the Job controller updates the field unconditionally.
-
 ### Test Plan
 
 - Unit and integration tests covering:
   - Count of ready pods.
-  - Not producing updates in the cases described in the design.
+  - Feature gate disablement.
 - Verify passing existing E2E and conformance tests for Job.
 
 ### Graduation Criteria
 
 #### Alpha
 
-This KEP proposes to skip this stage, for the following reasons:
-- The added calculation is trivial.
-- It is acceptable to report .status.ready as zero in the first release, as
-  the value is only informative.
+- Feature gate disabled by default.
+- Unit and integration tests passing.
 
 #### Beta
 
-- Ability to completely disable the feature, through a feature gate. The feature
-  gate is enabled by default.
-  
-In a first release:
-
-- The job controller only fills the field if there are other Job status updates.
-- Unit and integration tests.
-
-In a second release:
-
-- The job controller fills the field whenever the number of ready Pods changes.
-  The feature can still be disabled through the feature gate.
+- Feature gate enabled by default.
+- Existing E2E and conformance tests passing.
 
 #### GA
 
@@ -189,8 +153,8 @@ No changes required for existing cluster to use the enhancement.
 
 The feature doesn't affect nodes.
 
-In the first release, a version skew between apiservers might cause the new field
-to remain at zero even if there are Pods ready.
+In the first release, a version skew between apiservers might cause the new
+field to remain at zero even if there are Pods ready.
 
 ## Production Readiness Review Questionnaire
 
@@ -200,7 +164,9 @@ to remain at zero even if there are Pods ready.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: JobReadyPods
-  - Components depending on the feature gate: kube-controller-manager
+  - Components depending on the feature gate:
+    - kube-controller-manager
+    - kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control

@@ -8,14 +8,14 @@ status: implementable
 creation-date: 2021-08-19
 reviewers:
   - "@soltysh"
-  - TBD API reviewer
+  - "@lavalamp"
 approvers:
   - "@soltysh"
 
 see-also:
 replaces:
 
-stage: beta
+stage: alpha
 
 latest-milestone: "v1.23"
 
@@ -27,6 +27,7 @@ feature-gates:
   - name: JobReadyPods
     components:
     - kube-controller-manager
+    - kube-apiserver
 disable-supported: true
 
 metrics:
