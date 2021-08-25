@@ -47,4 +47,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  
+  - started_containers_total (add new label for HostProcess containers)
+  - started_containers_errors_total (add new label add new label for HostProcess containers)

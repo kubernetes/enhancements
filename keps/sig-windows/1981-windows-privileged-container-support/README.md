@@ -909,7 +909,7 @@ _This section must be completed when targeting beta graduation to a release._
 
   Kubelet metrics will be updated to report the number of HostProcess containers started and number of errors started.
 
-  TBD: Confirm the best way to acomplish this is to add new [values/metric labels](https://github.com/kubernetes/kubernetes/blob/fe099b2abdb023b21a17cd6a127e381b846c1a1f/pkg/kubelet/metrics/metrics.go#L96-L99) for `StartedContainersTotal` and `StartedContainersError` counters. Otherwise we could add new counters.
+  TBD: Confirm the best way to accomplish this is to add new [values/metric labels](https://github.com/kubernetes/kubernetes/blob/fe099b2abdb023b21a17cd6a127e381b846c1a1f/pkg/kubelet/metrics/metrics.go#L96-L99) for `StartedContainersTotal` and `StartedContainersError` counters. Otherwise we could add new counters.
 
 
 
