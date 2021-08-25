@@ -26,6 +26,7 @@ approvers:
 see-also:
   - "/keps/sig-storage/1790-recover-resize-failure"
 replaces:
+  - "https://github.com/kubernetes/enhancements/pull/1848"
 
 
 # The target maturity stage in the current dev cycle for this KEP.

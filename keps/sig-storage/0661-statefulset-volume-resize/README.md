@@ -77,26 +77,31 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [User Stories (Optional)](#user-stories-optional)
-        - [Story 1](#story-1)
-        - [Story 2](#story-2)
-    - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
+  - [Error indications to user](#error-indications-to-user)
+  - [Revision control](#revision-control)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
+  - [API server validation relaxation](#api-server-validation-relaxation)
+  - [StatefulSet controller changes](#statefulset-controller-changes)
+  - [RBAC changes.](#rbac-changes)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-    - [Monitoring Requirements](#monitoring-requirements)
-    - [Dependencies](#dependencies)
-    - [Scalability](#scalability)
-    - [Troubleshooting](#troubleshooting)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -169,7 +174,7 @@ updates.
 Currently kubernetes supports volume expansion as a beta feature since v1.16. However, 
 this feature support is only limited to standalone pods and deployments. Expansion of 
 volumes associated with a Statefulset is not supported. This enhancement proposes to add 
-the ability to resize volumes associated with a StatefulSet via modifications to it's specification.
+the ability to resize volumes associated with a StatefulSet via modifications to its specification.
 
 Users will be able to recover from volume expansion failures using the same mechanism 
 as listed in [KEP 1790](../1790-recover-resize-failure/README.md).
@@ -216,6 +221,8 @@ underlying PVC resize logic to take the appropriate action or indicate error as 
 - Few environments require Pod restarts in order
 to get access to the resized volume.
 - Modifying the storage class of the volumeClaimTemplate
+- Resizing a PVC associated with a statefulset directly by modifying the PVC spec will not affect the 
+  Statefulset `volumeClaimTemplates`. 
 
 ## Proposal
 
@@ -317,7 +324,7 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 ### API server validation relaxation
-Modifications would be made to `ValidateStatefulSetUpdate` inorder to allow changes in the
+Modifications would be made to `ValidateStatefulSetUpdate` in order to allow changes in the
 storage size of the volume in the `VolumeClaimTemplates`. The new requested size will be validated to 
 prevent a user from shrinking the volume.
 
@@ -349,6 +356,10 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
+
+- E2E tests for volume expansion of PVC associated with statefulsets.
+- Ensure statefulset controller revision works properly after resize.
+- Test resize failure recovery after [KEP 1790](../1790-recover-resize-failure/README.md) has been implemented.
 
 ### Graduation Criteria
 
@@ -411,6 +422,10 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 -->
+
+* *Alpha* in 1.23 behind `StatefulSetVolumeExpansion` feature gate which will be set to `false` by default. Statefulset controller revision behavior will be explained in the documentation.
+* *Beta* in 1.24: Since this feature is part of general `ExpandPersistentVolumes` feature which is in beta, we are going to move this to beta with enhanced e2e and more stability improvements.
+* *GA* in 1.25 along with `ExpandPersistentvolumes` feature. 
 
 ### Upgrade / Downgrade Strategy
 
