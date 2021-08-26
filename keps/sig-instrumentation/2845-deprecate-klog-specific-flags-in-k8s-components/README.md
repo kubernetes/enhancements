@@ -113,20 +113,19 @@ best practices.
 
 ## Proposal
 
-I propose that Kubernetes core components (kube-apiserver, kube-scheduler,
-kube-controller-manager, kubelet) should drop flags that extend
-logging over events streams or klog specific features. This change should be
-scoped to only those components and not affect broader klog community.
+I propose to remove klog specific feature flags in Kubernetes core components
+(kube-apiserver, kube-scheduler, kube-controller-manager, kubelet) and set them
+to agreed good defaults. From klog flags we would remove all flags besides "-v"
+and "-vmodule". With removal of flags to route logs based on type we want to
+change the default routing that will work as better default. Changing the
+defaults will be done in via multi release process, that will introduce some
+temporary flags that will be removed at the same time as other klog flags.
 
-With removal of output stream manipulation flags we need to provide a set of sane
-defaults and convention that will prevent logging formats implementations to
-diverge and reintroduce their own flags. As logs should be treated as event
-streams I would propose that we separate two main streams "info" and "error"
-based on log method called. As error logs should usually be treated with higher
-priority, having two streams prevents single pipeline from being clogged down
-(for example [kubernetes/klog#209](https://github.com/kubernetes/klog/issues/209)). For
-logging formats writing to standard streams, we should follow UNIX standard
-of mapping "info" logs to stdout and "error" logs to stderr.
+### Removed klog flags
+
+To addopt 12 factor app standard for logging we would drop all flags that extend
+logging over events streams. This change should be
+scoped to only those components and not affect broader klog community.
 
 Flags that should be deprecated:
 
@@ -138,13 +137,14 @@ Flags that should be deprecated:
   writing to journal.
 * --logtostderr, --alsologtostderr, --one-output, --stderrthreshold -
   responsible enabling/disabling writing to stderr (vs file).
-  Motivation: Not needed if writing to files is removed.
+  Motivation: Routing logs can be easily implemented by any log processors like:
+  Fluentd, Fluentbit, Logstash.
 * --log-file-max-size, --skip-log-headers - responsible configuration of file
   rotation.
   Motivation: Not needed if writing to files is removed.
 * --add-dir-header, --skip-headers - klog format specific flags .
   Motivation: don't apply to other log formats
-* --log-backtrace-at - an legacy glog feature.
+* --log-backtrace-at - A legacy glog feature.
   Motivation: No trace of anyone using this feature.
 
 Flag deprecation should comply with standard k8s policy and require 3 releases before removal.
@@ -154,8 +154,62 @@ This leaves that two flags that should be implemented by all log formats
 * -v - control global log verbosity of Info logs
 * --vmodule - control log verbosity of Info logs on per file level
 
-Those flags were chosen as they have direct effect of which logs are written,
+Those flags were chosen as they have effect of which logs are written,
 directly impacting log volume and component performance.
+
+### Logging defaults
+
+With removal of configuration alternatives we need to make sure that defaults
+make sense. List of logging features implemented by klog and proposed actions:
+* Routing logs based on type/verbosity - Should be reconsidered.
+* Writing logs to file - Feature removed.
+* Log file rotation based on file size - Feature removed.
+* Configuration of log headers - Use the current defaults.
+* Adding stacktrace - Feature removed.
+
+For log routing I propose to adopt UNIX convention of writing info logs to
+stdout and errors to stderr. For log headers I propose to use the current
+default.
+
+#### Split stdout and stderr
+
+As logs should be treated as event streams I would propose that we separate two
+main streams "info" and "error" based on log method called. As error logs should
+usually be treated with higher priority, having two streams prevents single
+pipeline from being clogged down (for example
+[kubernetes/klog#209](https://github.com/kubernetes/klog/issues/209)).
+For logging formats writing to standard streams, we should follow UNIX standard
+of mapping "info" logs to stdout and "error" logs to stderr.
+
+Splitting stdout from stderr would be a breaking change in both klog and
+kubernetes components. To avoid that I propose to introduce new logging flag
+`--logtostdout` in klog that will allow writing info logs to stdout. This flag
+will be used avoid introducing breaking change in klog. For Kubernetes components
+we would use this flag to start testing this change and delay enabling this flag
+by default by one release when we will hit Beta. As any other klog flag it
+should be deprecated when this effort hits GA.
+
+With this flag we can follow multi release plan to user impact (each point
+should be done in separate release):
+1. Introduce the flag in disabled state and start using it in tests.
+1. Announce flag availability and encourage users to adopt it.
+1. Enable flag by default and deprecate it (allows users to flip back to previous behavior)
+1. Remove the flag following the deprecation policy.
+
+#### Logging headers
+
+Default logging headers configuration results in klog writing information about
+log type (error/info), timestamp when log was created and code line responsible
+for generation it. All this information is useful and should be utilized by
+modern logging solutions. Log type is useful for log filtering when looking for
+an issue. Log generation timestamp is useful to preserve ordering of logs and
+should be always preferred over time of injection which can be much later.
+Source code location is important to identify how log line was generated.
+
+Example:
+```
+I0605 22:03:07.224378 3228948 logger.go:59] "Log using InfoS" key="value"
+```
 
 ### User Stories
 
@@ -217,14 +271,6 @@ architecture.
 
 ## Design Details
 
-Splitting stdout from stderr would be a breaking change in both klog and
-kubernetes components. To avoid that I propose to introduce new logging flag
-`--logtostdout` in klog that will allow writing info logs to stdout. This flag
-will be used avoid introducing breaking change in klog. For Kubernetes components
-we would use this flag to start testing this change and delay enabling this flag
-by default by one release when we will hit Beta. As any other klog flag it
-should be deprecated when this effort hits GA.
-
 ### Test Plan
 
 Go-runner is already used for scalability tests. We should ensure that we cover
@@ -246,11 +292,11 @@ all existing klog features.
 - Go-runner project is well maintained and documented
 - Documentation on migrating off klog flags is publicly available
 - Kubernetes klog flags are marked as deprecated
-- Split stdout and stderr logs in Kubernetes components by default
+- Enable --logtostdout in Kubernetes components by default
 
 #### GA
 
-- Kubernetes klog flags are removed
+- Kubernetes klog specific flags are removed (including --logtostdout)
 
 ### Upgrade / Downgrade Strategy
 
