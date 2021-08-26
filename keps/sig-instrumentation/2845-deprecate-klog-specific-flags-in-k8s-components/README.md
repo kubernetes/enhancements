@@ -7,6 +7,10 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Removed klog flags](#removed-klog-flags)
+  - [Logging defaults](#logging-defaults)
+    - [Split stdout and stderr](#split-stdout-and-stderr)
+    - [Logging headers](#logging-headers)
   - [User Stories](#user-stories)
     - [Writing logs to files](#writing-logs-to-files)
   - [Caveats](#caveats)
@@ -123,7 +127,7 @@ temporary flags that will be removed at the same time as other klog flags.
 
 ### Removed klog flags
 
-To addopt 12 factor app standard for logging we would drop all flags that extend
+To adopt 12 factor app standard for logging we would drop all flags that extend
 logging over events streams. This change should be
 scoped to only those components and not affect broader klog community.
 
