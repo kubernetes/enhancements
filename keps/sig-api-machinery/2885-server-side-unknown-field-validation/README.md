@@ -869,6 +869,7 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 * Proof of Concept [PR](https://github.com/kubernetes/kubernetes/pull/104433) for Create and Update.
+* Proof of Concept [PR](https://github.com/kubernetes/kubernetes/pull/104619) for JSON Patch.
 
 <!--
 ## Drawbacks
