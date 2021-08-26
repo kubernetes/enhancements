@@ -182,18 +182,18 @@ For logging formats writing to standard streams, we should follow UNIX standard
 of mapping "info" logs to stdout and "error" logs to stderr.
 
 Splitting stdout from stderr would be a breaking change in both klog and
-kubernetes components. To avoid that I propose to introduce new logging flag
-`--logtostdout` in klog that will allow writing info logs to stdout. This flag
-will be used avoid introducing breaking change in klog. For Kubernetes components
-we would use this flag to start testing this change and delay enabling this flag
-by default by one release when we will hit Beta. As any other klog flag it
-should be deprecated when this effort hits GA.
+kubernetes components. However, we expect only minimal impact on users, as
+redirecting both streams is a common practice. In rare cases that will be
+impacted, adapting to this change should be a 1 line change. Still we will want
+to give users a proper heads up before making this change, so we will hide the
+change behind a new logging flag `--logtostdout`. This flag will be used avoid
+introducing breaking change in klog.
 
-With this flag we can follow multi release plan to user impact (each point
-should be done in separate release):
+With this flag we can follow multi release plan to minimize user impact (each
+point should be done in a separate Kubernetes release):
 1. Introduce the flag in disabled state and start using it in tests.
 1. Announce flag availability and encourage users to adopt it.
-1. Enable flag by default and deprecate it (allows users to flip back to previous behavior)
+1. Enable the flag by default and deprecate it (allows users to flip back to previous behavior)
 1. Remove the flag following the deprecation policy.
 
 #### Logging headers
