@@ -10,13 +10,12 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Creating Ephemeral Containers](#creating-ephemeral-containers)
-  - [Identifying Pods with Ephemeral Containers](#identifying-pods-with-ephemeral-containers)
-  - [Reattaching and Restarting Ephemeral Containers](#reattaching-and-restarting-ephemeral-containers)
+  - [Reattaching Ephemeral Containers](#reattaching-ephemeral-containers)
+  - [Ephemeral Container Lifecycle](#ephemeral-container-lifecycle)
+  - [Removing Ephemeral Containers](#removing-ephemeral-containers)
   - [Configurable Security Policy](#configurable-security-policy)
     - [Specifying Security Context](#specifying-security-context)
     - [Compatibility with existing Admission Controllers](#compatibility-with-existing-admission-controllers)
-  - [Killing Ephemeral Containers](#killing-ephemeral-containers)
-    - [Removing and Re-adding Ephemeral Containers](#removing-and-re-adding-ephemeral-containers)
   - [User Stories](#user-stories)
     - [Operations](#operations)
     - [Debugging](#debugging)
@@ -221,28 +220,31 @@ There are no limits on the number of Ephemeral Containers that can be created in
 a pod, but exceeding a pod's resource allocation may cause the pod to be
 evicted.
 
-### Identifying Pods with Ephemeral Containers
+### Reattaching Ephemeral Containers
 
-The kubelet will set a `PodCondition` when it starts an Ephemeral Container.
-This condition may not be cleared: it will exist for the lifetime of the Pod
-and continues to exist even if all Ephemeral Containers are removed.
-
-The intended use of this `PodCondition` is to enable administrators to enforce
-custom policies for pods that have had Ephemeral Containers. For example,
-cluster administrators may want to automatically apply a label or delete the pod
-after a configurable time. This may be accomplished by a controller watching
-for this `PodCondition`, though the implementation of such a controller is out
-of scope for this proposal.
-
-### Reattaching and Restarting Ephemeral Containers
-
-One can reattach to a Ephemeral Container using `kubectl attach`. When supported
+One may reattach to a Ephemeral Container using `kubectl attach`. When supported
 by a runtime, multiple clients can attach to a single debug container and share
-the terminal. This is supported by Docker.
+the terminal. This is supported by the Docker runtime.
 
-Ephemeral Containers will not be restarted automatically, and there is no
-method in the API to restart an Ephemeral Container.  Creators of Ephemeral
-Containers are expected to choose a new, unused name.
+### Ephemeral Container Lifecycle
+
+Ephemeral containers will stop when their command exits, such as exiting a
+shell, and they will not be restarted.  Unlike `kubectl exec`, processes in
+Ephemeral Containers will not receive an EOF if their connections are
+interrupted, so shells won't automatically exit on disconnect.
+
+There is no API support for killing or restarting an ephemeral container.
+The only way to exit the container is to send it an OS signal.
+
+### Removing Ephemeral Containers
+
+Ephemeral containers may not be removed from a Pod once added, but
+we've received feedback during the alpha period that users would like
+the possibility of removing ephemeral containers (see
+[#84764](https://issues.k8s.io/84764)).
+
+Removal is out of scope for the initial graduation of ephemeral containers,
+but it may be added by a future KEP.
 
 ### Configurable Security Policy
 
@@ -306,50 +308,6 @@ later and emphasize the change in release notes. We'll stress that cluster
 administrators should ensure that their admission controllers support ephemeral
 containers prior to upgrading and provide instructions for how to disable
 ephemeral container creation in a cluster.
-
-### Killing Ephemeral Containers
-
-Ephemeral Containers will stop when their command exits, such as exiting a
-shell, and they will not be restarted.  Unlike `kubectl exec`, processes in
-Ephemeral Containers will not receive an EOF if their connections are
-interrupted, so shells won't automatically exit on disconnect. Without the
-ability to remove an Ephemeral Container via the API, the only way to exit the
-container is to send it an OS signal.
-
-Killing an Ephemeral Container is supported by removing it from the list of
-Ephemeral Containers in the Pod spec. The kubelet will then kill the container
-and cease publishing a `ContainerStatus` for this container.
-
-#### Removing and Re-adding Ephemeral Containers
-
-An edge case worth considering is what happens when a user removes and re-adds
-a Ephemeral Container with the same name. This presents a synchronization
-problem not present in the immutable container lists, which we resolve by
-enforcing the following constraints:
-
-- The client MUST NOT add an Ephemeral Container with the same name as
-  a container listed in `Pod.Status.EphemeralContainerStatuses`. This is an
-  error and will be rejected by the API server.
-- The kubelet MAY continue publishing an `EphemeralContainerStatus` for
-  an Ephemeral Container that no longer appears in
-  `Pod.Spec.EphemeralContainers`.
-- The kubelet MUST start a new container for any container in
-  `Pod.Spec.EphemeralContainers` that does not also appear in
-  `Pod.Status.EphemeralContainerStatuses.
-
-In this way the kubelet is able to signal to clients the set of container names
-which are unavailable because they correspond to containers still running on
-the node. The procedure for replacing a container then becomes:
-
-1. A client removes an Ephemeral Container from `Pod.Spec.EphemeralContainers`.
-2. The client waits for the Ephemeral Container to be removed from
-   `Pod.Status.EphemeralContainerStatuses`.
-3. The client adds an Ephemeral Container with the same name to
-   `Pod.Spec.EphemeralContainers`.
-
-This is not recommended, however, because the kubelet is under no obligation to
-remove the Ephemeral Container from `EphemeralContainerStatuses` in a timely
-fashion. Clients should choose a new container name instead.
 
 ### User Stories
 
