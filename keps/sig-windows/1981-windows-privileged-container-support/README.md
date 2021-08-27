@@ -502,10 +502,10 @@ Note: there will be no `chroot` equivalent.
   This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done before this features becomes stable.
 - Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers. This will be re-evaluated when transitioning from `alpha` to `beta` as we get more feedback.
   - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
-  - TODO: Discuss updating GO client library in v1.23.
+  - [kubernetes/kubernetes#104490](https://github.com/kubernetes/kubernetes/pull/104490) add support for `HostProcess` containers to the golang client library.
 - Named Pipe mounts will **not** be supported. Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
-- Unix domain sockets mounts support is still being investigated. The Windows APIs needed to support mounting unix domain socket mounts in `hostProcess` containers are not available on Windows Server 2019. Unix domain sockets can be accessed via their paths on the host like named pipes.
-  - TODO: Decide if we should enable this support for Windows Server Version 2004+ and have hcsshim return a detailed error message if domain socket mounts are used on unsupported OS version.
+- Unix domain sockets mounts support will be added before `HostProcess` containers graduate to `stable`. For `alpha` and `beta` Unix domain sockets can be accessed via their paths on the host like named pipes.
+  - The Windows APIs needed to support mounting unix domain socket mounts in `hostProcess` containers was introduced in Windows Server Ver, 2004. Microsoft is planning on backporting these APIs to Windows Server 2019 (min support Windows Server OS) to provide a consistent user experience.
 - All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
 
 #### Container Images
