@@ -2703,7 +2703,14 @@ of this feature?** No.
 
 ## Implementation History
 
-(none yet)
+- v1.19: `Alpha` release
+- v1.20: graduated to `Beta`
+- v1.22: initial support for width concept and watch initialization
+- v1.23: introduce `v1beta2` API
+  - no changes compared to `v1beta1`
+  - `v1beta1` remain as storage version
+- v1.24: storage version changed to `v1beta2`
+
 
 ## Drawbacks
 
