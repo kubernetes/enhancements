@@ -20,7 +20,8 @@ stage: alpha
 latest-milestone: "v1.23"
 
 milestone:
-  beta: "v1.23"
+  alpha: "v1.23"
+  beta: "v1.24"
   stable: "v1.25"
 
 feature-gates:

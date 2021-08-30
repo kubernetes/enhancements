@@ -94,8 +94,10 @@ field based on the number of Pods that have the `Ready` condition.
 
 ### Risks and Mitigations
 
-An increase in Job status updates. This is capped by the number of times Pods
-reach the ready State, usually once in their lifetime.
+- An increase in Job status updates. To mitigate this, the job controller holds
+  the Pod updates that happen in X ms before syncing a Job. X will be determined
+  from experiments on integration tests, but we expect it to be between 500ms
+  and 1s.
 
 ## Design Details
 
@@ -189,7 +191,7 @@ The Job controller will start populating the field again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, at unit and integration level.
+Yes, there will be tests at unit and integration level.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -222,8 +224,8 @@ The feature applies to all Jobs, unless the feature gate is disabled.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-The 99% percentile of Job status updates below 1s, when the controller doesn't
-create new Pods or tracks finishing Pods.
+The 99% percentile of Job status sync (processing+API calls) is below 2s, when
+the controller doesn't create new Pods or tracks finishing Pods.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
