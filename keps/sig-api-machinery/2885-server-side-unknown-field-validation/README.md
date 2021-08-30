@@ -99,6 +99,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Test Plan](#test-plan)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
@@ -640,32 +643,30 @@ Pick one of these and delete the rest.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). NO
 
-<!--
 ###### Does enabling the feature change any default behavior?
 
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
+No, strict validation is false by default.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+Yes, disabling the feature flag will cause us to ignore the validation query
+param, effectively rolling back this feature.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+No harm, requests will resume performing strict validation
+
 ###### Are there any tests for feature enablement/disablement?
 
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
+Testing for both presenence and absence of query param.
 
 ### Rollout, Upgrade and Rollback Planning
 
 This section must be completed when targeting beta to a release.
 
+N/A
+
+<!--
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -690,11 +691,13 @@ are missing a bunch of machinery and tooling and can't do that now.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 Even if applying deprecation policies, they may still surprise some users.
-
+-->
 ### Monitoring Requirements
 
 This section must be completed when targeting beta to a release.
 
+N/A
+<!--
 ###### How can an operator determine if the feature is in use by workloads?
 
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -749,10 +752,14 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 
+-->
 ### Dependencies
 
 This section must be completed when targeting beta to a release.
 
+N/A
+
+<!--
 ###### Does this feature depend on any specific services running in the cluster?
 
 Think about both cluster-level services (e.g. metrics-server) as well
