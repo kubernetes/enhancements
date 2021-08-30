@@ -1243,7 +1243,7 @@ v1.21: Moved from `Alpha` to `Beta`
 
 v1.22: Gathering beta user feedback and making bugfixes as needed.
 
-v1.23: Planning to move from `Beta` to `Stable`
+v1.23: Moved from `Beta` to `Stable`
 
 ## Alternatives
 
@@ -1379,10 +1379,10 @@ This capability will move to beta when the following criteria have been met.
 
 This capability will move to stable when the following criteria have been met.
 
-* Support of at least one CNI plugin to provide multi-IP
-* e2e test successfully running on two platforms
-* testing ingress controller infrastructure with updated dual-stack services
-* dual-stack tests run as pre-submit blocking for PRs
+* Support of at least one CNI plugin to provide multi-IP ([Cilium](https://cilium.io/blog/2021/05/20/cilium-110) and [Calico](https://www.tigera.io/blog/dual-stack-operation-with-calico-on-kubernetes/))
+* e2e test successfully running on two platforms (Azure and kind)
+* dual-stack service object is backwards-compatible with existing ingress controllers, so ingress controller infrastructure remains the same with updated dual-stack services
+* dual-stack tests always run as pre-submit (non-blocking) for PRs
 
 
 ## Production Readiness Review Questionnaire
