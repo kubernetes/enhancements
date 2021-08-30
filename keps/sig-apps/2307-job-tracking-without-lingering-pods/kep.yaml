@@ -1,16 +1,16 @@
 title: Job tracking without lingering Pods
 kep-number: 2307
 authors:
-  - "@alculquicondor"
+- "@alculquicondor"
 owning-sig: sig-apps
 status: implementable
 creation-date: 2020-01-21
 reviewers:
-  - "@erictune"
-  - "@lavalamp"
-  - "@soltysh"
+- "@erictune"
+- "@lavalamp"
+- "@soltysh"
 approvers:
-  - "@janetkuo"
+- "@janetkuo"
 prr-approvers:
 - "@wojtek-t"
 
@@ -31,12 +31,14 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: JobTrackingWithFinalizers
-    components:
-      - kube-apiserver
-      - kube-controller-manager
+- name: JobTrackingWithFinalizers
+  components:
+    - kube-apiserver
+    - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TBD
+- 'job_sync_duration_seconds'
+- 'job_sync_total'
+- 'job_pod_finished'

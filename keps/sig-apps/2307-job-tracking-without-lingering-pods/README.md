@@ -30,7 +30,7 @@
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
     - [How can this feature be enabled / disabled in a live cluster?](#how-can-this-feature-be-enabled--disabled-in-a-live-cluster)
     - [Does enabling the feature change any default behavior?](#does-enabling-the-feature-change-any-default-behavior)
-    - [Can the feature be disabled once it has been enabled (i.e. can we roll back](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back)
+    - [Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement)
     - [What happens if we reenable the feature if it was previously rolled back?**](#what-happens-if-we-reenable-the-feature-if-it-was-previously-rolled-back)
     - [Are there any tests for feature enablement/disablement?**](#are-there-any-tests-for-feature-enablementdisablement)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -331,16 +331,16 @@ the owner reference.
   - Removal of finalizer when feature gate is disabled.
   - Support for [Indexed Jobs](https://git.k8s.io/enhancements/keps/sig-apps/2214-indexed-job)
 - Tests: unit, integration.
+
 #### Alpha -> Beta Graduation
 
-- Processing 5000 Pods per minute across any number of Jobs, with Pod creation
-  having higher priority than status updates, using [Priority and Fairness](https://kubernetes.io/docs/concepts/cluster-administration/flow-control).
-  We rename the existing workload-high priority to workload-medium and, when
-  the feature gate JobTrackingWithFinalizers is enabled, we add a workload-high
-  priority that matches the job-controller ServiceAccount for Pod creation.
+- Pod processing throughput per minute (mix of creating and counting finished Pods),
+  assuming an average Job .spec.parallelism=10.
+  - Up to 2500 Pods (~3000 queries) for a 50 QPS client limit for the job controller.
+  - Up to 5000 (~6000 queries) Pods for a 100 QPS client limit for the job controller.
 - Ensure that tracking Jobs with big number of Pods doesn't cause starvation of
   smaller jobs.
-- Metrics for latency and errors
+- Metrics for latency, counting updates and errors.
 - Job E2E tests are in Testgrid with the feature enabled and linked in KEP
 
 #### Beta -> GA Graduation
@@ -416,8 +416,7 @@ No implications to node runtime.
   - Pods removed by the user or other controllers count towards failures or
     completions.
 
-#### Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?
+#### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
   
   Yes.
   The job controller removes finalizers in this case.
@@ -436,8 +435,6 @@ No implications to node runtime.
 ### Rollout, Upgrade and Rollback Planning
 
 #### How can a rollout fail? Can it impact already running workloads?
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
   
   The change doesn't affect running Pods. If the component restarts
   mid-rollout into an older version, the Job controller switches to tracking
@@ -453,8 +450,10 @@ No implications to node runtime.
 #### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   
   Integration tests cover feature gate disablement.
-  A manual upgrade->downgrade->upgrade flow will be executed to ensure that a
-  running Job falls back to tracking without finalizers.
+
+  A manual upgrade->downgrade->upgrade flow will be executed prior to graduation
+  to ensure that a running Job falls back to tracking without finalizers. The
+  KEP will be updated with the findings of the test.
 
 #### Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?
@@ -465,10 +464,12 @@ fields of API types, flags, etc.?
 
 #### How can an operator determine if the feature is in use by workloads?
   
-  There is no metric provided.
-  Administrators can check for the existence of Job objects with the annotation
-  `batch.kubernetes.io/job-completion` or Pods with the finalizer
-  `batch.kubernetes.io/job-completion`.
+  - The metric `job_pod_finished` (with a label result=failed/completed)
+    increments when the job controller removes a Pod out of
+    `.status.uncountedTerminatedPods` to increase the failed/completed counters.
+  - Administrators can check for the existence of Job objects with the annotation
+    `batch.kubernetes.io/job-completion` or Pods with the finalizer
+    `batch.kubernetes.io/job-completion`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -482,8 +483,8 @@ fields of API types, flags, etc.?
 
 #### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
- - 99% percentile over day for Job syncs is <= 15s, assuming a client-side QPS
-   limit of 50 calls per second.
+- 99% percentile over day for Job syncs is <= 15s for a client-side 50 QPS
+  limit.
     
 #### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
