@@ -237,7 +237,7 @@ Mitigations:
 
 ### Beta -> GA
 
-- Make a decision on wehther or not the feature should be extended to pods
+- TTL controller will be GA'ed without handling pods. The ability to extend TTL controller to work with pods can be introduced via a feature gate so that we can collect feedback and improve.
 - Enabled in Beta for at least two releases without complaints
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/issues/42752
@@ -427,3 +427,6 @@ When a Pod is created or updated:
   - indicate that the feature will be graduated for Jobs, and that Pods will be done as future work under a separate flag
   - add production readiness questionnaire
   - mark the feature for Beta graduation for jobs.
+- 2021-07-27: KEP updated to
+  - indicate that the feature will be graduated to stable for Jobs
+  - Pods will be done as future work if the need arises
