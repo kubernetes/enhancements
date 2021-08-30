@@ -51,10 +51,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -370,12 +370,11 @@ automatically enable late binding for PVCs which are owned by a pod.
   well as negative case (feature disabled or feature used incorrectly).
 - The ephemeral volume test [was
   extended](https://github.com/kubernetes/kubernetes/commit/2468a24b7a732fa492027a159ee15b6d31bf0577#diff-20517805986874f69e3254bed93d59996d5a6fd571a70ab8120736ded5aafa24)
-  to also test generic ephemeral volumes in combination with all
-  drivers that support dynamic volume provisioning. It currently runs
-  as part of the
-  [alpha-canary-on-master](https://k8s-testgrid.appspot.com/sig-storage-csi-ci#alpha-canary-on-master)
-  Prow job. After the promotion to beta it will also be part of all
-  `-on-1.21` jobs.
+  to also test generic ephemeral volumes in combination with all drivers that
+  support dynamic volume provisioning. It runs as part of jobs for Kubernetes
+  >= 1.21, like
+  [1.21-test-on-1.21](https://testgrid.k8s.io/sig-storage-csi-ci#1.21-test-on-1.21)
+  ("Testpattern: Generic Ephemeral-volume").
 
 ### Graduation Criteria
 
@@ -441,7 +440,7 @@ version will prevent pods from starting.
 
   Yes, unit tests for the apiserver, kube-controller-manager and kubelet cover scenarios
   where the feature is disabled or enabled. Tests for transitions
-  between these states will be added before beta.
+  between these states [were added](https://github.com/kubernetes/kubernetes/pull/99446) before beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -466,7 +465,15 @@ to determine whether errors are related to this feature.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
 
-Not yet, but will be done manually before transition to beta.
+This was done manually before transition to beta by bringing up a KinD cluster
+with kubeadm and changing the feature gate for individual components. While
+that worked as expected (Pod cannot be created/scheduled/started depending on
+where the feature is off), one observation was that the error messages were
+sub-optimal for scheduler and kubelet: because the components ignored the
+unknown volume type completely when disabled, they reported something about "no
+volume plugin matched". Error handling [was
+improved](https://github.com/kubernetes/kubernetes/pull/99446/commits/edb9a8584c79376dd0ae17f46d79a6cc77c26fe7)
+to provide a better error message.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
@@ -535,8 +542,6 @@ The goal is to achieve the same pod creation rate for pods using
 generic ephemeral inline volumes as for pods that use PVCs which get
 created separately. To make this comparable, the storage class should
 use late binding.
-
-This will need further discussion before going to GA.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability of this feature?**
@@ -634,6 +639,8 @@ output may provide additional information.
 ## Implementation History
 
 - Kubernetes 1.19: alpha
+- Kubernetes 1.21: beta
+- Kubernetes 1.23: GA
 
 ## Drawbacks
 
