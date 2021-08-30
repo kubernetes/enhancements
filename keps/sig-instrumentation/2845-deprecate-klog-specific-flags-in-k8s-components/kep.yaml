@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-arch
-status: provisional
+status: implementable
 creation-date: 2021-07-30
 reviewers:
   - TBD
