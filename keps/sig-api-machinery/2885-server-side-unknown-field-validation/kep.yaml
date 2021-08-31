@@ -4,13 +4,14 @@ authors:
   - "@kevindelgado"
 owning-sig: sig-api-machinery
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2021-08-20
 reviewers:
   - "@apelisse"
   - "@jpbetz"
 approvers:
-  - "@lavalamp"
+  - "@smarterclayton"
+  - "@deads2k"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
@@ -38,10 +39,6 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates:
-  - name: UnknownFieldValidation
-    components:
-      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release

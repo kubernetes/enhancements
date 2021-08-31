@@ -631,11 +631,11 @@ This section must be completed when targeting alpha to a release.
 
 <!--
 Pick one of these and delete the rest.
--->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: UnknownFieldValidation
   - Components depending on the feature gate: kube-apiserver
+-->
 - [x] Other
   - Describe the mechanism: query parameter
   - Will enabling / disabling the feature require downtime of the control
@@ -649,8 +649,8 @@ No, strict validation is false by default.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, disabling the feature flag will cause us to ignore the validation query
-param, effectively rolling back this feature.
+Yes, not setting the query param will ensure we are not doing strict validation
+(i.e. disable the feature)
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
