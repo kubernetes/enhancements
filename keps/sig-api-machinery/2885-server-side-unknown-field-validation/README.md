@@ -631,11 +631,10 @@ This section must be completed when targeting alpha to a release.
 
 <!--
 Pick one of these and delete the rest.
-
+-->
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: UnknownFieldValidation
   - Components depending on the feature gate: kube-apiserver
--->
 - [x] Other
   - Describe the mechanism: query parameter
   - Will enabling / disabling the feature require downtime of the control
