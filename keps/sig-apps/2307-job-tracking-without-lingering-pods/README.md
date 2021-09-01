@@ -37,7 +37,7 @@
     - [How can a rollout fail? Can it impact already running workloads?](#how-can-a-rollout-fail-can-it-impact-already-running-workloads)
     - [What specific metrics should inform a rollback?](#what-specific-metrics-should-inform-a-rollback)
     - [Were upgrade and rollback tested? Was the upgrade-&gt;downgrade-&gt;upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)
-    - [Is the rollout accompanied by any deprecations and/or removals of features, APIs,](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis)
+    - [Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis-fields-of-api-types-flags-etc)
   - [Monitoring Requirements](#monitoring-requirements)
     - [How can an operator determine if the feature is in use by workloads?](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads)
     - [What are the reasonable SLOs (Service Level Objectives) for the enhancement?](#what-are-the-reasonable-slos-service-level-objectives-for-the-enhancement)
@@ -317,6 +317,7 @@ the owner reference.
   - Job tracking with feature enabled.
   - Tracking of terminating Pods.
   - Transition from feature enabled to disabled and enabled again.
+  - Clean up finalizers of Orphan Pods.
   - Tracking Jobs with big number of Pods, making sure the status is eventually
     consistent.
 - E2E test:
@@ -430,7 +431,8 @@ No implications to node runtime.
 
 #### Are there any tests for feature enablement/disablement?**
 
-  Yes, we plan to add integration tests.
+  Yes, we have [integration tests](https://github.com/kubernetes/kubernetes/blob/7a0638da76cb9843def65708b661d2c6aa58ed5a/test/integration/job/job_test.go)
+  for feature enabled, disabled and transitions.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -449,14 +451,13 @@ No implications to node runtime.
 
 #### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   
-  Integration tests cover feature gate disablement.
+  Integration tests cover feature gate disablement and re-enablement.
 
-  A manual upgrade->downgrade->upgrade flow will be executed prior to graduation
-  to ensure that a running Job falls back to tracking without finalizers. The
-  KEP will be updated with the findings of the test.
+  A manual upgrade->downgrade->upgrade flow will be executed prior to Beta
+  graduation to ensure that a running Job falls back to tracking without
+  finalizers. The KEP will be updated with the findings of the test.
 
-#### Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?
+#### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
   
   No.
 
