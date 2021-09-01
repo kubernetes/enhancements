@@ -362,6 +362,9 @@ Arguments for using query parameter include:
 * We have precedent for using query parameters for write requests already (via CreateOptions,
   PatchOptions, UpdateOptions)
 
+For client-go support, we will add a `UnknownFieldValidation` field to
+CreateOptions, PatchOptions, and UpdateOptions that can supply the query
+parameter to the request.
 
 We believe that using a query parameter is the best approach.
 
