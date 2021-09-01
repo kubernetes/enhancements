@@ -357,19 +357,14 @@ This might be a good place to talk about core concepts and how they relate.
 Break the control plane by consuming excessive CPU and/or memory the api-server.
 
 Mitigation: CEL is specifically designed to constrain the running time of expressions
-and to limit the memory utilization. We will perform a security review of CEL and how
-it is integrated.
+and to limit the memory utilization. Since CRD creation is a privileged operation, it should be safe to integrate.
 
 #### Malicious use
 
 Breaking out of the sandbox to run untrusted code in the apiserver or exfiltrate data.
 
-Mitigation: CEL is designed to sandbox code execution. We will perform a security review of CEL and how
-it is integrated.
+Mitigation: CEL is designed to sandbox code execution. 
 
-<<[UNRESOLVED @jpbetz]>>
-Find a security reviewer for CEL.
-<<[/UNRESOLVED]>>
 
 ### Future Plan
 
