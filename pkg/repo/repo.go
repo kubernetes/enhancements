@@ -331,7 +331,7 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		}
 	}
 
-	kepPRs := make([]*github.PullRequest, 10)
+	kepPRs := []*github.PullRequest{}
 	sigLabel := strings.Replace(sig, "-", "/", 1)
 	logrus.Debugf("Searching list of %v PRs for %v/%v with labels: [%v, %v]", len(r.allPRs), remoteOrg, remoteRepo, sigLabel, proposalLabel)
 	for _, pr := range r.allPRs {

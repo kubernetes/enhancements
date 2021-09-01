@@ -99,7 +99,7 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 		}
 	}
 
-	allKEPs := make([]*api.Proposal, 0, 10)
+	allKEPs := []*api.Proposal{}
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.Groups {
 		// KEPs in the local filesystem
@@ -132,7 +132,7 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 	allowedApprover := sliceToMap(opts.Approver)
 	allowedParticipant := sliceToMap(opts.Participant)
 
-	results := make([]*api.Proposal, 0, 10)
+	results := []*api.Proposal{}
 	for _, k := range allKEPs {
 		if k == nil {
 			return nil, errors.New("one of the KEPs in query was nil")
