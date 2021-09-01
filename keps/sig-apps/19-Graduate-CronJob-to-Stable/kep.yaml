@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
   - sig-scalability
-status: implementable
+status: implemented
 creation-date: 2019-04-18
 reviewers:
   - "@liggitt"
