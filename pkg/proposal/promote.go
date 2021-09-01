@@ -51,7 +51,7 @@ func Promote(opts *PromoteOpts) error {
 
 	logrus.Infof("Updating KEP %s/%s", opts.SIG, opts.Name)
 
-	p, err := r.ReadKEP(opts.SIG, opts.Name)
+	p, err := r.LoadLocalKEP(opts.SIG, opts.Name)
 	if err != nil {
 		return fmt.Errorf("unable to load KEP for promotion: %s", err)
 	}

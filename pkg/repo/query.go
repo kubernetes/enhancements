@@ -112,7 +112,7 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 
 		// Open PRs; existing KEPs with open PRs will be shown twice
 		if opts.IncludePRs {
-			prKeps, err := r.loadKEPPullRequests(sig)
+			prKeps, err := r.LoadPullRequestKEPs(sig)
 			if err != nil {
 				logrus.Warnf("error searching for KEP PRs from %s: %s", sig, err)
 			}

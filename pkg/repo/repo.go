@@ -185,10 +185,8 @@ func (r *Repo) SetGitHubToken(tokenFile string) error {
 		if err != nil {
 			return err
 		}
-
 		r.Token = strings.Trim(string(token), "\n\r")
 	}
-
 	return nil
 }
 
@@ -205,10 +203,7 @@ func (r *Repo) getProposalTemplate() ([]byte, error) {
 }
 
 func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
-	sigPath := filepath.Join(
-		r.ProposalPath,
-		sig,
-	)
+	sigPath := filepath.Join(r.ProposalPath, sig)
 
 	keps := []string{}
 
@@ -240,6 +235,10 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 
 			if info.Name() == ProposalMetadataFilename {
 				logrus.Debugf("adding %s as KEP metadata", info.Name())
+				path, err = filepath.Rel(r.BasePath, path)
+				if err != nil {
+					return err
+				}
 				keps = append(keps, path)
 				return filepath.SkipDir
 			}
@@ -269,19 +268,17 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 	logrus.Debugf("loading the following local KEPs: %v", files)
 
 	var allKEPs []*api.Proposal
-	for _, k := range files {
-		if filepath.Ext(k) == ".yaml" {
-			kep, err := r.loadKEPFromYaml(k)
-			if err != nil {
-				return nil, errors.Wrapf(
-					err,
-					"reading KEP %s from yaml",
-					k,
-				)
-			}
-
-			allKEPs = append(allKEPs, kep)
+	for _, kepYamlPath := range files {
+		kep, err := r.loadKEPFromYaml(r.BasePath, kepYamlPath)
+		if err != nil {
+			return nil, errors.Wrapf(
+				err,
+				"reading KEP %s from yaml",
+				kepYamlPath,
+			)
 		}
+
+		allKEPs = append(allKEPs, kep)
 	}
 
 	logrus.Debugf("returning %d local KEPs", len(allKEPs))
@@ -289,7 +286,23 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 	return allKEPs, nil
 }
 
-func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
+func (r *Repo) LoadLocalKEP(sig, name string) (*api.Proposal, error) {
+	kepPath := filepath.Join(
+		ProposalPathStub,
+		sig,
+		name,
+		ProposalMetadataFilename,
+	)
+
+	_, err := os.Stat(kepPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getting file info for %s", kepPath)
+	}
+
+	return r.loadKEPFromYaml(r.BasePath, kepPath)
+}
+
+func (r *Repo) LoadPullRequestKEPs(sig string) ([]*api.Proposal, error) {
 	// Initialize github client
 	logrus.Debugf("Initializing github client to load PRs for sig: %v", sig)
 	var auth *http.Client
@@ -331,6 +344,7 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		}
 	}
 
+	// Find KEP PRs for the given sig
 	kepPRs := []*github.PullRequest{}
 	sigLabel := strings.Replace(sig, "-", "/", 1)
 	logrus.Debugf("Searching list of %v PRs for %v/%v with labels: [%v, %v]", len(r.allPRs), remoteOrg, remoteRepo, sigLabel, proposalLabel)
@@ -422,7 +436,13 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 
 		// read all these KEPs
 		for k := range kepNames {
-			kep, err := r.ReadKEP(sig, k)
+			kepPath := filepath.Join(
+				ProposalPathStub,
+				sig,
+				k,
+				ProposalMetadataFilename,
+			)
+			kep, err := r.loadKEPFromYaml(r.gitRepo.Directory(), kepPath)
 			if err != nil {
 				logrus.Warnf("error reading KEP %v: %v", k, err)
 			} else {
@@ -435,26 +455,13 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	return allKEPs, nil
 }
 
-func (r *Repo) ReadKEP(sig, name string) (*api.Proposal, error) {
-	kepPath := filepath.Join(
-		r.ProposalPath,
-		sig,
-		name,
-		ProposalMetadataFilename,
-	)
-
-	_, err := os.Stat(kepPath)
+// loadKEPFromYaml will return a Proposal from a kep.yaml at the given kepPath
+// within the given repoPath, or an error if the Proposal is invalid
+func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) {
+	fullKEPPath := filepath.Join(repoPath, kepPath)
+	b, err := ioutil.ReadFile(fullKEPPath)
 	if err != nil {
-		return nil, errors.Wrapf(err, "getting file info for %s", kepPath)
-	}
-
-	return r.loadKEPFromYaml(kepPath)
-}
-
-func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
-	b, err := ioutil.ReadFile(kepPath)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
+		return nil, fmt.Errorf("unable to read KEP metadata for %s: %w", fullKEPPath, err)
 	}
 
 	var p api.Proposal
@@ -464,24 +471,22 @@ func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	}
 
 	p.Name = filepath.Base(filepath.Dir(kepPath))
+	prrApprovalPath := filepath.Join(repoPath, ProposalPathStub, PRRApprovalPathStub)
 
 	// Read the PRR approval file and add any listed PRR approvers in there
 	// to the PRR approvers list in the KEP. this is a hack while we transition
 	// away from PRR approvers listed in kep.yaml
 	handler := r.PRRHandler
-	err = kepval.ValidatePRR(&p, handler, r.PRRApprovalPath)
+	err = kepval.ValidatePRR(&p, handler, prrApprovalPath)
 	if err != nil {
 		logrus.Errorf(
 			"%v",
 			errors.Wrapf(err, "validating PRR for %s", p.Name),
 		)
 	} else {
-		prrPath := filepath.Dir(kepPath)
-		prrPath = filepath.Dir(prrPath)
-		sig := filepath.Base(prrPath)
-		prrPath = filepath.Join(
-			filepath.Dir(prrPath),
-			PRRApprovalPathStub,
+		sig := filepath.Base(filepath.Dir(filepath.Dir(kepPath)))
+		prrPath := filepath.Join(
+			prrApprovalPath,
 			sig,
 			p.Number+".yaml",
 		)
