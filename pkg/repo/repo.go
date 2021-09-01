@@ -70,6 +70,12 @@ type Repo struct {
 
 	// Templates
 	ProposalTemplate []byte
+
+	// Temporary caches
+	// a local git clone of remoteOrg/remoteRepo
+	gitRepo *git.Repo
+	// all open pull requests for remoteOrg/remoteRepo
+	allPRs []*github.PullRequest
 }
 
 // New returns a new repo client configured to use the the normal os.Stdxxx and Filesystem
@@ -284,42 +290,47 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 }
 
 func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
+	// Initialize github client
 	var auth *http.Client
 	ctx := context.Background()
 	if r.Token != "" {
 		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.Token})
 		auth = oauth2.NewClient(ctx, ts)
 	}
-
 	gh := github.NewClient(auth)
-	allPulls := []*github.PullRequest{}
-	opt := &github.PullRequestListOptions{
-		ListOptions: github.ListOptions{
-			PerPage: 100,
-		},
-	}
 
-	for {
-		pulls, resp, err := gh.PullRequests.List(
-			ctx,
-			remoteOrg,
-			remoteRepo,
-			opt,
-		)
-		if err != nil {
-			return nil, err
+	// Fetch list of all PRs if none exists
+	if r.allPRs == nil {
+		r.allPRs = []*github.PullRequest{}
+
+		opt := &github.PullRequestListOptions{
+			ListOptions: github.ListOptions{
+				PerPage: 100,
+			},
 		}
 
-		allPulls = append(allPulls, pulls...)
-		if resp.NextPage == 0 {
-			break
-		}
+		for {
+			pulls, resp, err := gh.PullRequests.List(
+				ctx,
+				remoteOrg,
+				remoteRepo,
+				opt,
+			)
+			if err != nil {
+				return nil, err
+			}
 
-		opt.Page = resp.NextPage
+			r.allPRs = append(r.allPRs, pulls...)
+			if resp.NextPage == 0 {
+				break
+			}
+
+			opt.Page = resp.NextPage
+		}
 	}
 
 	kepPRs := make([]*github.PullRequest, 10)
-	for _, pr := range allPulls {
+	for _, pr := range r.allPRs {
 		foundKind, foundSIG := false, false
 		sigLabel := strings.Replace(sig, "-", "/", 1)
 
@@ -344,18 +355,20 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		return nil, nil
 	}
 
-	// Pull a temporary clone of the repo
-	g, err := git.NewClient()
-	if err != nil {
-		return nil, err
-	}
+	// Pull a temporary clone of the repo if none already exists
+	if r.gitRepo == nil {
+		g, err := git.NewClient()
+		if err != nil {
+			return nil, err
+		}
 
-	g.SetCredentials("", func() []byte { return []byte{} })
-	g.SetRemote(krgh.GitHubURL)
+		g.SetCredentials("", func() []byte { return []byte{} })
+		g.SetRemote(krgh.GitHubURL)
 
-	repo, err := g.Clone(remoteOrg, remoteRepo)
-	if err != nil {
-		return nil, err
+		r.gitRepo, err = g.Clone(remoteOrg, remoteRepo)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// read out each PR, and create a Proposal for each KEP that is
@@ -395,7 +408,7 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 			continue
 		}
 
-		err = repo.CheckoutPullRequest(pr.GetNumber())
+		err = r.gitRepo.CheckoutPullRequest(pr.GetNumber())
 		if err != nil {
 			return nil, err
 		}
