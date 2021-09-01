@@ -4,6 +4,7 @@ authors:
 - "@MikeSpreitzer"
 - "@yue9944882"
 - "@wojtek-t"
+- "@tkashem"
 owning-sig: sig-api-machinery
 participating-sigs:
 - wg-multitenancy
@@ -14,6 +15,7 @@ reviewers:
 - "@lavalamp"
 - "@ahg-g"
 - "@wojtek-t"
+- "@tkashem"
 approvers:
 - "@deads2k"
 - "@lavalamp"
@@ -27,7 +29,7 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.22"
+latest-milestone: "v1.23"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
