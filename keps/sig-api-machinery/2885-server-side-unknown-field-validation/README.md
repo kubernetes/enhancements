@@ -97,6 +97,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Strategic Merge Patch](#strategic-merge-patch)
     - [Apply Patch](#apply-patch)
   - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
