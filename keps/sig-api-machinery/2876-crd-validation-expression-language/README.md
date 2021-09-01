@@ -1,64 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [x] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [x] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
-# KEP-NNNN: CRD Validation Expression Language
+# KEP-2876: CRD Validation Expression Language
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -150,15 +90,15 @@ conversion in the future.
 
 This KEP proposes the adoption of [Common Expression Language
 (CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and safe to be run directly
-in the kube-apiserver, has a straight-forward and unsurprising grammar, and supports pre-parsing and
-typechecking of expressions, allowing syntax and type errors to be caught at CRD registration time.
-
+in the kube-apiserver (since CRD creation is a privileged operation), has a straight-forward and
+unsurprising grammar, and supports pre-parsing and typechecking of expressions, allowing syntax and
+type errors to be caught at CRD registration time.
 
 ## Motivation
 
 ### Overview of existing validation
 
-CRDs currently support two major categories of build-in validation:
+CRDs currently support two major categories of built-in validation:
 
 - [CRD structural
 schemas](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema):
@@ -229,6 +169,9 @@ objects the webhook is configured to intercept.
 - Eliminate the need for webhooks entirely. Webhooks will still be needed for
   some use cases. For example, if a validation check requires making a network
   request to some other system, it will still need to be implemented in a webhook.
+- Support all validation done on native Kubernetes types. For example, CRD structural schemas has
+  complex validation rules that we CEL cannot support due to the lask of support for arbitrarily
+  deeply nested terms (CEL cannot support recursive data types).
 - Change how Kubernetes built-in types are validated, defaulted and converted.
 
 ## Proposal
@@ -330,25 +273,24 @@ Considerations:
 - The functions will become VERY difficult to change as this feature matures. We
   should limit ourselves initially to functions that we have a high level of
   confidence will not need to be changed or rethought.
-- Support kubernetes specific concepts, like accessing associative lists by key
-  may be needed, we should review those cases carefully.
+- Support kubernetes specific concepts, like accessing associative lists by key may be needed, but
+  we need to review more use cases to determine if this is needed.
 
 
 ### User Stories
 
-<<[UNRESOLVED @cici37 @leilajal @jpbetz]>>
-Find validation use cases representative of community needs and show how they can
-be handled using CEL.
-<<[/UNRESOLVED]>>
+- Use case: [Tekton pipeline validation](https://github.com/tektoncd/pipeline/blob/main/pkg/apis/pipeline/v1beta1/pipeline_validation.go)
+  - Referential integrity checks
+  - Custom formatted validation error messages
+  - "Either list X or list Y must be non-empty"
+  - "There exists a X in one list/map for each Y in another map/list"
+- (PRs to add additional user stories to this list welcome!)
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+While we believe the expressiveness of CEL is pretty complete for our purposes, it is non-turing
+complete, and lacks support recursive data types (OpenAPIv3 & CRD structural schemas are not
+possible to validate with CEL).
 
 ### Risks and Mitigations
 
@@ -356,8 +298,9 @@ This might be a good place to talk about core concepts and how they relate.
 
 Break the control plane by consuming excessive CPU and/or memory the api-server.
 
-Mitigation: CEL is specifically designed to constrain the running time of expressions
-and to limit the memory utilization. Since CRD creation is a privileged operation, it should be safe to integrate.
+Mitigation: CEL is specifically designed to constrain the running time of expressions and to limit
+the memory utilization. Since CRD creation is a privileged operation, it should be safe to
+integrate.
 
 #### Malicious use
 
@@ -460,10 +403,10 @@ structural schemas. So we need to translate structural schemas to declarations.
 
 (https://github.com/googleapis/googleapis/blob/master/google/api/expr/v1alpha1/checked.proto).
 
-There are a couple alternative ways to do this. Ideally, we could be able to both dereference into objects and construct objects in a typesafe way.
-In order to construct objects in a typesafe way we need to be able to represent
-the structural schema types in CEL, e.g. "v1beta1.Foo{fieldname: value}", this
-is complicated by the way CEL relies on protobuf types.
+There are a couple alternative ways to do this. Ideally, we could be able to both dereference into
+objects and construct objects in a typesafe way.  In order to construct objects in a typesafe way we
+need to be able to represent the structural schema types in CEL, e.g. "v1beta1.Foo{fieldname:
+value}", this is complicated by the way CEL relies on protobuf types.
 
 
 
