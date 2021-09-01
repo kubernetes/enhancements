@@ -77,6 +77,14 @@ Secrets can be used by below ways:
   - [Exposed as environment variables](https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-environment-variables)
   - [Generic ephemeral volumes
 ](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/#generic-ephemeral-volumes) (can be handled as CSI PV below)
+- From Deployment:
+  - Specified through [DeploymentSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#deploymentspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From StatefulSet:
+  - Specified through [StatefulSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#statefulsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From DaemonSet:
+  - Specified through [DaemonSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#daemonsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From CronJob:
+  - Specified through [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#cronjob-v1-batch) -> [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#jobspec-v1-batch) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
 - From PV:
   - [CSI](https://kubernetes-csi.github.io/docs/secrets-and-credentials-storage-class.html):
     - provisioner secret
@@ -93,6 +101,14 @@ ConfigMaps can be used by below ways:
 - From Pod:
   - [Mounted as files](https://kubernetes.io/docs/concepts/configuration/configmap/#using-configmaps-as-files-from-a-pod)
   - [Exposed as environment variables](https://kubernetes.io/docs/concepts/configuration/configmap/#configmaps-and-pods)
+- From Deployment:
+  - Specified through [DeploymentSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#deploymentspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From StatefulSet:
+  - Specified through [StatefulSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#statefulsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From DaemonSet:
+  - Specified through [DaemonSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#daemonsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From CronJob:
+  - Specified through [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#cronjob-v1-batch) -> [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#jobspec-v1-batch) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
 
 ### Goals
 
@@ -101,6 +117,7 @@ ConfigMaps can be used by below ways:
 ### Non-Goals
 
 - Protect important Secrets/ConfigMaps that aren't in use from being deleted
+- Protect Secrets/ConfigMaps from being __updated__ while they are in use (Immutable Secrets/ConfigMaps will solve it)
 - Protect resources other than Secrets/ConfigMaps from being deleted.
 
 ## Proposal
@@ -264,6 +281,8 @@ So, when running these commands, we need to care that other controllers or users
       - Verify immediate deletion of a secret that is used but doesn't have annotation
       - Verify that secret used by a Pod as volume is not removed immediately
       - Verify that secret used by a Pod as EnvVar is not removed immediately
+      - Verify that secret used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as volume has proper Liens
+      - Verify that secret used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as EnvVar has proper Liens
       - Verify that secret used by a CSI PV as controllerPublishSecret is not removed immediately
       - Verify that secret used by a CSI PV as nodeStageSecret is not removed immediately
       - Verify that secret used by a CSI PV as nodePublishSecret is not removed immediately
@@ -276,6 +295,8 @@ So, when running these commands, we need to care that other controllers or users
       - Verify immediate deletion of a ConfigMap that is used but doesn't have annotation
       - Verify that ConfigMap used by a Pod as volume is not removed immediately
       - Verify that ConfigMap used by a Pod as EnvVar is not removed immediately
+      - Verify that ConfigMap used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as volume has proper Liens
+      - Verify that ConfigMap used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as EnvVar has proper Liens
     - Lien feature disabled:
       - Verify immediate deletion of a secret that is not used
       - Verify immediate deletion of a secret that is used by a Pod
@@ -290,6 +311,8 @@ So, when running these commands, we need to care that other controllers or users
       - Verify immediate deletion of a secret that is used but doesn't have annotation
       - Verify that secret used by a Pod as volume is not removed immediately
       - Verify that secret used by a Pod as EnvVar is not removed immediately
+      - Verify that secret used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as volume has proper Liens
+      - Verify that secret used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as EnvVar has proper Liens
       - Verify that secret used by a CSI PV as controllerPublishSecret is not removed immediately
       - Verify that secret used by a CSI PV as nodeStageSecret is not removed immediately
       - Verify that secret used by a CSI PV as nodePublishSecret is not removed immediately
@@ -305,6 +328,8 @@ So, when running these commands, we need to care that other controllers or users
       - Verify immediate deletion of a ConfigMap that is used but doesn't have annotation
       - Verify that ConfigMap used by a Pod as volume is not removed immediately
       - Verify that ConfigMap used by a Pod as EnvVar is not removed immediately
+      - Verify that ConfigMap used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as volume has proper Liens
+      - Verify that ConfigMap used by a Deployment, a StatefulSet, a Daemonset, and a CronJob as EnvVar has proper Liens
     - config-protection-controller not deployed:
       - Verify immediate deletion of a ConfigMap that is used by Pod
 
