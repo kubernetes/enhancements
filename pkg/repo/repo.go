@@ -242,8 +242,6 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 				return nil
 			}
 
-			logrus.Debugf("adding %s as KEP metadata", info.Name())
-			keps = append(keps, path)
 			return nil
 		},
 	)
