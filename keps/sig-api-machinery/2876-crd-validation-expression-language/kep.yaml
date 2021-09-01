@@ -41,12 +41,6 @@ feature-gates:
   - name: CustomResourceValidationExpressions
     components:
       - kube-apiserver
-  - name: CustomResourceDefaultingExpressions
-    components:
-      - kube-apiserver
-  - name: CustomResourceConversionExpressions
-    components:
-      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release

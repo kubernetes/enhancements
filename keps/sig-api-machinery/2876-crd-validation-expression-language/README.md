@@ -24,6 +24,13 @@
     - [Conversion](#conversion)
 - [Design Details](#design-details)
   - [Type Checking](#type-checking)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Alternatives](#alternatives)
   - [Rego](#rego)
   - [Expr](#expr)
@@ -408,6 +415,154 @@ objects and construct objects in a typesafe way.  In order to construct objects 
 need to be able to represent the structural schema types in CEL, e.g. "v1beta1.Foo{fieldname:
 value}", this is complicated by the way CEL relies on protobuf types.
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: CustomResourceValidationExpressions
+  - Components depending on the feature gate: kube-apiserver
+
+###### Does enabling the feature change any default behavior?
+
+No, default behavior is the same.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, disabling the feature will result in validation expressions being ignored.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Validation expressions will be enforced again.
+
+###### Are there any tests for feature enablement/disablement?
+
+These will be introduced in the Alpha implementation.
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+`x-kubernetes-validator` it not currently allowed in the OpenAPI schemas defined in Custom Resource
+Definitions. This creates a rollout issue: Any CRDs that are defined using this new field will
+be invalid according to versions of Kubernetes that pre-date the introduction of the field.
+
+
+Mitigation: Once we introduce the field, also backport the code that allows it to be included (but
+ignored) in CRDs to all supported Kubernetes versions. Before this feature goes to Beta we will
+need to make an assessment of how much support we have in older kubernetes versions for this feature.
+
+###### What specific metrics should inform a rollback?
+
+Custom resource create/update failures.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Will be completed before Beta.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+Check if there exist any custom resource definition with the x-kubernetes-validator field in the OpenAPIv3 schema.
+
+###### How can someone using this feature know that it is working for their instance?
+
+Test that a validation rule rejects a custom resource create/update/patch/apply as expected.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+No impact on latency for custom resource create/update/patch/apply when validation rules are absent
+from a custom resource definition.
+
+Performance when validation rules are in use will need to be measured and optimized. We anticipate negligible
+impact (<5%) for typical use.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+Custom resource definition create/update/patch/apply latencies are available today and should be sufficient.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+We don't anticipate the performance implications to justify the introduction of a validation latency metric, but
+if performance 
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+No
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+Not immediately, but custom resource definitions might become larger (anticipating <10% size increase based on similar
+functionality in other systems).
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+Yes, custom resource create/update/patch/apply latencies will be impacted when the feature is used. We expect this to be negligible
+but will measure it before Beta.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+We don't expect it to. We will measure this before Beta.
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
 
 
 ## Alternatives
