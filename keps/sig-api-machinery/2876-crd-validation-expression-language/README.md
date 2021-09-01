@@ -271,7 +271,7 @@ The function library available to expressions can be augmented using [extension
 functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions).
 
 List of functions to include for the initial release:
-- Equality and Ordering
+- Equality and Ordering (customized to do Kuberenetes semantic equality that handles "associative lists")
 - Regular Expressions
 - Some Standard Definitions
 
