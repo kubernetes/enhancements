@@ -28,11 +28,34 @@
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+    - [How can this feature be enabled / disabled in a live cluster?](#how-can-this-feature-be-enabled--disabled-in-a-live-cluster)
+    - [Does enabling the feature change any default behavior?](#does-enabling-the-feature-change-any-default-behavior)
+    - [Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement)
+    - [What happens if we reenable the feature if it was previously rolled back?**](#what-happens-if-we-reenable-the-feature-if-it-was-previously-rolled-back)
+    - [Are there any tests for feature enablement/disablement?**](#are-there-any-tests-for-feature-enablementdisablement)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+    - [How can a rollout fail? Can it impact already running workloads?](#how-can-a-rollout-fail-can-it-impact-already-running-workloads)
+    - [What specific metrics should inform a rollback?](#what-specific-metrics-should-inform-a-rollback)
+    - [Were upgrade and rollback tested? Was the upgrade-&gt;downgrade-&gt;upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)
+    - [Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis-fields-of-api-types-flags-etc)
   - [Monitoring Requirements](#monitoring-requirements)
+    - [How can an operator determine if the feature is in use by workloads?](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads)
+    - [What are the reasonable SLOs (Service Level Objectives) for the enhancement?](#what-are-the-reasonable-slos-service-level-objectives-for-the-enhancement)
+    - [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
+    - [Are there any missing metrics that would be useful to have to improve observability of this feature?](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
   - [Dependencies](#dependencies)
+    - [Does this feature depend on any specific services running in the cluster?](#does-this-feature-depend-on-any-specific-services-running-in-the-cluster)
   - [Scalability](#scalability)
+    - [Will enabling / using this feature result in any new API calls?](#will-enabling--using-this-feature-result-in-any-new-api-calls)
+    - [Will enabling / using this feature result in introducing new API types?](#will-enabling--using-this-feature-result-in-introducing-new-api-types)
+    - [Will enabling / using this feature result in any new calls to the cloud provider?](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud-provider)
+    - [Will enabling / using this feature result in increasing size or count of the existing API objects?](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects)
+    - [Will enabling / using this feature result in increasing time taken by any operations covered by <a href="https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos">existing SLIs/SLOs</a>?](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any-operations-covered-by-existing-slisslos)
+    - [Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?](#will-enabling--using-this-feature-result-in-non-negligible-increase-of-resource-usage-cpu-ram-disk-io--in-any-components)
   - [Troubleshooting](#troubleshooting)
+    - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
+    - [What are other known failure modes?](#what-are-other-known-failure-modes)
+    - [What steps should be taken if SLOs are not being met to determine the problem?](#what-steps-should-be-taken-if-slos-are-not-being-met-to-determine-the-problem)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -216,9 +239,11 @@ Steps 2 to 4 might deal with a potentially big number of Pods. Thus, status
 updates can potentially stress the kube-apiserver. For this reason, the Job
 controller repeats steps 2 to 4, capping the number of Pods each time, until
 the controller processes all the Pods. The number of Pods is caped by:
-- time: in each iteration, the job controller removes all the Pods' finalizers
-  it can in a unit of time in the order of tens of seconds. This allows to
-  throttle the number of Job status updates.
+- time: in each Job sync, the job controller removes all the Pods' finalizers
+  it can in a unit of time in the order of tens of seconds. If there are
+  pending Pods to count, the controller puts back the Job into the work queue.
+  This allows to throttle the number of Job status updates and avoid starving
+  smaller jobs.
 - count: Preventing big writes to etcd. We limit the number of UIDs to the order
   of hundreds, keeping the size of the slice under 20kb.
 
@@ -292,6 +317,7 @@ the owner reference.
   - Job tracking with feature enabled.
   - Tracking of terminating Pods.
   - Transition from feature enabled to disabled and enabled again.
+  - Clean up finalizers of Orphan Pods.
   - Tracking Jobs with big number of Pods, making sure the status is eventually
     consistent.
 - E2E test:
@@ -305,28 +331,33 @@ the owner reference.
   - Job tracking without lingering Pods
   - Removal of finalizer when feature gate is disabled.
   - Support for [Indexed Jobs](https://git.k8s.io/enhancements/keps/sig-apps/2214-indexed-job)
-- Tests: unit, integration, E2E
+- Tests: unit, integration.
 
 #### Alpha -> Beta Graduation
 
-- Processing 5000 Pods per minute across any number of Jobs, with Pod creation
-  having higher priority than status updates. This might depend on
-  [Priority and Fairness](https://git.k8s.io/enhancements/keps/sig-api-machinery/1040-priority-and-fairness).
+- Pod processing throughput per minute (mix of creating and counting finished Pods),
+  assuming an average Job .spec.parallelism=10.
+  - Up to 2500 Pods (~3000 queries) for a 50 QPS client limit for the job controller.
+  - Up to 5000 (~6000 queries) Pods for a 100 QPS client limit for the job controller.
 - Ensure that tracking Jobs with big number of Pods doesn't cause starvation of
   smaller jobs.
-- Metrics:
-  - latency
-  - errors
-- Tests are in Testgrid and linked in KEP
+- Metrics for latency, counting updates and errors.
+- Job E2E tests are in Testgrid with the feature enabled and linked in KEP
 
 #### Beta -> GA Graduation
 
-- Established a plan to remove legacy tracking and the use of
-  `batch.kubernetes.io/job-completion` as an annotation. The tentative
-  expectation is to keep them for two releases after the graduation to GA.
-  This time can be reduced if we can envision an algorithm to safely transition
-  a Job from legacy to new tracking.
-- E2E test graduates to conformance.
+- Remove legacy tracking and the use of `batch.kubernetes.io/job-completion` as
+  an annotation. This is possible assuming:
+  - After the feature was enabled for some time, the Job controller is already
+    tracking most Jobs using finalizers.
+  - For the remaining Jobs, the Job controller already accounted most of the
+    finished Pods in the status. The controller adds a tracking finalizer to
+    any running Pod that doesn't have it. The controller might leave some
+    finished Pods unaccounted, if they finish before the controller has a chance
+    to add a finalizer. This is acceptable as it's no worse that the current
+    behavior were the controller doesn't account for Pods removed by garbage
+    collection or other means.
+- Job E2E tests graduate to conformance.
 - Job tracking scales to 10^5 completions per Job processed within an order of
   minutes.
 
@@ -365,9 +396,7 @@ No implications to node runtime.
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
-
-* **How can this feature be enabled / disabled in a live cluster?**
+#### How can this feature be enabled / disabled in a live cluster?
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: JobTrackingWithFinalizers
     - Components depending on the feature gate:
@@ -380,7 +409,7 @@ _This section must be completed when targeting alpha to a release._
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
-* **Does enabling the feature change any default behavior?**
+#### Does enabling the feature change any default behavior?
 
   Yes.
   
@@ -388,8 +417,7 @@ _This section must be completed when targeting alpha to a release._
   - Pods removed by the user or other controllers count towards failures or
     completions.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
+#### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
   
   Yes.
   The job controller removes finalizers in this case.
@@ -397,95 +425,90 @@ _This section must be completed when targeting alpha to a release._
   create new Pods to fulfill completions. But this is no different from
   existing behavior with the legacy tracking.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+#### What happens if we reenable the feature if it was previously rolled back?**
 
   Existing Jobs are tracked with legacy Pods.
 
-* **Are there any tests for feature enablement/disablement?**
+#### Are there any tests for feature enablement/disablement?**
 
-  Yes, we plan to add integration tests.
+  Yes, we have [integration tests](https://github.com/kubernetes/kubernetes/blob/7a0638da76cb9843def65708b661d2c6aa58ed5a/test/integration/job/job_test.go)
+  for feature enabled, disabled and transitions.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
+#### How can a rollout fail? Can it impact already running workloads?
+  
+  The change doesn't affect running Pods. If the component restarts
+  mid-rollout into an older version, the Job controller switches to tracking
+  Jobs without using finalizers.
 
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+#### What specific metrics should inform a rollback?
 
-* **What specific metrics should inform a rollback?**
+  - An increase in `job_sync_duration_seconds`. Users should expect a higher
+    duration than previous versions of the job controller due to the new API
+    calls.
+  - Stale `job_sync_total` or `job_finished_total`.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+#### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+  
+  Integration tests cover feature gate disablement and re-enablement.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  A manual upgrade->downgrade->upgrade flow will be executed prior to Beta
+  graduation to ensure that a running Job falls back to tracking without
+  finalizers. The KEP will be updated with the findings of the test.
+
+#### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+  
+  No.
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+#### How can an operator determine if the feature is in use by workloads?
+  
+  - The metric `job_pod_finished` (with a label result=failed/completed)
+    increments when the job controller removes a Pod out of
+    `.status.uncountedTerminatedPods` to increase the failed/completed counters.
+  - Administrators can check for the existence of Job objects with the annotation
+    `batch.kubernetes.io/job-completion` or Pods with the finalizer
+    `batch.kubernetes.io/job-completion`.
 
-* **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+###### How can someone using this feature know that it is working for their instance?
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+- [ ] Events
+  - Event Reason:
+- [x] API .status
+  - Condition name:
+  - Other field: `Job.status.uncountedTerminatedPods` is not null.
+- [x] Other (treat as last resort)
+  - Details: The `Job` has the annotation `batch.kubernetes.io/job-completion`
+
+#### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+- 99% percentile over day for Job syncs is <= 15s for a client-side 50 QPS
+  limit.
+    
+#### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [x] Metrics
+    - Metric name: `job_sync_duration_seconds`
     - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+    - Components exposing the metric: `kube-controller-manager`
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
-
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+#### Are there any missing metrics that would be useful to have to improve observability of this feature?
+  
+  - A label in `job_sync_total` for the type of Job tracking. This label would
+    have to be removed when we graduate the feature to GA, adding operational
+    burden.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+#### Does this feature depend on any specific services running in the cluster?
+  
+  No.
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
-
-* **Will enabling / using this feature result in any new API calls?**
+#### Will enabling / using this feature result in any new API calls?
 
   - PATCH Pods, to remove finalizers.
     - estimated throughput: one per Pod created by the Job controller, when Pod
@@ -497,17 +520,15 @@ previous answers based on experience in the field._
       from experiments).
     - originating component: kube-controller-manager.
 
-* **Will enabling / using this feature result in introducing new API types?**
+#### Will enabling / using this feature result in introducing new API types?
 
   No.
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+#### Will enabling / using this feature result in any new calls to the cloud provider?
 
   No.
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
+#### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
   - Pod
     - Estimated increase: new finalizer of 33 bytes.
@@ -517,28 +538,28 @@ the existing API objects?**
     - Estimated increase: new array temporarily containing terminated Pod UIDs.
       The job controller caps the size of the array to less than 20kb.
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
+#### Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs]?
 
-  No existing SLIs/SLOs for Jobs.
+  Users should expect an increase in the `job_sync_duration_seconds` metric.
+  There is no existing SLO for Jobs.
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+#### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
   Additional memory to hold terminated Pods and the status of removing their
   finalizers.
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
+#### How does this feature react if the API server and/or etcd is unavailable?
 
-_This section must be completed when targeting beta graduation to a release._
+  It wouldn't make progress, but the controllers re-queues the Job syncs.
+  This is no different from existing behavior.
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
-
-* **What are other known failure modes?**
+#### What are other known failure modes?
+  
+  TBD from user feedback. No know failures modes so far.
+  
+  <!--
   For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
     - Detection: How can it be detected via metrics? Stated another way:
@@ -549,24 +570,29 @@ _This section must be completed when targeting beta graduation to a release._
       levels that could help debug the issue?
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
+  -->
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+#### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Check reachability between kube-controller-manager and apiserver.
+1. If the `job_sync_duration_seconds` above the suggested SLO, check for the number
+   of requests in apiserver coming from the kube-system/job-controller service
+   account. Consider increasing the number of inflight requests for
+   apiserver or tuning [API priority and fairness](https://kubernetes.io/docs/concepts/cluster-administration/flow-control/)
+   to give more priority for the job-controller requests.
+1. If the steps above are insufficient or if the `job_sync_total` metric is stale,
+   even though there are Jobs progressing in the cluster, disable the `JobTrackingWithFinalizers`
+   feature gate from apiserver and kube-controller-manager and [report an issue](https://github.com/kubernetes/kubernetes/issues).
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- 2021-02-08: First proposal.
+- 2021-04-20: Target 1.22 for Alpha.
+- 2021-07-09: Alpha implementation merged
+- 2021-08-18: PRR completed and graduation to beta proposed.
 
 ## Drawbacks
 
