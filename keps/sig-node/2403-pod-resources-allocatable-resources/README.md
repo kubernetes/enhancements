@@ -108,22 +108,23 @@ NOTE:
 
 The extended interface is shown in proto below:
 ```protobuf
-// PodResources is a service provided by the kubelet that provides information about the
+/ PodResourcesLister is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
-service PodResources {
+service PodResourcesLister {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
     rpc GetAllocatableResources(AllocatableResourcesRequest) returns (AllocatableResourcesResponse) {}
 }
 
 message AllocatableResourcesRequest {}
 
-// AvailableResourcesResponses contains informations about all the devices known by the kubelet
+// AllocatableResourcesResponses contains informations about all the devices known by the kubelet
 message AllocatableResourcesResponse {
     repeated ContainerDevices devices = 1;
     repeated int64 cpu_ids = 2;
+    repeated ContainerMemory memory = 3;
 }
 
-// ListPodResourcesRequest is the request made to the PodResources service
+// ListPodResourcesRequest is the request made to the PodResourcesLister service
 message ListPodResourcesRequest {}
 
 // ListPodResourcesResponse is the response returned by List function
@@ -146,14 +147,11 @@ message ContainerResources {
     repeated ContainerMemory memory = 4;
 }
 
-// Topology describes hardware topology of the resource
-message TopologyInfo {
-	repeated NUMANode nodes = 1;
-}
-
-// NUMA representation of NUMA node
-message NUMANode {
-	int64 ID = 1;
+// ContainerMemory contains information about memory and hugepages assigned to a container
+message ContainerMemory {
+    string memory_type = 1;
+    uint64 size = 2;
+    TopologyInfo topology = 3;
 }
 
 // ContainerDevices contains information about the devices assigned to a container
@@ -161,6 +159,16 @@ message ContainerDevices {
     string resource_name = 1;
     repeated string device_ids = 2;
     TopologyInfo topology = 3;
+}
+
+// Topology describes hardware topology of the resource
+message TopologyInfo {
+    repeated NUMANode nodes = 1;
+}
+
+// NUMA representation of NUMA node
+message NUMANode {
+    int64 ID = 1;
 }
 ```
 
