@@ -125,18 +125,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -513,9 +513,8 @@ We will also have additional testing for changes to the strategic merge patch
 logic in
 [apimachinery/pkg/util/strategicpatch/patch_test.go](https://github.com/kubernetes/kubernetes/blob/dadecb2c8932fd28de9dfb94edbc7bdac7d0d28f/staging/src/k8s.io/apimachinery/pkg/util/strategicpatch/patch_test.go)
 
-<!--
 ### Graduation Criteria
-
+<!--
 **Note:** *Not required until targeted at a release.*
 
 Define graduation milestones.
@@ -540,11 +539,13 @@ functionality is accessed.
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 
+-->
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Integration tests added for all relevant verbs (POST, PUT, and PATCH)
 
+<!--
 #### Beta
 
 - Gather feedback from developers and surveys
@@ -651,16 +652,23 @@ No, strict validation is false by default.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, not setting the query param will ensure we are not doing strict validation
-(i.e. disable the feature)
+Yes. From the cluster operator's side, they can restart the kube-apiserver without
+the UnknownFieldValidation flag set and this will disable the feature
+cluster-wide.
+
+For end-users that no longer wish to perform server-side strict validation,
+simply not setting the query param will ensure the server is not doing strict
+validation.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No harm, requests will resume performing strict validation
+No harm, requests will resume performing strict validation. The content of
+stored data does not change when the feature is used compared to when it is off,
+only new requests to the api-server will trigger strict validation.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Testing for both presenence and absence of query param.
+Testing for both presence and absence of query param.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -698,15 +706,26 @@ Even if applying deprecation policies, they may still surprise some users.
 
 This section must be completed when targeting beta to a release.
 
-N/A
 <!--
 ###### How can an operator determine if the feature is in use by workloads?
 
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
-
+-->
 ###### How can someone using this feature know that it is working for their instance?
+
+The easiest way to know that the feature is enabled and working is to query the
+API server with the query param set and passing an object with deliberately
+invalid, unknown fields. An error from the server will indicate that the feature
+is enabled as expected.
+
+Alternatively, and end-user can cross-reference the results of client-side
+validation (i.e. `kubectl --validate=true`) with the results of server-side. If
+client-side validation indicates an error but server-side does not, then the
+feature is disabled.
+
+<!--
 
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
 for each individual pod.
@@ -722,9 +741,17 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
+-->
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
+Users should expect to see an increase in request latency and memory usage
+(~20-25% increase) for requests that desire server side schema validation.
+
+Cluster operators can also use cpu usage monitoring to determine whether
+increased usage of server-side schema validation dramatically increases CPU usage after feature enablement.
+
+<!--
 This is your opportunity to define what "normal" quality of service looks like
 for a feature.
 
@@ -738,17 +765,22 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 
+-->
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 Pick one more of these and delete the rest.
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: CPU Usage
+  - Components exposing the metric: kube-apiserver
+- [x] Metrics
+  - Metric name: Memory Consumption
+  - Components exposing the metric: kube-apiserver
+- [x] Metrics
+  - Metric name: Request Latency
+  - Components exposing the metric: kube-apiserver
 
+<!--
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
