@@ -291,6 +291,7 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 
 func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	// Initialize github client
+	logrus.Debugf("Initializing github client to load PRs for sig: %v", sig)
 	var auth *http.Client
 	ctx := context.Background()
 	if r.Token != "" {
@@ -301,6 +302,7 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 
 	// Fetch list of all PRs if none exists
 	if r.allPRs == nil {
+		logrus.Debugf("Initializing list of all PRs for %v/%v", remoteOrg, remoteRepo)
 		r.allPRs = []*github.PullRequest{}
 
 		opt := &github.PullRequestListOptions{
@@ -330,9 +332,10 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	}
 
 	kepPRs := make([]*github.PullRequest, 10)
+	sigLabel := strings.Replace(sig, "-", "/", 1)
+	logrus.Debugf("Searching list of %v PRs for %v/%v with labels: [%v, %v]", len(r.allPRs), remoteOrg, remoteRepo, sigLabel, proposalLabel)
 	for _, pr := range r.allPRs {
 		foundKind, foundSIG := false, false
-		sigLabel := strings.Replace(sig, "-", "/", 1)
 
 		for _, l := range pr.Labels {
 			if *l.Name == proposalLabel {
@@ -348,8 +351,11 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 			continue
 		}
 
+		logrus.Debugf("Found #%v", pr.GetHTMLURL())
+
 		kepPRs = append(kepPRs, pr)
 	}
+	logrus.Debugf("Found %v PRs for %v/%v with labels: [%v, %v]", len(kepPRs), remoteOrg, remoteRepo, sigLabel, proposalLabel)
 
 	if len(kepPRs) == 0 {
 		return nil, nil
@@ -375,6 +381,7 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	// touched by a PR. This may result in multiple versions of the same KEP.
 	var allKEPs []*api.Proposal
 	for _, pr := range kepPRs {
+		logrus.Debugf("Getting list of files for %v", pr.GetHTMLURL())
 		files, _, err := gh.PullRequests.ListFiles(
 			context.Background(),
 			remoteOrg,
