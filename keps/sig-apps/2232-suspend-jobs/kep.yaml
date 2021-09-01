@@ -3,16 +3,14 @@ kep-number: 2232
 authors:
   - "@adtac"
 owning-sig: sig-apps
-status: implementable # provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
+status: implemented # provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
 creation-date: 2020-01-06
 reviewers:
   - "@soltysh"
   - "@ahg"
   - "@alculquicondor"
-  - TBD
 approvers:
   - "@janetkuo"
-  - TBD
 prr-approvers:
   - "@wojtek-t"
 
