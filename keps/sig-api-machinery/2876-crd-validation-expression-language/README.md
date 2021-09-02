@@ -231,22 +231,13 @@ element of the list or map.
   
 - For immutability use case, validator will have access to the existing version of the object. 
 
-<<[UNRESOLVED @jpbetz @deads2k @lavalamp]>>
-When performing an update, should the live state of a field also be readable by expressions? This could be used,
-for example, to enforce immutability.
-<<[/UNRESOLVED]>>
-
-<<[UNRESOLVED @cici37]>>
-Should the message also be an expression to allow for some basic variable
-substitution?
-<<[/UNRESOLVED]>>
-
-<<[UNRESOLVED @cici37]>>
-Should a 'type' field also be required? If it is not 'cel', the validator
-could be skipped to future proof against addition of other ways to validate in
+- Have a `type` field specified with `cel` within `x-kubernetes-validator`.
+  With `type` field added, the validator could potentially add other ways to validate in
 the future, or to allow 3rd party validators to have a way to inline their
 validation rules in CRDs.
-<<[/UNRESOLVED]>>
+
+- We plan to allow access to the current state of the object to allow validation rules to check the new value against the current value(e.g. for validation ratcheting or immutability checks).
+
 
 #### Field paths and field patterns
 
@@ -280,8 +271,12 @@ Considerations:
 - The functions will become VERY difficult to change as this feature matures. We
   should limit ourselves initially to functions that we have a high level of
   confidence will not need to be changed or rethought.
+
 - Support kubernetes specific concepts, like accessing associative lists by key may be needed, but
   we need to review more use cases to determine if this is needed.
+  
+- The Kubernetes associated list equality uses map semantic equality which is different from CEL. 
+  We would consider overwriting in CEL or adding a workaround utility function.
 
 
 ### User Stories
