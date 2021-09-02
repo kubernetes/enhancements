@@ -9,9 +9,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Application reads secret from disk on startup](#application-reads-secret-from-disk-on-startup)
-    - [Application watches secret for rotation](#application-watches-secret-for-rotation)
-    - [Application Pod YAML remains unchanged and works across secret providers](#application-pod-yaml-remains-unchanged-and-works-across-secret-providers)
+    - [Story 1](#story-1)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Directory traversal vulnerabilities](#directory-traversal-vulnerabilities)
@@ -58,7 +56,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -91,7 +89,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ### Goals
 
-- Signal the stability of the driver interface and implementation for the core task of making secrets available to pod filesystems.
+- Signal the stability of the driver interface and implementation for the core task of making secrets available to pod filesystem.
 
 ### Non-Goals
 
@@ -100,25 +98,25 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ## Proposal
 
-This project introduces a new Container Storage Interface (CSI) driver for fetching secrets and writing to a `tmpfs` mount in the Pod filesystem. The driver is deployed as a `DaemonSet`. A new Custom Resource Definition (CRD) called a `SecretProviderClass` is introduced with informs the driver of which external secret storage API to contact and how to map the secrets from those APIs to file paths. The driver communicates with the extneral secret provider processes through a gRPC interface over a Unix Domain Socket.
+This project introduces a new Container Storage Interface (CSI) driver for fetching secrets and writing to a `tmpfs` mount in the Pod filesystem. The driver is deployed as a `DaemonSet`. A new Custom Resource Definition (CRD) called a `SecretProviderClass` is introduced that informs the driver of which external secret storage API to contact and how to map the secrets from those APIs to file paths. The driver communicates with the external secret provider processes through a gRPC interface over a Unix Domain Socket.
 
 ### User Stories (Optional)
 
-#### Application reads secret from disk on startup
+#### Story 1
 
-#### Application watches secret for rotation
-
-#### Application Pod YAML remains unchanged and works across secret providers
+1. Application reads secret from filesystem on startup
+2. Application watches secret for rotation
+3. Application Pod YAML remains unchanged and works across secret providers
 
 ### Notes/Constraints/Caveats (Optional)
 
-Since the proposal is a storage driver, native support for presenting secrets to a process through environment variables is  not possible.
+Since the proposal is a storage driver, native support for presenting secrets to a process through environment variables is not possible.
 
 ### Risks and Mitigations
 
 #### Directory traversal vulnerabilities
 
-The driver<->provider interface has been expanded to allow the driver to be the only process that actually writes files to the pod filesystem. The only hostpath provider's need are now the one for creating the unix socket with the driver process.
+The driver<->provider interface has been expanded to allow the driver to be the only process that actually writes files to the pod filesystem. The only hostpath provider's need are now the one for creating the unix socket used for communication with the driver process.
 
 The driver protects against directory traversal vulnerabilities by re-using the `atomic_writer` used by Kubernetes Secrets and ConfigMaps which includes protections against writing to unintended paths.
 
@@ -193,6 +191,10 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
+- non-zero `total_node_publish` metrics indicate the CSI driver is used by the workloads.
+- `total_sync_k8s_secret` metrics indicate the optional Sync as Kubernetes secret feature is used by the workloads.
+- `total_rotation_reconcile` metrics indicate the optional rotation reconciliation feature is used by the workloads.
+
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
 for each individual pod.
@@ -202,15 +204,12 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
-
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+- `total_node_publish_error`
+  - any rising count of this metric indicates a problem with mounting the volume for pod.
+- `total_node_publish_error`
+  - any rising count of this metric indicates a problem with unmounting the volume for pod.
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -233,12 +232,9 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `total_node_publish`
+  - Components exposing the metric: `secrets-store-csi-driver`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
