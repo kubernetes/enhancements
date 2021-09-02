@@ -1,3 +1,7 @@
 kep-number: 1672
 alpha:
   approver: "@wojtek-t"
+beta:
+  approver: "@wojtek-t"
+stable:
+  approver: "@wojtek-t"
