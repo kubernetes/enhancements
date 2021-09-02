@@ -402,7 +402,7 @@ _This section must be completed when targeting alpha to a release._
   
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes, dropping or ignoring the new field returns the system to it's previous
+  Yes, dropping or ignoring the new field returns the system to its previous
   state. Worst case, some PVCs which were trying to use the new field might need
   to be deleted because they will never have anything happen to them after the
   feature is disabled.
@@ -477,7 +477,7 @@ of this feature?**
 
 * **Does this feature depend on any specific services running in the cluster?**
   This feature depends on the VolumePopulator CRD being installed, and the
-  associated data-source-validator controller.
+  associated volume-data-source-validator controller.
 
 ### Scalability
 
