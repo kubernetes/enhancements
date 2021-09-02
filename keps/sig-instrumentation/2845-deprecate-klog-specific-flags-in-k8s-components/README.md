@@ -23,13 +23,20 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Continue supporting all klog features](#continue-supporting-all-klog-features)
   - [Release klog 3.0 with removed features](#release-klog-30-with-removed-features)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -302,14 +309,6 @@ all existing klog features.
 
 - Kubernetes klog specific flags are removed (including --logtostdout)
 
-### Upgrade / Downgrade Strategy
-
-N/A
-
-### Version Skew Strategy
-
-N/A
-
 ## Implementation History
 
 - 20/06/2021 - Original proposal created in https://github.com/kubernetes/kubernetes/issues/99270
@@ -334,3 +333,202 @@ features makes their future removal much harder.
 ### Release klog 3.0 with removed features
 Removal of those features cannot be done without whole k8s community instead of
 just k8s core components
+
+### Upgrade / Downgrade Strategy
+
+Proposed user impacting changes are as follows:
+* Deprecate and remove subset of klog flags
+* Split log output (previously only stderr) into stdout/stderr based on type (info/error)
+
+In case of the first change, we will be following K8s deprecation policy. There
+will be 3 releases between informing users about deprecation and full removal.
+During deprecation period there will not be any changes in behavior for clusters
+using deprecated features, however after removal there will not be a way to
+restore previous behavior. 3 releases should be enough heads up for users to
+make necessary changes to avoid breakage. 
+
+In case of changing log output, we will introduce a temporary flag 
+`--logtostdout` that will allow users to flip back to previous behavior. 
+This flag too will be marked as deprecated and removed with same period.
+
+### Version Skew Strategy
+
+Proposed changes have no impact on cluster that would require coordination. 
+They only affect binary configuration and logs are written, which don't impact
+other components in cluster. Users might be required to change flags passed to 
+k8s binaries, but this can be done one by one independently of other components.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+For stdout/stderr log split feature we are introducing dedicated flag 
+`--logtostdout`, which can be used to enable and rollback the feature.
+
+As this feature will be releases in stages, let's discuss them separately:
+* Alpha - feature is available, users can enable the feature by passing 
+  `--logtostdout` flag to binaries.
+* Beta - feature is enabled by default. Users can rollback by passing 
+  `--logtostdout=false` flag to binaries. Old configuration is deprecated.
+* GA - Old configuration is no longer supported. This is ok wait 3 releases to
+  uphold Kubernetes deprecation policy.
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [x] Other
+  - Describe the mechanism: Passing command line flag to K8s component binaries.
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+    **Yes, for apiserver it will require a restart, which can be considered a 
+    control plane downtime in non highly available clusters**
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    **Yes, it will require restart of Kubelet**
+
+###### Does enabling the feature change any default behavior?
+
+Yes, this feature will change what flags are available in K8s binaries and how
+logs are written. For flags change will go through K8s flag deprecation policy,
+For logs we will introduce a flag to allow users to rollback the change.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, there is no impact on cluster state. Logs should also be unaffected as logs
+will be only written to stderr.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+No impact on cluster. 
+
+###### Are there any tests for feature enablement/disablement?
+
+New logging configuration will be tested as it will become a default in E2e 
+tests. Testing disabled feature will be handled in klog unit tests.
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+There are two cases of failed rollouts I would consider:
+* users logging setup doesn't handle stdout
+* users didn't adjust flags and left deprecated flags in their config
+
+When writing to stdout becomes the default, users will need to ensure that their
+logging setup handles it. If they fail to do so, we are still leaving an escape
+hatch for them via a `--logtostdout=false` flag.
+
+For removing klog flags, we don't have any escape hatch. Such breaking changes
+will be properly announced, but users will need to make adjustments before
+deprecation period finishes.
+
+I don't expect rollbacks to fail, 
+
+###### What specific metrics should inform a rollback?
+
+Users could observe number of logs from K8s components that they ingest. If
+there is a large drop in logs they get, whey should consider a rollback and 
+validate if their logging setup supports consuming binary stdout.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+N/A, logging is stateless.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+Yes, as discussed above we will be removing klog flags.
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+N/A
+
+###### How can someone using this feature know that it is working for their instance?
+
+N/A
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+N/A
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+N/A
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+To detect if user logging system is consuming all logs generated by K8s
+components it would be useful to have a metric to measure number of logs
+generated. However, this is out of scope of this proposal, as topic of measuring
+logging pipeline reliability heavily depends on third party logging systems that
+are outside K8s scope.
+
+### Dependencies
+
+N/A
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+
+### Scalability
+
+Scalability of logging pipeline is verified by existing scalability tests. We 
+don't plan to make any changes to existing tests. 
+
+###### Will enabling / using this feature result in any new API calls?
+
+No
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+N/A
+
+###### What are other known failure modes?
+
+No
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
