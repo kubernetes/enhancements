@@ -431,6 +431,10 @@ No, default behavior is the same.
 
 Yes, disabling the feature will result in validation expressions being ignored.
 
+We will add a unit test that ensures that if the featuregate is off, but the x-kubernetes-validator
+field is present, custom resource definition updates that do not add additional x-kubernetes-validator
+fields will succeed.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Validation expressions will be enforced again.
