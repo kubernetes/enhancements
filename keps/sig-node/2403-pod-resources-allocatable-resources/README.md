@@ -183,6 +183,11 @@ Add additional tests to prove that unhealthy devices are skipped as part of GetA
 - [X] No major bugs reported in the previous cycle.
 - [X] Ensure that empty NUMA topology is handled properly.
 - [X] Ensure that unhealthy devices are skipped in GetAllocatable.
+- [X] External clients are using this capability in their solutions
+    Topology aware Scheduling is one of the primary use cases of GetAllocatableResource podresource endpoint. As part of this initiative an exporter populates CRs per node to expose the information of resources available per NUMA. Pod Resource API `List` and `GetAllocatableResources` API endpoints are used to obtain resource allocation of running pods along with the underlying hardware topology (NUMA) information. Topology aware scheduler can be configured such that users can create custom exporters or use already existing exporters to expose the NodeResourceTopology information as CRs and then [Topology aware Scheduler](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/pkg/noderesourcetopology) uses this information to make a NUMA aware placement decision leading to the reduction of occurrence of Topology affinity Errors highlighted in the issue [here](https://github.com/kubernetes/kubernetes/issues/84869).
+    Examples of two such exporters are:
+     - [Node feature Discovery](https://github.com/kubernetes-sigs/node-feature-discovery) for exposing resource topology information as part of the initiative here: [Introducing NFD Topology Updater exposing Resource hardware Topology info through CRs](https://github.com/kubernetes-sigs/node-feature-discovery/pull/525).
+     - [Resource Topology Exporter](https://github.com/k8stopologyawareschedwg/resource-topology-exporter)
 
 #### Beta to G.A Graduation
 - [X] Allowing time for feedback (1 year).
