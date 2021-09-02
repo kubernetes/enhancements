@@ -102,6 +102,10 @@ The GRPC Service will expose an additional endpoint:
 - 'GetAllocatableResources`, which returns a single AllocatableResourcesResponse, enabling monitor applications to query for the allocatable set of resources available on the node.
 This endpoint will return error if the corresponding feature gate is disabled.
 
+NOTE:
+
+- `GetAllocatableResources` should only be used to evaluate [allocatable](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#node-allocatable) resources on a node. If the goal is to evaluate free/unallocated resources it should be used in conjunction with the List() endpoint. The result obtained by `GetAllocatableResources` would remain the same unless the underlying resources exposed to kubelet change. This happens rarely but when it does (e.g. CPUs onlined/offlined, devices added/removed), client is expected to call `GetAlloctableResources` endpoint.
+
 The extended interface is shown in proto below:
 ```protobuf
 // PodResources is a service provided by the kubelet that provides information about the
@@ -165,6 +169,8 @@ message ContainerDevices {
 The implementation PR adds a suite of E2E tests which cover both the existing `List` endpoint already implemented in the podresources API and
 the new proposed `GetAllocatableResources` API.
 
+Add additional tests to prove that unhealthy devices are skipped as part of GetAllocatable and empty NUMA topology is not returned.
+
 ### Graduation Criteria
 
 #### Alpha
@@ -174,6 +180,8 @@ the new proposed `GetAllocatableResources` API.
 #### Alpha to Beta Graduation
 - [X] The new API is consumed by other public software components (e.g. NFD).
 - [X] No major bugs reported in the previous cycle.
+- [X] Ensure that empty NUMA topology is handled properly.
+- [X] Ensure that unhealthy devices are skipped in GetAllocatable.
 
 #### Beta to G.A Graduation
 - [X] Allowing time for feedback (1 year).
@@ -253,6 +261,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2021-02-02: KEP extracted from [previous iteration](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2043-pod-resource-concrete-assigments)
 - 2021-02-04: KEP polished, added feature gate, clarified the graduation criteria.
 - 2021-02-08: KEP updated adding per-specific-endpoint metrics to the podresources API and clarifying failure modes.
+- 2021-09-02: KEP updated to explicitly clarify the behavior of `GetAllocatableResources` and graduate to Beta in 1.23.
 
 ## Alternatives
 
