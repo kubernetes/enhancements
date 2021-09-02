@@ -405,9 +405,14 @@ you need any help or guidance.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Other
-  - Describe the mechanism: Deploy the controller for each feature:
-    - secret-protection-controller
-    - configmap-protection-controller
+  - Describe the mechanism:
+    - Prerequisite: InUseProtection feature gate is enabled.
+    - To enable:
+      - Deploy secret-protection-controller to enable Secret protection
+      - Deploy configmap-protection-controller to enable Configmap protection
+    - To disable:
+      - Undeploy secret-protection-controller to disable Secret protection
+      - Undeploy configmap-protection-controller to disable Configmap protection
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -427,7 +432,10 @@ Secrets/ConfigMaps aren't deleted until the resources using them are deleted, ag
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, e2e tests for secret-protection-controller and configmap-protection-controller cover scenarios where the controller is deployed and undeployed.
+Yes.
+
+- Unit tests cover scenarios for lien feature (InUseProtection feature gate) disabled case.
+- E2e tests for secret-protection-controller and configmap-protection-controller cover scenarios where the controller is deployed and undeployed.
 
 ### Rollout, Upgrade and Rollback Planning
 
