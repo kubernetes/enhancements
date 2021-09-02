@@ -711,12 +711,16 @@ None of the tests for this feature are unusual or tricky.
 - [x] A task on https://kubernetes.io/docs/tasks/ describes how to troubleshoot
   a running pod using Ephemeral Containers.
 - [ ] Ephemeral Container creation is covered by e2e-node tests.
+- [ ] Update via `/ephemeralcontainers` validates entire PodSpec to protect against future bugs.
 
 #### Beta -> GA Graduation
 
 - [ ] Ephemeral Containers have been in beta for at least 2 releases.
 - [ ] Ephemeral Containers see use in 3 projects or articles.
 - [ ] Ephemeral Container creation is covered by [conformance tests].
+- [ ] The following cosmetic codebase TODOs are resolved:
+  - [ ] kubectl incorrectly suggests a debug container can be reattached after exit
+  - [ ] `validateEphemeralContainers` adds a superfluous index to ephemeral container spec paths
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
