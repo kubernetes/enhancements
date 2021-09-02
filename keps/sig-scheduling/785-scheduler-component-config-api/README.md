@@ -46,7 +46,7 @@
 ## Summary
 
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
-for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced 
+for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced
 `v1beta2` and `v1beta3` in 1.22 and 1.23 respectively.
 
 ## Motivation
@@ -59,7 +59,7 @@ changes such as:
   align with the new scheduler framework.
 - The introduction of scheduling profiles, that allow a scheduler to appear
   as multiple schedulers under different configurations.
-  
+
 A configuration API allows cluster administrators to build, validate and
 version their configurations in a more robust way than using command line flags.
 
@@ -86,7 +86,7 @@ For the most part, `kubescheduler.config.k8s.io/v1beta1` will be a copy of
 - [ ] `.profiles[*].plugins.unreserve` will be removed.
 - [ ] Embedded types of `RequestedToCapacityRatio` will include missing json tags
   and will be decoded with a case-sensitive decoder.
-  
+
 The second iteration, `kubescheduler.config.k8s.io/v1beta2`, includes the following changes:
   - Plugin removals:
     - `NodeLabel` (in favor of `NodeAffinity`)
@@ -102,10 +102,12 @@ The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the followi
     - `InterPodAffinity` to 2
     - `NodeAffinity` to 2
     - `TaintToleration` to 3 as leveraging node tainting to group nodes in the cluster is becoming a widely-adopted practice
+  - Remove `v1beta1`
+  - Remove the legacy [policy config API](https://kubernetes.io/docs/reference/scheduling/policies/)
 
 The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
 about user preferences, so should have more influence while making scheduling decisions.
-More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).     
+More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).
 ### Risks and Mitigations
 
 The major risk is around the removal of the `unreserve` extension point.
@@ -115,7 +117,7 @@ However, this is mitigated for the following reasons:
   effectively requiring plugins to implement both functions.
 - There are no in-tree Reserve or Unreserve plugins prior to 1.19.
   The `VolumeBinding` plugin is now implementing both interfaces.
-  
+
 The caveat is that out-of-tree plugins that want to work 1.19 need to
 updated to comply with the modified `Reserve` interface, otherwise scheduler
 startup will fail. Plugins can choose to provide empty implementations.
@@ -181,7 +183,7 @@ N/A
 * **Are there any tests for feature enablement/disablement?**
 
   The e2e framework does not currently support changing configuration files.
-  
+
   There are intensive unit tests for all the API versions.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -205,16 +207,17 @@ N/A
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
-  
+
   When `v1beta1` was introduced:
   - Configuration API `kubescheduler.config.k8s.io/v1alpha2` is removed.
-  
+
   When `v1beta2` was introduced:
   - Some plugins are disabled. They continue to work in `v1beta1`; if used,
     kube-scheduler logs a Warning.
 
   When `v1beta3` gets introduced:
-  - No changes to plugins enabled by default. Only their weights would change.  
+  - No changes to plugins enabled by default. Only their weights would change.
+  - Remove `v1beta1`.
 
 ### Monitoring requirements
 
@@ -228,7 +231,7 @@ N/A
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
-  
+
   N/A.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
@@ -259,22 +262,22 @@ N/A
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
-  
+
   No.
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
-  
+
   No.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
-  
+
   No.
 
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  
+
   No.
 
 ### Troubleshooting
@@ -296,5 +299,6 @@ N/A
 - 2020-05-08: KEP for beta graduation sent for review, including motivation,
   proposal, risks, test plan and graduation criteria.
 - 2020-05-13: KEP updated to remove v1alpha2 support.
-- 2021-07-08: Introducing `v1beta2`
-- 2021-08-06: Introducing `v1beta3` 
+- 2021-07-08: Introducing `v1beta2`.
+- 2021-08-06: Introducing `v1beta3`.
+- 2021-09-01: Remove `v1beta1` and the legacy policy config API.
