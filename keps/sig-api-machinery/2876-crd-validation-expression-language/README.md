@@ -229,12 +229,7 @@ access to the scalar data element the validator is scoped to.
 - For OpenAPIv3 list and map types, the expression will have access to the data
 element of the list or map.
   
-- For immutability use case, validator will have access to the existing version of the object. 
-
-- Have a `type` field specified with `cel` within `x-kubernetes-validator`.
-  With `type` field added, the validator could potentially add other ways to validate in
-the future, or to allow 3rd party validators to have a way to inline their
-validation rules in CRDs.
+- For immutability use case, validator will have access to the existing version of the object.
 
 - We plan to allow access to the current state of the object to allow validation rules to check the new value against the current value(e.g. for validation ratcheting or immutability checks).
 
@@ -312,7 +307,7 @@ Mitigation: CEL is designed to sandbox code execution.
 
 
 ### Future Plan
-
+  
 #### Defaulting
 
 The `x-kubernetes-default` extension will be used. The location of the defaulter
@@ -382,8 +377,15 @@ The 'field' is optional and defaults to the scope? TODO: is it better to make it
 If the expression evaluates to null, the field is left unset.
 
 TODO: demonstrate writing fields into annotations for round trip
+
 TODO: demonstrate string <-> structured (label selector example & ServicePort example)
 
+#### Other validation support
+
+  Add a `type` field specified with `cel` within `x-kubernetes-validator`.
+  With `type` field added, the validator could potentially add other ways to validate in
+  the future, or to allow 3rd party validators to have a way to inline their
+  validation rules in CRDs.
 
 ## Design Details
 
