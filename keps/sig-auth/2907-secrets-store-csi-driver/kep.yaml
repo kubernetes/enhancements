@@ -1,0 +1,44 @@
+title: Secrets Store CSI Driver
+kep-number: 2907
+authors:
+  - "@tam7t"
+  - "@aramase"
+owning-sig: sig-auth
+
+status: implemented
+creation-date: 2021-09-02
+reviewers:
+  - TBD
+  - "@alice.doe"
+approvers:
+  - TBD
+  - "@oscar.doe"
+
+##### WARNING !!! ######
+# prr-approvers has been moved to its own location
+# You should create your own in keps/prod-readiness
+# Please make a copy of keps/prod-readiness/template/nnnn.yaml
+# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
+#prr-approvers:
+
+see-also:
+  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
+  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
+replaces:
+  - "/keps/sig-ccc/3456-replaced-kep"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.19"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  stable: "v1.22"
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
