@@ -43,7 +43,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [X] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - ~~ [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io] ~~
 - [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -143,6 +143,7 @@ message ContainerResources {
     string name = 1;
     repeated ContainerDevices devices = 2;
     repeated int64 cpu_ids = 3;
+    repeated ContainerMemory memory = 4;
 }
 
 // Topology describes hardware topology of the resource
