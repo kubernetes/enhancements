@@ -32,6 +32,8 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
+- [Graduation Criteria](#graduation-criteria)
+  - [Beta](#beta)
 - [Alternatives](#alternatives)
   - [Rego](#rego)
   - [Expr](#expr)
@@ -566,6 +568,15 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+
+## Graduation Criteria
+
+### Beta
+
+Code that allows x-kubernetes-validator to be included (but ignored) in CRDs is backported all
+supported Kubernetes versions. Also, we should make an assessment of how much support we have in
+older kubernetes versions for this feature before we promote to Beta, delaying promotion as needed
+to minimize negative impact to ecosystem.
 
 ## Alternatives
 
