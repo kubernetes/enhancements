@@ -509,7 +509,7 @@ func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) 
 		if err != nil {
 			logrus.Errorf(
 				"%v",
-				errors.Wrapf(err, "getting PRR approver for %s stage", p.Stage),
+				fmt.Errorf("getting PRR approver for stage '%s' for kep %s: %w", p.Stage, fullKEPPath, err),
 			)
 		}
 
