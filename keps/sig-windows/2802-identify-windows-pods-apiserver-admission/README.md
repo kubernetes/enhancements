@@ -75,7 +75,7 @@ on which a pod would like to run.
 
 Identifying the OS of the pods during the API Server admission time is crucial to apply
 appropriate security constraints to the pod. Without proper identification, some admission
-plugins may apply unnecessary security constraints to the pods or in the
+plugins may apply unnecessary security constraints to the pods(which may prevent them from running properly) or in the
 worst case, don't apply security constraints at all.
 
 
@@ -86,22 +86,27 @@ pod intends to run.
 
 ### Non-Goals
 
-
-- Validating if the pods have appropriate security constraints.
 - Interaction with container runtimes.
+- Interaction with scheduler. (This may change in future)
 
 ## Proposal
 
 
-Identifying the Windows pods during the scheduling phase can be done
+Identifying the pods targeting Windows nodes during the scheduling phase can be done
 in the following ways:
 - Based on [nodeSelector and tolerations](https://kubernetes.io/docs/setup/production-environment/windows/user-guide-windows-containers/#ensuring-os-specific-workloads-land-on-the-appropriate-container-host) in the pod spec with 
   Windows node specific labels.
 - Based on [runtimeclasses](https://kubernetes.io/docs/setup/production-environment/windows/user-guide-windows-containers/#ensuring-os-specific-workloads-land-on-the-appropriate-container-host) in the pod spec
 
 The runtimeclass is a higher level abstraction which gets translated again to nodeSelectors+tolerations. While the 
-nodeSelector with reserved OS label is good enough, it can be viewed as an side-effect of scheduling constraints 
-and need not necessarily express the user intention fully. So, we propose to add a new field to the pod spec called 
+nodeSelector with reserved OS label is good enough, it has following shortcomings:
+
+- It can be viewed as an side-effect of scheduling constraints 
+and need not necessarily express the user intention fully.
+- The pod may target Windows node but pod OS may be linux or windows
+as Linux Containers on Windows(LCOW) can be supported in future.
+
+So, we propose to add a new field to the pod spec called 
 os to identify the OS on which pod intends to run.
 
 ```go
@@ -126,7 +131,7 @@ type OS struct {
 
 With the above change, all the admission plugins which validate or mutate the pod can 
 identify the pod's OS authoritatively and can act accordingly. As of now, PodSecurityAdmission
-plugin is the only admission plugin can leverage this field on the pod spec. In future, we can
+plugin is the only admission plugin can leverage this field on the pod spec. In addition, API validators like ValidatePod and ValidaPodUpdate should be modified. In future, we can
 have a validating admission plugin for Windows pods as Linux and Windows host capabilities are
 different and not all Kubernetes features are supported on Windows host.
 
@@ -162,7 +167,7 @@ when this featuregate is enabled and disabled.
 ### Implications to Kubelet
 
 Apart from the above API change, we intend to make the following changes to Kubelet:
-- Kubelet should reject admitting pods if the pod.Spec.OS.Name doesn't match the node label `kubernetes.io/os`
+- Kubelet should reject admitting pod if the kubelet cannot honor the pod.Spec.OS.Name. For instance, if the OS.Name does not match the host os.
 - Kubelet should reject admitting pods if the pod contains a nodeSelector with label `kubenetes.io/os` with a value 
 not matching `runtime.GOOS`. We can use this check as `kubernetes.io/os` value is supposed to be filled from `runtime.GOOS`. 
 
@@ -211,7 +216,7 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 ### Version Skew Strategy
 
 If the feature gate is enabled there are some kubelet implications as the code to strip security constraints based on OS can be removed and we need to add
-admission/denying in the kubelet logic which was mentioned above.
+admission/denying in the kubelet logic which was mentioned above. Older Kubelets without this change will continue stripping the unnecessary fields in the pod spec which is the current behavior.
 
 
 ## Production Readiness Review Questionnaire
@@ -240,7 +245,7 @@ automations, so be extremely careful here.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Using the featuregate is the only way to enable/disable this feature
+Yes. Using the featuregate is the only way to enable/disable this feature. We'd have unit tests which exercise the update validation code which changes as a result of this feature. The change to update validation comes from the fact that we will allow certain fields to be empty or invalidated when this OS field in the pod spec is set.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
