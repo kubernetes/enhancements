@@ -351,7 +351,7 @@ Content-Type which is providing information about the inbound request body.
 
 Alternatively, if we don’t like the idea of using Content-Type header to
 determine whether the apiserver should accept or fail on unknown fields, we
-could pass a query param such as “?validate=true”.
+could pass a query param such as “?fieldValidation=Strict”.
 
 This might make it more obvious to consumers of the API that strict schema
 validation is a choice of the client. On the other hand, query parameters are
