@@ -367,7 +367,7 @@ Workloads are expected to read the definition in this file to access a bucket. T
 
 ## Accessing existing Buckets  
 
-Since COSI automates the lifecycle management of credentials used for accessing buckets, and also standardizes a pattern for consuming object storage buckets in kubernetes, it is be desirable to access existing buckets in a similar fashion to a bucket created by COSI. This user story explains the steps to re-use a bucket:
+Since COSI automates the lifecycle management of credentials used for accessing buckets, and also standardizes a pattern for consuming object storage buckets in kubernetes, it is desirable to access existing buckets in a similar fashion to a bucket created by COSI. This user story explains the steps to re-use a bucket:
 
 The following stakeholders are involved in this lifecycle:
 
@@ -469,6 +469,8 @@ Bucket {
     
     // BucketID is the unique id of the bucket in the OSP. This field should be
     // used to specify a bucket that has been created outside of COSI. 
+	// 
+	// This field will be empty when the Bucket is dynamically provisioned by COSI.
     // +optional
     BucketID string 
   }
@@ -600,13 +602,13 @@ BucketAccessRequest {
   
   Spec BucketAccessRequestSpec {
     // BucketRequestName is the name of the BucketRequest.
-    // Mutually exclusive with BucketName
+    // Exactly one of BucketRequestName or BucketName must be set.
     // +optional
     BucketRequestName string
     
     // BucketName is the name of the Bucket for which 
     // credetials need to be generated
-    // Mutually exclusive with BucketRequestName
+    // Exactly one of BucketRequestName or BucketName must be set.
     // +optional
     BucketName string
 
