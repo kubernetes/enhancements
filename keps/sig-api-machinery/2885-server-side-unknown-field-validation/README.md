@@ -511,6 +511,9 @@ We can unit test and benchmark the performance of each endpoint in
 fail with invalid fields for all types of fields (embedding, free-form fields,
 etc).
 
+Additionally, we can add integration testing for all endpoints in
+[test/integration/apiserver/apiserver_test.go](https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/apiserver_test.go)
+
 We will also have additional testing for changes to the strategic merge patch
 logic in
 [apimachinery/pkg/util/strategicpatch/patch_test.go](https://github.com/kubernetes/kubernetes/blob/dadecb2c8932fd28de9dfb94edbc7bdac7d0d28f/staging/src/k8s.io/apimachinery/pkg/util/strategicpatch/patch_test.go)
