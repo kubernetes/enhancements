@@ -238,26 +238,27 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
+  - [x] Metrics
+    - Metric name: csi_operations_seconds
+    - [Optional] Aggregation method: filter by `method_name=NodeStageVolume|NodePublishVolume`, `driver_name` (CSI driver name), `grpc_status_code`.
+    - Components exposing the metric: kubelet
   - [ ] Other (treat as last resort)
     - Details:
+    
+  The `csi_operations_seconds` metrics reports a latency histogram of kubelet-initiated CSI gRPC calls by gRPC status code. Filtering by `NodeStageVolume` and `NodePublishVolume` will give us latency data for the respective gRPC calls which include FSGroup operations for drivers with `VOLUME_MOUNT_GROUP` capability, but analyzing driver logs is necessary to further isolate the problem to this feature.
+  
+  An SLI isn't necessary for kubelet logic since it just passes the FSGroup parameter to the CSI driver.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  
+  For a particular CSI driver, per-day percentage of gRPC calls with `method_name=NodeStageVolume|NodePublishVolume` returning error status codes (as defined by the CSI spec) <= 1%.
+  
+  Latency SLO would be specific to each driver.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+  
+  https://github.com/kubernetes/kubernetes/issues/98667 as mentioned above - aiming to implement this as part of beta.
 
 ### Dependencies
 
@@ -282,37 +283,33 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+    
+  No.
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+  
+  No.
 
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
 
+  No.
+
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  
+  No.
 
 * **Will enabling / using this feature result in increasing time taken by any
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
+  
+  Depending on the driver implementation of applying FSGroup, latency for the following SLI may increase:
+  
+  "Startup latency of schedulable stateful pods, excluding time to pull images, run init containers, provision volumes (in delayed binding mode) and unmount/detach volumes (from previous pod if needed), measured from pod creation timestamp to when all its containers are reported as started and observed via watch, measured as 99th percentile over last 5 minutes"
+  
+  Comparing to the existing recursive `chown` and `chmod` strategy, this operation will likely improve pod startup latency in the most common case.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -321,6 +318,8 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   volume), significant amount of data sent and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits].
+  
+  Not in Kubernetes components. CSI drivers may vary in their implementation and may increase resource usage.
 
 ### Troubleshooting
 
@@ -332,6 +331,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  This feature is part of the volume mount path in kubelet, and does not add extra communication with the API server, so this does not introduce new failure modes in the presence of API server or etcd downtime.
+  
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
@@ -343,8 +344,19 @@ _This section must be completed when targeting beta graduation to a release._
       levels that could help debug the issue?
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
+    
+  In addition to existing k8s volume and CSI failure modes:
+    
+  - Driver fails to apply FSGroup (due to a driver error).
+    - Detection: SLI above, in conjunction with the metric in https://github.com/kubernetes/kubernetes/issues/98667 to determine if this feature is being used.
+    - Mitigations: Revert the CSI driver version to one without the issue, or avoid specifying an FSGroup in the pod's security context, if possible.
+    - Diagnostics: Depends on the driver. Generally look for FSGroup-related messages in `NodeStageVolume` and `NodePublishVolume` logs.
+    - Testing: Will add an e2e test with a test driver (csi-driver-host-path) simulating a FSGroup failure.
+
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+The CSI driver log should be inspected to look for `NodeStageVolume` and/or `NodePublishVolume` errors.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
