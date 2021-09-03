@@ -175,7 +175,7 @@ you need any help or guidance.
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: MountWithFSGroup
+    - Feature gate name: DelegateFSGroupToCSIDriver
     - Components depending on the feature gate:
       - Kubelet
   - [ ] Other
