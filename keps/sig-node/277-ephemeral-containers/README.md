@@ -10,13 +10,12 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Creating Ephemeral Containers](#creating-ephemeral-containers)
-  - [Identifying Pods with Ephemeral Containers](#identifying-pods-with-ephemeral-containers)
-  - [Reattaching and Restarting Ephemeral Containers](#reattaching-and-restarting-ephemeral-containers)
+  - [Reattaching Ephemeral Containers](#reattaching-ephemeral-containers)
+  - [Ephemeral Container Lifecycle](#ephemeral-container-lifecycle)
+  - [Removing Ephemeral Containers](#removing-ephemeral-containers)
   - [Configurable Security Policy](#configurable-security-policy)
     - [Specifying Security Context](#specifying-security-context)
     - [Compatibility with existing Admission Controllers](#compatibility-with-existing-admission-controllers)
-  - [Killing Ephemeral Containers](#killing-ephemeral-containers)
-    - [Removing and Re-adding Ephemeral Containers](#removing-and-re-adding-ephemeral-containers)
   - [User Stories](#user-stories)
     - [Operations](#operations)
     - [Debugging](#debugging)
@@ -221,28 +220,31 @@ There are no limits on the number of Ephemeral Containers that can be created in
 a pod, but exceeding a pod's resource allocation may cause the pod to be
 evicted.
 
-### Identifying Pods with Ephemeral Containers
+### Reattaching Ephemeral Containers
 
-The kubelet will set a `PodCondition` when it starts an Ephemeral Container.
-This condition may not be cleared: it will exist for the lifetime of the Pod
-and continues to exist even if all Ephemeral Containers are removed.
-
-The intended use of this `PodCondition` is to enable administrators to enforce
-custom policies for pods that have had Ephemeral Containers. For example,
-cluster administrators may want to automatically apply a label or delete the pod
-after a configurable time. This may be accomplished by a controller watching
-for this `PodCondition`, though the implementation of such a controller is out
-of scope for this proposal.
-
-### Reattaching and Restarting Ephemeral Containers
-
-One can reattach to a Ephemeral Container using `kubectl attach`. When supported
+One may reattach to a Ephemeral Container using `kubectl attach`. When supported
 by a runtime, multiple clients can attach to a single debug container and share
-the terminal. This is supported by Docker.
+the terminal. This is supported by the Docker runtime.
 
-Ephemeral Containers will not be restarted automatically, and there is no
-method in the API to restart an Ephemeral Container.  Creators of Ephemeral
-Containers are expected to choose a new, unused name.
+### Ephemeral Container Lifecycle
+
+Ephemeral containers will stop when their command exits, such as exiting a
+shell, and they will not be restarted.  Unlike `kubectl exec`, processes in
+Ephemeral Containers will not receive an EOF if their connections are
+interrupted, so shells won't automatically exit on disconnect.
+
+There is no API support for killing or restarting an ephemeral container.
+The only way to exit the container is to send it an OS signal.
+
+### Removing Ephemeral Containers
+
+Ephemeral containers may not be removed from a Pod once added, but
+we've received feedback during the alpha period that users would like
+the possibility of removing ephemeral containers (see
+[#84764](https://issues.k8s.io/84764)).
+
+Removal is out of scope for the initial graduation of ephemeral containers,
+but it may be added by a future KEP.
 
 ### Configurable Security Policy
 
@@ -306,50 +308,6 @@ later and emphasize the change in release notes. We'll stress that cluster
 administrators should ensure that their admission controllers support ephemeral
 containers prior to upgrading and provide instructions for how to disable
 ephemeral container creation in a cluster.
-
-### Killing Ephemeral Containers
-
-Ephemeral Containers will stop when their command exits, such as exiting a
-shell, and they will not be restarted.  Unlike `kubectl exec`, processes in
-Ephemeral Containers will not receive an EOF if their connections are
-interrupted, so shells won't automatically exit on disconnect. Without the
-ability to remove an Ephemeral Container via the API, the only way to exit the
-container is to send it an OS signal.
-
-Killing an Ephemeral Container is supported by removing it from the list of
-Ephemeral Containers in the Pod spec. The kubelet will then kill the container
-and cease publishing a `ContainerStatus` for this container.
-
-#### Removing and Re-adding Ephemeral Containers
-
-An edge case worth considering is what happens when a user removes and re-adds
-a Ephemeral Container with the same name. This presents a synchronization
-problem not present in the immutable container lists, which we resolve by
-enforcing the following constraints:
-
-- The client MUST NOT add an Ephemeral Container with the same name as
-  a container listed in `Pod.Status.EphemeralContainerStatuses`. This is an
-  error and will be rejected by the API server.
-- The kubelet MAY continue publishing an `EphemeralContainerStatus` for
-  an Ephemeral Container that no longer appears in
-  `Pod.Spec.EphemeralContainers`.
-- The kubelet MUST start a new container for any container in
-  `Pod.Spec.EphemeralContainers` that does not also appear in
-  `Pod.Status.EphemeralContainerStatuses.
-
-In this way the kubelet is able to signal to clients the set of container names
-which are unavailable because they correspond to containers still running on
-the node. The procedure for replacing a container then becomes:
-
-1. A client removes an Ephemeral Container from `Pod.Spec.EphemeralContainers`.
-2. The client waits for the Ephemeral Container to be removed from
-   `Pod.Status.EphemeralContainerStatuses`.
-3. The client adds an Ephemeral Container with the same name to
-   `Pod.Spec.EphemeralContainers`.
-
-This is not recommended, however, because the kubelet is under no obligation to
-remove the Ephemeral Container from `EphemeralContainerStatuses` in a timely
-fashion. Clients should choose a new container name instead.
 
 ### User Stories
 
@@ -884,32 +842,27 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  We will create a new gauge metric that's updated during kubelet's reconcile
-  of `v1.Pod` to track the number containers scheduled to this node in the API.
-  This will be slightly different than the existing
-  `kubelet_running_containers`, which describes the kubelet's representation of
-  containers, and will be able to label the metrics with fields that are only
-  available in the API object, such as type of container.
+  This information is available by examining pod objects in the API server
+  for the field `pod.spec.ephemeralContainers`. Additionally, the kubelet surfaces
+  the following metrics, added in [#99000](https://issues.k8s.io/99000):
 
-  Note that these kubelet metrics are still in alpha.
-
-  This is tracked in [#97974](https://issues.k8s.io/97974).
+  - `kubelet_managed_ephemeral_containers`: The number of ephemeral containers
+    in pods managed by this kubelet.
+  - `kubelet_started_containers_total`: Counter of all containers started by
+    this kubelet, indexed by `container_type`. Ephemeral containers have a
+    `container_type` of `ephemeral_container`.
+  - `kubelet_started_containers_errors_total `: Counter of errors encountered
+    when this kubelet starts containers, idnexed by `container_type`.
+    Ephemeral containers have a `container_type` of `ephemeral_container`.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [x] Metrics
-    - Metric name: `apiserver_request_total{component="apiserver",resource="pods",subresource="ephemeralcontainers"}` (apiserver), `kubelet_container_errors_total{type="Ephemeral"}` (kubelet, Proposed)
+    - Metric name: `apiserver_request_total{component="apiserver",resource="pods",subresource="ephemeralcontainers"}` (apiserver), `kubelet_started_containers_errors_total{container_type="ephemeral_container"}`
     - [Optional] Aggregation method: Aggregate by container type
-    - Components exposing the metric: kubelet
+    - Components exposing the metric: apiserver, kubelet
   - [ ] Other (treat as last resort)
     - Details:
-
-  Note that the kubelet SLI for this feature is a counter that increments upon
-  failure to create an ephemeral container. Right now the kubelet only surfaces
-  runtime-level errors, so I'll propose adding a higher level counter to
-  encapsulate the entire container creation request, including container type.
-
-  This is tracked in [#97974](https://issues.k8s.io/97974).
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   At a high level, this usually will be in the form of "high percentile of SLI
@@ -962,11 +915,13 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in introducing new API types?**
 
-  There an no new Kinds for storage, but new types are used in API interactions
-  and in `v1.Pod`.
+  There an no new Kinds for storage, but new types are used in `v1.Pod`.
+  Ephemeral containers are added by writing a `v1.Pod` containing
+  `pod.spec.ephemeralContainers` to the pod's `/ephemeralcontainers`
+  subresource, similar to how the kubelet updates `pod.status`.
 
   - API type: 
-    - v1.EphemeralContainers (used for `/ephemeralcontainers` subresource)
+    - v1.Pod (with `/ephemeralcontainers` subresource)
   - Supported number of objects per cluster: same as Pods
   - Supported number of objects per namespace: same as Pods
 
@@ -980,21 +935,22 @@ the existing API objects?**
 
   - API type(s): v1.Pod
   - Estimated increase in size: Additional `Container` for each Ephemeral
-    container. This is expected to be negligible since these are created by
+    container. This is expected to be negligible since these are created
     manually by humans.
   - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
 
-  When people add additional containers to a Pod, the pod will have additional
+  When users add additional containers to a Pod, the pod will have additional
   containers to shut down and garbage collect when the Pod exits.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
   Not automatically. Use of this feature will result in additional containers
-  running on kubelets.
+  running on kubelets, but it does not change the amount of resources allocated
+  to pods.
 
 ### Troubleshooting
 
@@ -1030,6 +986,11 @@ _This section must be completed when targeting beta graduation to a release._
     - Testing: No, testing for cluster misconfiguration at dev time doesn't
       prevent cluster misconfiguration at run time.
 
+  One may completely disable the feature using the `EphemeralContainers` feature
+  flag, but it's also possible to prevent the creation of new ephemeral containers
+  without a restart by removing authorization to `ephemeralcontainers` subresource
+  via [RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
   Troubleshoot using apiserver and kubelet error logs.
@@ -1050,6 +1011,9 @@ _This section must be completed when targeting beta graduation to a release._
 - *2020-09-29*: Ported KEP to directory-based template.
 - *2021-01-07*: Updated KEP for beta release in 1.21 and completed PRR section.
 - *2021-04-12*: Switched `/ephemeralcontainers` API to use `Pod`.
+- *2021-05-14*: Add additional graduation criteria
+- *2021-07-09*: Revert KEP to alpha because of the new API introduced in 1.22.
+- *2021-08-23*: Updated KEP for beta release in 1.23.
 
 ## Drawbacks
 
