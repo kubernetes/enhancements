@@ -207,6 +207,8 @@ and make progress.
 - Modifying the existing states of deployment controller
 - Changing the definition of States
 - Introduce new api for existing conditions
+- To properly implement Progressing condition, `.spec.progressDeadlineSeconds` field has to be introduced in 
+  DaemonSet and StatefulSet to describe the time when the controllers should declare the workload as `failed`.
 
 ## Proposal
 
@@ -314,6 +316,9 @@ proposal will be implemented, this is the place to discuss them.
 ### Test Plan
 Unit and E2E tests will be added to cover the
 API validation, behavioral change of DaemonSet and StatefulSet with feature gate enabled and disabled.
+
+- Validating all possible states of old and new conditions. Checking that the changes in underlying Pod statuses correspond to the conditions.
+- Testing `progressDeadlineSeconds` and feature gates.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -449,6 +454,8 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
+TBD
+
 ## Production Readiness Review Questionnaire
 
 <!--
@@ -492,7 +499,9 @@ Pick one of these and delete the rest.
     - kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
-The default behavior won't change but the new conditions will be additive.
+No. The default behavior won't change.
+The default values for newly introduced `progressDeadlineSeconds` fields might change when graduating it after getting feedback from users.
+Only new conditions will be added with no effect on existing conditions.
 
 <!--
 Any change of default behavior may be surprising to users or break existing
@@ -511,7 +520,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The DaemonSet, StatefulSet controller sstarts respecting the `progressDeadlineSeconds` again 
+The DaemonSet, StatefulSet controller starts respecting the `progressDeadlineSeconds` again.
 
 ###### Are there any tests for feature enablement/disablement?
  
@@ -670,8 +679,8 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 Yes
-  - Update StatefulSet, DaemonSet status
-  - StatefulSet, DaemonSet controllers make these calls
+  - Update of DaemonSet, StatefulSet status
+  - Controllers could make additional update calls when syncing the resources
 <!--
 Describe them, providing:
   - API call type (e.g. PATCH pods)
