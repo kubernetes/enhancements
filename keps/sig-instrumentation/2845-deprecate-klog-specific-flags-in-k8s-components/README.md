@@ -114,6 +114,7 @@ best practices.
 ### Non-Goals
 
 * Change klog output format
+* Removing flags from klog itself
 
 ## Proposal
 
@@ -169,7 +170,7 @@ make sense. List of logging features implemented by klog and proposed actions:
 * Writing logs to file - Feature removed.
 * Log file rotation based on file size - Feature removed.
 * Configuration of log headers - Use the current defaults.
-* Adding stacktrace - Feature removed.
+* Adding backtrace - Feature removed.
 
 For log routing I propose to adopt UNIX convention of writing info logs to
 stdout and errors to stderr. For log headers I propose to use the current
