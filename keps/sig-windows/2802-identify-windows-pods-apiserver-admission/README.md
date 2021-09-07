@@ -164,7 +164,7 @@ when this featuregate is enabled and disabled.
 
 ## Design Details
 
-### Implications to Kubelet
+### Changes to Kubelet
 
 Apart from the above API change, we intend to make the following changes to Kubelet:
 - Kubelet should reject admitting pod if the kubelet cannot honor the pod.Spec.OS.Name. For instance, if the OS.Name does not match the host os.
@@ -178,9 +178,9 @@ Having the above checks in kubelet helps in the following conditions:
 As of now, Kubelet doesn't reconcile the value of `kubernetes.io/os`. So, it'd be nice to have the reconciliation as part of this change.
 
 
-### Implications to Scheduler
+### Potential future changes to Scheduler
 
-We let the users to explicitly specify nodeSelectors+tolerations or runtimeclasses to express their intention
+We let the users to explicitly specify nodeSelectors/nodeAffinities+tolerations or runtimeclasses to express their intention
 to run an particular OS. However, in future, once the OS struct expands, we can see if we can leverage those fields to
 express scheduling constraints. During the alpha, we assume there are no scheduling implications.
 
@@ -190,7 +190,7 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 - Unit tests covering API server defaulting to various fields within pod with and without this feature
 - Unit tests covering admission plugins which validate/mutate pod spec based on this feature
 - Unit and E2E tests for Kubelet changes.
-
+- Updates to the `sig-windows` tagged tests to utilize to direct windows scheduling for all pods .
 ### Graduation Criteria
 
 #### Alpha
