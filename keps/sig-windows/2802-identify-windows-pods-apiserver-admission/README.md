@@ -172,7 +172,7 @@ Apart from the above API change, we intend to make the following changes to Kube
 not matching `runtime.GOOS`. We can use this check as `kubernetes.io/os` value is supposed to be filled from `runtime.GOOS`. 
 
 Having the above checks in kubelet helps in the following conditions:
-- If scheduler has been by passed by setting the nodeName directly on the pod spec.
+- If scheduler has been bypassed by setting the nodeName directly on the pod spec.
 - A malicious user or a user unknowingly with RBAC to just bind pod to node, can associate pod to node there by bypassing the scheduler.
 
 As of now, Kubelet doesn't reconcile the value of `kubernetes.io/os`. So, it'd be nice to have the reconciliation as part of this change.
@@ -203,7 +203,7 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 - Gather feedback from end users
 - Tests are in Testgrid and linked in the KEP
 
-#### Alpha -> Beta Graduation
+#### Beta -> GA Graduation
 - 2 examples of end users using this field
 
 ### Upgrade / Downgrade Strategy
@@ -296,6 +296,7 @@ to run properly on desired OS
 
 
 - [x] Events
+  - Event Reason: Corresponding admission plugins(PodSecurityAdmission plugin) will send pod denied event.
   - Event Reason: Kubelet will send pod admitted/denied event.
 - [ ] API .status
   - Condition name: 
@@ -309,15 +310,14 @@ All the pods which have OS field set in the pod spec should have OS specific con
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 
-- [ ] Metrics
-  - Metric name:
+- [x] Metrics
+  - Metric name: `kube_pod_status_phase`
   - [Optional] Aggregation method:
   - Components exposing the metric:
-- [x] Other (treat as last resort)
-  - Details: Linux Specific SCCs not available on Windows pod specs and vice-versa
+- [] Other (treat as last resort)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-
+Metric which counts the number of rejections at the kube-apiserver admission time.
 
 ### Dependencies
 
