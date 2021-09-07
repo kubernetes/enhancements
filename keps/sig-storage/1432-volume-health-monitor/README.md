@@ -160,10 +160,16 @@ type VolumeStats struct {
 	PVCRef *PVCReference `json:"pvcRef,omitempty"`
 
 	// Note: Add the following new field
-	// Normal volumes are available for use and operating optimally.
-	// An abnormal volume does not meet these criteria.
 	// +optional
-	Abnormal *bool `json:"abnormal,omitempty"`
+        // VolumeHealthStats contains data about volume health
+        VolumeHealthStats `json:"volumeHealthStats,omitempty"`
+}
+
+// VolumeHealthStats contains data about volume health.
+type VolumeHealthStats struct {
+        // Normal volumes are available for use and operating optimally.
+        // An abnormal volume does not meet these criteria.
+        Abnormal bool `json:"abnormal,omitempty"`
 }
 ```
 
@@ -182,6 +188,14 @@ Add new metrics [here](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg
 Update [CollectWithStability](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/metrics/collectors/volume_stats.go#L117) to add a [NewLazyConstMetric](https://github.com/kubernetes/component-base/blob/v0.22.1/metrics/value.go#L33) with an [GaugeValue](https://github.com/kubernetes/component-base/blob/v0.22.1/metrics/value.go#L32).
 
 Since Prometheus does not store string metrics, `VolumeStatsHealthAbnormal` will be stored as either 1 or 0.
+
+PVC's namespace and name will be the label as in the following example:
+https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/metrics/collectors/volume_stats.go#L97
+
+An example metric:
+```
+kubelet_volume_stats_health_abnormal{namespace="testns",persistentvolumeclaim="testpvc"} 1
+```
 
 ### CSI changes
 
