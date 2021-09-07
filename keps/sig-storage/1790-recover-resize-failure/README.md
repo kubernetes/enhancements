@@ -125,6 +125,8 @@ When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Statu
 2. If `pvc.Status.ResizeStatus` is `NodeExpansionFailed` and SP supports node-only expansion (indicating that previous expansion to last known `allocatedResources` failed on node with a final error).
 3. If `pvc.Status.ResizeStatus` is `nil` or `empty` and previous `ControllerExpandVolume** has not succeeded.
 
+![Determining new size](./get_new_size.png)
+
 **Note**: Whenever resize controller or kubelet modifies `pvc.Status` (such as when setting both `AllocatedResources` and `ResizeStatus`) - it is expected that all changes to `pvc.Status` are submitted as part of same patch request to avoid race conditions.
 
 The complete expansion and recovery flow of both control-plane and kubelet is documented in attached PDF. The attached pdf - documents complete volume expansion flow via state diagrams and is much more exhaustive than the text above.
