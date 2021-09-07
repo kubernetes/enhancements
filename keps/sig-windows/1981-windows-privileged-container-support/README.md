@@ -492,14 +492,19 @@ More information on Windows resource access can be found at https://docs.microso
 
 #### Container Mounts
 
-- When privileged containers are started a new volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume. Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
-Note: there will be no `chroot` equivalent.
-- An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted.
+- When privileged containers are started a new volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume.
+Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
+  - Note: there will be no `chroot` equivalent.
+- An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted for `hostProcess` containers.
+  - This environment variable will be set to `c:\c\<containerid>\` (trailing \ included!) for each container.
+  - This environment variable can be used inside the Pod manifest / command line args for containers. See files in this [pull request](https://github.com/kubernetes-sigs/sig-windows-tools/pull/161/files#diff-b8195f7a2ad8f9ae9ebdd1bde8a0f3756c4508c1d9d9dd99f4a3bfa19fc3b828R135) for examples of using `$CONTAINER_SANDBOX_MOUNT_point` inside deployment manifets.
+- `$CONTAINE_SANDBOX_MOUNT_POINT` will not be set for non-`hostProcess` containers.
 - Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
-  - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` would be the root instead of `c:\c\<container id>`).
+  - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` (trailing \ included) would be the root instead of `c:\c\<container id>\`).
   This would make it so files from volume mounts would be accessible via static paths. HostProcess containers would still have full access to the host file-system.
   https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
   This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done before this features becomes stable.
+
 - Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers. This will be re-evaluated when transitioning from `alpha` to `beta` as we get more feedback.
   - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
   - [kubernetes/kubernetes#104490](https://github.com/kubernetes/kubernetes/pull/104490) add support for `HostProcess` containers to the golang client library.
