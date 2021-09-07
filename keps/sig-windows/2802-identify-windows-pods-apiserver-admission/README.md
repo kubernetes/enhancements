@@ -15,13 +15,13 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Implications to Kubelet](#implications-to-kubelet)
-  - [Implications to Scheduler](#implications-to-scheduler)
+  - [Changes to Kubelet](#changes-to-kubelet)
+  - [Potential future changes to Scheduler](#potential-future-changes-to-scheduler)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation-1)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -107,7 +107,8 @@ and need not necessarily express the user intention fully.
 as Linux Containers on Windows(LCOW) can be supported in future.
 
 So, we propose to add a new field to the pod spec called 
-os to identify the OS of the containers specified in the pod.
+os to identify the OS of the containers specified in the pod. There is no default
+value for this `OS` field or the `Name` field in `OS` struct.
 
 ```go
 type PodSpec struct {
