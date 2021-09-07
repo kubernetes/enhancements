@@ -67,14 +67,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The main goal of this enhancement is to authoritatively identify the Operating System
+The primary goal of this enhancement is to define the OperatingSystem scheduling requirements for a Pod in a manner which is common in the Kubelet as well as the KubernetesControlPlane.
 on which a pod would like to run.
 
 
 ## Motivation
 
 Identifying the OS of the pods during the API Server admission time is crucial to apply
-appropriate security constraints to the pod. Without proper identification, some admission
+appropriate security constraints to the pod. In the absence of having information about a target OS for a pod, some admission
 plugins may apply unnecessary security constraints to the pods(which may prevent them from running properly) or in the
 worst case, don't apply security constraints at all.
 
@@ -87,7 +87,7 @@ pod intends to run.
 ### Non-Goals
 
 - Interaction with container runtimes.
-- Interaction with scheduler. (This may change in future)
+- Interaction with scheduler (this may change in future).
 
 ## Proposal
 
@@ -236,7 +236,7 @@ admission/denying in the kubelet logic which was mentioned above. Older Kubelets
     - kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
-No
+A Kubelet with a misscheduled pod (i.e. trying to run a windows pod on a linux node) will fail *before* trying to run a container (i.e. it will never actually invoke the underlying CRI), as opposed to after.
 
 <!--
 Any change of default behavior may be surprising to users or break existing
