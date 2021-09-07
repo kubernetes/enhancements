@@ -496,6 +496,7 @@ More information on Windows resource access can be found at https://docs.microso
 Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
   - Note: there will be no `chroot` equivalent.
 - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted for `hostProcess` containers.
+  - Note: Syntax for referencing environment variables differs depending on what shell you are using. In cmd.exe env vars are surrounded by %'s (ex: `%CONTAINER_SANDBOX_MOUNT_POINT%`) and in powershell env vars are prefixed with $env: (ex: `$env:CONTAINER_SANDBOX_MOUNT_POINT`).
   - This environment variable will be set to `c:\c\<containerid>\` (trailing \ included!) for each container.
   - This environment variable can be used inside the Pod manifest / command line args for containers. See files in this [pull request](https://github.com/kubernetes-sigs/sig-windows-tools/pull/161/files#diff-b8195f7a2ad8f9ae9ebdd1bde8a0f3756c4508c1d9d9dd99f4a3bfa19fc3b828R135) for examples of using `$CONTAINER_SANDBOX_MOUNT_POINT` inside deployment manifests.
 - `$CONTAINER_SANDBOX_MOUNT_POINT` will not be set for non-`hostProcess` containers.
