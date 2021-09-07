@@ -119,6 +119,7 @@ ConfigMaps can be used by below ways:
 - Protect important Secrets/ConfigMaps that aren't in use from being deleted
 - Protect Secrets/ConfigMaps from being __updated__ while they are in use (Immutable Secrets/ConfigMaps will solve it)
 - Protect resources other than Secrets/ConfigMaps from being deleted.
+- Provide a generic mechanism that prevents a resource from being deleted when it shouldn't be deleted (Scope of [KEP-2839](https://github.com/kubernetes/enhancements/pull/2840))
 
 ## Proposal
 
@@ -190,48 +191,64 @@ Users need to add below to enable this feature per resource:
 Basic flows of Secret protection controller and ConfigMap protection controller are as follows:
 
 - Secret protection controller:
-  - The controller watches `Pod`, `PersistentVolume`, and `VolumeSnapshotContent`
+  - The controller watches `Pod`, `PersistentVolume`, `VolumeSnapshotContent`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
     - Create/Update event:
       - For all the `Secret`s referenced by the resource:
-        - If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, do nothing
-        - Update the `Secret`'s `Liens` field to add `kubernetes.io/secret-protection ${version}/${kind}/${namespace}/${name}`.
+        1. Update the dependency graph (If the resource is using a Secret, mark the Secret that the resource is using it)
+        2. If there are any updates to the Secret in the dependency graph, add the key for the Secret to add-lien-queue
     - Delete event:
       - For all the `Secret`s referenced by the resource:
-        - Update the `Secret`'s `Liens` field to remove `kubernetes.io/secret-protection ${version}/${kind}/${namespace}/${name}`.
-  - The controller periodically check `Pod`, `PersistentVolume`, and `VolumeSnapshotContent`
+        1. Update the dependency graph (If the resource is using a Secret, unmark the Secret that the resource is using it)
+        2. If there are no resource using the Secret in the dependency graph, add the key for the Secret to delete-lien-queue
+  - The controller periodically checks `Pod`, `PersistentVolume`, `VolumeSnapshotContent`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
     - For each resource:
-      - For all the `Secret`s referenced by the resource:
-        - If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, do nothing
-        - Update the `Secret`'s `Liens` field to add `kubernetes.io/secret-protection ${version}/${kind}/${namespace}/${name}`.
-  - The controller preiodically check `Secret`
+      1. Update the dependency graph (If the resource is using a Secret, mark the Secret that the resource is using it)
+      2. If there are any updates to the Secret in the dependency graph, add the key for the Secret to add-lien-queue
+  - The controller periodically checks `Secret`
     - For each `Secret`:
-      - If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation
-        - Remove all the `Liens` that is prefixed with `kubernetes.io/secret-protection`
-      - otherwise:
-        - For all the liens that are prefixed with `kubernetes.io/secret-protection`:
-        - Check if the resource with `${version}/${kind}/${namespace}/${name}` exists, and if it no longer exists, delete the lien.
+      - Check if the `Secret` have `kubernetes.io/enable-secret-protection: "yes"` annotation:
+        - If yes:
+          1. Check API server if the resources marked as using the secret in the dependency graph are still using the secret, and update the graph
+          2. Check if there is no using resources in the graph any more
+            - If yes: Add the key for the secret to delete-lien-queue
+            - Otherwise: Add the key for the secret to add-lien-queue
+        - Otherwise: Add the key for the secret to delete-lien-queue
+  - The controller gets a key for a `Secret` from add-lien-queue:
+    1. If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, do nothing
+    2. Check API server if the `Secret` is actually used by one of the resources marked in the dependency graph, and if used, add `kubernetes.io/secret-protection` lien to the `Secret`
+  - The controller gets a key for a `Secret` from delete-lien-queue:
+    1. If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, delete `kubernetes.io/secret-protection` lien from the `Secret`
+    2. Check API server if the `Secret` is actually not used by any of the resources, and if not used, delete `kubernetes.io/secret-protection` lien from the `Secret`
 
 - ConfigMap protection controller:
-  - The controller watches `Pod`
+  - The controller watches `Pod`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
     - Create/Update event:
-      - For all the `ConfigMap`s referenced by the `Pod`:
-        - If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, do nothing
-        - Update the `ConfigMap`'s `Liens` field to add `kubernetes.io/configmap-protection ${version}/${kind}/${namespace}/${name}`.
+      - For all the `ConfigMap`s referenced by the resource:
+        1. Update the dependency graph (If the resource is using a ConfigMap, mark the ConfigMap that the resource is using it)
+        2. If there are any updates to the ConfigMap in the dependency graph, add the key for the ConfigMap to add-lien-queue
     - Delete event:
-      - For all the `ConfigMap`s referenced by the `Pod`:
-        - Update the `ConfigMap`'s `Liens` field to remove `kubernetes.io/configmap-protection ${version}/${kind}/${namespace}/${name}`.
-  - The controller periodically check `Pod`
-    - For each `Pod`:
-      - For all the `ConfigMap`s referenced by the `Pod`:
-        - If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, do nothing
-        - Update the `ConfigMap`'s `Liens` field to add `kubernetes.io/configmap-protection ${version}/${kind}/${namespace}/${name}`.
-  - The controller preiodically check the `ConfigMap`s
+      - For all the `ConfigMap`s referenced by the resource:
+        1. Update the dependency graph (If the resource is using a ConfigMap, unmark the ConfigMap that the resource is using it)
+        2. If there are no resource using the ConfigMap in the dependency graph, add the key for the ConfigMap to delete-lien-queue
+  - The controller periodically checks `Pod`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
+    - For each resource:
+      1. Update the dependency graph (If the resource is using a ConfigMap, mark the ConfigMap that the resource is using it)
+      2. If there are any updates to the ConfigMap in the dependency graph, add the key for the ConfigMap to add-lien-queue
+  - The controller periodically checks `ConfigMap`
     - For each `ConfigMap`:
-      - If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation
-        - Remove all the `Liens` that is prefixed with `kubernetes.io/configmap-protection`
-      - otherwise:
-        - For all the liens that are prefixed with `kubernetes.io/configmap-protection`:
-        - Check if the resource with `${version}/${kind}/${namespace}/${name}` exists, and if it no longer exists, delete the lien.
+      - Check if the `ConfigMap` have `kubernetes.io/enable-configmap-protection: "yes"` annotation:
+        - If yes:
+          1. Check API server if the resources marked as using the ConfigMap in the dependency graph are still using the ConfigMap, and update the graph
+          2. Check if there is no using resources in the graph any more
+            - If yes: Add the key for the ConfigMap to delete-lien-queue
+            - Otherwise: Add the key for the ConfigMap to add-lien-queue
+        - Otherwise: Add the key for the ConfigMap to delete-lien-queue
+  - The controller gets a key for a `ConfigMap` from add-lien-queue:
+    1. If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, do nothing
+    2. Check API server if the `ConfigMap` is actually used by one of the resources marked in the dependency graph, and if used, add `kubernetes.io/configmap-protection` lien to the `ConfigMap`
+  - The controller gets a key for a `ConfigMap` from delete-lien-queue:
+    1. If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, delete `kubernetes.io/configmap-protection` lien from the `ConfigMap`
+    2. Check API server if the `ConfigMap` is actually not used by any of the resources, and if not used, delete `kubernetes.io/configmap-protection` lien from the `ConfigMap`
 
 Note that
   - Periodical checks for referencing resources are needed for handling a case that the annotation is added after referecing resources are created,
@@ -334,6 +351,7 @@ So, when running these commands, we need to care that other controllers or users
       - Verify immediate deletion of a ConfigMap that is used by Pod
 
 - For Beta, scalability tests are added to exercise this feature.
+
 - For GA, the introduced e2e tests will be promoted to conformance.
 
 ### Graduation Criteria
