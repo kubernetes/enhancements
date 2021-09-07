@@ -160,7 +160,7 @@ the way it is being treated now.
 The primary risk is a bug in the implementation of the admission plugins that validate or mutate
 based on the OS field in the pod spec. The best mitigation for that scenario is unit testing 
 when this featuregate is enabled and disabled.
-
+Additionally, there may be some end-user confusion on the functional consequences of setting the new OS field, given that it is optional.
 
 ## Design Details
 
