@@ -107,13 +107,13 @@ and need not necessarily express the user intention fully.
 as Linux Containers on Windows(LCOW) can be supported in future.
 
 So, we propose to add a new field to the pod spec called 
-os to identify the OS on which pod intends to run.
+os to identify the OS of the containers specified in the pod.
 
 ```go
 type PodSpec struct {
   // If specified, indicates the type of OS on which pod intends
   // to run.  This field is alpha-level and is only honored by servers that 
-  // enable the IdentifyOS feature. This is used to help identifying the
+  // enable the IdentifyPodOS feature. This is used to help identifying the
   // OS authoritatively during the API server admission.
   // +optional
   OS *OS
@@ -131,7 +131,7 @@ type OS struct {
 
 With the above change, all the admission plugins which validate or mutate the pod can 
 identify the pod's OS authoritatively and can act accordingly. As of now, PodSecurityAdmission
-plugin is the only admission plugin can leverage this field on the pod spec. In addition, API validators like ValidatePod and ValidaPodUpdate should be modified. In future, we can
+plugin is the only admission plugin can leverage this field on the pod spec. In addition, API validators like ValidatePod and ValidatePodUpdate should be modified. In future, we can
 have a validating admission plugin for Windows pods as Linux and Windows host capabilities are
 different and not all Kubernetes features are supported on Windows host.
 
@@ -209,10 +209,10 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 ### Upgrade / Downgrade Strategy
 
 - Upgrades:
-  When upgrading from a release without this feature, to a release with `IdentifyOS` feature enabled, there is no change to existing behavior unless user specifies
+  When upgrading from a release without this feature, to a release with `IdentifyPodOS` feature enabled, there is no change to existing behavior unless user specifies
   OS field in the pod spec.
 - Downgrades:
-  When downgrading from a release with this feature to a release without `IdentifyOS`, the current behavior will continue.
+  When downgrading from a release with this feature to a release without `IdentifyPodOS`, the current behavior will continue.
 ### Version Skew Strategy
 
 If the feature gate is enabled there are some kubelet implications as the code to strip security constraints based on OS can be removed and we need to add
@@ -230,7 +230,7 @@ admission/denying in the kubelet logic which was mentioned above. Older Kubelets
 
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: IdentifyOS
+  - Feature gate name: IdentifyPodOS
   - Components depending on the feature gate:
     - kubelet
     - kube-apiserver
@@ -323,7 +323,7 @@ All the pods which have OS field set in the pod spec should have OS specific con
 
 
 ###### Does this feature depend on any specific services running in the cluster?
-None
+kube-apiserver and kubelet
 
 
 ### Scalability
@@ -376,7 +376,7 @@ Relying on nodeSelectors to identify the Pod OS.
 Following are the reasons to not choose this approach:
 - Piggybacking on nodeSelectors+tolerations to definitively identify Pod OS may not be ideal experience for end-users as they can convey scheduling constraints using the same
 abstractions
-- We can use this field when the hostOS is not not always equal to Container OS. For example, Linux Containers on Windows(using WSL) is an example.
+- We can use this field when the hostOS is not not always equal to Container OS. For example, Linux Containers on Windows(using WSL).
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
