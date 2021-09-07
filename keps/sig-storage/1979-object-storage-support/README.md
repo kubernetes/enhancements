@@ -26,6 +26,7 @@
 - [Security](#security)
       - [User Story](#user-story)
   - [Bucket Provisioning with Service Account based Authn (for pods)](#bucket-provisioning-with-service-account-based-authn-for-pods)
+- [Object Lifecycle](#object-lifecycle)
 - [COSI API Reference](#cosi-api-reference)
   - [Bucket](#bucket)
   - [BucketRequest](#bucketrequest)
@@ -568,6 +569,47 @@ The above volume definition will prompt kubernetes to retrieve the secret and pl
 ```
 
 Workloads are expected to read the definition in this file to access a bucket. The API of `bucket.json` follows the same versioning and lifecycle as the rest of the COSI APIs.
+
+# Object Lifecycle
+
+The following resources are created by an admin
+
+- BucketClass
+- BucketAccessClass
+
+The following resources are created by a user. They are created with a reference to their corresponding class objects:
+
+- BucketRequest -> BucketClass
+- BucketAccessRequest -> BucketAccessClass, BucketRequest
+
+Note that a BucketAccessRequest also must point to a BucketRequest.
+
+The COSI controller responds by creating the following objects
+
+- BucketRequest <-> Bucket (1:1)
+- BucketAccessRequest <-> BucketAccess (1:1)
+
+In addition, the BucketAccess will point to the Bucket pointed to by the specified BucketRequest
+
+- BucketAccess -> Bucket
+
+Notes:
+
+ - The resulting BucketAccess will point to the same Bucket pointed to by the Bucket Request.
+ - The BucketClass and BucketAccessClass objects are copied into Bucket and BucketAccess respectively. 
+ - There are **NO** cycles in the relationship graph of the above mentioned API objects.
+ - Mutations are not supported in the API.
+
+When a user deletes the BucketRequest, then depending on the DeletionPolicy, the following happens:
+
+- If deletionPolicy is Delete, then Bucket deletion is also triggered. 
+- If deletionPolicy is Retain, then Bucket is left as is, but the BucketRequest is deleted.
+
+Only when all accessors (BucketAccess) of the Bucket are deleted, is the Bucket itself cleaned up. An orphaned Bucket can be "recovered"  by manually creating a new BucketRequest object that points to the orphaned Bucket. This manual style of associating BucketRequests to Buckets will only succeed if the Bucket is not already bound to a different BucketRequest.
+
+When a user deletes a BucketAccessRequest, the corresponding BucketAccess is also deleted. In addition, the secret pointed to by the BucketAccess is also deleted. If a pod has that secret mountedwhen delete is called, then the secret will not be deleted, but will instead have its deletionTimestamp set. In this way, access to a Bucket is preserved until the application pod dies. 
+
+When an admin deletes any of the Class objects, it does not affect existing Buckets and BucketAccesses as they store a copy of the fields in the corresponding class objects. If a Bucket or BucketAccess is manually deleted by an admin, then the cluster is considered to be in an invalid state. Manual recovery is possible if data is not already lost.  
 
 # COSI API Reference
 
