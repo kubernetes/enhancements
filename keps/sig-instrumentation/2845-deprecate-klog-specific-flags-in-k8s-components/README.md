@@ -121,16 +121,14 @@ best practices.
 ### Non-Goals
 
 * Change klog output format
+* Remove flags from klog
 
 ## Proposal
 
 I propose to remove klog specific feature flags in Kubernetes core components
-(kube-apiserver, kube-scheduler, kube-controller-manager, kubelet) and set them
-to agreed good defaults. From klog flags we would remove all flags besides "-v"
-and "-vmodule". With removal of flags to route logs based on type we want to
-change the default routing that will work as better default. Changing the
-defaults will be done in via multi release process, that will introduce some
-temporary flags that will be removed at the same time as other klog flags.
+(kube-apiserver, kube-scheduler, kube-controller-manager, kubelet) and leave
+them with defaults. From klog flags we would remove all flags besides "-v"
+and "-vmodule".
 
 ### Removed klog flags
 
@@ -172,40 +170,11 @@ directly impacting log volume and component performance.
 
 With removal of configuration alternatives we need to make sure that defaults
 make sense. List of logging features implemented by klog and proposed actions:
-* Routing logs based on type/verbosity - Should be reconsidered.
+* Routing logs based on type/verbosity - Feature removed.
 * Writing logs to file - Feature removed.
 * Log file rotation based on file size - Feature removed.
 * Configuration of log headers - Use the current defaults.
 * Adding stacktrace - Feature removed.
-
-For log routing I propose to adopt UNIX convention of writing info logs to
-stdout and errors to stderr. For log headers I propose to use the current
-default.
-
-#### Split stdout and stderr
-
-As logs should be treated as event streams I would propose that we separate two
-main streams "info" and "error" based on log method called. As error logs should
-usually be treated with higher priority, having two streams prevents single
-pipeline from being clogged down (for example
-[kubernetes/klog#209](https://github.com/kubernetes/klog/issues/209)).
-For logging formats writing to standard streams, we should follow UNIX standard
-of mapping "info" logs to stdout and "error" logs to stderr.
-
-Splitting stdout from stderr would be a breaking change in both klog and
-kubernetes components. However, we expect only minimal impact on users, as
-redirecting both streams is a common practice. In rare cases that will be
-impacted, adapting to this change should be a 1 line change. Still we will want
-to give users a proper heads up before making this change, so we will hide the
-change behind a new logging flag `--logtostdout`. This flag will be used avoid
-introducing breaking change in klog.
-
-With this flag we can follow multi release plan to minimize user impact (each
-point should be done in a separate Kubernetes release):
-1. Introduce the flag in disabled state and start using it in tests.
-1. Announce flag availability and encourage users to adopt it.
-1. Enable the flag by default and deprecate it (allows users to flip back to previous behavior)
-1. Remove the flag following the deprecation policy.
 
 #### Logging headers
 
@@ -295,19 +264,16 @@ all existing klog features.
 - Kubernetes logging configuration drops global state
 - Go-runner is feature complementary to klog flags planned for deprecation
 - Projects in Kubernetes Org are migrated to go-runner
-- Add --logtostdout flag to klog disabled by default
-- Use --logtostdout in kubernetes tests
 
 #### Beta
 
 - Go-runner project is well maintained and documented
 - Documentation on migrating off klog flags is publicly available
 - Kubernetes klog flags are marked as deprecated
-- Enable --logtostdout in Kubernetes components by default
 
 #### GA
 
-- Kubernetes klog specific flags are removed (including --logtostdout)
+- Kubernetes klog specific flags are removed
 
 ## Implementation History
 
@@ -336,20 +302,12 @@ just k8s core components
 
 ### Upgrade / Downgrade Strategy
 
-Proposed user impacting changes are as follows:
-* Deprecate and remove subset of klog flags
-* Split log output (previously only stderr) into stdout/stderr based on type (info/error)
-
-In case of the first change, we will be following K8s deprecation policy. There
-will be 3 releases between informing users about deprecation and full removal.
+For removal of klog specific flags we will be following K8s deprecation policy. 
+There will be 3 releases between informing users about deprecation and full removal.
 During deprecation period there will not be any changes in behavior for clusters
 using deprecated features, however after removal there will not be a way to
 restore previous behavior. 3 releases should be enough heads up for users to
 make necessary changes to avoid breakage. 
-
-In case of changing log output, we will introduce a temporary flag 
-`--logtostdout` that will allow users to flip back to previous behavior. 
-This flag too will be marked as deprecated and removed with same period.
 
 ### Version Skew Strategy
 
@@ -361,17 +319,6 @@ k8s binaries, but this can be done one by one independently of other components.
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
-
-For stdout/stderr log split feature we are introducing dedicated flag 
-`--logtostdout`, which can be used to enable and rollback the feature.
-
-As this feature will be releases in stages, let's discuss them separately:
-* Alpha - feature is available, users can enable the feature by passing 
-  `--logtostdout` flag to binaries.
-* Beta - feature is enabled by default. Users can rollback by passing 
-  `--logtostdout=false` flag to binaries. Old configuration is deprecated.
-* GA - Old configuration is no longer supported. This is ok wait 3 releases to
-  uphold Kubernetes deprecation policy.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -416,19 +363,9 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-There are two cases of failed rollouts I would consider:
-* users logging setup doesn't handle stdout
-* users didn't adjust flags and left deprecated flags in their config
-
-When writing to stdout becomes the default, users will need to ensure that their
-logging setup handles it. If they fail to do so, we are still leaving an escape
-hatch for them via a `--logtostdout=false` flag.
-
 For removing klog flags, we don't have any escape hatch. Such breaking changes
 will be properly announced, but users will need to make adjustments before
 deprecation period finishes.
-
-I don't expect rollbacks to fail, 
 
 ###### What specific metrics should inform a rollback?
 
@@ -452,7 +389,6 @@ This section must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-N/A
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -523,7 +459,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A
+Logs don't have a remote dependency on the API server or etcd.
 
 ###### What are other known failure modes?
 
