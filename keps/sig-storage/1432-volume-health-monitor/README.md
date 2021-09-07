@@ -145,7 +145,7 @@ The volume health monitoring by Kubelet will be controlled by a new feature gate
 
 ### Kubelet Metrics changes
 
-Add two new fields in the [VolumeStats metrics API](https://github.com/kubernetes/kubernetes/blob/v1.22.1/staging/src/k8s.io/kubelet/pkg/apis/stats/v1alpha1/types.go#L263).
+Add a new field in the [VolumeStats metrics API](https://github.com/kubernetes/kubernetes/blob/v1.22.1/staging/src/k8s.io/kubelet/pkg/apis/stats/v1alpha1/types.go#L263).
 
 ```
 // VolumeStats contains data about Volume filesystem usage.
@@ -164,15 +164,10 @@ type VolumeStats struct {
 	// An abnormal volume does not meet these criteria.
 	// +optional
 	Abnormal *bool `json:"abnormal,omitempty"`
-
-	// Note: Add the following new field
-	// The message describing the condition of the volume.
-	// +optional
-	Message *string `json:"message,omitempty"`
 }
 ```
 
-Modify [parsePodVolumeStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/volume_stat_calculator.go#L172) to include the new fields in the returned `stats.VolumeStats`.
+Modify [parsePodVolumeStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/volume_stat_calculator.go#L172) to include the new field in the returned `stats.VolumeStats`.
 
 The newly added Volume Health stats will be stored in [persistentStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/volume_stat_calculator.go#L168).
 
@@ -182,12 +177,11 @@ Add new metrics [here](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg
 
 ```
 	VolumeStatsHealthAbnormal  = "volume_stats_health_abnormal"
-	VolumeStatsHealthMessage  = "volume_stats_health_message"
 ```
 
 Update [CollectWithStability](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/metrics/collectors/volume_stats.go#L117) to add a [NewLazyConstMetric](https://github.com/kubernetes/component-base/blob/v0.22.1/metrics/value.go#L33) with an [GaugeValue](https://github.com/kubernetes/component-base/blob/v0.22.1/metrics/value.go#L32).
 
-Since Prometheus does not store string metrics, `VolumeStatsHealthAbnormal` will be stored as either 1 or 0 and `VolumeStatsHealthMessage` will be added as a label in the same metric named `VolumeStatsHealthAbnormal`.
+Since Prometheus does not store string metrics, `VolumeStatsHealthAbnormal` will be stored as either 1 or 0.
 
 ### CSI changes
 
@@ -911,13 +905,13 @@ previous answers based on experience in the field._
     call is needed.
   - API calls that may be triggered by changes of some Kubernetes resources
     (e.g. update of object X triggers new updates of object Y)
-    We are adding new `Abnormal` and `Message` fields to the existing Kubelet metrics API. It will be retrieved by the periodic metrics collection call. We are not changing the existing frequency of that call.
+    We are adding a new `Abnormal` field to the existing Kubelet metrics API. It will be retrieved by the periodic metrics collection call. We are not changing the existing frequency of that call.
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them, providing:
-  - API type: Adding 'Abnormal` and `Message` fields to Kubelet VolumeStats metrics API
+  - API type: Adding 'Abnormal` field to Kubelet VolumeStats metrics API
   - Supported number of objects per cluster: No
   - Supported number of objects per namespace (for namespace-scoped objects): No
 
@@ -928,7 +922,7 @@ provider?**
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
   Describe them, providing:
-  - API type(s): Yes. We are adding new 'Abnormal` and `Message` fields to Kubelet VolumeStats metrics API.
+  - API type(s): Yes. We are adding new 'Abnormal` field to Kubelet VolumeStats metrics API.
   - Estimated increase in size: (e.g., new annotation of size 32B):
     New string of max length of 128 bytes; new int of 4 bytes.
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
