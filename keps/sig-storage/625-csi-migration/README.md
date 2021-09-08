@@ -31,7 +31,7 @@
 ## Summary
 
 This document presents a detailed design for migrating in-tree storage plugins
-to CSI. This will be an opt-in feature turned on at cluster creation time that
+to CSI. This will be an opt-in feature turned on at cluster start time that
 will redirect in-tree plugin operations to a corresponding CSI Driver.
 
 ### Glossary
@@ -86,8 +86,9 @@ internal APIs.
 * Design a mechanism for deploying  CSI drivers on all systems so that users can
   use the current storage system the same way they do today without having to do
   extra set up.
-* Implementing CSI Drivers for existing plugins
-* Define set of volume plugins that should be migrated to CSI
+* Implementing CSI Drivers for existing plugins.
+* Define set of volume plugins that should be migrated to CSI.
+* Implement CSI specific features like volume snapshot for in-tree volume plugins.
 
 ## Proposal
 
@@ -135,7 +136,7 @@ The above is done by checking that no in-tree plugin code is emitting metrics
 when migration is on. We will also confirm that metrics are being emitted in
 general by confirming the existence of an indicator metric.
 
-Passing these tests in Public CI is the main graduation criterea for the
+Passing these tests in Public CI is the main graduation criteria for the
 `CSIMigration{provider}` flag to Beta.
 
 ### Upgrade/Downgrade/Skew Testing
@@ -198,7 +199,7 @@ you need any help or guidance.
     - Please refer to this design doc on the [Step to enable the feature](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md#upgradedowngrade-migrateunmigrate-scenarios)
 
 * **Does enabling the feature change any default behavior?**
-  Yes and No. If only CSIMigration feature flag is enabled, nothing will change on the cluster behavior. However, if CSIMigration && CSIMigration{cloud-provider} are both enabled, the behavior will change. The in-tree volume plugin that the cloud-provider use will be redirect to use the corresponding CSI driver. But from a user perspective, nothing will be noticed.
+  Yes and No. If only `CSIMigration` feature flag is enabled, nothing will change on the cluster behavior. However, if `CSIMigration` && `CSIMigration{cloud-provider}` are both enabled, the behavior will change. The in-tree volume plugin that the cloud-provider use will be redirect to use the corresponding CSI driver. But from a user perspective, nothing will be noticed.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
@@ -228,7 +229,7 @@ Specifically, for each in-tree plugin corresponding CSI drivers, it will have
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**  
-  - The rollout can fail if the ordering of CSIMigration{cloud-provider} flag was wrongly enabled on kubelet and kube-controller-manager. Specifically, if on the node side kubelet enables the flag and control-plane side the flag is not enabled, then the volume will not be able to be mounted successfully. 
+  - The rollout can fail if the ordering of `CSIMigration{cloud-provider}` flag was wrongly enabled on kubelet and kube-controller-manager. Specifically, if on the node side kubelet enables the flag and control-plane side the flag is not enabled, then the volume will not be able to be mounted successfully. 
     - For workloads that running on nodes have not enable CSI migration, those pods will not be impacted. 
     - For any pod that is being deleted by node drain before turning on migration and created on new node that has CSI migration turned on, the volume mount will fail and pod will not come up correctly.
   - Additionally, CSI Migration has a strong dependency on CSI drivers. So if the in-tree corresponding CSI driver is not properly installed, any volume related operation could fail.
@@ -320,6 +321,7 @@ Node side CSI operation metrics. It will be implemented in the GA phase.
   CSI migration specific fields:
   - The size of PV will increase with the new annotation `volume.beta.kubernetes.io/migrated-to`.
   - For existing in-line volumes, there will be a new field under `VolumeAttachment.Spec.Source.VolumeAttachmentSource.InlineVolumeSpec` that will be populated if in-line volumes of migrated in-tree plugin is used.
+  - For CSINode object that maps to a node which installs CSIDriver, if CSI Migration is turned on, a new annotation will be added `storage.alpha.kubernetes.io/migrated-plugins`
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
