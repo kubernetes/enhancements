@@ -23,7 +23,7 @@
     - [Dual-Stack Support](#dual-stack-support)
     - [Startup Options](#startup-options)
     - [Startup](#startup)
-    - [Reconciliation Loop](#reconciliation-loop)
+    - [Processing Queue](#processing-queue)
     - [Event Watching Loops](#event-watching-loops)
       - [Node Added](#node-added)
       - [Node Updated](#node-updated)
@@ -77,15 +77,15 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone /
 release*.
 
--   [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+-   [X] (R) Enhancement issue in release milestone, which links to KEP dir in
     [kubernetes/enhancements](not the initial KEP PR)
--   [ ] (R) KEP approvers have approved the KEP status as `implementable`
--   [ ] (R) Design details are appropriately documented
--   [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+-   [X] (R) KEP approvers have approved the KEP status as `implementable`
+-   [X] (R) Design details are appropriately documented
+-   [X] (R) Test plan is in place, giving consideration to SIG Architecture and
     SIG Testing input (including test refactors)
--   [ ] (R) Graduation criteria is in place
--   [ ] (R) Production readiness review completed
--   [ ] (R) Production readiness review approved
+-   [X] (R) Graduation criteria is in place
+-   [X] (R) Production readiness review completed
+-   [X] (R) Production readiness review approved
 -   [ ] "Implementation History" section is up-to-date for milestone
 -   [ ] User-facing documentation has been created in [kubernetes/website], for
     publication to [kubernetes.io]
@@ -225,6 +225,8 @@ do not assume Kubernetes has a single continguous Pod CIDR.
 
 ### New Resource
 
+This KEP proposes adding a new built-in API called `ClusterCIDRConfig`.
+
 ```go
 type ClusterCIDRConfig struct {
   metav1.TypeMeta
@@ -238,7 +240,7 @@ type ClusterCIDRConfigSpec struct {
     // This defines which nodes the config is applicable to. A nil selector can
     // be applied to any node.
     // +optional
-    NodeSelector *v1.LabelSelector
+    NodeSelector *v1.NodeSelector
 
     // This defines the IPv4 CIDR assignable to nodes selected by this config.
     // +optional
@@ -275,9 +277,10 @@ type ClusterCIDRConfigStatus struct {
 
     ```32 - IPv4.PerNodeMaskSize == 128 - IPv6.PerNodeMaskSize```
 
--   Each node will be assigned all Pod CIDRs from a matching config.
-    Consider the following example:
-    
+-   Each node will be assigned all Pod CIDRs from a matching config. That is to
+    say, you cannot assing only IPv4 addresses from a `ClusterCIDRConfig` which
+    specifies both IPv4 and IPv6. Consider the following example:
+
     ```go
     {
         IPv4: {
@@ -294,12 +297,22 @@ type ClusterCIDRConfigStatus struct {
     Pod CIDRs can be partitioned from the IPv4 CIDR. The remaining IPv6 Pod
     CIDRs may be used if referenced in another `ClusterCIDRConfig`.
 
--   In case of multiple matching ranges, attempt to break ties with the
+-   When there are multiple `ClusterCIDRConfig` resources in the cluster, first
+    collect the list of applicable `ClusterCIDRConfig`. A `ClusterCIDRConfig` is
+    applicable if its `NodeSelector` matches the `Node` being allocated, and if
+    it has free CIDRs to allocate.
+
+    A nil `NodeSelector` functions as a default that applies to all nodes. This
+    should be the fall-back and not take precedence if any other range matches.
+    If there are multiple default ranges, ties are broken using the scheme
+    outlined below.
+
+    In ths case of multiple matching ranges, attempt to break ties with the
     following rules:
     1.  Pick the `ClusterCIDRConfig` whose `NodeSelector` matches the most
-        labels on the `Node`. For example, `{'node.kubernetes.io/instance-type':
-        'medium', 'rack': 'rack1'}` before `{'node.kubernetes.io/instance-type':
-        'medium'}`.
+        labels/fields on the `Node`. For example,
+        `{'node.kubernetes.io/instance-type': 'medium', 'rack': 'rack1'}` before
+        `{'node.kubernetes.io/instance-type': 'medium'}`.
     1.  Pick the `ClusterCIDRConfig` with the fewest Pod CIDRs allocatable. For
         example, `{CIDR: "10.0.0.0/16", PerNodeMaskSize: "16"}` (1 possible Pod
         CIDR) is picked before `{CIDR: "192.168.0.0/20", PerNodeMaskSize: "22"}`
@@ -307,11 +320,6 @@ type ClusterCIDRConfigStatus struct {
     1.  Pick the `ClusterCIDRConfig` whose `PerNodeMaskSize` is the fewest IPs.
         For example, `27` (32 IPs) picked before `25` (128 IPs).
     1.  Break ties arbitrarily.
-
--   An empty `NodeSelector` functions as a default that applies to all nodes.
-    This should be the fall-back and not take precedence if any other range
-    matches. If there are multiple default ranges, ties are broken using the
-    scheme outlined above.
 
 -   When breaking ties between matching `ClusterCIDRConfig`, if the most
     applicable (as defined by the tie-break rules) has no more free allocations,
@@ -329,21 +337,21 @@ type ClusterCIDRConfigStatus struct {
     to the tie-break rules.
     ```go
     {
-        NodeSelector: { MatchLabels: { "node": "n1", "rack": "rack1" } },
+        NodeSelector: { MatchExpressions: { "node": "n1", "rack": "rack1" } },
         IPv4: {
             CIDR:            "10.5.0.0/16",
             PerNodeMaskSize: 26,
         }
     },
     {
-        NodeSelector: { MatchLabels: { "node": "n1" } },
+        NodeSelector: { MatchExpressions: { "node": "n1" } },
         IPv4: {
             CIDR:            "192.168.128.0/17",
             PerNodeMaskSize: 28,
         }
     },
     {
-        NodeSelector: { MatchLabels: { "node": "n1" } },
+        NodeSelector: { MatchExpressions: { "node": "n1" } },
         IPv4: {
             CIDR:            "192.168.64.0/20",
             PerNodeMaskSize: 28,
@@ -363,7 +371,7 @@ type ClusterCIDRConfigStatus struct {
 
 -   On deletion of the `ClusterCIDRConfig`, the controller checks to see if any
     Nodes are using `PodCIDRs` from this range -- if so it keeps the finalizer
-    in place and periodically polls Nodes. When all Nodes using this
+    in place and waits for the Nodes to be deleted. When all Nodes using this
     `ClusterCIDRConfig` are deleted, the finalizer is removed.
 
 #### Example: Allocations
@@ -451,11 +459,11 @@ nodes we expect.
 
 #### Dual-Stack Support
 
-To assign both IPv4 and IPv6 Pod CIDRs to a Node, the `IPv4` and `IPv6` fields
-must be both set on the object. The controller does not have an in-built notion
-of single-stack or dual-stack clusters. It uses the tie-break rules specified
-[above](#expected-behavior) to pick a `ClusterCIDRConfig` from which to allocate
-Pod CIDRs for each Node.
+The decision of whether to assign only IPv4, only IPv6, or both depends on the
+CIDRs configured in a `ClusterCIDRConfig` object. As described
+[above](#expected-behavior), the controller creates an ordered list of
+`ClusterCIDRConfig` resources which apply to a given `Node` and allocates from
+the first matching `ClusterCIDRConfig` with CIDRs available.
 
 The controller makes no guarantees that all Nodes are single-stack or that all
 Nodes are dual-stack. This is to specifically allow users to upgrade existing
@@ -497,12 +505,20 @@ from the existing NodeIPAM controller:
         necessary.
     -   The "created-from-flags-\<hash\>" object will always be created as long
         as the flags are set. The hash is arbitrarily assigned.
-    -   If an object with the name "created-from-flags-\<hash>" already exists,
-        but it does not match the flag values, the controller will delete it and
-        create a new object. The controller will ensure (on startup) that there
-        is only one non-deleted `ClusterCIDRConfig` with the name
-        "create-from-flags\<hash>". This will allow users to change the flag
-        values and stop using the old values. 
+    -   If an un-deleted object with the name "created-from-flags-*" already
+        exists, but it does not match the flag values, the controller will
+        delete it and create a new object. The controller will ensure (on
+        startup) that there is only one non-deleted `ClusterCIDRConfig` with the
+        name "create-from-flags-\<hash>". The "\<hash>" at the end of the name
+        allows the controller to have multiple "created-from-flags" objects
+        present (e.g. blocked on deletion because of the finalizer), without
+        blocking startup.
+    -   If some `Node`s were allocated Pod CIDRs from the old
+        "created-from-flags-\<hash>" object, they will follow the standard
+        lifecycle for deleting a `ClusterCIDRConfig` object. The
+        "created-from-flag-\<hash>" object the `Nodes` are allocated from will
+        remain pending deletion (waiting for its finalizer to be cleared) until
+        all `Nodes` using those ranges are re-created.
 -   Fetch list of `Node`s. Check each node for `PodCIDRs`
     -   If `PodCIDR` is set, mark the allocation in the internal data structure
         and store this association with the node.
@@ -512,13 +528,12 @@ from the existing NodeIPAM controller:
         After processing all nodes, allocate ranges to any nodes without Pod
         CIDR(s) [Same logic as Node Added event]
 
-#### Reconciliation Loop
+#### Processing Queue
 
-This go-routine will watch for cleanup operations and failed allocations and
-continue to try them in the background.
-
-For example if a Node can't be allocated a PodCIDR, it will be periodically
-retried until it can be allocated a range or it is deleted.
+The controller will maintain a queue of events that it is processing. `Node`
+additions and `ClusterCIDRConfig` additions will be appended to the queue.
+Similarly, Node allocations which failed due to insufficient CIDRs can be
+retried by adding them back on to the queue (with exponential backoff).
 
 #### Event Watching Loops
 
@@ -729,6 +744,12 @@ This section must be completed when targeting alpha to a release.
 Pick one of these and delete the rest.
 -->
 
+-   [X] Feature Gate
+    -   Feature gate name: ClusterCIDRConfig
+    -   Components depending on the feature gate: kube-controller-manager
+        -   The feature gate will control whether the new controller can even be
+            used, while the kube-controller-manager flag below will pick the
+            active controller.
 -   [X] Other
     -   Describe the mechanism:
         -   The feature is enabled by setting the kube-controller-manager flag
@@ -755,8 +776,8 @@ too only for nodes created after that point).
 Yes, users can switch back to the old controller and delete the
 `ClusterCIDRConfig` objects. However, if any Nodes were allocated `PodCIDR` by
 the new controller, those allocation will persist for the lifetime of the Node.
-Users will have to restart their Nodes to trigger another `PodCIDR` allocation
-(this time performed by the old controller.)
+Users will have to recreate their Nodes to trigger another `PodCIDR` allocation
+(this time performed by the old controller).
 
 The should not be any effect on running workloads. The nodes will continue to
 use their allocated `PodCIDR` even if the underlying `ClusterCidrConfig` object
@@ -765,15 +786,15 @@ is forceably deleted.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The controller is expected to read the existing set of `ClusterCIDRConfig` as
-well as the existing Node `PodCIDR` allocations and allocate new PorCIDRs
+well as the existing Node `PodCIDR` allocations and allocate new PodCIDRs
 appropriately. 
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, some integraiotn tets will be added to test this case. They will test the
-scenario where some Nodes already have PodCIDRs allocated to them (potentially
-from CIDRs not tracked by any `ClusterCIDRConfig`). THis should be sufficient to
-cover the enablement/disablment scenarios.
+Not yet, they will be added as part of the graduation to alpha. They will test
+the scenario where some Nodes already have PodCIDRs allocated to them
+(potentially from CIDRs not tracked by any `ClusterCIDRConfig`). This should be
+sufficient to cover the enablement/disablment scenarios.
 
 ### Rollout, Upgrade and Rollback Planning
 

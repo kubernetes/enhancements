@@ -4,7 +4,7 @@ authors:
   - "@rahulkjoshi"
   - "@sdmodi"
 owning-sig: sig-network
-status: provisional
+status: implementable
 creation-date: 2021-03-22
 reviewers:
   - "@mskrocki"
@@ -12,7 +12,7 @@ approvers:
   - "@thockin"
   - "@aojea"
 prr-approvers:
-  - TBD
+  - "@wojtek-t"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -27,3 +27,9 @@ milestone:
   alpha: "v1.23"
   beta: "v1.24"
   stable: "v1.26"
+
+feature-gates:
+  - name: ClusterCIDRConfig
+    components:
+      - kube-controller-manager
+disable-supported: true
