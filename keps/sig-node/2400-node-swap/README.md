@@ -420,8 +420,6 @@ For beta:
 
 #### Beta
 
-_(Tentative.)_
-
 - Add support for controlling swap consumption at the pod level [via cgroups].
   - Handle usage of swap during container restart boundaries for writes to tmpfs
     (which may require pod cgroup change beyond what container runtime will do at
@@ -440,6 +438,8 @@ _(Tentative.)_
 [via cgroups]: #restrict-swap-usage-at-the-cgroup-level
 
 #### GA
+
+_(Tentative.)_
 
 - Test a wide variety of scenarios that may be affected by swap support.
 - Remove feature flag.
@@ -612,7 +612,8 @@ that might indicate a serious problem?
 -->
 
 Workload churn or performance degradations on nodes. The metrics will be
-application/use-case specific, but we can provide some suggestions.
+application/use-case specific, but we can provide some suggestions, based on
+the stability metrics identified earlier.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -658,9 +659,12 @@ utilization.
 Pick one more of these and delete the rest.
 -->
 
-TBD. We will determine a set of metrics as part of beta graduation. We will
-need more data; there is not a single metric or set of metrics that can be used
-to generally quantify node performance.
+TBD. We will determine a set of metrics as a requirement for beta graduation.
+We will need more production data; there is not a single metric or set of
+metrics that can be used to generally quantify node performance.
+
+This section to be updated before the feature can be marked as graduated, and
+to be worked on during 1.23 development.
 
 - [ ] Metrics
   - Metric name:
