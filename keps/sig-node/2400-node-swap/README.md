@@ -407,6 +407,8 @@ For beta:
 - Add e2e tests that verify pod-level control of swap utilization.
 - Add e2e tests that verify swap performance with pods using a tmpfs.
 - Verify new system-reserved settings for swap memory.
+- Verify MemoryPressure behaviour with swap enabled and document any changes
+  for configuring eviction.
 
 ### Graduation Criteria
 
