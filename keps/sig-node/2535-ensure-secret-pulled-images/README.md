@@ -110,7 +110,7 @@ authentication.)
 ### Goals
 
 Modify the current pullIfNotPresent policy management enforced by `kubelet` to
-ensure the images pulled with a secret by `kublet` since boot. During the
+ensure the images pulled with a secret by `kubelet` since boot. During the
 EnsureImagesExist step `kubelet` will require authentication of present images
 pulled with auth since boot.
 
@@ -132,8 +132,10 @@ use un-encrypted...
 
 ## Proposal
 
-`kubelet` will keep a list, since boot, of container images that required
+For alpha `kubelet` will keep a list, since boot, of container images that required
 authentication and a list of the authentications that successfully pulled the image.
+For beta the list will be persisted across reboot of host, and restart of kubelet.
+Additionally, an API will be considered to manage the ensure metadata.
 
 `kubelet` will ensure any image in the list is always pulled if an authentication
 used is not present, thus enforcing authentication / re-authentication.
@@ -161,12 +163,18 @@ Image authentications with a registry may expire. To mitigate expirations a
 a timeout could be used to force re-authentication. The timeout could be a
 container runtime feature or a `kubelet` feature. If at the container runtime,
 images would not be present during the EnsureImagesExist step, thus would have
-to be pulled and authenticated if necessary.
+to be pulled and authenticated if necessary. This timeout feature will be
+implemented in beta.
 
 Since images can be pre-loaded, loaded outside the `kubelet` process, and
 garbage collected.. the list of images that required authentication in `kubelet`
 will not be a source of truth for how all images were pulled that are in the
 container runtime cache. To mitigate, images can be garbage collected at boot.
+And for beta, we will persist ensure metadata across reboot of host, and restart
+of kubelet, and possibly look at a way to add ensure metadata for images loaded
+outside of kubelet. In beta we will add a switch to enable re-auth on boot for
+admins seeking that instead of having to garbage collect where they do not use
+or expect preloaded images since boot.
 
 
 ## Design Details
@@ -178,7 +186,35 @@ See PR for detailed design / behavior documentation.
 
 ### Test Plan
 
-See PR (exhaustive unit tests added for alpha covering feature gate on and off for new and modified functions)
+For alpha, exhaustive Kubelet unit tests will be provided. Functions affected by the feature gate will be run with the feature gate on and with the feature gate off. Unit buckets will be provided for:
+- HashAuth - (new, small) returns a hash code for a CRI pull image auth [link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-ca08601dfd2fdf846f066d0338dc332beddd5602ab3a71b8fac95b419842da63R704-R751)
+- shouldPullImage - (modified, large sized change) determines if image should be pulled based on presence, and image pull policy, and now with the feature gate on if the image has been pulled/ensured by a secret. A unit test bucket did not exist for this function. The unit bucket will cover a matrix for:
+```
+	pullIfNotPresent := &v1.Container{
+    ..
+   	ImagePullPolicy: v1.PullIfNotPresent,
+ 	}
+ 	pullNever := &v1.Container{
+    ..
+    ImagePullPolicy: v1.PullNever,
+ 	}
+ 	pullAlways := &v1.Container{
+ 		..
+    ImagePullPolicy: v1.PullAlways,
+ 	}
+ 	tests := []struct {
+ 		description       string
+ 		container         *v1.Container
+ 		imagePresent      bool
+ 		pulledBySecret    bool
+ 		ensuredBySecret   bool
+ 		expectedWithFGOff bool
+ 		expectedWithFGOn  bool
+ 	}
+```
+[TestShouldPullImage link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-7297f08c72da9bf6479e80c03b45e24ea92ccb11c0031549e51b51f88a91f813R311-R438)
+
+At beta we should revisit if integration buckets are warranted for e2e node and/or cri-tools/critest, and after gathering feedback.
 
 ### Graduation Criteria
 
@@ -341,7 +377,7 @@ Why should this KEP _not_ be implemented. N/A
 ## Alternatives [optional]
 
 - Make the behavior change enabled by default by changing the feature gate to true by default instead of false by default.
-- Discussions went back and forth on whether this should go directly to GA as a fix or alpha as a feature gate. It seems this should be the default security posture for pullIfNotPresent as it is not clear to admins/users that an image pulled by a first pod with authentication can be used by a second pod without authentication. The performance cost should be minimal as only the manifest needs to be re-authenticated. But after further review and discussion with MrunalP we'll go ahead and have a kubelet feature gate with default off for alpha in v1.22.
+- Discussions went back and forth on whether this should go directly to GA as a fix or alpha as a feature gate. It seems this should be the default security posture for pullIfNotPresent as it is not clear to admins/users that an image pulled by a first pod with authentication can be used by a second pod without authentication. The performance cost should be minimal as only the manifest needs to be re-authenticated. But after further review and discussion with MrunalP we'll go ahead and have a kubelet feature gate with default off for alpha in v1.23.
 - Set the flag at some other scope e.g. pod spec (doing it at the pod spec was rejected by SIG-Node).
 - For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extension to the CRI API for having the container runtime
 ensure the image instead of kubelet.
