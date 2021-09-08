@@ -117,7 +117,7 @@ The pod-deletion-cost range will be from [-MaxInt, MaxInt]. The default value is
 Invalid values (like setting the annotation to string) will be rejected by the api-server
 with a BadRequest status code.
 
-Having the default value in the middle of the range allows controllers to cutomize
+Having the default value in the middle of the range allows controllers to customize
 the semantics of the cost of deleting pods that don't have the annotation set: 
 controllers can use positive pod-deletion-cost values if they always want uninitialized
 pods to be deleted first, or use negative pod-deletion-cost values if they want
