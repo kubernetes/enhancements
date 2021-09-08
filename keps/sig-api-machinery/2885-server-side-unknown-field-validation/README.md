@@ -944,7 +944,7 @@ Why should this KEP _not_ be implemented?
 * Instead of erroring on unknown fields, we could warn on unknown fields and
   then more generally have a `TreatWarningsAsErrors` option to fail on requests
   with unknown fields. One drawback here is that it would be difficult to
-  flag unkown fields separately from other warnings that we might not want to
+  flag unknown fields separately from other warnings that we might not want to
   error on (e.g. using a deprecated API). See note in [#proposal](#proposal)
   section around adding an option for warning on unknown fields.
 
