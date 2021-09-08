@@ -1,0 +1,36 @@
+title: Honor Persistent Volume Reclaim Policy
+kep-number: 2644
+authors:
+  - "@deepakkinni"
+owning-sig: sig-storage
+participating-sigs:
+status: implementable
+creation-date: 2021-05-05
+reviewers:
+  - "@xing-yang"
+  - "@jsafrane"
+approvers:
+  - "@jsafrane"
+  - "@xing-yang"
+prr-approvers:
+  - "@ehashman"
+see-also:
+replaces:
+
+stage: alpha
+
+latest-milestone: "v1.23"
+
+milestone:
+  alpha: "v1.23"
+  beta: "v1.24"
+  stable: "v1.25"
+
+feature-gates:
+  - name: HonorPvReclaim
+    components:
+      - kube-controller-manager
+      - external-provisioner
+disable-supported: true
+
+metrics:
