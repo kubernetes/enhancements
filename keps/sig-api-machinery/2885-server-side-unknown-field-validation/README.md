@@ -364,9 +364,13 @@ Arguments for using query parameter include:
 * We have precedent for using query parameters for write requests already (via CreateOptions,
   PatchOptions, UpdateOptions)
 
-For client-go support, we will add a `UnknownFieldValidation` field to
+For client-go support, we will add a `FieldValidation` field to
 CreateOptions, PatchOptions, and UpdateOptions that can supply the query
 parameter to the request.
+
+With a query parameter, we can consider values other than just `Strict` and `Ignore`. For example,
+can offer a `?fieldValidation=Warn` to support warning, rather than erroring on
+unknown fields.
 
 We believe that using a query parameter is the best approach.
 
@@ -933,10 +937,15 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
-* Content-Type Header vs Query Param (see #proposal)
+* Content-Type Header vs Query Param (see [#proposal](#proposal))
 * Passing multiple decoders around in the request scope
 * Change the Decode signature itself (or adding a new DecodeStrict that Decode
   calls into)
+* Instead of erroring on unknown fields, we could warn on unknown fields and
+  then more generally have a `TreatWarningsAsErrors` option to fail on requests
+  with unknown fields. One drawback here is that it would be difficult to
+  flag unkown fields separately from other warnings that we might not want to
+  error on (e.g. using a deprecated API).
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
