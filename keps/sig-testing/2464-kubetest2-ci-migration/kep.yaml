@@ -6,7 +6,7 @@ owning-sig: sig-testing
 participating-sigs:
 - sig-release
 - sig-scalability
-status: implemented
+status: implementable
 creation-date: 2021-02-08
 last-updated: 2021-08-16
 reviewers:
@@ -21,7 +21,7 @@ see-also: []
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
