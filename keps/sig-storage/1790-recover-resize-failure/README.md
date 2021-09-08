@@ -16,6 +16,7 @@
       - [Case 2 (node only expandable volume):](#case-2-node-only-expandable-volume)
       - [Case 3 (Malicious user)](#case-3-malicious-user)
       - [Case 4(Malicious User and rounding to GB/GiB bounaries)](#case-4malicious-user-and-rounding-to-gbgib-bounaries)
+      - [Case 5(Rapid successive expansion and shrink)](#case-5rapid-successive-expansion-and-shrink)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
   - [Test Plan](#test-plan)
@@ -123,7 +124,7 @@ When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Statu
 
 1. If `pvc.Status.ResizeStatus` is `ControllerExpansionFailed` (indicating that previous expansion to last known `allocatedResources` failed with a final error) and previous control-plane has not succeeded.
 2. If `pvc.Status.ResizeStatus` is `NodeExpansionFailed` and SP supports node-only expansion (indicating that previous expansion to last known `allocatedResources` failed on node with a final error).
-3. If `pvc.Status.ResizeStatus` is `nil` or `empty` and previous `ControllerExpandVolume** has not succeeded.
+3. If `pvc.Status.ResizeStatus` is `nil` or `empty` and previous `ControllerExpandVolume` has not succeeded.
 
 ![Determining new size](./get_new_size.png)
 
@@ -201,6 +202,24 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 - Expansion to `100G` succeeds and `pv.Spec.Capacity` and `pvc.Status.Capacity` report new size as `100G`.
 - Although `pvc.Spec.Resources` reports size as `10.5GB`, expansion to `10.5GB` is never attempted.
 - Quota controller sees no change in storage usage by the PVC because `pvc.Status.AllocatedResources` is 100Gi.
+
+##### Case 5(Rapid successive expansion and shrink)
+- User increases 10Gi PVC to 100Gi by changing `pvc.spec.resources.requests["storage"] = "100Gi"`
+- Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
+- Expansion controller slowly starts expanding the volume and sets `pvc.Status.AllocatedResources` to `100Gi` (before expanding).
+- Expansion controller also sets `pvc.Status.ResizeStatus` to `ControllerExpansionInProgress`.
+- At this point -`pv.Spec.Capacity` and `pvc.Status.Capacity` stays at 10Gi until the resize is finished.
+- While the storage backend is re-sizing the volume, user requests size 200Gi by changing `pvc.spec.resources.requests["storage"] = "200Gi"`
+- Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `100Gi` to used quota.
+- Since `pvc.Status.ResizeStatus` is in `ControllerExpansionInProgress` - expansion controller still chooses last `pvc.Status.AllocatedResources` as new size.
+- User reduces size back to `20Gi`.
+- Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and *returns* `100Gi` to used quota.
+- Expansion controller notices that previous expansion to last known `allocatedresources` is still in-progress.
+- Expansion controller keeps expanding the volume to `allocatedResources`.
+- Expansion to `100G` succeeds and `pv.Spec.Capacity` and `pvc.Status.Capacity` report new size as `100G`.
+- Although `pvc.Spec.Resources` reports size as `20G`, expansion to `20G` is never attempted.
+- Quota controller sees no change in storage usage by the PVC because `pvc.Status.AllocatedResources` is 100Gi.
+
 
 ### Risks and Mitigations
 
