@@ -179,22 +179,18 @@ The newly added Volume Health stats will be stored in [persistentStats](https://
 
 This is returned in [GetPodVolumeStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/fs_resource_analyzer.go#L99).
 
-Add new metrics [here](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/metrics/metrics.go#L50):
+Since Prometheus does not store string metrics, `volume_health_status` will be stored as either 1 or 0. The `volume_health_status` label could be `status: abnormal`.
 
 ```
-	VolumeStatsHealthAbnormal  = "volume_stats_health_abnormal"
-```
-
-Update [CollectWithStability](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/metrics/collectors/volume_stats.go#L117) to add a [NewLazyConstMetric](https://github.com/kubernetes/component-base/blob/v0.22.1/metrics/value.go#L33) with an [GaugeValue](https://github.com/kubernetes/component-base/blob/v0.22.1/metrics/value.go#L32).
-
-Since Prometheus does not store string metrics, `VolumeStatsHealthAbnormal` will be stored as either 1 or 0.
-
-PVC's namespace and name will be the label as in the following example:
-https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/metrics/collectors/volume_stats.go#L97
-
-An example metric:
-```
-kubelet_volume_stats_health_abnormal{namespace="testns",persistentvolumeclaim="testpvc"} 1
+var volumeHealthMetric = metrics.NewGaugeVec(
+	&metrics.GaugeOpts{
+		Subsystem:      KubeletSubsystem,
+                Name:           "volume_health_status",
+                Help:           "Volume health status. The count is either 1 or 0.",
+                StabilityLevel: metrics.ALPHA,
+                },
+                []string{"volume_plugin", "pvc_namespace", "pvc_name", "volume_health_status"},
+)
 ```
 
 ### CSI changes
