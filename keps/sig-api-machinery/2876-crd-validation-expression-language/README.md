@@ -25,6 +25,9 @@
     - [Other validation support](#other-validation-support)
 - [Design Details](#design-details)
   - [Type Checking](#type-checking)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -414,6 +417,17 @@ There are a couple alternative ways to do this. Ideally, we could be able to bot
 objects and construct objects in a typesafe way.  In order to construct objects in a typesafe way we
 need to be able to represent the structural schema types in CEL, e.g. "v1beta1.Foo{fieldname:
 value}", this is complicated by the way CEL relies on protobuf types.
+
+### Test Plan
+
+We will extend both the unit test suite and the integration test suite to cover the CRD validation rule described in this KEP.
+
+### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Ensure proper tests are in place.
 
 ## Production Readiness Review Questionnaire
 
