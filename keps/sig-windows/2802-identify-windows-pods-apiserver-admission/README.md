@@ -313,12 +313,19 @@ All the pods which have OS field set in the pod spec should have OS specific con
 
 - [x] Metrics
   - Metric name: `kube_pod_status_phase`
+  - Metric name: `apiserver_request_total`
   - [Optional] Aggregation method:
   - Components exposing the metric:
 - [] Other (treat as last resort)
 
+If the pod is rejected by admission plugins, we'd get a 400 series error. The increase in 400 series errors
+during pod creation/updation would give us an indication of the health. This can be measured via metric
+`apiserver_request_total`
+
+If the pod gets admitted at the kube-apiserver and gets rejected by kubelet, the metric `kube_pod_status_phase`
+would give us an indication of where the failure is happening.
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-Metric which counts the number of rejections at the kube-apiserver admission time.
 
 ### Dependencies
 
