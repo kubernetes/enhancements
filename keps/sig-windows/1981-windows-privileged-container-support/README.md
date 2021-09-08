@@ -493,7 +493,7 @@ More information on Windows resource access can be found at https://docs.microso
 
 #### Container Mounts
 
-- When `hostProcess` containers are started a new volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume.
+- When `hostProcess` containers are started a new Windows volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume.
 Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
   - Note: there will be no `chroot` equivalent.
 - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted for `hostProcess` containers.
@@ -503,7 +503,8 @@ Containers will also have full access to the host file-system (unless restricted
 - `$CONTAINER_SANDBOX_MOUNT_POINT` will not be set for non-`hostProcess` containers.
 - Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
   - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` (trailing \ included) would be the root instead of `c:\c\<container id>\`).
-  This would make it so files from volume mounts would be accessible via static paths. HostProcess containers would still have full access to the host file-system.
+  This would make it so files from volume mounts would be accessible via relative paths (ex: `/foo.exe` instead of needing to specify `$CONTAINER_SANDBOX_MOUNT_POINT/foo.exe`)
+  HostProcess containers would still have full access to the host file-system and `$CONTAINER_SANDBOX_MOUNT_POINT` would continue to be set so that workloads which already access files from inside volume months using this environment variable would continue to work without modification.
   https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
   This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done before this features becomes stable.
 
@@ -511,8 +512,10 @@ Containers will also have full access to the host file-system (unless restricted
   - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after `hostProcess` containers while this feature is in `alpha`.
   - [kubernetes/kubernetes#104490](https://github.com/kubernetes/kubernetes/pull/104490) add support for `HostProcess` containers to the golang client library.
 - Named Pipe mounts will **not** be supported. Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
+  - The following error will be returned if `hostProcess` containers attempt to use name pipe mounts - https://github.com/microsoft/hcsshim/blob/358f05d43d423310a265d006700ee81eb85725ed/internal/jobcontainers/mounts.go#L40.
 - Unix domain sockets mounts support will be added before `HostProcess` containers graduate to `stable`. For `alpha` and `beta` Unix domain sockets can be accessed via their paths on the host like named pipes.
   - The Windows APIs needed to support mounting unix domain socket mounts in `hostProcess` containers was introduced in Windows Server Ver, 2004. Microsoft is planning on backporting these APIs to Windows Server 2019 (min support Windows Server OS) to provide a consistent user experience.
+- Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers - kubelet will explicitly block this scenario.
 - All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
 
 #### Container Images
@@ -711,6 +714,7 @@ Beta
 - Validate running kubeproxy as a daemon set
 - Validate CSI-proxy running as a daemon set
 - Validate running a CNI implementation as a daemon set
+- Validate behaviors of various volume mount types as described in [Container Mounts](#container-mounts) with e2e tests
 
 ### Graduation Criteria
 
