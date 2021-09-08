@@ -546,7 +546,7 @@ details). For now, we leave it here.
 ## Implementation History
 
   - 1.21, KEP created.
-  - 1.22, alpha implementation.
+  - 1.23, alpha implementation.
 
 ## Drawbacks
 The StatefulSet field update is required.
