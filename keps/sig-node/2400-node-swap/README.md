@@ -430,6 +430,7 @@ For beta:
   detects on the host.
 - Consider introducing new configuration modes for swap, such as a node-wide
   swap limit for workloads.
+- Add swap memory to the Kubelet stats api.
 - Determine a set of metrics for node QoS in order to evaluate the performance
   of nodes with and without swap enabled.
   - Better understand relationship of swap with memory QoS in cgroup v2
@@ -667,6 +668,8 @@ metrics that can be used to generally quantify node performance.
 
 This section to be updated before the feature can be marked as graduated, and
 to be worked on during 1.23 development.
+
+We will also add swap memory utilization to the Kubelet stats API, to provide a means of monitoring this beyond cadvisor Prometheus stats.
 
 - [ ] Metrics
   - Metric name:
