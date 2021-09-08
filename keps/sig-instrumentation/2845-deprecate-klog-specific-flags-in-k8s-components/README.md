@@ -9,7 +9,6 @@
 - [Proposal](#proposal)
   - [Removed klog flags](#removed-klog-flags)
   - [Logging defaults](#logging-defaults)
-    - [Split stdout and stderr](#split-stdout-and-stderr)
     - [Logging headers](#logging-headers)
   - [User Stories](#user-stories)
     - [Writing logs to files](#writing-logs-to-files)
@@ -164,17 +163,27 @@ This leaves that two flags that should be implemented by all log formats
 * --vmodule - control log verbosity of Info logs on per file level
 
 Those flags were chosen as they have effect of which logs are written,
-directly impacting log volume and component performance.
+directly impacting log volume and component performance. Flag `-v` will be
+supported by all logging formats, however `-vmodule` will be optional for non
+default "text" format.
 
 ### Logging defaults
 
 With removal of configuration alternatives we need to make sure that defaults
 make sense. List of logging features implemented by klog and proposed actions:
-* Routing logs based on type/verbosity - Feature removed.
+* Routing logs based on type/verbosity - Supported by alternative logging formats.
 * Writing logs to file - Feature removed.
 * Log file rotation based on file size - Feature removed.
 * Configuration of log headers - Use the current defaults.
 * Adding stacktrace - Feature removed.
+
+Ability to route logs based on type/verbosity will be replaced with default
+splitting info and errors logs to stdout and stderr. We will make this change
+only in alternative logging formats (like JSON) as we don't want to introduce
+breaking change in default configuration. Splitting stream will allow treating
+info and errors with different priorities. It will unblock efforts like
+[kubernetes/klog#209](https://github.com/kubernetes/klog/issues/209) to make
+info logs non-blocking.
 
 #### Logging headers
 
@@ -264,6 +273,7 @@ all existing klog features.
 - Kubernetes logging configuration drops global state
 - Go-runner is feature complementary to klog flags planned for deprecation
 - Projects in Kubernetes Org are migrated to go-runner
+- JSON logs format splits stdout and stderr logs
 
 #### Beta
 
@@ -302,18 +312,18 @@ just k8s core components
 
 ### Upgrade / Downgrade Strategy
 
-For removal of klog specific flags we will be following K8s deprecation policy. 
+For removal of klog specific flags we will be following K8s deprecation policy.
 There will be 3 releases between informing users about deprecation and full removal.
 During deprecation period there will not be any changes in behavior for clusters
 using deprecated features, however after removal there will not be a way to
 restore previous behavior. 3 releases should be enough heads up for users to
-make necessary changes to avoid breakage. 
+make necessary changes to avoid breakage.
 
 ### Version Skew Strategy
 
-Proposed changes have no impact on cluster that would require coordination. 
+Proposed changes have no impact on cluster that would require coordination.
 They only affect binary configuration and logs are written, which don't impact
-other components in cluster. Users might be required to change flags passed to 
+other components in cluster. Users might be required to change flags passed to
 k8s binaries, but this can be done one by one independently of other components.
 
 ## Production Readiness Review Questionnaire
@@ -329,7 +339,7 @@ k8s binaries, but this can be done one by one independently of other components.
   - Describe the mechanism: Passing command line flag to K8s component binaries.
   - Will enabling / disabling the feature require downtime of the control
     plane?
-    **Yes, for apiserver it will require a restart, which can be considered a 
+    **Yes, for apiserver it will require a restart, which can be considered a
     control plane downtime in non highly available clusters**
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
@@ -348,11 +358,11 @@ will be only written to stderr.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No impact on cluster. 
+No impact on cluster.
 
 ###### Are there any tests for feature enablement/disablement?
 
-New logging configuration will be tested as it will become a default in E2e 
+New logging configuration will be tested as it will become a default in E2e
 tests. Testing disabled feature will be handled in klog unit tests.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -370,7 +380,7 @@ deprecation period finishes.
 ###### What specific metrics should inform a rollback?
 
 Users could observe number of logs from K8s components that they ingest. If
-there is a large drop in logs they get, whey should consider a rollback and 
+there is a large drop in logs they get, whey should consider a rollback and
 validate if their logging setup supports consuming binary stdout.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -420,8 +430,8 @@ No
 
 ### Scalability
 
-Scalability of logging pipeline is verified by existing scalability tests. We 
-don't plan to make any changes to existing tests. 
+Scalability of logging pipeline is verified by existing scalability tests. We
+don't plan to make any changes to existing tests.
 
 ###### Will enabling / using this feature result in any new API calls?
 
