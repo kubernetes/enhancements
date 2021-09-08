@@ -1377,7 +1377,7 @@ This capability will move to beta when the following criteria have been met.
 * Service resource supports pods with multi-IP
 * Kubenet to support multi-IPs
 
-This capability will move to stable when the following criteria have been met.
+This capability will move to stable when the following criteria have been met:
 
 * Support of at least one CNI plugin to provide multi-IP ([Cilium](https://cilium.io/blog/2021/05/20/cilium-110) and [Calico](https://www.tigera.io/blog/dual-stack-operation-with-calico-on-kubernetes/))
 * e2e test successfully running on two platforms (Azure and kind)
