@@ -15,6 +15,8 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Changes to kube-apiserver](#changes-to-kube-apiserver)
+  - [Changes to PodSecurity Standards](#changes-to-podsecurity-standards)
   - [Changes to Kubelet](#changes-to-kubelet)
   - [Potential future changes to Scheduler](#potential-future-changes-to-scheduler)
   - [Test Plan](#test-plan)
@@ -91,22 +93,7 @@ pod intends to run.
 
 ## Proposal
 
-
-Identifying the pods targeting Windows nodes during the scheduling phase can be done
-in the following ways:
-- Based on [nodeSelector and tolerations](https://kubernetes.io/docs/setup/production-environment/windows/user-guide-windows-containers/#ensuring-os-specific-workloads-land-on-the-appropriate-container-host) in the pod spec with 
-  Windows node specific labels.
-- Based on [runtimeclasses](https://kubernetes.io/docs/setup/production-environment/windows/user-guide-windows-containers/#ensuring-os-specific-workloads-land-on-the-appropriate-container-host) in the pod spec
-
-The runtimeclass is a higher level abstraction which gets translated again to nodeSelectors+tolerations. While the 
-nodeSelector with reserved OS label is good enough, it has following shortcomings:
-
-- It can be viewed as an side-effect of scheduling constraints 
-and need not necessarily express the user intention fully.
-- The pod may target Windows node but pod OS may be linux or windows
-as Linux Containers on Windows(LCOW) can be supported in future.
-
-So, we propose to add a new field to the pod spec called 
+We propose to add a new field to the pod spec called 
 os to identify the OS of the containers specified in the pod. There is no default
 value for this `OS` field or the `Name` field in `OS` struct.
 
@@ -123,8 +110,7 @@ type PodSpec struct {
 // OS has information on the type of OS. 
 // We're making this a struct for possible future expansion.
 type OS struct {
-  // Name of the OS. The values supported are available at:
-  // https://github.com/opencontainers/runtime-spec/blob/master/config.md#platform-specific-configuration
+  // Name of the OS. Current supported values are linux and windows. 
   Name string
 }
 
@@ -165,18 +151,24 @@ Additionally, there may be some end-user confusion on the functional consequence
 
 ## Design Details
 
+### Changes to kube-apiserver
+
+- Pod spec API validation will be adjusted to ensure values are not set for OS specific field that are irrelevant to the Pod's OS
+- Unit tests will be added to new fields in the pod spec are classified as OS specific or not (and which OSes they are allowed for)
+- E2e test that demonstrates only required OS specific fields are applied to pods during API admission time.
+
+### Changes to PodSecurity Standards
+
+- Pod Security Standards will be reviewed and updated to indicate which Pod OSes they apply to
+- The restricted Pod Security Standard will be reviewed to see if there are OS-specific requirements that should be added
+- The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS.
+- Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field.
+
+
 ### Changes to Kubelet
 
-Apart from the above API change, we intend to make the following changes to Kubelet:
+Apart from the above API changes, we intend to make the following changes to Kubelet:
 - Kubelet should reject admitting pod if the kubelet cannot honor the pod.Spec.OS.Name. For instance, if the OS.Name does not match the host os.
-- Kubelet should reject admitting pods if the pod contains a nodeSelector with label `kubenetes.io/os` with a value 
-not matching `runtime.GOOS`. We can use this check as `kubernetes.io/os` value is supposed to be filled from `runtime.GOOS`. 
-
-Having the above checks in kubelet helps in the following conditions:
-- If scheduler has been bypassed by setting the nodeName directly on the pod spec.
-- A malicious user or a user unknowingly with RBAC to just bind pod to node, can associate pod to node there by bypassing the scheduler.
-
-As of now, Kubelet doesn't reconcile the value of `kubernetes.io/os`. So, it'd be nice to have the reconciliation as part of this change.
 
 
 ### Potential future changes to Scheduler
@@ -184,6 +176,7 @@ As of now, Kubelet doesn't reconcile the value of `kubernetes.io/os`. So, it'd b
 We let the users to explicitly specify nodeSelectors/nodeAffinities+tolerations or runtimeclasses to express their intention
 to run an particular OS. However, in future, once the OS struct expands, we can see if we can leverage those fields to
 express scheduling constraints. During the alpha, we assume there are no scheduling implications.
+
 
 
 ### Test Plan
@@ -380,10 +373,16 @@ No
 
 ## Alternatives
 
-Relying on nodeSelectors to identify the Pod OS.
-Following are the reasons to not choose this approach:
-- Piggybacking on nodeSelectors+tolerations to definitively identify Pod OS may not be ideal experience for end-users as they can convey scheduling constraints using the same
-abstractions
+Identifying the pods targeting Windows nodes during the scheduling phase can be done
+in the following ways:
+- Based on [nodeSelector and tolerations](https://kubernetes.io/docs/setup/production-environment/windows/user-guide-windows-containers/#ensuring-os-specific-workloads-land-on-the-appropriate-container-host) in the pod spec with 
+  Windows node specific labels.
+- Based on [runtimeclasses](https://kubernetes.io/docs/setup/production-environment/windows/user-guide-windows-containers/#ensuring-os-specific-workloads-land-on-the-appropriate-container-host) in the pod spec
+
+The runtimeclass is a higher level abstraction which gets translated again to nodeSelectors+tolerations. While the 
+nodeSelector with reserved OS label is good enough, it has following shortcomings:
+
+- Piggybacking on nodeSelectors+tolerations to definitively identify Pod OS may not be ideal experience for end-users as they can convey scheduling constraints using the same abstractions.
 - We can use this field when the hostOS is not not always equal to Container OS. For example, Linux Containers on Windows(using WSL).
 
 <!--
