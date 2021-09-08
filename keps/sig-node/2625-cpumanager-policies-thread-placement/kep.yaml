@@ -7,14 +7,15 @@ owning-sig: sig-node
 participating-sigs: []
 status: implementable
 creation-date: "2021-04-14"
-last-updated: "2021-09-02"
+last-updated: "2021-09-08"
 reviewers:
   - "@klueska"
 approvers:
   - "@sig-node-leads"
 prr-approvers:
   - "@johnbelamaric"
-see-also: []
+see-also:
+- "keps/sig-node/2902-cpumanager-distribute-cpus-policy-option/"
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
@@ -35,6 +36,7 @@ milestone:
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: "CPUManagerPolicyOptions"
+  - name: "CPUManagerPolicyExperimentalOptions"
     components:
       - kubelet
 disable-supported: true

@@ -27,6 +27,9 @@
     - [Alpha](#alpha)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
     - [Beta to G.A Graduation](#beta-to-ga-graduation)
+  - [Graduation Criteria of Options](#graduation-criteria-of-options)
+    - [Graduation of Options to <code>Beta-quality</code> (non-hidden)](#graduation-of-options-to--non-hidden)
+    - [Graduation of Options from <code>Beta-quality</code> to <code>G.A-quality</code>](#graduation-of-options-from--to-)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -49,7 +52,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [X] Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - ~~ [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io] ~~
 - [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -274,6 +277,24 @@ The [implementation PR](https://github.com/kubernetes/kubernetes/pull/101432) wi
 - [X] Allowing time for feedback (1 year).
 - [X] Risks have been addressed.
 
+### Graduation Criteria of Options
+
+In 1.23 release, as we are graduating this feature to Beta meaning `CPUManagerPolicyOptions` is enabled by default allowing the user to configure CPU Manager static policy with the option `full-pcpus-only`.
+NOTE: Even though the feature gate is enabled by default the user still has to explicitly use the Kubelet flag called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` along with a specific policy option to use this feature.
+- In addition to this, in order to not have all alpha-quality experimental options introduced in the future available by default, we are introducing an additional feature gate called `CPUManagerPolicyExperimentalOptions` that controls all the experimental options. The experimental options are hidden by default and only if the feature gate is enabled the user has the ability to use the experimental options. Based on the graduation criteria described below, a policy option can move from being hidden to being non-hidden. Once the feature is non-hidden the user would not need to use `CPUManagerPolicyExperimentalOptions` feature gate in order to use that option.
+- Since the feature that allows the ability to customize the behaviour of CPUManager static policy as well as the CPUManager Policy option `full-pcpus-only` were both introduced in 1.22 release and meet the above graduation criterion, `full-pcpus-only` would be considered as a non-hidden option i.e. available to be used when explicitly used along with `CPUManagerPolicyOptions` Kubelet flag in the kubelet config or command line argument called `cpumanager-policy-options` .
+-  The introduction of this new feature gate gives us the ability to move the feature to beta and later stable without implying all that the options are beta or stable.
+
+The graduation Criteria of options is described below:
+
+#### Graduation of Options to `Beta-quality` (non-hidden)
+- [X] Gather feedback from the consumer of the policy option.
+- [X] No major bugs reported in the previous cycle.
+
+#### Graduation of Options from `Beta-quality` to `G.A-quality`
+- [X] Allowing time for feedback (1 year) on the policy option.
+- [X] Risks have been addressed.
+
 ### Upgrade / Downgrade Strategy
 
 We expect no impact. The new policies are opt-in and separated by the existing ones.
@@ -288,17 +309,19 @@ No changes needed
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`).
     - Feature gate name: `CPUManagerPolicyOptions`.
+    - Feature gate name: `CPUManagerPolicyExperimentalOptions`.
     - Components depending on the feature gate: kubelet
-  - [X] Change the kubelet configuration to set the CPUManager policy to `configurable`
-  - [X] Change the kubelet configuration adding the CPUManager policy option to `reject-non-smt-aligned`
+  - [X] Change the kubelet configuration adding the CPUManager policy option to `full-pcpus-only`
 * **Does enabling the feature change any default behavior?**
-  - Yes, it makes the behaviour of the CPUManager static policy more restrictive and can lead to pod admission rejection.
+  - Enabling the `CPUManagerPolicyOptions` makes the behaviour of the CPUManager static policy more restrictive and can lead to pod admission rejection.
+  - Enabling the `CPUManagerPolicyExperimentalOptions` provides the ability to use experimental options which depending on the option can change the behaviour of the CPUManager static policy.
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
-  - Yes, disabling the feature gate shuts down the feature completely; alternatively,
-  - Yes, through kubelet configuration - switch to a different policy.
+  - Yes, disabling the `CPUManagerPolicyOptions` feature gate shuts down the feature completely; alternatively through kubelet configuration - switch to a different policy.
+  - Also, disabling `CPUManagerPolicyExperimentalOptions` feature gate disables the use of experimental options and the behavior would depend on how `CPUManagerPolicyOptions` feature gate is configured.
+  - Disabling both the feature gates would allow complete rollback of this enablement. 
 * **What happens if we reenable the feature if it was previously rolled back?** No changes. Existing container will not see their allocation changed. New containers will.
 * **Are there any tests for feature enablement/disablement?**
-  - A specific e2e test will demonstrate that the default behaviour is preserved when the feature gate is disabled, or when the feature is not used (2 separate tests)
+  - A specific e2e test will demonstrate that the default behaviour is preserved when the `CPUManagerPolicyOptions` feature gate is disabled, or when the feature is not used (2 separate tests)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -310,7 +333,7 @@ No changes needed
 
 ### Monitoring requirements
 * **How can an operator determine if the feature is in use by workloads?**
-  - Inspect the kubelet configuration of the nodes: check feature gate and usage of the new option
+  - Inspect the kubelet configuration of the nodes: check feature gates and usage of the new options
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - No change
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** N/A.
@@ -351,3 +374,4 @@ No changes needed
 - 2021-05-11: KEP update to add to the `configurable` alias and address review comments
 - 2021-05-13: KEP update to postpone the `configurable` alias, per review comments
 - 2021-09-02: KEP update to capture the policy name `full-pcpus-only` based on the implementation merged in 1.22, explain how this feature is being used for introduction of another policy option and updates pertaining to promotion of the feature to Beta.
+- 2021-09-08: KEP update to introduce `CPUManagerPolicyExperimentalOptions` feature gate to prevent alpha-quality options from being non-hidden (available) by default and explain the graduation criteria of the options.
