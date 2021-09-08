@@ -368,8 +368,8 @@ For client-go support, we will add a `FieldValidation` field to
 CreateOptions, PatchOptions, and UpdateOptions that can supply the query
 parameter to the request.
 
-With a query parameter, we can consider values other than just `Strict` and `Ignore`. For example,
-can offer a `?fieldValidation=Warn` to support warning, rather than erroring on
+In addition to supporting the options `Strict` (for erroring on unknown fields) and `Ignore`,
+we will also support the `?fieldValidation=Warn` option, to warn, rather than error on
 unknown fields.
 
 We believe that using a query parameter is the best approach.
