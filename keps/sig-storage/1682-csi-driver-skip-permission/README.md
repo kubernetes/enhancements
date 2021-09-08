@@ -32,10 +32,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -140,15 +140,12 @@ A test plan will include the following tests:
 
 * Alpha in 1.19 provided all tests are passing.
 * All functionality is guarded by a new alpha `CSIVolumeFSGroupPolicy` feature gate.
-
 * Beta in 1.20 with design validated by at least two customer deployments
   (non-production), with discussions in SIG-Storage regarding success of
   deployments. 
 * The `CSIVolumeFSGroupPolicy` feature gate will graduate to beta.
 * E2E tests
-
-
-* GA in 1.21, with E2E tests in place tagged with feature Storage.
+* GA in 1.23, with E2E tests in place tagged with feature Storage.
 * The `CSIVolumeFSGroupPolicy` feature gate will graduate to GA.
 
 [issues]: https://github.com/kubernetes/enhancements/issues/1682
@@ -182,24 +179,53 @@ A test plan will include the following tests:
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g. what if some components will restart
-  in the middle of rollout?
+  No, a rollout should not impact running workloads, since the default behavior
+  remains the same and using this feature requires a change to the CSIDriver.
 
 * **What specific metrics should inform a rollback?**
+  No known rollback criteria.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and do that now.
+  The upgrade->downgrade->upgrade path should work fine--if the new field is
+  not present in the CSIDriver object, it defaults to current heuristic of
+  looking at fstype and RWO volumes for applying fsgroups.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  No, this feature does not deprecate any existing functionality.
 
 ### Monitoring requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+  Check if `CSIDriver.Spec.FSGroupPolicy` is used on any CSIDriver objects.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [x] Other (treat as last resort)
+  - Details:
+  This is not an end user feature. Only cluster admins can configure `CSIDriver`
+  objects. To verify the feature is functioning, they can review kubelet log
+  messages from `mounter.SetupAt`.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+- No increased failure rates during mount operations.
+- Mount times should be expected to be less than or equal to the default behavior.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [x] Metrics
+  - Metric name: storage_operation_duration_seconds
+  - [Optional] Aggregation method: filter by `operation_name = volume_mount`
+  - Components exposing the metric: kubelet
+
+There should be no change in `status: fail-unknown` once `CSIDriver.Spec.FSGroupPolicy` is set.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+  No additional metrics needed for this new API field.
 
 ### Dependencies
 
@@ -239,3 +265,4 @@ There should be no noticeable increase to resource usage for any components.
 - 2020-04-27 Initial KEP pull request submitted
 - 2020-05-12 Updated to use new KEP template
 - 2020-09-25 Moved E2E Tests for beta target
+- 2020-11-12 Feature moved to beta

@@ -2,6 +2,7 @@ title: Skip Volume Ownership Change
 kep-number: 1682
 authors:
   - "@huffmanca"
+  - "@dobsonj"
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
@@ -16,14 +17,13 @@ approvers:
 see-also:
 replaces:
 
-stage: alpha
-
-latest-milestone: "v1.19"
+stage: stable
+latest-milestone: "v1.23"
 
 milestone:
   alpha: "v1.19"
   beta: "v1.20"
-  stable: "v1.21"
+  stable: "v1.23"
 
 feature-gates:
   - name: CSIVolumeSupportFSGroup
