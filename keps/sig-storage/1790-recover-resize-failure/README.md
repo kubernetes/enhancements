@@ -262,6 +262,9 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
   so it should not break any of existing automation. This means that if `pvc.Status.AllocatedResources` is available it will be
   used for calculating quota.
 
+  To facilitate older kubelets - external resize controller will set `pvc.Status.ResizeStatus` to "''" after entire expansion process is complete. This will ensure that `ResizeStatus` is updated
+after expansion is complete even with older kubelets. No recovery from expansion failure will be possible in this case and the workaround will be removed once feature goes GA.
+
   One more thing to keep in mind is - enabling this feature in kubelet while keeping it disabled in external-resizer will cause
   all volume expansions operations to get stuck(similar thing will happen when feature moves to beta and kubelet is newer but external-resizer sidecar is older).
   This limitation will be documented in external-resizer.
