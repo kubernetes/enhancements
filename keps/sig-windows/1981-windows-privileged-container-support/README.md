@@ -715,6 +715,7 @@ Beta
 - Validate CSI-proxy running as a daemon set
 - Validate running a CNI implementation as a daemon set
 - Validate behaviors of various volume mount types as described in [Container Mounts](#container-mounts) with e2e tests
+- Add e2e tests to test different ways to construct paths for container command, args, and workingDir fields for both `hostProcess` and non-hostProcess containers. These tests will include constructing paths with and without `$CONTAINER_SANDBOX_MOUNT_POINT` set and with different combinations of forward and backward slashes.
 
 ### Graduation Criteria
 
