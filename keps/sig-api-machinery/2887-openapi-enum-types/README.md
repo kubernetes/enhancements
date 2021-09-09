@@ -316,12 +316,6 @@ package core
 type Protocol string
 ```
 
-### Detect Possible Enum Types
-
-A new API rule will be added to `kube-openapi` that warns about detected Enum Pattern
-without the enum tag. If, in a rare situation, the detected type is not an enum, the user can
-add an exception in `/api/api-rules/`.
-
 <!--
 This is where we get down to the specifics of what the proposal actually is.
 This should have enough detail that reviewers can understand exactly what
