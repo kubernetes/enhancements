@@ -21,4 +21,4 @@ replaces:
 prr-approvers:
   - "@johnbelarmic"
 stage: "alpha"
-latest-milestone: "v1.22"
+latest-milestone: "v1.23"
