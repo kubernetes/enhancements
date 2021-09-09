@@ -247,12 +247,11 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-This KEP does not require removal of existing validation of enum types. While OpenAPI-based
-of enum types can simplify this type of validation, retiring custom-made validations is out
-of scope.
+This KEP does not provide support for validation that is more complicated than an enum type
+like regex or prefix. Instead, use other validation mechanism that is or will be supported.
 
-This proposal does not intend to change the enum syntax for third-party tools like `kubebuilder`.
-The implementation should only suggest changes to internal APIs. 
+This KEP does not consider extensibility of enum values. Any changes to the set of possible values
+should be considered breaking change and thus should follow the standard procedure of changing an API.
 
 ## Proposal
 
