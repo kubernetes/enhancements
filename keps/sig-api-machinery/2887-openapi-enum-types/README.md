@@ -435,7 +435,7 @@ will be provided to prune the enum information similar to that of `api-server` (
 ### Enum Fields Pruning for Feature Disablement
 
 If the feature is disabled through the feature gate, `api-server` will remove all aspects about
-enum types from the schema, making the result identical to that of the current version.
+enum types from the schema, making the result identical to that of the prior format.
 
 After this feature graduates to GA, the pruning code will be removed from `api-server`.
 
