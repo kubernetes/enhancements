@@ -347,23 +347,20 @@ k8s binaries, but this can be done one by one independently of other components.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, this feature will change what flags are available in K8s binaries and how
-logs are written. For flags change will go through K8s flag deprecation policy,
-For logs we will introduce a flag to allow users to rollback the change.
+No, we are not changing the default behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, there is no impact on cluster state. Logs should also be unaffected as logs
-will be only written to stderr.
+After deprecation period, flags will be removed and users will not be able to re-enable them.
+Only way to re-enable them would be to downgrade the cluster.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No impact on cluster.
+Flags cannot be reenabled without downgrading.
 
 ###### Are there any tests for feature enablement/disablement?
 
-New logging configuration will be tested as it will become a default in E2e
-tests. Testing disabled feature will be handled in klog unit tests.
+N/A, we are not introducing any new behavior.
 
 ### Rollout, Upgrade and Rollback Planning
 
