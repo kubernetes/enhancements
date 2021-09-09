@@ -238,6 +238,7 @@ know that this has succeeded?
 - Make the Kubernetes OpenAPI generator recognize the marker.
 - Deduce values of an enum type from its Go type definition.
 - Detect and annotate enum types in all built-in types. 
+- Unify the marker with that of kube-builder's enum mechanism.
 
 ### Non-Goals
 
