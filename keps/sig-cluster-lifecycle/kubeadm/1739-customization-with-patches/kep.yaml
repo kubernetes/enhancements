@@ -18,15 +18,16 @@ replaces:
   - "/keps/sig-cluster-lifecycle/kubeadm/20190722-Advanced-configurations-with-kubeadm-(Kustomize).md"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.19"
+# NOTE: keeping this at v1.0 to avoid PRR. See milestones bellow.
+latest-milestone: "v1.0"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.19"
-  beta: "v1.20"
-  stable: "v1.22"
+  beta: "v1.22"
+  stable: "TODO"
