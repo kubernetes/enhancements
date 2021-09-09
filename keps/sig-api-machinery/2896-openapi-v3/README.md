@@ -359,9 +359,11 @@ generated is valid OpenAPI v3.
 - Native types are updated to capture capabilities introduced with v3
 - Definition names of native resources are updated to omit their package paths
 - Parameters are reused as components
-- `kubectl explain` to support using the OpenAPI V3 Schema (with fallback to V2)
-- Aggregated API servers are queried for their V2 endpoint and converted to
-  publish V3 if they do not directly publish V3
+- `kubectl explain` to support using the OpenAPI v3 Schema
+- Aggregated API servers are queried for their v2 endpoint and converted to
+  publish v3 if they do not directly publish v3
+- Heuristics are used for the OpenAPI v2 to v3 conversion to maximize
+  correctness of published spec
 
 ### Upgrade / Downgrade Strategy
 
