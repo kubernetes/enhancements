@@ -857,6 +857,8 @@ Major milestones might include
 
 - 2020-05-04: initial provisional KEP created
 - 2020-05-14: addressed feedback, filled PRR questionnaire, KEP marked as implementable
+- 2021-09-09: marked the feature as graduated to Beta. This was done as part of
+the kubeadm v1beta3 API work. The actions under "Alpha -> Beta" are completed.
 
 ## Drawbacks
 
