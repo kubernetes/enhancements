@@ -402,7 +402,7 @@ _This section must be completed when targeting alpha to a release._
   
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes, dropping or ignoring the new field returns the system to it's previous
+  Yes, dropping or ignoring the new field returns the system to its previous
   state. Worst case, some PVCs which were trying to use the new field might need
   to be deleted because they will never have anything happen to them after the
   feature is disabled.
@@ -447,37 +447,55 @@ _This section must be completed when targeting beta graduation to a release._
   same mechanisms as the volume snapshot controller for installation and
   health monitoring.
 
+  Additionally, the volume-data-source-validator controller will supply metrics
+  on the number of volumes it validates and the outcomes of those validations,
+  called `volume_data_source_validator_operation_count`.
+
+  Individual populators can generate metrics, and the supplied populator library
+  will supply population duration metrics called
+  `volume_populator_operation_seconds` and number of operations and results
+  including errors called `volume_populator_operation_count`.
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+  - [X] Metrics
+    - Metric name: The `volume_data_source_validator_operation_count` metric will
+      tally operations and include how many were valid/invalid. A significant
+      number of invalid operations would be cause for concern. The
+      `volume_populator_operation_seconds` metric will expose how long individual
+      population operations are taking and problems can be detected by deviations
+      from expected values. The `volume_populator_operation_count` metric
+      will include error counts, and any errors would be cause for concern.
     - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - Components exposing the metric: volume-data-source-validator controller
+        and each populator that uses the lib-volume-populator library.
   - [ ] Other (treat as last resort)
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+
+  For `volume_data_source_validator_operation_count` counts of PVCs invalid data
+  sources should be very low, ideally zero. A value other than zero indicates that
+  a user tried to use a volume populator that didn't exist, which suggests a
+  mistake by either the deployer or the user. Small numbers might be ignorable
+  if users are likely to be experimenting or playing around.
+  For `volume_populator_operation_seconds` the reasonable times will depend on
+  what the populator is doing. Some data source might be reasonably populated in
+  under 1 second, while others might frequently require a minute or more (if large
+  amounts of data copying are involved).
+  For `volume_populator_operation_count` any errors for a populator would suggest
+  that specific populator had problems worth investigating.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
-  * Counter for number of PVCs with no data sources
-  * Counter for number of PVCs with valid data sources
-  * Counter for number of PVCs with invalid data sources
+
+  No
 
 ### Dependencies
 
 * **Does this feature depend on any specific services running in the cluster?**
   This feature depends on the VolumePopulator CRD being installed, and the
-  associated data-source-validator controller.
+  associated volume-data-source-validator controller.
 
 ### Scalability
 
@@ -519,21 +537,41 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   n/a
   
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  - No feedback on invalid data sources
+    - Detection: volume-data-source-validator controller not installed, or
+      VolumePopulator CRD not installed, or complete absence of
+      `volume_data_source_validator_operation_count` metrics.
+    - Mitigations: Install the controller and CRD
+    - Diagnostics: None
+    - Testing: No, lack of feedback is expected result of not installing
+      the controller.
+  - PVCs using invalid data source
+    - Detection: Non-zero `volume_data_source_validator_operation_count` errors
+    - Mitigations: Install appropriate populator if possible
+    - Diagnostics: Examine data source group/kind values for affected PVCs
+      to determine what populator is missing.
+    - Testing: Yes.
+  - PVCs won't bind
+    - Detection: Non-zero `volume_populator_operation_count` errors
+    - Mitigations: Depends on the specific populator. If it was bad enough
+      the populator could be uninstalled, preventing future PVCs with the
+      matching data source group/kind from binding at all.
+    - Diagnostics: Investigate the logs for the specific populator.
+    - Testing: This will vary per-implementation of populators.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+  First ensure that all the required components are installed. Most problems are
+  likely to result from a specific populator not being installed when users
+  expect it (although it is up to deployers to decide what to include and
+  communicate reasonable expectations to users) or from the
+  volume-data-source-validator and the VolumePopulator CRD not being installed.  
+
+  Assuming all of the necessary components are installed, the next important
+  step is to identify which populator is affected, by looking at the data
+  sources of the PVCs that are having problems. Once the specific populator
+  is determined, a populator-specific investigation will be needed, starting
+  from looking at the logs for that populator.
 
 ## Implementation History
 
@@ -551,6 +589,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - Webhook replaced with controller in December 2020
 - KEP updated Feb 2021 for v1.21
 - Redesign with new `DataSourceRef` field in May 2021 for v1.22, still alpha
+- Added metrics, troubleshooting, move to beta in Sep 2021 for v1.23.
 
 ## Alternatives
 
