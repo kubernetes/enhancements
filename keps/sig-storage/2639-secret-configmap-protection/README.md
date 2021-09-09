@@ -55,15 +55,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes a feature to protect Secrets/ConfigMaps while it is in use. Currently, users can delete a secret that is being used by other resources, like Pods, PVs, and VolumeSnapshots. This may have negative impact on the resouces using the secret and it may result in data loss.
+This KEP proposes a feature to protect Secrets/ConfigMaps while they are in use. Currently, users can delete a secret that is being used by other resources, like Pods, PVs, and VolumeSnapshots. This may have negative impact on the resources using the secret and it may result in data loss.
 
-For example, one of the worst case scenarios is deletion of a Node Stage Secret for CSI volumes while it is still in-use.
-If it happens, a CSI driver for the volume can't unstage the volume due to the lack of the Secret,
-as a result, the volume can't be detached from the node and the volume can't even be deleted.
+For example, one of the worst case scenarios is deletion of a controller-publish Secret or a provisioner Secret for CSI volumes while it is still in-use.
+If it happens, a CSI driver for the volume can't controller-unpublish or delete the volume due to the lack of the Secret,
+as a result, the volume remains published on the controller or the volume can't be deleted.
 This issue will easily happen if a PVC for the volume and a Secret for the volume exist in the same namespace, and a user requests to delete the namespace, which starts deletion of all the resources in the namespace.
 When the Secret is deleted before the PVC is deleted, this issue happens.
+In addition, even if Secrets exist in a separate namespace, an admin or a user of the namespace may still mistakenly delete the Secrets.
 
-Also, ConfigMaps can be deleted while it is in use, which may lead to an unexpected behavior in applications.
+Also, ConfigMaps can be deleted while they are in use, which may lead to an unexpected behavior in applications.
 
 Similar features for protecting PV and PVC already exist as [pv-protection](https://github.com/kubernetes/enhancements/issues/499) and [pvc-protection](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/postpone-pvc-deletion-if-used-in-a-pod.md).
 
@@ -79,12 +80,16 @@ Secrets can be used by below ways:
 ](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/#generic-ephemeral-volumes) (can be handled as CSI PV below)
 - From Deployment:
   - Specified through [DeploymentSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#deploymentspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From Replicaset:
+  - Specified through [ReplicaSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#replicasetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core) (Excluded from the scope, because [Replicaset should be managed through Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/#when-to-use-a-replicaset))
 - From StatefulSet:
   - Specified through [StatefulSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#statefulsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
 - From DaemonSet:
   - Specified through [DaemonSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#daemonsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
 - From CronJob:
   - Specified through [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#cronjob-v1-batch) -> [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#jobspec-v1-batch) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From Job:
+  - Specified through [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#jobspec-v1-batch) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core) (Excluded from the scope, because existence of a Job doesn't always mean creation of Pod in the future. Also see [here](https://kubernetes.io/docs/concepts/workloads/controllers/job/#clean-up-finished-jobs-automatically))
 - From PV:
   - [CSI](https://kubernetes-csi.github.io/docs/secrets-and-credentials-storage-class.html):
     - provisioner secret
@@ -98,21 +103,16 @@ Secrets can be used by below ways:
   - snapshotter secret
 
 ConfigMaps can be used by below ways:
-- From Pod:
-  - [Mounted as files](https://kubernetes.io/docs/concepts/configuration/configmap/#using-configmaps-as-files-from-a-pod)
-  - [Exposed as environment variables](https://kubernetes.io/docs/concepts/configuration/configmap/#configmaps-and-pods)
-- From Deployment:
-  - Specified through [DeploymentSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#deploymentspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
-- From StatefulSet:
-  - Specified through [StatefulSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#statefulsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
-- From DaemonSet:
-  - Specified through [DaemonSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#daemonsetspec-v1-apps) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
-- From CronJob:
-  - Specified through [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#cronjob-v1-batch) -> [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#jobspec-v1-batch) -> [PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#podtemplatespec-v1-core)
+- From Pod, Deployment, Replicaset, StatefulSet, DaemonSet, CronJob, Job in the same way as Secrets
+
+    Note that:
+	- "From PV" case doesn't exist for ConfigMap
+	- The same resources, or Replicaset and Job, are also out of scope for ConfigMap
 
 ### Goals
 
 - Protect Secrets/ConfigMaps from being deleted while they are in use.
+- Provide ways to dynamically enable/disable above feature per Secret/Configmap
 
 ### Non-Goals
 
@@ -192,26 +192,27 @@ Basic flows of Secret protection controller and ConfigMap protection controller 
 
 - Secret protection controller:
   - The controller watches `Pod`, `PersistentVolume`, `VolumeSnapshotContent`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
-    - Create/Update event:
+    - Create/Update events:
       - For all the `Secret`s referenced by the resource:
-        1. Update the dependency graph (If the resource is using a Secret, mark the Secret that the resource is using it)
-        2. If there are any updates to the Secret in the dependency graph, add the key for the Secret to add-lien-queue
+        1. Update the in-memory dependency graph (If the resource is using a Secret, add a dependency to the Secret that the resource is using the Secret. Also, the graph holds previous dependencies from the resource, so that the controller can remove a dependency to the Secret when the controller detects that the resource is no longer using the Secret).
+        2. If number of dependency is changed:
+           - Number becomes 0: Add the key for the Secret to delete-lien-queue
+           - Number becomes 1+ from 0: Add the key for the Secret to add-lien-queue
+           - Otherwise: Do nothing
     - Delete event:
       - For all the `Secret`s referenced by the resource:
-        1. Update the dependency graph (If the resource is using a Secret, unmark the Secret that the resource is using it)
-        2. If there are no resource using the Secret in the dependency graph, add the key for the Secret to delete-lien-queue
-  - The controller periodically checks `Pod`, `PersistentVolume`, `VolumeSnapshotContent`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
-    - For each resource:
-      1. Update the dependency graph (If the resource is using a Secret, mark the Secret that the resource is using it)
-      2. If there are any updates to the Secret in the dependency graph, add the key for the Secret to add-lien-queue
-  - The controller periodically checks `Secret`
-    - For each `Secret`:
+        1. Update the in-memory dependency graph (If the resource is using a Secret, delete a dependency to the Secret that the resource is using it)
+        2. If number of dependency is changed:
+           - Number becomes 0: Add the key for the Secret to delete-lien-queue
+           - Otherwise: Do nothing
+ - The controller watches `Secret`
+    - Create/Update events:
       - Check if the `Secret` have `kubernetes.io/enable-secret-protection: "yes"` annotation:
         - If yes:
-          1. Check API server if the resources marked as using the secret in the dependency graph are still using the secret, and update the graph
+          1. Check API server if the resources marked as using the secret in the in-memory dependency graph are still using the secret, and update the graph
           2. Check if there is no using resources in the graph any more
-            - If yes: Add the key for the secret to delete-lien-queue
-            - Otherwise: Add the key for the secret to add-lien-queue
+             - If yes: Add the key for the secret to delete-lien-queue
+             - Otherwise: Add the key for the secret to add-lien-queue
         - Otherwise: Add the key for the secret to delete-lien-queue
   - The controller gets a key for a `Secret` from add-lien-queue:
     1. If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, do nothing
@@ -220,40 +221,11 @@ Basic flows of Secret protection controller and ConfigMap protection controller 
     1. If the `Secret` doesn't have `kubernetes.io/enable-secret-protection: "yes"` annotation, delete `kubernetes.io/secret-protection` lien from the `Secret`
     2. Check API server if the `Secret` is actually not used by any of the resources, and if not used, delete `kubernetes.io/secret-protection` lien from the `Secret`
 
-- ConfigMap protection controller:
-  - The controller watches `Pod`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
-    - Create/Update event:
-      - For all the `ConfigMap`s referenced by the resource:
-        1. Update the dependency graph (If the resource is using a ConfigMap, mark the ConfigMap that the resource is using it)
-        2. If there are any updates to the ConfigMap in the dependency graph, add the key for the ConfigMap to add-lien-queue
-    - Delete event:
-      - For all the `ConfigMap`s referenced by the resource:
-        1. Update the dependency graph (If the resource is using a ConfigMap, unmark the ConfigMap that the resource is using it)
-        2. If there are no resource using the ConfigMap in the dependency graph, add the key for the ConfigMap to delete-lien-queue
-  - The controller periodically checks `Pod`, `Deployment`, `StatefulSet`, `DaemonSet`, and `CronJob`
-    - For each resource:
-      1. Update the dependency graph (If the resource is using a ConfigMap, mark the ConfigMap that the resource is using it)
-      2. If there are any updates to the ConfigMap in the dependency graph, add the key for the ConfigMap to add-lien-queue
-  - The controller periodically checks `ConfigMap`
-    - For each `ConfigMap`:
-      - Check if the `ConfigMap` have `kubernetes.io/enable-configmap-protection: "yes"` annotation:
-        - If yes:
-          1. Check API server if the resources marked as using the ConfigMap in the dependency graph are still using the ConfigMap, and update the graph
-          2. Check if there is no using resources in the graph any more
-            - If yes: Add the key for the ConfigMap to delete-lien-queue
-            - Otherwise: Add the key for the ConfigMap to add-lien-queue
-        - Otherwise: Add the key for the ConfigMap to delete-lien-queue
-  - The controller gets a key for a `ConfigMap` from add-lien-queue:
-    1. If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, do nothing
-    2. Check API server if the `ConfigMap` is actually used by one of the resources marked in the dependency graph, and if used, add `kubernetes.io/configmap-protection` lien to the `ConfigMap`
-  - The controller gets a key for a `ConfigMap` from delete-lien-queue:
-    1. If the `ConfigMap` doesn't have `kubernetes.io/enable-configmap-protection: "yes"` annotation, delete `kubernetes.io/configmap-protection` lien from the `ConfigMap`
-    2. Check API server if the `ConfigMap` is actually not used by any of the resources, and if not used, delete `kubernetes.io/configmap-protection` lien from the `ConfigMap`
-
-Note that
-  - Periodical checks for referencing resources are needed for handling a case that the annotation is added after referecing resources are created,
-  - Periodical checks for `Secret` or `Configmap` are needed for handling a case that update for a referencing resource is done in a way that remove the reference to `Secret` or `Configmap`,
-  - What deletion event handling is doing is covered by the periodical checks for `Secret` or `Configmap`, but added intentionally to handle the event in a timely manner.
+- ConfigMap protection controller can be implemented in almost the same way, except:
+  - It handles ConfigMap instead of Secret
+  - PVs aren't watched
+  - `kubernetes.io/enable-configmap-protection: "yes"` annotation is checked
+  - `kubernetes.io/configmap-protection` lien is added
 
 Prototype implementation can be found [here](https://github.com/mkimuram/secret-protection/commits/lien).
 
@@ -357,6 +329,7 @@ So, when running these commands, we need to care that other controllers or users
 ### Graduation Criteria
 #### Alpha -> Beta Graduation
 
+- Review the dependencies covered by the controllers are enough
 - Gather feedback from developers and surveys of users
 - Tests are in Testgrid and linked in KEP
 
@@ -502,10 +475,10 @@ There will be Secrets/ConfigMaps which have liens prefixed with `kubernetes.io/s
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: secret_protection_controller
+  - Metric name: secret_protection
     - Aggregation method: prometheus
     - Components exposing the metric: secret-protection-controller
-  - Metric name: configmap_protection_controller
+  - Metric name: configmap_protection
     - Aggregation method: prometheus
     - Components exposing the metric: configmap-protection-controller
 
@@ -554,10 +527,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 ### Scalability
 ###### Will enabling / using this feature result in any new API calls?
 
-- API call type: Update Secret/ConfigMap, List Pod/PV/VolumeSnapshot, and Get PVC/SC
+- API call type: Update Secret/ConfigMap, Watch/List Secret/ConfigMap/Pod/PV/VolumeSnapshot/Deployment/StatefulSet/DaemonSet/CronJob, and Get PVC/SC
+    (List is called only before deleting lien to make sure that there are no resource using Secret/ConfigMap. For other cases, watch or list from cache is used).
 - estimated throughput: TBD
 - originating component: secret-protection-controller and configmap-protection-controller
-- API calls are triggered by changes of Secret/ConfigMap, Pod, PV, VolumeSnapshot
+- API calls are triggered by changes of Secret, ConfigMap, Pod, PV, VolumeSnapshot, Deployment, StatefulSet, DaemonSet, and CronJob
 
 ###### Will enabling / using this feature result in introducing new API types?
 
