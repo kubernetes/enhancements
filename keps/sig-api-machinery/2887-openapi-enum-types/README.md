@@ -85,7 +85,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Enum Pattern](#enum-pattern)
   - [Enum Tag](#enum-tag)
-  - [Detect Possible Enum Types](#detect-possible-enum-types)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
