@@ -36,7 +36,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: OpenAPIv3Enabled # must be the same of OpenAPI v3 KEP #2896
+  - name: OpenAPIEnum
     components:
       - kube-apiserver
 disable-supported: true

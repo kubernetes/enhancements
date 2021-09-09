@@ -94,7 +94,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
-    - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -107,7 +106,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Directly into OpenAPI v2](#directly-into-openapi-v2)
+  - [Do Not Break Existing Clients](#do-not-break-existing-clients)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -131,14 +130,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -176,10 +175,7 @@ updates.
 This KEP defines Enum Types support for OpenAPI. Currently, types in our API have fields
 that are actually enums but represented as plain string. This KEP proposes a `+enum`
 marker to type aliases that represent enums. The OpenAPI generator will have
-the capability to recognize the marker and auto-detect possible values for an enum. 
-
-This feature should be implemented and graduated alongside [KEP-2896 OpenAPI v3](https://github.com/kubernetes/enhancements/issues/2896)
-because the feature breaks existing OpenAPI clients.
+the capability to recognize the marker and auto-detect possible values for an enum.
 
 ## Motivation
 
@@ -258,8 +254,8 @@ The implementation should only suggest changes to internal APIs.
 
 ## Proposal
 
-As part of the OpenAPI v3 KEP, when generating OpenAPI schema,
-the de facto enum types should be reflected as enums in the resulting schema.
+When generating OpenAPI schema, the de facto enum types should be reflected as enums in the resulting schema.
+
 We define enum types with following properties:
 - All enum types are closed, i.e., the type includes a finite number of possible values.
 - All enum types should be string. There can be no enum integers, floats, etc
@@ -397,9 +393,9 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 ### OpenAPI v2 Breakage
-This feature is not targeting OpenAPI v2 because it breaks existing code using
-swagger to generate client or server stub from the spec. Take the following spec as 
-an example.
+This feature, when enabled, breaks existing code using swagger to generate client or server stub from the spec
+for languages with built-in enum support, including Java and C#.
+Take the following spec as an example.
 
 ```yaml
 definitions:
@@ -429,8 +425,7 @@ public class Foo {
 }
 ```
 If the `enum` field was not in the definition, the `Bar` field would be a String.
-This breaking change happens to all languages that have built-in enum support,
-including Java, Kotlin, and TypeScript.
+Maintainers of the clients should include the change in a new major release.
 
 ### Test Plan
 
@@ -462,7 +457,7 @@ there should be integration and e2e tests that validate present of enum fields.
 
 #### Alpha
 
- - Feature implemented behind the OpenAPI v3 feature gate
+ - Feature implemented behind the feature gate
  - Initial tests, both in k/k and k/kube-openapi, are completed and enabled
 
 #### Beta
@@ -470,16 +465,13 @@ there should be integration and e2e tests that validate present of enum fields.
  - All enums in Kubernetes built-in types have enum tags properly added.
  - Enum syntax of kube-builder updated to match that of this KEP.
 
-#### Stable
-
-This feature should graduate with OpenAPI v3 after beta.
-
 ### Upgrade / Downgrade Strategy
-Enable/disable the OpenAPI v3 feature gate.
+Enable/disable the OpenAPIEnum feature gate.
 
 ### Version Skew Strategy
-An old version can still consume OpenAPI v2. For the conversion from v2 to v3 (see OpenAPI v3 KEP),
-enum types will not present and thus should cause no issue.
+The API is still compatible even with enum types enabled.
+For the conversion from v2 to v3 (see OpenAPI v3 KEP), enum types will be carried over and thus
+should not change the behavior of v3.
 
 ## Production Readiness Review Questionnaire
 
@@ -518,7 +510,7 @@ Pick one of these and delete the rest.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `OpenAPIv3Enabled`
+  - Feature gate name: `OpenAPIEnum`
   - Components depending on the feature gate: `kube-apiserver`
 - [ ] Other
   - Describe the mechanism:
@@ -534,8 +526,9 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No. This feature does not affect existing OpenAPI v2 generator. The tag in internal
-APIs would be ignored by existing tooling.
+Yes. Any clients generated from the new schema will see enum fields.
+For languages with enum support, OpenAPI language-level generator (swagger) will create
+Language-specific enum types instead of plain strings.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -546,7 +539,7 @@ feature, can it break the existing applications?).
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. This feature can be turned off with OpenAPI v3.
+Yes. By disabling the feature gate and restart `api-server`.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 This feature needs access only to information immutable at run-time. There should
@@ -827,10 +820,9 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Directly into OpenAPI v2
+### Do Not Break Existing Clients
 
-The original design is to make the changes independent of OpenAPI v3. Doing this will
-cause swagger-generated type to switch from plain string to a built-in enum, provided
-the language supports enum type. This will break client code for many popular languages. 
-We can use a feature gate to give the maintainer some time to adapt the change,
-but eventually the breakage will happen.
+This change can go along with OpenAPI v3 instead of v2, which prevent the breakage mentioned above.
+However, an affected client can release a new major version to introduce the breaking change itself
+instead of waiting for new major version of OpenAPI. In this way, we can "make things right" and benefit
+from the improvement much earlier.
