@@ -384,7 +384,8 @@ package example
 type Alias string
 ```
 The two approaches are compatible, but eventually they will have to be unified.
-However, compatibility with the ecosystem is out of scope of this proposal.
+To retain compatibility with existing users of kube-builder, the auto-deduction will be added
+to kube-builder once the work is done with built-in types.
 
 ## Design Details
 
@@ -467,6 +468,7 @@ there should be integration and e2e tests that validate present of enum fields.
 #### Beta
 
  - All enums in Kubernetes built-in types have enum tags properly added.
+ - Enum syntax of kube-builder updated to match that of this KEP.
 
 #### Stable
 
