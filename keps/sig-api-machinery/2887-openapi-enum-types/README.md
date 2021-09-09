@@ -239,7 +239,7 @@ know that this has succeeded?
 
 - Add a marker that indicates a field as an enum.
 - Make the Kubernetes OpenAPI generator recognize the marker.
-- Auto-detect possible values of an enum type.
+- Deduce values of an enum type from its Go type definition.
 - Detect and annotate enum types in all built-in types. 
 
 ### Non-Goals
