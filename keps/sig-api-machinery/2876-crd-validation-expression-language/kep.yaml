@@ -9,9 +9,13 @@ owning-sig: sig-api-machinery
 status: implementable
 creation-date: 2021-05-26
 reviewers:
-  - TBD
+  - "@deads2k"
+  - "@lavalamp"
+  - "@liggitt"
+  - "@sttts"
 approvers:
-  - TBD
+  - "@deads2k"
+  - "@lavalamp"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location

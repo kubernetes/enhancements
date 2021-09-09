@@ -20,14 +20,15 @@
     - [Accidental misuse](#accidental-misuse)
     - [Malicious use](#malicious-use)
   - [Future Plan](#future-plan)
-    - [Defaulting](#defaulting)
-    - [Conversion](#conversion)
-    - [Other validation support](#other-validation-support)
+  - [CEL for General Admission Control](#cel-for-general-admission-control)
+    - [CEL Custom Resource Definition Conversion](#cel-custom-resource-definition-conversion)
+    - [Other expression languages](#other-expression-languages)
 - [Design Details](#design-details)
   - [Type Checking](#type-checking)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -35,9 +36,10 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
-- [Graduation Criteria](#graduation-criteria)
-  - [Beta](#beta)
+- [Graduation Criteria](#graduation-criteria-1)
+  - [Beta](#beta-1)
 - [Alternatives](#alternatives)
+  - [Introduce CEL for General Admission Control](#introduce-cel-for-general-admission-control)
   - [Rego](#rego)
   - [Expr](#expr)
   - [WebAssembly](#webassembly)
@@ -106,6 +108,12 @@ This KEP proposes the adoption of [Common Expression Language
 in the kube-apiserver (since CRD creation is a privileged operation), has a straight-forward and
 unsurprising grammar, and supports pre-parsing and typechecking of expressions, allowing syntax and
 type errors to be caught at CRD registration time.
+
+CEL might be used in Kubernetes for extensibility beyond CRD validation. The future plans section of
+this KEP explains how CEL might be used for general admission control, defaulting and
+conversion. This KEP aims to prove the utility of CEL for both the immediate use case (CRD validation)
+and these future use cases. This KEP also aims to use CEL in a way that is congruent with these
+future use cases.
 
 ## Motivation
 
@@ -185,7 +193,8 @@ objects the webhook is configured to intercept.
 - Support all validation done on native Kubernetes types. For example, CRD structural schemas has
   complex validation rules that we CEL cannot support due to the lask of support for arbitrarily
   deeply nested terms (CEL cannot support recursive data types).
-- Change how Kubernetes built-in types are validated, defaulted and converted.
+- Change how Kubernetes built-in types are validated, defaulted and converted. We are, however,
+  interested in admission control support for build-in types. See future work for more details.
 
 ## Proposal
 
@@ -229,15 +238,37 @@ extension in the schema. In the above example, the validator is scoped to the
 - For OpenAPIv3 object types, the expression will have direct access to all the
 fields of the object the validator is scoped to.
   
-- For OpenAPIv3 scalar types (integer, string & boolean), the expression will have
-access to the scalar data element the validator is scoped to.
+- For OpenAPIv3 scalar types (integer, string & boolean), the expression will have access to the
+scalar data element the validator is scoped to. The data element will be accessible to CEL
+expressions via the name of the property name that `x-kubernetes-validator` is defined on,
+e.g. `len(labelSelector) > 10`.
 
-- For OpenAPIv3 list and map types, the expression will have access to the data
-element of the list or map.
+- For OpenAPIv3 list and map types, the expression will have access to the data element of the list
+or map. These will be accessible to CEL via the property name that `x-kubernetes-validator` is
+defined on. The elements of a map or list can be validated using the CEL support for collections
+like the `all` macro, e.g. `property.all(listItem, <predicate>)` or `property.all(mapKey,
+<predicate>)`.
   
-- For immutability use case, validator will have access to the existing version of the object.
+- For immutability use case, validator will have access to the existing version of the object. This
+  will be accessible to CEL via the `old<propertyName>` identifier.
+  - This will only be available on mergable collection types such as objects (unless
+    `x-kubernetes-map-type=atomic`), maps with `x-kubernetes-map-type=granular` and lists
+    with `x-kubernetes-list-type` set to `set` or `map`.  See (Merge
+    Strategy)[https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy] for
+    details.
+  - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
+    `oldObject`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
+    keyword for escaping purposes (see below).
+  - xref (analysis of possible interactions with immutability and
+    validation)[https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable].
 
-- We plan to allow access to the current state of the object to allow validation rules to check the new value against the current value(e.g. for validation ratcheting or immutability checks).
+- If a object property collides with a CEL keyword (see RESERVED in (CEL Syntax)[https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax]),
+  it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision, all properties with a `_` prefix will always be
+  prefixed by `__` (generally, N+1 the existing number of `_`s).
+
+- We plan to allow access to the current state of the object to allow validation rules to check the
+  new value against the current value, e.g. for immutability checks (for validation racheting we would
+  prefer an approach like described in https://github.com/kubernetes/kubernetes/issues/94060 be pursued).
 
 
 #### Field paths and field patterns
@@ -282,6 +313,19 @@ Considerations:
 
 ### User Stories
 
+- Cases provided by @deads2k
+  - list of type foo struct {name string ... }, no item in the list can have a name == "value X", [ref](https://github.com/openshift/kubernetes/blob/75ee3073266
+f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L68).
+  - metadata.name must equal "valueX", [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L47)
+  - if name == "foo", then fieldX must not be nil, [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L177)
+  - if name == "foo", then field X must be nil, [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L177)
+  - validate new label selector format: metav1.LabelSelector, this matches our deployment API
+  - validate old label selector format: map[string]string, this matches our node selectors for pods
+  - len(A)>0 xor len(B)>0
+  - quantity validation to match quota and usage specifications, [buried inside of here (most of it is not generally applicable)](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/clusterresourcequota/validation/validation.go#L44)
+  - if old value is X, don't allow changing the value, [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/features/validate_features.go#L82)
+  - shorthand to match our NameIsDNSSubdomain and the like would be nice.
+  - if X exists in list1, then X must not existing in list2, both list1 and list2 are in the manifest, [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/securitycontextconstraints/validation/validation.go#L139)
 - Use case: [Tekton pipeline validation](https://github.com/tektoncd/pipeline/blob/main/pkg/apis/pipeline/v1beta1/pipeline_validation.go)
   - Referential integrity checks
   - Custom formatted validation error messages
@@ -302,96 +346,61 @@ possible to validate with CEL).
 Break the control plane by consuming excessive CPU and/or memory the api-server.
 
 Mitigation: CEL is specifically designed to constrain the running time of expressions and to limit
-the memory utilization. Since CRD creation is a privileged operation, it should be safe to
-integrate.
+the memory utilization. We will run a series of performance benchmarks with CEL programs designed
+utilize a range of CPU and memory resources and document the results of the benchmarks before
+promoting this feature to GA.
 
 #### Malicious use
 
 Breaking out of the sandbox to run untrusted code in the apiserver or exfiltrate data.
 
-Mitigation: CEL is designed to sandbox code execution. 
+Mitigation: CEL is designed to sandbox code execution. Also, because CRD createion is a privileged
+operation, it should be safe to integrate.
 
+Additional limits we can put in place, as needed, include:
+- A max execution time limit to but could bound running time of CEL programs. This would require
+  modifying CEL (by working with the CEL community) to make CEL evaluation cancelable. Ideally this
+  would be based on CPU time dedicated to CEL evaluation, but since there is no clear way to measure
+  that, it might have to be based on wall time, which is a poor signal of resource consumption and
+  so would need to be set very high and used primarily as a backstop.
+- Work with the CEL community to introduce metrics that approximate actual CPU and/or memory
+  consumption of CEL programs.
 
 ### Future Plan
+
+### CEL for General Admission Control
+
+The ability to use CEL to extend Kubernetes admission control could allow for both validating and
+mutating admission control without the use of webhooks. It improves on this KEP by providing
+admission control of all Kubernetes objects, including native types.
+
+We decided to start with CRD validation because it is:
+
+- Better scoped (validation rule can be constrained to just the relevant field/subtree)
+- Self-contained (single CRD manifest that all takes effect at once)
+- Easier to type check (a CRD validation rule has more knowledge about the schema of the data that
+it will be asked to validate than an admission expression that could have arbitrary resources routed
+to it)
+
+Even if we later add general admission control support using CEL, we believe having inline validation support
+in CRDs is sufficiently valuable due to its convenience that it should exist as it's own feature. We also
+believe CRD validation expressions can be kept congruent with general admission control CEL support.
+
+(Thanks @liggitt for idea of using CEL for general admission control. This section is largely
+a copy-paste of (this comment)[https://github.com/kubernetes/enhancements/pull/2877#discussion_r704513565]).
   
-#### Defaulting
+#### CEL Custom Resource Definition Conversion
 
-The `x-kubernetes-default` extension will be used. The location of the defaulter
-determines the scope of defaulter.
+Similar to CEL for General Admission Control, CEL could also be used to author CRD Conversions.
 
-The 'field' specifies which field is to be defaulted using a field path that is
-relative to the scope root. The defaulter will only be run if 'field' is unset, 
-and the result of the expression must match the type of the field to be
-defaulted.
+#### Other expression languages
 
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-...
-  schema:
-    openAPIV3Schema:
-      type: object
-      properties:
-        spec:
-          x-kubernetes-default:
-		    - rule: "!has(spec.type) && spec.Type == 'LoadBalancer' ? 'ServiceExternalTrafficPolicy' : null"
-			  field: spec.externalTrafficPolicy
-```
+While we believe CEL should be sufficient. If another language we introduce in the future, it would be supported:
 
-- Each defaulter may have multiple rules.
-
-- The 'field' is optional and defaults to the scope if not explicitly set.
-
-If the expression evaluates to null, the field is left unset.
-TODO: Any downsides to using null this way?
-
-#### Conversion
-
-Conversion rules will be made available via a ConversionRules strategy. A set of
-rules can be provided for each supported source/destination version pair. Each rule will
-specify which field it sets using a field path. A 'scope' field *pattern* may
-also be used specify all locations in the object that the conversion rule should
-be applied.
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-...
- conversion:
-    strategy: ConversionRules
-	converters:
-		- fromVersion: v1beta1
-		  toVersion: v1
-		  rules:
-		    - field: spec.xyz.podIPs
-			  rule: "has(spec.xyz.podIP) ? [spec.xyz.podIP] : []"
-		- fromVersion: v1
-		  toVersion: v1beta1
-		  rules:
-		    - field: xyz.podIP
-		      scope: spec
-			  rule: "size(xyz.podIPs) > 0 ? xyz.podIPs[0] : null"
-```
-
-Expressions that return object types will overwrite all fields that they return and
-leave all other fields to be auto-converted.
-
-The 'scope' is optional and defaults to the object root.
-
-The 'field' is optional and defaults to the scope? TODO: is it better to make it required for conversion?
-
-If the expression evaluates to null, the field is left unset.
-
-TODO: demonstrate writing fields into annotations for round trip
-
-TODO: demonstrate string <-> structured (label selector example & ServicePort example)
-
-#### Other validation support
-
-  Add a `type` field specified with `cel` within `x-kubernetes-validator`.
-  With `type` field added, the validator could potentially add other ways to validate in
-  the future, or to allow 3rd party validators to have a way to inline their
-  validation rules in CRDs.
+- Add an identifier for each expression language.
+- Add a `type` field specified to `x-kubernetes-validator` (it would default to `cel`).
+- Implement the validation support for the languages or even allow 3rd party validators to have a
+  way to inline their validation rules in CRDs?
 
 ## Design Details
 
@@ -408,15 +417,21 @@ CEL type checking requires "declarations" be registered for any types that are t
 be type checked.  In our case, the type information of interest is the CRD's
 structural schemas. So we need to translate structural schemas to declarations.
 
-"declarations" are registered via the go-genproto "checked" package
-(https://github.com/googleapis/go-genproto/blob/master/googleapis/api/expr/v1alpha1/checked.pb.go).
+CEL provides direct support for type checking protobuf types, which is not useful
+for our use case.
 
-(https://github.com/googleapis/googleapis/blob/master/google/api/expr/v1alpha1/checked.proto).
+The good news is that https://github.com/google/cel-policy-templates-go already has
+demonstrated integrating CEL with OpenAPIv3. We plan to leverage this work.
 
-There are a couple alternative ways to do this. Ideally, we could be able to both dereference into
-objects and construct objects in a typesafe way.  In order to construct objects in a typesafe way we
-need to be able to represent the structural schema types in CEL, e.g. "v1beta1.Foo{fieldname:
-value}", this is complicated by the way CEL relies on protobuf types.
+We will add detailed test coverage for numeric comparisons due to
+(google/cel-spec#54)[https://github.com/google/cel-spec/issues/54#issuecomment-491464172] including
+coverage of interactions in these dimensions:
+
+- schemas defining integer and number fields
+- data specifying integers and float values (and integer values for float fields)
+- expressions specifying literal integers, literal floats, and explicitly typed integers and floats
+
+(Thanks to @liggitt for pointing this out)
 
 ### Test Plan
 
@@ -428,6 +443,12 @@ We will extend both the unit test suite and the integration test suite to cover 
 
 - Feature implemented behind a feature flag
 - Ensure proper tests are in place.
+
+#### Beta
+
+- Understanding of upper bounds of CPU/memory usage and appropriate limits set to prevent abuse.
+- Build-in macro/function library is comprehensive and stable (any changes to this will be a breaking change)
+- CEL numeric comparison issue is resolved
 
 ## Production Readiness Review Questionnaire
 
@@ -553,6 +574,9 @@ but will measure it before Beta.
 
 We don't expect it to. We will measure this before Beta.
 
+Specifically we will ddemonstrate an upper bound on the resource cost someone could incur with a CEL expression that is some some
+combination of large, compact, complex vs. similar combinations using existing validation rules (suggested by @liggitt)
+
 ### Troubleshooting
 
 <!--
@@ -593,6 +617,14 @@ older kubernetes versions for this feature before we promote to Beta, delaying p
 to minimize negative impact to ecosystem.
 
 ## Alternatives
+
+### Introduce CEL for General Admission Control
+
+See also the future plans section for this. We believe that CEL for General Admission Control is
+valuable and should be implemented. We are implementing CRD validation with CEL first because is is
+a more constrainted problem and is complementary to CEL for general admission (even if we already
+had CEL for general admission implemented, the convenience of inline CEL validation expressions in
+CRDs is sufficiently convenient to justify it being added).
 
 ### Rego
 
