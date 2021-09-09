@@ -354,7 +354,7 @@ promoting this feature to GA.
 
 Breaking out of the sandbox to run untrusted code in the apiserver or exfiltrate data.
 
-Mitigation: CEL is designed to sandbox code execution. Also, because CRD createion is a privileged
+Mitigation: CEL is designed to sandbox code execution. Also, because CRD creation is a privileged
 operation, it should be safe to integrate.
 
 Additional limits we can put in place, as needed, include:
