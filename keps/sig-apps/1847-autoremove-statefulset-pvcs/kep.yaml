@@ -22,7 +22,7 @@ approvers:
 
 stage: alpha
 
-latest-milestone: "v1.22"
+latest-milestone: "v1.23"
 
 milestone:
   alpha: "v1.23"
