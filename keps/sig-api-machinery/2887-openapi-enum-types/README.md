@@ -263,9 +263,9 @@ We define enum types with following properties:
 - All enum types should be string. There can be no enum integers, floats, etc
 
 Additionally, This KEP makes the following assumptions on the implementation:
-- All enum types have their own type alias. i.e. , no raw string enums.
-- The canonical definition of a type is written in go and follows the standard 
+- The canonical definition of a type is written in go and follows the standard
   Kubernetes convention.
+- All enum types have their own type alias. i.e. , no raw string enums.
 
 ### Enum Pattern
 
