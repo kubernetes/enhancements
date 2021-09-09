@@ -90,6 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [OpenAPI v2 Breakage](#openapi-v2-breakage)
+  - [Enum Fields Pruning for Feature Disablement](#enum-fields-pruning-for-feature-disablement)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -426,6 +427,13 @@ public class Foo {
 ```
 If the `enum` field was not in the definition, the `Bar` field would be a String.
 Maintainers of the clients should include the change in a new major release.
+
+### Enum Fields Pruning for Feature Disablement
+
+If the feature is disabled through the feature gate, `api-server` will prune the enum fields,
+making the result identical to that of the current version.
+
+After this feature graduates to GA, the pruning code will be removed from `api-server`.
 
 ### Test Plan
 
