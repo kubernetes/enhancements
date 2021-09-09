@@ -430,8 +430,8 @@ Maintainers of the clients should include the change in a new major release.
 
 ### Enum Fields Pruning for Feature Disablement
 
-If the feature is disabled through the feature gate, `api-server` will prune the enum fields,
-making the result identical to that of the current version.
+If the feature is disabled through the feature gate, `api-server` will remove all aspects about
+enum types from the schema, making the result identical to that of the current version.
 
 After this feature graduates to GA, the pruning code will be removed from `api-server`.
 
@@ -472,6 +472,10 @@ there should be integration and e2e tests that validate present of enum fields.
 
  - All enums in Kubernetes built-in types have enum tags properly added.
  - Enum syntax of kube-builder updated to match that of this KEP.
+
+#### Stable
+
+ - OpenAPI-level validation of enum types in built-in types removed in favor of that provided by the schema. 
 
 ### Upgrade / Downgrade Strategy
 Enable/disable the OpenAPIEnum feature gate.
