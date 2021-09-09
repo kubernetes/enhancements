@@ -272,7 +272,7 @@ The Enum Pattern of a type, appearing in a go source file, is defined as follows
 ```go
 package internal
 
-// FooType define sa type alias, underlying type must be string
+// FooType defines a type alias, underlying type must be string
 type FooType string
 
 // in the same package, define constants with the alias
