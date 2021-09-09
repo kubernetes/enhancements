@@ -251,8 +251,8 @@ and make progress.
 This KEP does not provide support for validation that is more complicated than an enum type
 like regex or prefix. Instead, use other validation mechanism that is or will be supported.
 
-This KEP does not consider extensibility of enum values. Any changes to the set of possible values
-should be considered breaking change and thus should follow the standard procedure of changing an API.
+This KEP treat any enum type as a closed enum. Any change to the set of possible values should be
+treated as creating a new type and thus should follow the standard procedure of changing an API.
 
 ## Proposal
 
