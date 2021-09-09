@@ -260,6 +260,7 @@ When generating OpenAPI schema, the de facto enum types should be reflected as e
 
 We define enum types with following properties:
 - All enum types are closed, i.e., the type includes a finite number of possible values.
+  However, for compatibility, a client may allow unknown values from responses.
 - All enum types should be string. There can be no enum integers, floats, etc
 
 Additionally, This KEP makes the following assumptions on the implementation:
