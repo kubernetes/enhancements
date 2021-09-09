@@ -200,6 +200,12 @@ EndpointSlice will continue to have the `terminating` and `serving` condition se
 
 Yes, there will be strategy API unit tests validating if the new API field is allowed based on the feature gate.
 
+Unit, integration and e2e tests that were as part of these PRs:
+- https://github.com/kubernetes/kubernetes/pull/92968
+- https://github.com/kubernetes/kubernetes/pull/103645
+- https://github.com/kubernetes/kubernetes/pull/103621
+- https://github.com/kubernetes/kubernetes/pull/103596
+
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout fail? Can it impact already running workloads?
