@@ -282,7 +282,7 @@ const (
     BazConst FooType = "Baz"
 )
 
-// in one or more resources or nested objects, one of the field is of 
+// in one or more resources or nested objects, one of the fields is of 
 // the defined alias type.
 
 // ExampleResource should refer FooType
