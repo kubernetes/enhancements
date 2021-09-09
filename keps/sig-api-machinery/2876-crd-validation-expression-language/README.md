@@ -270,6 +270,12 @@ like the `all` macro, e.g. `property.all(listItem, <predicate>)` or `property.al
   new value against the current value, e.g. for immutability checks (for validation racheting we would
   prefer an approach like described in https://github.com/kubernetes/kubernetes/issues/94060 be pursued).
 
+- If the CEL evaluation exceeds the bounds we set (details below), the server will return a 408
+  (Request Timeout) HTTP status code. The timeout will be a backstop we expect to rarely be used
+  since CEL evaluations are multiple orders of magnitude faster that typical webhook invocations,
+  and we can use CEL expression complexity estimations
+  ((xref)[https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265])
+  during CRD update to bound complexity.
 
 #### Field paths and field patterns
 
@@ -350,6 +356,10 @@ the memory utilization. We will run a series of performance benchmarks with CEL 
 utilize a range of CPU and memory resources and document the results of the benchmarks before
 promoting this feature to GA.
 
+Also we can use (CEL complexity
+estimations)[https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265]
+to help bound running time.
+
 #### Malicious use
 
 Breaking out of the sandbox to run untrusted code in the apiserver or exfiltrate data.
@@ -358,6 +368,9 @@ Mitigation: CEL is designed to sandbox code execution. Also, because CRD creatio
 operation, it should be safe to integrate.
 
 Additional limits we can put in place, as needed, include:
+- Use (CEL complexity
+  estimations)[https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265]
+  to bound running time.
 - A max execution time limit to but could bound running time of CEL programs. This would require
   modifying CEL (by working with the CEL community) to make CEL evaluation cancelable. Ideally this
   would be based on CPU time dedicated to CEL evaluation, but since there is no clear way to measure
