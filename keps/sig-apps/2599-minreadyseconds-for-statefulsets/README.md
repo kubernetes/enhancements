@@ -403,6 +403,9 @@ This section must be completed when targeting beta to a release.
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
 -->
+It shouldn't impact already running workloads. This is an opt-in feature since 
+users need to explicitly set the minReadySeconds parameter in the StatefulSet spec i.e `.spec.minReadySeconds` field.
+If the feature is disabled the field is preserved. If it was already set in the persisted StatefulSet object, otherwise it is silently dropped.
 
 ###### What specific metrics should inform a rollback?
 
@@ -410,9 +413,13 @@ mid-rollout?
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+We have a metric called `kube_statefulset_status_replicas_available`
+which we added recently to track the number of available replicas. The cluster-admin could use
+this metric to track the problems. If the value is immediately equal to the value of `Ready` replicas or if it is `0`, it can be considered as a feature failure.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-
+Manually tested. No issues were found when we enabled the feature gate -> disabled it ->
+re-enabled the feature gate. We still need to test upgrade -> downgrade -> upgrade scenario.
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
@@ -424,7 +431,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-
+None
 ### Monitoring Requirements
 
 <!--
@@ -438,6 +445,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+By checking the `kube_statefulset_status_replicas_available` metric. If all the `Ready` replicas are accounted for in `kube_statefulset_status_replicas_available` after waiting for `minReadySeconds`, we can consider the feature to be in use by workloads.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -445,12 +453,13 @@ logs or events for this purpose.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [x] Metrics
+  - Metric name: `kube_statefulset_status_replicas_available`
   - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  - Components exposing the metric: kube-controller-manager via kube_state_metrics. [PR which adds the metric](https://github.com/kubernetes/kube-state-metrics/pull/1532)
+
+The `kube_statefulset_status_replicas_available` gives the number of replicas available. Since the
+`kube_statefulset_status_replicas_available` metric tracks available replicas, comparing it with `kube_statefulset_status_replicas_ready` metric should give us an understanding of the health of the feature. There should be certain times where `kube_statefulset_status_replicas_available` lags behind `kube_statefulset_status_replicas_ready` for a duration of minReadySeconds. This lag defines the correctness of the functionality.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
@@ -463,6 +472,7 @@ high level (needs more precise definitions) those may be things like:
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 -->
+All the `Available` pods created should be more than the time specified in `.spec.minReadySeconds` 99% of the time. 
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -493,6 +503,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+None. It is part of the StatefulSet controller.
 
 ### Scalability
 
@@ -589,6 +600,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The controller won't be able to make progress, all currently queued resources are re-queued. This feature does not change current behavior of the controller in this regard.
+
 ###### What are other known failure modes?
 
 <!--
@@ -603,11 +616,23 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+ - `minReadySeconds` not respected and all the pods are shown `Available` immediately
+    - Detection: Looking at `kube_statefulset_status_replicas_available` metric
+    - Mitigations: Disable the `StatefulSetMinReadySeconds` feature flag
+    - Diagnostics: Controller-manager when starting at log-level 4 and above
+    - Testing: Yes, e2e tests are already in place
+  - `minReadySeconds` not respected and none of the pods are shown as `Available` after `minReadySeconds`
+    - Detection: Looking at `kube_statefulset_status_replicas_available`. None of the pods will be shown available
+    - Mitigations: Disable the `StatefulSetMinReadySeconds` feature flag
+    - Diagnostics: Controller-manager when starting at log-level 4 and above
+    - Testing: Yes, e2e tests are already in place
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
-
+- 2021-04-29: Initial KEP merged
+- 2021-06-15: Initial implementation PR merged
+- 2021-07-14: Graduate the feature to Beta proposed 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
