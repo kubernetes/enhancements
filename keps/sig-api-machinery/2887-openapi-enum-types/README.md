@@ -175,8 +175,8 @@ updates.
 
 This KEP defines Enum Types support for OpenAPI. Currently, types in our API have fields
 that are actually enums but represented as plain string. This KEP proposes a `+enum`
-annotation to type aliases that represent enums. The OpenAPI generator will have
-the capability to recognize the annotation and auto-detect possible values for an enum. 
+marker to type aliases that represent enums. The OpenAPI generator will have
+the capability to recognize the marker and auto-detect possible values for an enum. 
 
 This feature should be implemented and graduated alongside [KEP-2896 OpenAPI v3](https://github.com/kubernetes/enhancements/issues/2896)
 because the feature breaks existing OpenAPI clients.
@@ -237,8 +237,8 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Add an annotation that indicates a field as an enum.
-- Make the Kubernetes OpenAPI generator recognize the annotation.
+- Add a marker that indicates a field as an enum.
+- Make the Kubernetes OpenAPI generator recognize the marker.
 - Auto-detect possible values of an enum type.
 - Detect and annotate enum types in all built-in types. 
 
@@ -297,7 +297,7 @@ Enum Type is the type that follows such pattern (`FooType` in the example above)
 Enum Values are the possible values of the Enum Type (`Bar` and `Baz` are Enum Values for `FooType`).
 
 ### Enum Tag
-The Enum Tag is the annotation `// +enum` that must be in the closest comment blocks
+The Enum Tag is the marker `// +enum` that must be in the closest comment blocks
 of an enum type following Enum Pattern.
 
 ```go
@@ -374,7 +374,7 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 The syntax proposed in this KEP is different from existing implementation of kube-builder.
-Namely, kube-builder requires possible values in the annotation itself, and is treated
+Namely, kube-builder requires possible values in the marker itself, and is treated
 as a validation.
 ```go
 package example
@@ -741,7 +741,7 @@ No.
 <!--
 Describe them, providing:
   - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated increase in size: (e.g., new marker of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 No. Enum information only appears in `/openapi/` endpoints but not standard APIs.
