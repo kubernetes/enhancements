@@ -1,5 +1,5 @@
 title: Enhanced NodeIPAM to support Discontiguous Cluster CIDR
-kep-number: 2594
+kep-number: 2593
 authors:
   - "@rahulkjoshi"
   - "@sdmodi"

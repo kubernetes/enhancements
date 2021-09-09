@@ -1,4 +1,4 @@
-# KEP-2594: Enhanced NodeIPAM to support Discontiguous Cluster CIDR
+# KEP-2593: Enhanced NodeIPAM to support Discontiguous Cluster CIDR
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
