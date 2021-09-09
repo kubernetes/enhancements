@@ -551,7 +551,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 -->
 #### Alpha
 
-- Feature implemented behind a feature flag
+- Feature implemented behind a feature gate
 - Integration tests added for all relevant verbs (POST, PUT, and PATCH)
 
 <!--
@@ -662,7 +662,7 @@ No, strict validation is false by default.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. From the cluster operator's side, they can restart the kube-apiserver without
-the UnknownFieldValidation flag set and this will disable the feature
+the UnknownFieldValidation feature gate set and this will disable the feature
 cluster-wide.
 
 For end-users that no longer wish to perform server-side strict validation,
@@ -780,13 +780,7 @@ question.
 Pick one more of these and delete the rest.
 
 - [x] Metrics
-  - Metric name: CPU Usage
-  - Components exposing the metric: kube-apiserver
-- [x] Metrics
-  - Metric name: Memory Consumption
-  - Components exposing the metric: kube-apiserver
-- [x] Metrics
-  - Metric name: Request Latency
+  - Metric name: apiserver_request_duration_seconds
   - Components exposing the metric: kube-apiserver
 
 <!--
