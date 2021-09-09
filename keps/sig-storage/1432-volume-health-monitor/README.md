@@ -9,6 +9,7 @@
   - [Use Cases](#use-cases)
 - [Proposal](#proposal)
 - [Implementation](#implementation)
+  - [Kubelet Metrics changes](#kubelet-metrics-changes)
   - [CSI changes](#csi-changes)
     - [Add ControllerGetVolume RPC](#add-controllergetvolume-rpc)
     - [Add Node Volume Health Function](#add-node-volume-health-function)
@@ -136,10 +137,61 @@ Two main parts are involved here in the architecture.
   - Kubelet already collects volume stats from CSI node plugin by calling CSI function NodeGetVolumeStats.
   - In addition to existing volume stats collected already, Kubelet will also check volume condition collected from the same CSI function and log events to Pods if volume condition is abnormal.
   - Note that currently we do not have CSI support for local storage. When the support is available, we will implement relavant CSI monitoring interfaces as well.
+  - Expose Volume Health information as Kubelet VolumeStats Metrics.
 
 The volume health monitoring by Kubelet will be controlled by a new feature gate called `VolumeHealth`.
 
 ## Implementation
+
+### Kubelet Metrics changes
+
+Add a new field in the [VolumeStats metrics API](https://github.com/kubernetes/kubernetes/blob/v1.22.1/staging/src/k8s.io/kubelet/pkg/apis/stats/v1alpha1/types.go#L263).
+
+```
+// VolumeStats contains data about Volume filesystem usage.
+type VolumeStats struct {
+	// Embedded FsStats
+	FsStats `json:",inline"`
+	// Name is the name given to the Volume
+	// +optional
+	Name string `json:"name,omitempty"`
+	// Reference to the PVC, if one exists
+	// +optional
+	PVCRef *PVCReference `json:"pvcRef,omitempty"`
+
+	// Note: Add the following new field
+	// +optional
+        // VolumeHealthStats contains data about volume health
+        VolumeHealthStats `json:"volumeHealthStats,omitempty"`
+}
+
+// VolumeHealthStats contains data about volume health.
+type VolumeHealthStats struct {
+        // Normal volumes are available for use and operating optimally.
+        // An abnormal volume does not meet these criteria.
+        Abnormal bool `json:"abnormal,omitempty"`
+}
+```
+
+Modify [parsePodVolumeStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/volume_stat_calculator.go#L172) to include the new field in the returned `stats.VolumeStats`.
+
+The newly added Volume Health stats will be stored in [persistentStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/volume_stat_calculator.go#L168).
+
+This is returned in [GetPodVolumeStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/fs_resource_analyzer.go#L99).
+
+Since Prometheus does not store string metrics, `volume_health_status` will be stored as either 1 or 0. The `volume_health_status` label could be `status: abnormal`.
+
+```
+var volumeHealthMetric = metrics.NewGaugeVec(
+	&metrics.GaugeOpts{
+		Subsystem:      KubeletSubsystem,
+                Name:           "volume_health_status",
+                Help:           "Volume health status. The count is either 1 or 0.",
+                StabilityLevel: metrics.ALPHA,
+                },
+                []string{"volume_plugin", "pvc_namespace", "pvc_name", "volume_health_status"},
+)
+```
 
 ### CSI changes
 
@@ -695,7 +747,7 @@ _This section must be completed when targeting alpha to a release._
       For Kubelet, enabling/disabling the feature requires downtime of a node.
 
 * **Does enabling the feature change any default behavior?**
-  Enabling the `VolumeHealth` feature gate will allow Kubelet to monitor volume health and
+  Enabling the `VolumeHealth` feature gate will allow Kubelet to monitor volume health, emit new metric, and
   generate events on Pods so it will change the default behavior.
   Enabling the feature from the controller side will allow events to be reported on PVCs when
   abnormal volume conditions are detected.
@@ -704,14 +756,14 @@ _This section must be completed when targeting alpha to a release._
   the enablement)?**
   Yes. Uninstalling the health monitoring controller sidecar will disable the feature from
   the controller side.
-  Disabling the feature gate on Kubelet will prevent Kubelet from monitoring volume health.
+  Disabling the feature gate on Kubelet will prevent Kubelet from monitoring volume health and emitting the new metric.
   Existing events will not be removed but they will disappear after a period of time.
   Disabling the feature should not break an existing application as these events are for humans
   only, not for automation.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   Events will be added to PVCs or Pods when abnormal volume conditions are
-  detected again.
+  detected again and the new metric will be emitted by Kubelet again.
 
 * **Are there any tests for feature enablement/disablement?**
   There will be unit tests for the feature `VolumeHealth` enablement/disablement.
@@ -734,23 +786,23 @@ _This section must be completed when targeting beta graduation to a release._
    condition will be reported on PVCs.
 
    If enabling the `VolumeHealth` feature fails, no event on volume condition will be
-   reported on the pod.
+   reported on the pod and the new `volume_stats_health_abnormal` metric won't be emitted.
 
 * **What specific metrics should inform a rollback?**
   An event will be recorded on the PVC when the controller has successfully retrieved an
   abnormal volume condition from the storage system. When other errors occur in the controller,
-  the errors will also be recorded as events.
+  the errors will also be recorded as events. When a rollback happens on the controller side, that means the external health monitor controller is uninstalled. After that we won't see events on the PVC due to abnormal volume conditions.
 
-  In Kubelet, an event will be recorded on the Pod when Kubelet has successfully retrieved an
+  In Kubelet, an event will be recorded on the Pod and a `volume_stats_health_abnormal` metric will be emitted when Kubelet has successfully retrieved an
   abnormal volume condition. If the call to `NodeGetVolumeStats` fails for other reasons,
   an error will be returned and whether this will be logged as an event on the Node is up to
-  the existing Kubelet logic and will not be changed.
+  the existing Kubelet logic and will not be changed. When a rollback happens, that means the feature gate is disabled again. The new metric won't be emitted after that.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
-  Manual testing will be done.
+  Manual testing will be done to upgrade from 1.22 to 1.23 and downgrade from 1.23 back to 1.22.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
@@ -775,16 +827,16 @@ _This section must be completed when targeting beta graduation to a release._
   they are aggregated to show metrics for different sidecars.
 
   In Kubelet, an operator can check whether the feature gate `VolumeHealth`
-  is enabled.
+  is enabled and whether the new metric `volume_stats_health_abnormal` is emitted.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [ ] Metrics
-    - Metric name: csi_sidecar_operations_seconds
+    - Metric name: csi_sidecar_operations_seconds, volume_stats_health_abnormal
     - [Optional] Aggregation method:
     - Components exposing the metric:
       csi-external-health-monitor-controller exposes the `csi_sidecar_operations_seconds` metric.
-      In Kubelet, a call to `NodeGetVolumeStats` is meant to collect volume stats metrics.
+      In Kubelet, a call to `NodeGetVolumeStats` is meant to collect volume stats metrics. The new metric name is `volume_stats_health_abnormal`.
   - [ ] Other (treat as last resort)
     - Details:
 
@@ -804,12 +856,15 @@ the health of the service?**
   can look at the ratio of successful vs non-successful statue codes to figure out
   the success/failure ratio.
 
+  In Kubelet, the new metric `volume_stats_health_abnormal` will be emitted. Whether we can successfully retrieve this metric depending on the CSI call 'NodeGetVolumeStats'. This is an existing call in Kubelet. As long as the CSI driver has implemented this capability to provide volume health, it should be in the response of "NodeGetVolumeStats' call.
+
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
   <!--
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
   -->
+  No.
 
 ### Dependencies
 
@@ -860,12 +915,13 @@ previous answers based on experience in the field._
     call is needed.
   - API calls that may be triggered by changes of some Kubernetes resources
     (e.g. update of object X triggers new updates of object Y)
+    We are adding a new `Abnormal` field to the existing Kubelet metrics API. It will be retrieved by the periodic metrics collection call. We are not changing the existing frequency of that call.
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them, providing:
-  - API type: No
+  - API type: Adding 'Abnormal` field to Kubelet VolumeStats metrics API
   - Supported number of objects per cluster: No
   - Supported number of objects per namespace (for namespace-scoped objects): No
 
@@ -876,9 +932,9 @@ provider?**
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
   Describe them, providing:
-  - API type(s): No
+  - API type(s): Yes. We are adding new 'Abnormal` field to Kubelet VolumeStats metrics API.
   - Estimated increase in size: (e.g., new annotation of size 32B):
-    No
+    New string of max length of 128 bytes; new int of 4 bytes.
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
     The controller reports events on PVC while Kubelet reports events on Pod. They work independently of each other. It is recommended that CSI driver should not report duplicate information through the controller and Kubelet. For example, if the controller detects a failure on one volume, it should record just one event on one PVC. If Kubelet detects a failure, it should record an event on every pod used by the affected PVC.
 
@@ -888,7 +944,8 @@ the existing API objects?**
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
-  This feature will periodically query storage systems to get the latest volume conditions. So this will have an impact on the performance of the operations running on the storage systems.
+  On the controller side, this feature will periodically query storage systems to get the latest volume conditions. So this will have an impact on the performance of the operations running on the storage systems.
+  In Kubelet, `NodeGetVolumeStats` is an existing call, so it won't have additional performance impact.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -921,7 +978,7 @@ _This section must be completed when targeting beta graduation to a release._
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue?
       Not required until feature graduated to beta.
-      If there are log messages indicating abnormal volume conditions but there are no events reported, we can check the timestamp of the messages to see if events have disappeared based on TTL or if they are never reported. If there are problems on the storage systems but they are not reported in logs or events, we can check the logs of the storage systems to figure out why this has happened.
+      If there are log messages indicating abnormal volume conditions but there are no events reported or new metric emitted, we can check the timestamp of the messages to see if events have disappeared based on TTL or if they are never reported. If there are problems on the storage systems but they are not reported in logs or events, we can check the logs of the storage systems to figure out why this has happened.
     - Testing: Are there any tests for failure mode? If not, describe why.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
@@ -932,7 +989,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-- 20210117: Update KEP for Beta
+- 20210902: Update KEP to add volume health to Kublet metrics.
+- 20210117: Update KEP for Alpha
 
 - 20191021: KEP updated
 
