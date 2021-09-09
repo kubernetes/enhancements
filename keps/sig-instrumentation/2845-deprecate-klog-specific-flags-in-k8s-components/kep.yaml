@@ -5,12 +5,13 @@ authors:
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-arch
-status: provisional
+status: implementable
 creation-date: 2021-07-30
 reviewers:
-  - TBD
+  - pohly
 approvers:
   - ehashman
+  - dims
 
 see-also:
   - "/keps/sig-instrumentation/1602-structured-logging"

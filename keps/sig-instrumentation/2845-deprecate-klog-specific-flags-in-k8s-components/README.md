@@ -9,7 +9,6 @@
 - [Proposal](#proposal)
   - [Removed klog flags](#removed-klog-flags)
   - [Logging defaults](#logging-defaults)
-    - [Split stdout and stderr](#split-stdout-and-stderr)
     - [Logging headers](#logging-headers)
   - [User Stories](#user-stories)
     - [Writing logs to files](#writing-logs-to-files)
@@ -23,27 +22,34 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Continue supporting all klog features](#continue-supporting-all-klog-features)
   - [Release klog 3.0 with removed features](#release-klog-30-with-removed-features)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -114,16 +120,14 @@ best practices.
 ### Non-Goals
 
 * Change klog output format
+* Remove flags from klog
 
 ## Proposal
 
 I propose to remove klog specific feature flags in Kubernetes core components
-(kube-apiserver, kube-scheduler, kube-controller-manager, kubelet) and set them
-to agreed good defaults. From klog flags we would remove all flags besides "-v"
-and "-vmodule". With removal of flags to route logs based on type we want to
-change the default routing that will work as better default. Changing the
-defaults will be done in via multi release process, that will introduce some
-temporary flags that will be removed at the same time as other klog flags.
+(kube-apiserver, kube-scheduler, kube-controller-manager, kubelet) and leave
+them with defaults. From klog flags we would remove all flags besides "-v"
+and "-vmodule".
 
 ### Removed klog flags
 
@@ -159,46 +163,27 @@ This leaves that two flags that should be implemented by all log formats
 * --vmodule - control log verbosity of Info logs on per file level
 
 Those flags were chosen as they have effect of which logs are written,
-directly impacting log volume and component performance.
+directly impacting log volume and component performance. Flag `-v` will be
+supported by all logging formats, however `-vmodule` will be optional for non
+default "text" format.
 
 ### Logging defaults
 
 With removal of configuration alternatives we need to make sure that defaults
 make sense. List of logging features implemented by klog and proposed actions:
-* Routing logs based on type/verbosity - Should be reconsidered.
+* Routing logs based on type/verbosity - Supported by alternative logging formats.
 * Writing logs to file - Feature removed.
 * Log file rotation based on file size - Feature removed.
 * Configuration of log headers - Use the current defaults.
 * Adding stacktrace - Feature removed.
 
-For log routing I propose to adopt UNIX convention of writing info logs to
-stdout and errors to stderr. For log headers I propose to use the current
-default.
-
-#### Split stdout and stderr
-
-As logs should be treated as event streams I would propose that we separate two
-main streams "info" and "error" based on log method called. As error logs should
-usually be treated with higher priority, having two streams prevents single
-pipeline from being clogged down (for example
-[kubernetes/klog#209](https://github.com/kubernetes/klog/issues/209)).
-For logging formats writing to standard streams, we should follow UNIX standard
-of mapping "info" logs to stdout and "error" logs to stderr.
-
-Splitting stdout from stderr would be a breaking change in both klog and
-kubernetes components. However, we expect only minimal impact on users, as
-redirecting both streams is a common practice. In rare cases that will be
-impacted, adapting to this change should be a 1 line change. Still we will want
-to give users a proper heads up before making this change, so we will hide the
-change behind a new logging flag `--logtostdout`. This flag will be used avoid
-introducing breaking change in klog.
-
-With this flag we can follow multi release plan to minimize user impact (each
-point should be done in a separate Kubernetes release):
-1. Introduce the flag in disabled state and start using it in tests.
-1. Announce flag availability and encourage users to adopt it.
-1. Enable the flag by default and deprecate it (allows users to flip back to previous behavior)
-1. Remove the flag following the deprecation policy.
+Ability to route logs based on type/verbosity will be replaced with default
+splitting info and errors logs to stdout and stderr. We will make this change
+only in alternative logging formats (like JSON) as we don't want to introduce
+breaking change in default configuration. Splitting stream will allow treating
+info and errors with different priorities. It will unblock efforts like
+[kubernetes/klog#209](https://github.com/kubernetes/klog/issues/209) to make
+info logs non-blocking.
 
 #### Logging headers
 
@@ -288,32 +273,23 @@ all existing klog features.
 - Kubernetes logging configuration drops global state
 - Go-runner is feature complementary to klog flags planned for deprecation
 - Projects in Kubernetes Org are migrated to go-runner
-- Add --logtostdout flag to klog disabled by default
-- Use --logtostdout in kubernetes tests
+- JSON logs format splits stdout and stderr logs
 
 #### Beta
 
 - Go-runner project is well maintained and documented
 - Documentation on migrating off klog flags is publicly available
 - Kubernetes klog flags are marked as deprecated
-- Enable --logtostdout in Kubernetes components by default
 
 #### GA
 
-- Kubernetes klog specific flags are removed (including --logtostdout)
-
-### Upgrade / Downgrade Strategy
-
-N/A
-
-### Version Skew Strategy
-
-N/A
+- Kubernetes klog specific flags are removed
 
 ## Implementation History
 
 - 20/06/2021 - Original proposal created in https://github.com/kubernetes/kubernetes/issues/99270
-- 30/07/2021 - First KEP draft was created
+- 30/07/2021 - KEP draft was created
+- 26/08/2021 - Merged in provisional state
 
 ## Drawbacks
 
@@ -333,3 +309,169 @@ features makes their future removal much harder.
 ### Release klog 3.0 with removed features
 Removal of those features cannot be done without whole k8s community instead of
 just k8s core components
+
+### Upgrade / Downgrade Strategy
+
+For removal of klog specific flags we will be following K8s deprecation policy.
+There will be 3 releases between informing users about deprecation and full removal.
+During deprecation period there will not be any changes in behavior for clusters
+using deprecated features, however after removal there will not be a way to
+restore previous behavior. 3 releases should be enough heads up for users to
+make necessary changes to avoid breakage.
+
+### Version Skew Strategy
+
+Proposed changes have no impact on cluster that would require coordination.
+They only affect binary configuration and logs are written, which don't impact
+other components in cluster. Users might be required to change flags passed to
+k8s binaries, but this can be done one by one independently of other components.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [x] Other
+  - Describe the mechanism: Passing command line flag to K8s component binaries.
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+    **Yes, for apiserver it will require a restart, which can be considered a
+    control plane downtime in non highly available clusters**
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    **Yes, it will require restart of Kubelet**
+
+###### Does enabling the feature change any default behavior?
+
+No, we are not changing the default behavior.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+After deprecation period, flags will be removed and users will not be able to re-enable them.
+Only way to re-enable them would be to downgrade the cluster.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Flags cannot be reenabled without downgrading.
+
+###### Are there any tests for feature enablement/disablement?
+
+N/A, we are not introducing any new behavior.
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+For removing klog flags, we don't have any escape hatch. Such breaking changes
+will be properly announced, but users will need to make adjustments before
+deprecation period finishes.
+
+###### What specific metrics should inform a rollback?
+
+Users could observe number of logs from K8s components that they ingest. If
+there is a large drop in logs they get, whey should consider a rollback and
+validate if their logging setup supports consuming binary stdout.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+N/A, logging is stateless.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+Yes, as discussed above we will be removing klog flags.
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+
+###### How can someone using this feature know that it is working for their instance?
+
+N/A
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+N/A
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+N/A
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+To detect if user logging system is consuming all logs generated by K8s
+components it would be useful to have a metric to measure number of logs
+generated. However, this is out of scope of this proposal, as topic of measuring
+logging pipeline reliability heavily depends on third party logging systems that
+are outside K8s scope.
+
+### Dependencies
+
+N/A
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+
+### Scalability
+
+Scalability of logging pipeline is verified by existing scalability tests. We
+don't plan to make any changes to existing tests.
+
+###### Will enabling / using this feature result in any new API calls?
+
+No
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+Logs don't have a remote dependency on the API server or etcd.
+
+###### What are other known failure modes?
+
+No
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
