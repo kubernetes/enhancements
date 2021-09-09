@@ -11,6 +11,7 @@ reviewers:
   - pohly
 approvers:
   - ehashman
+  - dims
 
 see-also:
   - "/keps/sig-instrumentation/1602-structured-logging"
