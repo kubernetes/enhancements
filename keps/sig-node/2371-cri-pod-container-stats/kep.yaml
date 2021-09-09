@@ -10,20 +10,19 @@ reviewers:
   - "@mrunalp"
   - "@ehashman"
   - "@marosset"
-  - "TODO containerd reviewer"
+  - "@mikebrow"
 approvers:
   - "@dchen1107"
 prr-approvers:
   - "@ehashman"
-editor: TBD
 creation-date: 2021-01-27
-last-updated: 2021-05-12
+last-updated: 2021-09-08
 status: implementable
 stage: alpha
-latest-milestone: "v1.22"
+latest-milestone: "v1.23"
 see-also:
-  - TODO
+  - N/A
 replaces:
-  - TODO/N/A?
+  - N/A
 superseded-by:
   - N/A
