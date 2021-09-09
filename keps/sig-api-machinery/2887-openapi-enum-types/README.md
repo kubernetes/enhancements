@@ -429,7 +429,7 @@ public class Foo {
 If the `enum` field was not in the definition, the `Bar` field would be a String.
 Maintainers of the clients should include the change in a new major release.
 
-If, for some reason, a client does not want enum fields to be generated, a simple preprocessor
+If, rather than update code generator or use of the generated client, a client would prefer enum fields to be strings as they were previously, a simple preprocessor
 will be provided to prune the enum information similar to that of `api-server` (see below).
 
 ### Enum Fields Pruning for Feature Disablement
