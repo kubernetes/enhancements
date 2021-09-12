@@ -1,0 +1,41 @@
+title: Windows Conformance
+kep-number: 2578
+authors:
+  - "@vladimirvivien"
+  - "@jayunit100"
+  - "@perithompson"
+  - "@john"
+  - "@claudiubelu"
+  - "@knabben"
+  - "@ravi"
+owning-sig: sig-windows
+participating-sigs:
+  - sig-testing
+status: implementable
+creation-date: 2021-09-13
+reviewers:
+  - "@jsturtevant"
+approvers:
+  - "@marosset"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.23"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.23"
+  beta: "v1.24"
+  stable: "v1.25"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics:
