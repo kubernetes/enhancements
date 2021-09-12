@@ -25,14 +25,13 @@
   - [Mutating Buckets](#mutating-buckets)
 - [Security](#security)
       - [User Story](#user-story)
-  - [Bucket Provisioning with Service Account based Authn (for pods)](#bucket-provisioning-with-service-account-based-authn-for-pods)
+  - [Bucket Provisioning with Service Account based Auth (for pods)](#bucket-provisioning-with-service-account-based-auth-for-pods)
 - [Object Lifecycle](#object-lifecycle)
 - [COSI API Reference](#cosi-api-reference)
   - [Bucket](#bucket)
   - [BucketRequest](#bucketrequest)
   - [BucketClass](#bucketclass)
-  - [BucketAccess](#bucketaccess)
-  - [BucketAccessRequest](#bucketaccessrequest)
+  - [BucketClaim](#bucketclaim)
   - [BucketAccessClass](#bucketaccessclass)
 - [COSI Driver](#cosi-driver)
   - [COSI Driver gRPC API](#cosi-driver-grpc-api)
@@ -156,8 +155,7 @@ COSI defines 6 new API types
  - [Bucket](#bucket)
  - [BucketRequest](#bucketrequest)
  - [BucketClass](#bucketclass)
- - [BucketAccess](#bucketaccess)
- - [BucketAccessRequest](#bucketaccessrequest)
+ - [BucketClaim](#bucketclaim)
  - [BucketAccessClass](#bucketaccessclass)
 
 More information about usage of these API types is provided inline with user stories.
@@ -241,20 +239,20 @@ The following stakeholders are involved in the lifecycle of access credential ge
  - Users  - request access to buckets
  - Admins - establish cluster wide access policies
 
-Access credentials are represented by BucketAccess objects. Here are the steps for creating a BucketAccess:
+Access credentials are represented by BucketClaim objects. Here are the steps for creating a BucketClaim:
 
   ![COSI Access Credential Creation](images/create-bucket-access.jpg)
 
-###### 1. Admin creates BucketAccessClass, User requests BucketAccess to be created
+###### 1. Admin creates BucketAccessClass, User creates BucketClaim
 
-The BucketAccessClass represents a set of common properties shared by multiple BucketAccesses. It is used to specify policies for creating access credentials, and also for configuring driver-specific access parameters. More information about BucketAccessClass is [here](#bucketaccessclass)
+The BucketAccessClass represents a set of common properties shared by multiple BucketClaims. It is used to specify policies for creating access credentials, and also for configuring driver-specific access parameters. More information about BucketAccessClass is [here](#bucketaccessclass)
 
-The BucketAccessRequest is a request to create BucketAccess. This resource is designed to specify the Bucket for which the credentials provide access, and also for specifying access modes (rw, ro, wo) for that the application requires. More information about BucketAccessRequest is [here](#bucketaccessrequest)
+The BucketClaim is a claim to access the bucket. This resource is designed to specify the Bucket for which the credentials will be generated, and also for specifying access modes (rw, ro, wo) that the application requires. More information about BucketClaim is [here](#bucketclaim)
 
-BucketSecret is the name of the secret that COSI will generate with credentials to access the bucket. The same secret name has to be set in the podSpec as a projected secret volume.
+credentialsSecretName is the name of the secret that COSI will generate with credentials to access the bucket. The same secret name has to be set in the podSpec as a projected secret volume.
 
 ```
-    BucketAccessRequest - bar1                                BucketAccessClass - bac1
+    BucketClaim - bcl1                                        BucketAccessClass - bac1
     |---------------------------------------|                 |----------------------------------|
     | metadata:                             |                 | provisioner: s3.amazonaws.com    |
     |   namespace: ns1                      |                 | parameters:                      |
@@ -262,37 +260,18 @@ BucketSecret is the name of the secret that COSI will generate with credentials 
     |   bucketAccessClassName: bac1         |                 |----------------------------------|
     |   bucketRequestName: br1              |
     |   credentialsSecretName: bucketcreds1 |
+	| status:                               |
+	|   conditions:                         |
+	|   - name: AccessGranted               |
+	|     value: False                      |
     |---------------------------------------|
 ```
 
-###### 2. COSI creates an intermediate BucketAccess object
+###### 3. COSI calls driver to generate credentials
 
-The ControllerManager creates a BucketAccess object by copying fields over from both BucketAccessRequest and BucketAccessClass. This step can only proceed if the BucketAccessClass and Bucket already exist. The Bucket's `BucketReady` condition should be true. This BucketAccess object is an intermediate object, with its condition `AccessGranted` set to false and credentialsSeret pointing to a `nil` value. This indicates that access credentials are yet to be generated in the OSP.
+The COSI sidecar, which runs alongside each of the drivers, listens for BucketClaim events. All but the sidecar with the specified provisioner will ignore the BucketClaim object. Only the appropriate sidecar will make a gRPC request to its driver to generate credentials for a Bucket in the OSP.
 
-More information about BucketAccess is [here](#bucketaccess)
-
-```
-    Bucket Access - bar-$uuid
-    |--------------------------------------|
-    | name: bar-$uuid                      |
-    | spec:                                |
-    |   bucketAccessClassName: bac1        |
-    |   parameters:                        |
-    |     key: value                       |
-    |   bucket:                            |
-    |     name: br-$uuid                   |
-    |     uuid: $uuid                      |
-    | status:                              |
-    |   credentialsSecret: nil             |
-    |   conditions:                        |
-    |   - type: AccessGranted              |
-    |     status: False                    |
-    |--------------------------------------|
-```
-
-###### 3. COSI calls driver to create BucketAccess
-
-The COSI sidecar, which runs alongside each of the drivers, listens for BucketAccess events. All but the sidecar with the specified provisioner will ignore the BucketAccess object. Only the appropriate sidecar will make a gRPC request to its driver to generate credentials for a Bucket in the OSP.
+This step will only proceed if the Bucket already exist. The Bucket's `BucketReady` condition should be true. The `AccessGranted` condition in BucketClaim is set to false to indicate that access credentials are yet to be generated in the OSP.
 
 More information about COSI gRPC API is [here](#cosi-driver-grpc-api)
 
@@ -308,13 +287,14 @@ More information about COSI gRPC API is [here](#cosi-driver-grpc-api)
     | })                                       |
     |------------------------------------------|
 ```
-Each BucketAccess is meant to map to one account (or its equivalent) in the OSP with privileges to access the bucket. Once the credentials are successfully generated in the OSP, a secret by the name specified in the BucketAccessRequest is created and the credential values are stored in it. The secret resides in the namespace of the BucketAccessRequest.
 
-The sidecar sets the `AccessGranted` condition to `True` in the BucketAccess object and sets the `credentialsSecret` field to the name and namespace of the generated secret. At this point, the BucketAccess is ready to be utilized by workloads.
+Each BucketClaim is meant to map to one account (or its equivalent) in the OSP with privileges to access the bucket. Once the credentials are successfully generated in the OSP, a secret by the name specified in the BucketClaim is created and the credential values are stored in it. The secret resides in the namespace of the BucketClaim.
+
+The sidecar sets the `AccessGranted` condition to `True` in the BucketClaim object.
 
 NOTE:
  - The secret is not created until the credentials have been generated.
- - Within a namespace, one BAR and secret pair is generally sufficient, but cases which may want to control this more granularly can use multiple.
+ - Within a namespace, one BucketClaim and secret pair is generally sufficient, but cases which may want to control this more granularly can use multiple.
 
 ## Bucket Provisioning (for pods)
 
@@ -322,11 +302,11 @@ The following stakeholders are involved in the lifecycle of provisioning bucket 
 
  - Users  - specify bucket in the pod definition
 
-Once a valid BucketAccess is available, pods can use it to access buckets.
+Once a valid BucketClaim is available (`AccessGranted` is `True`), pods can use it to access buckets.
 
-###### 1. User creates pod with a projected volume pointing to the secret in BAR
+###### 1. User creates pod with a projected volume pointing to the secret in BucketClaim
 
-A BucketAccess with condition `AccessGranted` set to `True`, and pointing to a secret by the name specified in the BucketAccessRequest is required for the Pod to be started. If either the Bucket hasn't been provisioned, or the access has not been granted - the pod will not run. It will wait indefinitely for those two conditions to be true.
+The secret pointed to by the BucketClaim is required for the Pod to be started. If either the Bucket hasn't been provisioned, or the access has not been granted - the pod will not run. It will wait indefinitely for those two conditions to be true.
 
 In order to specify the bucket for the pod, a projected volume pointing to the secret mentioned above needs to be specified.
 
@@ -400,27 +380,27 @@ A Bucket with `bucketID` indicates that this Bucket has already been created out
     |-------------------------------------------------|
 ```
 
-###### 2. User requests BucketAccess to be created
+###### 2. User BucketClaim to generate credentials for that bucket
 
-Unlike the BucketAccessRequest for COSI created bucket, this BucketAccessRequest should directly reference the Bucket instead of a BucketRequest
+Unlike the BucketClaim for COSI created bucket, this BucketClaim should directly reference the Bucket instead of a BucketRequest
 
 ```
-    BucketAccessRequest - bucketRequest1
+    BucketClaim - bacl2
     |-------------------------------|
     | spec:                         |
     |   bucketName: bucketName123   |
     |                               |
     |-------------------------------|
 ```
-This BucketAccessRequest can be specified in pod definition as described in the above sections.
+This BucketClaim can be specified in pod definition as described in the above sections.
 
-Note that, as of the alpha version of COSI, there is no officially supported mechanism for utilizing buckets created by COSI in a different namespace (BucketRequest in a different namespace).
+Note that, as of the alpha version of COSI, there is no authorization mechanism to restrict users who can refer to buckets created by other namesapces. In the future, we are working on a design based on `referencePolicy`, a new development in K8s, meant to be a general approach to sharing resources across namespaces.
 
 # Usability
 
 ## Self Service
 
-Self service is easily possible with the current design as both the BucketRequest and BucketAccessRequest resources are namespace scoped, and users need not have admin privileges to create, modify and delete them.
+Self service is easily possible with the current design as both the BucketRequest and BucketClaim resources are namespace scoped, and users need not have admin privileges to create, modify and delete them.
 
 The only admin step is the creation of BucketClass and BucketAccessClass. This requirement is no different from requiring a StorageClass for provisioning PVCs. It is a well-understood pattern among kubernetes users.
 
@@ -448,10 +428,10 @@ Devops Denise would like to ensure that buckets created by her core-platform tea
 
 Assumption: Bucket has already been created by COSI in the core-platform namespace.
 
-###### 1. User creates BucketAccessRequest
+###### 1. User creates BucketClaim
 
 ```
-    BucketAccessRequest - bar2                                        BucketAccessClass - bac1
+    BucketClaim - bacl3                                               BucketAccessClass - bac1
     |-----------------------------------------------|                 |----------------------------------|
     | metadata:                                     |                 | provisioner: s3.amazonaws.com    |
     |   namespace: core-platform                    |                 | parameters:                      |
@@ -462,35 +442,12 @@ Assumption: Bucket has already been created by COSI in the core-platform namespa
     |   credentialsSecretName: bucketcreds2         |
     |-----------------------------------------------|
 ```
-###### 2. COSI creates an intermediate BucketAccess object
 
-The ControllerManager creates a BucketAccess object by copying fields over from both BucketAccessRequest and BucketAccessClass. This step can only proceed if the BucketAccessClass and Bucket already exist. The Bucket's `BucketReady` condition should be true. This BucketAccess object is an intermediate object, with its condition `AccessGranted` set to false and credentialsSeret pointing to a `nil` value. This indicates that access credentials are yet to be generated in the OSP.
+###### 2. COSI calls driver to generate credentials
 
-More information about BucketAccess is [here](#bucketaccess)
+The COSI sidecar, which runs alongside each of the drivers, listens for BucketClaim events. All but the sidecar with the specified provisioner will ignore the BucketClaim object. Only the appropriate sidecar will make a gRPC request to its driver to associate an IAM identity in the OSP with a new service account in Kubernetes.
 
-```
-    Bucket Access - bar-$uuid
-    |--------------------------------------|
-    | name: bar2-$uuid                     |
-    | spec:                                |
-    |   bucketAccessClassName: bac1        |
-    |   parameters:                        |
-    |     key: value                       |
-    |   bucket:                            |
-    |     name: br-$uuid                   |
-    |     uuid: $uuid                      |
-    | status:                              |
-    |   credentialsServiceAccount: nil     |
-    |   credentialsSecret: nil             |
-    |   conditions:                        |
-    |   - type: AccessGranted              |
-    |     status: False                    |
-    |--------------------------------------|
-```
-
-###### 3. COSI calls driver to create BucketAccess
-
-The COSI sidecar, which runs alongside each of the drivers, listens for BucketAccess events. All but the sidecar with the specified provisioner will ignore the BucketAccess object. Only the appropriate sidecar will make a gRPC request to its driver to associate an IAM identity in the OSP with a new service account in Kubernetes.
+This step can only proceed if the BucketClaim has `AccessGranted` set to `True` and Bucket's `BucketReady` set to `True`.
 
 More information about COSI gRPC API is [here](#cosi-driver-grpc-api)
 
@@ -506,25 +463,25 @@ More information about COSI gRPC API is [here](#cosi-driver-grpc-api)
     | })                                       |
     |------------------------------------------|
 ```
-Each BucketAccess is meant to map to one account (or its equivalent) in the OSP with privileges to access the bucket. Once the association between OSP IAM identity/role and Kubernetes Service Account is complete, a secret and a service account by the name specified in the BucketAccessRequest is created and are stored in the namespace of the BucketAccessRequest.
+Each BucketClaim is meant to map to one account (or its equivalent) in the OSP with privileges to access the bucket. Once the association between OSP IAM identity/role and Kubernetes Service Account is complete, a secret and a service account by the name specified in the BucketClaim is created and are stored in the namespace of the BucketClaim.
 
-The sidecar sets the `AccessGranted` condition to `True` in the BucketAccess object, sets the `credentialsSecret` field to the name and namespace of the generated secret, and sets the `credentialsServiceAccount` fiedl to the name and namespace of the generated service account. At this point, the BucketAccess is ready to be utilized by workloads.
+The sidecar sets the `AccessGranted` condition to `True` in the BucketClaim object. At this point, the BucketClaim is ready to be utilized by workloads.
 
 NOTE: The secret is not created until the Service Account mapping is complete.
 
-## Bucket Provisioning with Service Account based Authn (for pods)
+## Bucket Provisioning with Service Account based Auth (for pods)
 
 The following stakeholders are involved in the lifecycle of provisioning bucket for pods:
 
  - Users  - specify bucket in the pod definition
 
-Once a valid BucketAccess is available, pods can use it to access buckets.
+Once a valid BucketClaim is available, pods can use it to access buckets.
 
-###### 1. User creates pod with a projected volume pointing to the secret in BAR
+###### 1. User creates pod with a projected volume pointing to the secret in BucketClaim
 
-A BucketAccess with condition `AccessGranted` set to `True`, and pointing to a secret by the name specified in the BucketAccessRequest is required for the Pod to be started. If either the Bucket hasn't been provisioned, or the access has not been granted - the pod will not run. It will wait indefinitely for those two conditions to be true.
+A BucketClaim with condition `AccessGranted` set to `True` is required for the Pod to be started. If either the Bucket hasn't been provisioned, or the access has not been granted - the pod will not run. It will wait indefinitely for those two conditions to be true.
 
-In order to specify the bucket for the pod, a projected volume pointing to the secret mentioned above needs to be specified, along with the service account pointing to the one specified in the BucketAccessRequest.
+In order to specify the bucket for the pod, a projected volume pointing to the secret mentioned above needs to be specified, along with the service account pointing to the one specified in the BucketClaim.
 
 ```
     PodSpec - pod1
@@ -580,23 +537,15 @@ The following resources are created by an admin
 The following resources are created by a user. They are created with a reference to their corresponding class objects:
 
 - BucketRequest -> BucketClass
-- BucketAccessRequest -> BucketAccessClass, BucketRequest
-
-Note that a BucketAccessRequest also must point to a BucketRequest.
+- BucketClaim -> BucketRequest, Bucket, BucketAccessClass
 
 The COSI controller responds by creating the following objects
 
 - BucketRequest <-> Bucket (1:1)
-- BucketAccessRequest <-> BucketAccess (1:1)
-
-In addition, the BucketAccess will point to the Bucket pointed to by the specified BucketRequest
-
-- BucketAccess -> Bucket
+- BucketClaim -> Bucket
 
 Notes:
 
- - The resulting BucketAccess will point to the same Bucket pointed to by the Bucket Request.
- - The BucketClass and BucketAccessClass objects are copied into Bucket and BucketAccess respectively. 
  - There are **NO** cycles in the relationship graph of the above mentioned API objects.
  - Mutations are not supported in the API.
 
@@ -605,11 +554,11 @@ When a user deletes the BucketRequest, then depending on the DeletionPolicy, the
 - If deletionPolicy is Delete, then Bucket deletion is also triggered. 
 - If deletionPolicy is Retain, then Bucket is left as is, but the BucketRequest is deleted.
 
-Only when all accessors (BucketAccess) of the Bucket are deleted, is the Bucket itself cleaned up. An orphaned Bucket can be "recovered"  by manually creating a new BucketRequest object that points to the orphaned Bucket. This manual style of associating BucketRequests to Buckets will only succeed if the Bucket is not already bound to a different BucketRequest.
+Only when all accessors (BucketClaims) of the Bucket are deleted, is the Bucket itself cleaned up. An orphaned Bucket can be "recovered"  by manually creating a new BucketRequest object that points to the orphaned Bucket. This manual style of associating BucketRequests to Buckets will only succeed if the Bucket is not already bound to a different BucketRequest.
 
-When a user deletes a BucketAccessRequest, the corresponding BucketAccess is also deleted. In addition, the secret pointed to by the BucketAccess is also deleted. If a pod has that secret mountedwhen delete is called, then the secret will not be deleted, but will instead have its deletionTimestamp set. In this way, access to a Bucket is preserved until the application pod dies. 
+When a user deletes a BucketClaim, the corresponding secret/serviceaccount are also deleted. If a pod has that secret mounted when delete is called, then the secret will not be deleted, but will instead have its deletionTimestamp set. In this way, access to a Bucket is preserved until the application pod dies. 
 
-When an admin deletes any of the Class objects, it does not affect existing Buckets and BucketAccesses as they store a copy of the fields in the corresponding class objects. If a Bucket or BucketAccess is manually deleted by an admin, then the cluster is considered to be in an invalid state. Manual recovery is possible if data is not already lost.  
+When an admin deletes any of the Class objects, it does not affect existing Buckets as they store a copy of the fields in the class object. If a Bucket  is manually deleted by an admin, then the cluster is considered to be in an invalid state. Manual recovery is possible if data is not already lost.  
 
 # COSI API Reference
 
@@ -738,58 +687,16 @@ BucketClass {
 }
 ```
 
-## BucketAccess
+## BucketClaim
 
-Resource to represent credentials for a particular Bucket in OSP. BucketAccesses are cluster scoped.
+A claim to access a Bucket. BucketClaim is a namespaced resource
 
 ```yaml
-BucketAccess {
+BucketClaim {
   TypeMeta
   ObjectMeta
 
-  Spec BucketAccessSpec {
-    // Bucket is the reference to the Bucket for which credentials
-    // are generated
-    Bucket corev1.ObjectReference
-
-    // Name of the BucketAccessClass specified in the BucketAccessRequest
-    BucketAccessClassName string
-
-    // Name of the BucketAccessRequest that resulted in the creation of this BucketAccess
-    BucketAccessRequest corev1.ObjectReference
-
-    // Parameters is an opaque map for passing in configuration to a driver
-    // for creating access credentials
-    // +optional
-    Parameters map[string]string
-  }
-
-  Status BucketAccessStatus {
-    // Possible Conditions:
-    // AccessGranted indicates that the credentials provisioned have been
-    // granted access to the bucket
-    Conditions []metav1.ObjectReference
-
-    // AccountID is the unique ID for the account in the OSP
-    AccountID string
-
-    // CredentialsSecret is the secret which holds information the
-    // accessKey and secretKey values of the granted credentials
-    CredentialsSecret corev1.ObjectReference
-  }
-}
-```
-
-## BucketAccessRequest
-
-A request to create credentials for a Bucket. BucketAccessRequest is a namespaced resource
-
-```yaml
-BucketAccessRequest {
-  TypeMeta
-  ObjectMeta
-
-  Spec BucketAccessRequestSpec {
+  Spec BucketClaimSpec {
     // BucketRequestName is the name of the BucketRequest.
     // Exactly one of BucketRequestName or BucketName must be set.
     // +optional
@@ -810,21 +717,23 @@ BucketAccessRequest {
     CredentialsSecretName string
   }
 
-  Status BucketAccessRequestStatus {
+  Status BucketClaimStatus {
     // Possible Conditions:
     // AccessGranted indicates that the credentials provisioned have been
     // granted access to the bucket
     Conditions []metav1.ObjectReference
 
-    // BucketAccessName is the name of the provisioned BucketAccess in response
-    // to this BucketAccessRequest
-    BucketAccessName string
+    // BucketName is the name of the bucket for which credentials are being generated
+    BucketName string
+	
+    // AccountID is the unique ID for the account in the OSP
+    AccountID string
   }
 ```
 
 ## BucketAccessClass
 
-Resouce for configuring common properties for multiple BucketAccesses. BucketAccessClass is a clustered resource
+Resouce for configuring common properties for multiple BucketClaims. BucketAccessClass is a clustered resource
 
 ```yaml
 BucketAccessClass {
@@ -848,7 +757,7 @@ The sidecar uses the unique id to direct requests to the appropriate drivers. Mu
 
 #### ProvisionerGetInfo
 
-This gRPC call responds with the name of the provisioner. The name is used to identify the appropriate driver for a given BucketRequest or BucketAccessRequest.
+This gRPC call responds with the name of the provisioner. The name is used to identify the appropriate driver for a given BucketRequest or BucketClaim.
 
 ```
     ProvisionerGetInfo
@@ -883,7 +792,7 @@ The returned `bucketID` should be a unique identifier for the bucket in the OSP.
 
 #### ProvisionerGrantBucketAccess
 
-This gRPC call creates a set of access credentials for a bucket. This api must be idempotent. The input to this call is the id of the bucket, a set of opaque parameters and name of the account. This `accountName` field is used to ensure that multiple requests for the same BucketAccessRequest do not result in multiple credentials.
+This gRPC call creates a set of access credentials for a bucket. This api must be idempotent. The input to this call is the id of the bucket, a set of opaque parameters and name of the account. This `accountName` field is used to ensure that multiple requests for the same BucketClaim do not result in multiple credentials.
 
 The returned `accountID` should be a unique identifier for the account in the OSP. This value could be the name of the account too. This value will be used by COSI to make all subsequent calls related to this account.
 
