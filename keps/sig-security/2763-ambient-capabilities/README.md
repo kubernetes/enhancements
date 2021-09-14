@@ -47,7 +47,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -70,7 +70,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Running containers as non-root has been a long recommended best-practice in kubernetes and we have published [blogs](https://kubernetes.io/blog/2018/07/18/11-ways-not-to-get-hacked/#8-run-containers-as-a-non-root-user) recommending this best practice. In addition to running as non-root it is also recommended that all capabilities other than the ones required are dropped from the container. Since most containers don’t require any capabilities this guidance becomes easy to follow.
 
-NOTE: In the example below net_bind_service is only userd for demonstration purposes, in no way are we scoping this KEP just to net_bind_service. See the [User Stories (Optional)](#user-stories-optional) section below for other cases where ambient capabilities can help.
+NOTE: In the example below net_bind_service is only used for demonstration purposes, in no way are we scoping this KEP just to net_bind_service. See the [User Stories (Optional)](#user-stories-optional) section below for other cases where ambient capabilities can help.
 
 **The following works:-**
 ```Dockerfile
@@ -108,7 +108,7 @@ spec:
 kubectl apply -f pod.yaml
 pod/static-web created
 
-kubectl get pods                                                        
+kubectl get pods
 NAME         READY   STATUS    RESTARTS   AGE
 static-web   1/1     Running   0          10s
 ```
@@ -239,7 +239,7 @@ NAME         READY   STATUS    RESTARTS   AGE
 static-web   1/1     Running   0          9s
 ```
 
-**Note:** While applying the capabilities to the binary during the image build is a work-around, it should be noted that now even if we switched back to port 8080 in the above example we would have to add the capability in the container's `SecurityContext`. 
+**Note:** While applying the capabilities to the binary during the image build is a work-around, it should be noted that now even if we switched back to port 8080 in the above example we would have to add the capability in the container's `SecurityContext`.
 
 **If we update the port to non-privileged but use the setcap image:-**
 
@@ -325,7 +325,7 @@ COPY --from=0 /binaryThatIWantToRunAsNonRoot /binaryThatIWantToRunAsNonRoot
 
 Here we override the binary in the original image with a setcaped binary and push the image to our private repository. While this is a workaround to the problem if you don’t control the build, you are now forced to effectively maintain another copy of the image.
 
-The way capabilities are today designed is that they are effective in limiting the capabilities of a user but we lack the ability to grant capabilities to a user unless we also control the build of an image. 
+The way capabilities are today designed is that they are effective in limiting the capabilities of a user but we lack the ability to grant capabilities to a user unless we also control the build of an image.
 
 ### Goals
 
@@ -356,6 +356,7 @@ _Blocking for Alpha._
 Is there enough demand for this feature today?
 
 <<[/UNRESOLVED]>>
+This might be useful for those who do their own kubernetes installation, and put CNI plugins in the pod, which is a very common practice nowadays. A rarer practice is to load BPF also for networking or security tracking (CAP_BPF is available since linux kernel version 5.8), [for example KubeArmor loads BPF for security purpose (<a href="https://github.com/kubearmor/KubeArmor">https://github.com/kubearmor/KubeArmor</a>)]. There are cases where system components are deployed in Pod which even load a kernel modules. CAP_PTRACE could be used for debugging purpose and CAP_AUDIT could be used by intrusion detection systems.
 
 #### Story 1
 As a security conscious user I should be able to run my container as non-root and add the minimum set of capabilities required for it to function even when I do not control how the image is built.
@@ -394,7 +395,7 @@ There are 2 options here:-
 
   :+1: No new field needs to added to the K8S API Capabilities object.
 
-  :-1: How would we tell the difference at API validation time? I assume we'd have to look at mustRunAsNonRoot, because the apiserver has no idea whether a textual runAsUser is root or not. mustRunAsNonRoot it designed to fail at the last minute, in the Kubelet, which is bad UX. This makes this approach very awkward. Difrrent behavior for root vs non-root might be confusing for users.
+  :-1: How would we tell the difference at API validation time? I assume we'd have to look at mustRunAsNonRoot, because the apiserver has no idea whether a textual runAsUser is root or not. mustRunAsNonRoot it designed to fail at the last minute, in the Kubelet, which is bad UX. This makes this approach very awkward. Different behavior for root vs non-root might be confusing for users.
 
   :-1: Since we are changing the default behavior for non-root containers we might break existing user containers. Issues with linux capabilities have proven themselves to be very hard to debug in the past.
 
@@ -420,7 +421,7 @@ There are 2 options here:-
 
   :+1: Since this is a new field existing user workloads are unaffected by this change.
 
-  :+1: The capabilities struct only really translates to Linux Capabilities, adding a new field does make it easier for users who understand Linux capabilities to confiure them.
+  :+1: The capabilities struct only really translates to Linux Capabilities, adding a new field does make it easier for users who understand Linux capabilities to configure them.
 
   :+1: Ambient caps are useful for root containers as well.A root process can control what caps it gives to child processes that are running as non-root. The capabilities list list for these non-root processes may not be the same as the root caps in Add.
 
@@ -462,12 +463,12 @@ type Capability struct {
 }
 ```
 
-Adding apabilities to the `ambient` field in the `capabilities` field of the containers `securityContext` will directly update this field, and these changes would live in the [convertToRuntimeCapabilities](https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/pkg/kubelet/kuberuntime/security_context.go#L121:6) function.
+Adding capabilities to the `ambient` field in the `capabilities` field of the containers `securityContext` will directly update this field, and these changes would live in the [convertToRuntimeCapabilities](https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/pkg/kubelet/kuberuntime/security_context.go#L121:6) function.
 
 
 ### Changes to containerd/containerd (https://github.com/containerd/containerd)
 
-`containerd` clears all ambient capabilities on container creation. See [this](https://github.com/containerd/containerd/blob/055c801ededcb7a5e82f47bdeed555cdf6c64bd8/pkg/cri/server/container_create_linux.go#L233) link for details. 
+`containerd` clears all ambient capabilities on container creation. See [this](https://github.com/containerd/containerd/blob/055c801ededcb7a5e82f47bdeed555cdf6c64bd8/pkg/cri/server/container_create_linux.go#L233) link for details.
 
 ```go
 // Clear all ambient capabilities. The implication of non-root + caps
@@ -480,7 +481,7 @@ specOpts = append(specOpts,
 )
 ```
 
-We would need to update code at that link to add the ambient capabilities by calling the [WithAmbientCapabilities](https://github.com/containerd/containerd/blob/ab963e1cc16a845567a0e3e971775c29c701fcf8/oci/spec_opts.go#L858) function instead of the [WithoutAmbientCapabilities](https://github.com/containerd/containerd/blob/04f73e3f8a097d95111f8419fa136d196b3a8725/pkg/cri/opts/spec_linux.go#L354) function. 
+We would need to update code at that link to add the ambient capabilities by calling the [WithAmbientCapabilities](https://github.com/containerd/containerd/blob/ab963e1cc16a845567a0e3e971775c29c701fcf8/oci/spec_opts.go#L858) function instead of the [WithoutAmbientCapabilities](https://github.com/containerd/containerd/blob/04f73e3f8a097d95111f8419fa136d196b3a8725/pkg/cri/opts/spec_linux.go#L354) function.
 
 ### Order of changes
 We propose that the changes be made in the following order:
@@ -523,8 +524,8 @@ required to enable ambient capabilities is in place. It includes the following w
     - [ ] [User Stories (Optional)](#user-stories-optional)
     - [ ] [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1)
 
-2. AmbientCapabilities feature-gate added in default off configuration(feature is opt-in by default)
-3. Changes to CRI API as described in section [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1alpha2) implemented.
+2. AmbientCapabilities feature-gate is added in to the default configuration as disabled(feature is opt-in by default)
+3. Changes to CRI API as described in section [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1alpha2) are implemented.
 4. A version of containerd and CRI-O that properly sets the ambient capabilities as described in section [Changes to containerd/containerd (<a href="https://github.com/containerd/containerd">https://github.com/containerd/containerd</a>)](#changes-to-containerdcontainerd-httpsgithubcomcontainerdcontainerd) available.
 5. Changes to k8s API as described in [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1) implemented.
 6. Update to kubelet code to sets ambient capabilities and these changes are hidden behind the feature-gate.
@@ -532,7 +533,7 @@ required to enable ambient capabilities is in place. It includes the following w
 
 #### Beta
 
-While alpha was focusd on setting up the infra for this feature, beta will focus on the safe enablement.
+While alpha was focused on setting up the infra for this feature, beta will focus on the safe enablement.
 
 1. Collect feedback from Alpha and use information to guide the following sections need to be resolved before Beta.
     - [] [Restricted ambient capabilities.](#restricted-ambient-capabilities)
@@ -718,10 +719,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
