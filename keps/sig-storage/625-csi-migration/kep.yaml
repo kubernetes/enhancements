@@ -44,7 +44,12 @@ feature-gates:
     - kube-controller-manager
     - kubelet
     - kube-scheduler
-  - name: CSIMigration{cloud-provider}
+  - name: CSIMigration{vendor}
+    components:
+    - kube-controller-manager
+    - kubelet
+    - kube-scheduler
+  - name: InTreePlugin{vendor}Unregister
     components:
     - kube-controller-manager
     - kubelet

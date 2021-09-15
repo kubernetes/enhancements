@@ -194,20 +194,52 @@ you need any help or guidance.
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: CSIMigration, CSIMigration{cloud-provider}
+    - Feature gate name: CSIMigration, CSIMigration{vendor}, InTreePlugin{vendor}Unregister
     - Components depending on the feature gate: kubelet, kube-controller-manager, kube-scheduler
     - Please refer to this design doc on the [Step to enable the feature](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md#upgradedowngrade-migrateunmigrate-scenarios)
 
 * **Does enabling the feature change any default behavior?**
-  Yes and No. If only `CSIMigration` feature flag is enabled, nothing will change on the cluster behavior. However, if `CSIMigration` && `CSIMigration{cloud-provider}` are both enabled, the behavior will change. The in-tree volume plugin that the cloud-provider use will be redirect to use the corresponding CSI driver. But from a user perspective, nothing will be noticed.
+
+  Yes and No.
+  - If only `CSIMigration` feature flag is enabled, nothing will change on the cluster behavior. `CSIMigration`
+  is a big umbrella feature gate. It takes control of vendor-agnostic controllers. Without this feature gate on,
+  the entire CSI Migration feature is disabled.
+  - If only `CSIMigration{vendor}` feature flag is enabled, nothing will change on the cluster behavior.
+  This feature gate controls the vendor-specific logic.
+  - Both `CSIMigration` and `CSIMigration{vendor}` need to be enabled on Kubernetes Components, 
+  including scheduler, KCM, Kubelet, for CSI Migration to take effect.
+  - `InTreePlugin{vendor}Unregister` is a standalone feature gate that can be enabled and disabled
+  even out of CSI Migration scope. The name speaks for itself, when enabled, the component will not 
+  register the specific in-tree storage plugin to the supported list. If the cluster operator only enables this flag, 
+  they will get an error from PVC saying it cannot find the plugin when the plugin is used. The cluster operator
+  may want to enable this regardless of CSI Migration if they do not want to support the legacy in-tree APIs and
+  only support CSI going forward.
+  - The table below assumes `CSIMigration` is enabled whenever `CSIMigration{vendor}` is on, since if not, there will 
+  be no effect to the behaviors. The table does not take into account feature gates on kube-scheduler, the feature gates
+  for it should be enabled align with kube-controller-manager otherwise the volume topology && volume limit function could
+  be impacted.
+  
+| Kube-Controller-Manager| Kubelet                                            | Expected Behavior Change                                                 |
+|------------------------|----------------------------------------------------|--------------------------------------------------------------------------|
+| `CSIMigration{vendor}` On | `CSIMigration{vendor}` On                       | Fully migrated. All operations serviced by CSI plugin. From user perspective, nothing changed.                    |
+| `CSIMigration{vendor}` On | `CSIMigration{vendor}` Off                      | `InTreePlugin{vendor}Unregister` enabled on Kubelet: Broken state, Provision/Delete/Attach/Detach by CSI, Mount/Unmount not function. `InTreePlugin{vendor}Unregister` enabled on KCM: Provision/Deletion/Attach/Detach by CSI, Mount/Unmount by in-tree. `InTreePlugin{vendor}Unregister` disabled at all: Provision/Deletion by CSI, other operations by In-tree.|
+| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` On                      | Broken state. Operations like volume provision will still work. But operations like volume Attach/Mount will be broken                        |
+| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` Off                     | No behavior change        |
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes - can be disabled by disabling feature flags. 
+  - Yes - can be disabled by disabling feature flags. 
   Please refer to the [upgrade/downgrade](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md#upgradedowngrade-migrateunmigrate-scenarios) sections on how to downgrade the cluster to roll back the enablement.
 
+  - For `InTreePlugin{vendor}Unregister`, yes we can disable the feature gate once we enabled. This will register the corresponding 
+  in-tree storage plugin into the supported list and user will be able to use it to do all storage related operations again.
+
 * **What happens if we reenable the feature if it was previously rolled back?**
-The CSI migration feature will start to work again. The out-of-tree CSI driver will start to work instead of in-tree plugin again.
+- The CSI migration feature will start to work again. The out-of-tree CSI driver will start to work instead of in-tree plugin again.
+- For `InTreePlugin{vendor}Unregister`, if we enabled the feature the plugin will not be supported. And when we reenable it, it will 
+again unregister the storage plugin at the component restart time and then the specific storage plugin will become unavailable again
+to the end user. For any workload that is already using the in-tree plugin, running workloads will not be impacted. But new operations
+like Provision/Deletion/Attach/Detach/Mount/Unmount will not be available if CSI migration for the specific plugin is not enabled.
 
 * **Are there any tests for feature enablement/disablement?**
 We have CSI Migration e2e test for each plugin that are implemented and maintained by each driver maintainer. 
@@ -229,11 +261,21 @@ Specifically, for each in-tree plugin corresponding CSI drivers, it will have
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**  
-  - The rollout can fail if the ordering of `CSIMigration{cloud-provider}` flag was wrongly enabled on kubelet and kube-controller-manager. Specifically, if on the node side kubelet enables the flag and control-plane side the flag is not enabled, then the volume will not be able to be mounted successfully. 
-    - For workloads that running on nodes have not enable CSI migration, those pods will not be impacted. 
-    - For any pod that is being deleted by node drain before turning on migration and created on new node that has CSI migration turned on, the volume mount will fail and pod will not come up correctly.
-  - Additionally, CSI Migration has a strong dependency on CSI drivers. So if the in-tree corresponding CSI driver is not properly installed, any volume related operation could fail.
-  - If feature parity is not guaranteed or if any bug exists in the CSI driver/csi-translation-lib, the rollout could fail because pod using the PV could fail to execute provision/delete/attach/detach/mount/unmount/resize operations depend on the bug itself.
+  For `CSIMigration` and `CSIMigration{vendor}`
+    - The rollout can fail if the ordering of `CSIMigration{vendor}` flag was wrongly enabled on kubelet and kube-controller-manager. Specifically, if on the node side kubelet enables the flag and control-plane side the flag is not enabled, then the volume will not be able to be mounted successfully. 
+      - For workloads that running on nodes have not enable CSI migration, those pods will not be impacted. 
+      - For any pod that is being deleted by node drain before turning on migration and created on new node that has CSI migration turned on, the volume mount will fail and pod will not come up correctly.
+    - Additionally, CSI Migration has a strong dependency on CSI drivers. So if the in-tree corresponding CSI driver is not properly installed, any volume related operation could fail.
+    - If feature parity is not guaranteed or if any bug exists in the CSI driver/csi-translation-lib, the rollout could fail because pod using the PV could fail to execute provision/delete/attach/detach/mount/unmount/resize operations depend on the bug itself.
+
+  For `InTreePlugin{vendor}Unregister`
+    - rollout of the feature gate will not fail. The component(kube-controller-manager, kubelet) will be able to start
+    and running without failures. 
+    - However, it can impact running workloads when the feature is enabled on clusters that still have running workloads using the 
+    specific in-tree storage plugin, the further operations related to that volume(unmount/detach/delete) will all fail when CSI migration for that 
+    plugin is not enabled. This is expected and user should not turn on this feature gate without CSI migration when there are still workloads using the 
+    corresponding in-tree storage plugin.
+    - There will be no impact when the feature is disabled at cluster runtime with or without workloads.
 
 * **What specific metrics should inform a rollback?**
   We have metrics on the CSI sidecar side called `csi_operation_duration_seconds` and core k8s metrics on both kube-controller-manager and kubelet side called `storage_operation_duration_seconds`. 
@@ -250,7 +292,7 @@ For GA, we require such test exists in each driver's test CI.
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
 There will not be API removal in CSI migration itself. But eventually when CSI migration is all finished. We will plan to remove all in-tree plugins.
-So we will have in-tree plugin deprecated when CSIMigration{cloud-provider} goes to beta. And code removal will be required eventually.
+So we will have in-tree plugin deprecated when CSIMigration{vendor} goes to beta. And code removal will be required eventually.
 In addition, some CSI drivers are not able to maintain 100% backwards compatibility, so those drivers need to deprecate certain behaviors. 
 - vSphere [kubernetes#98546](https://github.com/kubernetes/kubernetes/pull/98546).
 - Azure drivers links TBD.
