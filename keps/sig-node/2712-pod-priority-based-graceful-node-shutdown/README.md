@@ -188,16 +188,16 @@ Same as the graceful shutdown KEP.
 ## Design Details
 
 The configuration will be controlled by a new Kubelet Config setting,
-`kubeletConfig.PodPriorityShutdownGracePeriods`:
+`kubeletConfig.ShutdownGracePeriodByPodPriority`:
 
 ```
-type PodPriorityShutdownGracePeriod struct {
+type ShutdownGracePeriodByPodPriority struct {
 	Priority int32
 	ShutdownGracePeriodSeconds int64
 }
 
 type KubeletConfiguration struct {
-  PodPriorityShutdownGracePeriods []PodPriorityShutdownGracePeriod
+  ShutdownGracePeriodByPodPriority []ShutdownGracePeriodByPodPriority
 }
 ```
 
@@ -292,7 +292,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: `PodPriorityBasedGracefulNodeShutdown`
+    - Feature gate name: `GracefulNodeShutdownBasedOnPodPriority`
     - Components depending on the feature gate:
       - `kubelet`
   - [ ] Other
