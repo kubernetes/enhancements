@@ -155,7 +155,7 @@ with their maturity tracking the maturity level of the PodSecurity feature.
 in admission.
 
 **Audit:** Pods and [templated pods] meeting the requirements of the audit policy level are ignored.
-Violations are recorded in a `pod-security.kubernetes.io/audit-violations: <violation>` [audit
+Violations are recorded in a `pod-security.kubernetes.io/audit: <violation>` [audit
 annotation](#audit-annotations) on the audit event for the request. Audit annotations will **not**
 be applied to the pod objects themselves, as doing so would violate the non-mutating requirement.
 
@@ -628,19 +628,9 @@ The metric will use the following labels:
 
 The following audit annotations will be added:
 
-1. `pod-security.kubernetes.io/enforce-policy = "<policy_level>:<version>"` - Record which policy was evaluated
-   for enforcing mode.
-    - version is `latest` or a specific version in the form `v1.x`
-    - This annotation is only recorded when a policy is enforced. Specifically, it will not be
-      recorded for irrelevant updates or exempt requests.
-2. `pod-security.kubernetes.io/audit-violations = "<policy violations>"` - When an audit mode policy is violated, record
+1. `pod-security.kubernetes.io/audit = "<policy violations>"` - When an audit mode policy is violated, record
    the violation messages here.
-3. `pod-security.kubernetes.io/exempt = "namespace" | "user" | "runtimeClass"` - For exempt requests, record the parameter
-   that triggered the exemption here. If multiple parameters are exempt, the first in this ordered list will be returned:
-   - namespace
-   - user
-   - runtimeClass
-4. `pod-security.kubernetes.io/error = "<evaluation errors>"` - Errors evaluating policies are recorded here
+2`pod-security.kubernetes.io/error = "<evaluation errors>"` - Errors evaluating policies are recorded here
 
 Violation messages returned by enforcing policies are included in the `responseStatus` portion of audit events in the `ResponseComplete` stage.
 
