@@ -385,11 +385,11 @@ One risk of adding this feature is that it could be used to give non-root users 
 _Blocking for Alpha._
 
 There are 2 options here:-
-- Option 1: Reuse Add field in [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
+- **Option 1:** Reuse Add field in [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
 
   When a capability gets added explicitly to a non-root container it also gets added to the ambient set in addition to getting added to inheritable, permitted, bounding and effective sets. The default capabilities are not added to the ambient set.
 
-  Pros and Cons
+  **Pros and Cons**
 
   :+1: Simple add and drop API is easy to use from a user perspective.
 
@@ -399,7 +399,7 @@ There are 2 options here:-
 
   :-1: Since we are changing the default behavior for non-root containers we might break existing user containers. Issues with linux capabilities have proven themselves to be very hard to debug in the past.
 
-- Option 2: Add new field to [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
+- **Option 2:** Add new field to [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
 
   When a capability is added using this field only then does it get added to the ambient set in addition to inheritable, permitted, bounding and effective sets. The behavior is consistent for root and non-root containers.
 
@@ -417,13 +417,13 @@ There are 2 options here:-
   }
   ```
 
-  Pros and Cons
+  **Pros and Cons**
 
   :+1: Since this is a new field existing user workloads are unaffected by this change.
 
   :+1: The capabilities struct only really translates to Linux Capabilities, adding a new field does make it easier for users who understand Linux capabilities to configure them.
 
-  :+1: Ambient caps are useful for root containers as well.A root process can control what caps it gives to child processes that are running as non-root. The capabilities list list for these non-root processes may not be the same as the root caps in Add.
+  :+1: Ambient caps are useful for root containers as well. A root process can control what caps it gives to child processes that are running as non-root. The capabilities list list for these non-root processes may not be the same as the root caps in Add.
 
   :-1: Requires changes to the K8S API Capabilities object.
 
