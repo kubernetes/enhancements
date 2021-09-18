@@ -58,8 +58,7 @@ staging area.
 For each artifact, there will be a configuration file checked into this repository. When a
 project wants to promote an image, they will file a PR in this repository to update their
 image promotion configuration to promote an artifact from staging to production. Once this
-PR is approved, automation that is running in the k8s project infrastructure (e.g. 
-https://github.com/GoogleCloudPlatform/k8s-container-image-promoter) will pick up this new
+PR is approved, automation that is running in the k8s project infrastructure (built using our [artifact promotion tooling][promo-tools]) will pick up this new
 configuration file and copy the relevant bits out to the production serving locations.
 
 Importantly, if a project needs to roll-back or remove an artifact, the same process will
@@ -128,3 +127,5 @@ manage the images for a Kubernetes release.
   mirrors?  What is the performance impact (latency, throughput) of serving
   everything from GCLB?  Is GCLB reachable from everywhere (including China)?
   Can we support private mirrors (i.e. non-coordinated mirrors)?
+
+[promo-tools]: https://sigs.k8s.io/promo-tools
