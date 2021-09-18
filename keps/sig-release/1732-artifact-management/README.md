@@ -14,9 +14,9 @@
 <!-- /toc -->
 
 ## Summary
+
 This document describes how official artifacts (Container Images, Binaries) for the Kubernetes
 project are managed and distributed.
-
 
 ## Motivation
 
@@ -29,8 +29,9 @@ and that anyone in the project is capable (if given the right authority) to dist
 ### Goals
 
 The goals of this process are to enable:
-  * Anyone in the community (with the right permissions) to manage the distribution of Kubernetes images and binaries.
-  * Fast, cost-efficient access to artifacts around the world through appropriate mirrors and distribution
+
+- Anyone in the community (with the right permissions) to manage the distribution of Kubernetes images and binaries
+- Fast, cost-efficient access to artifacts around the world through appropriate mirrors and distribution
 
 This KEP will have succeeded when artifacts are all managed in the same manner and anyone in the community
 (with the right permissions) can manage these artifacts.
@@ -66,6 +67,7 @@ occur, so that the promotion tool needs to be capable of deleting images and art
 well as promoting them.
 
 ### HTTP Redirector Design
+
 To facilitate world-wide distribution of artifacts from a single (virtual) location we will
 ideally run a replicated redirector service in the United States, Europe and Asia.
 Each of these redirectors
@@ -75,6 +77,7 @@ address and a dns record indicating their location (e.g. `europe.artifacts.k8s.i
 We will use Geo DNS to route requests to `artifacts.k8s.io` to the correct redirector. This is necessary to ensure that we always route to a server which is accessible no matter what region we are in. We will need to extend or enhance the existing DNS synchronization tooling to handle creation of the GeoDNS records.
 
 #### Configuring the HTTP Redirector
+
 THe HTTP Redirector service will be driven from a YAML configuration that specifies a path to mirror
 mapping. For now the redirector will serve content based on continent, for example:
 
@@ -96,33 +99,33 @@ manage the images for a Kubernetes release.
 
 ### Milestone 0 (MVP): In progress
 
-(Described in terms of kops, our first candidate; other candidates welcome!)
+(Described in terms of kOps, our first candidate; other candidates welcome!)
 
-* k8s-infra creates a "staging" GCS bucket for each project
+- k8s-infra creates a "staging" GCS bucket for each project
   (e.g. `k8s-artifacts-staging-<project>`) and a "prod" GCS bucket for promoted
   artifacts (e.g. `k8s-artifacts`, one bucket for all projects).
-* We grant write-access to the staging GCS bucket to trusted jobs / people in
-  each project (e.g. kops OWNERS and prow jobs can push to
+- We grant write-access to the staging GCS bucket to trusted jobs / people in
+  each project (e.g. kOps OWNERS and prow jobs can push to
   `k8s-artifacts-staging-kops`).  We can encourage use of CI & reproducible
   builds, but we do not block on it.
-* We grant write-access to the prod bucket only to the infra-admins & the
+- We grant write-access to the prod bucket only to the infra-admins & the
   promoter process.
-* Promotion of artifacts to the "prod" GCS bucket is via a script / utility (as
+- Promotion of artifacts to the "prod" GCS bucket is via a script / utility (as
   we do today).  For v1 we can promote based on a sha256sum file (only copy the
   files listed), similarly to the image promoter.  We will experiment to develop
   that script / utility in this milestone, along with prow jobs (?) to publish
   to the staging buckets, and to figure out how best to run the promoter.
   Hopefully we can copy the image-promotion work closely.
-* We create a bucket-backed GCLB for serving, with a single url-map entry for
+- We create a bucket-backed GCLB for serving, with a single url-map entry for
   `binaries/` pointing to the prod bucket.  (The URL prefix gives us some
   flexibility to e.g. add dynamic content later)
-* We create the artifacts.k8s.io DNS name pointing to the GCLB. (Unclear whether
+- We create the artifacts.k8s.io DNS name pointing to the GCLB. (Unclear whether
   we want one for staging, or just encourage pulling from GCS directly).
-* Projects start using the mirrors e.g. kops adds the
+- Projects start using the mirrors e.g. kOps adds the
   https://artifacts.k8s.io/binaries/kops mirror into the (upcoming) mirror-list
-  support, so that it will get real traffic but not break kops should this
+  support, so that it will get real traffic but not break kOps should this
   infrastructure break
-* We start to collect data from the GCLB logs.  Questions we would like to
+- We start to collect data from the GCLB logs.  Questions we would like to
   understand: What are the costs, and what would the costs be for localized
   mirrors?  What is the performance impact (latency, throughput) of serving
   everything from GCLB?  Is GCLB reachable from everywhere (including China)?
