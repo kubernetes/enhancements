@@ -49,6 +49,11 @@ aliases:
     - dashpole
     - ehashman
     - logicalhan
+  sig-k8s-infra-leads:
+    - ameukam
+    - dims
+    - spiffxp
+    - thockin
   sig-multicluster-leads:
     - jeremyot
     - pmorie
@@ -111,10 +116,6 @@ aliases:
     - cantbewong
     - cindyxing
     - dejanb
-  wg-k8s-infra-leads:
-    - bartsmykla
-    - dims
-    - spiffxp
   wg-multitenancy-leads:
     - srampal
     - tashimi
