@@ -1,0 +1,53 @@
+title: Public KRM Functions Registry
+kep-number: 2985
+authors:
+  - "@mengqiy"
+owning-sig: sig-cli
+participating-sigs:
+  - sig-cli
+reviewers:
+  - "@jeremyrickard"
+  - "@KnVerey"
+  - "@natasha41575"
+  - "@pwittrock"
+  - "@seans3"
+  - "@soltysh"
+approvers:
+  - "@pwittrock"
+  - "@seans3"
+  - "@soltysh"
+status: provisional
+creation-date: 2021-09-21
+
+##### WARNING !!! ######
+# prr-approvers has been moved to its own location
+# You should create your own in keps/prod-readiness
+# Please make a copy of keps/prod-readiness/template/nnnn.yaml
+# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
+#prr-approvers:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.23"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.23"
+  beta: TBD
+  stable: TBD
+
+# # The following PRR answers are required at alpha release
+# # List the feature gate name and the components for which it must be enabled
+# feature-gates:
+#   - name: n/a
+#     components:
+#       - n/a
+# disable-supported: true
+
+# # The following PRR answers are required at beta release
+# metrics:
+#   - n/a
