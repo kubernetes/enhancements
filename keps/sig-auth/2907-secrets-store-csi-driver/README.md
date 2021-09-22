@@ -74,7 +74,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The [secrets-store-csi-driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver) project provides a portable method for applications to consume secrets from external secret APIs through the filesystem. This effort was added to the `sig-auth` subproject in February 2020 and currently there are providers for Azure, AWS, GCP, and HashiCorp Vault. This KEP intends to cover making the core functionality of the driver GA.
+The [secrets-store-csi-driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver) project provides a portable method for applications to consume secrets from external secret APIs through the filesystem. This effort was added to the `sig-auth` subproject in February 2020 and currently there are providers for Azure, AWS, GCP, and HashiCorp Vault. All the providers for the driver are out-of-tree. This KEP intends to cover making the core functionality of the driver GA.
 
 ## Motivation
 
@@ -110,13 +110,13 @@ This project introduces a new Container Storage Interface (CSI) driver for fetch
 
 ### Notes/Constraints/Caveats (Optional)
 
-Since the proposal is a storage driver, native support for presenting secrets to a process through environment variables is not possible.
+Since the proposal is a storage driver, native support for presenting secrets to a process through environment variables is not possible. In addition to the default mount, the driver also supports syncing the mounted content as Kubernetes secret. This is an optional feature and isn't enabled by default.
 
 ### Risks and Mitigations
 
 #### Directory traversal vulnerabilities
 
-The driver<->provider interface has been expanded to allow the driver to be the only process that actually writes files to the pod filesystem. The only hostpath provider's need are now the one for creating the unix socket used for communication with the driver process.
+The driver<->provider interface has been expanded to allow the driver to be the only process that actually writes files to the pod filesystem. The only hostpath providers need are now the one for creating the unix socket used for communication with the driver process.
 
 The driver protects against directory traversal vulnerabilities by re-using the `atomic_writer` used by Kubernetes Secrets and ConfigMaps which includes protections against writing to unintended paths.
 
@@ -208,7 +208,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - `total_node_publish_error`
   - any rising count of this metric indicates a problem with mounting the volume for pod.
-- `total_node_publish_error`
+- `total_node_unpublish_error`
   - any rising count of this metric indicates a problem with unmounting the volume for pod.
 
 <!--
@@ -250,7 +250,14 @@ implementation difficulties, etc.).
 - Supports windows containers (Kubernetes version v1.18+)
 - [KEP 1855: Service Account Token for CSI Driver](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/1855-csi-driver-service-account-token)
 
+The driver uses CSI Inline Volumes to mount the external secrets-store objects in the pod. The CSI Inline Volumes feature is enabled by default in Kubernetes 1.16+. For windows containers, the CSI Inline Volumes feature is enabled by default in Kubernetes 1.18+.
+
+The minimum supported Kubernetes version is 1.16 for Linux and 1.18 for Windows.
+
 ###### Does this feature depend on any specific services running in the cluster?
+
+- Kubelet
+  - If kubelet service is not running, the pods referencing the csi driver for volume will fail to start.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -268,6 +275,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 -->
 
 ### Scalability
+
+Load test results: https://secrets-store-csi-driver.sigs.k8s.io/load-tests.html
 
 <!--
 For alpha, this section is encouraged: reviewers should consider these questions
