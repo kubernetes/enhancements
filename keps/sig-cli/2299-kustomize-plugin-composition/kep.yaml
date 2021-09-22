@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-cli
 participating-sigs:
   - sig-cli
-status: provisional
+status: implementable
 creation-date: 2021-01-20
 reviewers:
   - "@monopole"
@@ -17,4 +17,4 @@ approvers:
 see-also:
 - "/keps/sig-cli/993-kustomize-generators-transformers"
 stage: alpha
-latest-milestone: "v1.22"
+latest-milestone: "v1.23"
