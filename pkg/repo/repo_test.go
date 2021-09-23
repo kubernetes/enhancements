@@ -71,6 +71,11 @@ func TestProposalValidate(t *testing.T) {
 		errs []error
 	}{
 		{
+			name: "valid KEP: minimum fields",
+			file: "testdata/valid-kep-minimum.yaml",
+			errs: nil,
+		},
+		{
 			name: "valid KEP: all fields",
 			file: "testdata/valid-kep-full.yaml",
 			errs: nil,

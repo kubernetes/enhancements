@@ -1,0 +1,29 @@
+title: minimal
+kep-number: 1337
+authors:
+  - "@jpbetz"
+  - "@roycaihw"
+  - "@sttts"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-api-machinery
+  - sig-architecture
+reviewers:
+  - "@deads2k"
+  - "@lavalamp"
+  - "@liggitt"
+  - "@mbohlool"
+  - "@sttts"
+approvers:
+  - "@deads2k"
+  - "@lavalamp"
+creation-date: 2018-04-15
+last-updated: 2018-04-24
+status: provisional
+
+stage: beta
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.22"

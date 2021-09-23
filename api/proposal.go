@@ -110,7 +110,7 @@ type Proposal struct {
 	OwningSIG         string   `json:"owningSig" yaml:"owning-sig" validate:"required"`
 	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
 	Reviewers         []string `json:"reviewers" yaml:",flow"`
-	Approvers         []string `json:"approvers" yaml:",flow"`
+	Approvers         []string `json:"approvers" yaml:",flow" validate:"required"`
 	PRRApprovers      []string `json:"prrApprovers" yaml:"prr-approvers,flow"`
 	Editor            string   `json:"editor" yaml:"editor,omitempty"`
 	CreationDate      string   `json:"creationDate" yaml:"creation-date"`

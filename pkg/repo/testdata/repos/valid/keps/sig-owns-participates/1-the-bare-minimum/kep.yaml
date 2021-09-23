@@ -9,10 +9,10 @@ status: a non-empty string
 # creation-date: yyyy-mm-dd
 # reviewers:
 #   - "@beth"
-# approvers:
-#   - "@carolyn"
+approvers:
+  - "@dorothy"
 # prr-approvers:
-#   - "@dorothy"
+#   - "@carolyn"
 # stage: stable
 # latest-milestone: v1.4
 # milestone:
