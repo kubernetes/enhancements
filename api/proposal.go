@@ -30,10 +30,66 @@ import (
 	"k8s.io/enhancements/pkg/yaml"
 )
 
-var ValidStages = []string{
-	"alpha",
-	"beta",
-	"stable",
+type Stage string
+
+const (
+	AlphaStage  Stage = "alpha"
+	BetaStage   Stage = "beta"
+	StableStage Stage = "stable"
+)
+
+var ValidStages = []Stage{
+	AlphaStage,
+	BetaStage,
+	StableStage,
+}
+
+func (s Stage) String() string {
+	return string(s)
+}
+
+func (s Stage) IsValid() error {
+	for _, s2 := range ValidStages {
+		if s == s2 {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid stage: %v, should be one of %v", s, ValidStages)
+}
+
+type Status string
+
+const (
+	ProvisionalStatus   Status = "provisional"
+	ImplementableStatus Status = "implementable"
+	ImplementedStatus   Status = "implemented"
+	DeferredStatus      Status = "deferred"
+	RejectedStatus      Status = "rejected"
+	WithdrawnStatus     Status = "withdrawn"
+	ReplacedStatus      Status = "replaced"
+)
+
+var ValidStatuses = []Status{
+	ProvisionalStatus,
+	ImplementableStatus,
+	ImplementedStatus,
+	DeferredStatus,
+	RejectedStatus,
+	WithdrawnStatus,
+	ReplacedStatus,
+}
+
+func (s Status) String() string {
+	return string(s)
+}
+
+func (s Status) IsValid() error {
+	for _, s2 := range ValidStatuses {
+		if s == s2 {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid status: %v, should be one of %v", s, ValidStatuses)
 }
 
 type Proposals []*Proposal
@@ -59,12 +115,12 @@ type Proposal struct {
 	Editor            string   `json:"editor" yaml:"editor,omitempty"`
 	CreationDate      string   `json:"creationDate" yaml:"creation-date"`
 	LastUpdated       string   `json:"lastUpdated" yaml:"last-updated"`
-	Status            string   `json:"status" yaml:"status" validate:"required"`
+	Status            Status   `json:"status" yaml:"status" validate:"required"`
 	SeeAlso           []string `json:"seeAlso" yaml:"see-also,omitempty"`
 	Replaces          []string `json:"replaces" yaml:"replaces,omitempty"`
 	SupersededBy      []string `json:"supersededBy" yaml:"superseded-by,omitempty"`
 
-	Stage           string    `json:"stage" yaml:"stage"`
+	Stage           Stage     `json:"stage" yaml:"stage"`
 	LatestMilestone string    `json:"latestMilestone" yaml:"latest-milestone"`
 	Milestone       Milestone `json:"milestone" yaml:"milestone"`
 
@@ -85,6 +141,18 @@ func (p *Proposal) IsMissingStage() bool {
 	return p.Stage == ""
 }
 
+type Milestone struct {
+	Alpha      string `json:"alpha" yaml:"alpha"`
+	Beta       string `json:"beta" yaml:"beta"`
+	Stable     string `json:"stable" yaml:"stable"`
+	Deprecated string `json:"deprecated" yaml:"deprecated,omitempty"`
+	Removed    string `json:"removed" yaml:"removed,omitempty"`
+}
+
+type FeatureGate struct {
+	Name       string   `json:"name" yaml:"name"`
+	Components []string `json:"components" yaml:"components"`
+}
 type KEPHandler Parser
 
 // TODO(api): Make this a generic parser for all `Document` types
@@ -192,19 +260,6 @@ func (k *KEPHandler) Validate(p *Proposal) []error {
 		allErrs = append(allErrs, errs...)
 	}
 	return allErrs
-}
-
-type Milestone struct {
-	Alpha      string `json:"alpha" yaml:"alpha"`
-	Beta       string `json:"beta" yaml:"beta"`
-	Stable     string `json:"stable" yaml:"stable"`
-	Deprecated string `json:"deprecated" yaml:"deprecated,omitempty"`
-	Removed    string `json:"removed" yaml:"removed,omitempty"`
-}
-
-type FeatureGate struct {
-	Name       string   `json:"name" yaml:"name"`
-	Components []string `json:"components" yaml:"components"`
 }
 
 func hash(s string) string {

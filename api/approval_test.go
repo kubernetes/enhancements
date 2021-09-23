@@ -46,7 +46,7 @@ var (
 func TestPRRApproval_ApproverForStage(t *testing.T) {
 	testcases := []struct {
 		name         string
-		stage        string
+		stage        api.Stage
 		prr          *api.PRRApproval
 		wantApprover string
 		wantErr      bool

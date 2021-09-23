@@ -104,7 +104,7 @@ func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage 
 	missingMilestone = kep.IsMissingMilestone()
 	missingStage = kep.IsMissingStage()
 
-	if kep.Status != "implementable" {
+	if kep.Status != api.ImplementableStatus {
 		required = false
 		return required, missingMilestone, missingStage, nil
 	}

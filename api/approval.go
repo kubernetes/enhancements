@@ -54,10 +54,9 @@ func (prr *PRRApproval) Validate() error {
 	return nil
 }
 
-func (prr *PRRApproval) ApproverForStage(stage string) (string, error) {
-	isValidStage := IsOneOf(stage, ValidStages)
-	if !isValidStage {
-		return "", ErrKEPStageIsInvalid(stage)
+func (prr *PRRApproval) ApproverForStage(stage Stage) (string, error) {
+	if err := stage.IsValid(); err != nil {
+		return "", err
 	}
 
 	if prr.Alpha == nil && prr.Beta == nil && prr.Stable == nil {
@@ -65,19 +64,19 @@ func (prr *PRRApproval) ApproverForStage(stage string) (string, error) {
 	}
 
 	switch stage {
-	case "alpha":
+	case AlphaStage:
 		if prr.Alpha == nil {
 			return "", ErrPRRMilestoneIsNil
 		}
 
 		return prr.Alpha.Approver, nil
-	case "beta":
+	case BetaStage:
 		if prr.Beta == nil {
 			return "", ErrPRRMilestoneIsNil
 		}
 
 		return prr.Beta.Approver, nil
-	case "stable":
+	case StableStage:
 		if prr.Stable == nil {
 			return "", ErrPRRMilestoneIsNil
 		}

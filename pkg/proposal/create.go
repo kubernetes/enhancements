@@ -124,7 +124,7 @@ func populateProposal(p *api.Proposal, opts *CreateOpts) {
 	p.Name = opts.Name
 
 	if opts.State != "" {
-		p.Status = opts.State
+		p.Status = api.Status(opts.State)
 	}
 
 	now := time.Now()
