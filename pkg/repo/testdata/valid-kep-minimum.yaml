@@ -1,22 +1,16 @@
 title: minimal
-kep-number: 1337
+kep-number: 1234
 authors:
-  - "@jpbetz"
-  - "@roycaihw"
-  - "@sttts"
+  - "@alice"
+  - "@beth"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-api-machinery
   - sig-architecture
 reviewers:
-  - "@deads2k"
-  - "@lavalamp"
-  - "@liggitt"
-  - "@mbohlool"
-  - "@sttts"
+  - "@carol"
 approvers:
-  - "@deads2k"
-  - "@lavalamp"
+  - "@dorothy"
 creation-date: 2018-04-15
 last-updated: 2018-04-24
 status: provisional

@@ -106,7 +106,7 @@ type Proposal struct {
 
 	Title             string   `json:"title" yaml:"title" validate:"required"`
 	Number            string   `json:"kep-number" yaml:"kep-number" validate:"required"`
-	Authors           []string `json:"authors" yaml:",flow"`
+	Authors           []string `json:"authors" yaml:",flow" validate:"required"`
 	OwningSIG         string   `json:"owningSig" yaml:"owning-sig" validate:"required"`
 	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
 	Reviewers         []string `json:"reviewers" yaml:",flow"`

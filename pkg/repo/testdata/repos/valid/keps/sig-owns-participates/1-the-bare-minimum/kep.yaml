@@ -1,7 +1,7 @@
 title: The Bare Minimum
 kep-number: a non-empty string
-# authors:
-#   - "@alice"
+authors:
+  - alice
 # TODO: this should fail to load/validate unless owning-sig is sig-owns-participates
 owning-sig: a non-empty string
 # TODO: this should fail to load/validate unless status is one of...
