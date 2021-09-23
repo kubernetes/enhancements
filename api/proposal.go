@@ -259,6 +259,12 @@ func (k *KEPHandler) Validate(p *Proposal) []error {
 	if errs := k.validatePRRApprovers(p); errs != nil {
 		allErrs = append(allErrs, errs...)
 	}
+	if err := p.Status.IsValid(); err != nil {
+		allErrs = append(allErrs, err)
+	}
+	if err := p.Stage.IsValid(); err != nil {
+		allErrs = append(allErrs, err)
+	}
 	return allErrs
 }
 

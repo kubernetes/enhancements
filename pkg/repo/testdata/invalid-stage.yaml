@@ -1,5 +1,5 @@
-title: minimal
-kep-number: 1234
+title: i like monkeys
+kep-number: 2345
 authors:
   - "@alice"
   - "@beth"
@@ -7,4 +7,4 @@ owning-sig: sig-api-machinery
 approvers:
   - "@dorothy"
 status: provisional
-stage: beta
+stage: monkeys

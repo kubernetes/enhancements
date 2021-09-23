@@ -1,20 +1,12 @@
-title: Hierarchical Namespace Controller As A Subproject
-kep-number: 1687
+title: whatever
+kep-number: 4321
 authors:
-  - "@rjbez17"
-  - "@adrianludwin"
-owning-sig: sig-architecture
-participating-sigs:
-  - sig-auth
-reviewers:
-  - "TBD"
-approvers:
-  - "@mikedanese"
-  - "@deads2k"
-  - "@liggitt"
+  - "@alice"
+  - "@beth"
+owning-sig: sig-api-machinery
 prr-approvers:
   - not-a-prr-approver
-creation-date: 2020-04-14
-last-updated: 2020-04-15
-stage: "alpha"
+approvers:
+  - "@dorothy"
 status: provisional
+stage: beta

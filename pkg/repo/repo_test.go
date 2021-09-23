@@ -94,6 +94,20 @@ func TestProposalValidate(t *testing.T) {
 				fmt.Errorf("invalid prr-approver: not-a-prr-approver"),
 			},
 		},
+		{
+			name: "invalid KEP: status does not exist",
+			file: "testdata/invalid-status.yaml",
+			errs: []error{
+				fmt.Errorf("invalid status: monkeys, should be one of %v", api.ValidStatuses),
+			},
+		},
+		{
+			name: "invalid KEP: stage does not exist",
+			file: "testdata/invalid-stage.yaml",
+			errs: []error{
+				fmt.Errorf("invalid stage: monkeys, should be one of %v", api.ValidStages),
+			},
+		},
 	}
 
 	parser := api.KEPHandler{}
