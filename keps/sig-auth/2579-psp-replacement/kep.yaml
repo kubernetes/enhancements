@@ -53,3 +53,5 @@ disable-supported: true
 # The following PRR answers are required at beta release
 metrics:
   - pod_security_evaluations_total
+  - pod_security_exemptions_total
+  - pod_security_errors_total

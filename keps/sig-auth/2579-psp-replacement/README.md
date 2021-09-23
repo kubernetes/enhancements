@@ -846,7 +846,7 @@ _This section must be completed when targeting alpha to a release._
   of the following metrics mean the feature is not working as expected:
 
   * `pod_security_evaluations_total{decision=deny,mode=enforce}`
-  * `pod_security_evaluations_total{decision=error,mode=enforce}`
+  * `pod_security_errors_total`
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
@@ -867,15 +867,21 @@ _This section must be completed when targeting alpha to a release._
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - [x] Metrics
-    - Metric name: `pod_security_evaluations_total`
+    - Metric name: `pod_security_evaluations_total`, `pod_security_errors_total`
     - Components exposing the metric: `kube-apiserver`
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  - `pod_security_evaluations_total{decision=error}`
+  - `pod_security_errors_total`
     - any rising count of these metrics indicates an unexpected problem evaluating the policy
-  - `pod_security_evaluations_total{decision=error,mode=enforce}`
+  - `pod_security_errors_total{fatal=true}`
     - any rising count of these metrics indicates an unexpected problem evaluating the policy that
       is preventing pod write requests
+  - `pod_security_errors_total{fatal=false}`,
+    `pod_security_evaluations_total{decision=deny,mode=enforce,level=restricted,version=latest}`
+    - a rising count of non-fatal errors indicates an error resolving namespace policies, which
+      causes PodSecurity to default to enforcing `restricted:latest`
+    - a corresponding rise in `restricted:latest` denials may indicate that these errors are
+      preventing pod write requests
   - `pod_security_evaluations_total{decision=deny,mode=enforce}`
     - a rising count indicates that the policy is preventing pod creation as intended, but is
       preventing a user or controller from successfully writing pods
@@ -958,8 +964,8 @@ details). For now, we leave it here.
     - Testing: unit testing on configuration validation
 
   - Enforce mode rejects pods because invalid level/version defaulted to `restricted` level
-    - Detection: rising `pod_security_evaluations_total{decision=error,mode=enforce}` metric counts
-    - Mitigations: 
+    - Detection: rising `pod_security_errors_total{fatal=false}` metric counts
+    - Mitigations: fix the malformed labels
     - Diagnostics:
       - Locate audit logs containing `pod-security.kubernetes.io/error` annotations on affected requests
       - Locate namespaces with malformed level labels:
