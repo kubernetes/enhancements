@@ -223,11 +223,14 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-Come up with a plan for:
-
-* Where to create the KRM functions repo/registry.
-* How to manage the KRM functions repo/registry.
-* How to standardize the metadata for a KRM function.
+* Enable end users of orchestrators (e.g. Kustomize, Kpt) that support KRM
+  functions to discover and leverage a common ecosystem of compatible functions.
+* Enable end users to discover and use sets of functions specifically from 
+  publishers they trust.
+* Enable function authors from any company to expose their function in a
+  well-known index for discovery by end users.
+* Provide a central place for first-party (SIG-sponsored) plugins to be built
+  and added to the index.
 
 ### Non-Goals
 
@@ -236,8 +239,12 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-Design the detailed format of the metadata of a KRM function. It should be
-designed separately.
+* Replace or compete with Catalog as publication format for collections of
+  functions. Catalog should be used by this Registry, and the details of its
+  internal format should be discussed in that KEP.
+* Support building non-SIG-sponsored functions.
+* Support SIG-sponsored functions written in a language other than Go or
+  published in a format other than containerized.
 
 ## Proposal
 
@@ -281,7 +288,8 @@ CI can be set up to enforce verifiable commit from desired email domain.
 
 ### Security
 
-SIG-CLI is NOT responsible for the security of their KRM functions.
+SIG-CLI is responsible for the security of the SIG-sponsored KRM functions but
+not all KRM functions in the registry.
 
 Publishers are responsible for the security of their KRM functions. Publishers
 are responsible for clearly communicating the expectation (e.g. maturity) to
@@ -293,8 +301,11 @@ be published as _kutomize-experimental_. We can also consider using hierarchy in
 publishers. E.g. _kustomize/default_ for the former set and
 _kustomize/experimental_ for the latter.
 
-If some functions don't have any publishers, the users should use it at their
-own risk.
+Some contributors (e.g. students) may not want to publish KRM functions on
+behalf of any publishers, but we will require the maintainer information be
+included in the metadata of the functions and the maintainers are responsible
+for the security of their KRM functions. For the functions that don't have any
+publishers, the users should use it at their own risk.
 
 We strongly suggest users to use container as a sandboxing mechanism to run the
 KRM functions.
@@ -306,9 +317,12 @@ A user should NOT trust every KRM function in the registry.
 Trust can be established at the publisher level. Users can choose to trust a
 publisher and use the KRM functions provided by this publisher.
 
-Publisher information can be used to aggregate KRM functions. For example, I can
-query https://krm-fn-registry.sigs.k8s.io/catalog.yaml?publisher=kustomize,kubeflow
-to find all the KRM functions offered by Kustomize and KubeFlow.
+Publisher information can be used to aggregate KRM functions. We can support
+both dynamic aggregation of KRM functions and static, versioned collection of
+KRM functions. Publishers can choose to create a snapshot of the dynamic
+aggregation of their KRM functions at some time. The snapshot must be versioned,
+but SemVer is not necessary here since it's meaningless for a catalog. The
+snapshot can be accessed later as a static catalog.
 
 ### User Stories (Optional)
 
@@ -324,28 +338,52 @@ bogged down.
 As a KRM functions user, I can browse the function registry website (e.g.
 https://krm-fn-registry.sigs.k8s.io) and search the KRM function by name (e.g.
 set-labels). And I can find everything including doc, examples, homepage,
-maintainers information about the function.
+maintainers, publisher information about the function.
 
 #### Story 2
 
-As a KRM function user, I can find all KRM functions published by Example Co.
-The metadata for these functions can be aggregated and served by the website.
+As a KRM function user, I can query
+https://krm-fn-registry.sigs.k8s.io/catalogs/aggregate/latest.yaml?publisher=kubeflow,kustomize
+to find a real-time aggregation of all KRM functions published by Kustomize and
+KubeFlow.
 
 #### Story 3
 
-As a kustomize user, I can use the KRM functions provided by a publisher as
-[a catalog with kustomize](https://github.com/kubernetes/enhancements/pull/2954/files#diff-da31478d2b3a925c17471e989c953539b508eed0aae19d624ad943d08f4dd910R414-R415).
-The `kustomiztion.yaml` file may look like:
+As a KRM function user, I can find the versioned catalog published by Pineapple
+Co. at
+https://krm-fn-registry.sigs.k8s.io/catalogs/pineapple/v20210924.yaml.
+It is a catalog provided by Pineapple Co. and snapshoted on 09/24/2021.
+
+#### Story 4
+
+As a kustomize user, I want to use a KRM functions catalog provided by a
+publisher in kustomize.
+The `kustomiztion.yaml` file may look like the following per [Catalog KEP](https://github.com/kubernetes/enhancements/pull/2954/files#diff-da31478d2b3a925c17471e989c953539b508eed0aae19d624ad943d08f4dd910R414-R415)
 
 ```
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 catalogs:
-- https://krm-fn-registry.sigs.k8s.io/catalog.yaml?publisher=kustomize
+- https://krm-fn-registry.sigs.k8s.io/catalogs/kustomize/v20210924.yaml.
 resources:
 - input.yaml
 transformers:
 - ...
+```
+
+#### Story 5
+
+As a KRM function user, I want to have tab completion for function image names
+when using imperative runs. The sugguested image names should from the registry.
+
+When using with kustomize:
+```shell
+kustomize fn run --image <tab><tab>
+```
+
+When using with kpt:
+```shell
+kpt fn eval --image <tab><tab>
 ```
 
 ### Notes/Constraints/Caveats (Optional)
@@ -373,6 +411,12 @@ Consider including folks who also work outside the SIG or subproject.
 
 Security might be a potential risk here. We have introduced the publisher
 concept to mitigate the risk.
+
+The dynamic generation of catalogs (e.g. from a versionless URL with a query
+param), if supported and used in declarative configs, would lead to
+non-reproducible builds.
+To mitigate it, we would strongly suggest users to use versioned catalogs from
+the registry in production.
 
 ## Design Details
 
@@ -466,7 +510,8 @@ We can mix the 2 management models above.
 We can manage the source code of the Kustomize provided KRM functions in-tree.
 Generic KRM functions like set-labels, set-annotations and set-namespace can be
 included. All the KRM functions provided by kustomize must go through a security
-audit.
+audit. These in-tree KRM funcitons can serve as examples for other publishers
+about how to organize their functions.
 
 The model of centralized index with distributed release is more flexible and
 more suitable for all vendors and other contributors. We can manage the source
@@ -475,6 +520,15 @@ code of the functions contributed by the community out-of-tree.
 All KRM functions in the registry must provide the metadata in the repo. We must
 standardize the metadata format for KRM functions, since we will require all
 contributors to follow it. A website can be built using the metadata information.
+
+### Website
+
+The website code will live in the registry as well.
+Ideally, we don't need to check generated html files in the repo. We can use
+tools to generate the site from Markdown files.
+
+Kpt site is using [docsify](https://docsify.js.org/#/) and kubebuilder site is
+using [mdBook](https://github.com/rust-lang/mdBook).
 
 ### Test Plan
 
@@ -496,8 +550,12 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-Simple smoke tests can be set up to ensure the functions are compliant with the
-[KRM functions spec].
+For the sig-sponsored KRM functions, they should be tested in-tree. And if we
+develop a test harness, it should live in-tree. If kustomize has an existing
+test harness, we can leverage it or move it to the registry repo.
+
+For KRM functions that are not sig-sponsored, the maintainers are responsible
+for testing them.
 
 ### Graduation Criteria
 
