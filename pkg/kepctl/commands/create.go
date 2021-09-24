@@ -90,7 +90,7 @@ func addCreate(topLevel *cobra.Command) {
 		&co.State,
 		"state",
 		"s",
-		api.ProvisionalStatus.String(),
+		string(api.ProvisionalStatus),
 		"KEP State",
 	)
 

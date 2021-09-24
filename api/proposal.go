@@ -44,10 +44,6 @@ var ValidStages = []Stage{
 	StableStage,
 }
 
-func (s Stage) String() string {
-	return string(s)
-}
-
 func (s Stage) IsValid() error {
 	for _, s2 := range ValidStages {
 		if s == s2 {
@@ -77,10 +73,6 @@ var ValidStatuses = []Status{
 	RejectedStatus,
 	WithdrawnStatus,
 	ReplacedStatus,
-}
-
-func (s Status) String() string {
-	return string(s)
 }
 
 func (s Status) IsValid() error {
