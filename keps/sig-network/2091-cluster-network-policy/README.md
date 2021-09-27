@@ -240,47 +240,47 @@ Now suppose the client in each Namespace initiates traffic towards x/server.
 
 ### User Stories
 
-![Alt text](user_story_diagram.png?raw=true "User Story Diagram")
+Note: This KEP will focus on East-West traffic, cluster internal, user stories and 
+not address North-South traffic, cluster external, use cases, which will be 
+solved in a follow-up proposal.
 
-#### Story 1: Deny traffic from certain sources
+#### Story 1: Deny traffic at a cluster level 
 
-As a cluster admin, I want to explicitly deny traffic from certain source IPs
-that I know to be bad.
+As a cluster admin, I want to explicitly isolate certain pod(s) and(or) 
+Namespace(s) from all other cluster internal traffic. 
 
-Although this is a valid use case from an administrators' perspective, this KEP
-will not address this use case as we solely plan to focus developing an API
-which takes care of cluster internal traffic. All cluster external traffic use
-cases will be solved as a follow-up proposal.
+![Alt text](explicit_isolation.png?raw=true "Explicit Deny")
 
-#### Story 2: Ensure traffic goes through ingress/egress gateways
+#### Story 2: Allow traffic at a cluster level
 
-As a cluster admin, I want to ensure that all traffic coming into (going out of)
-my cluster always goes through my ingress (egress) gateway.
+As a cluster admin, I want to explicitly allow traffic to certain pods(s) 
+and(or) Namespace(s) from all other cluster internal traffic. 
 
-It is common practice in enterprises to setup checkpoints in their clusters at
-ingress/egress. These checkpoints usually perform advanced checks such as
-firewalling, authentication, packet/connection logging, etc.
-This is a big request for compliance reasons, and ClusterNetworkPolicy can provide
-the admin with an API that ensures that unintentional ingress/egress of traffic from
-checkpoints other than the ones hosting ingress/egress gateways is not allowed.
-It is worth noting that the Cluster-scoped NetworkPolicy APIs will not redirect
-traffic, rather it can ensure that no traffic is allowed in/out except traffic
-via the gateways.
+![Alt text](explicit_allow.png?raw=true "Explicit Allow")
 
-#### Story 3: Isolate multiple tenants in a cluster
+#### Story 3: Explicitly Delegate traffic to existing K8's Network Policy 
 
-As a cluster admin, I want to isolate all the tenants (modeled as Namespaces)
-on my cluster from each other by default. Tenancy may be modeled as 1:1, where
-1 tenant is mapped to a single Namespace, or 1:n, where a single tenant may
-own more than 1 Namespace.
+As a cluster admin, I want to explicitly delegate traffic to be handled by 
+standard namespace scoped network policies. The delegate action can also be 
+thought of as a deny exception.  
 
-Many enterprises are creating shared Kubernetes clusters that are managed by a
-centralized platform team. Each internal team that wants to run their workloads
-gets assigned a Namespace on the shared clusters. Naturally, the platform team
-will want to make sure that, by default, all intra-namespace traffic management
-is authorized by the Namespace owners and all inter-namespace traffic is denied.
+Note: In the diagram below the ability to talk to the service svc-pub 
+in namespace bar-ns-1 is delegated to the k8s network policies 
+implemented in foo-ns-1 and foo-ns-2. If no k8's network policies touch the 
+delegated traffic the traffic will be allowed. 
 
-#### Story 4: Zero-trust default security posture for tenants
+![Alt text](delegation.png?raw=true "Delegate")
+
+#### Story 4: Create and Isolate multiple tenants in a cluster
+
+As a cluster admin, I want to build tenants (modeled as Namespace(s))
+in my cluster that are isolated from each other by default. Tenancy may be 
+modeled as 1:1, where 1 tenant is mapped to a single Namespace, or 1:n, where a 
+single tenant may own more than 1 Namespace.
+
+![Alt text](tenants.png?raw=true "Tenants")
+
+#### Story 5: Cluster wide Guardrails 
 
 As a cluster admin, I want all workloads to start with a network/security
 model that meets the needs of my company.
@@ -290,18 +290,7 @@ lifecycle with a default zero-trust security model, where in the default policy
 of the cluster is to deny traffic. Only traffic that is essential to the cluster
 will be opened up with stricter cluster level policies. Namespace owners are therefore
 forced to use NetworkPolicies to explicitly allow only known traffic. This follows
-a model which is familiar to many security administrators, where in you deny by default
-and then poke holes in the cluster by adding explicit allow rules.
-
-#### Story 5: Restrict egress to well known destinations
-
-As a cluster admin, I want to explicitly limit which workloads can connect to
-well known destinations outside the cluster.
-
-Although this is a valid use case from an administrators' perspective, this KEP
-will not address this use case as we solely plan to focus developing an API
-which takes care of cluster internal traffic. All cluster external traffic use
-cases will be solved as a follow-up proposal.
+a explicit whitelist model which is familiar to many security administrators. 
 
 ### RBAC
 
