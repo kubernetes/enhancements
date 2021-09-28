@@ -1,6 +1,9 @@
 title: Apply
 kep-number: 555
 authors:
+  - "@apelisse"
+  - "@jefftree"
+  - "@kwiesmueller"
   - "@lavalamp"
   - "@tkashem"
 owning-sig: sig-api-machinery
