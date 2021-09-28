@@ -235,6 +235,8 @@ Pick one more of these and delete the rest.
 - [x] Metrics
   - Metric name: `total_node_publish`
   - Components exposing the metric: `secrets-store-csi-driver`
+- [x] Other
+  - Details: The CSI driver is configured with liveness and readiness probes. The liveness check is performed using the [liveness-probe](https://github.com/kubernetes-csi/livenessprobe) sidecar container. The liveness probe sidecar container exposes an HTTP `/healthz` endpoint which serves as kubelet's livenessProbe hook to monitor health of the CSI driver. The liveness probe uses `Probe()` RPC call to check the CSI driver is healthy.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
