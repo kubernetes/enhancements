@@ -253,16 +253,16 @@ like the `all` macro, e.g. `property.all(listItem, <predicate>)` or `property.al
   will be accessible to CEL via the `old<propertyName>` identifier.
   - This will only be available on mergable collection types such as objects (unless
     `x-kubernetes-map-type=atomic`), maps with `x-kubernetes-map-type=granular` and lists
-    with `x-kubernetes-list-type` set to `set` or `map`.  See (Merge
-    Strategy)[https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy] for
+    with `x-kubernetes-list-type` set to `set` or `map`.  See [Merge
+    Strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) for
     details.
   - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
     `oldObject`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
     keyword for escaping purposes (see below).
-  - xref (analysis of possible interactions with immutability and
-    validation)[https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable].
+  - xref [analysis of possible interactions with immutability and
+    validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
 
-- If a object property collides with a CEL keyword (see RESERVED in (CEL Syntax)[https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax]),
+- If a object property collides with a CEL keyword (see RESERVED in [CEL Syntax](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)),
   it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision, all properties with a `_` prefix will always be
   prefixed by `__` (generally, N+1 the existing number of `_`s).
 
@@ -274,7 +274,7 @@ like the `all` macro, e.g. `property.all(listItem, <predicate>)` or `property.al
   (Request Timeout) HTTP status code. The timeout will be a backstop we expect to rarely be used
   since CEL evaluations are multiple orders of magnitude faster that typical webhook invocations,
   and we can use CEL expression complexity estimations
-  ((xref)[https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265])
+  ([xref](https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265))
   during CRD update to bound complexity.
 
 #### Field paths and field patterns
@@ -320,8 +320,7 @@ Considerations:
 ### User Stories
 
 - Cases provided by @deads2k
-  - list of type foo struct {name string ... }, no item in the list can have a name == "value X", [ref](https://github.com/openshift/kubernetes/blob/75ee3073266
-f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L68).
+  - list of type foo struct {name string ... }, no item in the list can have a name == "value X", [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L68).
   - metadata.name must equal "valueX", [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L47)
   - if name == "foo", then fieldX must not be nil, [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L177)
   - if name == "foo", then field X must be nil, [ref](https://github.com/openshift/kubernetes/blob/75ee3073266f07baaba5db004cde0636425737cf/openshift-kube-apiserver/admission/customresourcevalidation/apiserver/validate_apiserver.go#L177)
@@ -356,8 +355,8 @@ the memory utilization. We will run a series of performance benchmarks with CEL 
 utilize a range of CPU and memory resources and document the results of the benchmarks before
 promoting this feature to GA.
 
-Also we can use (CEL complexity
-estimations)[https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265]
+Also we can use [CEL complexity
+estimations](https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265)
 to help bound running time.
 
 #### Malicious use
@@ -368,8 +367,8 @@ Mitigation: CEL is designed to sandbox code execution. Also, because CRD creatio
 operation, it should be safe to integrate.
 
 Additional limits we can put in place, as needed, include:
-- Use (CEL complexity
-  estimations)[https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265]
+- Use [CEL complexity
+  estimations](https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265)
   to bound running time.
 - A max execution time limit to but could bound running time of CEL programs. This would require
   modifying CEL (by working with the CEL community) to make CEL evaluation cancelable. Ideally this
@@ -400,7 +399,7 @@ in CRDs is sufficiently valuable due to its convenience that it should exist as 
 believe CRD validation expressions can be kept congruent with general admission control CEL support.
 
 (Thanks @liggitt for idea of using CEL for general admission control. This section is largely
-a copy-paste of (this comment)[https://github.com/kubernetes/enhancements/pull/2877#discussion_r704513565]).
+a copy-paste of [this comment](https://github.com/kubernetes/enhancements/pull/2877#discussion_r704513565)).
   
 #### CEL Custom Resource Definition Conversion
 
@@ -437,7 +436,7 @@ The good news is that https://github.com/google/cel-policy-templates-go already 
 demonstrated integrating CEL with OpenAPIv3. We plan to leverage this work.
 
 We will add detailed test coverage for numeric comparisons due to
-(google/cel-spec#54)[https://github.com/google/cel-spec/issues/54#issuecomment-491464172] including
+[google/cel-spec#54](https://github.com/google/cel-spec/issues/54#issuecomment-491464172) including
 coverage of interactions in these dimensions:
 
 - schemas defining integer and number fields
@@ -449,6 +448,9 @@ coverage of interactions in these dimensions:
 ### Test Plan
 
 We will extend both the unit test suite and the integration test suite to cover the CRD validation rule described in this KEP.
+
+We also intend to explore what testing utilities could be added to make it easier for 3rd party
+developers to test their validation rules.
 
 ### Graduation Criteria
 
