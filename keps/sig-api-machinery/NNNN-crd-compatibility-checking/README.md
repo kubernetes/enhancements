@@ -190,6 +190,14 @@ checker.
 
 ## Proposal
 
+- Milestone 1: Write a standalone linter (use an annotation to enable checking?)
+  - Crib from https://github.com/liggitt/kubernetes/commits/psscheck-example
+    - use k8s.io/cli-runtime/pkg/resource stuff to read in files like `kubectl -f` does
+	- use k8s.io/pod-security-admission to read data in
+  - https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme/doc.go
+- Milestone 2: Implement as a validating webhook
+- Milestone 3: Determine if this should be something added directly to kubernetes
+
 Add a `spec.compatibilityChecking` enum to Custom Resource Definitions with the allowed
 values of:
 
@@ -198,9 +206,8 @@ values of:
 
 `BackwardCompatible` will enforce:
 
-- Field types cannot be changed
-- Field names cannot be changed
 - Fields cannot be removed (but can be documented as deprecated)
+  - Implied in this is that field names and types cannot be changed
 - Only optional or defaulted fields can be added (required fields cannot be added)
 - Enums (and Unions if/when they are supported):
   - Enumeratable values cannot be removed
