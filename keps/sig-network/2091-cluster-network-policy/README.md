@@ -11,11 +11,11 @@
   - [ClusterDefaultNetworkPolicy resource](#clusterdefaultnetworkpolicy-resource)
   - [Precedence model](#precedence-model)
   - [User Stories](#user-stories)
-    - [Story 1: Deny traffic from certain sources](#story-1-deny-traffic-from-certain-sources)
-    - [Story 2: Ensure traffic goes through ingress/egress gateways](#story-2-ensure-traffic-goes-through-ingressegress-gateways)
-    - [Story 3: Isolate multiple tenants in a cluster](#story-3-isolate-multiple-tenants-in-a-cluster)
-    - [Story 4: Zero-trust default security posture for tenants](#story-4-zero-trust-default-security-posture-for-tenants)
-    - [Story 5: Restrict egress to well known destinations](#story-5-restrict-egress-to-well-known-destinations)
+    - [Story 1: Deny traffic at a cluster level](#story-1-deny-traffic-at-a-cluster-level)
+    - [Story 2: Allow traffic at a cluster level](#story-2-allow-traffic-at-a-cluster-level)
+    - [Story 3: Explicitly delegate traffic to existing K8's network policy](#story-3-explicitly-delegate-traffic-to-existing-k8s-network-policy)
+    - [Story 4: Create and isolate multiple tenants in a cluster](#story-4-create-and-isolate-multiple-tenants-in-a-cluster)
+    - [Story 5: Cluster Wide default guardrails](#story-5-cluster-wide-default-guardrails)
   - [RBAC](#rbac)
   - [Key differences between Cluster-scoped policies and Network Policies](#key-differences-between-cluster-scoped-policies-and-network-policies)  
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
@@ -28,11 +28,11 @@
     - [AppliedTo](#appliedto)
     - [Namespaces](#namespaces)
   - [Sample Specs for User Stories](#sample-specs-for-user-stories)
-    - [Sample spec for Story 1: Deny traffic from certain sources](#sample-spec-for-story-1-deny-traffic-from-certain-sources)
-    - [Sample spec for Story 2: Ensure traffic goes through ingress/egress gateways](#sample-spec-for-story-2-ensure-traffic-goes-through-ingressegress-gateways)
-    - [Sample spec for Story 3: Isolate multiple tenants in a cluster](#sample-spec-for-story-3-isolate-multiple-tenants-in-a-cluster)
-    - [Sample spec for Story 4: Zero-trust default security posture for tenants](#sample-spec-for-story-4-zero-trust-default-security-posture-for-tenants)
-    - [Sample spec for Story 5: Restrict egress to well known destinations](#sample-spec-for-story-5-restrict-egress-to-well-known-destinations)
+    - [Sample spec for Story 1: Deny traffic at a cluster level](#sample-spec-for-story-1-deny-traffic-at-a-cluster-level)
+    - [Sample spec for Story 2: Allow traffic at a cluster level](#sample-spec-for-story-2-allow-traffic-at-a-cluster-level)
+    - [Sample spec for Story 3: Explicitly delegate traffic to existing K8's network policy](#sample-spec-for-story-3-explicitly-delegate-traffic-to-existing-k8s-network-policy)
+    - [Sample spec for Story 4: Create and isolate multiple tenants in a cluster](#sample-spec-for-story-4-create-and-isolate-multiple-tenants-in-a-cluster)
+    - [Sample spec for Story 5: Cluster Wide default guardrails](#sample-spec-for-story-5-cluster-wide-default-guardrails)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
@@ -246,27 +246,29 @@ solved in a follow-up proposal.
 
 #### Story 1: Deny traffic at a cluster level 
 
-As a cluster admin, I want to explicitly isolate certain pod(s) and(or) 
-Namespace(s) from all other cluster internal traffic. 
+As a cluster admin, I want to apply non-overridable deny rules 
+to certain pod(s) and(or) Namespace(s) that isolate the selected 
+resources from all other cluster internal traffic. 
 
 ![Alt text](explicit_isolation.png?raw=true "Explicit Deny")
 
 #### Story 2: Allow traffic at a cluster level
 
-As a cluster admin, I want to explicitly allow traffic to certain pods(s) 
-and(or) Namespace(s) from all other cluster internal traffic. 
+As a cluster admin, I want to apply non-overridable allow rules to  
+certain pods(s) and(or) Namespace(s) that enable the selected resources 
+to communicate with all other cluster internal entities.  
 
 ![Alt text](explicit_allow.png?raw=true "Explicit Allow")
 
-#### Story 3: Explicitly Delegate traffic to existing K8's Network Policy 
+#### Story 3: Explicitly Delegate traffic to existing K8s Network Policy 
 
-As a cluster admin, I want to explicitly delegate traffic to be handled by 
-standard namespace scoped network policies. The delegate action can also be 
-thought of as a deny exception.  
+As a cluster admin, I want to explicitly delegate traffic so that it
+skips any remaining cluster network policies and is handled by standard 
+namespace scoped network policies.
 
 Note: In the diagram below the ability to talk to the service svc-pub 
 in namespace bar-ns-1 is delegated to the k8s network policies 
-implemented in foo-ns-1 and foo-ns-2. If no k8's network policies touch the 
+implemented in foo-ns-1 and foo-ns-2. If no k8s network policies touch the 
 delegated traffic the traffic will be allowed. 
 
 ![Alt text](delegation.png?raw=true "Delegate")
@@ -280,17 +282,18 @@ single tenant may own more than 1 Namespace.
 
 ![Alt text](tenants.png?raw=true "Tenants")
 
-#### Story 5: Cluster wide Guardrails 
+#### Story 5: Cluster Wide Default Guardrails 
 
-As a cluster admin, I want all workloads to start with a network/security
-model that meets the needs of my company.
+As a cluster admin I want to change the default security model for my cluster.
 
-In order to follow best practices, an admin may want to begin the cluster
-lifecycle with a default zero-trust security model, where in the default policy
-of the cluster is to deny traffic. Only traffic that is essential to the cluster
-will be opened up with stricter cluster level policies. Namespace owners are therefore
+In order to follow best practices, an admin may want to spawn a cluster with default 
+rules blocking all intra cluster traffic. Only traffic that is essential to the cluster
+will be opened up with stricter cluster network policies. While Namespace owners will be
 forced to use NetworkPolicies to explicitly allow only known traffic. This follows
-a explicit whitelist model which is familiar to many security administrators. 
+a explicit allow model which is familiar to many security administrators, and similar 
+to how [kubernetes suggests network policy be used](https://kubernetes.io/docs/concepts/services-networking/network-policies/#default-policies).
+
+![Alt text](default_rules.png?raw=true "Default Rules")
 
 ### RBAC
 
@@ -615,112 +618,25 @@ t2-ns1 or t2-ns2.
 
 ![Alt text](user_story_diagram.png?raw=true "User Story Diagram")
 
-#### Sample spec for Story 1: Deny traffic from certain sources
+#### Sample spec for Story 1: Deny traffic at a cluster level 
 
-n/a
+TODO
 
-#### Sample spec for Story 2: Ensure traffic goes through ingress/egress gateways
-As a cluster admin, I want to ensure that all traffic coming into (going out of)
-my cluster always goes through my ingress (egress) gateway.
+#### Sample spec for Story 2: Allow traffic at a cluster level
 
-```yaml
-apiVersion: netpol.networking.k8s.io/v1alpha1
-kind: ClusterNetworkPolicy
-metadata:
-  name: ingress-egress-gateway
-spec:
-  appliedTo:
-    namespaceSelector:
-      matchLabels:
-        type: tenant  # assuming all tenant namespaces will be created with this label
-  ingress:
-    - action: Empower
-      from:
-      - namespaceSelector:
-          matchExpressions:
-            {Key: kubernetes.io/metadata.name, Operator: In, Values: [kube-system, dmz]}
-      - namespaces:
-          scope: Self
-    - action: Deny
-      from:
-      - namespaceSelector: {}
-  egress:
-    - action: Empower
-      from:
-      - namespaceSelector:
-          matchExpressions:
-            {Key: kubernetes.io/metadata.name, Operator: In, Values: [kube-system, egress-gw]}
-      - namespaces:
-          scope: Self
-    - action: Deny
-      to:
-      - namespaceSelector: {}
-```
+TODO
 
-#### Sample Spec for Story 3: Isolate multiple tenants in a cluster
+#### Sample spec for Story 3: Explicitly Delegate traffic to existing K8's Network Policy 
 
-As a cluster admin, I want to isolate all the tenants (modeled as Namespaces)
-on my cluster from each other by default.
+TODO
 
-```yaml
-apiVersion: netpol.networking.k8s.io/v1alpha1
-kind: ClusterNetworkPolicy
-metadata:
-  name: namespace-isolation # strictly deny inter-namespace traffic for tenant namespaces with the exception
-                            # of system namespaces and intra-namespace traffic. Tenants are empowered with
-                            # the control of intra-namespace traffic and from system namespaces like kube-system.
-spec:
-  appliedTo:
-    namespaceSelector:
-      matchLabels:
-        type: tenant      # assuming all tenant namespaces will be created with this label
-  ingress:
-    - from:
-      - namespaces:
-          scope: Self
-        action: Empower   # add exception to deny rule for intra-namespace traffic
-      - namespaceSelector:
-          matchLabels:
-            app: system
-        action: Empower   # add exception to deny rule for system namespaces like kube-system
-      - action: Deny      # deny traffic from all namespaces except for exceptions provided by Empower rules
-        namespaceSelector: {}
-```
+#### Sample spec for Story 4: Create and Isolate multiple tenants in a cluster
 
-In this policy, tenant isolation (Namespace being the boundary) is strictly enforced.
-Tenants can however allow or deny intra-namespace traffic and traffic from "kube-system"
-Namespace depending on their needs. They cannot, however, overwrite Allow and Deny
-rules which cluster admins listed out as guardrails (dns must be allowed, egress
-to some IPs must be denied etc.)
+TODO
 
-#### Sample Spec for Story 4: Zero-trust default security posture for tenants
+#### Sample spec for Story 5: Cluster Wide Default Guardrails 
 
-As a cluster admin, I want all workloads to start with a network/security
-model that meets the needs of my company.
-
-```yaml
-apiVersion: netpol.networking.k8s.io/v1alpha1
-kind: ClusterDefaultNetworkPolicy
-spec:
-  appliedTo:
-    namespaceSelector:
-      matchLabels:
-        type: tenant  # assuming all tenant namespaces will be created with this label
-  # By default, allow no ingress traffic for tenant namespaces
-  ingress:
-  # By default, allow no egress traffic for tenant namespaces
-  egress:
-```
-
-__Note:__ The above policy ensures that, by default, all tenant Namespaces do not have the
-ability to ingress/egress, except for any traffic that is allowed by a stricter
-ClusterNetworkPolicy (see sample [story 3](#sample-spec-for-story-3-isolate-multiple-tenants-in-a-cluster)).
-Tenants may override the default deny behavior by explicitly opening up traffic which suit their
-needs with the help of K8s NetworkPolicies. However, they will be bound by the ClusterNetworkPolicy rules.
-
-#### Sample spec for Story 5: Restrict egress to well known destinations
-
-n/a
+TODO
 
 ### Test Plan
 
