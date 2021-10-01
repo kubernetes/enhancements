@@ -90,6 +90,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
+    - [Story 5](#story-5)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -102,6 +104,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Prior Art](#prior-art-1)
     - [Pros and Cons](#pros-and-cons-1)
   - [Mixture Model](#mixture-model)
+  - [Website](#website)
+  - [Function Metadata](#function-metadata)
+  - [Publishing Workflow](#publishing-workflow)
+  - [Repo Layout Convention](#repo-layout-convention)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -267,14 +273,20 @@ components to back the registry:
 
 ### Publisher
 
-A publisher can be a project/community in Kubernetes or a company. For example,
-it can be Kustomize, KubeFlow, Apple or Google.
+When publishing a function, the contributor MUST publish it on behalf of a
+publisher. We can revisit this decision later if there are requests to relax it
+when publisher is an individual.
 
-When publishing a function, the contributor can choose to publish it on behalf
-of a publisher.
+A publisher can be one of the following:
 
-To publish on behalf of a k8s project/community, at least one of the maintainers
-of the project/community must approve the change.
+- A project, community or SIG in Kubernetes: e.g. Kustomize, KubeFlow or SIG-CLI.
+- A company: e.g. Apple or Google.
+- A GitHub organization: e.g. github.com/myorg
+- An individual: e.g. foo@example.com
+
+All publishers must specify maintainers in a OWNERS file which is a convention
+in kubernetes. Whenever changes (e.g. adding new functions) are made in a
+publisher, at least one of the maintainers must approve the change.
 
 To publish on behalf of a company:
 
@@ -283,7 +295,14 @@ To publish on behalf of a company:
 * If there are maintainers for this publisher, at least one of the maintainers
   must approve the change.
 
-OWNERS files can be set up to enforce maintainer’s approvals.
+To publish on behalf of a GitHub organization, the contributor must be a member
+of the organization.
+
+To publish as an individual, the commit must be a verified commit from the same
+person's email.
+
+Kubernetes already has the tooling to enforce approval with OWNERS files. We can
+leverage it.
 CI can be set up to enforce verifiable commit from desired email domain.
 
 ### Security
@@ -293,19 +312,8 @@ not all KRM functions in the registry.
 
 Publishers are responsible for the security of their KRM functions. Publishers
 are responsible for clearly communicating the expectation (e.g. maturity) to
-their users (e.g. through a file for the publisher. We should standardize it
-eventually). For example, Kustomize wants to provide a small set of carefully
-vetted KRM functions as default and some non-default KRM functions. The former
-set can be published as _kustomize_ or _kustomize-default_ while the latter can
-be published as _kutomize-experimental_. We can also consider using hierarchy in
-publishers. E.g. _kustomize/default_ for the former set and
-_kustomize/experimental_ for the latter.
-
-Some contributors (e.g. students) may not want to publish KRM functions on
-behalf of any publishers, but we will require the maintainer information be
-included in the metadata of the functions and the maintainers are responsible
-for the security of their KRM functions. For the functions that don't have any
-publishers, the users should use it at their own risk.
+their users. For example, Kustomize can provide a small set of carefully vetted
+KRM functions which can be published as _kustomize_.
 
 We strongly suggest users to use container as a sandboxing mechanism to run the
 KRM functions.
@@ -529,6 +537,346 @@ tools to generate the site from Markdown files.
 
 Kpt site is using [docsify](https://docsify.js.org/#/) and kubebuilder site is
 using [mdBook](https://github.com/rust-lang/mdBook).
+
+### Function Metadata
+
+The following is an example function metadata for a container-based KRM
+function. We will only support container-based KRM functions in the public
+registry.
+
+Ideally, the content under field `spec` should be able to be used directly in a
+Catalog resource.
+
+```yaml
+apiVersion: config.k8s.io/v1alpha1
+kind: KRMFunction
+metadata:
+  # 'name' must match the last part of the image name for container-based function.
+  # for example: the name should be set-namespace when image name is docker.example.co/functions/set-namespace
+  name: set-namespace
+spec:
+  apiVersion: example.com/v1beta1 # Primary apiVersion
+  kind: SetNamespace # Primary kind
+  description: "A short description of the KRM function"
+  publisher: example.com
+  schema: <a URL pointing to the schema of the functionConfig of apiVersion example.com/v1beta1 and kind SetNamespace>
+  version: v1.2.3
+  idempotent: true|false
+  runtime:
+    container:
+      image: docker.example.co/functions/set-namespace:v1.2.3 # The version part should match `spec.version`.
+      sha256: a428de... # The digest of the image which can be verified against. This field is required if the version is semver.
+      requireNetwork: true|false
+      requireVolumeMount: true|false
+  additionalAPIVersionKinds:
+    - apiVersion: example.com/v1alpha1
+      kind: LegacySetNamespace
+      deprecated: true
+  usage: <a URL pointing to a README.md>
+  home: <a URL pointing to the home page>
+  examples:
+    - <a URL pointing to a README.md>
+    - <another URL pointing to another README.md>
+  license: Apache 2.0
+  maintainers: # The maintainers for this function. It doesn't need to be the same as the publisher OWNERS. 
+    - foo@example.com
+  tags: # keywords of the KRM functions
+    - mutator
+    - namespace
+```
+
+The following is an example for exec-based KRM function. We will not allow
+contributors to publish exec-based KRM functions. But we want to standardize the
+metadata to allow an organization to share exec-based KRM functions internally.
+
+```yaml
+apiVersion: config.k8s.io/v1alpha1
+kind: KRMFunction
+metadata:
+  # 'name' must match the last part of the image name for container-based function.
+  # for example: the name should be set-namespace when image name is docker.example.co/functions/set-namespace
+  name: set-namespace
+spec:
+  apiVersion: example.com/v1beta1 # Primary apiVersion
+  kind: SetNamespace # Primary kind
+  description: "A short description of the KRM function"
+  publisher: example.com
+  schema: <a URL pointing to the schema of the functionConfig of apiVersion example.com/v1beta1 and kind SetNamespace>
+  version: v1.2.3
+  idempotent: true|false
+  runtime:
+    exec:
+      platforms:
+      - bin: foo-amd64-linux
+        os: linux
+        arch: amd64
+        uri: https://example.com/foo-amd64-linux.tar.gz
+        sha256: <hash>
+      - bin: foo-amd64-darwin
+        os: darwin
+        arch: amd64
+        uri: https://example.com/foo-amd64-darwin.tar.gz
+        sha256: <hash>
+  additionalAPIVersionKinds:
+    - apiVersion: example.com/v1alpha1
+      kind: LegacySetNamespace
+      deprecated: true
+  usage: <a URL pointing to a README.md>
+  home: <a URL pointing to the home page>
+  examples:
+    - <a URL pointing to a README.md>
+    - <another URL pointing to another README.md>
+  license: Apache 2.0
+  maintainers: # The maintainers for this function. It doesn't need to be the same as the publisher OWNERS. 
+    - foo@example.com
+  tags: # keywords of the KRM functions
+    - mutator
+    - namespace
+```
+
+<details>
+<summary>
+Full OpenAPI schema
+</summary>
+
+```yaml
+swagger: "2.0"
+info:
+  title: KRM Function Metadata
+  version: v1alpha1
+definitions:
+  KRMFunction:
+    type: object
+    description: KRMFunction is metadata of a KRM function.
+    x-kubernetes-group-version-kind:
+      - group: config.kubernetes.io
+        kind: KRMFunction
+        version: v1alpha1
+    required:
+      - apiVersion
+      - kind
+      - spec
+    properties:
+      apiVersion:
+        description: apiVersion of KRMFunction. i.e. config.k8s.io/v1alpha1
+        type: string
+      kind:
+        description: kind of KRMFunction. i.e. KRMFunction
+        type: string
+      spec:
+        type: object
+        description: spec contains the metadata for a KRM function.
+        required:
+          - apiVersion
+          - kind
+          - description
+          - publisher
+          - version
+          - idempotent
+          - runtime
+          - usage
+          - examples
+          - license
+          - maintainers
+          - tags
+        properties:
+          apiVersion:
+            description: apiVersion of the primary functionConfig
+            type: string
+          kind:
+            description: kind of the primary functionConfig
+            type: string
+          description:
+            description: short description of the KRM function
+            type: string
+          publisher:
+            description: publisher of the KRM function
+            type: string
+          schema:
+            description: a URI pointing to the schema of the functionConfig
+            type: string
+          version:
+            description: Version of the KRM function. SemVer is strongly recommended.
+            type: string
+          idempotent:
+            description: If the function is idempotent.
+            type: boolean
+          usage:
+            description: |
+              A URI pointing to a README.md that describe the details of how to
+              use the KRM function. It should at least cover what the function
+              does and what functionConfig does it support and it should give
+              detailed explaination about each field in the functionConfig.
+            type: string
+          home:
+            description: A URI pointing the home page of the KRM function.
+            type: string
+          examples:
+            description: |
+              A list of URIs that point to README.md files. At least one example
+              must be provided. Each README.md should cover an example. It
+              should at least cover how to get input resources, how to run it
+              and what is the expected output.
+            type: array
+            items:
+              type: string
+          license:
+            description: The license of the KRM function.
+            type: string
+          maintainers:
+            description: The maintainers for the function.
+            type: array
+            items:
+              type: string
+          tags:
+            description: |
+              The tags (or keywords) of the function. e.g. mutator, validator,
+              generator, prefix, GCP.
+            type: array
+            items:
+              type: string
+          additionalAPIVersionKinds:
+            description: |
+              The apiVersion and kind of secondary functionConfigs that the
+              function supports.
+            type: array
+            items:
+              type: object
+              required:
+                - apiVersion
+                - kind
+              properties: 
+                apiVersion:
+                  description: apiVersion of the secondary functionConfig
+                  type: string
+                kind:
+                  description: kind of the secondary functionConfig
+                  type: string
+                deprecated:
+                  description: if this secondary functionConfig is deprecated
+                  type: boolean
+          runtime:
+            description: |
+              The runtime information about the KRM function. One and only one
+              of container and exec must be set.
+            type: object
+            properties:
+              container:
+                description: The runtime information for container-based KRM function.
+                type: object
+                required:
+                  - image
+                properties: 
+                  image:
+                    description: The image name of the KRM function.
+                    type: string
+                  sha256:
+                    description: |
+                      The digest of the image that can be verified against. It
+                      is required only when the image is using semver.
+                    type: string
+                  requireNetwork:
+                    description: If network is required to run this function.
+                    type: boolean
+                  requireVolumeMount:
+                    description: If volumn mount is required to run this function.
+                    type: boolean
+              exec:
+                description: The runtime information for exec-based KRM function.
+                type: object
+                required:
+                  - platform
+                properties:
+                  platforms:
+                    description: Per platform runtime information.
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - bin
+                        - os
+                        - arch
+                        - uri
+                        - sha256
+                      properties: 
+                        bin:
+                          description: The binary name.
+                          type: string
+                        os:
+                          description: The target operation system to run the KRM function.
+                          type: string
+                          enum:
+                            - linux
+                            - darwin
+                            - windows
+                        arch:
+                          description: The target archtechture to run the KRM function.
+                          type: string
+                          enum:
+                            - amd64
+                            - arm64
+                        uri:
+                          description: The location to download the binary.
+                          type: string
+                        sha256:
+                          description: The degist of the binary that can be used to verify the binary.
+                          type: string
+paths: {}
+```
+</details>
+
+### Publishing Workflow
+
+We only support publishing container-based KRM function in the public registry.
+We will only cover the workflow for that.
+
+The developer needs to do the following:
+
+1. Build a container image and pushed it to a publicly accessible container
+   registry.
+2. Ensure the usage doc is a markdown file and is up-to-date and publicly
+   accessible.
+3. Create a file called `krm-function-metadata.yaml` which contains the metadata
+   that satisfies the KRM function metadata schema above.
+4. Checkout the KRM function registry repo.
+5. Move the `krm-function-metadata.yaml` file to the desired location in the
+   repo by following the repo layout convention (discussed below).
+6. Depending on the requirements (discussed in an earlier session) of different
+   publisher type, choose the right email to commit the change.
+7. Create a PR and get it reviewed and approved by the publisher OWNERS.
+
+### Repo Layout Convention
+
+```shell
+├── publishers
+│   ├── communities
+│   │   ├── kustomize
+│   │   │   ├── fn-foo
+│   │   │   │   ├── v1.2.3
+│   │   │   │   │   └── krm-function-metadata.yaml
+│   │   │   │   └── v2.0.0
+│   │   │   │       └── krm-function-metadata.yaml
+│   │   │   ├── fn-bar
+│   │   │   └── OWNERS # OWNERS of the publisher
+│   │   ├── kubeflow
+│   │   ├── sig-cli
+│   │   └── OWNERS # OWNERS to approve new community publishers
+│   ├── companies
+│   │   ├── apple
+│   │   │   ├── fn-baz
+│   │   │   └── OWNERS # OWNERS of the publisher
+│   │   ├── google
+│   │   └── OWNERS # OWNERS to approve new company publishers
+│   ├── github-orgs
+│   └── individuals
+├── krm-functions # in-tree functions implementation
+│   ├── kustomize
+│   │   ├── fn-foo
+│   │   └── OWNERS # OWNERS to approve code change to the function
+│   └── sig-cli
+├── site # Stuff related to the site
+└── OWNERS
+```
 
 ### Test Plan
 
