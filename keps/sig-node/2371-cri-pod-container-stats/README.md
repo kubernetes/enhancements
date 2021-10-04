@@ -225,7 +225,7 @@ As such, this proposal will be broken up into what needs to be done for each of 
 2. Add CRI Pod Level Stats message to CRI protobuf that includes all [Pod Level Stats](#summary-pod-stats-object) metrics from Summary API.
 3. Add support for the new CRI additions in supported container runtimes (CRI-O and containerd).
 4. Switch Kubelet's CRI stats provider from querying container and pod level stats from cAdvisor to newly added CRI pod and container level stats
-5. cAdvisor should stop collecting container and pod level stats. If any other components need container or pod level stats from cAdvisor, the CRI implementation should be queried instead.
+5. cAdvisor should be updated to support no longer collecting stats that are duplicated with CRI implementation. Any client that requires the metrics that are reported by the CRI should gather them from the CRI instead of cAdvisor.
 
 This will be described in more detail in the [design details section](#design-details)
 
@@ -234,7 +234,7 @@ This will be described in more detail in the [design details section](#design-de
 ### /metrics/cadvisor
 
 1. Expose the metric fields provided in `/metrics/cadvisor` in an analogous Prometheus endpoint directly from the CRI implementation.
-2. cAdvisor should stop collecting container and pod level stats, as well as stop broadcasting from `/metrics/cadvisor`.
+5. cAdvisor should be updated to support no longer collecting stats that are duplicated with CRI implementation, and omit them from the report sent to `/metrics/cadvisor`.
 3. The precise endpoint can change, but all the fields should be duplicated (so custom rules can be maintained).
 4. Kubelet does not collect nor expose pod and container level metrics that were formally collected for and exposed by `/metrics/cadvisor`.
 
