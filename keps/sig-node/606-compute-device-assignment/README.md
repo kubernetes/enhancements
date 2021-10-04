@@ -28,7 +28,7 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
-  - [Add v1alpha1 Kubelet GRPC service, at <code>/var/lib/kubelet/pod-resources/kubelet.sock</code>, which returns a list of <a href="https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L734">CreateContainerRequest</a>s used to create containers.](#add-v1alpha1-kubelet-grpc-service-at--which-returns-a-list-of-createcontainerrequests-used-to-create-containers)
+  - [Add v1alpha1 Kubelet GRPC service, at <code>/var/lib/kubelet/pod-resources/kubelet.sock</code>, which returns a list of <a href="https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L734">CreateContainerRequest</a>s used to create containers.](#add-v1alpha1-kubelet-grpc-service-at-varlibkubeletpod-resourceskubeletsock-which-returns-a-list-of-createcontainerrequests-used-to-create-containers)
   - [Add a field to Pod Status.](#add-a-field-to-pod-status)
   - [Use the Kubelet Device Manager Checkpoint file](#use-the-kubelet-device-manager-checkpoint-file)
   - [Add a field to the Pod Spec:](#add-a-field-to-the-pod-spec)

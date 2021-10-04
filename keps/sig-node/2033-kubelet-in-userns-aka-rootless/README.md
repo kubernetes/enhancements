@@ -87,7 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories](#user-stories)
     - [Story 1: Production cluster](#story-1-production-cluster)
     - [Story 2: HPC cluster](#story-2-hpc-cluster)
-    - [Story 3: <code>kind</code> with Rootless Docker/Podman](#story-3--with-rootless-dockerpodman)
+    - [Story 3: <code>kind</code> with Rootless Docker/Podman](#story-3-kind-with-rootless-dockerpodman)
     - [Story 4: Temporary initial cluster for bootstrapping](#story-4-temporary-initial-cluster-for-bootstrapping)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)

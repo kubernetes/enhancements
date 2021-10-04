@@ -35,7 +35,7 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Full <code>kubectl debug</code> Arguments](#full--arguments)
+  - [Full <code>kubectl debug</code> Arguments](#full-kubectl-debug-arguments)
   - [Test Plan](#test-plan)
     - [Alpha milestones](#alpha-milestones)
     - [Beta milestones](#beta-milestones)

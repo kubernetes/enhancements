@@ -30,7 +30,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Support <code>minDomains</code> in ScheduleAnyway as well](#support--in-scheduleanyway-as-well)
+  - [Support <code>minDomains</code> in ScheduleAnyway as well](#support-mindomains-in-scheduleanyway-as-well)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 

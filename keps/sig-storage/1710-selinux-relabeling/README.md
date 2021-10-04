@@ -44,10 +44,10 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
-  - [<code>FSGroupChangePolicy</code> approach](#-approach)
+  - [<code>FSGroupChangePolicy</code> approach](#fsgroupchangepolicy-approach)
   - [Change container runtime](#change-container-runtime)
   - [Move SELinux label management to kubelet](#move-selinux-label-management-to-kubelet)
-  - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge--and-)
+  - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge-fsgroupchangepolicy-and-selinuxrelabelpolicy)
 <!-- /toc -->
 
 ## Release Signoff Checklist

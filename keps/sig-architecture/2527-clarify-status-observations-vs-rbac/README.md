@@ -9,7 +9,7 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Part 1: Loosen and clarify <code>status</code>](#part-1-loosen-and-clarify-)
+  - [Part 1: Loosen and clarify <code>status</code>](#part-1-loosen-and-clarify-status)
     - [Examples](#examples)
   - [Part 2: Clarify when it makes sense to use 2 objects](#part-2-clarify-when-it-makes-sense-to-use-2-objects)
   - [Test Plan](#test-plan)

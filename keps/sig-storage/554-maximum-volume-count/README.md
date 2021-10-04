@@ -25,7 +25,7 @@
         - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
         - [Beta -&gt; GA Graduation](#beta---ga-graduation)
     - [Upgrade / Downgrade / Version Skew Strategy](#upgrade--downgrade--version-skew-strategy)
-      - [Interaction with old <code>AttachVolumeLimit</code> implementation](#interaction-with-old--implementation)
+      - [Interaction with old <code>AttachVolumeLimit</code> implementation](#interaction-with-old-attachvolumelimit-implementation)
   - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 <!-- /toc -->

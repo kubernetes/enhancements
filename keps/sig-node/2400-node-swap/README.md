@@ -39,7 +39,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Just set <code>--fail-swap-on=false</code>](#just-set-)
+  - [Just set <code>--fail-swap-on=false</code>](#just-set---fail-swap-onfalse)
   - [Restrict swap usage at the cgroup level](#restrict-swap-usage-at-the-cgroup-level)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->

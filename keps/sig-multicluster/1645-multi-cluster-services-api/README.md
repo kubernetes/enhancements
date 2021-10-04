@@ -114,7 +114,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
-  - [<code>ObjectReference</code> in <code>ServiceExport.Spec</code> to directly map to a Service](#-in--to-directly-map-to-a-service)
+  - [<code>ObjectReference</code> in <code>ServiceExport.Spec</code> to directly map to a Service](#objectreference-in-serviceexportspec-to-directly-map-to-a-service)
   - [Export services via label selector](#export-services-via-label-selector)
   - [Export via annotation](#export-via-annotation)
 - [Infrastructure Needed](#infrastructure-needed)

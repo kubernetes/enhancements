@@ -12,7 +12,7 @@
   - [Internal structure of the test tarball](#internal-structure-of-the-test-tarball)
     - [Binary artifacts](#binary-artifacts)
     - [Portable sources](#portable-sources)
-  - [Updating dependencies on <code>kubernetes-test.tar.gz</code>](#updating-dependencies-on-)
+  - [Updating dependencies on <code>kubernetes-test.tar.gz</code>](#updating-dependencies-on-kubernetes-testtargz)
     - [Dependencies outside the Kubernetes organization](#dependencies-outside-the-kubernetes-organization)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Test Plan](#test-plan)

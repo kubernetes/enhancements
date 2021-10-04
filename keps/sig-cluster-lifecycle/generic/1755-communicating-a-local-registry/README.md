@@ -90,7 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Pushing images to an outdated URL](#pushing-images-to-an-outdated-url)
     - [Confusion due to multiple versions in the ConfigMap](#confusion-due-to-multiple-versions-in-the-configmap)
 - [Design Details](#design-details)
-  - [The <code>local-registry-hosting</code> ConfigMap](#the--configmap)
+  - [The <code>local-registry-hosting</code> ConfigMap](#the-local-registry-hosting-configmap)
   - [LocalRegistryHosting](#localregistryhosting)
     - [Specification for LocalRegistryHosting v1](#specification-for-localregistryhosting-v1)
   - [Test Plan](#test-plan)

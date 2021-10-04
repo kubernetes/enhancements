@@ -18,7 +18,7 @@
     - [Dynamic workflow vs static workflow](#dynamic-workflow-vs-static-workflow)
     - [Strategies for deploying control plane components](#strategies-for-deploying-control-plane-components)
     - [Strategies for distributing cluster certificates](#strategies-for-distributing-cluster-certificates)
-    - [<code>kubeadm upgrade</code> for HA clusters](#-for-ha-clusters)
+    - [<code>kubeadm upgrade</code> for HA clusters](#kubeadm-upgrade-for-ha-clusters)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)

@@ -9,7 +9,7 @@
 - [Proposal](#proposal)
   - [Adding the staging repository in kubernetes/kubernetes:](#adding-the-staging-repository-in-kuberneteskubernetes)
   - [Modify and Set-up the existing receiving kubernetes/kubectl repository](#modify-and-set-up-the-existing-receiving-kuberneteskubectl-repository)
-  - [Move <code>pkg/kubectl</code> Code](#move--code)
+  - [Move <code>pkg/kubectl</code> Code](#move-pkgkubectl-code)
   - [Time frame](#time-frame)
 - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
