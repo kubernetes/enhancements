@@ -598,18 +598,25 @@ coverage of unit tests.
 
 ### Monitoring
 
-A single metric will be added to track policy evaluations against pods and [templated pods].
-[Namespace evaluations](#namespace-policy-update-warnings) are not counted.
+Three metrics will be introduced:
 
 ```
 pod_security_evaluations_total
 ```
 
+This metric will be added to track policy evaluations against pods and [templated pods].
+[Namespace evaluations](#namespace-policy-update-warnings) are not counted.
+The metric will only be incremented when the policy check is actually performed. In other words,
+this metric will not be incremented if any of the following are true:
+
+- Ignored resource types, subresources, or workload resources without a pod template
+- Update requests that are out of scope (see [Updates](#updates) above)
+- Exempt requests (these are reported in the `pod_security_exemptions_total` metric instead)
+- Errors that make policy evaluation impossible (these are reported in the `pod_security_exemptions_total` metric instead)
+
 The metric will use the following labels:
 
-1. `decision {exempt, allow, deny, error}` - The policy decision. Error is reserved for panics or
-   other errors in policy evaluation. Update requests that are out of scope (see [Updates](#updates)
-   above) are not counted.
+1. `decision {allow, deny}` - The policy decision. `allow` is only recorded with `enforce` mode.
 3. `policy_level {privileged, baseline, restricted}` - The policy level that the request was
    evaluated against.
 4. `policy_version {v1.X, v1.Y, latest, future}` - The policy version that was used for the evaluation.
@@ -617,12 +624,41 @@ The metric will use the following labels:
    Explicit versions greater than the build of the API server or webhook (which are evaluated as `latest`) are recorded as `future`.
    Explicit use of the `latest` version or implicit use by omitting a version or specifying an unparseable version will be recorded as `latest`.
 5. `mode {enforce, warn, audit}` - The type of evaluation mode being recorded. Note that a single
-   request can increment this metric 3 times, once for each mode. If this admission controller is
-   enabled, every every create request and in-scope update request will at least increment the
-   `enforce` total. Privileged evaluations for warn and audit modes are not counted.
+   request can increment this metric 3 times, once for each mode. `audit` and `warn` mode metrics
+   are only incremented for violations. If this admission controller is enabled, every
+   evaluated request will at least increment the `enforce` total.
 6. `request_operation {create, update}` - The operation of the request being checked.
 7. `resource {pod, controller}` - Whether the request object is a Pod, or a [templated
    pod](#podtemplate-resources) resource.
+8. `subresource {ephemeralcontainers}` - The subresource, when relevant & in scope.
+
+```
+pod_security_exemptions_total
+```
+
+This metric will be added to track requests that are considered exempt. Ignored resources and out of
+scope requests do not count towards the total. Errors encountered before the exemption logic will
+not be counted as exempt.
+
+The metric will use the following labels. The definitions match from the above label definitions.
+
+1. `request_operation {create, update}`
+2. `resource {pod, controller}`
+3. `subresource {ephemeralcontainers}`
+
+```
+pod_security_errors_total
+```
+
+This metric will be added to track errors encountered during request evaluation.
+
+The metric will use the following labels. The definitions match from the above label definitions.
+
+1. `fatal {true, false}` - Whether the error prevented evaluation (short-circuit deny). If
+   `fatal=false` then the latest restricted profile may be used to evaluate the pod.
+2. `request_operation {create, update}`
+3. `resource {pod, controller}`
+4. `subresource {ephemeralcontainers}`
 
 ### Audit Annotations
 
@@ -810,7 +846,7 @@ _This section must be completed when targeting alpha to a release._
   of the following metrics mean the feature is not working as expected:
 
   * `pod_security_evaluations_total{decision=deny,mode=enforce}`
-  * `pod_security_evaluations_total{decision=error,mode=enforce}`
+  * `pod_security_errors_total`
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
@@ -831,15 +867,21 @@ _This section must be completed when targeting alpha to a release._
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - [x] Metrics
-    - Metric name: `pod_security_evaluations_total`
+    - Metric name: `pod_security_evaluations_total`, `pod_security_errors_total`
     - Components exposing the metric: `kube-apiserver`
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  - `pod_security_evaluations_total{decision=error}`
+  - `pod_security_errors_total`
     - any rising count of these metrics indicates an unexpected problem evaluating the policy
-  - `pod_security_evaluations_total{decision=error,mode=enforce}`
+  - `pod_security_errors_total{fatal=true}`
     - any rising count of these metrics indicates an unexpected problem evaluating the policy that
       is preventing pod write requests
+  - `pod_security_errors_total{fatal=false}`,
+    `pod_security_evaluations_total{decision=deny,mode=enforce,level=restricted,version=latest}`
+    - a rising count of non-fatal errors indicates an error resolving namespace policies, which
+      causes PodSecurity to default to enforcing `restricted:latest`
+    - a corresponding rise in `restricted:latest` denials may indicate that these errors are
+      preventing pod write requests
   - `pod_security_evaluations_total{decision=deny,mode=enforce}`
     - a rising count indicates that the policy is preventing pod creation as intended, but is
       preventing a user or controller from successfully writing pods
@@ -922,8 +964,8 @@ details). For now, we leave it here.
     - Testing: unit testing on configuration validation
 
   - Enforce mode rejects pods because invalid level/version defaulted to `restricted` level
-    - Detection: rising `pod_security_evaluations_total{decision=error,mode=enforce}` metric counts
-    - Mitigations: 
+    - Detection: rising `pod_security_errors_total{fatal=false}` metric counts
+    - Mitigations: fix the malformed labels
     - Diagnostics:
       - Locate audit logs containing `pod-security.kubernetes.io/error` annotations on affected requests
       - Locate namespaces with malformed level labels:
