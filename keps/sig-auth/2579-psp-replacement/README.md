@@ -611,8 +611,8 @@ this metric will not be incremented if any of the following are true:
 
 - Ignored resource types, subresources, or workload resources without a pod template
 - Update requests that are out of scope (see [Updates](#updates) above)
-- Exempt requests
-- Errors that make policy evaluation impossible
+- Exempt requests (these are reported in the `pod_security_exemptions_total` metric instead)
+- Errors that make policy evaluation impossible (these are reported in the `pod_security_exemptions_total` metric instead)
 
 The metric will use the following labels:
 
