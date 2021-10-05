@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/sirupsen/logrus"
+	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
 )
 
@@ -56,7 +57,7 @@ func Promote(opts *PromoteOpts) error {
 		return fmt.Errorf("unable to load KEP for promotion: %s", err)
 	}
 
-	p.Stage = opts.Stage
+	p.Stage = api.Stage(opts.Stage)
 	p.LatestMilestone = opts.Release
 	p.LastUpdated = opts.Release
 

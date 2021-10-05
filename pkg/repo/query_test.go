@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/repo"
 )
 
@@ -99,8 +100,8 @@ func TestQuery(t *testing.T) {
 				name: "everything",
 				queryOpts: repo.QueryOpts{
 					Groups: []string{"sig-architecture"},
-					Status: []string{"provisional"},
-					Stage:  []string{"alpha"},
+					Status: []string{string(api.ProvisionalStatus)},
+					Stage:  []string{string(api.AlphaStage)},
 					// TODO: PRRApprover: []string{""},
 					Author:   []string{"@rjbez17"},
 					Approver: []string{"@liggitt"},
@@ -136,7 +137,7 @@ func TestQuery(t *testing.T) {
 			{
 				name: "results",
 				queryOpts: repo.QueryOpts{
-					Status: []string{"provisional"},
+					Status: []string{string(api.ProvisionalStatus)},
 				},
 				kepNames: []string{
 					"123-newstyle",
@@ -174,7 +175,7 @@ func TestQuery(t *testing.T) {
 			{
 				name: "alpha",
 				queryOpts: repo.QueryOpts{
-					Stage: []string{"alpha"},
+					Stage: []string{string(api.AlphaStage)},
 				},
 				kepNames: []string{
 					"123-newstyle",
@@ -184,7 +185,7 @@ func TestQuery(t *testing.T) {
 			{
 				name: "beta",
 				queryOpts: repo.QueryOpts{
-					Stage: []string{"beta"},
+					Stage: []string{string(api.BetaStage)},
 				},
 				kepNames: []string{
 					"404-question-not-found",
@@ -193,7 +194,7 @@ func TestQuery(t *testing.T) {
 			{
 				name: "stable",
 				queryOpts: repo.QueryOpts{
-					Stage: []string{"stable"},
+					Stage: []string{string(api.StableStage)},
 				},
 				kepNames: []string{
 					"13-keps-as-crds",

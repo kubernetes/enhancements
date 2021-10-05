@@ -1,6 +1,8 @@
 title: "Extending RequestedToCapacityRatio Priority Function to support Resource Bin Packing of Extended Resources - @sudeshsh"
 kep-number: 964
 owning-sig: sig-scheduling
+authors:
+  - sudeshsh
 participating-sigs:
   - sig-scheduling
 reviewers:

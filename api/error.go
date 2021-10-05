@@ -17,8 +17,6 @@ limitations under the License.
 package api
 
 import (
-	"fmt"
-
 	"github.com/pkg/errors"
 )
 
@@ -37,14 +35,3 @@ var (
 		"an unknown error occurred while trying to determine a PRR approver",
 	)
 )
-
-// KEP errors
-func ErrKEPStageIsInvalid(stage string) error {
-	return errors.New(
-		fmt.Sprintf(
-			"the specified stage (%s) should be one of the following: %v",
-			stage,
-			ValidStages,
-		),
-	)
-}

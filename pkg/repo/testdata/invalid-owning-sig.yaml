@@ -1,0 +1,10 @@
+title: does-not-matter
+kep-number: 1234
+authors:
+  - "@alice"
+  - "@beth"
+owning-sig: not-a-sig
+approvers:
+  - "@dorothy"
+status: provisional
+stage: beta

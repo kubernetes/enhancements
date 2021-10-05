@@ -140,10 +140,10 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 
 		logrus.Debugf("current KEP: %v", k)
 
-		if len(opts.Status) > 0 && !allowedStatus[k.Status] {
+		if len(opts.Status) > 0 && !allowedStatus[string(k.Status)] {
 			continue
 		}
-		if len(opts.Stage) > 0 && !allowedStage[k.Stage] {
+		if len(opts.Stage) > 0 && !allowedStage[string(k.Stage)] {
 			continue
 		}
 		if len(opts.PRRApprover) > 0 && !atLeastOne(k.PRRApprovers, allowedPRR) {

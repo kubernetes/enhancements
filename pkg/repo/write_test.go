@@ -44,7 +44,7 @@ func TestWriteKep(t *testing.T) {
 	}{
 		{
 			name:         "simple KEP",
-			kepFile:      "testdata/valid-kep.yaml",
+			kepFile:      "testdata/valid-kep-full.yaml",
 			repoPath:     "enhancements",
 			kepName:      "1010-test",
 			sig:          "sig-auth",
@@ -53,7 +53,7 @@ func TestWriteKep(t *testing.T) {
 		},
 		{
 			name:         "missing KEP name",
-			kepFile:      "testdata/valid-kep.yaml",
+			kepFile:      "testdata/valid-kep-full.yaml",
 			repoPath:     "enhancements",
 			sig:          "sig-auth",
 			expectedPath: filepath.Join("enhancements", "keps", "sig-auth", "1010-test"),
@@ -61,7 +61,7 @@ func TestWriteKep(t *testing.T) {
 		},
 		{
 			name:         "missing owning SIG",
-			kepFile:      "testdata/valid-kep.yaml",
+			kepFile:      "testdata/valid-kep-full.yaml",
 			repoPath:     "enhancements",
 			kepName:      "1010-test",
 			expectedPath: filepath.Join("enhancements", "keps", "sig-auth", "1010-test"),

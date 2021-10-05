@@ -66,24 +66,53 @@ func TestMain(m *testing.M) {
 
 func TestProposalValidate(t *testing.T) {
 	testcases := []struct {
-		name         string
-		file         string
-		expectErrors bool
+		name string
+		file string
+		errs []error
 	}{
 		{
-			name:         "valid KEP passes validate",
-			file:         "testdata/valid-kep.yaml",
-			expectErrors: false,
+			name: "valid KEP: minimum fields",
+			file: "testdata/valid-kep-minimum.yaml",
+			errs: nil,
 		},
 		{
-			name:         "invalid KEP fails validate for owning-sig",
-			file:         "testdata/invalid-kep.yaml",
-			expectErrors: true,
+			name: "valid KEP: all fields",
+			file: "testdata/valid-kep-full.yaml",
+			errs: nil,
+		},
+		{
+			name: "invalid KEP: owning-sig does not exist",
+			file: "testdata/invalid-owning-sig.yaml",
+			errs: []error{
+				fmt.Errorf("invalid owning-sig: not-a-sig"),
+			},
+		},
+		{
+			name: "invalid KEP: prr-approver does not exist",
+			file: "testdata/invalid-prr-approver.yaml",
+			errs: []error{
+				fmt.Errorf("invalid prr-approver: not-a-prr-approver"),
+			},
+		},
+		{
+			name: "invalid KEP: status does not exist",
+			file: "testdata/invalid-status.yaml",
+			errs: []error{
+				fmt.Errorf("invalid status: monkeys, should be one of %v", api.ValidStatuses),
+			},
+		},
+		{
+			name: "invalid KEP: stage does not exist",
+			file: "testdata/invalid-stage.yaml",
+			errs: []error{
+				fmt.Errorf("invalid stage: monkeys, should be one of %v", api.ValidStages),
+			},
 		},
 	}
 
 	parser := api.KEPHandler{}
-	parser.Groups = []string{"sig-api-machinery"}
+	parser.Groups = []string{"sig-api-machinery", "sig-architecture", "sig-auth"}
+	parser.PRRApprovers = []string{"@wojtek-t"}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,11 +124,7 @@ func TestProposalValidate(t *testing.T) {
 			require.NoError(t, err)
 
 			errs := parser.Validate(&p)
-			if tc.expectErrors {
-				require.NotEmpty(t, errs)
-			}
-
-			require.NoError(t, err)
+			require.ElementsMatch(t, tc.errs, errs)
 		})
 	}
 }

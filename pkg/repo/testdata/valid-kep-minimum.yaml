@@ -1,0 +1,10 @@
+title: minimal
+kep-number: 1234
+authors:
+  - "@alice"
+  - "@beth"
+owning-sig: sig-api-machinery
+approvers:
+  - "@dorothy"
+status: provisional
+stage: beta

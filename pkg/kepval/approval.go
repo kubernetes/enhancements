@@ -100,14 +100,9 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage bool, err error) {
 	logrus.Debug("checking if PRR is required")
 
-	required = true
+	required = kep.Status == api.ImplementableStatus
 	missingMilestone = kep.IsMissingMilestone()
 	missingStage = kep.IsMissingStage()
-
-	if kep.Status != "implementable" {
-		required = false
-		return required, missingMilestone, missingStage, nil
-	}
 
 	if missingMilestone {
 		logrus.Warnf("Missing the latest milestone field: %s", kep.Filename)
