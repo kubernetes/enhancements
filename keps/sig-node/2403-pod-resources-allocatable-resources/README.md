@@ -93,6 +93,14 @@ This interface can be used to the available resources on the worker node. The ku
 Combining the information reported by the `List` API, which pertains the current allocation, with the information reported by the `GetAllocatableResources` API, monitoring agent can reliably report the resource
 utilization and availability.
 
+#### Extended resources
+
+The interface can be used to implement usage scenarios where a client needs
+information about all resource requests of the pod, also Extended Resources
+that are not directly mapped to any specific device id. For example, Extended
+Resources can be used to handle device sub-resources like GPU memory but these
+requests are not visible as container devices in the API.
+
 
 ### Risks and Mitigations
 
@@ -148,8 +156,6 @@ message GetCapacityResponse {
     repeated int64 cpu_ids = 2;
     repeated ContainerMemory memory = 3;
     map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> quantity = 4;
-    ReservedResources system_reserved = 5;
-    ReservedResources kube_reserved = 6;
 }
 
 // ListPodResourcesRequest is the request made to the PodResourcesLister service
@@ -158,15 +164,6 @@ message ListPodResourcesRequest {}
 // ListPodResourcesResponse is the response returned by List function
 message ListPodResourcesResponse {
     repeated PodResources pod_resources = 1;
-}
-
-// ReservedResources contains information about the resources reserved for
-// services outside Kubernetes Pods (system-reserved, kube-reserved)
-message ReservedResources {
-    repeated ContainerDevices devices = 1;
-    repeated int64 cpu_ids = 2;
-    repeated ContainerMemory memory = 3;
-    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> quantity = 4;
 }
 
 // PodResources contains information about the node resources assigned to a pod
