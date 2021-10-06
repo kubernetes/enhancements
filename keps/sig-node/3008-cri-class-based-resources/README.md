@@ -1,0 +1,1131 @@
+<!--
+**Note:** When your KEP is complete, all of these comment blocks should be removed.
+
+To get started with this template:
+
+- [ ] **Pick a hosting SIG.**
+  Make sure that the problem space is something the SIG is interested in taking
+  up. KEPs should not be checked in without a sponsoring SIG.
+- [ ] **Create an issue in kubernetes/enhancements**
+  When filing an enhancement tracking issue, please make sure to complete all
+  fields in that template. One of the fields asks for a link to the KEP. You
+  can leave that blank until this KEP is filed, and then go back to the
+  enhancement and add the link.
+- [ ] **Make a copy of this template directory.**
+  Copy this template into the owning SIG's directory and name it
+  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
+  leading-zero padding) assigned to your enhancement above.
+- [ ] **Fill out as much of the kep.yaml file as you can.**
+  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
+  "Status", and date-related fields.
+- [ ] **Fill out this file as best you can.**
+  At minimum, you should fill in the "Summary" and "Motivation" sections.
+  These should be easy if you've preflighted the idea of the KEP with the
+  appropriate SIG(s).
+- [ ] **Create a PR for this KEP.**
+  Assign it to people in the SIG who are sponsoring this process.
+- [ ] **Merge early and iterate.**
+  Avoid getting hung up on specific details and instead aim to get the goals of
+  the KEP clarified and merged quickly. The best way to do this is to just
+  start with the high-level sections and fill out details incrementally in
+  subsequent PRs.
+
+Just because a KEP is merged does not mean it is complete or approved. Any KEP
+marked as `provisional` is a working document and subject to change. You can
+denote sections that are under active debate as follows:
+
+```
+<<[UNRESOLVED optional short context or usernames ]>>
+Stuff that is being argued.
+<<[/UNRESOLVED]>>
+```
+
+When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
+focused. If you disagree with what is already in a document, open a new PR
+with suggested changes.
+
+One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
+You do not need a new KEP to move from beta to GA, for example. If
+new details emerge that belong in the KEP, edit the KEP. Once a feature has become
+"implemented", major changes should get new KEPs.
+
+The canonical place for the latest set of instructions (and the likely source
+of this file) is [here](/keps/NNNN-kep-template/README.md).
+
+**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
+it is marked `implementable`, must be approved by each of the KEP approvers.
+If none of those approvers are still appropriate, then changes to that list
+should be approved by the remaining approvers and/or the owning SIG (or
+SIG Architecture for cross-cutting KEPs).
+-->
+# KEP-3008: Class-based resources
+
+<!--
+This is the title of your KEP. Keep it short, simple, and descriptive. A good
+title can help communicate what the KEP is and should be considered as part of
+any review.
+-->
+
+<!--
+A table of contents is helpful for quickly jumping to sections of a KEP and for
+highlighting any additional information provided beyond the standard KEP
+template.
+
+Ensure the TOC is wrapped with
+  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
+tags, and then generate with `hack/update-toc.sh`.
+-->
+
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+    - [Story 3](#story-3)
+    - [Story 4](#story-4)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [CRI protocol](#cri-protocol)
+  - [Pod Spec](#pod-spec)
+  - [Container runtimes](#container-runtimes)
+  - [Open Questions](#open-questions)
+    - [Pod QoS class](#pod-qos-class)
+  - [Default class](#default-class)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+  - [Future work](#future-work)
+    - [Resource status/capacity](#resource-statuscapacity)
+    - [Resource discovery](#resource-discovery)
+    - [Access control](#access-control)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [Pod annotations instead of Pod spec changes](#pod-annotations-instead-of-pod-spec-changes)
+  - [RDT-only](#rdt-only)
+  - [Widen the scope](#widen-the-scope)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+<!-- /toc -->
+
+## Release Signoff Checklist
+
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
+
+## Summary
+
+<!--
+This section is incredibly important for producing high-quality, user-focused
+documentation such as release notes or a development roadmap. It should be
+possible to collect this information before implementation begins, in order to
+avoid requiring implementors to split their attention between writing release
+notes and implementing the feature itself. KEP editors and SIG Docs
+should help to ensure that the tone and content of the `Summary` section is
+useful for a wide audience.
+
+A good summary is probably at least a paragraph in length.
+
+Both in this section and below, follow the guidelines of the [documentation
+style guide]. In particular, wrap lines to a reasonable length, to make it
+easier for reviewers to cite specific portions, and to minimize diff churn on
+updates.
+
+[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
+-->
+
+We would like to add support for class-based resources in Kubernetes.
+Class-based resources can be thought of as non-accountable resources, each of
+which is presented by a set of classes. Being non-accountable means that
+multiple containers can be assigned to the same class. They are also supposed
+to be opaque to the CRI client in the sense that the container runtime takes
+care of configuration and control of the resources and the classes within.
+
+A prime example of a class-based resource is Intel RDT (Resource Director
+Technology). RDT is a technology for controlling the cache lines and memory
+bandwidth available to applications. RDT provides a class-based approach for
+QoS control of these shared resources: all processes in the same hardware class
+share a portion of cache lines and memory bandwidth.
+
+We also believe that the Linux Block IO controller (cgroup) should be handled
+as a class-based resource on the level of container orchestration. This enables
+configuring I/O scheduler priority and throttling I/O bandwidth per workload.
+Having the support for class-based resources in place, it will provide a
+framework for the future, for instance class-based network or memory type
+prioritization.
+
+## Motivation
+
+<!--
+This section is for explicitly listing the motivation, goals, and non-goals of
+this KEP.  Describe why the change is important and the benefits to users. The
+motivation section can optionally provide links to [experience reports] to
+demonstrate the interest in a KEP within the wider Kubernetes community.
+
+[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
+-->
+
+RDT implements a class-based mechanism for controlling the cache and memory
+bandwidth QoS of applications, providing a tool for mitigating noisy neighbors
+and fulfilling SLAs. In Linux control happens via resctrl -- a
+pseudo-filesystem provided by the kernel which makes it virtually agnostic of
+the hardware architecture. The OCI runtime-spec has supported Intel RDT for a
+while already. Other hardware vendors have comparable technologies which use
+the same resctrl interface.
+
+The Linux Block IO controller parameters depend very heavily on the underlying
+hardware and system configuration (device naming/numbering, IO scheduler
+configuration etc) which makes it very impractical to control from the Pod spec
+level. In order to hide this complexity the concept of blockio classes is being
+added to the container runtimes (CRI-O and containerd). A system administrator
+is able to configure blockio controller parameters on per-class basis and the
+classes are then made available for CRI clients.
+
+Currently, there is no mechanism in Kubernetes to use these types of resources
+in Kubernetes. CRI-O and containerd runtimes have support for RDT and blockio
+classes and they provide an bridge-gap user interface through special pod
+annotations. We would like to eventually get these types of resources first
+class citizen and properly supported in Kubernetes, providing visibility, a
+well-defined user interface, and permission controls.
+
+### Goals
+
+<!--
+List the specific goals of the KEP. What is it trying to achieve? How will we
+know that this has succeeded?
+-->
+
+- Make it possible to request class resources
+  - Support RDT class assignment of containers. This is already supported by
+    the containerd and CRI-O runtime and part of the OCI runtime-spec
+  - Support blockio class assignment of containers.
+- Make the extensions flexible, enabling simple addition of other class-based
+  resource types in the future.
+
+### Non-Goals
+
+<!--
+What is out of scope for this KEP? Listing non-goals helps to focus discussion
+and make progress.
+-->
+
+- Interface for configuring the class-based resources.
+- Enumerating possible (class) resource types or their detailed behavior
+- Resource status/capacity (will be addressed in a separate KEP)
+- Discovery of the class-based resources (will be addressed in a separate KEP)
+- Access control (will be addressed in a separate KEP)
+
+## Proposal
+
+<!--
+This is where we get down to the specifics of what the proposal actually is.
+This should have enough detail that reviewers can understand exactly what
+you're proposing, but should not include things like API designs or
+implementation. What is the desired outcome and how do we measure success?.
+The "Design Details" section below is for the real
+nitty-gritty.
+-->
+
+We extend the CRI protocol and Pod spec to contain information about the
+class-based resource assignment of containers.
+
+Currently we identify two types of resources (RDT and blockio) but this will be
+a generic mechanism that will serve other similar resources in the future.
+
+### User Stories (Optional)
+
+<!--
+Detail the things that people will be able to do if this KEP is implemented.
+Include as much detail as possible so that people can understand the "how" of
+the system. The goal here is to make this feel real for users without getting
+bogged down.
+-->
+
+#### Story 1
+
+As a user I want to minimize the interference of other applications to my
+workload by assigning it to a class with exclusive cache allocation.
+
+#### Story 2
+
+As a user I want to make sure my low-priority, I/O-intensive background task
+will not disturb more important workloads running on the same node.
+
+#### Story 3
+
+As a cluster administrator I want to throttle I/O bandwidths of certain
+DaemonSets, and I want that exact throttling values depend on the SSD model in
+my heterogenous cluster.
+
+#### Story 4
+
+As a user I want to assign a low priority task into an (RDT) class that limits
+the available memory bandwidth.
+
+### Notes/Constraints/Caveats (Optional)
+
+<!--
+What are the caveats to the proposal?
+What are some important details that didn't come across above?
+Go in to as much detail as necessary here.
+This might be a good place to talk about core concepts and how they relate.
+-->
+
+This is only the first step in getting class-based resources supported in
+Kubernetes. Important pieces like resource status, resource disovery and
+permission control are [non-goals](#non-goals) not solved here. These aspects
+are briefly discussed in [future work](#future-work). The risk in this sort of
+piecemeal approach is finding devil in the details, resulting in inconsistent
+and/or crippled and/or cumbersome end result. However, there is a lot of
+experience in extending the API and understanding which sort of solutions are
+functional and practical.
+
+### Risks and Mitigations
+
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
+
+- User assigning container to “unauthorized” class, causing interference and
+  access to unwanted set/amount of resources. This will be addressed in future
+  KEP introducing permission controls.
+- Confusion: user tries to assign container to RDT class but RDT has not been
+  enabled on system(s). This will be addressed by future KEP(s) introducing
+  resource discovery and status.
+- Keeping client (kubelet) and runtime in sync wrt to available classes. Will
+  be addressed in future KEP about resource discovery.
+
+## Design Details
+
+<!--
+This section should contain enough information that the specifics of your
+change are understandable. This may include API specs (though not always
+required) or even code snippets. If there's any ambiguity about HOW your
+proposal will be implemented, this is the place to discuss them.
+-->
+
+Configuration and management of the resource classes is fully handled by the
+underlying container runtime and is invisible to kubelet. An error to the CRI
+client is returned if the specified class is not available.
+
+### CRI protocol
+
+The following additions to the CRI protocol are suggested.
+
+The `ContainerConfig` message will be supplemented with new `class_resources`
+field, providing per-container setting for class resources.
+
+
+```diff
+ message ContainerConfig {
+
+ ...
+     // Configuration specific to Linux containers.
+     LinuxContainerConfig linux = 15;
+     // Configuration specific to Windows containers.
+     WindowsContainerConfig windows = 16;
++
++    // Configuration of class resources.
++    ContainerClassResources class_resources = 17;
+ }
+
++// ContainerClassResources specifies the configuration of class based
++// resources of a container.
++message ContainerClassResources {
++    // Resource classes of the container will be assigned to
++    map<string, string> classes = 1;
++}
+```
+
+The `PodSandboxConfig` will be supplemented with a corresponding
+`class_resources` field that will be the Pod level configuration. Depending on
+the resource this might be interpreted as a pod-level default (that is used if
+nothing is specified in the `ContainerConfig`) or as a true Pod-level setting -
+in the end the detailed behavior will be responsibility of the container
+runtime.
+
+```diff
+ message PodSandboxConfig {
+@@ -45,5 +45,14 @@ message PodSandboxConfig {
+     LinuxPodSandboxConfig linux = 8;
+     // Optional configurations specific to Windows hosts.
+     WindowsPodSandboxConfig windows = 9;
++    // Configuration of class resources.
++    PodClassResources class_resources = 10;
++
+ }
+
++// PodClassResources specifies the configuration of class based
++// resources of a pod.
++message PodClassResources {
++    // Resource classes of the pod will be assigned to
++    map<string, string> class = 1;
++}
+```
+
+Also, define "known" class resource types to more easily align container
+runtime implementations:
+
+```
++
++const (
++       // ClassResourceRdt is the name of the RDT class resource
++       ClassResourceRdt = "rdt"
++       // ClassResourceBlockio is the name of the blockio class resource
++       ClassResourceBlockio = "blockio"
++)
+```
+
+### Pod Spec
+
+Introduce a new field (e.g. class) into ResourceRequirements of Container.
+
+```diff
+// ResourceRequirements describes the compute resource requirements.
+type ResourceRequirements struct {
+     // Limits describes the maximum amount of compute resources allowed.
+     Limits ResourceList `json:"limits,omitempty"
+     // Requests describes the minimum amount of compute resources required.
+     Requests ResourceList `json:"requests,omitempty"
++    // Classes specifies the resource classes that the container should be assigned
++    Classes map[ClassResourceName]string
+}
+
++// ClassResourceName is the name of a class-based resource.
++type ClassResourceName string
+```
+
+Also, we add a `Resources` field to the `PodSpec`. We will re-use the existing
+`ResourceRequirements` type but Limits and Requests must be left empty. Classes
+may be set and they represent the Pod-level assignment of class resources,
+comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
+
+```diff
+ type PodSpec struct {
+@@ -224,4 +224,8 @@ type PodSpec struct {
+     // Default to false.
+     // +optional
+     SetHostnameAsFQDN *bool `json:"setHostnameAsFQDN,omitempty" protobuf:"varint,35,opt,name=setHostnameAsFQDN"`
++    // Pod-level resources. Currently, requests and limits are not allowed
++    // to be specified for pods.
++    // +optional
++    Resources ResourceRequirements
+ }
+```
+
+In practice, the class resource information will be directly used in the CRI
+ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
+resource discovery or access control kubelet does not do any validity checking
+of the values. Invalid class assignments will cause an error in the container
+runtime.
+
+Input validation of classes very similar to labels is implemented: keys
+(`ClassResourceName`) and values must be non-empty, less than 64 characters
+long, must start and end with an alphanumeric character and may contain only
+alphanumeric characters, dashes, underscores or dots (`-`, `_` or `.`).
+Similar to labels, a namespace prefix (FQDN subdomain separated with a slash)
+in the key is allowed, similar to labels, e.g. `vendor/resource`.
+
+### Container runtimes
+
+We have open PRs to implement class-based RDT and blockio support in CRI-O and
+containerd:
+
+- cri-o:
+  - [~~Add support for Intel RDT~~](https://github.com/cri-o/cri-o/pull/4830)
+  - [~~Support for cgroups blockio~~](https://github.com/cri-o/cri-o/pull/4873)
+- containerd:
+  - [~~Support Intel RDT~~](https://github.com/containerd/containerd/pull/5439)
+  - [Support for cgroups blockio](https://github.com/containerd/containerd/pull/5490)
+
+The design paradigm here is that the container runtime configures the resource
+classes according to a given configuration file. Enforcement on containers is
+done via OCI.
+
+### Open Questions
+
+#### Pod QoS class
+
+The Pod QoS class could be communicated to the container runtime as a class
+resource, too. This information is currently internal to kubelet. However,
+container runtimes (CRI-O, at least) are already depending on this information
+and currently determining it indirectly by evaluating other CRI parameters. It
+would be better to explicitly state the Pod QoS class and class resources would
+look like a logical place for that. This also makes it techically possible to
+have container-specific QoS classes (as a possible future enhancement of K8s).
+
+Communicating Pod QoS class via class resources would advocate moving class
+resources up to `ContainerConfig`.
+
+Making this change, it would also be possible to separate `oom_score_adj` from
+the pod qos class in the future.  The runtime could provide a set of OOM
+classes, making it possible for the user to specify a burstable pod with low
+oom priority (low chance of being killed).
+
+### Default class
+
+A mechanism for indicating that the (runtime) default class should be used. The
+default class would/should be a node/runtime specific attribute. How should
+this be specified in the CRI protocol/`cri-api` and Pod spec?
+
+### Test Plan
+
+<!--
+**Note:** *Not required until targeted at a release.*
+
+Consider the following in developing a test plan for this enhancement:
+- Will there be e2e and integration tests, in addition to unit tests?
+- How will it be tested in isolation vs with other components?
+
+No need to outline all of the test cases, just the general strategy. Anything
+that would count as tricky in the implementation, and anything particularly
+challenging to test, should be called out.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+### Graduation Criteria
+
+<!--
+**Note:** *Not required until targeted at a release.*
+
+Define graduation milestones.
+
+These may be defined in terms of API maturity, or as something else. The KEP
+should keep this high-level with a focus on what signals will be looked at to
+determine graduation.
+
+Consider the following in developing the graduation criteria for this enhancement:
+- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
+- [Deprecation policy][deprecation-policy]
+
+Clearly define what graduation means by either linking to the [API doc
+definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
+or by redefining what graduation means.
+
+In general we try to use the same stages (alpha, beta, GA), regardless of how the
+functionality is accessed.
+
+[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
+[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
+
+Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
+
+**For non-optional features moving to GA, the graduation criteria must include
+[conformance tests].**
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+
+#### Deprecation
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+-->
+
+### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
+
+### Version Skew Strategy
+
+<!--
+If applicable, how will the component handle version skew with other
+components? What are the guarantees? Make sure this is in the test plan.
+
+Consider the following in developing a version skew strategy for this
+enhancement:
+- Does this enhancement involve coordinating behavior in the control plane and
+  in the kubelet? How does an n-2 kubelet without this feature available behave
+  when this feature is used?
+- Will any other components on the node change? For example, changes to CSI,
+  CRI or CNI may require updating that component before the kubelet.
+-->
+
+### Future work
+
+These topics were stated in [Non-goals](#non-goals) and thus they are strictly
+out of the scope of this KEP. However, the sections below briefly outline some
+possible solutions for those, in order to better evaluate this KEP in a broader
+context.
+
+#### Resource status/capacity
+
+This KEP does not speak out anything about presenting the available resource
+types (or classes within) to the users.
+
+Some alternatives for presenting this information:
+
+1. Supplement `NodeStatus`
+
+   ```diff
+    // NodeStatus is information about the current status of a node.
+    type NodeStatus struct {
+            // Capacity represents the total resources of a node.
+            // More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#capacity
+            // +optional
+            Capacity ResourceList `json:"capacity,omitempty" protobuf:"bytes,1,rep,name=capacity,casttype=ResourceList,castkey=ResourceName"`
+            // Allocatable represents the resources of a node that are available for scheduling.
+            // Defaults to Capacity.
+            // +optional
+            Allocatable ResourceList `json:"allocatable,omitempty" protobuf:"bytes,2,rep,name=allocatable,casttype=ResourceList,castkey=ResourceName"`
+   +        // ResourceClasses lists the available
+   +        ClassResourdes []ClassResourceList
+   +
+   +type ClassResourceList {
+   +        // Name of the resource
+   +        Name ClassResourceName
+   +        // Classes available in the resource
+   +        Classes []string
+   +}
+   ```
+1. Separate API objects (e.g. something like `RuntimeClass`). Doesn't
+   necessarily that neatly align with two level hierarchy (resource name and a
+   set of classes within). Also, only best suited to homogenous clusters.
+
+#### Resource discovery
+
+Some possible alternatives.
+
+1. Reported by the container runtime. Container runtime is (or at least should
+   be) aware of all resource types and the classes within. It could advertise
+   the resources e.g. via either:
+
+   1. A separate gRPC endpoint or update `StatusResponse
+   1. OR Populate a (json) file in a known location
+
+   As a reference, the API currently allows listing of some objects/resources
+   (Pods, Containers, Images etc) but not some others.
+
+1. Manual configuration. Would be best suited for case where resources and
+   classes would be presented as separate API objects.
+
+#### Access control
+
+If class resources were advertised as API objects the natural access
+control mechanism would be through RBAC.
+
+If class resources were advertised in node status (similar to other resources),
+access control could be achieved e.g. by extending ResourceQuotaSpec which would implement restrictions based on the namespace.
+
+```diff
+ // ResourceQuotaSpec defines the desired hard limits to enforce for Quota.
+ type ResourceQuotaSpec struct {
+     // hard is the set of desired hard limits for each named resource.
+     Hard ResourceList
+     // A collection of filters that must match each object tracked by a quota.
+     // If not specified, the quota matches all objects.
+     Scopes []ResourceQuotaScope 
+     // scopeSelector is also a collection of filters like scopes that must match each
+     // object tracked by a quota but expressed using ScopeSelectorOperator in combination
+     // with possible values.
+     ScopeSelector *ScopeSelector
++    // AllowedClasses specifies the list of allowed classes for each class-based resource
++    AllowedClasses map[ClassResourceName]ResourceClassList
+}
+
++// ResourceClassList is a list of classes of a specific type of class-based resource.
++type ResourceClassList []string
+```
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
+
+### Feature Enablement and Rollback
+
+<!--
+This section must be completed when targeting alpha to a release.
+-->
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+<!--
+Pick one of these and delete the rest.
+-->
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [ ] Other
+  - Describe the mechanism:
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+###### Does enabling the feature change any default behavior?
+
+<!--
+Any change of default behavior may be surprising to users or break existing
+automations, so be extremely careful here.
+-->
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+<!--
+Describe the consequences on existing workloads (e.g., if this is a runtime
+feature, can it break the existing applications?).
+
+NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+-->
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+###### Are there any tests for feature enablement/disablement?
+
+<!--
+The e2e framework does not currently support enabling or disabling feature
+gates. However, unit tests in each component dealing with managing data, created
+with and without the feature, are necessary. At the very least, think about
+conversion tests if API types are being modified.
+-->
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
+
+###### What specific metrics should inform a rollback?
+
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+<!--
+Even if applying deprecation policies, they may still surprise some users.
+-->
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+<!--
+Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+checking if there are objects with field X set) may be a last resort. Avoid
+logs or events for this purpose.
+-->
+
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
+
+### Dependencies
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### Does this feature depend on any specific services running in the cluster?
+
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
+
+### Scalability
+
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
+
+For beta, this section is required: reviewers must answer these questions.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### Will enabling / using this feature result in any new API calls?
+
+<!--
+Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+Focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+-->
+
+No, enabling or using the feature does not induce any new API calls in
+Kubernetes.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+<!--
+Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+-->
+
+Class resources do extend existing API types but not introduce new types of
+objects. However, future work (KEPs) enabling resource discovery and permission
+control might change this.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+<!--
+Describe them, providing:
+  - Which API(s):
+  - Estimated increase:
+-->
+
+No, enabling or using the feature does not result in any new calls to the cloud
+provider.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+<!--
+Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+-->
+
+A new field in `ResourceRequirements` (of `Container`) will increase the size
+of `Pod` objects by a bytes per class requested.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+<!--
+Look at the [existing SLIs/SLOs].
+
+Think about adding additional work or introducing new steps in between
+(e.g. need to do X to start a container), etc. Please describe the details.
+
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+-->
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+<!--
+Things to keep in mind include: additional in-memory state, additional
+non-trivial computations, excessive access to disks (including increased log
+volume), significant amount of data sent and/or received over network, etc.
+This through this both in small and large cases, again with respect to the
+[supported limits].
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+## Implementation History
+
+<!--
+Major milestones in the lifecycle of a KEP should be tracked in this section.
+Major milestones might include:
+- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
+- the `Proposal` section being merged, signaling agreement on a proposed design
+- the date implementation started
+- the first Kubernetes release where an initial version of the KEP was available
+- the version of Kubernetes where the KEP graduated to general availability
+- when the KEP was retired or superseded
+-->
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+
+## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
+
+### Pod annotations instead of Pod spec changes
+
+Instead of updating CRI and Pod spec in lock-step, the API change could be
+split into two phases, similar to e.g. how seccomp support was added.  Adding
+support for Pod annotations would provide an initial user interface (behind a
+feature gate) for the feature and enable easier testing/verification.  These
+would bridge the gap between enabling class-based resources in the CRI protocol
+and making them available in the Pod spec.
+
+
+1. In the first phase only update the CRI API use Pod annotations
+as an intermediate solution for specifying class resources
+2. In the second phase deprecate Pod annotations and update the Pod spec
+
+A feature gate ResourceClassPodAnnotations would be added kubelet to look for
+pod annotations and set the RDT and blockio class of containers via CRI
+protocol accordingly:
+
+- `rdt.resources.beta.kubernetes.io/pod` for setting a Pod-level default RDT
+  class for all containers
+- `rdt.resources.beta.kubernetes.io/container.<container-name>` for
+  container-specific RDT class settings
+- `blockio.resources.beta.kubernetes.io/pod` for setting a Pod-level default
+  blockio class for all containers
+- `blockio.resources.beta.kubernetes.io/container.<container-name>` for
+  container-specific blockio class settings
+
+### RDT-only
+
+The scope of the KEP could be narrowed down by concentrating on RDT only,
+dropping support for blockio. This would center the focus on RDT only which is
+well understood and specified in the OCI runtime specification.
+
+### Widen the scope
+
+The currently chosen strategy of this KEP is "minimum viable product" with
+incremental future steps of improving and supplementing the functionality. This
+strategy was chosen in order to make the review easier by handling smaller
+digestible (but still coherent and self-contained) chunks at a time.
+
+An alternaive would be to widen the scope of this KEP to include some or all of
+the subjects mentioned in [future work](#future-work) (i.e. resource discovery,
+status/capacity and access control).
+
+## Infrastructure Needed (Optional)
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
+
+For proper end-to-end testing of RDT, a cluster with nodes that have RDT
+enabled would be required. Similarly, for end-to-end testing of blockio, nodes
+with blockio cgroup controller and suitable i/o scheduler enabled would be
+required.
