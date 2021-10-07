@@ -1,0 +1,51 @@
+title: KEP Template
+kep-number: 2763
+authors:
+  - "@vinayakankugoyal"
+owning-sig: sig-security
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2021-05-20
+reviewers:
+  - "@PushkarJ" # sig-security
+  - "@tabbysable" # sig-security
+  - "@tallclair" # sig-auth
+  - "@mrunalp" # sig-node and CRI-O
+  - "@mikebrow" # sig-node and containerd
+  - "@SergeyKanzhelev" # sig-node and CRI API
+approvers:
+  - "@tabbysable"
+prr-approvers:
+  - "@ehashman"
+see-also:
+  - TBD
+replaces:
+  - TBD
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.24"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.24"
+  beta: "TBD"
+  stable: "TBD"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: AmbientCapabilities
+    components:
+      - kubelet
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - TBD
