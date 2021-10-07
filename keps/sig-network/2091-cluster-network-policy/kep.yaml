@@ -2,11 +2,12 @@ title: Add support for ClusterNetworkPolicy resources
 kep-number: 2091
 authors:
   - "@abhiraut"
-  - "@gjsj"
   - "@Dyanngg"
-  - "@vbannai"
   - "@skmatti"
-  - "@cmluciano"
+  - "@astoycos"
+  - "@srampal"
+  - "@vbannai"
+  - "@gjsj"
 owning-sig: sig-network
 status: provisional
 creation-date: 2021-02-18

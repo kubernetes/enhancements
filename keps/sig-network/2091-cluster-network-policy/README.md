@@ -8,8 +8,10 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [ClusterNetworkPolicy resource](#clusternetworkpolicy-resource)
-  - [ClusterDefaultNetworkPolicy resource](#clusterdefaultnetworkpolicy-resource)
-  - [Precedence model](#precedence-model)
+    - [Actions](#actions)
+    - [Priority](#priority)
+    - [Default rules](#default-rules)
+    - [Rule identifiers](#rule-identifiers)
   - [User Stories](#user-stories)
     - [Story 1: Deny traffic at a cluster level](#story-1-deny-traffic-at-a-cluster-level)
     - [Story 2: Allow traffic at a cluster level](#story-2-allow-traffic-at-a-cluster-level)
@@ -23,7 +25,6 @@
   - [Future Work](#future-work)
 - [Design Details](#design-details)
   - [ClusterNetworkPolicy API Design](#clusternetworkpolicy-api-design)
-  - [ClusterDefaultNetworkPolicy API Design](#clusterdefaultnetworkpolicy-api-design)
   - [Shared API Design](#shared-api-design)
     - [AppliedTo](#appliedto)
     - [Namespaces](#namespaces)
@@ -48,6 +49,9 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [NetworkPolicy v2](#networkpolicy-v2)
+  - [Empower, Deny, Allow action based CRD](#empower-deny-allow-action-based-crd)
+    - [ClusterDefaultNetworkPolicy resource](#clusterdefaultnetworkpolicy-resource)
+    - [Precedence model](#precedence-model)
   - [Single CRD with DefaultRules field](#single-crd-with-defaultrules-field)
   - [Single CRD with IsOverrideable field](#single-crd-with-isoverrideable-field)
   - [Single CRD with BaselineAllow as Action](#single-crd-with-baselineallow-as-action)
@@ -80,8 +84,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 Introduce new set of APIs to express an administrator's intent in securing
-their K8s cluster. This doc proposes two new set of resources,
-ClusterNetworkPolicy API and the ClusterDefaultNetworkPolicy API to complement
+their K8s cluster. This doc proposes the ClusterNetworkPolicy API to complement
 the developer focused NetworkPolicy API in Kubernetes.
 
 ## Motivation
@@ -89,7 +92,7 @@ the developer focused NetworkPolicy API in Kubernetes.
 Kubernetes provides NetworkPolicy resources to control traffic within a
 cluster. NetworkPolicies focus on expressing a developers intent to secure
 their applications. Thus, in order to satisfy the needs of a security admin,
-we propose to introduce new set of APIs that capture the administrators intent.
+we propose to introduce a new API that captures the administrators intent.
 
 ### Goals
 
@@ -118,125 +121,78 @@ Cluster Administrator. It is not intended to solve:
 1. Error reporting for Network Policy
 2. Kubernetes Node policies
 3. New policy selectors (services, service accounts, etc.)
-4. Tools/CLI to debug/explain NetworkPolicies, cluster-scoped policies and their
-   impact on workloads.
-5. Cluster external traffic access control.
+4. Cluster external traffic access control.
 
 ## Proposal
 
 In order to achieve the two primary broad use cases for a cluster admin to
-secure K8s clusters, we propose to introduce the following two new resources
+secure K8s clusters, we propose to introduce the following resource
 under `netpol.networking.k8s.io` API group:
 - ClusterNetworkPolicy
-- ClusterDefaultNetworkPolicy
 
 ### ClusterNetworkPolicy resource
 
-A ClusterNetworkPolicy resource will help the administrators set strict
+A ClusterNetworkPolicy (CNP) resource will help the administrators set strict
 security rules for the cluster, i.e. a developer CANNOT override these rules
 by creating NetworkPolicies that applies to the same workloads as the
 ClusterNetworkPolicy does.
 
+#### Actions
+
 Unlike the NetworkPolicy resource in which each rule represents an allowed
-traffic, ClusterNetworkPolicy will enable administrators to set `Empower`,
+traffic, ClusterNetworkPolicy will enable administrators to set `Pass`,
 `Deny` or `Allow` as the action of each rule. ClusterNetworkPolicy rules should
 be read as-is, i.e. there will not be any implicit isolation effects for the Pods
 selected by the ClusterNetworkPolicy, as opposed to what NetworkPolicy rules imply.
 
-In terms of precedence, the aggregated `Empower` rules (all ClusterNetworkPolicy
-rules with action `Empower` in the cluster combined) should be evaluated before
-aggregated ClusterNetworkPolicy `Deny` rules, followed by aggregated ClusterNetworkPolicy
-`Allow` rules, followed by NetworkPolicy rules in all Namespaces. As such, the
-`Empower` rules have the highest precedence, which shall only be used to provide
-exceptions to deny rules. The `Empower` rules do not guarantee that the traffic
-will not be dropped: it simply denotes that the packets matching those rules can bypass the
-ClusterNetworkPolicy `Deny` rule evaluation.
+- Pass: Traffic that matches a `Pass` rule will skip all rules from all CNPs and instead
+  be enforced by the K8s NetworkPolicies. If there is no K8s NetworkPolicy rule match,
+  traffic will be allowed.
+- Deny: Traffic that matches a `Deny` rule will be dropped. This is a terminal action.
+- Allow: Traffic that matches an `Allow` rule will be allowed. This is a terminal action.
 
 ClusterNetworkPolicy `Deny` rules are useful for administrators to explicitly
 block traffic from malicious clients, or workloads that poses security risks.
 Those traffic restrictions can only be lifted once the `Deny` rules are deleted
-or modified by the admin. In clusters where the admin requires total control over
-security postures of all workloads, the `Deny` rules can also be used to deny all
-incoming/outgoing traffic in the cluster, with few exceptions that's listed out
-by `Empower` rules.
+or modified by the admin.
 
 On the other hand, the `Allow` rules can be used to call out traffic in the cluster
 that needs to be allowed for certain components to work as expected (egress to
 CoreDNS for example). Those traffic should not be blocked when developers apply
 NetworkPolicy to their Namespaces which isolates the workloads.
 
-### ClusterDefaultNetworkPolicy resource
+ClusterNetworkPolicy `Pass` rules allows an admin to delegate security posture for
+certain traffic to the Namespace owners. For example, allowing intra-tenant traffic
+can be delegated to tenant admins explicitly by the cluster admin with the use of `pass`
+rules.
 
-A ClusterDefaultNetworkPolicy resource will help the administrators set baseline
-security rules for the cluster, i.e. a developer CAN override these rules by creating
-NetworkPolicies that applies to the same workloads as the ClusterDefaultNetworkPolicy
-does.
+#### Priority
 
-ClusterDefaultNetworkPolicy works just like NetworkPolicy except that it is cluster-scoped.
-When workloads are selected by a ClusterDefaultNetworkPolicy, they are isolated except
-for the ingress/egress rules specified. ClusterDefaultNetworkPolicy rules will not have
-actions associated -- each rule will be an 'allow' rule.
+The policy instances will be ordered based on the numeric priority assigned to the
+CNP. A lower number corresponds to a higher order. For example, CNP with `priority` set
+to "0" will be considered as the highest priority policy.
+The precedence of the rules within a CNP will be determined by the order in which the rule
+is written. Thus, a rule that appears at the top of the ingress/egress rules would take the
+highest precedence.
 
-Aggregated NetworkPolicy rules will be evaluated before aggregated ClusterDefaultNetworkPolicy
-rules. If a Pod is selected by both, a ClusterDefaultNetworkPolicy and a NetworkPolicy,
-then the ClusterDefaultNetworkPolicy's effect on that Pod becomes obsolete.
-In this case, the traffic allowed will be solely determined by the NetworkPolicy.
+Conflict resolution: Two policies are considered to be conflicting if they are assigned the
+same `priority`. In order to avoid such conflicts, we propose to include validation for
+CNP resources, such that no two CNP instances can be created with the same `priority`.
 
-### Precedence model
+#### Default rules
 
-```
-         +-----------------------+      
-  ---->  |    traffic matches    | -------- Yes
-         | a CNP Empower rule?   |           |        
-         +-----------------------+           |  
-                 |                           |                                     
-                 No                          |    Yes ------> [ Allow ]           Yes ------> [ Allow ]
-                 |                           |     |                               |
-                 V                           v     |                               |
-         +------------------+             +-------------------+              +------------------+
-         | traffic matches  | --- No -->  | traffic matches   |  --- No -->  | traffic matches  |
-         | a CNP Deny rule? |             | a CNP Allow rule? |              | a NetworkPolicy  |
-         +------------------+             +-------------------+              | rule?            |
-                 |                                                           +------------------+
-                 |                                                                 |
-                Yes -------> [ Drop ]                                              No
-                                                                                   |
-                                                                                   V
-         +------------------+             +-------------------+              +------------------+
-  <----  | traffic matches  | <--- No --- | traffic matches   |  <--- No --- | traffic matches  |
-         | DNP default      |             | a DNP Allow rule? |              | NP default       |
-         | isolation(*)?    |             +-------------------+              | isolation(*)?    |
-         +------------------+                      |                         +------------------+
-                |                                  |                                |
-                |                                 Yes -------> [ Allow ]            |
-               Yes ------> [ Drop ]                                                Yes ------> [ Drop ]
+TODO: Add how to handle default disposition here.
 
+#### Rule identifiers
 
-CNP = ClusterNetworkPolicy   DNP = ClusterDefaultNetworkPolicy   NP = NetworkPolicy
-(*) If a Pod has a ingress NetworkPolicy applied, then any ingress traffic to the Pod that does
-    not match the NetworkPolicy's ingress rules, matches NetworkPolicy default isolation
-    (the Pod is isolated for ingress). Same applies for egress. Same applies for DNP.
-
-```
-
-The diagram above explains the rule evaluation precedence between ClusterNetworkPolicy,
-NetworkPolicy and ClusterDefaultNetworkPolicy.
-
-Consider the following scenario:
-
-- Pod `server` exists in Namespace x. Each Namespace [a, b, c, d] has a Pod named `client`.
-The following policy resources also exist in the cluster:
-- (1) A ClusterNetworkPolicy `Empower` rule selects Namespace x and makes an exception for ingress traffic from Namespace a.
-- (2) A ClusterNetworkPolicy `Deny` rule selects Namespace x and denies all ingress traffic from Namespace a and b.
-- (3) A ClusterNetworkPolicy `Allow` rule selects Namespace x and allows all ingress traffic Namespace b and c.
-- (4) A NetworkPolicy rule isolates [x/server], only allows ingress traffic from its own Namespace and Namespace a.
-- (5) A ClusterDefaultNetworkPolicy rule isolates [x/server], only allows ingress traffic from Namespace d.
-
-Now suppose the client in each Namespace initiates traffic towards x/server.
-- a/client -> x/server is affected by rule (1), (2), (4) and (5). Since rule (1) denotes rule (2) should be bypassed, rule (4) applies and the request should be allowed.
-- b/client -> x/server is affected by rule (2), (3), (4) and (5). Since rule (2) has highest precedence, the request should be denied.
-- c/client -> x/server is affected by rule (3), (4) and (5). Since rule (3) has highest precedence, the request should be allowed.
-- d/client -> x/server is affected by rule (4) and (5). Since rule (4) has higher precedence, the request should be denied.
+In order to collect traffic statistics corresponding to
+a rule, it is necessary to identify the rule which allows/denies that traffic.
+This helps administrators figure the impact of the rules written in a
+cluster-scoped policy resource. Thus, the ability to uniquely identify a rule
+within a cluster-scoped policy resource becomes very important.
+We propose to introduce a new string field, called `name`, per `ClusterNetworkPolicy`
+ingress/egress rule. The `name` of a rule must be unique withtin the same CNP. However,
+two CNP instances could have rules with same names.
 
 ### User Stories
 
@@ -305,25 +261,26 @@ to edit the cluster-scoped NetworkPolicy resources.
 
 ### Key differences between Cluster-scoped policies and Network Policies
 
-|                          | ClusterNetworkPolicy                                                                                             | K8s NetworkPolicies                                                                | ClusterDefaultNetworkPolicy                                                                                        |
-|--------------------------|------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| Target persona           | Cluster administrator or equivalent                                                                              | Developers within Namespaces                                                       | Cluster administrator or equivalent                                                                                |
-| Scope                    | Cluster                                                                                                          | Namespaced                                                                         | Cluster                                                                                                            |
-| Drop traffic             | Supported with a `Deny` rule action                                                                              | Supported via implicit isolation of target Pods                                    | Supported via implicit isolation of target Pods                                                                    |
-| Skip enforcement         | Supported with an `Empower` rule action                                                                          | Not needed                                                                         | Not needed                                                                                                         |
-| Allow traffic            | Supported with an `Allow` rule action for ClusterNetworkPolicy                                                   | Default action for all rules is to allow                                           | Default action for all rules is to allow                                                                           |
-| Implicit isolation       | No implicit isolation                                                                                            | All rules have an implicit isolation of target Pods                                | All rules have an implicit isolation of target Pods                                                                |
-| Rule precedence          | Empower > Deny > Allow action                                                                                    | Rules are additive                                                                 | Rules are additive                                                                                                 |
-| Policy precedence        | Enforced before K8s NetworkPolicies                                                                              | Enforced after ClusterNetworkPolicies                                              | Enforced after K8s NetworkPolicies                                                                                 |
-| Cluster external traffic | Not supported                                                                                                    | Supported via IPBlock                                                              | Not supported                                                                                                      |
-| Namespace selectors      | Supports advanced selection of Namespaces with the use of `namespaces`and label based `namespaceSelector` fields | Supports label based Namespace selection with the use of `namespaceSelector` field | Supports advanced selection of Namespaces with the use of  `namespaces` and label based `namespaceSelector` fields |
+|                          | ClusterNetworkPolicy                                                                                             | K8s NetworkPolicies                                                                |
+|--------------------------|------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
+| Target persona           | Cluster administrator or equivalent                                                                              | Developers within Namespaces                                                       |
+| Scope                    | Cluster                                                                                                          | Namespaced                                                                         |
+| Drop traffic             | Supported with a `Deny` rule action                                                                              | Supported via implicit isolation of target Pods                                    |
+| Skip enforcement         | Supported with an `Pass` rule action                                                                             | Not needed                                                                         |
+| Allow traffic            | Supported with an `Allow` rule action for ClusterNetworkPolicy                                                   | Default action for all rules is to allow                                           |
+| Implicit isolation       | No implicit isolation                                                                                            | All rules have an implicit isolation of target Pods                                |
+| Rule precedence          | Depends on the order in which they appear within a CNP                                                           | Rules are additive                                                                 |
+| Policy precedence        | Depends on `priority` field among CNPs. Enforced before K8s NetworkPolicies                                      | Enforced after ClusterNetworkPolicies                                              |
+| Rule identifiers         | Name per rule in string format. Unique within a CNP.                                                             | Not supported                                                                      |
+| Cluster external traffic | Not supported                                                                                                    | Supported via IPBlock                                                              |
+| Namespace selectors      | Supports advanced selection of Namespaces with the use of `namespaces`and label based `namespaceSelector` fields | Supports label based Namespace selection with the use of `namespaceSelector` field |
 
 ### Notes/Constraints/Caveats
 
 It is important to note that the controller implementation for cluster-scoped
 policy APIs will not be provided as part of this KEP. Such controllers which
-realize the intent of these APIs will be provided by individual CNI providers,
-as is the case with the NetworkPolicy API.
+realize the intent of these APIs will be provided by individual network policy
+providers, as is the case with the NetworkPolicy API.
 
 ### Risks and Mitigations
 
@@ -343,20 +300,19 @@ The same Pods, on the other hand, can appear as an AppliedTo, or an ingress/egre
 peer in any ClusterNetworkPolicy. This makes looking up policies that affect a
 particular Pod more challenging than when there's only NetworkPolicy resources.
 
-In addition, in an extreme case where a ClusterNetworkPolicy `Empower` rule,
+In case where a ClusterNetworkPolicy `Pass` rule,
 ClusterNetworkPolicy `Deny` rule, ClusterNetworkPolicy `Allow` rule,
-NetworkPolicy rule and ClusterDefaultNetworkPolicy rule applies to an overlapping
-set of Pods, users will need to refer to the precedence model mentioned in the
-[previous section](#precedence-model) to determine which rule would take effect.
-As shown in that section, figuring out how stacked policies affect traffic
-between workloads might not be very straightfoward.
+NetworkPolicy rule and default rule applies to an overlapping
+set of Pods, users will need to refer to the priority associated with the
+rule, to determine which rule would take effect. Figuring out how stacked policies
+affect traffic between workloads might not be very straightfoward.
 
 To mitigate this risk and improve UX, a tool which reversely looks up affecting
 policies for a given Pod and prints out relative precedence of those rules
 can be quite useful. The [cyclonus](https://github.com/mattfenwick/cyclonus)
-project for example, could be extended to support ClusterNetworkPolicy and
-ClusterDefaultNetworkPolicy. This is an orthogonal effort and will not be addressed
-by this KEP in particular.
+project for example, could be extended to support ClusterNetworkPolicy.
+
+TODO: add relevant tooling info here.
 
 ### Future Work
 
@@ -370,19 +326,6 @@ also like to consider the following set of proposals as future work items:
   cluster-scoped policy resources with a new field, say `auditPolicy`, to
   determine whether a connection matching a particular rule/policy must be
   logged or not.
-- **Rule identifier**: In order to collect traffic statistics corresponding to
-  a rule, it is necessary to identify the rule which allows/denies that traffic.
-  This helps administrators figure the impact of the rules written in a
-  cluster-scoped policy resource. Thus, the ability to uniquely identify a rule
-  within a cluster-scoped policy resource becomes very important.
-  This can be addressed by introducing a field, say `name`, per `ClusterNetworkPolicy`
-  and `ClusterDefaultNetworkPolicy` ingress/egress rule.
-- **Node Selector**: Cluster administrators and developers want to write
-  policies that apply to cluster nodes or host network pods. This can be
-  addressed by introducing nodeSelector field under `appliedTo` field of the
-  `ClusterNetworkPolicy` and `ClusterDefaultNetworkPolicy` spec.
-  `ClusterDefaultNetworkPolicy` is a better candidate compared to K8s `NetworkPolicy`
-  for introducing this field as nodes are cluster level resources.
 
 ## Design Details
 
@@ -402,6 +345,7 @@ type ClusterNetworkPolicy struct {
 }
 
 type ClusterNetworkPolicySpec struct {
+	Priority     int
 	// No implicit isolation of AppliedTo Pods/Namespaces.
 	// Required field.
 	AppliedTo    AppliedTo
@@ -410,9 +354,7 @@ type ClusterNetworkPolicySpec struct {
 }
 
 type ClusterNetworkPolicyIngress/EgressRule struct {
-	// Action specifies whether this rule must allow traffic or deny traffic. Deny rules take
-	// precedence over allow rules. Any exception to a deny rule must be written as an Empower
-	// rule which takes highest precedence. i.e. Empower > Deny > Allow
+	// Action specifies whether this rule must pass, allow traffic or deny traffic.
 	// Required field for any rule.
 	Action       RuleAction
 	// List of ports for incoming/outgoing traffic.
@@ -429,6 +371,9 @@ type ClusterNetworkPolicyIngress/EgressRule struct {
 	// allows/denies traffic only if the traffic matches at least one item in the from/to list.
 	// +optional
 	From/To      []ClusterNetworkPolicyPeer
+	// Name is an identifier for this rule. Must be unique within an instance of CNP. Can be
+	// same across policy instances.
+	Name         string
 }
 
 type ClusterNetworkPolicyPeer struct {
@@ -441,13 +386,12 @@ type ClusterNetworkPolicyPeer struct {
 }
 
 const (
-	// RuleActionEmpower is the highest priority rules which enable admins to provide exceptions to deny rules.
-	RuleActionEmpower   RuleAction = "Empower"
-	// RuleActionDeny enables admins to deny specific traffic. Any exception to this deny rule must be overridden by
-	// creating a RuleActionEmpower rule.
+	// RuleActionPass enables admins to provide exceptions to ClusterNetworkPolicies and delegate this rule to
+	// K8s NetworkPolicies.
+	RuleActionPass      RuleAction = "Pass"
+	// RuleActionDeny enables admins to deny specific traffic.
 	RuleActionDeny      RuleAction = "Deny"
-	// RuleActionAllow enables admins to specifically allow certain traffic. These rules will be enforced after
-	// Empower and Deny rules.
+	// RuleActionAllow enables admins to specifically allow certain traffic.
 	RuleActionAllow     RuleAction = "Allow"
 )
 ```
@@ -455,54 +399,7 @@ const (
 For the ClusterNetworkPolicy ingress/egress rule, the `Action` field dictates whether
 traffic should be allowed or denied from/to the ClusterNetworkPolicyPeer. This will be a required field.
 
-### ClusterDefaultNetworkPolicy API Design
-The following new `ClusterDefaultNetworkPolicy` API will be added to the `netpol.networking.k8s.io` API group:
-
-```golang
-type ClusterDefaultNetworkPolicy struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	// Specification of the desired behavior of ClusterDefaultNetworkPolicy.
-	Spec ClusterDefaultNetworkPolicySpec
-}
-
-type ClusterDefaultNetworkPolicySpec struct {
-	// Implicit isolation of AppliedTo Pods.
-	AppliedTo   AppliedTo
-	Ingress     []ClusterDefaultNetworkPolicyIngressRule
-	Egress      []ClusterDefaultNetworkPolicyEgressRule
-}
-
-type ClusterDefaultNetworkPolicyIngress/EgressRule struct {
-	// List of ports for incoming/outgoing traffic.
-	// Each item in this list is combined using a logical OR. If this field is
-	// empty or missing, this rule matches all ports (traffic not restricted by port).
-	// If this field is present and contains at least one item, then this rule allows
-	// traffic only if the traffic matches at least one port in the list.
-	// +optional
-	Ports       []networkingv1.NetworkPolicyPort
-	// List of sources/dest which should be able to access the pods selected for this rule.
-	// Items in this list are combined using a logical OR operation. If this field is
-	// empty or missing, this rule matches all sources/dest (traffic not restricted by
-	// source/dest). If this field is present and contains at least one item, this rule
-	// allows traffic only if the traffic matches at least one item in the from/to list.
-	// +optional
-	From/To     []ClusterDefaultNetworkPolicyPeer
-}
-
-type ClusterDefaultNetworkPolicyPeer struct {
-	PodSelector       *metav1.LabelSelector
-	// One of NamespaceSelector or Namespaces is required, if a PodSelector is specified
-	// In the same ClusterDefaultNetworkPolicyPeer, NamespaceSelector and Namespaces
-	// fields are mutually exclusive.
-	NamespaceSelector *metav1.LabelSelector
-	Namespaces        *Namespaces
-}
-```
-
-### Shared API Design
-The following structs will be added to the `netpol.networking.k8s.io` API group and
-shared between `ClusterNetworkPolicy` and `ClusterDefaultNetworkPolicy`:
+The following structs will be added to the `netpol.networking.k8s.io` API group:
 
 ```golang
 type AppliedTo struct {
@@ -536,8 +433,7 @@ const (
 
 #### AppliedTo
 The `AppliedTo` field in Cluster-scoped network policies is what `Spec.PodSelector` field is to K8s NetworkPolicy spec,
-as means to specify the target Pods that this cluster-scoped policy (either `ClusterNetworkPolicy` or
-`ClusterDefaultNetworkPolicy`) applies to.
+as means to specify the target Pods that this cluster-scoped policy applies to.
 Since the policy is cluster-scoped, the `NamespaceSelector` field is required.
 An empty `NamespaceSelector` (namespaceSelector: {}) selects all Namespaces in the Cluster.
 
@@ -561,12 +457,14 @@ Consider the following example:
 
 ```yaml
 apiVersion: netpol.networking.k8s.io/v1alpha1
-kind: ClusterDefaultNetworkPolicy
+kind: ClusterNetworkPolicy
 spec:
+  priority: 100
   appliedTo:
     namespaceSelector: {}
   ingress:
-    - from:
+    - action: Allow
+      from:
       - namespaces:
           scope: self
         podSelector:
@@ -574,10 +472,10 @@ spec:
             app: b
 ```
 
-The above ClusterDefaultNetworkPolicy should be interpreted as: for each Namespace in
-the cluster, all Pods in that Namespace should only allow traffic from Pods in
+The above ClusterNetworkPolicy should be interpreted as: for each Namespace in
+the cluster, all Pods in that Namespace should strictly allow traffic from Pods in
 the _same Namespace_ who has label app=b. Hence, the policy above allows
-x/b1 -> x/a1 and y/b2 -> y/a2, but denies y/b2 -> x/a1 and x/b1 -> y/a2.
+x/b1 -> x/a1 and y/b2 -> y/a2, but does not allow y/b2 -> x/a1 and x/b1 -> y/a2.
 
 __SameLabels:__
 This is a special strategy to indicate that the rule only applies to the Namespaces
@@ -593,26 +491,30 @@ Consider the following example:
 
 ```yaml
 apiVersion: netpol.networking.k8s.io/v1alpha1
-kind: ClusterDefaultNetworkPolicy
+kind: ClusterNetworkPolicy
 spec:
+  priority: 50
   appliedTo:
     namespaceSelector:
       matchExpressions: {key: "tenant"; operator: Exists}
   ingress:
-    - from:
+    - action: Pass
+      from:
       - namespaces:
           scope: samelabels
           labels:
             - tenant
 ```
 
-The above ClusterDefaultNetworkPolicy should be interpreted as: for each Namespace in
-the cluster who has a label key set as "tenant", all Pods in that Namespace should only allow traffic
-from all Pods in the Namespaces who has the same label value for key `tenant`. Hence, the policy above
-allows all Pods in Namespaces labeled `tenant=t1` i.e. t1-ns1 and t1-ns2, to reach each other,
-similarly all Pods in Namespaces labeled `tenant=t2` i.e. t2-ns1 and t2-ns2, are allowed
-to talk to each other, however it does not allow any Pod in t1-ns1 or t1-ns2 to reach Pods in
-t2-ns1 or t2-ns2.
+The above ClusterNetworkPolicy should be interpreted as: for each Namespace in
+the cluster who has a label key set as "tenant", traffic for all Pods in that Namespace
+from all Pods in the Namespaces who has the same label value for key `tenant` is delegated to the Namespace
+admins, i.e such traffic will not be subject to any CNP (`priority` > 50) rules and be evaluated by K8s NetworkPolicies.
+Hence, the policy above delegates traffic from all Pods in Namespaces labeled `tenant=t1` i.e. t1-ns1 and t1-ns2,
+to reach each other, to K8s NetworkPolicies, similarly traffic for all Pods in Namespaces labeled `tenant=t2`
+i.e. t2-ns1 and t2-ns2, to talk to each other is delegated to K8s NetworkPolicies as well, however it does not
+delegate traffic from any Pod in t1-ns1 or t1-ns2 to reach Pods in t2-ns1 or t2-ns2, such traffic is still subject
+to CNP rules.
 
 ### Sample Specs for User Stories
 
@@ -641,15 +543,11 @@ TODO
 ### Test Plan
 
 - Add e2e tests for ClusterNetworkPolicy resource
-  - Ensure `Empower` rules can provide exceptions to the `Deny` rules.
-  - Ensure `Deny` rules override all allowed traffic in the cluster, except for `Empower` traffic.
-  - Ensure `Allow` rules override K8s NetworkPolicies
-  - Ensure that in stacked ClusterNetworkPolicies/K8s NetworkPolicies, the following precedence is maintained
-    aggregated `Deny` rules > aggregated `Allow` rules > K8s NetworkPolicy rules
-- Add e2e tests for ClusterDefaultNetworkPolicy resource
-  - Ensure that in absence of ClusterNetworkPolicy rules and K8s NetworkPolicy rules, ClusterDefaultNetworkPolicy rules are observed
-  - Ensure that K8s NetworkPolicies override ClusterDefaultNetworkPolicies by applying policies to the same workloads
-  - Ensure that stacked ClusterDefaultNetworkPolicies are additive in nature
+  - Ensure `Pass` rules are delegated and are not subject to CNP rules.
+  - Ensure `Deny` rules drop traffic.
+  - Ensure `Allow` rules allow traffic.
+  - Ensure that in stacked ClusterNetworkPolicies/K8s NetworkPolicies, precedence is maintained
+    as per the `priority` set in CNP.
 - e2e test cases must cover ingress and egress rules
 - e2e test cases must cover port-ranges, named ports, integer ports etc
 - e2e test cases must cover various combinations of `podSelector` in `appliedTo` and ingress/egress rules
@@ -659,6 +557,7 @@ TODO
 - Add unit tests to test the validation logic which shall be introduced for cluster-scoped policy resources
   - Ensure that `self` field cannot be set along with `selector` within `namespaces`
   - Test cases for fields which are shared with NetworkPolicy, like `endPort` etc.
+  - Ensure no two policies can be set with same `priority`
 - Ensure that only administrators or assigned roles can create/update/delete cluster-scoped policy resources
 
 ### Graduation Criteria
@@ -669,6 +568,7 @@ TODO
 - At least 2 CNI provider must provide the implementation for the complete set
   of alpha features
 - Evaluate "future work" items based on feedback from community
+- Ensure extensibility of adding new fields. i.e. adding new fields do not "fail-open" traffic for older clients
 
 #### Beta to GA Graduation
 
@@ -734,17 +634,17 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-1.22:
+1.23:
 - disable by default
 - allow gate to enable the feature
 - release note
 
-1.24:
+1.25:
 - enable by default
 - allow gate to disable the feature
 - release note
 
-1.26:
+1.27:
 - remove gate
 
 ###### How can this feature be enabled / disabled in a live cluster?
@@ -756,7 +656,7 @@ you need any help or guidance.
 ###### Does enabling the feature change any default behavior?
 
 Enabling the feature by itself has no effect on the cluster.
-Creating a ClusterNetworkPolicy/ClusterDefaultNetworkPolicy does have an effect on
+Creating a ClusterNetworkPolicy does have an effect on
 the cluster, however they must be specifically created, which means the
 administrator is aware of the impact.
 
@@ -838,6 +738,154 @@ However, this idea was rejected because the NetworkPolicy resource was introduce
 solely to satisfy a developers intent. Thus, adding new use cases for a cluster admin
 would be contradictory. In addition to that, the administrator use cases are mainly
 scoped to the cluster as opposed to the NetworkPolicy resource, which is `namespaced`.
+
+### Empower, Deny, Allow action based CRD
+
+Unlike the NetworkPolicy resource in which each rule represents an allowed
+traffic, ClusterNetworkPolicy will enable administrators to set `Empower`,
+`Deny` or `Allow` as the action of each rule. ClusterNetworkPolicy rules should
+be read as-is, i.e. there will not be any implicit isolation effects for the Pods
+selected by the ClusterNetworkPolicy, as opposed to what NetworkPolicy rules imply.
+
+In terms of precedence, the aggregated `Empower` rules (all ClusterNetworkPolicy
+rules with action `Empower` in the cluster combined) should be evaluated before
+aggregated ClusterNetworkPolicy `Deny` rules, followed by aggregated ClusterNetworkPolicy
+`Allow` rules, followed by NetworkPolicy rules in all Namespaces. As such, the
+`Empower` rules have the highest precedence, which shall only be used to provide
+exceptions to deny rules. The `Empower` rules do not guarantee that the traffic
+will not be dropped: it simply denotes that the packets matching those rules can bypass the
+ClusterNetworkPolicy `Deny` rule evaluation.
+
+ClusterNetworkPolicy `Deny` rules are useful for administrators to explicitly
+block traffic from malicious clients, or workloads that poses security risks.
+Those traffic restrictions can only be lifted once the `Deny` rules are deleted
+or modified by the admin. In clusters where the admin requires total control over
+security postures of all workloads, the `Deny` rules can also be used to deny all
+incoming/outgoing traffic in the cluster, with few exceptions that's listed out
+by `Empower` rules.
+
+On the other hand, the `Allow` rules can be used to call out traffic in the cluster
+that needs to be allowed for certain components to work as expected (egress to
+CoreDNS for example). Those traffic should not be blocked when developers apply
+NetworkPolicy to their Namespaces which isolates the workloads.
+
+#### ClusterDefaultNetworkPolicy resource
+
+A ClusterDefaultNetworkPolicy resource will help the administrators set baseline
+security rules for the cluster, i.e. a developer CAN override these rules by creating
+NetworkPolicies that applies to the same workloads as the ClusterDefaultNetworkPolicy
+does.
+
+ClusterDefaultNetworkPolicy works just like NetworkPolicy except that it is cluster-scoped.
+When workloads are selected by a ClusterDefaultNetworkPolicy, they are isolated except
+for the ingress/egress rules specified. ClusterDefaultNetworkPolicy rules will not have
+actions associated -- each rule will be an 'allow' rule.
+
+Aggregated NetworkPolicy rules will be evaluated before aggregated ClusterDefaultNetworkPolicy
+rules. If a Pod is selected by both, a ClusterDefaultNetworkPolicy and a NetworkPolicy,
+then the ClusterDefaultNetworkPolicy's effect on that Pod becomes obsolete.
+In this case, the traffic allowed will be solely determined by the NetworkPolicy.
+
+
+#### Precedence model
+
+```
+         +-----------------------+
+  ---->  |    traffic matches    | -------- Yes
+         | a CNP Empower rule?   |           |
+         +-----------------------+           |
+                 |                           |
+                 No                          |    Yes ------> [ Allow ]           Yes ------> [ Allow ]
+                 |                           |     |                               |
+                 V                           v     |                               |
+         +------------------+             +-------------------+              +------------------+
+         | traffic matches  | --- No -->  | traffic matches   |  --- No -->  | traffic matches  |
+         | a CNP Deny rule? |             | a CNP Allow rule? |              | a NetworkPolicy  |
+         +------------------+             +-------------------+              | rule?            |
+                 |                                                           +------------------+
+                 |                                                                 |
+                Yes -------> [ Drop ]                                              No
+                                                                                   |
+                                                                                   V
+         +------------------+             +-------------------+              +------------------+
+  <----  | traffic matches  | <--- No --- | traffic matches   |  <--- No --- | traffic matches  |
+         | DNP default      |             | a DNP Allow rule? |              | NP default       |
+         | isolation(*)?    |             +-------------------+              | isolation(*)?    |
+         +------------------+                      |                         +------------------+
+                |                                  |                                |
+                |                                 Yes -------> [ Allow ]            |
+               Yes ------> [ Drop ]                                                Yes ------> [ Drop ]
+
+
+CNP = ClusterNetworkPolicy   DNP = ClusterDefaultNetworkPolicy   NP = NetworkPolicy
+(*) If a Pod has a ingress NetworkPolicy applied, then any ingress traffic to the Pod that does
+    not match the NetworkPolicy's ingress rules, matches NetworkPolicy default isolation
+    (the Pod is isolated for ingress). Same applies for egress. Same applies for DNP.
+
+```
+
+The diagram above explains the rule evaluation precedence between ClusterNetworkPolicy,
+NetworkPolicy and ClusterDefaultNetworkPolicy.
+
+Consider the following scenario:
+
+- Pod `server` exists in Namespace x. Each Namespace [a, b, c, d] has a Pod named `client`.
+  The following policy resources also exist in the cluster:
+- (1) A ClusterNetworkPolicy `Empower` rule selects Namespace x and makes an exception for ingress traffic from Namespace a.
+- (2) A ClusterNetworkPolicy `Deny` rule selects Namespace x and denies all ingress traffic from Namespace a and b.
+- (3) A ClusterNetworkPolicy `Allow` rule selects Namespace x and allows all ingress traffic Namespace b and c.
+- (4) A NetworkPolicy rule isolates [x/server], only allows ingress traffic from its own Namespace and Namespace a.
+- (5) A ClusterDefaultNetworkPolicy rule isolates [x/server], only allows ingress traffic from Namespace d.
+
+Now suppose the client in each Namespace initiates traffic towards x/server.
+- a/client -> x/server is affected by rule (1), (2), (4) and (5). Since rule (1) denotes rule (2) should be bypassed, rule (4) applies and the request should be allowed.
+- b/client -> x/server is affected by rule (2), (3), (4) and (5). Since rule (2) has highest precedence, the request should be denied.
+- c/client -> x/server is affected by rule (3), (4) and (5). Since rule (3) has highest precedence, the request should be allowed.
+- d/client -> x/server is affected by rule (4) and (5). Since rule (4) has higher precedence, the request should be denied.
+
+The following new `ClusterDefaultNetworkPolicy` API will be added to the `netpol.networking.k8s.io` API group:
+
+```golang
+type ClusterDefaultNetworkPolicy struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	// Specification of the desired behavior of ClusterDefaultNetworkPolicy.
+	Spec ClusterDefaultNetworkPolicySpec
+}
+
+type ClusterDefaultNetworkPolicySpec struct {
+	// Implicit isolation of AppliedTo Pods.
+	AppliedTo   AppliedTo
+	Ingress     []ClusterDefaultNetworkPolicyIngressRule
+	Egress      []ClusterDefaultNetworkPolicyEgressRule
+}
+
+type ClusterDefaultNetworkPolicyIngress/EgressRule struct {
+	// List of ports for incoming/outgoing traffic.
+	// Each item in this list is combined using a logical OR. If this field is
+	// empty or missing, this rule matches all ports (traffic not restricted by port).
+	// If this field is present and contains at least one item, then this rule allows
+	// traffic only if the traffic matches at least one port in the list.
+	// +optional
+	Ports       []networkingv1.NetworkPolicyPort
+	// List of sources/dest which should be able to access the pods selected for this rule.
+	// Items in this list are combined using a logical OR operation. If this field is
+	// empty or missing, this rule matches all sources/dest (traffic not restricted by
+	// source/dest). If this field is present and contains at least one item, this rule
+	// allows traffic only if the traffic matches at least one item in the from/to list.
+	// +optional
+	From/To     []ClusterDefaultNetworkPolicyPeer
+}
+
+type ClusterDefaultNetworkPolicyPeer struct {
+	PodSelector       *metav1.LabelSelector
+	// One of NamespaceSelector or Namespaces is required, if a PodSelector is specified
+	// In the same ClusterDefaultNetworkPolicyPeer, NamespaceSelector and Namespaces
+	// fields are mutually exclusive.
+	NamespaceSelector *metav1.LabelSelector
+	Namespaces        *Namespaces
+}
+```
 
 ### Single CRD with DefaultRules field
 
