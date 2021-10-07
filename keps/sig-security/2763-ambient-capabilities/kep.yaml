@@ -9,12 +9,13 @@ status: provisional
 creation-date: 2021-05-20
 reviewers:
   - "@PushkarJ" # sig-security
+  - "@tabbysable" # sig-security
   - "@tallclair" # sig-auth
   - "@mrunalp" # sig-node and CRI-O
   - "@mikebrow" # sig-node and containerd
   - "@SergeyKanzhelev" # sig-node and CRI API
 approvers:
-  - TBD
+  - "@tabbysable"
 prr-approvers:
   - "@ehashman"
 see-also:
@@ -28,11 +29,11 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "alpha"
+latest-milestone: "v1.23"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "1.23"
+  alpha: "v1.23"
   beta: "TBD"
   stable: "TBD"
 
