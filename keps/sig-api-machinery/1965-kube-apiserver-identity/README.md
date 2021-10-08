@@ -115,6 +115,62 @@ The refresh rate, lease duration will be configurable through kube-apiserver
 flags. The resync period will be configurable through a kube-controller-manager
 flag.
 
+Each kube-apiserver with expose the following metrics for its own ID:
+
+```go
+  startTime := metrics.NewGauge(
+		&metricsGaugeOpts{
+			Namespace:      "apiserver",
+			Subsystem:      "identity",
+			Name:           "lease_start_time_seconds",
+			Help:           "Lease start time seconds, labeled by the kube-apiserver ID in the Lease object, show the the time the Lease was created",
+			StabilityLevel: metrics.ALPHA,
+		},
+  renewTime := metrics.NewGauge(
+		&metricsGaugeOpts{
+			Namespace:      "apiserver",
+			Subsystem:      "identity",
+			Name:           "lease_renew_time_seconds",
+			Help:           "Lease rente time seconds, labeled by the kube-apiserver ID in the Lease object, show the time the Lease was updated",
+			StabilityLevel: metrics.ALPHA,
+		},
+	success := metrics.NewCounter(
+		&metrics.CounterOpts{
+			Namespace:      "apiserver",
+			Subsystem:      "identity",
+			Name:           "lease_success_count",
+			Help:           "Lease success count, labeled by the kube-apiserver ID in the Lease object, counts the number of success renewing a Lease",
+			StabilityLevel: metrics.ALPHA,
+		},
+	)
+  failures := metrics.NewCounter(
+		&metrics.CounterOpts{
+			Namespace:      "apiserver",
+			Subsystem:      "identity",
+			Name:           "lease_failure_count",
+			Help:           "Lease failure count, labeled by the kube-apiserver ID in the Lease object, counts the number of failures to renew a Lease",
+			StabilityLevel: metrics.ALPHA,
+		},
+```
+
+
+The apiserver identity with be exposed using its own metric (ref. https://www.robustperception.io/exposing-the-software-version-to-prometheus)
+
+```go
+	buildInfo = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Name:           "apiserver_identity",
+			Help:           "A metric with a constant '1' value labeled by the kube-apiserver ID",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"id"},
+	)
+```
+
+If users find complicated to obtain the apiserver ID using metrics, the information can be added
+as a new endpoint, following the example of the `version` field, that is exposed both as an endpoint
+`/version` and a metric `kubernetes_build_info`.
+
 ### Test Plan
 
   - integration test for creating the Namespace and the Lease on kube-apiserver
