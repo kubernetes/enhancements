@@ -95,6 +95,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 - Extending the Kubernetes Secret object
 - Introduce a new Kubernetes type
+- Consume only: The proposed CRD and implementation does not provide a way to add/write/edit secrets in the external stores.
 
 ## Proposal
 
@@ -110,15 +111,21 @@ This project introduces a new Container Storage Interface (CSI) driver for fetch
 
 ### Notes/Constraints/Caveats (Optional)
 
-Since the proposal is a storage driver, native support for presenting secrets to a process through environment variables is not possible. In addition to the default mount, the driver also supports syncing the mounted content as Kubernetes secret. This is an optional feature and isn't enabled by default.
+Since the proposal is a storage driver, native support for presenting secrets to a process through environment variables is not possible. The driver includes a method to sync the mounted content as Kubernetes secret. This is an optional feature, isn't enabled by default, and will not be considered a GA feature of the driver.
 
 ### Risks and Mitigations
 
 #### Directory traversal vulnerabilities
 
-The driver<->provider interface has been expanded to allow the driver to be the only process that actually writes files to the pod filesystem. The only hostpath providers need are now the one for creating the unix socket used for communication with the driver process.
+[CVE-2020-8567](https://github.com/kubernetes-sigs/secrets-store-csi-driver/issues/384) is an example of this risk. Since then, the interface
+between the driver and provider processes has been updated to:
+
+- eliminate the `kubelet/pods` `hostPath` volume mount from providers
+- consolidate all filesystem IO to the driver process
 
 The driver protects against directory traversal vulnerabilities by re-using the `atomic_writer` used by Kubernetes Secrets and ConfigMaps which includes protections against writing to unintended paths.
+
+Providers need a single remaining `hostPath` to share a unix domain socket file with the driver process, but this path has no other system critical or security sensitive access.
 
 #### Authenticating to external secret APIs
 
@@ -143,8 +150,11 @@ Additionally [KEP 1855](https://github.com/kubernetes/enhancements/tree/master/k
 - Month+ soak of minor release
 - Completion of milestone requirements
 - Agreement of stability documented on community call from 3+ provider maintainers
+- User facing API groups (`SecretProviderClass` and `SecretProviderClassPodStatus` CRDs) promoted to v1
 
 #### Deprecation
+
+There are currently no planned deprecations. The following rules will be followed if a deprecation is needed.
 
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
@@ -248,9 +258,9 @@ implementation difficulties, etc.).
 ### Dependencies
 
 - [Kubernetes Container Storage Interface](https://github.com/kubernetes/community/blob/98b3d97d2e7f91bb62b8e88710c29c1675efb689/contributors/design-proposals/storage/container-storage-interface.md)
-- [KEP 596](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/596-csi-inline-volumes)
-- Supports windows containers (Kubernetes version v1.18+)
+- [KEP 596: CSI Inline Volume Support GA](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/596-csi-inline-volumes)
 - [KEP 1855: Service Account Token for CSI Driver](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/1855-csi-driver-service-account-token)
+- Supports windows containers (Kubernetes version v1.18+)
 
 The driver uses CSI Inline Volumes to mount the external secrets-store objects in the pod. The CSI Inline Volumes feature is enabled by default in Kubernetes 1.16+. For windows containers, the CSI Inline Volumes feature is enabled by default in Kubernetes 1.18+.
 
@@ -368,7 +378,6 @@ https://secrets-store-csi-driver.sigs.k8s.io/troubleshooting.html
 ## Drawbacks
 
 - Environment Variables: There appears to be a strong desire to consume secrets using environment variables but the only way for this to work currently is through syncing secrets to Kubernetes Secrets.
-- Consume only: The proposed CRD and implementation does not provide a way to add/write/edit secrets in the external stores.
 
 ## Alternatives
 
