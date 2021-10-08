@@ -84,6 +84,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 3](#story-3)
     - [Story 4](#story-4)
     - [Story 5](#story-5)
+    - [Story 5](#story-5-1)
+    - [Story 6](#story-6)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -257,7 +259,7 @@ kind: Catalog
 metadata: 
   name: "example-co-functionss"
 spec: 
-  providers: 
+  krmFunctions: 
   - apiVersion: example.com/v1
     kind: JavaApplication
     description: "A Kustomize function that represents a Java based app"
@@ -302,7 +304,7 @@ kind: Catalog
 metadata: 
   name: "example-co-functions"
 spec: 
-  providers: 
+  krmFunctions: 
   - apiVersion: example.com/v1
     kind: GroovyApplication
     description: "A Kustomize function that can handle groovy apps"
@@ -330,7 +332,7 @@ kind: Catalog
 metadata: 
   name: "example-co-functions"
 spec: 
-  providers: 
+  krmFunctions: 
   - apiVersion: example.com/v1
     kind: JavaApplication
     description: "A Kustomize function that can handle Java apps"
@@ -462,7 +464,7 @@ kind: Catalog
 metadata: 
   name: "official-kustomize-functions"
 spec: 
-  providers: 
+  krmFunctions: 
   - apiVersion: kustomize.io/v1
     kind: Helm
     description: "A Kustomize function that can handle Helm charts"
@@ -474,6 +476,71 @@ spec:
 This official extension will be embedded within the Kustomize binary and require subsequent releases to Kustomize when official extensions are updated. 
 
 Alternatively, this could be published as an external resource that can be pulled by Kustomize as would any other catalog. This would decouple the release cadence of Kustomize and the official extensions, but would introduce extra latency for the end user.
+
+#### Story 5
+
+As a KRM function developer at company Example Co, I want to contribute a KRM function to the official extension catalog. 
+
+I publish the implementation of my function as a container to a public Docker registry. I then contribute the necessary metadata to the public catalog, including:
+
+* Provider information
+* Network access requirements
+* Storage/volume requirements
+
+Once this has been approved and included into the officially published catalog, my function is available for others to discover:
+
+```yaml
+apiVersion: kustomize.io/v1
+kind: Catalog
+metadata: 
+  name: "official-kustomize-functions"
+spec: 
+  krmFunctions: 
+  - apiVersion: kustomize.io/v1
+    kind: Helm
+    description: "A Kustomize function that can handle Helm charts"
+    provider: 
+      container: 
+        image:  k8s.gcr.io/kustomize/helm-function:v1.0.0
+  - apiVersion: example.co/v1
+    kind: McGuffin
+    description: "A KRM function that everyone is searching for"
+    provider: 
+      container: 
+        image:  docker.example.io/krm/mcguffin-function:v1.0.0
+```
+
+#### Story 6
+
+As a platform developer at enterprise company Example Co, I wish to publish a trusted function catalog containing functions published by multiple sources, with appropriate metadata:
+
+* One plugin developed by Banana Co   
+* One plugin developed by Watermelon Co
+* One plugin developed by my company Example Co
+
+Using the provider information and the metadata for each function, I publish a trusted catalog for use at Example Co
+
+```yaml
+apiVersion: kustomize.io/v1
+kind: Catalog
+metadata: 
+  name: "example-co-aggregated-catalog"
+spec: 
+  krmFunctions: 
+  - apiVersion: banana.co/v1
+    kind: Split
+    description: "A KRM function that splits a deployment into multiple deployments"
+    provider: 
+      container: 
+        image:  banana.gcr.io/functions/split-function:v1.0.0
+  - apiVersion: watermelon.co/v1
+    kind: Salt
+    description: "A KRM function that applies salt"
+    provider: 
+      container: 
+        image:  watermelon.gcr.io/krm-functions/salt-function:v1.0.0
+```
+
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -508,7 +575,7 @@ metadata:
   labels:
     author: ExampleCo
 spec: 
-  providers: 
+  krmFunctions: 
   - apiVersion: example.com/v1
     kind: JavaApplication
     description: "A Kustomize function provider that can handle Java apps"
