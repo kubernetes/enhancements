@@ -22,3 +22,5 @@ see-also:
   - "https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190129-csi-migration.md"
 replaces:
 superseded-by:
+latest-milestone: '0.0'
+stage: stable

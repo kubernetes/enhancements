@@ -22,3 +22,5 @@ see-also:
   - "/keps/sig-api-machinery/20180415-crds-to-ga.md"
   - "https://github.com/kubernetes/enhancements/pull/926"
   - "https://github.com/kubernetes/enhancements/pull/709"
+latest-milestone: '0.0'
+stage: stable

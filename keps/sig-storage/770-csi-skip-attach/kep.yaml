@@ -18,3 +18,5 @@ see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-skip-attach.md"
 replaces:
 superseded-by:
+latest-milestone: '0.0'
+stage: stable

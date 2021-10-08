@@ -17,3 +17,5 @@ status: implemented
 see-also:
   - "/keps/sig-api-machinery/0015-dry-run.md"
   - "/keps/sig-api-machinery/0006-apply.md"
+latest-milestone: '0.0'
+stage: stable

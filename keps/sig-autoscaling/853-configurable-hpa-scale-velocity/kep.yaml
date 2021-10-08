@@ -16,3 +16,5 @@ creation-date: 2019-03-07
 last-updated: 2020-01-29
 status: implemented
 superseded-by:
+latest-milestone: '0.0'
+stage: stable
