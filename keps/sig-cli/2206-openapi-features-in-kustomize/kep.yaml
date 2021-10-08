@@ -13,7 +13,7 @@ approvers:
   - "@pwittrock"
 creation-date: 2020-12-21
 last-updated: 2020-01-15
-status: implemented
+status: implementable
 
 latest-milestone: "1.22"
 stage: "beta"
