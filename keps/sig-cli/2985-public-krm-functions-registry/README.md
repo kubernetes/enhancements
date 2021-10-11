@@ -344,22 +344,27 @@ bogged down.
 #### Story 1
 
 As a KRM functions user, I can browse the function registry website (e.g.
-https://krm-fn-registry.sigs.k8s.io) and search the KRM function by name (e.g.
-set-labels). And I can find everything including doc, examples, homepage,
-maintainers, publisher information about the function.
+https://krm-functions.io) and search the KRM function by name (e.g. set-labels).
+And I can find everything including doc, examples, homepage, maintainers,
+publisher information about the function.
 
 #### Story 2
 
 As a KRM function user, I can query
-https://krm-fn-registry.sigs.k8s.io/catalogs/aggregate/latest.yaml?publisher=kubeflow,kustomize
+https://krm-functions.io/catalogs/aggregate/latest.yaml?publisher=kubeflow,kustomize
 to find a real-time aggregation of all KRM functions published by Kustomize and
 KubeFlow.
 
 #### Story 3
 
+<<[UNRESOLVED]>>
+This KEP propose using the date as the version of static catalog. Alternatively,
+the hash of the contents can be used as the version. This is still TBD.
+<<[/UNRESOLVED]>>
+
 As a KRM function user, I can find the versioned catalog published by Pineapple
 Co. at
-https://krm-fn-registry.sigs.k8s.io/catalogs/pineapple/v20210924.yaml.
+https://krm-functions.io/catalogs/pineapple/v20210924.yaml.
 It is a catalog provided by Pineapple Co. and snapshoted on 09/24/2021.
 
 #### Story 4
@@ -372,7 +377,7 @@ The `kustomiztion.yaml` file may look like the following per [Catalog KEP](https
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 catalogs:
-- https://krm-fn-registry.sigs.k8s.io/catalogs/kustomize/v20210924.yaml.
+- https://krm-functions.io/catalogs/kustomize/v20210924.yaml.
 resources:
 - input.yaml
 transformers:
@@ -393,6 +398,16 @@ When using with kpt:
 ```shell
 kpt fn eval --image <tab><tab>
 ```
+
+#### Story 6
+
+As a Kustomize maintainer, I want to develop and publish a small, well-vetted
+set of functions published from the SIG's registry. These plugins should behave
+identically to built-ins from the end-user perspective.
+
+Furthermore, I can release a version of Kustomize that trusts these functions.
+This should be supported by kustomize, but building kustomize is not in scope
+for this KEP.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -440,8 +455,8 @@ proposal will be implemented, this is the place to discuss them.
 The ideal repo location is in [kubernetes-sigs](https://github.com/kubernetes-sigs).
 It should be sponsored by SIG-CLI.
 
-The repo name can be `KRM-functions`, `KRM-function-catalog`,
-`KRM-function-registry` or something more reasonable.
+The repo name can be `krm-functions`, `krm-function-registry` or something more
+reasonable.
 
 ### Management Model
 
@@ -540,44 +555,43 @@ using [mdBook](https://github.com/rust-lang/mdBook).
 
 ### Function Metadata
 
+<<[UNRESOLVED]>>
+The schema of the function metadata has not been finalized yet.
+<<[/UNRESOLVED]>>
+
 The following is an example function metadata for a container-based KRM
 function. We will only support container-based KRM functions in the public
 registry.
 
-Ideally, the content under field `spec` should be able to be used directly in a
-Catalog resource.
+The content under field `spec` will be used directly in a Catalog resource.
 
 ```yaml
 apiVersion: config.k8s.io/v1alpha1
 kind: KRMFunction
-metadata:
-  # 'name' must match the last part of the image name for container-based function.
-  # for example: the name should be set-namespace when image name is docker.example.co/functions/set-namespace
-  name: set-namespace
 spec:
-  apiVersion: example.com/v1beta1 # Primary apiVersion
-  kind: SetNamespace # Primary kind
+  group: example.com
+  kind: SetNamespace
   description: "A short description of the KRM function"
   publisher: example.com
-  schema: <a URL pointing to the schema of the functionConfig of apiVersion example.com/v1beta1 and kind SetNamespace>
-  version: v1.2.3
-  idempotent: true|false
-  runtime:
-    container:
-      image: docker.example.co/functions/set-namespace:v1.2.3 # The version part should match `spec.version`.
-      sha256: a428de... # The digest of the image which can be verified against. This field is required if the version is semver.
-      requireNetwork: true|false
-      requireVolumeMount: true|false
-  additionalAPIVersionKinds:
-    - apiVersion: example.com/v1alpha1
-      kind: LegacySetNamespace
-      deprecated: true
-  usage: <a URL pointing to a README.md>
-  home: <a URL pointing to the home page>
-  examples:
-    - <a URL pointing to a README.md>
-    - <another URL pointing to another README.md>
-  license: Apache 2.0
+  versions:
+    - name: v1
+      schema:
+        openAPIV3Schema: ... # inline schema like CRD
+      idempotent: true|false
+      runtime:
+        container:
+          image: docker.example.co/functions/set-namespace:v1.2.3
+          sha256: a428de... # The digest of the image which can be verified against. This field is required if the version is semver.
+          requireNetwork: true|false
+          requireStorageMount: true|false
+      configMap: true|false # Support ConfigMap as functionConfig. Default is false if omitted.
+      usage: <a URL pointing to a README.md>
+      examples:
+        - <a URL pointing to a README.md>
+        - <another URL pointing to another README.md>
+      license: Apache 2.0
+    - name: v1beta1
+      ...
   maintainers: # The maintainers for this function. It doesn't need to be the same as the publisher OWNERS. 
     - foo@example.com
   tags: # keywords of the KRM functions
@@ -592,41 +606,38 @@ metadata to allow an organization to share exec-based KRM functions internally.
 ```yaml
 apiVersion: config.k8s.io/v1alpha1
 kind: KRMFunction
-metadata:
-  # 'name' must match the last part of the image name for container-based function.
-  # for example: the name should be set-namespace when image name is docker.example.co/functions/set-namespace
-  name: set-namespace
 spec:
-  apiVersion: example.com/v1beta1 # Primary apiVersion
-  kind: SetNamespace # Primary kind
+  group: example.com
+  kind: SetNamespace
   description: "A short description of the KRM function"
   publisher: example.com
-  schema: <a URL pointing to the schema of the functionConfig of apiVersion example.com/v1beta1 and kind SetNamespace>
-  version: v1.2.3
-  idempotent: true|false
-  runtime:
-    exec:
-      platforms:
-      - bin: foo-amd64-linux
-        os: linux
-        arch: amd64
-        uri: https://example.com/foo-amd64-linux.tar.gz
-        sha256: <hash>
-      - bin: foo-amd64-darwin
-        os: darwin
-        arch: amd64
-        uri: https://example.com/foo-amd64-darwin.tar.gz
-        sha256: <hash>
-  additionalAPIVersionKinds:
-    - apiVersion: example.com/v1alpha1
-      kind: LegacySetNamespace
-      deprecated: true
-  usage: <a URL pointing to a README.md>
+  versions:
+    - name: v1
+      schema:
+        openAPIV3Schema: ...
+      idempotent: true|false
+      runtime:
+        exec:
+          platforms:
+          - bin: foo-amd64-linux
+            os: linux
+            arch: amd64
+            uri: https://example.com/foo-amd64-linux.tar.gz
+            sha256: <hash>
+          - bin: foo-amd64-darwin
+            os: darwin
+            arch: amd64
+            uri: https://example.com/foo-amd64-darwin.tar.gz
+            sha256: <hash>
+      configMap: true|false # Support ConfigMap as functionConfig. Default is false if omitted.
+      usage: <a URL pointing to a README.md>
+      examples:
+        - <a URL pointing to a README.md>
+        - <another URL pointing to another README.md>
+      license: Apache 2.0
+    - name: v1
+      ...
   home: <a URL pointing to the home page>
-  examples:
-    - <a URL pointing to a README.md>
-    - <another URL pointing to another README.md>
-  license: Apache 2.0
   maintainers: # The maintainers for this function. It doesn't need to be the same as the publisher OWNERS. 
     - foo@example.com
   tags: # keywords of the KRM functions
@@ -667,61 +678,147 @@ definitions:
         type: object
         description: spec contains the metadata for a KRM function.
         required:
-          - apiVersion
+          - group
           - kind
           - description
           - publisher
-          - version
-          - idempotent
-          - runtime
-          - usage
-          - examples
-          - license
-          - maintainers
-          - tags
+          - versions
         properties:
-          apiVersion:
-            description: apiVersion of the primary functionConfig
+          group:
+            description: group of the functionConfig
             type: string
           kind:
-            description: kind of the primary functionConfig
+            description: kind of the functionConfig
             type: string
-          description:
-            description: short description of the KRM function
-            type: string
-          publisher:
-            description: publisher of the KRM function
-            type: string
-          schema:
-            description: a URI pointing to the schema of the functionConfig
-            type: string
-          version:
-            description: Version of the KRM function. SemVer is strongly recommended.
-            type: string
-          idempotent:
-            description: If the function is idempotent.
-            type: boolean
-          usage:
-            description: |
-              A URI pointing to a README.md that describe the details of how to
-              use the KRM function. It should at least cover what the function
-              does and what functionConfig does it support and it should give
-              detailed explaination about each field in the functionConfig.
-            type: string
-          home:
-            description: A URI pointing the home page of the KRM function.
-            type: string
-          examples:
-            description: |
-              A list of URIs that point to README.md files. At least one example
-              must be provided. Each README.md should cover an example. It
-              should at least cover how to get input resources, how to run it
-              and what is the expected output.
+          versions:
+            description: the versions of the functionConfig
             type: array
             items:
-              type: string
-          license:
-            description: The license of the KRM function.
+              type: object
+              required:
+                - name
+                - schema
+                - idempotent
+                - runtime
+                - configMap
+                - usage
+                - examples
+                - license
+              properties:
+                name:
+                  description: Version of the functionConfig
+                  type: string
+                schema:
+                  description: a URI pointing to the schema of the functionConfig
+                  type: object
+                  required:
+                    - openAPIV3Schema
+                  properties:
+                    openAPIV3Schema:
+                      description: openAPIV3Schema is the OpenAPI v3 schema to use for validation
+                      $ref: "#/definitions/io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.JSONSchemaProps"
+                idempotent:
+                  description: If the function is idempotent.
+                  type: boolean
+                configMap:
+                  description: If the function support a ConfigMap as functionConfig.
+                  type: boolean
+                usage:
+                  description: |
+                    A URI pointing to a README.md that describe the details of how to
+                    use the KRM function. It should at least cover what the function
+                    does and what functionConfig does it support and it should give
+                    detailed explaination about each field in the functionConfig.
+                  type: string
+                examples:
+                  description: |
+                    A list of URIs that point to README.md files. At least one example
+                    must be provided. Each README.md should cover an example. It
+                    should at least cover how to get input resources, how to run it
+                    and what is the expected output.
+                  type: array
+                  items:
+                    type: string
+                license:
+                  description: The license of the KRM function.
+                  type: string
+                maintainers:
+                  description: |
+                    The maintainers for the function. It should only be used
+                    when the maintainers are different from the ones in
+                    `spec.maintainers`. When this field is specified, it
+                    override `spec.maintainers`.
+                  type: array
+                  items:
+                    type: string
+                runtime:
+                  description: |
+                    The runtime information about the KRM function. One and only one
+                    of container and exec must be set.
+                  type: object
+                  properties:
+                    container:
+                      description: The runtime information for container-based KRM function.
+                      type: object
+                      required:
+                        - image
+                      properties: 
+                        image:
+                          description: The image name of the KRM function.
+                          type: string
+                        sha256:
+                          description: |
+                            The digest of the image that can be verified against. It
+                            is required only when the image is using semver.
+                          type: string
+                        requireNetwork:
+                          description: If network is required to run this function.
+                          type: boolean
+                        requireStorageMount:
+                          description: If storage mount is required to run this function.
+                          type: boolean
+                    exec:
+                      description: The runtime information for exec-based KRM function.
+                      type: object
+                      required:
+                        - platform
+                      properties:
+                        platforms:
+                          description: Per platform runtime information.
+                          type: array
+                          items:
+                            type: object
+                            required:
+                              - bin
+                              - os
+                              - arch
+                              - uri
+                              - sha256
+                            properties: 
+                              bin:
+                                description: The binary name.
+                                type: string
+                              os:
+                                description: The target operation system to run the KRM function.
+                                type: string
+                                enum:
+                                  - linux
+                                  - darwin
+                                  - windows
+                              arch:
+                                description: The target archtechture to run the KRM function.
+                                type: string
+                                enum:
+                                  - amd64
+                                  - arm64
+                              uri:
+                                description: The location to download the binary.
+                                type: string
+                              sha256:
+                                description: The degist of the binary that can be used to verify the binary.
+                                type: string
+          home:
+            description: A URI pointing the home page of the KRM function.
             type: string
           maintainers:
             description: The maintainers for the function.
@@ -735,92 +832,6 @@ definitions:
             type: array
             items:
               type: string
-          additionalAPIVersionKinds:
-            description: |
-              The apiVersion and kind of secondary functionConfigs that the
-              function supports.
-            type: array
-            items:
-              type: object
-              required:
-                - apiVersion
-                - kind
-              properties: 
-                apiVersion:
-                  description: apiVersion of the secondary functionConfig
-                  type: string
-                kind:
-                  description: kind of the secondary functionConfig
-                  type: string
-                deprecated:
-                  description: if this secondary functionConfig is deprecated
-                  type: boolean
-          runtime:
-            description: |
-              The runtime information about the KRM function. One and only one
-              of container and exec must be set.
-            type: object
-            properties:
-              container:
-                description: The runtime information for container-based KRM function.
-                type: object
-                required:
-                  - image
-                properties: 
-                  image:
-                    description: The image name of the KRM function.
-                    type: string
-                  sha256:
-                    description: |
-                      The digest of the image that can be verified against. It
-                      is required only when the image is using semver.
-                    type: string
-                  requireNetwork:
-                    description: If network is required to run this function.
-                    type: boolean
-                  requireVolumeMount:
-                    description: If volumn mount is required to run this function.
-                    type: boolean
-              exec:
-                description: The runtime information for exec-based KRM function.
-                type: object
-                required:
-                  - platform
-                properties:
-                  platforms:
-                    description: Per platform runtime information.
-                    type: array
-                    items:
-                      type: object
-                      required:
-                        - bin
-                        - os
-                        - arch
-                        - uri
-                        - sha256
-                      properties: 
-                        bin:
-                          description: The binary name.
-                          type: string
-                        os:
-                          description: The target operation system to run the KRM function.
-                          type: string
-                          enum:
-                            - linux
-                            - darwin
-                            - windows
-                        arch:
-                          description: The target archtechture to run the KRM function.
-                          type: string
-                          enum:
-                            - amd64
-                            - arm64
-                        uri:
-                          description: The location to download the binary.
-                          type: string
-                        sha256:
-                          description: The degist of the binary that can be used to verify the binary.
-                          type: string
 paths: {}
 ```
 </details>
@@ -852,10 +863,7 @@ The developer needs to do the following:
 │   ├── communities
 │   │   ├── kustomize
 │   │   │   ├── fn-foo
-│   │   │   │   ├── v1.2.3
-│   │   │   │   │   └── krm-function-metadata.yaml
-│   │   │   │   └── v2.0.0
-│   │   │   │       └── krm-function-metadata.yaml
+│   │   │   │   └── krm-function-metadata.yaml
 │   │   │   ├── fn-bar
 │   │   │   └── OWNERS # OWNERS of the publisher
 │   │   ├── kubeflow
