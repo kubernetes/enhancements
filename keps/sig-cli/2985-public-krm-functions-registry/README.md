@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 3](#story-3)
     - [Story 4](#story-4)
     - [Story 5](#story-5)
+    - [Story 6](#story-6)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -533,7 +534,7 @@ We can mix the 2 management models above.
 We can manage the source code of the Kustomize provided KRM functions in-tree.
 Generic KRM functions like set-labels, set-annotations and set-namespace can be
 included. All the KRM functions provided by kustomize must go through a security
-audit. These in-tree KRM funcitons can serve as examples for other publishers
+audit. These in-tree KRM functions can serve as examples for other publishers
 about how to organize their functions.
 
 The model of centralized index with distributed release is more flexible and
@@ -728,7 +729,7 @@ definitions:
                     A URI pointing to a README.md that describe the details of how to
                     use the KRM function. It should at least cover what the function
                     does and what functionConfig does it support and it should give
-                    detailed explaination about each field in the functionConfig.
+                    detailed explanation about each field in the functionConfig.
                   type: string
                 examples:
                   description: |
