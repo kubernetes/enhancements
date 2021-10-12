@@ -9,13 +9,11 @@ reviewers:
   - "@jeremyrickard"
   - "@KnVerey"
   - "@natasha41575"
-  - "@pwittrock"
   - "@seans3"
-  - "@soltysh"
 approvers:
-  - "@pwittrock"
+  - "@KnVerey"
   - "@seans3"
-  - "@soltysh"
+  - "@monopole"
 status: provisional
 creation-date: 2021-09-21
 
