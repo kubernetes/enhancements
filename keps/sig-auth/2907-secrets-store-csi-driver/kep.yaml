@@ -1,0 +1,16 @@
+title: Secrets Store CSI Driver
+kep-number: 2907
+authors:
+  - "@tam7t"
+  - "@aramase"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+creation-date: 2021-09-02
+reviewers:
+  - "@ritazh"
+  - "@mikedanese"
+approvers:
+  - "@ritazh"
+  - "@mikedanese"
+status: implemented
