@@ -84,8 +84,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 3](#story-3)
     - [Story 4](#story-4)
     - [Story 5](#story-5)
-    - [Story 5](#story-5-1)
     - [Story 6](#story-6)
+    - [Story 7](#story-7)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -477,7 +477,7 @@ This official extension will be embedded within the Kustomize binary and require
 
 Alternatively, this could be published as an external resource that can be pulled by Kustomize as would any other catalog. This would decouple the release cadence of Kustomize and the official extensions, but would introduce extra latency for the end user.
 
-#### Story 5
+#### Story 6
 
 As a KRM function developer at company Example Co, I want to contribute a KRM function to the official extension catalog. 
 
@@ -510,7 +510,7 @@ spec:
         image:  docker.example.io/krm/mcguffin-function:v1.0.0
 ```
 
-#### Story 6
+#### Story 7
 
 As a platform developer at enterprise company Example Co, I wish to publish a trusted function catalog containing functions published by multiple sources, with appropriate metadata:
 
@@ -539,8 +539,16 @@ spec:
     provider: 
       container: 
         image:  watermelon.gcr.io/krm-functions/salt-function:v1.0.0
+  - apiVersion: example.com/v1
+    kind: JavaApplication
+    description: "A Kustomize function provider that can handle Java apps"
+    definition: "https://example.com/java/definition"
+    provider: 
+      container: 
+        image: example/module_providers/java:v1.0.0
+        requireNetwork: true
+        requireFilesystem: true
 ```
-
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -621,6 +629,7 @@ Once the module list and the catalogs for the resolved composition have been gen
 
 ### Use of OCI Artifacts
 
+<<[UNRESOLVED]>>
 ### OCI Artifacts
 
 While this proposal is largely focused on the introduction of the new Catalog `kind`, the introduction of this kind enables additional distribution and trust mechanisms for non container based function providers and associated resources, like Open API v3 schemas through the use of OCI Artifacts. 
@@ -641,6 +650,7 @@ In order to support pulling these resources, the ORAS library could be included 
 Kustomize function providers that are packaged as OCI images will continue to use the existing OCI media types. 
 
 While out of scope of this KEP, the use of OCI artifacts enables additional verification use cases, like the signing and verification of function providers, definitions, and the catalog itself.
+<<[/UNRESOLVED]>>
 
 ### Test Plan
 
