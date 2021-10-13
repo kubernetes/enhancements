@@ -135,75 +135,104 @@ import "k8s.io/apimachinery/pkg/api/resource/generated.proto";
 // PodResourcesLister is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
 service PodResourcesLister {
+    // List returns information about the resources assigment of every pod on
+    // the node.
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
+    // GetAllocatableResources returns information about total amount of
+    // resources available to be used by pods. Corresponds allocatable in node
+    // status.
     rpc GetAllocatableResources(AllocatableResourcesRequest) returns (AllocatableResourcesResponse) {}
+    // GetCapacity returns information about all the resources known by
+    // kubelet. Corresponds capacity in node status.
     rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse) {}
 }
 
 message AllocatableResourcesRequest {}
 
-// AllocatableResourcesResponses contains informations about all the devices known by the kubelet
 message AllocatableResourcesResponse {
+    // Information about all devices available to be used by pods.
     repeated ContainerDevices devices = 1;
+    // List of CPUs available to be used by pods.
     repeated int64 cpu_ids = 2;
+    // Information about memory available to be used by pods.
     repeated ContainerMemory memory = 3;
+    // Amount of resources available to be used by pods.
     map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> quantity = 4;
 }
 
-// GetCapacityResponse contains informations about all the resources known by kubelet
 message GetCapacityResponse {
+    // Information about all devices in the node (known by kubelet).
     repeated ContainerDevices devices = 1;
+    // List of all CPUs in the node (known by kubelet).
     repeated int64 cpu_ids = 2;
+    // Information about all memory in the node (known by kubelet).
     repeated ContainerMemory memory = 3;
+    // Amount of resources known by kubelet.
     map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> quantity = 4;
 }
 
-// ListPodResourcesRequest is the request made to the PodResourcesLister service
 message ListPodResourcesRequest {}
 
-// ListPodResourcesResponse is the response returned by List function
 message ListPodResourcesResponse {
+    // Resource assignment of pods.
     repeated PodResources pod_resources = 1;
 }
 
 // PodResources contains information about the node resources assigned to a pod
 message PodResources {
+    // Name of the pod.
     string name = 1;
+    // Namespace of the pod.
     string namespace = 2;
+    // Resource assignment of the containers of the pod.
     repeated ContainerResources containers = 3;
 }
 
 // ContainerResources contains information about the resources assigned to a container
 message ContainerResources {
+    // Name of the container.
     string name = 1;
+    // Devices assigned to the container.
     repeated ContainerDevices devices = 2;
+    // CPUs exclusively pinned to this containers.
     repeated int64 cpu_ids = 3;
+    // Memory assigned to the container.
     repeated ContainerMemory memory = 4;
+    // Resource requests of the container from the pod spec.
     map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 5;
+    // Resource limits of the container from the pod spec.
     map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> limits = 6;
 }
 
 // ContainerMemory contains information about memory and hugepages assigned to a container
 message ContainerMemory {
+    // Type of the memory.
     string memory_type = 1;
+    // Amount of memory in units specific for the memory type.
     uint64 size = 2;
+    // Topology information of the memory.
     TopologyInfo topology = 3;
 }
 
 // ContainerDevices contains information about the devices assigned to a container
 message ContainerDevices {
+    // Name of the resource
     string resource_name = 1;
+    // Device IDs of this type.
     repeated string device_ids = 2;
+    // Topology information of the devices.
     TopologyInfo topology = 3;
 }
 
 // Topology describes hardware topology of the resource
 message TopologyInfo {
+    // NUMA nodes local to the resource.
     repeated NUMANode nodes = 1;
 }
 
 // NUMA representation of NUMA node
 message NUMANode {
+    // Node ID.
     int64 ID = 1;
 }
 ```
