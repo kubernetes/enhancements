@@ -14,3 +14,4 @@ approvers:
   - "@ritazh"
   - "@mikedanese"
 status: implemented
+stage: stable
