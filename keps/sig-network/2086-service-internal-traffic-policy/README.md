@@ -76,9 +76,10 @@ for internal Service traffic.
 
 ## Proposal
 
-Introduce a new field in Service `spec.internalTrafficPolicy`. The field will have 2 codified values:
+Introduce a new field in Service `spec.internalTrafficPolicy`. The field will have 3 codified values:
 1. Cluster (default): route to all cluster-wide endpoints (or use topology aware subsetting if enabled).
 2. Local: only route to node-local endpoints, drop otherwise.
+3. PreferLocal: route to node-local endpoints if possible, fall back to Cluster behavior otherwise.
 
 A feature gate `ServiceInternalTrafficPolicy` will also be introduced this feature.
 The `internalTrafficPolicy` field cannot be set on Service during the alpha stage unless the feature gate is enabled.
@@ -90,8 +91,10 @@ The `internalTrafficPolicy` field will not apply for headless Services or Servic
 
 #### Story 1
 
-As an application owner, I would like traffic to cluster DNS servers to always prefer local endpoints to reduce
-latency in my application.
+As an application owner, I would like traffic to cluster DNS servers to always prefer
+local endpoints to reduce latency in my application. However, if the local DNS pod is
+temporarily unavailable, my application should automatically switch to using a remote DNS
+pod until the local DNS pod comes back.
 
 #### Story 2
 
@@ -101,6 +104,7 @@ Traffic should never bounce to a daemon on another node.
 ### Risks and Mitigations
 
 * When the `Local` policy is set, it is the user's responsibility to ensure node-local endpoints are ready, otherwise traffic will be dropped.
+  The `PreferLocal` policy should be used when falling back to remote endpoints is acceptable.
 
 ## Design Details
 
@@ -111,6 +115,7 @@ type ServiceInternalTrafficPolicyType string
 const (
 	ServiceTrafficPolicyTypeCluster     ServiceTrafficPolicyType = "Cluster"
 	ServiceTrafficPolicyTypeLocal       ServiceTrafficPolicyType = "Local"
+	ServiceTrafficPolicyTypePreferLocal ServiceTrafficPolicyType = "PreferLocal"
 )
 
 // ServiceSpec describes the attributes that a user creates on a service.
@@ -122,7 +127,9 @@ type ServiceSpec struct {
 	// should be routed to all endpoints or node-local endpoints only.
 	// "Cluster" routes internal traffic to a Service to all endpoints.
 	// "Local" routes traffic to node-local endpoints only, traffic is
-	// dropped if no node-local endpoints are ready.
+	// dropped if no node-local endpoints are ready. "PreferLocal"
+	// prefers local endpoints but falls back to all endpoints if no
+	// node-local endpoints are ready.
 	// The default value is "Cluster".
 	// +featureGate=ServiceInternalTrafficPolicy
 	// +optional
@@ -134,7 +141,8 @@ This field will be independent from externalTrafficPolicy. In other words, inter
 
 Proposed changes to kube-proxy:
 * when `internalTrafficPolicy=Cluster`, default to existing behavior today.
-* when `internalTrafficPolicy=Local`, route to endpoints in EndpointSlice that maches the local node's topology, drop traffic if none exist.
+* when `internalTrafficPolicy=Local`, route to endpoints in EndpointSlice that matches the local node's topology, drop traffic if none exist.
+* when `internalTrafficPolicy=PreferLocal`, route to endpoints in EndpointSlice that matches the local node's topology, fall back to existing behavior if no local endpoints exist.
 
 Overlap with topology-aware routing:
 
@@ -153,6 +161,7 @@ Unit tests:
 E2E test:
 * e2e tests validating default behavior with kube-proxy did not change when `internalTrafficPolicy` defaults to `Cluster`. Existing tests should cover this.
 * e2e tests validating that traffic is only sent to node-local endpoints when `internalTrafficPolicy` is set to `Local`.
+* e2e tests validating that traffic is preferentially sent to node-local endpoints, but falls back to remote endpoints if necessary, when `internalTrafficPolicy` is set to `PreferLocal`.
 
 ### Graduation Criteria
 
@@ -161,11 +170,14 @@ Alpha:
 * kube-proxy handles traffic routing for 2 initial internal traffic policies `Cluster`, and `Local`.
 * Unit tests as defined in "Test Plan" section above. E2E tests are nice to have but not required for Alpha.
 
-Beta:
+Beta1:
 * integration tests exercising API behavior for `spec.internalTrafficPolicy` field of Service.
 * e2e tests exercising kube-proxy routing when `internalTrafficPolicy` is `Local`.
 * feature gate `ServiceInternalTrafficPolicy` is enabled by default.
 * consensus on how internalTrafficPolicy overlaps with topology-aware routing.
+
+Beta2:
+* implementation and testing of `PreferLocal` policy
 
 ### Upgrade / Downgrade Strategy
 
@@ -232,7 +244,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-* Check Service to see if `internalTrafficPolicy` is set to `Local`.
+* Check Service to see if `internalTrafficPolicy` is set to `Local` or `PreferLocal`.
 * A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints).
 
 TODO: add metric name once it's decided
@@ -340,6 +352,7 @@ A Service `internalTrafficPolicy` is set to `Local` but there are no node-local 
 2020-10-09: KEP approved as implementable in "alpha" stage.
 2021-03-08: alpha implementation merged for v1.21
 2021-05-12: KEP approved as implementable in "beta" stage.
+2021-10-14: added `PreferLocal` policy
 
 ## Drawbacks
 
