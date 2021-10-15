@@ -171,6 +171,8 @@ message ContainerResources {
     string name = 1;
     repeated ContainerDevices devices = 2;
     repeated int64 cpu_ids = 3;
+    repeated ContainerMemory memory = 4;
+    repeated int64 cpu_affinity = 5
 }
 
 // Topology describes hardware topology of the resource
@@ -243,6 +245,19 @@ compute resources.
 Applications are expected to run `GetAlloctableResources` each time they expect a change in the resources
 availability (e.g. CPUs onlined/offlined, devices added/removed). We anticipate these changes to happen very rarely.
 Client applications should not expect any ordering in the return value.
+
+NOTE: cpu_ids field in the `ContainerResources` returns only exclusively allocated CPUs in the list endpoint of Podresource API.
+
+Though this is useful in proper resource accounting and determining the remaining CPUs on a node,
+there is no easy way to know the taskset associated with a container.
+Currently, in order to determine the taskset the client had to:
+
+1. Call GetAllocatableResources gRPC endpoint to get a list of all the allocatable CPUs
+1. Call GetCpuIds on all ContainerResources in the system
+1. Subtract out all of the CPUs from the GetCpuIds calls from the GetAllocatableResources call
+
+To determine the tasket of a container in a more user friendly way, the client can use the cpu_affinity
+field in the ContainerResources.
 
 ### Test Plan
 
@@ -358,6 +373,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2020-09-02: Add the GetAllocatableResources endpoint
 - 2020-10-01: KEP extended with Watch API
 - 2020-11-02: Agreement in sig-node to implement Watch API in the 1.21 cycle
+- 2021-10-15: Add cpu_affinity in ContainerResources to obtain taskset of a container in 1.24 cycle
 
 ## Alternatives
 

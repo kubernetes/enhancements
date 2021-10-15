@@ -6,10 +6,12 @@ authors:
   - "@renaudwastaken"
   - "@fromanirh"
   - "@alexeyperevalov"
+  - "swatisehgal"
 owning-sig: sig-node
 participating-sigs: []
 status: implementable
 creation-date: "2018-07-19"
+last-updated: "2021-10-15"
 reviewers:
   - "@derekwaynecarr"
   - "@renaudwastaken"
@@ -28,7 +30,7 @@ stage: stable
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
 # latest-milestone: "v1.21"
-latest-milestone: "0.0"
+latest-milestone: "1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -40,6 +42,7 @@ milestone:
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: "KubeletPodResources"
+  - name: "KubeletPodResourcesGetCPUAffinity"
     components:
       - kubelet
 disable-supported: false
