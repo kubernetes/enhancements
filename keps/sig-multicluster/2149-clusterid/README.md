@@ -438,7 +438,7 @@ The most common discussion point within the SIG regarding whether an implementat
 # An example object of `id.k8s.io ClusterProperty` 
 # using a kube-system ns uuid as the id value (recommended above):
 
-apiVersion: multicluster.k8s.io/v1
+apiVersion: about.k8s.io/v1
 kind: ClusterProperty
 metadata:
   name: id.k8s.io
@@ -450,7 +450,7 @@ spec:
 # An example object of `id.k8s.io ClusterProperty` 
 # using a human-readable string as the id value:
 
-apiVersion: multicluster.k8s.io/v1
+apiVersion: about.k8s.io/v1
 kind: ClusterProperty
 metadata:
   name: id.k8s.io
@@ -472,7 +472,7 @@ In situations like these, the admission controller will need to fail to add the 
 ```
 # An example object of `clusterset.k8s.io ClusterProperty`:
 
-apiVersion: multicluster.k8s.io/v1
+apiVersion: about.k8s.io/v1
 kind: ClusterProperty
 metadata:
   name: clusterset.k8s.io
