@@ -451,11 +451,24 @@ No implications to node runtime.
 
 #### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   
-  Integration tests cover feature gate disablement and re-enablement.
+Integration tests cover feature gate disablement and re-enablement.
 
-  A manual upgrade->downgrade->upgrade flow will be executed prior to Beta
-  graduation to ensure that a running Job falls back to tracking without
-  finalizers. The KEP will be updated with the findings of the test.
+The following upgrade->downgrade->upgrade flow was executed on GKE:
+
+1. Start at version 1.22.2
+1. Create a Job A that sleeps for 1 minute, with high completions number and low parallelism.
+1. Verify that the Job A is running and pods don’t have finalizers
+1. Upgrade to 1.23 with JobTrackingWithFinalizers feature enabled
+1. Verify that Job A still runs and still creates pods without finalizers.
+1. Create a Job B with similar characteristics as Job A.
+1. Verify that the Job B is running and pods have finalizers while running.
+1. Downgrade to 1.22.2
+1. Verify that ob B still runs and creates pods without finalizers
+1. Upgrade to 1.23 with JobTrackingWithFinalizers feature enabled again.
+1. Verify that Job B still runs and still create pods without finalizers.
+1. Create a Job C and verify that pods have finalizers while running.
+
+The flow was completed successfully with all the stated verifications.
 
 #### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
   
@@ -593,6 +606,7 @@ No implications to node runtime.
 - 2021-04-20: Target 1.22 for Alpha.
 - 2021-07-09: Alpha implementation merged
 - 2021-08-18: PRR completed and graduation to beta proposed.
+- 2021-10-14: Added details for Upgrade->Downgrade->Upgrade manual test.
 
 ## Drawbacks
 
