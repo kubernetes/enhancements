@@ -6,7 +6,7 @@ owning-sig: sig-testing
 participating-sigs:
 - sig-testing
 - sig-release
-status: implemented
+status: implementable
 creation-date: 2021-02-23
 last-updated: 2021-08-16
 reviewers:

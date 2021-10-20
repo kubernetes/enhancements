@@ -24,3 +24,5 @@ replaces:
   - "0008-kustomize.md"
 superseded-by:
   - n/a
+latest-milestone: '0.0'
+stage: stable

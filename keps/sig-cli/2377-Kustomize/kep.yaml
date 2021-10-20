@@ -20,3 +20,5 @@ replaces:
   - kinflate # Old name for kustomize
 superseded-by:
   - "/keps/sig-cli/2386-kustomize-subcommand-integration/"
+latest-milestone: '0.0'
+stage: stable

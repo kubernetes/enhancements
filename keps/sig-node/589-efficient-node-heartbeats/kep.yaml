@@ -25,3 +25,5 @@ replaces:
   - n/a
 superseded-by:
   - n/a
+latest-milestone: '0.0'
+stage: stable

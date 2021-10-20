@@ -16,3 +16,5 @@ last-updated: 2020-03-09
 status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
+latest-milestone: '0.0'
+stage: stable

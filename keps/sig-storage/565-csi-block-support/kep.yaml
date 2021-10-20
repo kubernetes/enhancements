@@ -17,3 +17,5 @@ status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
   - "https://github.com/kubernetes/enhancements/pull/1288"
+latest-milestone: '0.0'
+stage: stable

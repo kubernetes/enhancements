@@ -1,15 +1,17 @@
 title: Shared PID Namespace
 kep-number: 495
 authors:
-- "@verb"
+  - "@verb"
 owning-sig: sig-node
 participating-sigs:
-- sig-node
+  - sig-node
 reviewers:
-- "@yujuhong"
+  - "@yujuhong"
 approvers:
-- "@dchen1107"
+  - "@dchen1107"
 editor: N/A
 creation-date: 2016-12-21
 last-updated: 2019-09-30
 status: implemented
+latest-milestone: '0.0'
+stage: stable

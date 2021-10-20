@@ -24,3 +24,5 @@ replaces:
   - "https://github.com/kubernetes/community/pull/481"
 superseded-by:
   - n/a
+latest-milestone: '0.0'
+stage: stable

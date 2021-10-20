@@ -100,7 +100,7 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage bool, err error) {
 	logrus.Debug("checking if PRR is required")
 
-	required = kep.Status == api.ImplementableStatus
+	required = kep.Status == api.ImplementableStatus || kep.Status == api.ImplementedStatus
 	missingMilestone = kep.IsMissingMilestone()
 	missingStage = kep.IsMissingStage()
 

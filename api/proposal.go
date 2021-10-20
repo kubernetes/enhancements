@@ -257,6 +257,9 @@ func (k *KEPHandler) Validate(p *Proposal) []error {
 	if err := p.Stage.IsValid(); err != nil {
 		allErrs = append(allErrs, err)
 	}
+	if p.Status == ImplementedStatus && p.Stage != StableStage {
+		allErrs = append(allErrs, fmt.Errorf("status:implemented implies stage:stable but found: %v", p.Stage))
+	}
 	return allErrs
 }
 

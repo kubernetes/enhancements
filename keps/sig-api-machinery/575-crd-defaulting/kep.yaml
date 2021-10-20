@@ -21,3 +21,5 @@ status: implemented
 see-also:
   - "/keps/sig-api-machinery/20180731-crd-pruning.md"
   - "/keps/sig-api-machinery/20190425-structural-openapi.md"
+latest-milestone: '0.0'
+stage: stable

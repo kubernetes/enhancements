@@ -20,3 +20,5 @@ last-updated: 2020-05-11
 status: implemented
 see-also:
   - "/keps/sig-cloud-provider/20190729-building-without-in-tree-providers.md"
+latest-milestone: '0.0'
+stage: stable

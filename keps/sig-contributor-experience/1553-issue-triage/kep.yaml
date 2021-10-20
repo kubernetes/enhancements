@@ -20,3 +20,5 @@ approvers:
 creation-date: 2020-02-15
 see-also:
 replaces:
+latest-milestone: '0.0'
+stage: stable

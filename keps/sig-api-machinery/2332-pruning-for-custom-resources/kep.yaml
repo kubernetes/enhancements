@@ -22,3 +22,5 @@ status: implemented
 see-also:
   - "https://github.com/kubernetes/enhancements/pull/1002"
   - "/keps/sig-api-machinery/20180415-crds-to-ga.md"
+latest-milestone: '0.0'
+stage: stable

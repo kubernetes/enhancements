@@ -33,3 +33,4 @@ disable-supported: true
 metrics:
   - kubelet_certificate_manager_client_expiration_seconds
   - kubelet_certificate_manager_client_expiration_renew_errors
+stage: stable
