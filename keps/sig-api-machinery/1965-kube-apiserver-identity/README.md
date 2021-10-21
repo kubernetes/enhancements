@@ -131,7 +131,7 @@ Each kube-apiserver with expose the following metrics for its own ID:
 			Namespace:      "apiserver",
 			Subsystem:      "identity",
 			Name:           "lease_renew_time_seconds",
-			Help:           "Lease rente time seconds, labeled by the kube-apiserver ID in the Lease object, show the time the Lease was updated",
+			Help:           "Lease renew time seconds, labeled by the kube-apiserver ID in the Lease object, show the time the Lease was updated",
 			StabilityLevel: metrics.ALPHA,
 		},
 	success := metrics.NewCounter(
