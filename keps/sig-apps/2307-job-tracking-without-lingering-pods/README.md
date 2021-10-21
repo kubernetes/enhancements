@@ -342,7 +342,7 @@ the owner reference.
 - Ensure that tracking Jobs with big number of Pods doesn't cause starvation of
   smaller jobs.
 - Metrics for latency, counting updates and errors.
-- Job E2E tests are in Testgrid with the feature enabled and linked in KEP
+- Job E2E tests are in [Testgrid](https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=apps%5C%5D%20Job)
 
 #### Beta -> GA Graduation
 
@@ -463,7 +463,7 @@ The following upgrade->downgrade->upgrade flow was executed on GKE:
 1. Create a Job B with similar characteristics as Job A.
 1. Verify that the Job B is running and pods have finalizers while running.
 1. Downgrade to 1.22.2
-1. Verify that ob B still runs and creates pods without finalizers
+1. Verify that Job B still runs and creates pods without finalizers
 1. Upgrade to 1.23 with JobTrackingWithFinalizers feature enabled again.
 1. Verify that Job B still runs and still create pods without finalizers.
 1. Create a Job C and verify that pods have finalizers while running.
@@ -607,6 +607,7 @@ The flow was completed successfully with all the stated verifications.
 - 2021-07-09: Alpha implementation merged
 - 2021-08-18: PRR completed and graduation to beta proposed.
 - 2021-10-14: Added details for Upgrade->Downgrade->Upgrade manual test.
+- 2021-10-21: Add link to testgrid.
 
 ## Drawbacks
 
