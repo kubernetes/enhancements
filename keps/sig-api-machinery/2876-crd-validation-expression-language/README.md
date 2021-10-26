@@ -25,6 +25,8 @@
     - [Other expression languages](#other-expression-languages)
 - [Design Details](#design-details)
   - [Type Checking](#type-checking)
+  - [Type System Integration](#type-system-integration)
+    - [Why not represent associative lists as maps in CEL?](#why-not-represent-associative-lists-as-maps-in-cel)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -444,6 +446,63 @@ coverage of interactions in these dimensions:
 - expressions specifying literal integers, literal floats, and explicitly typed integers and floats
 
 (Thanks to @liggitt for pointing this out)
+
+### Type System Integration
+
+Types:
+
+| OpenAPIv3 type                          | CEL type                       |
+| --------------------------------------- | ------------------------------ |
+| 'object' with Properties                | object / "message type"        |
+| 'object' with AdditionalProperties      | map                            |
+| 'array                                  | list                           |
+| 'array' with x-kubernetes-list-type=map | list with map based Equality & unique key guarantees   |
+| 'array' with x-kubernetes-list-type=set | list with set based Equality & unique entry guarantees |
+| 'boolean'                               | boolean                        |
+| 'number' (all formats)                  | double                         |
+| 'integer' (all formats)                 | int (64)                       |
+| 'null'                                  | null                           |
+| 'string'                                | string                         |
+| 'string' with format=byte               | bytes                          |
+| 'string' with format=binary             | bytes                          |
+| 'string' with format=date               | timestamp (protobuf.Timestamp) |
+| 'string' with format=datetime           | timestamp (protobuf.Timestamp) |
+
+xref: [CEL types](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values), [OpenAPI types](https://swagger.io/specification/#data-types).
+
+Implementation:
+
+Type integration will be added by implementing CEL's
+[ref.Val](https://github.com/google/cel-go/blob/8e5d9877f0ab106269dee64e5bf10c5315281830/common/types/ref/reference.go#L40)
+and related [trait interfaces](https://github.com/google/cel-go/tree/master/common/types/traits). 
+
+The initial changes made in the type integration will be:
+
+- `Equals` for lists with type "map" and "set" will be map and set based instead of list based (order will be ignored)
+- `Add` for lists with type "map" will overwrite existing entries with the same key, but with the position of existing entries in the list retained. New entries will be appended.
+- `Add` for lists with type "set" will perform a union. The positions of existing set entries in the list will be retained and new set entries will be appended.
+
+#### Why not represent associative lists as maps in CEL?
+
+- CEL maps must be keyed by a single scalar type, "associative lists" may be keyed by 1+ scalar key fields
+- While it would be possible to use a string representation of mult-field maps, there are problems:
+  - Developers [sometimes care](https://github.com/kubernetes/kubernetes/issues/104641) about associative list order, and if allow the associative lists to be treated as a map in a way that results in order being discarded, we would break them.
+  - We couldn't statically type check the key string literals being used as multi part keys
+  - We couldn't have both: (a) equality of string keys, which implies a canonical ordering of key fields, and (b) ability for developers to successfully lookup a map entry regardless of how they order the keys in the string representation
+
+
+So instead of treating "associative lists" as maps in CEL, we will continue to treat them as lists, but override equality to ignore object order (i.e. use map equality semantics) and introduce utility functions to make the list representation easy to use in CEL. E.g. instead of:
+
+```
+associativeList.filter(e, e.key1 == 'a' && e.key2 == 'b').all(e, e.val == 100)
+```
+
+We plan to add a `get()` builtin function (exact name and semantics TBD) that allows for lookup of a single map entry:
+
+```
+associativeList.get(e, e.key1 == 'a' && e.key2 == 'b').val == 100
+```
+
 
 ### Test Plan
 
