@@ -235,20 +235,44 @@ will be surfaced when the validation rule evaluates to false.
 
 - The validator will be scoped to the location of the `x-kubernetes-validator`
 extension in the schema. In the above example, the validator is scoped to the
-'spec' field.
-
+`spec` field. `self` will be used to represent the name of the field which the validator
+is scoped to.
+  - Consideration under adding the representative of scoped filed name: There would be composition problem while generating CRD with tools like `controller-gen`.
+  When trying to add validation as a marker comment to a field, the validation rule will 
+  be hard to define without the actual field name. As the example showing below. When we want to put cel validation on ToySpec, the field name as `spec` has not 
+  been identified yet which makes rule hard to define.
+  
+     ```azure
+     // +kubebuilder:validation:XValidator=
+     type ToySpec struct {
+       fieldSample string `json:"fieldSample"`
+       ...
+     }
+    
+     type Toy struct {
+       Spec ToySpec `json:"spec"`
+     }
+     ```
+  
+  - Alternatives: 
+    - Provide a local scoped variable with a fixed name for different types:
+      - scalar: value
+      - array: items
+      - map: entries
+      - object: object
+    
+      It will cause a lot of keywords to be reserved and users have to memorize those variable when writing rules.
+    - Using other names like `this`, `me`, `value`, `_`. The name should be self-explanatory, less chance of conflict and easy to be picked up.
 - For OpenAPIv3 object types, the expression will have direct access to all the
 fields of the object the validator is scoped to.
   
 - For OpenAPIv3 scalar types (integer, string & boolean), the expression will have access to the
 scalar data element the validator is scoped to. The data element will be accessible to CEL
-expressions via the name of the property name that `x-kubernetes-validator` is defined on,
-e.g. `len(labelSelector) > 10`.
+expressions via `self`, e.g. `len(self) > 10`.
 
 - For OpenAPIv3 list and map types, the expression will have access to the data element of the list
-or map. These will be accessible to CEL via the property name that `x-kubernetes-validator` is
-defined on. The elements of a map or list can be validated using the CEL support for collections
-like the `all` macro, e.g. `property.all(listItem, <predicate>)` or `property.all(mapKey,
+or map. These will be accessible to CEL via `self`. The elements of a map or list can be validated using the CEL support for collections
+like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey,
 <predicate>)`.
   
 - For immutability use case, validator will have access to the existing version of the object. This
