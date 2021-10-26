@@ -235,8 +235,8 @@ will be surfaced when the validation rule evaluates to false.
 extension in the schema. In the above example, the validator is scoped to the
 `spec` field. `self` will be used to represent the name of the field which the validator
 is scoped to.
-  - Consideration under adding `self`: There would be composition problem while generating CRD with tools like `controller-gen`.
-  When trying to add validation as a maker comment to a field, the validation rule will 
+  - Consideration under adding the representative of scoped filed name: There would be composition problem while generating CRD with tools like `controller-gen`.
+  When trying to add validation as a marker comment to a field, the validation rule will 
   be hard to define without the actual field name. As the example showing below. When we want to put cel validation on ToySpec, the field name as `spec` has not 
   been identified yet which makes rule hard to define.
   
