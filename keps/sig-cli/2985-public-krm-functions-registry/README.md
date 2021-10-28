@@ -111,6 +111,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Repo Layout Convention](#repo-layout-convention)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -556,15 +559,10 @@ using [mdBook](https://github.com/rust-lang/mdBook).
 
 ### Function Metadata
 
-<<[UNRESOLVED]>>
-The schema of the function metadata has not been finalized yet.
-<<[/UNRESOLVED]>>
+We will use `KRMFunction` kind whose schema is defined in [KEP-2906](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2906-kustomize-function-catalog#function-metadata-schema) to capture the metadata for a single KRM function.
 
 The following is an example function metadata for a container-based KRM
-function. We will only support container-based KRM functions in the public
-registry.
-
-The content under field `spec` will be used directly in a Catalog resource.
+function. We will support it starting from the alpha phase.
 
 ```yaml
 apiVersion: config.k8s.io/v1alpha1
@@ -600,9 +598,8 @@ spec:
     - namespace
 ```
 
-The following is an example for exec-based KRM function. We will not allow
-contributors to publish exec-based KRM functions. But we want to standardize the
-metadata to allow an organization to share exec-based KRM functions internally.
+The following is an example for exec-based KRM function. We will support it
+starting from the beta phase.
 
 ```yaml
 apiVersion: config.k8s.io/v1alpha1
@@ -724,6 +721,22 @@ For KRM functions that are not sig-sponsored, the maintainers are responsible
 for testing them.
 
 ### Graduation Criteria
+
+#### Alpha
+
+- Set up the repo in `kubernetes-sigs`.
+- Set up build and release pipeline for sig-sponsored functions (including kustomize's).
+- Set up CI for publishers.
+- Support container-based KRM functions.
+
+#### Beta
+
+- Gather feedback from developers and contributors.
+- Support exec-based KRM functions.
+
+#### GA
+
+TBD
 
 <!--
 **Note:** *Not required until targeted at a release.*

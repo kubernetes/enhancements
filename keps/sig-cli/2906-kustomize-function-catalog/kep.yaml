@@ -3,6 +3,7 @@ kep-number: 2906
 authors:
   - "@jeremyrickard"
   - "@KnVerey"
+  - "@mengqiy"
 owning-sig: sig-cli
 participating-sigs:
   - sig-cli
