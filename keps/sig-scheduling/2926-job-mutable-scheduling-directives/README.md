@@ -161,9 +161,10 @@ which group of nodes a job should run. For example, it may want to send the job 
 specific partition (e.g., preemptibles) or a specific location (e.g., zone x).
 
 This is a proposal to relax update validation on jobs that have never been unsuspended to 
-allow mutating node scheduling directives, namely node affinity, node selector and tolerations of 
-the job's pod template. This enables a higher-level queue controller to inject such directives before
-un-suspending a job to influence its placement.
+allow mutating node scheduling directives, namely the pod template's node affinity, 
+node selector, tolerations, annotations and labels of the job's pod template. This enables 
+a higher-level queue controller to inject such directives before un-suspending a job to
+influence its placement.
 
 <!--
 This section is incredibly important for producing high-quality, user-focused
@@ -215,8 +216,8 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ### Goals
 
-- Allow mutating node affinity, node selector and tolerations of jobs that 
-  have never been unsuspended.
+- Allow mutating node affinity, node selector, tolerations, annotations and labels of 
+  the pod template of jobs that have never been unsuspended.
 
 
 <!--
@@ -241,7 +242,8 @@ and make progress.
 ## Proposal
 
 The proposal is to relax update validation of scheduling bits of jobs that have never
-been unsuspended, specifically node affinity, node selector and tolerations.
+been unsuspended, specifically node affinity, node selector, tolerations, annotations and 
+labels of the pod template.
 
 This has no impact on the job-controller. The job controller has no dependency
 on those scheduling directives expressed in a job's pod template.
@@ -317,7 +319,7 @@ Consider including folks who also work outside the SIG or subproject.
 
 The pod template validation logic in the API server, what we need to do is relax the validation
 of the Job's Template field which is currently immutable to be mutable for node affinity, 
-node selector and tolerations.
+node selector, tolerations, annotations and labels.
 
 The condition we will check to verify that the job has never been unsuspended before is 
 `Job.Spec.Suspend=true && Job.Status.StartTime=nil`.
@@ -332,8 +334,8 @@ proposal will be implemented, this is the place to discuss them.
 ### Test Plan
 
 - Unit and integration tests veryfing that:
-  - node affinity, node selector or tolerations not mutable for jobs that have been unsuspended before
-  - node affinity, node selector or tolerations not mutable for apps other than jobs
+  - pod template's node affinity, node selector, tolerations, annotations and labels not mutable for jobs that have been unsuspended before
+  - pod template's node affinity, node selector tolerations, annotations or labels not mutable for apps other than jobs
   - job controller observes the update and creates pods with the new scheduling directives
 
 <!--
@@ -818,6 +820,7 @@ N/A.
 ## Implementation History
 
 - 2021-09-01: Proposed KEP starting in beta status.
+- 2021-10-28: Updated the KEP to include annotations and labels of the pod template
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
