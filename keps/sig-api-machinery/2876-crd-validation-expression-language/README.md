@@ -206,7 +206,7 @@ satisfy a large set of remaining uses cases that none of the above can solve.
 For example, cross-field validation use cases can only be solved using
 expressions or webhooks.
 
-`x-kubernetes-validator` extension will be added to CRD structural schemas to allow CEL validation expressions.
+`x-kubernetes-validations` extension will be added to CRD structural schemas to allow CEL validation expressions.
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -217,7 +217,7 @@ kind: CustomResourceDefinition
       type: object
       properties:
         spec:
-          x-kubernetes-validator: 
+          x-kubernetes-validations: 
             - rule: "minReplicas <= maxReplicas"
               message: "minReplicas cannot be larger than maxReplicas"
           type: object
@@ -233,7 +233,7 @@ kind: CustomResourceDefinition
 - Each validation rule has an optional 'message' field for the error message that
 will be surfaced when the validation rule evaluates to false.
 
-- The validator will be scoped to the location of the `x-kubernetes-validator`
+- The validator will be scoped to the location of the `x-kubernetes-validations`
 extension in the schema. In the above example, the validator is scoped to the
 `spec` field. `self` will be used to represent the name of the field which the validator
 is scoped to.
@@ -436,7 +436,7 @@ Similar to CEL for General Admission Control, CEL could also be used to author C
 While we believe CEL should be sufficient. If another language we introduce in the future, it would be supported:
 
 - Add an identifier for each expression language.
-- Add a `type` field specified to `x-kubernetes-validator` (it would default to `cel`).
+- Add a `type` field specified to `x-kubernetes-validations` (it would default to `cel`).
 - Implement the validation support for the languages or even allow 3rd party validators to have a
   way to inline their validation rules in CRDs?
 
@@ -566,8 +566,8 @@ No, default behavior is the same.
 
 Yes, disabling the feature will result in validation expressions being ignored.
 
-We will add a unit test that ensures that if the featuregate is off, but the x-kubernetes-validator
-field is present, custom resource definition updates that do not add additional x-kubernetes-validator
+We will add a unit test that ensures that if the featuregate is off, but the x-kubernetes-validations
+field is present, custom resource definition updates that do not add additional x-kubernetes-validations
 fields will succeed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -586,7 +586,7 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-`x-kubernetes-validator` it not currently allowed in the OpenAPI schemas defined in Custom Resource
+`x-kubernetes-validations` it not currently allowed in the OpenAPI schemas defined in Custom Resource
 Definitions. This creates a rollout issue: Any CRDs that are defined using this new field will
 be invalid according to versions of Kubernetes that pre-date the introduction of the field.
 
@@ -615,7 +615,7 @@ This section must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Check if there exist any custom resource definition with the x-kubernetes-validator field in the OpenAPIv3 schema.
+Check if there exist any custom resource definition with the x-kubernetes-validations field in the OpenAPIv3 schema.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -709,7 +709,7 @@ For each of them, fill in the following information by copying the below templat
 
 ### Beta
 
-Code that allows x-kubernetes-validator to be included (but ignored) in CRDs is backported all
+Code that allows x-kubernetes-validations to be included (but ignored) in CRDs is backported all
 supported Kubernetes versions. Also, we should make an assessment of how much support we have in
 older kubernetes versions for this feature before we promote to Beta, delaying promotion as needed
 to minimize negative impact to ecosystem.
