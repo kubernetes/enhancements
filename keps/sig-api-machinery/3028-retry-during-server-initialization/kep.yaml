@@ -1,0 +1,16 @@
+title: Retry during Server Initialization
+kep-number: 3028
+authors:
+  - "@tkashem"
+  - "@MikeSpreitzer"
+owning-sig: sig-api-machinery
+participating-sigs:
+status: implementable
+creation-date: 2021-11-01
+reviewers:
+- "@deads2k"
+- "@lavalamp"
+- "@wojtek-t"
+approvers:
+- "@deads2k"
+- "@lavalamp"
