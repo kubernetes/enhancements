@@ -1,0 +1,27 @@
+title: Tuning the number of domains in PodTopologySpread
+kep-number: 3022
+authors:
+  - "@sanposhiho"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-autoscaling
+status: implementable
+creation-date: 2021-10-28
+reviewers:
+  - "@alculquicondor"
+  - "@Huang-Wei"
+  - "@x13n"
+approvers:
+  - "@alculquicondor"
+  - "@Huang-Wei"
+stage: alpha
+latest-milestone: "v1.24"
+milestone:
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.26"
+disable-supported: true
+feature-gates:
+  - name: MinDomainsInPodTopologySpread
+    components:
+      - kube-scheduler
