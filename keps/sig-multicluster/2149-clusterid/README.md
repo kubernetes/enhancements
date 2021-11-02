@@ -102,7 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Lifespan](#lifespan-1)
       - [Contents](#contents-1)
       - [Consumers](#consumers-1)
-  - [Additional Claims](#additional-claims)
+  - [Additional Properties](#additional-properties)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -255,7 +255,7 @@ nitty-gritty.
 ### Overview
 Each cluster in a ClusterSet will be assigned a unique identifier, that lives at least as long as that cluster is a member of the given ClusterSet, and is immutable for that same lifetime. This identifier will be stored in a new cluster-scoped `ClusterProperty` CR with the well known name `id.k8s.io` that may be referenced by workloads within the cluster. The identifier must be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label, and may be created by an implementation dependent mechanism.
 
-While a member of a ClusterSet, a cluster will also have an additional `clusterset.k8s.io ClusterProperty` which describes its current membership. This claim must be present exactly as long as the cluster's membership in a ClusterSet lasts, and removed when the cluster is no longer a member.
+While a member of a ClusterSet, a cluster will also have an additional `clusterset.k8s.io ClusterProperty` which describes its current membership. This property must be present exactly as long as the cluster's membership in a ClusterSet lasts, and removed when the cluster is no longer a member.
 
 More detail and examples of the uniqueness, lifespan, immutability, and content requirements for both the `id.k8s.io ClusterProperty` and `clusterset.k8s.io ClusterProperty` are described further below. The goal of these requirements are to provide to the MCS API a cluster ID of viable usefulness to address known user stories without being too restrictive or prescriptive.
 
@@ -297,22 +297,22 @@ _For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs
 
 ### `ClusterProperty` CRD
 
-The `ClusterProperty` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterProperty`s, each holding a different identification related value. Each claim contains the following information:
+The `ClusterProperty` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterProperty`s, each holding a different identification related value. Each property contains the following information:
 
-*   **Name** - a well known or custom name to identify the claim.
-*   **Value** - a claim-dependent string, up to 128 KB.
+*   **Name** - a well known or custom name to identify the property.
+*   **Value** - a property-dependent string, up to 128 KB.
 
-The schema for `ClusterProperty` is intentionally loose to support multiple forms of information, including arbitrary additional identification related claims described by users (see "Additional Claims", below), but certain well-known claims will add additional schema constraints, such as those described in the next section.
+The schema for `ClusterProperty` is intentionally loose to support multiple forms of information, including arbitrary additional identification related properties described by users (see "Additional Properties", below), but certain well-known properties will add additional schema constraints, such as those described in the next section.
 
 
-### Well known claims
+### Well known properties
 
-The `ClusterProperty` CRD will support two specific claims under the well known names `id.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowledge of a cluster's ID or ClusterSet membership.
+The `ClusterProperty` CRD will support two specific properties under the well known names `id.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowledge of a cluster's ID or ClusterSet membership.
 
 The requirements below use the keywords **must, should,** and **may** purposefully in accordance with [RFC-2119](https://tools.ietf.org/html/rfc2119).
 
 
-#### Claim: `id.k8s.io`
+#### Property: `id.k8s.io`
 
 Contains a unique identifier for the containing cluster.
 
@@ -327,7 +327,7 @@ Contains a unique identifier for the containing cluster.
 
 ##### Lifespan
 
-*   The identifier **must** exist and be immutable for the duration of a cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io` claim referring to that cluster in that ClusterSet exists.
+*   The identifier **must** exist and be immutable for the duration of a cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io` property referring to that cluster in that ClusterSet exists.
 *   The identifier **must** exist for the lifespan of a cluster.
 *   The identifier **should** be immutable for the lifespan of a cluster.
 
@@ -343,17 +343,17 @@ Contains a unique identifier for the containing cluster.
 ##### Consumers
 
 *   **Must** be able to rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
-*   **Should** watch the `id.k8s.io` claim to handle potential changes if they live beyond the ClusterSet membership.
+*   **Should** watch the `id.k8s.io` property to handle potential changes if they live beyond the ClusterSet membership.
 *   **May** rely on the existence of an identifier for clusters that do not belong to a ClusterSet so long as the implementation provides one.
 
 
 ##### Notable scenarios
 
-**Renaming a cluster**: Since a `id.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the claim contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
+**Renaming a cluster**: Since a `id.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the property contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
 
 **Reusing cluster names**: Since an `id.k8s.io ClusterProperty` has no restrictions on whether or not a ClusterProperty can be repeatable, if a cluster unregisters from a ClusterSet it is permitted under this standard to rejoin later with the same `id.k8s.io ClusterProperty` it had before. Similarly, a *different* cluster could join a ClusterSet with the same `id.k8s.io ClusterProperty` that had been used by another cluster previously, as long as both do not have membership in the same ClusterSet at the same time. Finally, two or more clusters may have the same `id.k8s.io ClusterProperty` concurrently (though they **should** not; see "Uniqueness" above) *as long as* they both do not have membership in the same ClusterSet.
 
-#### Claim: `clusterset.k8s.io`
+#### Property: `clusterset.k8s.io`
 
 Contains an identifier that relates the containing cluster to the ClusterSet in which it belongs.
 
@@ -373,12 +373,12 @@ Contains an identifier that relates the containing cluster to the ClusterSet in 
 ##### Consumers
 
 *   **Must** be able to rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
-*   **Should** watch the clusterset claim to detect the span of a cluster’s membership in a ClusterSet.
+*   **Should** watch the clusterset property to detect the span of a cluster’s membership in a ClusterSet.
 
 
-### Additional Claims
+### Additional Properties
 
-Implementers are free to add additional claims as they see fit, so long as they do not conflict with the well known claims. `*.k8s.io`, `*.kubernetes.io`, and `sigs.k8s.io` claims are reserved for Kubernetes and related projects.
+Implementers are free to add additional properties as they see fit, so long as they do not conflict with the well known properties. `*.k8s.io`, `*.kubernetes.io`, and `sigs.k8s.io` properties are reserved for Kubernetes and related projects.
 
 
 ### Notes/Constraints/Caveats (Optional)
@@ -417,7 +417,7 @@ proposal will be implemented, this is the place to discuss them.
 
 This proposal suggests a CRD composed of objects all of the same `Kind` `ClusterProperty`, and that are distinguished using certain well known values in their `metadata.name` fields. This design avoids cluster-wide singleton `Kind`s for each property, reduces access competition for the same metadata by making each property its own resource (instead of all in one), allows for RBAC to be applied in a targeted way to individual properties, and supports the user prerogative to store other simple metadata in one centralized CRD by creating CRs of the same `Kind` `ClusterProperty` but with their own names.
 
-Storing arbitrary facts about a cluster can be implemented in other ways. For example, Cluster API subproject stopgapped their need for cluster name metadata by leveraging the existing `Node` `Kind` and storing metadata there via annotations, such as `cluster.x-k8s.io/cluster-name` ([ref](https://github.com/kubernetes-sigs/cluster-api/pull/4048)). While practical for their case, this KEP avoids adding cluster-level info as annotations on child resources so as not to be dependent on a child resource's existence, to avoid issues maintaining parity across multiple resources of the same `Kind` for identical metadata, and maintain RBAC separation between the cluster-level metadata and the child resources. Even within the realm of implementing as a CRD, the API design could focus on distinguishing each fact by utilizing different `spec.Type`s (as `Service` objects do e.g. `spec.type=ClusterIP` or `spec.type=ExternalName`), or even more strictly, each as a different `Kind`.  The former provides no specific advantages since multiple differently named claims for the same fact are unnecessary, and is less expressive to query (it is easier to query by name directly like `kubectl get clusterclaims id.k8s.io`). The latter would result in the proliferation of cluster-wide singleton `Kind` resources, and be burdensome for users to create their own custom claims.
+Storing arbitrary facts about a cluster can be implemented in other ways. For example, Cluster API subproject stopgapped their need for cluster name metadata by leveraging the existing `Node` `Kind` and storing metadata there via annotations, such as `cluster.x-k8s.io/cluster-name` ([ref](https://github.com/kubernetes-sigs/cluster-api/pull/4048)). While practical for their case, this KEP avoids adding cluster-level info as annotations on child resources so as not to be dependent on a child resource's existence, to avoid issues maintaining parity across multiple resources of the same `Kind` for identical metadata, and maintain RBAC separation between the cluster-level metadata and the child resources. Even within the realm of implementing as a CRD, the API design could focus on distinguishing each fact by utilizing different `spec.Type`s (as `Service` objects do e.g. `spec.type=ClusterIP` or `spec.type=ExternalName`), or even more strictly, each as a different `Kind`.  The former provides no specific advantages since multiple differently named properties for the same fact are unnecessary, and is less expressive to query (it is easier to query by name directly like `kubectl get clusterproperties id.k8s.io`). The latter would result in the proliferation of cluster-wide singleton `Kind` resources, and be burdensome for users to create their own custom properties.
 
 
 ### Implementing the `ClusterProperty` CRD and its admission controllers
@@ -428,7 +428,7 @@ The actual implementation to select and store the identifier of a given cluster 
 
 That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `id.k8s.io ClusterProperty` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for example, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new ID.
 
-Since this KEP does not formally mandate that the cluster ID *must* be immutable for the lifetime of the cluster, only for the lifetime of its membership in a ClusterSet, any dependent tooling explicitly *cannot* assume the `id.k8s.io ClusterProperty` for a given cluster will stay constant on its own merit. For example, log aggregation of a given cluster ID based on this claim should only be trusted to be referring to the same cluster for as long as it has one ClusterSet membership; similarly, controllers whose logic depends on distinguishing clusters by cluster ID can only trust this claim to disambiguate the same cluster for as long as the cluster has one ClusterSet membership.
+Since this KEP does not formally mandate that the cluster ID *must* be immutable for the lifetime of the cluster, only for the lifetime of its membership in a ClusterSet, any dependent tooling explicitly *cannot* assume the `id.k8s.io ClusterProperty` for a given cluster will stay constant on its own merit. For example, log aggregation of a given cluster ID based on this property should only be trusted to be referring to the same cluster for as long as it has one ClusterSet membership; similarly, controllers whose logic depends on distinguishing clusters by cluster ID can only trust this property to disambiguate the same cluster for as long as the cluster has one ClusterSet membership.
 
 Despite this flexibility in the KEP, clusterIDs may still be useful before ClusterSet membership needs to be established; again, particularly if the implementation chooses the broadest restrictions regarding immutability and uniqueness. Therefore, having a controller that initializes it early in the lifecycle of the cluster, and possibly as part of cluster creation, may be a useful place to implement it, though within the bounds of this KEP that is not strictly necessary.
 
@@ -460,14 +460,14 @@ spec:
 
 #### `clusterset.k8s.io ClusterProperty`
 
-A cluster in a ClusterSet is expected to be authoritatively associated with that ClusterSet by an external process and storage mechanism with a purview above the cluster local boundary, whether that is some form of a cluster registry or just a human running kubectl. (The details of any specific mechanism is out of scope for the MCS API and this KEP -- see the Non-Goals section.) Mirroring this information in the cluster-local `ClusterProperty` CRD will necessarily need to be managed above the level of the cluster itself, since the properties of `clusterset.k8s.io` extend beyond the boundaries of a single cluster, and will likely be something that has access to whatever cluster registry-esque concept is implemented for that multicluster setup. It is expected that the mcs-controller ([as described in the MCS API KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#proposal)), will act as an admission controller to verify individual objects of this claim.
+A cluster in a ClusterSet is expected to be authoritatively associated with that ClusterSet by an external process and storage mechanism with a purview above the cluster local boundary, whether that is some form of a cluster registry or just a human running kubectl. (The details of any specific mechanism is out of scope for the MCS API and this KEP -- see the Non-Goals section.) Mirroring this information in the cluster-local `ClusterProperty` CRD will necessarily need to be managed above the level of the cluster itself, since the properties of `clusterset.k8s.io` extend beyond the boundaries of a single cluster, and will likely be something that has access to whatever cluster registry-esque concept is implemented for that multicluster setup. It is expected that the mcs-controller ([as described in the MCS API KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#proposal)), will act as an admission controller to verify individual objects of this property.
 
 Because there are obligations of the `id.k8s.io ClusterProperty` that are not meanigfully verifiable until a cluster tries to join a ClusterSet and set its `clusterset.k8s.io ClusterProperty`, the admission controller responsible for setting a `clusterset.k8s.io ClusterProperty` will need the ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]` or possibly affect changes to that cluster's `id.k8s.io ClusterProperty` to make it valid `[/UNRESOLVED]`. Two symptomatic cases of this would be:
 
 1. When a cluster with a given `id.k8s.io ClusterProperty` tries to join a ClusterSet, but a cluster with that same `id.k8s.io ClusterProperty` appears to already be in the set.
 2. When a cluster that does not have a `id.k8s.io ClusterProperty` tries to join a ClusterSet.
 
-In situations like these, the admission controller will need to fail to add the invalid cluster to the ClusterSet by refusing to set its `clusterset.k8s.io ClusterProperty`, and surface an error that is actionable to make the claim valid.
+In situations like these, the admission controller will need to fail to add the invalid cluster to the ClusterSet by refusing to set its `clusterset.k8s.io ClusterProperty`, and surface an error that is actionable to make the property valid.
 
 ```
 # An example object of `clusterset.k8s.io ClusterProperty`:
