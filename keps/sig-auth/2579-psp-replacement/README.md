@@ -258,11 +258,10 @@ leveraging the library implementation.
 
 When an `enforce` policy (or version) label is added or changed, the admission plugin will test each pod
 in the namespace against the new policy. Violations are returned to the user as warnings. These
-checks have a timeout of XX seconds and a limit of YY pods, and will return a warning in the event
+checks have a timeout of 1 second and a limit of 3,000 pods, and will return a warning in the event
 that not every pod was checked. User exemptions are ignored by these checks, but runtime class
-exemptions still apply. Namespace exemptions are also ignored, but an additional warning will be
-returned when updating the policy on an exempt namespace. These checks only consider actual Pod
-resources, not [templated pods].
+exemptions and namespace exemptions still apply when determining whether to check the new `enforce` policy
+against existing pods in the namespace. These checks only consider actual Pod resources, not [templated pods].
 
 These checks are also performed when making a dry-run request, which can be an effective way of
 checking for breakages before updating a policy, for example:
@@ -271,23 +270,17 @@ checking for breakages before updating a policy, for example:
 kubectl label --dry-run=server --overwrite ns --all pod-security.kubernetes.io/enforce=baseline
 ```
 
-<<[UNRESOLVED]>>
+Evaluation of pods in a namespace is limited in the following dimensions, and a warning emitted if not all pods are checked:
+* max of 3,000 pods ([documented](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md)
+  scalability limit for per-namespace pod count)
+* no more than 1 second or 50% of remaining request deadline (whichever is less).
+* benchmarks show checking 3,000 pods takes ~0.01 second running with 100% of a 2.60GHz CPU
 
-_Non-blocking: can be decided on the implementing PR_
+If multiple pods have identical warnings, the warnings are aggregated.
 
-- What should the timeout be for pod update warnings?
-  - Total is a parameter on the context (query parameter for webhooks). Cap should be
-    `min(timeout_param, hard_cap)`, where the `hard_cap` is a small number of seconds.
-  - Expect evaluation to be fast, so even 3k pods should come in well under the timeout.
-- What should the pod limit be set to?
-  - 3,000 is the
-    [documented](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md)
-    scalability limit for per-namespace pod count.
-  - Warnings should be aggregated for large namespaces (soft cap number of warnings, hard cap number
-    of evaluations).
-
-<<[/UNRESOLVED]>>
-
+If there are multiple pods with an ownerReference pointing to the same controller,
+controlled pods after the first one are checked only if sufficient pod count and time remain.
+This prioritizes checking unique pods over checking many identical replicas.
 
 ### Admission Configuration
 
@@ -1067,6 +1060,7 @@ As this feature progresses towards GA, we should think more about how it interac
               provisionally accepted.
 - 2021-08-04: v1.22 Alpha version released
 - 2021-08-24: v1.23 Beta KEP updates
+- 2021-11-03: v1.23 Beta version released
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
