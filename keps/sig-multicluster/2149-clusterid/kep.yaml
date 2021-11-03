@@ -13,8 +13,8 @@ reviewers:
   - "@mikedanese"
 approvers:
   - "@pmorie"
-#prr-approvers:
-#  - N/A -- out of tree
+prr-approvers:
+  - "@wojtek-t"
 see-also:
   - "/keps/sig-multicluster/1645-multi-cluster-services-api"
 #replaces:
@@ -36,12 +36,8 @@ latest-milestone: "v1.23"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-# feature-gates:
-#   - name: MyFeature
-#     components:
-#       - kube-apiserver
-#       - kube-controller-manager
-# disable-supported: true
+feature-gates:
+disable-supported: true
 
 # The following PRR answers are required at beta release
 # metrics:
