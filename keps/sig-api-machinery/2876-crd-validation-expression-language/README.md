@@ -101,9 +101,7 @@ CRDs validation, they significantly complicate the development and
 operability of CRDs.
 
 This KEP proposes that an inline expression language be integrated directly into CRDs such that a
-much larger portion of validation use cases can be solved without the use of webhooks. When
-selecting an exression language, we want to be sure that it can support defaulting and CRD
-conversion in the future.
+much larger portion of validation use cases can be solved without the use of webhooks. 
 
 This KEP proposes the adoption of [Common Expression Language
 (CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and safe to be run directly
@@ -237,10 +235,12 @@ will be surfaced when the validation rule evaluates to false.
 extension in the schema. In the above example, the validator is scoped to the
 `spec` field. `self` will be used to represent the name of the field which the validator
 is scoped to.
-  - Consideration under adding the representative of scoped filed name: There would be composition problem while generating CRD with tools like `controller-gen`.
-  When trying to add validation as a marker comment to a field, the validation rule will 
-  be hard to define without the actual field name. As the example showing below. When we want to put cel validation on ToySpec, the field name as `spec` has not 
-  been identified yet which makes rule hard to define.
+
+  - Consideration under adding the representative of scoped filed name: There would be composition
+    problem while generating CRD with tools like `controller-gen`.  When trying to add validation as
+    a marker comment to a field, the validation rule will be hard to define without the actual field
+    name. As the example showing below. When we want to put cel validation on ToySpec, the field
+    name as `spec` has not been identified yet which makes rule hard to define.
   
      ```azure
      // +kubebuilder:validation:XValidator=
@@ -283,14 +283,31 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
     Strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) for
     details.
   - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
-    `oldObject`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
+    `oldSelf`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
     keyword for escaping purposes (see below).
   - xref [analysis of possible interactions with immutability and
     validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
 
-- If a object property collides with a CEL keyword (see RESERVED in [CEL Syntax](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)),
+- If a object property name is a CEL keyword (see RESERVED in [CEL Syntax](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)),
   it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision, all properties with a `_` prefix will always be
   prefixed by `__` (generally, N+1 the existing number of `_`s).
+  
+- If a object property name is a CEL language identifier (`int`, `uint`, `double`, `bool`, `string`,
+  `bytes`, `list`, `map`, `null_type`, `type`, see [CEL language
+  identifiers](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values)) it is not
+  accessible as a root variable and must be accessed via `self`, .e.g. `seft.int`.
+
+- Rules may be written at the root of an object, and may make field selection into any fields
+  declared in the OpenAPIv3 schema of the CRD. This includes selection of fields in both the `spec`
+  and `status` in the same expression, e.g. `status.quantity <= spec.maxQuantity`. Because CRDs only
+  allow the `name` and `generatedName` to be declared in the `metadata` of an object, these are the
+  only metadata fields that may be validated using CEL validator rules. For example,
+  `metadata.name.endsWith('mySuffix')` is allowed, but only when the OpenAPIv3 schema explicitly
+  declares `metadata` as a field in the root object and declares the `name` field within `metadata`.
+  `size(metadata.labels) < 3` however, it not allowed. The limit on which `metadata` fields may be
+  validated is an intentional design choice (that aims to keep metadata behavior uniform across
+  types) and applies to all validation mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not
+  just CEL validator rules.
 
 - We plan to allow access to the current state of the object to allow validation rules to check the
   new value against the current value, e.g. for immutability checks (for validation racheting we would
@@ -311,7 +328,6 @@ exact indices of the list items and the keys of map entries it traverses.
 A field *pattern* is a path to all nodes in the data tree that match the pattern. I.e.
 it may wildcard list item and map keys.
 
-
 #### Expression lifecycle
 
 When CRDs are written to the kube-apiserver, all expressions will be [parsed and
@@ -329,7 +345,6 @@ List of functions to include for the initial release:
 - Equality and Ordering (customized to do Kuberenetes semantic equality that handles "associative lists")
 - Regular Expressions
 - Some Standard Definitions
-
 
 Considerations:
 - The functions will become VERY difficult to change as this feature matures. We
@@ -475,24 +490,50 @@ coverage of interactions in these dimensions:
 
 Types:
 
-| OpenAPIv3 type                          | CEL type                       |
-| --------------------------------------- | ------------------------------ |
-| 'object' with Properties                | object / "message type"        |
-| 'object' with AdditionalProperties      | map                            |
-| 'array                                  | list                           |
-| 'array' with x-kubernetes-list-type=map | list with map based Equality & unique key guarantees   |
-| 'array' with x-kubernetes-list-type=set | list with set based Equality & unique entry guarantees |
-| 'boolean'                               | boolean                        |
-| 'number' (all formats)                  | double                         |
-| 'integer' (all formats)                 | int (64)                       |
-| 'null'                                  | null                           |
-| 'string'                                | string                         |
-| 'string' with format=byte               | bytes                          |
-| 'string' with format=binary             | bytes                          |
-| 'string' with format=date               | timestamp (protobuf.Timestamp) |
-| 'string' with format=datetime           | timestamp (protobuf.Timestamp) |
+| OpenAPIv3 type                                     | CEL type                                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 'object' with Properties                           | object / "message type"                                                                                        |
+| 'object' with AdditionalProperties                 | map                                                                                                            |
+| 'object' with x-kubernetes-embedded-type           | <treatment is the same as 'object' more details below>                                                         |
+| 'object' with x-kubernetes-preserve-unknown-fields | <treatment is the same as 'object', more details below>                                                        |
+| x-kubernetes-embedded-int-or-string                | object with 'intVal' (type: int) and 'strVal' (type: string) fields                                            |
+| 'array                                             | list                                                                                                           |
+| 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                           |
+| 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                         |
+| 'boolean'                                          | boolean                                                                                                        |
+| 'number' (all formats)                             | double                                                                                                         |
+| 'integer' (all formats)                            | int (64)                                                                                                       |
+| 'null'                                             | null_type                                                                                                      |
+| 'string'                                           | string                                                                                                         |
+| 'string' with format=byte                          | string (containing base64 encoded data)                                                                        |
+| 'string' with format=binary                        | bytes                                                                                                          |
+| 'string' with format=date                          | timestamp (google.protobuf.Timestamp)                                                                          |
+| 'string' with format=datetime                      | timestamp (google.protobuf.Timestamp)                                                                          |
+| 'string' with format=duration                      | duration (google.protobuf.Duration)                                                                            |
 
-xref: [CEL types](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values), [OpenAPI types](https://swagger.io/specification/#data-types).
+xref: [CEL types](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values), [OpenAPI
+types](https://swagger.io/specification/#data-types), [Kubernetes Structural Schemas](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema).
+
+Although `x-kubernetes-preserve-unknown-fields` allows custom resources to contain values without
+corresponding schema information, we will not provide validation support of these "schemaless"
+values. Reasons for this include:
+
+- Without schema information, types (e.g. `map` vs. `object`), formats (e.g. plain `string`
+  vs. `date`) and list types (plain `list` vs. `set`) are not available, and this feature depends
+  on this schema information to integrate custom resources values with CEL.
+
+- The contents of unknown fields are unvalidated. So it is possible for the contents to be any
+  possible values. This significantly complicates the authoring of validation rules and makes them
+  far more difficult write safely. Specifically, all unchecked field selection and assumptions about
+  value types will result in runtime errors when the values contents of the unknown data does not
+  match the expectations of the validation rule author. None of the benefits of static type checking
+  at CRD registration time would apply.
+
+- For objects with both `x-kubernetes-embedded-type` and `x-kubernetes-preserve-unknown-fields` set to `true`,
+  if we were to allow for validation of embedded resource while the validation rules that are part of
+  the embedded resource are not enforced, we would be allowing for developers to use CEL to validate
+  the contents of embedded types without allowing developers to write validation rules directly on the
+  embedded type to validate it. We don't want to do that.
 
 Implementation:
 
