@@ -295,7 +295,7 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
 - If a object property name is a CEL language identifier (`int`, `uint`, `double`, `bool`, `string`,
   `bytes`, `list`, `map`, `null_type`, `type`, see [CEL language
   identifiers](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values)) it is not
-  accessible as a root variable and must be accessed via `self`, .e.g. `seft.int`.
+  accessible as a root variable and must be accessed via `self`, .e.g. `self.int`.
 
 - Rules may be written at the root of an object, and may make field selection into any fields
   declared in the OpenAPIv3 schema of the CRD. This includes selection of fields in both the `spec`
