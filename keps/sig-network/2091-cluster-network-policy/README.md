@@ -86,6 +86,11 @@ Introduce new set of APIs to express an administrator's intent in securing
 their K8s cluster. This doc proposes the ClusterNetworkPolicy API to complement
 the developer focused NetworkPolicy API in Kubernetes.
 
+(TODO) In the multi-cluster context, we are thinking to name the extended NetworkPolicy
+to MultiClusterNetworkPolicy. To avoid the extension of this API resource to be named
+MultiCluster-ClusterNetworkPolicy, maybe we should name this resource differently
+to begin with? AdminNetworkPolicy is a popular alternative.
+
 ## Motivation
 
 Kubernetes provides NetworkPolicy resources to control traffic within a
@@ -97,12 +102,12 @@ we propose to introduce a new API that captures the administrators intent.
 
 The goals for this KEP are to satisfy the following key user stories:
 1. As a cluster administrator, I want to enforce irrevocable guardrails that
-   all workloads must adhere to in order to guarantee the safety of my clusters. 
-   In particular I want to enforce certain network level access controls that are 
-cluster scoped and cannot be overridden or bypassed by namespace scoped network policies. 
-2. As a cluster administrator, I want to have the option to enforce network level access controls 
-that facilitate network multi-tenancy and strict network level isolation between multiple 
-teams and tenants sharing a cluster via use of namespaces or groupings of namespaces per tenant.
+   all workloads must adhere to in order to guarantee the safety of my clusters.
+   In particular I want to enforce certain network level access controls that are
+cluster scoped and cannot be overridden or bypassed by namespace scoped network policies.
+2. As a cluster administrator, I want to have the option to enforce network level access controls
+   that facilitate network multi-tenancy and strict network level isolation between multiple
+   teams and tenants sharing a cluster via use of namespaces or groupings of namespaces per tenant.
 3. As a cluster administrator, I want to optionally also deploy an additional default set of policies to all
    workloads that may be overridden by the developers if needed.
 
@@ -119,8 +124,8 @@ Our mission is to solve the most common use cases that cluster admins have.
 That is, we don't want to solve for every possible policy permutation a user
 can think of.  Instead, we want to design an API that addresses 90-95% use cases
 while keeping the mental model easy to understand and use.
-The focus of this KEP is on cluster scoped controls for east-west traffic within 
-a cluster. Cluster scoped controls for North-South traffic may be addressed via 
+The focus of this KEP is on cluster scoped controls for east-west traffic within
+a cluster. Cluster scoped controls for North-South traffic may be addressed via
 future versions of the api resources introduced in this or other future KEPs.
 
 Additionally, this proposal is squarely focused on solving the needs of the
@@ -177,12 +182,19 @@ rules.
 
 The policy instances will be ordered based on the numeric priority assigned to the
 CNP. A lower number corresponds to a higher order. For example, CNP with `priority` set
-to "0" will be considered as the highest priority policy.
+to "0" will be considered as the highest priority policy, while a large number, i.e.
+999, will be considered as low priority. Any numeric-valued priority, however, will have
+higher precedence over the namespaced NetworkPolicy instances in the cluster.
 
-TODO double check this. There are benefits of having 0 be the lowest priority so that there is
+Additionally, a special keyword `Baseline` can be used in the priority field to indicate
+that the rules in that policy instance shall be created at a priority lower than the Namespaced
+NetworkPolicies. Admission controllers will need to validate that only this string value or
+numeric values are set for the priority field.
+
+(TODO: double check this. There are benefits of having 0 be the lowest priority so that there is
 convenient to add higher and higher priority policies and critical override rules by the admin
-given any existing set of policies. It also enables an option of using priority 0 as a way to 
-indicate the default network policy.
+given any existing set of policies. It also enables an option of using priority 0 as a way to
+indicate the default network policy.)
 
 The precedence of the rules within a CNP will be determined by the order in which the rule
 is written. Thus, a rule that appears at the top of the ingress/egress rules would take the
@@ -191,15 +203,16 @@ highest precedence.
 Conflict resolution: Two policies are considered to be conflicting if they are assigned the
 same `priority`. In order to avoid such conflicts, we propose to include validation for
 CNP resources, such that no two CNP instances can be created with the same `priority`.
+(TODO: Is such admission control viable?)
 
 For conformance and portability purposes, it will be required that implementations
-support up to 1000 CNP priorities (0 through 999) per cluster and up to 100 rules 
-within a CNP instance.  An implementation can optionally choose to support larger numbers 
-of priority values and rules, however if an implementation supports a 
-smaller number of rules and instances than these recommended ranges, it will be considered 
-non-conformant.  This ensures that policy manifests written using priorities 0 through 
-999 for instance are portable across clusters and implementations without need to re-write 
-policy manifests or re-adjust priority allocations  when moving applications from 1 
+support up to 1000 CNP priorities (0 through 999) per cluster and up to 100 rules
+within a CNP instance.  An implementation can optionally choose to support larger numbers
+of priority values and rules, however if an implementation supports a
+smaller number of rules and instances than these recommended ranges, it will be considered
+non-conformant.  This ensures that policy manifests written using priorities 0 through
+999 for instance are portable across clusters and implementations without need to re-write
+policy manifests or re-adjust priority allocations when moving applications from 1
 kubernetes cluster to another.
 
 ####  Multiple selectors per policy instance
@@ -211,15 +224,11 @@ of selectors within a single CNP policy instance and each such selector can be c
 with its own set of peer endpoints and policy actions. This enables greater flexibility
 of configuration, and improves ease of use by not requiring cluster admins to have to come up
 with unique priority values for each instnce of rule while retaining explicit rule ordering
-as described earlier since multiple rules wihin a CNP instance are prioritized by their listing 
-order within the CNP manifest. A fully specified new rule (including selector, peer and action 
-type definitions) can hence be unambiguously inserted into an existing configuration of CNPs and 
-rules without requiring any reshuffling of priority values and while retaining unambiguous 
-relative priority ordering of all configured rules and CNP instances. 
-
-#### Default rules
-
-TODO: Add how to handle default disposition here.
+as described earlier since multiple rules wihin a CNP instance are prioritized by their listing
+order within the CNP manifest. A fully specified new rule (including selector, peer and action
+type definitions) can hence be unambiguously inserted into an existing configuration of CNPs and
+rules without requiring any reshuffling of priority values and while retaining unambiguous
+relative priority ordering of all configured rules and CNP instances.
 
 #### Rule identifiers
 
@@ -234,57 +243,57 @@ two CNP instances could have rules with same names.
 
 ### User Stories
 
-Note: This KEP will focus on East-West traffic, cluster internal, user stories and 
-not address North-South traffic, cluster external, use cases, which will be 
+Note: This KEP will focus on East-West traffic, cluster internal, user stories and
+not address North-South traffic, cluster external, use cases, which will be
 solved in a follow-up proposal.
 
-#### Story 1: Deny traffic at a cluster level 
+#### Story 1: Deny traffic at a cluster level
 
-As a cluster admin, I want to apply non-overridable deny rules 
-to certain pod(s) and(or) Namespace(s) that isolate the selected 
-resources from all other cluster internal traffic. 
+As a cluster admin, I want to apply non-overridable deny rules
+to certain pod(s) and(or) Namespace(s) that isolate the selected
+resources from all other cluster internal traffic.
 
 ![Alt text](explicit_isolation.png?raw=true "Explicit Deny")
 
 #### Story 2: Allow traffic at a cluster level
 
 As a cluster admin, I want to apply non-overridable allow rules to  
-certain pods(s) and(or) Namespace(s) that enable the selected resources 
+certain pods(s) and(or) Namespace(s) that enable the selected resources
 to communicate with all other cluster internal entities.  
 
 ![Alt text](explicit_allow.png?raw=true "Explicit Allow")
 
-#### Story 3: Explicitly Delegate traffic to existing K8s Network Policy 
+#### Story 3: Explicitly Delegate traffic to existing K8s Network Policy
 
 As a cluster admin, I want to explicitly delegate traffic so that it
-skips any remaining cluster network policies and is handled by standard 
+skips any remaining cluster network policies and is handled by standard
 namespace scoped network policies.
 
-Note: In the diagram below the ability to talk to the service svc-pub 
-in namespace bar-ns-1 is delegated to the k8s network policies 
-implemented in foo-ns-1 and foo-ns-2. If no k8s network policies touch the 
-delegated traffic the traffic will be allowed. 
+Note: In the diagram below the ability to talk to the service svc-pub
+in namespace bar-ns-1 is delegated to the k8s network policies
+implemented in foo-ns-1 and foo-ns-2. If no k8s network policies touch the
+delegated traffic the traffic will be allowed.
 
 ![Alt text](delegation.png?raw=true "Delegate")
 
 #### Story 4: Create and Isolate multiple tenants in a cluster
 
 As a cluster admin, I want to build tenants (modeled as Namespace(s))
-in my cluster that are isolated from each other by default. Tenancy may be 
-modeled as 1:1, where 1 tenant is mapped to a single Namespace, or 1:n, where a 
+in my cluster that are isolated from each other by default. Tenancy may be
+modeled as 1:1, where 1 tenant is mapped to a single Namespace, or 1:n, where a
 single tenant may own more than 1 Namespace.
 
 ![Alt text](tenants.png?raw=true "Tenants")
 
-#### Story 5: Cluster Wide Default Guardrails 
+#### Story 5: Cluster Wide Default Guardrails
 
 As a cluster admin I want to change the default security model for my cluster.
 
-In order to follow best practices, an admin may want to spawn a cluster with default 
+In order to follow best practices, an admin may want to spawn a cluster with default
 rules blocking all intra cluster traffic. Only traffic that is essential to the cluster
 will be opened up with stricter cluster network policies. While Namespace owners will be
 forced to use NetworkPolicies to explicitly allow only known traffic. This follows
-a explicit allow model which is familiar to many security administrators, and similar 
+a explicit allow model which is familiar to many security administrators, and similar
 to how [kubernetes suggests network policy be used](https://kubernetes.io/docs/concepts/services-networking/network-policies/#default-policies).
 
 ![Alt text](default_rules.png?raw=true "Default Rules")
@@ -308,8 +317,8 @@ to edit the cluster-scoped NetworkPolicy resources.
 | Allow traffic            | Supported with an `Allow` rule action for ClusterNetworkPolicy                                                   | Default action for all rules is to allow                                           |
 | Implicit isolation       | No implicit isolation                                                                                            | All rules have an implicit isolation of target Pods                                |
 | Rule precedence          | Depends on the order in which they appear within a CNP                                                           | Rules are additive                                                                 |
-| Policy precedence        | Depends on `priority` field among CNPs. Enforced before K8s NetworkPolicies                                      | Enforced after ClusterNetworkPolicies                                              |
-| Matching pod selection   | Multiple "Applied-to" selector fields supported per CNP instance | Single "Applied-to" selector per policy instance |
+| Policy precedence        | Depends on `priority` field among CNPs. Enforced before K8s NetworkPolicies if numeric priority value            | Enforced after numeric-priority ClusterNetworkPolicies, before basline-priority ClusterNetworkPolicy |
+| Matching pod selection   | Multiple "Applied-to" selector fields supported per CNP instance                                                 | Single "Applied-to" selector per policy instance                                   |
 | Rule identifiers         | Name per rule in string format. Unique within a CNP.                                                             | Not supported                                                                      |
 | Rule identifiers         | Name per rule in string format. Unique within a CNP.                                                             | Not supported                                                                      |
 | Cluster external traffic | Not supported                                                                                                    | Supported via IPBlock                                                              |
@@ -347,14 +356,14 @@ set of Pods, users will need to refer to the priority associated with the
 rule, to determine which rule would take effect. Figuring out how stacked policies
 affect traffic between workloads might not be very straightfoward.
 
-To mitigate this risk and improve UX, a tool which does a reverse look up and lists rules 
+To mitigate this risk and improve UX, a tool which does a reverse look up and lists rules
 and policies that impact a given Pod and prints out relative precedence of those rules
 can be quite useful. The [cyclonus](https://github.com/mattfenwick/cyclonus)
 project for example, could be extended to support ClusterNetworkPolicy. kubectl plugin extensions
 that allow listing of policies and rules in this manner should be developed. Similarly
-a kubectl plugin extension should be developed that checks whether communication is allowed 
+a kubectl plugin extension should be developed that checks whether communication is allowed
 between a specified pair of source and destination pods for traffic of a specified protocol/ port type.
- 
+
 ### Future Work
 
 Although the scope of the cluster-scoped policies is wide, the above proposal
@@ -386,11 +395,11 @@ type ClusterNetworkPolicy struct {
 }
 
 type ClusterNetworkPolicySpec struct {
-	Priority     int
+	Priority     IntOrString
 	// No implicit isolation of AppliedTo Pods/Namespaces.
 	// Required field.
-        // List of multiple combinations of Selector, Peers and Actions
-        PolicyRules  []ClusterNetworkPolicyRule
+	// List of multiple combinations of Selector, Peers and Actions
+	PolicyRules  []ClusterNetworkPolicyRule
 }
 
 type ClusterNetworkPolicyRule struct {
@@ -422,20 +431,43 @@ type ClusterNetworkPolicyIngress/EgressRule struct {
 	Name         string
 }
 
-type ClusterNetworkPolicyType string
-
-// Add future selector types here to ease introduction of future selectors to ensure api fails 
-// closed cleanly if a CNI doesnt support specific types of selectors
-const (
-	PodSelector ClusterNetworkPolicyType  = "PodSelector"
-	PodPlusNamespaceSelector              = "PodPlusNamespaceSelector"
-	NamespaceSelector                     = "NamespaceSelector" 
-)
-
-type ClusterNetworkPolicyPeer struct {
-        SelectorType        ClusterNetworkPolicyType  
+// WorkloadSelector selects workloads based on the label Selector.
+// Right now the only selector type supported is PodSelector. More selector types may be
+// added in the future to support other workload selection mechanism, e.g. serviceAccountSelector.
+// Must be accompanied by a NamespaceSelector to specify the scope of the workload selection.
+type WorkloadSelector struct {
 	PodSelector         *metav1.LabelSelector
-	// One of NamespaceSelector or Namespaces is required, if a PodSelector is specified.
+}
+```
+
+**Alternatives considered for the WorkloadSelector struct:**  
+```golang
+type WorkloadSelector struct {
+	selectorType        WorkloadSelectorType
+	selector            metav1.LabelSelector
+}
+
+type WorkloadSelectorType string
+
+// Add future selector types here to ease introduction of future selectors (e.g. serviceAccountSelector)
+// and ensure api fails closed cleanly if a CNI doesn't support specific types of selectors.
+const (
+	PodSelector WorkloadSelectorType  = "PodSelector"
+)
+```
+This alternative WorkloadSelector definition is more explicit but more verbose as well.
+At this point, it is expected that any future selectors will be mutually exclusive to the
+PodSelector in a single WorkloadSelector. Both approaches should be future extensible
+without breaking the premise of fail-closed API design.
+
+(TODO) Does there seem to be a valid usecase where two or more types of selectors will
+need to co-exist in a same workloadSelector? i.e. select workloads in these Namespaces,
+where it matches certain Pod labels, AND matches serviceAccount selection criteria?
+
+```golang
+type ClusterNetworkPolicyPeer struct {
+	WorkloadSelector    *WorkloadSelector
+	// One of NamespaceSelector or Namespaces is required.
 	// In the same ClusterNetworkPolicyPeer, NamespaceSelector and Namespaces fields are mutually
 	// exclusive.
 	NamespaceSelector   *metav1.LabelSelector
@@ -460,11 +492,10 @@ The following structs will be added to the `netpol.networking.k8s.io` API group:
 
 ```golang
 type AppliedTo struct {
-        SelectorType        ClusterNetworkPolicyType  
 	// required if a PodSelector is specified
-        NamespaceSelector   *metav1.LabelSelector
+	NamespaceSelector   *metav1.LabelSelector
 	// optional
-        PodSelector         *metav1.LabelSelector
+	WorkloadSelector    *WorkloadSelector
 }
 
 // Namespaces define a way to select Namespaces in the cluster.
@@ -526,9 +557,10 @@ spec:
       from:
       - namespaces:
           scope: self
-        podSelector:
-          matchLabels:
-            app: b
+        workloadSelector:
+          podSelector:
+            matchLabels:
+              app: b
 ```
 
 The above ClusterNetworkPolicy should be interpreted as: for each Namespace in
@@ -577,22 +609,21 @@ to CNP rules.
 
 ### Sample Specs for User Stories
 
-![Alt text](user_story_diagram.png?raw=true "User Story Diagram")
-
-#### Sample spec for Story 1: Deny traffic at a cluster level 
+#### Sample spec for Story 1: Deny traffic at a cluster level
 
 ```yaml
 apiVersion: netpol.networking.k8s.io/v1alpha1
 kind: ClusterNetworkPolicy
 spec:
-  priority: 100
+  priority: 10
   - appliedTo:
      namespaceSelector: {}
     ingress:
      - action: Deny
        from:
        - namespaceSelector:
-          isolatedByAdmin: true 
+          matchLabels:
+            isolatedByAdmin: true
 ```
 
 #### Sample spec for Story 2: Allow traffic at a cluster level
@@ -601,45 +632,103 @@ spec:
 apiVersion: netpol.networking.k8s.io/v1alpha1
 kind: ClusterNetworkPolicy
 spec:
-  priority: 10
+  priority: 30
   - appliedTo:
      namespaceSelector: {}
     ingress:
      - action: Allow
        from:
        - namespaceSelector:
-           adminMonitoringNamespace: true 
-         podSelector:
            matchLabels:
-             app: adminMonitoringApp 
+             adminMonitoringNamespace: true
+         workloadSelector:
+           podSelector:
+             matchLabels:
+               app: adminMonitoringApp
 ```
 
-#### Sample spec for Story 3: Explicitly Delegate traffic to existing K8s Network Policy 
+#### Sample spec for Story 3: Explicitly Delegate traffic to existing K8s Network Policy
 
 ```yaml
 apiVersion: netpol.networking.k8s.io/v1alpha1
 kind: ClusterNetworkPolicy
 spec:
-  priority: 10
+  priority: 20
   - appliedTo:
       namespaceSelector: {}
     ingress:
     - action: Pass
       from:
       - namespaceSelector:
-          publicServiceTenant: true 
-        podSelector:
           matchLabels:
-            app: publicServiceFooBar 
+            publicServiceTenant: true
+        workloadSelector:
+          podSelector:
+            matchLabels:
+              app: publicServiceFooBar
 ```
 
 #### Sample spec for Story 4: Create and Isolate multiple tenants in a cluster
 
-TODO
+```yaml
+apiVersion: netpol.networking.k8s.io/v1alpha1
+kind: ClusterNetworkPolicy
+spec:
+  priority: 50
+  - appliedTo:
+     namespaceSelector:
+       matchExpressions: {key: "tenant"; operator: Exists}
+    ingress:
+     - action: Deny
+       from:
+       - namespaces:
+          scope: notsamelabels
+          labels:
+            - tenant
+```
 
-#### Sample spec for Story 5: Cluster Wide Default Guardrails 
+Note: the above ClusterNetworkPolicy can also be written in the following fashion:
+```yaml
+apiVersion: netpol.networking.k8s.io/v1alpha1
+kind: ClusterNetworkPolicy
+spec:
+  priority: 50
+  - appliedTo:
+     namespaceSelector:
+       matchExpressions: {key: "tenant"; operator: Exists}
+    ingress:
+     - action: Pass
+       from:
+       - namespaces:
+          scope: samelabels
+          labels:
+            - tenant
+     - action: Deny   # Deny everything else other than same tenant traffic
+       from:
+       - namespaceSelector: {}
+```
+The difference is that in the first case, traffic within tenant Namespaces will fall
+through, and be evaluated against lower-priority ClusterNetworkPolicies, and then
+NetworkPolicies. In the second case, the matching packet will skip all ClusterNetworkPolicy
+evaluation (except for ClusterNetworkPolicy priority=baseline), and only match
+against NetworkPolicy rules in the cluster. In other words, the second ClusterNetworkPolicy
+specifies intra-tenant traffic must be delegated to the tenant Namespace owners.
 
-TODO
+#### Sample spec for Story 5: Cluster Wide Default Guardrails
+
+```yaml
+apiVersion: netpol.networking.k8s.io/v1alpha1
+kind: ClusterNetworkPolicy
+spec:
+  priority: baseline
+  - appliedTo:
+     namespaceSelector:
+       matchExpressions: {key: "tenant"; operator: Exists}
+    ingress:
+     - action: Deny   # zero-trust cluster default security posture
+       from:
+       - namespaceSelector: {}
+```
 
 ### Test Plan
 
@@ -651,7 +740,7 @@ TODO
     as per the `priority` set in CNP.
 - e2e test cases must cover ingress and egress rules
 - e2e test cases must cover port-ranges, named ports, integer ports etc
-- e2e test cases must cover various combinations of `podSelector` in `appliedTo` and ingress/egress rules
+- e2e test cases must cover various combinations of `workloadSelector` in `appliedTo` and ingress/egress rules
 - e2e test cases must cover various combinations of `namespaceSelector` in `appliedTo`
 - e2e test cases must cover various combinations of `namespaces` in ingress/egress rules
   - Ensure that namespace matching strategies work as expected
