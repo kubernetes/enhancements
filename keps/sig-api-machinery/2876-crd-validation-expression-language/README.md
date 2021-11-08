@@ -283,13 +283,13 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
     Strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) for
     details.
   - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
-    `oldSelf`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
+    `oldObject`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
     keyword for escaping purposes (see below).
   - xref [analysis of possible interactions with immutability and
     validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
 
 - If a object property name is a CEL keyword (see RESERVED in [CEL Syntax](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)),
-  it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision, all properties with a `_` prefix will always be
+  it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision,  properties named with a CEL keyword and a  `_` prefix will be
   prefixed by `__` (generally, N+1 the existing number of `_`s).
   
 - If a object property name is a CEL language identifier (`int`, `uint`, `double`, `bool`, `string`,
@@ -297,17 +297,22 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   identifiers](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values)) it is not
   accessible as a root variable and must be accessed via `self`, .e.g. `self.int`.
 
+- If a object property name contains characters not allowed in CEL identifiers it is escaped using these rules:
+  - `.` (period) is escaped as `__dot__`
+  - `-` (slash) is escaped as `__slash__`
+  - ` ` (space) is escaped as `__space__`
+  - `__` (2 underscores) is escaped as `__underscores__`
+
 - Rules may be written at the root of an object, and may make field selection into any fields
-  declared in the OpenAPIv3 schema of the CRD. This includes selection of fields in both the `spec`
-  and `status` in the same expression, e.g. `status.quantity <= spec.maxQuantity`. Because CRDs only
-  allow the `name` and `generatedName` to be declared in the `metadata` of an object, these are the
-  only metadata fields that may be validated using CEL validator rules. For example,
-  `metadata.name.endsWith('mySuffix')` is allowed, but only when the OpenAPIv3 schema explicitly
-  declares `metadata` as a field in the root object and declares the `name` field within `metadata`.
-  `size(metadata.labels) < 3` however, it not allowed. The limit on which `metadata` fields may be
-  validated is an intentional design choice (that aims to keep metadata behavior uniform across
-  types) and applies to all validation mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not
-  just CEL validator rules.
+  declared in the OpenAPIv3 schema of the CRD as well as `apiVersion`, `kind`, `metadata.name` and
+  `metadata.generateName`. This includes selection of fields in both the `spec` and `status` in the
+  same expression, e.g. `status.quantity <= spec.maxQuantity`. Because CRDs only allow the `name`
+  and `generatName` to be declared in the `metadata` of an object, these are the only metadata
+  fields that may be validated using CEL validator rules. For example,
+  `metadata.name.endsWith('mySuffix')` is allowed, but `size(metadata.labels) < 3` it not
+  allowed. The limit on which `metadata` fields may be validated is an intentional design choice
+  (that aims to keep metadata behavior uniform across types) and applies to all validation
+  mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator rules.
 
 - We plan to allow access to the current state of the object to allow validation rules to check the
   new value against the current value, e.g. for immutability checks (for validation racheting we would
@@ -505,8 +510,7 @@ Types:
 | 'integer' (all formats)                            | int (64)                                                                                                       |
 | 'null'                                             | null_type                                                                                                      |
 | 'string'                                           | string                                                                                                         |
-| 'string' with format=byte                          | string (containing base64 encoded data)                                                                        |
-| 'string' with format=binary                        | bytes                                                                                                          |
+| 'string' with format=byte (base64 encoded)         | bytes                                                                                                          |
 | 'string' with format=date                          | timestamp (google.protobuf.Timestamp)                                                                          |
 | 'string' with format=datetime                      | timestamp (google.protobuf.Timestamp)                                                                          |
 | 'string' with format=duration                      | duration (google.protobuf.Duration)                                                                            |
