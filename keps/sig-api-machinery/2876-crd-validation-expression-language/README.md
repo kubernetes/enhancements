@@ -506,7 +506,7 @@ Types:
 | 'object' with AdditionalProperties                 | map                                                                                                            |
 | 'object' with x-kubernetes-embedded-type           | <treatment is the same as 'object' more details below>                                                         |
 | 'object' with x-kubernetes-preserve-unknown-fields | <treatment is the same as 'object', more details below>                                                        |
-| x-kubernetes-embedded-int-or-string                | object with 'intVal' (type: int) and 'strVal' (type: string) fields                                            |
+| x-kubernetes-int-or-string                | object with 'intVal' (type: int) and 'strVal' (type: string) fields                                            |
 | 'array                                             | list                                                                                                           |
 | 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                           |
 | 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                         |
