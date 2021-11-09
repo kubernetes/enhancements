@@ -297,11 +297,16 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   identifiers](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values)) it is not
   accessible as a root variable and must be accessed via `self`, .e.g. `self.int`.
 
-- If a object property name contains characters not allowed in CEL identifiers it is escaped using these rules:
-  - `.` (period) is escaped as `__dot__`
-  - `-` (slash) is escaped as `__slash__`
-  - ` ` (space) is escaped as `__space__`
-  - `__` (2 underscores) is escaped as `__underscores__`
+- If a object property name contains characters not allowed in CEL identifiers (`[a-zA-Z_][a-zA-Z0-9_]*`) it is escaped using these rules:
+  - Property names starting with a number are prefixed by `_`. Property names prefixed with `_`
+    followed by a number are prefixed with `__` and the number.
+  - `__` (2 underscores) is escaped as `__underscores__` (and is used as the escape char for the below rules)
+  - All characters except `[a-zA-Z0-9]` are escaped either as `__{symbolName}__` or `__0x{unicodeHex}__`, the recognized symbol names are:
+    - `dot` (`.`)
+	- `dash` (`-`)
+	- `space` (` `)
+	- `dollar` (`$`)
+	- `slash` (`/`)
 
 - Rules may be written at the root of an object, and may make field selection into any fields
   declared in the OpenAPIv3 schema of the CRD as well as `apiVersion`, `kind`, `metadata.name` and
