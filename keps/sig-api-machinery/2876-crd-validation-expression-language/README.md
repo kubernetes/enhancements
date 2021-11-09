@@ -226,6 +226,22 @@ kind: CustomResourceDefinition
               type: integer
 ```
 
+Example Validation Rules:
+
+| Rule                                                         | Purpose                                                                           |
+| ----------------                                             | ------------                                                                      |
+| `minReplicas <= replicas <= maxReplicas`                     | Validate that the three fields defining replicas are ordered appropriately        |
+| `'Available' in stateCounts`                                 | Validate the 'Available' key exists in a map                                      |
+| `(size(list1) == 0) != (size(list2) == 0)`                   | Validate that one of two lists is non-empty, but not both                         |
+| `created + ttl < expiry`                                     | Validate that 'expiry' date is after a 'create' date plus a 'ttl' duration        |
+| `health.startsWith('ok')`                                    | Validate a 'health' string field has the prefix 'ok'                              |
+| `widgets.exists(w, w.key == 'x' && w.foo < 10)`              | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
+| `type(limit) == string ? limit == '100%' : limit == 1000`    | Validate an int-or-string field for both the the int and string cases             |
+| `metadata.name == 'singleton`                                | Validate that an object's name matches a specific value (making it a singleton)   |
+| `set1.all(e, !(e in set2))`                                  | Validate that two listSets are disjoint                                           |
+| `size(names) == size(details) && names.all(n, n in details)` | Validate the 'details' map is keyed by the items in the names listSet             |
+
+
 - Each validator may have multiple validation rules.
 
 - Each validation rule has an optional 'message' field for the error message that
@@ -297,22 +313,25 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   identifiers](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values)) it is not
   accessible as a root variable and must be accessed via `self`, .e.g. `self.int`.
 
-- If a object property name contains characters not allowed in CEL identifiers (`[a-zA-Z_][a-zA-Z0-9_]*`) it is escaped using these rules:
-  - Property names starting with a number are prefixed by `_`. Property names prefixed with `_`
-    followed by a number are prefixed with `__` and the number.
-  - `__` (2 underscores) is escaped as `__underscores__` (and is used as the escape char for the below rules)
-  - All characters except `[a-zA-Z0-9]` are escaped either as `__{symbolName}__` or `__0x{unicodeHex}__`, the recognized symbol names are:
-    - `dot` (`.`)
-	- `dash` (`-`)
-	- `space` (` `)
-	- `dollar` (`$`)
-	- `slash` (`/`)
+- Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible.
+  If a property name is "self" or matches with a [reserved language identifier](https://github.com/google/cel-spec/blob/v0.6.0/doc/langdef.md#values) 
+  (`int`, `uint`, `double`, `bool`, `string`, `bytes`, `list`, `map`, `null_type`, `type`), it is
+  not escaped, but it is excluded from the bound variables and can only be accessed via 
+  "self.{property name}". All other accessible property names are escaped according to the following rules
+  when accessed in the expression:
+	- '__' escapes to '__underscores__'
+	- '.' escapes to '__dot__'
+	- '-' escapes to '__dash__'
+	- '/' escapes to '__slash__'
+	- CEL RESERVED keywords escape to '__{keyword}__'. The keywords are: "true", "false", "null",
+	"in", "as", "break", "const", "continue", "else", "for", "function", "if", "import", "let",
+	"loop", "package", "namespace", "return".
 
 - Rules may be written at the root of an object, and may make field selection into any fields
   declared in the OpenAPIv3 schema of the CRD as well as `apiVersion`, `kind`, `metadata.name` and
   `metadata.generateName`. This includes selection of fields in both the `spec` and `status` in the
   same expression, e.g. `status.quantity <= spec.maxQuantity`. Because CRDs only allow the `name`
-  and `generatName` to be declared in the `metadata` of an object, these are the only metadata
+  and `generateName` to be declared in the `metadata` of an object, these are the only metadata
   fields that may be validated using CEL validator rules. For example,
   `metadata.name.endsWith('mySuffix')` is allowed, but `size(metadata.labels) < 3` it not
   allowed. The limit on which `metadata` fields may be validated is an intentional design choice
@@ -506,7 +525,7 @@ Types:
 | 'object' with AdditionalProperties                 | map                                                                                                            |
 | 'object' with x-kubernetes-embedded-type           | <treatment is the same as 'object' more details below>                                                         |
 | 'object' with x-kubernetes-preserve-unknown-fields | <treatment is the same as 'object', more details below>                                                        |
-| x-kubernetes-int-or-string                | object with 'intVal' (type: int) and 'strVal' (type: string) fields                                            |
+| x-kubernetes-int-or-string                         | dynamic object that is either an int or a string, `type(value)` can be used to check the type                  |
 | 'array                                             | list                                                                                                           |
 | 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                           |
 | 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                         |
@@ -594,9 +613,10 @@ developers to test their validation rules.
 
 #### Beta
 
+- x-kubernetes-int-or-string is upgraded to use a union type of just int or string, not a dynamic type (CEL go support is planned in lates 2021)
 - Understanding of upper bounds of CPU/memory usage and appropriate limits set to prevent abuse.
 - Build-in macro/function library is comprehensive and stable (any changes to this will be a breaking change)
-- CEL numeric comparison issue is resolved
+- CEL numeric comparison issue is resolved (e.g. ability to compare ints to doubles)
 
 ## Production Readiness Review Questionnaire
 
