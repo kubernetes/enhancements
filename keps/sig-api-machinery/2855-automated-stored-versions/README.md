@@ -102,10 +102,11 @@ For this solution to work, the validatingAdmissionWebhook must be able to identi
 A summary of the proposed workflow can be found below:
 
 1. A `StorageVersionMigration` CR for the `foo.example.io` CRD has been created, possibly by the trigger-controller as [described here](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/acdee30ced218b79e39c6a701985e8cd8bd33824/USER_GUIDE.md#storage-version-migrator-in-a-nutshell)). 
-2. The [kube-storage-version-migrator] adds the `ksvm.sigs.k8s.io/migrating=foo.example.io` annotation to the`foo.example.io` CRD.
-3. The [kube-storage-version-migrator] begins migrating all `foo` resources as it does today.
-4. When a migration is successful, the `foo` CRD's `status.storedVersion` is patched to only include the new stored version.
-5. When a migration is finished, the [kube-storage-version-migrator] removes the `ksvm.sigs.k8s.io/migrating=foo.example.io` annotation from the `foo.example.io` CRD.
+2. If a validatingWebhookConfiguration wih the `ksvm.sigs.k8s.io/storedVersionManagementEnabled: "true"` label exists steps 2-6 are enabled, otherwise fall back on existing behavior.
+3. The [kube-storage-version-migrator] adds the `ksvm.sigs.k8s.io/migrating=foo.example.io` annotation to the`foo.example.io` CRD.
+4. The [kube-storage-version-migrator] begins migrating all `foo` resources as it does today.
+5. When a migration is successful, the `foo` CRD's `status.storedVersion` is patched to only include the new stored version.
+6. When a migration is finished, the [kube-storage-version-migrator] removes the `ksvm.sigs.k8s.io/migrating=foo.example.io` annotation from the `foo.example.io` CRD.
 
 ### User Stories (Optional)
 
@@ -158,6 +159,8 @@ As described earlier, the admission webhook would prevent update operations to a
 apiVersion: admissionregistration.k8s.io/v1beta1
   kind: ValidatingWebhookConfiguration
   metadata:
+    labels:
+      ksvm.sigs.k8s.io/storedVersionManagementEnabled: "true"
     name: crd.kube-storage-version-migrator.io
   webhooks:
   - name: crd.kube-storage-version-migrator.io
