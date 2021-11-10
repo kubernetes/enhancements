@@ -184,23 +184,18 @@ apiVersion: admissionregistration.k8s.io/v1beta1
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
+#### Alpha Feature Tests
+This is an alpha feature and will not be enabled by default. As such, it must be possible to enable or disable the tests introduced as a part of this proposal depending on whether or not the feature is enabled. Today, the [kube-storage-version-migrator]'s e2e test suite does not have a concept of alpha tests at this time so the ability to modify which tests are ran based on the enabled features must be introduced.
 
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
+The introduction of a flag the enables the tests associated with the feature should suffice.
 
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+#### Proposed e2e Tests
 
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
+At a high level, the following workflows must be tested in the e2e teest suite:
+- The `ksvm.sigs.k8s.io/migrating=<CRD NAME>` annotation is properly added to CRDs during migration.
+- Changes to a CRD's `spec.versions[*].storage` fields are rejected during a migration.
+- The `ksvm.sigs.k8s.io/migrating=<CRD NAME>` annotation is properly removed from CRDs post migration.
+- A CRD's `status.storedVersion` field is properly updated post migration.
 
 ### Graduation Criteria
 
