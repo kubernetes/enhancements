@@ -94,18 +94,18 @@ It is desirable for the [kube-storage-version-migrator] to modify a CRD's `statu
 
 In order for the [kube-storage-version-migrator] to safely modify a CRD's `status.storedVersions` field after a successful migration, this KEP proposes that the [kube-storage-version-migrator] introduces a [Validating Admission Webhook](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/) that prevents changes to a CRD's `spec.versions[*].storage` fields during a migration using a [fail](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy) failure policy.
 
-The validating admission webhook would need to:
+For this solution to work, the validatingAdmissionWebhook must be able to identify when a CRD is being migrated. To this end, the [kube-storage-version-migrator] will append an `ksvm.sigs.k8s.io/migrating=<CRD NAME>` annotation to the CRDs that are being migrated and remove the annotation post migration. The key will be used by the validatingAdmissionWebhook to identify when a CRD is being migrated while the value of this annotation can be used by humans to identify stuck or failed migrations. The validatingAdmissionWebhook will then need to:
 
 - Intercept all Update operations against CRDs.
-- Prevent changes to a CRD's `spec.versions[*].storage` fields if the CRD includes the `ksvm.sigs.k8s.io/migrating=true` annotation.
+- Prevent any changes to a CRD's `spec.versions[*].storage` fields if the CRD includes an annotation whose key is `ksvm.sigs.k8s.io/migrating`. 
 
-A summary of the new migration workflow can be found below:
+A summary of the proposed workflow can be found below:
 
-1. A `StorageVersionMigration` CR for the `foo` CRD has been created, possibly by the trigger-controller as [described here](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/acdee30ced218b79e39c6a701985e8cd8bd33824/USER_GUIDE.md#storage-version-migrator-in-a-nutshell)). 
-2. The [kube-storage-version-migrator] adds the `ksvm.sigs.k8s.io/migrating=true` annotation to the`foo` CRD.
+1. A `StorageVersionMigration` CR for the `foo.example.io` CRD has been created, possibly by the trigger-controller as [described here](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/acdee30ced218b79e39c6a701985e8cd8bd33824/USER_GUIDE.md#storage-version-migrator-in-a-nutshell)). 
+2. The [kube-storage-version-migrator] adds the `ksvm.sigs.k8s.io/migrating=foo.example.io` annotation to the`foo.example.io` CRD.
 3. The [kube-storage-version-migrator] begins migrating all `foo` resources as it does today.
 4. When a migration is successful, the `foo` CRD's `status.storedVersion` is patched to only include the new stored version.
-5. When a migration is finished, the [kube-storage-version-migrator] removes the `ksvm.sigs.k8s.io/migrating=true` annotation from the `foo` CRD.
+5. When a migration is finished, the [kube-storage-version-migrator] removes the `ksvm.sigs.k8s.io/migrating=foo.example.io` annotation from the `foo.example.io` CRD.
 
 ### User Stories (Optional)
 
