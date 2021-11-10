@@ -216,7 +216,12 @@ At a high level, the following workflows must be tested in the e2e teest suite:
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+This proposal includes the introduction of:
+
+- An annotation applied to CRDs that indicate that it is undergoing a migration.
+- The introduction of an validatingWebhookConfiguration and its associated manifests.
+
+After downgrading the [kube-storage-version-migrator], users will need to remove the validatingWebhookConfiguration and its associated manifests introduced in this proposal. The users will then need to remove the `ksvm.sigs.k8s.io/migrating` from all CRDs which can be done with the following command: ` kubectl annotate crds --all ksvm.sigs.k8s.io/migrating-`
 
 ### Version Skew Strategy
 
