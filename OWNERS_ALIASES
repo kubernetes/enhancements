@@ -166,17 +166,13 @@ aliases:
   enhancements-approvers:
     - jeremyrickard
     - johnbelamaric
-    - justaugustus
     - kikisdeliveryservice
-    - LappleApple
     - mrbobbytables
   enhancements-reviewers:
     - annajung
     - jeremyrickard
     - johnbelamaric
-    - justaugustus
     - kikisdeliveryservice
-    - LappleApple
     - mrbobbytables
     - palnabarun
   kep-tools-approvers:
