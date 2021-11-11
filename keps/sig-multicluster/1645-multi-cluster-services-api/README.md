@@ -260,6 +260,12 @@ nitty-gritty.
   The cluster name should be consistent for the life of a cluster and its
   membership in the clusterset. Implementations should treat name mutation as
   a delete of the membership followed by recreation with the new name.
+- **cluster network** - An identifier for the cluster network. Each cluster can have an optional name that can identify the network its running in. The network name must be a valid [RFC
+  1123](https://tools.ietf.org/html/rfc1123) DNS label. Two or more clusters within the ClusterSet can have the same network identifier.
+
+  The network name should be consistent during its
+  membership in the clusterset. Implementations should treat network change as
+  a delete of the membership followed by recreation with the new name.
 
 [namespace sameness]: https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md
 
@@ -663,6 +669,58 @@ endpoints:
 
 The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
 this cluster.
+
+
+#### Multi-network scenario
+One of more clusters in a ClusterSet can be running on a discrete network (a non-flat network). An MCS controller can use the `network.k8s.io` `ClusterProperty` to determine if a cluster in a `ClusterSet` is running on a discrete network. In this scenario, the generated EndpointSlice in an importing cluster will point to the FQDN (Fully Qualified Domain Name) of the Gateway/Loadbalancer of the cluster this `EndpointSlice` belongs to. The MCS controller implementation is responsible for determining the Gateway/Loadbalancer in a cluster for a non-flat network. A sample implementation can use a K8s [Gateway](https://gateway-api.sigs.k8s.io/) defined with an annotation `network.k8s.io: mcs-gateway` to match against a ServiceExport with the same annotation to identity the FQDN associated with it. This FQDN would then be used in the EndpointSlice generated for this cluster in the importing clusters. The MCS controller may implement creating the K8s Gateway and the necessary routing rules to automate the configuration.
+
+```yaml
+apiVersion: multicluster.k8s.io/v1alpha1
+kind: ServiceImport
+metadata:
+  name: my-svc
+  namespace: my-ns
+spec:
+  ips:
+  - 42.42.42.42
+  type: "ClusterSetIP"
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+  sessionAffinity: None
+status:
+  clusters:
+  - cluster: us-west2-a-my-cluster
+---
+apiVersion: discovery.k8s.io/v1beta1
+kind: EndpointSlice
+metadata:
+  name: imported-my-svc-cluster-b-1
+  namespace: my-ns
+  labels:
+    multicluster.kubernetes.io/source-cluster: us-west2-a-my-cluster
+    multicluster.kubernetes.io/service-name: my-svc
+  ownerReferences:
+  - apiVersion: multicluster.k8s.io/v1alpha1
+    controller: false
+    kind: ServiceImport
+    name: my-svc
+addressType: FQDN
+ports:
+  - name: http
+    protocol: TCP
+    port: 80
+endpoints:
+  hostname: us-west2-a-my-cluster.subdomain.domain.com
+    conditions:
+      ready: true
+    topology:
+     topology.kubernetes.io/zone: us-west2-a
+```
+
+##### Known limitation
+In a multi-network scenario where the `EndpointSlice`s are backed by FQDNs, there isn't currently a way (K8s native support) to proportionately distribute the traffic based on the number of endpoints behind these FQDNs. There is active ongoing work in SIG-Network to add an attribute to represent the number of endpoints for `EndpointSlice`s when the addressType is FQDN. This will provide a way for kube-proxy to load balance across `EndpointSlice`s of addressType FQDN.
 
 ### ClusterSet Service Behavior Expectations
 

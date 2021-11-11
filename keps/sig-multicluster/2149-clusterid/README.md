@@ -294,6 +294,9 @@ My controller interacts with multiple clusters and needs to disambiguate between
 
 _For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs/cluster-api-provider-nested) is implementing a multi-tenant scheduler that schedules tenant namespaces only in certain parent clusters, and a separate syncer running in each parent cluster controller needs to compare the name of the parent cluster to determine whether the namespace should be synced. ([ref](https://github.com/kubernetes/enhancements/issues/2149#issuecomment-768486457))._
 
+#### Multi-network scenario
+
+With in a ClusterSet I have one or more clusters where pods across these clusters are not directly routable (a non-flat network).
 
 ### `ClusterProperty` CRD
 
@@ -352,6 +355,38 @@ Contains a unique identifier for the containing cluster.
 **Renaming a cluster**: Since a `id.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the property contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
 
 **Reusing cluster names**: Since an `id.k8s.io ClusterProperty` has no restrictions on whether or not a ClusterProperty can be repeatable, if a cluster unregisters from a ClusterSet it is permitted under this standard to rejoin later with the same `id.k8s.io ClusterProperty` it had before. Similarly, a *different* cluster could join a ClusterSet with the same `id.k8s.io ClusterProperty` that had been used by another cluster previously, as long as both do not have membership in the same ClusterSet at the same time. Finally, two or more clusters may have the same `id.k8s.io ClusterProperty` concurrently (though they **should** not; see "Uniqueness" above) *as long as* they both do not have membership in the same ClusterSet.
+
+#### Property: `network.k8s.io`
+
+Contains an identifier representing the network for the cluster.
+
+
+##### Uniqueness
+
+*   The identifier **need not be** unique but **should** remain the same for a cluster for the duration of the cluster’s membership.
+
+##### Lifespan
+
+*   The identifier if exists **should** be immutable for the lifespan of a ClusterSet membership.
+
+
+##### Contents
+
+*   The identifier **must** be a valid RFC-1123 DNS label [as described for object names in the Kubernetes docs](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
+    *   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
+*   The identifier **may** be a human readable description.
+
+
+##### Consumers
+
+*   **Must** be able to rely on the identifier, if exists, unmodified for the entire duration of its membership in a ClusterSet.
+*   **Should** watch the `network.k8s.io` property to handle potential changes if they live beyond the ClusterSet membership.
+*   **May** rely on the existence of an identifier for clusters that do not belong to a ClusterSet so long as the implementation provides one.
+
+
+##### Notable scenarios
+
+**Cluster changes its network**: Since a `network.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the property contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
 
 #### Property: `clusterset.k8s.io`
 
