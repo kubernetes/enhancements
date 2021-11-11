@@ -11,7 +11,6 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [Field paths and field patterns](#field-paths-and-field-patterns)
     - [Expression lifecycle](#expression-lifecycle)
     - [Function library](#function-library)
   - [User Stories](#user-stories)
@@ -140,7 +139,7 @@ suited or insufficient.
 These improvements are largely complementary to expression support and either
 are (or should be) addressed by in separate KEPs.
 
-For use cases cannot be covered by build-in validation support:
+For use cases that cannot be covered by build-in validation support:
 
 - Admission Webhooks: have validating admission webhook for further validation
 - Custom validators: write custom checks in several languages such as Rego 
@@ -216,7 +215,7 @@ kind: CustomResourceDefinition
       properties:
         spec:
           x-kubernetes-validations: 
-            - rule: "minReplicas <= maxReplicas"
+            - rule: "self.minReplicas <= self.maxReplicas"
               message: "minReplicas cannot be larger than maxReplicas"
           type: object
           properties:
@@ -228,18 +227,18 @@ kind: CustomResourceDefinition
 
 Example Validation Rules:
 
-| Rule                                                         | Purpose                                                                           |
-| ----------------                                             | ------------                                                                      |
-| `minReplicas <= replicas <= maxReplicas`                     | Validate that the three fields defining replicas are ordered appropriately        |
-| `'Available' in stateCounts`                                 | Validate the 'Available' key exists in a map                                      |
-| `(size(list1) == 0) != (size(list2) == 0)`                   | Validate that one of two lists is non-empty, but not both                         |
-| `created + ttl < expiry`                                     | Validate that 'expiry' date is after a 'create' date plus a 'ttl' duration        |
-| `health.startsWith('ok')`                                    | Validate a 'health' string field has the prefix 'ok'                              |
-| `widgets.exists(w, w.key == 'x' && w.foo < 10)`              | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
-| `type(limit) == string ? limit == '100%' : limit == 1000`    | Validate an int-or-string field for both the the int and string cases             |
-| `metadata.name == 'singleton`                                | Validate that an object's name matches a specific value (making it a singleton)   |
-| `set1.all(e, !(e in set2))`                                  | Validate that two listSets are disjoint                                           |
-| `size(names) == size(details) && names.all(n, n in details)` | Validate the 'details' map is keyed by the items in the names listSet             |
+| Rule                                                                             | Purpose                                                                           |
+| ----------------                                                                 | ------------                                                                      |
+| `self.minReplicas <= self.replicas <= self.maxReplicas`                          | Validate that the three fields defining replicas are ordered appropriately        |
+| `'Available' in self.stateCounts`                                                | Validate that an entry with the 'Available' key exists in a map                   |
+| `(size(self.list1) == 0) != (size(self.list2) == 0)`                             | Validate that one of two lists is non-empty, but not both                         |
+| `has(self.expired) && self.created + self.ttl < self.expired`                    | Validate that 'expired' date is after a 'create' date plus a 'ttl' duration       |
+| `self.health.startsWith('ok')`                                                   | Validate a 'health' string field has the prefix 'ok'                              |
+| `self.widgets.exists(w, w.key == 'x' && w.foo < 10)`                             | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
+| `type(self.limit) == string ? self.limit == '100%' : self.limit == 1000`         | Validate an int-or-string field for both the the int and string cases             |
+| `self.metadata.name == 'singleton`                                               | Validate that an object's name matches a specific value (making it a singleton)   |
+| `self.set1.all(e, !(e in self.set2))`                                            | Validate that two listSets are disjoint                                           |
+| `size(self.names) == size(self.details) && self.names.all(n, n in self.details)` | Validate the 'details' map is keyed by the items in the 'names' listSet           |
 
 
 - Each validator may have multiple validation rules.
@@ -279,12 +278,13 @@ is scoped to.
     
       It will cause a lot of keywords to be reserved and users have to memorize those variable when writing rules.
     - Using other names like `this`, `me`, `value`, `_`. The name should be self-explanatory, less chance of conflict and easy to be picked up.
-- For OpenAPIv3 object types, the expression will have direct access to all the
-fields of the object the validator is scoped to.
+
+- For OpenAPIv3 object types, the expression may use field selection to access all the
+  properties of the object the validator is scoped to, e.g. `self.field == 10`.
   
 - For OpenAPIv3 scalar types (integer, string & boolean), the expression will have access to the
-scalar data element the validator is scoped to. The data element will be accessible to CEL
-expressions via `self`, e.g. `len(self) > 10`.
+  scalar data element the validator is scoped to. The data element will be accessible to CEL
+  expressions via `self`, e.g. `len(self) > 10`.
 
 - For OpenAPIv3 list and map types, the expression will have access to the data element of the list
 or map. These will be accessible to CEL via `self`. The elements of a map or list can be validated using the CEL support for collections
@@ -292,26 +292,20 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
 <predicate>)`.
   
 - For immutability use case, validator will have access to the existing version of the object. This
-  will be accessible to CEL via the `old<propertyName>` identifier.
+  will be accessible to CEL via the `oldSelf` identifier.
   - This will only be available on mergable collection types such as objects (unless
     `x-kubernetes-map-type=atomic`), maps with `x-kubernetes-map-type=granular` and lists
     with `x-kubernetes-list-type` set to `set` or `map`.  See [Merge
     Strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) for
     details.
   - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
-    `oldObject`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
-    keyword for escaping purposes (see below).
+    `oldObject`.
   - xref [analysis of possible interactions with immutability and
     validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
 
 - If a object property name is a CEL keyword (see RESERVED in [CEL Syntax](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)),
   it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision,  properties named with a CEL keyword and a  `_` prefix will be
   prefixed by `__` (generally, N+1 the existing number of `_`s).
-  
-- If a object property name is a CEL language identifier (`int`, `uint`, `double`, `bool`, `string`,
-  `bytes`, `list`, `map`, `null_type`, `type`, see [CEL language
-  identifiers](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values)) it is not
-  accessible as a root variable and must be accessed via `self`, .e.g. `self.int`.
 
 - Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible.
   If a property name is "self" or matches with a [reserved language identifier](https://github.com/google/cel-spec/blob/v0.6.0/doc/langdef.md#values) 
@@ -330,10 +324,10 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
 - Rules may be written at the root of an object, and may make field selection into any fields
   declared in the OpenAPIv3 schema of the CRD as well as `apiVersion`, `kind`, `metadata.name` and
   `metadata.generateName`. This includes selection of fields in both the `spec` and `status` in the
-  same expression, e.g. `status.quantity <= spec.maxQuantity`. Because CRDs only allow the `name`
+  same expression, e.g. `self.status.quantity <= self.spec.maxQuantity`. Because CRDs only allow the `name`
   and `generateName` to be declared in the `metadata` of an object, these are the only metadata
   fields that may be validated using CEL validator rules. For example,
-  `metadata.name.endsWith('mySuffix')` is allowed, but `size(metadata.labels) < 3` it not
+  `self.metadata.name.endsWith('mySuffix')` is allowed, but `size(self.metadata.labels) < 3` it not
   allowed. The limit on which `metadata` fields may be validated is an intentional design choice
   (that aims to keep metadata behavior uniform across types) and applies to all validation
   mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator rules.
@@ -348,14 +342,6 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   and we can use CEL expression complexity estimations
   ([xref](https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265))
   during CRD update to bound complexity.
-
-#### Field paths and field patterns
-
-A field path is a patch to a single node in the data tree. I.e. it specifies the
-exact indices of the list items and the keys of map entries it traverses.
-
-A field *pattern* is a path to all nodes in the data tree that match the pattern. I.e.
-it may wildcard list item and map keys.
 
 #### Expression lifecycle
 
@@ -584,18 +570,20 @@ The initial changes made in the type integration will be:
   - We couldn't have both: (a) equality of string keys, which implies a canonical ordering of key fields, and (b) ability for developers to successfully lookup a map entry regardless of how they order the keys in the string representation
 
 
-So instead of treating "associative lists" as maps in CEL, we will continue to treat them as lists, but override equality to ignore object order (i.e. use map equality semantics) and introduce utility functions to make the list representation easy to use in CEL. E.g. instead of:
+So instead of treating "associative lists" as maps in CEL, we will continue to treat them as lists, but override equality to ignore object order (i.e. use map equality semantics).
+
+Looking up entiries by keys is available primarily via the `exists_one` and `filter` macros. Examples:
 
 ```
-associativeList.filter(e, e.key1 == 'a' && e.key2 == 'b').all(e, e.val == 100)
-```
+// exists_one() and exists() behave similarly if all map keys are checked, but exsists_one() has slightly stricter
+// semantics, which make it preferable
 
-We plan to add a `get()` builtin function (exact name and semantics TBD) that allows for lookup of a single map entry:
+// To check if the map contains a entry with a particular key:
+associativeList.exists_one(e, e.key1 == 'a' && e.key2 == 'b')
 
+// To lookup a map entry by key and check if some condition is met on the other fields of the entry:
+associativeList.exists_one(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
 ```
-associativeList.get(e, e.key1 == 'a' && e.key2 == 'b').val == 100
-```
-
 
 ### Test Plan
 
