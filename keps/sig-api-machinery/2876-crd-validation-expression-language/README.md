@@ -232,12 +232,13 @@ Example Validation Rules:
 | `self.minReplicas <= self.replicas <= self.maxReplicas`                          | Validate that the three fields defining replicas are ordered appropriately        |
 | `'Available' in self.stateCounts`                                                | Validate that an entry with the 'Available' key exists in a map                   |
 | `(size(self.list1) == 0) != (size(self.list2) == 0)`                             | Validate that one of two lists is non-empty, but not both                         |
-| `!('MY_ENV' in self.envars) || self['MY_ENV'].matches('^[a-zA-Z]*$')`            | Validate the value of a map for a specific key, if it is in the map               |
+| `!('MY_KEY' in self.map1) || self['MY_KEY].matches('^[a-zA-Z]*$')`               | Validate the value of a map for a specific key, if it is in the map               |
+| `self.envars.filter(e, e.name = 'MY_ENV').all(e, e.value.matches('^[a-zA-Z]*$')` | Validate the 'value' field of a listMap entry where key field 'name' is 'MY_ENV'  |
 | `has(self.expired) && self.created + self.ttl < self.expired`                    | Validate that 'expired' date is after a 'create' date plus a 'ttl' duration       |
 | `self.health.startsWith('ok')`                                                   | Validate a 'health' string field has the prefix 'ok'                              |
 | `self.widgets.exists(w, w.key == 'x' && w.foo < 10)`                             | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
-| `type(self) == string ? self == '100%' : self == 1000`         | Validate an int-or-string field for both the the int and string cases             |
-| `self.metadata.name == 'singleton'`                                               | Validate that an object's name matches a specific value (making it a singleton)   |
+| `type(self) == string ? self == '100%' : self == 1000`                           | Validate an int-or-string field for both the the int and string cases             |
+| `self.metadata.name == 'singleton'`                                              | Validate that an object's name matches a specific value (making it a singleton)   |
 | `self.set1.all(e, !(e in self.set2))`                                            | Validate that two listSets are disjoint                                           |
 | `size(self.names) == size(self.details) && self.names.all(n, n in self.details)` | Validate the 'details' map is keyed by the items in the 'names' listSet           |
 
