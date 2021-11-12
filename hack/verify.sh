@@ -32,13 +32,14 @@ fi
 
 # Excluded check patterns are always skipped.
 EXCLUDED_PATTERNS=(
-  "verify.sh"                # this script calls the make rule and would cause a loop
-  "verify-*-dockerized.sh"   # Don't run any scripts that intended to be run dockerized
+  "verify.sh"              # this script calls the make rule and would cause a loop
+  "verify-*-dockerized.sh" # Don't run any scripts that intended to be run dockerized
 
   # TODO(verify): Enable these checks once their errors have been resolved
   "verify-boilerplate.sh"
   "verify-golangci-lint.sh"
   "verify-shellcheck.sh"
+  "verify-kep-structure.sh"
 )
 
 EXCLUDED_CHECKS=$(ls ${EXCLUDED_PATTERNS[@]/#/${REPO_ROOT}\/hack\/} 2>/dev/null || true)
@@ -54,7 +55,7 @@ function is-excluded {
 
 function run-cmd {
   if ${SILENT}; then
-    "$@" &> /dev/null
+    "$@" &>/dev/null
   else
     "$@"
   fi
@@ -68,7 +69,7 @@ function print-failed-tests {
   echo -e "${color_red}FAILED TESTS${color_norm}"
   echo -e "========================"
   for t in "${FAILED_TESTS[@]}"; do
-      echo -e "${color_red}${t}${color_norm}"
+    echo -e "${color_red}${t}${color_norm}"
   done
 }
 
@@ -80,10 +81,9 @@ function run-checks {
   local check_name
   local start
 
-  for t in $(ls ${pattern})
-  do
+  for t in $(ls ${pattern}); do
     check_name="$(basename "${t}")"
-    if is-excluded "${t}" ; then
+    if is-excluded "${t}"; then
       echo "Skipping ${check_name}"
       continue
     fi
@@ -109,17 +109,17 @@ SILENT=false
 
 while getopts ":s" opt; do
   case ${opt} in
-    s)
-      SILENT=true
-      ;;
-    \?)
-      echo "Invalid flag: -${OPTARG}" >&2
-      exit 1
-      ;;
+  s)
+    SILENT=true
+    ;;
+  \?)
+    echo "Invalid flag: -${OPTARG}" >&2
+    exit 1
+    ;;
   esac
 done
 
-if ${SILENT} ; then
+if ${SILENT}; then
   echo "Running in silent mode, run without -s if you want to see script logs."
 fi
 
