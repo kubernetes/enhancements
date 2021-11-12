@@ -235,8 +235,8 @@ Example Validation Rules:
 | `has(self.expired) && self.created + self.ttl < self.expired`                    | Validate that 'expired' date is after a 'create' date plus a 'ttl' duration       |
 | `self.health.startsWith('ok')`                                                   | Validate a 'health' string field has the prefix 'ok'                              |
 | `self.widgets.exists(w, w.key == 'x' && w.foo < 10)`                             | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
-| `type(self.limit) == string ? self.limit == '100%' : self.limit == 1000`         | Validate an int-or-string field for both the the int and string cases             |
-| `self.metadata.name == 'singleton`                                               | Validate that an object's name matches a specific value (making it a singleton)   |
+| `type(self) == string ? self == '100%' : self == 1000`         | Validate an int-or-string field for both the the int and string cases             |
+| `self.metadata.name == 'singleton'`                                               | Validate that an object's name matches a specific value (making it a singleton)   |
 | `self.set1.all(e, !(e in self.set2))`                                            | Validate that two listSets are disjoint                                           |
 | `size(self.names) == size(self.details) && self.names.all(n, n in self.details)` | Validate the 'details' map is keyed by the items in the 'names' listSet           |
 
@@ -575,7 +575,7 @@ So instead of treating "associative lists" as maps in CEL, we will continue to t
 Looking up entiries by keys is available primarily via the `exists_one` and `filter` macros. Examples:
 
 ```
-// exists_one() and exists() behave similarly if all map keys are checked, but exsists_one() has slightly stricter
+// exists_one() and exists() behave similarly if all map keys are checked, but exists_one() has slightly stricter
 // semantics, which make it preferable
 
 // To check if the map contains a entry with a particular key:
