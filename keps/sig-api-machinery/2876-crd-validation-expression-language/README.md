@@ -232,6 +232,7 @@ Example Validation Rules:
 | `self.minReplicas <= self.replicas <= self.maxReplicas`                          | Validate that the three fields defining replicas are ordered appropriately        |
 | `'Available' in self.stateCounts`                                                | Validate that an entry with the 'Available' key exists in a map                   |
 | `(size(self.list1) == 0) != (size(self.list2) == 0)`                             | Validate that one of two lists is non-empty, but not both                         |
+| `!('MY_ENV' in self.envars) || self['MY_ENV'].matches('^[a-zA-Z]*$')`            | Validate the value of a map for a specific key, if it is in the map               |
 | `has(self.expired) && self.created + self.ttl < self.expired`                    | Validate that 'expired' date is after a 'create' date plus a 'ttl' duration       |
 | `self.health.startsWith('ok')`                                                   | Validate a 'health' string field has the prefix 'ok'                              |
 | `self.widgets.exists(w, w.key == 'x' && w.foo < 10)`                             | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
@@ -257,7 +258,7 @@ is scoped to.
     name. As the example showing below. When we want to put cel validation on ToySpec, the field
     name as `spec` has not been identified yet which makes rule hard to define.
   
-     ```azure
+     ```
      // +kubebuilder:validation:XValidator=
      type ToySpec struct {
        fieldSample string `json:"fieldSample"`
@@ -307,30 +308,27 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision,  properties named with a CEL keyword and a  `_` prefix will be
   prefixed by `__` (generally, N+1 the existing number of `_`s).
 
-- Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible.
-  If a property name is "self" or matches with a [reserved language identifier](https://github.com/google/cel-spec/blob/v0.6.0/doc/langdef.md#values) 
-  (`int`, `uint`, `double`, `bool`, `string`, `bytes`, `list`, `map`, `null_type`, `type`), it is
-  not escaped, but it is excluded from the bound variables and can only be accessed via 
-  "self.{property name}". All other accessible property names are escaped according to the following rules
-  when accessed in the expression:
+- Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible and are escaped
+  according to the following rules when accessed in the expression:
 	- '__' escapes to '__underscores__'
 	- '.' escapes to '__dot__'
 	- '-' escapes to '__dash__'
 	- '/' escapes to '__slash__'
-	- CEL RESERVED keywords escape to '__{keyword}__'. The keywords are: "true", "false", "null",
-	"in", "as", "break", "const", "continue", "else", "for", "function", "if", "import", "let",
-	"loop", "package", "namespace", "return".
+	- Property names that match a CEL RESERVED keyword exactly escape to '__{keyword}__'. The
+	keywords are: "true", "false", "null", "in", "as", "break", "const", "continue", "else", "for",
+	"function", "if", "import", "let", "loop", "package", "namespace", "return".
 
 - Rules may be written at the root of an object, and may make field selection into any fields
   declared in the OpenAPIv3 schema of the CRD as well as `apiVersion`, `kind`, `metadata.name` and
   `metadata.generateName`. This includes selection of fields in both the `spec` and `status` in the
-  same expression, e.g. `self.status.quantity <= self.spec.maxQuantity`. Because CRDs only allow the `name`
-  and `generateName` to be declared in the `metadata` of an object, these are the only metadata
-  fields that may be validated using CEL validator rules. For example,
+  same expression, e.g. `self.status.quantity <= self.spec.maxQuantity`. Because CRDs only allow the
+  `name` and `generateName` to be declared in the `metadata` of an object, these are the only
+  metadata fields that may be validated using CEL validator rules. For example,
   `self.metadata.name.endsWith('mySuffix')` is allowed, but `size(self.metadata.labels) < 3` it not
   allowed. The limit on which `metadata` fields may be validated is an intentional design choice
-  (that aims to keep metadata behavior uniform across types) and applies to all validation
-  mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator rules.
+  (that aims to allow for generic access to labels and annotations across all kinds) and applies to
+  all validation mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator
+  rules. xref rule 4 in [specifying a structural schema](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema).
 
 - We plan to allow access to the current state of the object to allow validation rules to check the
   new value against the current value, e.g. for immutability checks (for validation racheting we would
@@ -601,6 +599,7 @@ developers to test their validation rules.
 
 #### Beta
 
+- Resolve topic of what support we should provide for access to the previous versions of object (ie. 'oldSelf' feature)
 - x-kubernetes-int-or-string is upgraded to use a union type of just int or string, not a dynamic type (CEL go support is planned in lates 2021)
 - Understanding of upper bounds of CPU/memory usage and appropriate limits set to prevent abuse.
 - Build-in macro/function library is comprehensive and stable (any changes to this will be a breaking change)
