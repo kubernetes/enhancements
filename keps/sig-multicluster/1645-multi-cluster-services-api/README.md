@@ -93,6 +93,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Exporting Services](#exporting-services)
     - [Restricting Exports](#restricting-exports)
   - [Importing Services](#importing-services)
+    - [Multi-network scenario](#multi-network-scenario)
+      - [Known limitation](#known-limitation)
   - [ClusterSet Service Behavior Expectations](#clusterset-service-behavior-expectations)
     - [Service Types](#service-types)
     - [ClusterSetIP](#clustersetip)
