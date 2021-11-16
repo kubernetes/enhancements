@@ -311,11 +311,11 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
 
 - Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible and are escaped
   according to the following rules when accessed in the expression:
-	- '__' escapes to '__underscores__'
-	- '.' escapes to '__dot__'
-	- '-' escapes to '__dash__'
-	- '/' escapes to '__slash__'
-	- Property names that match a CEL RESERVED keyword exactly escape to '__{keyword}__'. The
+	- `__` escapes to `__underscores__`
+	- `.` escapes to `__dot__`
+	- `-` escapes to `__dash__`
+	- `/` escapes to `__slash__`
+	- Property names that match a CEL RESERVED keyword exactly escape to `__{keyword}__`. The
 	keywords are: "true", "false", "null", "in", "as", "break", "const", "continue", "else", "for",
 	"function", "if", "import", "let", "loop", "package", "namespace", "return".
 
