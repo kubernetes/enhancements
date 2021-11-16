@@ -229,7 +229,7 @@ Example Validation Rules:
 
 | Rule                                                                             | Purpose                                                                           |
 | ----------------                                                                 | ------------                                                                      |
-| `self.minReplicas <= self.replicas <= self.maxReplicas`                          | Validate that the three fields defining replicas are ordered appropriately        |
+| `self.minReplicas <= self.replicas && self.replicas <= self.maxReplicas`         | Validate that the three fields defining replicas are ordered appropriately        |
 | `'Available' in self.stateCounts`                                                | Validate that an entry with the 'Available' key exists in a map                   |
 | `(size(self.list1) == 0) != (size(self.list2) == 0)`                             | Validate that one of two lists is non-empty, but not both                         |
 | `!('MY_KEY' in self.map1) || self['MY_KEY].matches('^[a-zA-Z]*$')`               | Validate the value of a map for a specific key, if it is in the map               |
@@ -304,10 +304,6 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
     `oldObject`.
   - xref [analysis of possible interactions with immutability and
     validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
-
-- If a object property name is a CEL keyword (see RESERVED in [CEL Syntax](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)),
-  it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision,  properties named with a CEL keyword and a  `_` prefix will be
-  prefixed by `__` (generally, N+1 the existing number of `_`s).
 
 - Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible and are escaped
   according to the following rules when accessed in the expression:
@@ -504,32 +500,32 @@ coverage of interactions in these dimensions:
 
 Types:
 
-| OpenAPIv3 type                                     | CEL type                                                                                                       |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 'object' with Properties                           | object / "message type"                                                                                        |
-| 'object' with AdditionalProperties                 | map                                                                                                            |
-| 'object' with x-kubernetes-embedded-type           | <treatment is the same as 'object' more details below>                                                         |
-| 'object' with x-kubernetes-preserve-unknown-fields | <treatment is the same as 'object', more details below>                                                        |
-| x-kubernetes-int-or-string                         | dynamic object that is either an int or a string, `type(value)` can be used to check the type                  |
-| 'array                                             | list                                                                                                           |
-| 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                           |
-| 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                         |
-| 'boolean'                                          | boolean                                                                                                        |
-| 'number' (all formats)                             | double                                                                                                         |
-| 'integer' (all formats)                            | int (64)                                                                                                       |
-| 'null'                                             | null_type                                                                                                      |
-| 'string'                                           | string                                                                                                         |
-| 'string' with format=byte (base64 encoded)         | bytes                                                                                                          |
-| 'string' with format=date                          | timestamp (google.protobuf.Timestamp)                                                                          |
-| 'string' with format=datetime                      | timestamp (google.protobuf.Timestamp)                                                                          |
-| 'string' with format=duration                      | duration (google.protobuf.Duration)                                                                            |
+| OpenAPIv3 type                                     | CEL type                                                                                                                     |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 'object' with Properties                           | object / "message type"                                                                                                      |
+| 'object' with AdditionalProperties                 | map                                                                                                                          |
+| 'object' with x-kubernetes-embedded-type           | object / "message type", 'apiVersion', 'kind', 'metadata.name' and 'metadata.generateName' are implicitly included in schema |
+| 'object' with x-kubernetes-preserve-unknown-fields | object / "message type", unknown fields are NOT accessible in CEL expression                                                 |
+| x-kubernetes-int-or-string                         | dynamic object that is either an int or a string, `type(value)` can be used to check the type                                |
+| 'array                                             | list                                                                                                                         |
+| 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                                         |
+| 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                                       |
+| 'boolean'                                          | boolean                                                                                                                      |
+| 'number' (all formats)                             | double                                                                                                                       |
+| 'integer' (all formats)                            | int (64)                                                                                                                     |
+| 'null'                                             | null_type                                                                                                                    |
+| 'string'                                           | string                                                                                                                       |
+| 'string' with format=byte (base64 encoded)         | bytes                                                                                                                        |
+| 'string' with format=date                          | timestamp (google.protobuf.Timestamp)                                                                                        |
+| 'string' with format=datetime                      | timestamp (google.protobuf.Timestamp)                                                                                        |
+| 'string' with format=duration                      | duration (google.protobuf.Duration)                                                                                          |
 
 xref: [CEL types](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values), [OpenAPI
 types](https://swagger.io/specification/#data-types), [Kubernetes Structural Schemas](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema).
 
 Although `x-kubernetes-preserve-unknown-fields` allows custom resources to contain values without
-corresponding schema information, we will not provide validation support of these "schemaless"
-values. Reasons for this include:
+corresponding schema information, we will not provide access to these "schemaless" values in CEL
+expressions. Reasons for this include:
 
 - Without schema information, types (e.g. `map` vs. `object`), formats (e.g. plain `string`
   vs. `date`) and list types (plain `list` vs. `set`) are not available, and this feature depends

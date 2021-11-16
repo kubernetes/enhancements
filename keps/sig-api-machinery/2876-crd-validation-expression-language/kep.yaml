@@ -6,7 +6,7 @@ authors:
   - "@DangerOnTheRanger"
   - "@leilajal"
 owning-sig: sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2021-05-26
 reviewers:
   - "@deads2k"
@@ -16,6 +16,7 @@ reviewers:
 approvers:
   - "@deads2k"
   - "@lavalamp"
+  - "@liggitt"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
