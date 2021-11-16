@@ -605,6 +605,8 @@ developers to test their validation rules.
 - Understanding of upper bounds of CPU/memory usage and appropriate limits set to prevent abuse.
 - Build-in macro/function library is comprehensive and stable (any changes to this will be a breaking change)
 - CEL numeric comparison issue is resolved (e.g. ability to compare ints to doubles)
+- [Reduce noise of invalid data messages reported from cel.UnstructuredToVal](https://github.com/kubernetes/kubernetes/issues/106440)
+- [Benchmark cel.UnstructuredToVal and optimize away repeated wrapper object construction](https://github.com/kubernetes/kubernetes/issues/106438)
 
 ## Production Readiness Review Questionnaire
 
