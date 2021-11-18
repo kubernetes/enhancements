@@ -97,6 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [SLSA Level 2: Tamper Resistance of the Build Service](#slsa-level-2-tamper-resistance-of-the-build-service)
     - [SLSA Level 3: Extra Resistance to Specific Threats](#slsa-level-3-extra-resistance-to-specific-threats)
     - [SLSA Level 4: Highest Levels of Confidence and Trust](#slsa-level-4-highest-levels-of-confidence-and-trust)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -151,8 +152,8 @@ is a framework to harden software supply currently being defined by the
 Group](https://github.com/ossf/wg-digital-identity-attestation).
 
 The framework provides requirements and recommendations to software
-build systems to harden the environments and processes that drive them.
-It also defines the metadata that needs to be produced to trace the 
+build systems to harden their environments and the processes that drive
+them. It also defines the metadata that needs to be produced to trace the 
 origins of every item in a software release.
 
 The main goal of this enhancement is to provide downstream consumers of our
@@ -183,6 +184,8 @@ updates.
 -->
 
 ## Motivation
+
+Release Kubernetes in a zero-trust environment.
 
 Kubernetes releases represent key links in many software supply chains, not
 just for the project itself but also for consumers that derive, repackage and
