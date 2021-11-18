@@ -159,7 +159,7 @@ The main goal of this enhancement is to provide downstream consumers of our
 artifacts the highest assurance about the integrity of each Kubernetes release.
 
 SLSA defines several levels of hardening, each touching more aspects of the
-release process beyond the techincal implementation required. This document is
+release process that go beyond its technical implementation. This document is
 meant to serve as a guide to reach the highest possible levels after 
 consensus has been reached about their viability.
 
@@ -190,13 +190,26 @@ distribute our artifacts downstream. The project releases end-user artifacts
 like binaries and container images, but also source code that is actively reused
 further down the distribution stream.
 
-As the world hardens its software supply chains, the Kubernetes project needs
-to do its part to achieve a secure supply chain from end to end. This proposal
+All current work done by SIG Release on the Kubernetes supply chain centers
+around three focus areas: Artifact Consumption, Introspection, and Security.
+These areas are explained in more detail in our [_Roadmap for 2021 and Beyond_ 
+document](https://github.com/kubernetes/sig-release/blob/master/roadmap.md).
+
+As the world hardens its software distribution methods, the Kubernetes project needs
+to do its part to achieve a secure supply chain from end to end: from the
+top base images to the final artifacts downloaded by end users. This proposal
 provides a path to achieve increasing levels of security, integrity, and availability
-in our releases by improvements to our release process to make it comply with the
+in our releases by engineering new features to our processes. The objective is
+to achieve the highest possible compliance with the
 [SLSA framework](https://slsa.dev/) (Supply-chain Levels for Software Artifacts).
 
-SLSA is a project under the [OpenSSF](https://openssf.org/)'s [Digital Identity 
+We consider SLSA compliance to be an effort in line with the three objectives outlined
+in our roadmap: Artifacts can be consumed easier and with more trust.
+Improvements to code and process will secure the supply chain and each release
+will produce software bills of materials, provenance attestations and signatures
+which will yield much better introspection to the journey from code to binary.
+
+The SLSA framework is a project under the [OpenSSF](https://openssf.org/)'s [Digital Identity 
 Attestation Working Group](https://github.com/ossf/wg-digital-identity-attestation).
 The framework defines numbered levels of compliance that harden software supply
 chains by recommending concrete steps to address, each of increasing technical
@@ -247,7 +260,7 @@ to software supply chains. However, changes to reach level 4 may not be feasible
 
 If the changes that need to be conducted are deemed too disruptive or even destructive
 to other areas of the project (development velocity, contributor experience, policy,
-etc), the community may decide the current SLSA level to be unimplementable. In that
+etc), the community may declare a specific SLSA level to be unimplementable. In that
 scenario, we would work on the rest of the SLSA requirements and consider this KEP
 complete.
 
@@ -373,7 +386,7 @@ only provenance metadata needs to be produced:
 #### SLSA Level 2: Tamper Resistance of the Build Service
 
 Level 2 calls for digital signatures of the metadata captured and passed
-around the release process in the provenance attestations.
+around the release process in the provenance attestations. 
 
 #### SLSA Level 3: Extra Resistance to Specific Threats
 
