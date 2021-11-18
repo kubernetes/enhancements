@@ -148,8 +148,8 @@ This document proposes a plan to harden the Kubernetes releases by
 making the necessary adjustments to comply with the SLSA Framework.
 [SLSA (Supply-chain Levels for Software Artifacts)](https://slsa.dev/)
 is a framework to harden software supply currently being defined by the 
-[OpenSSF](https://openssf.org/)'s [Digital Identity Attestation Working
-Group](https://github.com/ossf/wg-digital-identity-attestation).
+[OpenSSF](https://openssf.org/)'s 
+[Supply Chain Integrity WG](https://github.com/ossf/wg-supply-chain-integrity).
 
 The framework provides requirements and recommendations to software
 build systems to harden their environments and the processes that drive
