@@ -232,11 +232,10 @@ SLSA compliance in the Kubernetes release process. While providing a roadmap
 this KEP can be considered complete when a SLSA level is deemed as not
 implementable by the community at large (see Graduation Criteria).
 
-
 ### Non-Goals
 
 This KEP does not aim to propose concrete technical implementation details
-or process improvements to achieve each of the SLSA levels. As a framework,
+or process improvements to achieve each SLSA level. As a framework,
 SLSA provides an incomplete roadmap to guide our implementation while it leaves
 the rest to the project. Some of these changes need a discussion and KEP by
 themselves, and we will be working on them as we advance.
@@ -377,27 +376,70 @@ required enhancements to reach each SLSA level.
 
 ### Graduation Milestones
 
+The following is a rough, non-comprehensive outline of the work required
+to achieve each of the SLSA levels. It is important to note that some
+items and/or their specific implementations (like digital signing) 
+will warrant a KEP of their own.
+
 #### SLSA Level 1: Documentation of the Build Process (not user impacting)
 
-SLSA level 1 calls for build and release process information to be made available
-to consumers to provide a better overview of how software gets built. To comply,
-only provenance metadata needs to be produced:
+SLSA level 1 calls for consumer availability of build and release process
+information. The metadata provides a better overview of how software gets
+built. Only provenance attestations need be published to reach compliance.
 
 #### SLSA Level 2: Tamper Resistance of the Build Service
 
 Level 2 calls for digital signatures of the metadata captured and passed
 around the release process in the provenance attestations. 
 
+Work to reach SLSA 2 will center around three key areas:
+
+1. Laying the required groundwork to enable SIG Release access to
+produce digital signatures. This enhancement is being proposed in 
+[KEP-3031](https://github.com/kubernetes/enhancements/issues/3031).
+
+2. Add the required improvements to sign the container images that are part
+of a Kubernetes release.
+
+3. Add the required improvements to allow the release process to
+sign and verify artifacts as they travel through staging and release.
+
+With those improvements in place, releases will produce signatures 
+for their artifacts (images, binaries, tarballs, etc) as well as the
+release metadata (provenance attestations, SBOMs, etc).
+
 #### SLSA Level 3: Extra Resistance to Specific Threats
 
-Enhancements needed to reach SLSA Level 3 involve modifying the release process
-so that builds are controlled from configuration code checked into the VCS.
+The enhancements needed to reach SLSA Level 3 involve modifying the release process
+so that builds are controlled from configuration code checked into the VCS. Key
+areas for SLSA level 3 include:
+
+1. Modifying the release process to run from configuration files that determine
+the build's outcome (relevant issue: 
+[k/release#1836](https://github.com/kubernetes/release/issues/1836))
+
+2. The build process needs to be modified to ensure the parameters for
+running builds are accessible and recorded in the provenance statements.
 
 #### SLSA Level 4: Highest Levels of Confidence and Trust
 
-Reaching SLSA level 4 requires hardening and reviewing of access controls and
+Reaching SLSA level 4 demands hardening and reviewing of access controls and
 permissions to the build infrastructure, possibly a review of the PR approval
-process, and making the build process hermetic.
+process, and making the build process hermetic. Some requirements:
+
+1. Modifying the release process to make available all dependencies before 
+the build starts (tracking issue:
+[k/sig-release#1720](https://github.com/kubernetes/sig-release/issues/1720))
+
+2. Ensuring that the release process meets a security standard. The framework
+does not require a specific one. This topic shall be proposed and discussed in
+a KEP when the time comes.
+
+3. Ensuring that only an extremely limited number of individuals can override the
+guarantees provided by SLSA. This is mostly true at the moment but more
+transparency is needed to ensure risks and policies are understood by the
+community.
+
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -808,6 +850,7 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - 2021-10-31 Initial Draft
+- 2021-11-17 Broader descriptions of required work for each SLSA level
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
