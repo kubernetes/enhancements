@@ -646,7 +646,7 @@ This section must be completed when targeting alpha to a release.
 Pick one of these and delete the rest.
 -->
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: UnknownFieldValidation
+  - Feature gate name: ServerSideFieldValidation
   - Components depending on the feature gate: kube-apiserver
 - [x] Other
   - Describe the mechanism: query parameter
@@ -662,7 +662,7 @@ No, strict validation is false by default.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. From the cluster operator's side, they can restart the kube-apiserver without
-the UnknownFieldValidation flag set and this will disable the feature
+the ServerSideFieldValidation flag set and this will disable the feature
 cluster-wide.
 
 For end-users that no longer wish to perform server-side strict validation,
