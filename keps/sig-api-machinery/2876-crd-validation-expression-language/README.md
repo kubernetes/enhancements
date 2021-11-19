@@ -227,20 +227,20 @@ kind: CustomResourceDefinition
 
 Example Validation Rules:
 
-| Rule                                                                             | Purpose                                                                           |
-| ----------------                                                                 | ------------                                                                      |
-| `self.minReplicas <= self.replicas && self.replicas <= self.maxReplicas`         | Validate that the three fields defining replicas are ordered appropriately        |
-| `'Available' in self.stateCounts`                                                | Validate that an entry with the 'Available' key exists in a map                   |
-| `(size(self.list1) == 0) != (size(self.list2) == 0)`                             | Validate that one of two lists is non-empty, but not both                         |
-| `!('MY_KEY' in self.map1) || self['MY_KEY].matches('^[a-zA-Z]*$')`               | Validate the value of a map for a specific key, if it is in the map               |
-| `self.envars.filter(e, e.name = 'MY_ENV').all(e, e.value.matches('^[a-zA-Z]*$')` | Validate the 'value' field of a listMap entry where key field 'name' is 'MY_ENV'  |
-| `has(self.expired) && self.created + self.ttl < self.expired`                    | Validate that 'expired' date is after a 'create' date plus a 'ttl' duration       |
-| `self.health.startsWith('ok')`                                                   | Validate a 'health' string field has the prefix 'ok'                              |
-| `self.widgets.exists(w, w.key == 'x' && w.foo < 10)`                             | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
-| `type(self) == string ? self == '100%' : self == 1000`                           | Validate an int-or-string field for both the the int and string cases             |
-| `self.metadata.name == 'singleton'`                                              | Validate that an object's name matches a specific value (making it a singleton)   |
-| `self.set1.all(e, !(e in self.set2))`                                            | Validate that two listSets are disjoint                                           |
-| `size(self.names) == size(self.details) && self.names.all(n, n in self.details)` | Validate the 'details' map is keyed by the items in the 'names' listSet           |
+| Rule                                                                               | Purpose                                                                           |
+| ----------------                                                                   | ------------                                                                      |
+| `self.minReplicas <= self.replicas && self.replicas <= self.maxReplicas`           | Validate that the three fields defining replicas are ordered appropriately        |
+| `'Available' in self.stateCounts`                                                  | Validate that an entry with the 'Available' key exists in a map                   |
+| `(self.list1.size() == 0) != self.list2.size() == 0)`                              | Validate that one of two lists is non-empty, but not both                         |
+| `!('MY_KEY' in self.map1) \|\| self['MY_KEY'].matches('^[a-zA-Z]*$')`              | Validate the value of a map for a specific key, if it is in the map               |
+| `self.envars.filter(e, e.name = 'MY_ENV').all(e, e.value.matches('^[a-zA-Z]*$')`   | Validate the 'value' field of a listMap entry where key field 'name' is 'MY_ENV'  |
+| `has(self.expired) && self.created + self.ttl < self.expired`                      | Validate that 'expired' date is after a 'create' date plus a 'ttl' duration       |
+| `self.health.startsWith('ok')`                                                     | Validate a 'health' string field has the prefix 'ok'                              |
+| `self.widgets.exists(w, w.key == 'x' && w.foo < 10)`                               | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
+| `type(self) == string ? self == '100%' : self == 1000`                             | Validate an int-or-string field for both the the int and string cases             |
+| `self.metadata.name == 'singleton'`                                                | Validate that an object's name matches a specific value (making it a singleton)   |
+| `self.set1.all(e, !(e in self.set2))`                                              | Validate that two listSets are disjoint                                           |
+| `self.names.size() == self.details.size() && self.names.all(n, n in self.details)` | Validate the 'details' map is keyed by the items in the 'names' listSet           |
 
 
 - Each validator may have multiple validation rules.
@@ -286,7 +286,7 @@ is scoped to.
   
 - For OpenAPIv3 scalar types (integer, string & boolean), the expression will have access to the
   scalar data element the validator is scoped to. The data element will be accessible to CEL
-  expressions via `self`, e.g. `len(self) > 10`.
+  expressions via `self`, e.g. `self.size() > 10`.
 
 - For OpenAPIv3 list and map types, the expression will have access to the data element of the list
 or map. These will be accessible to CEL via `self`. The elements of a map or list can be validated using the CEL support for collections
@@ -321,7 +321,7 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   same expression, e.g. `self.status.quantity <= self.spec.maxQuantity`. Because CRDs only allow the
   `name` and `generateName` to be declared in the `metadata` of an object, these are the only
   metadata fields that may be validated using CEL validator rules. For example,
-  `self.metadata.name.endsWith('mySuffix')` is allowed, but `size(self.metadata.labels) < 3` it not
+  `self.metadata.name.endsWith('mySuffix')` is allowed, but `self.metadata.labels.size() < 3` it not
   allowed. The limit on which `metadata` fields may be validated is an intentional design choice
   (that aims to allow for generic access to labels and annotations across all kinds) and applies to
   all validation mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator
@@ -502,7 +502,7 @@ Types:
 
 | OpenAPIv3 type                                     | CEL type                                                                                                                     |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 'object' with Properties                           | object / "message type"                                                                                                      |
+| 'object' with Properties                           | object / "message type" (`type(<object>)` evaluates to `selfType<uniqueNumber>.path.to.object.from.self`                     |
 | 'object' with AdditionalProperties                 | map                                                                                                                          |
 | 'object' with x-kubernetes-embedded-type           | object / "message type", 'apiVersion', 'kind', 'metadata.name' and 'metadata.generateName' are implicitly included in schema |
 | 'object' with x-kubernetes-preserve-unknown-fields | object / "message type", unknown fields are NOT accessible in CEL expression                                                 |
@@ -513,6 +513,7 @@ Types:
 | 'boolean'                                          | boolean                                                                                                                      |
 | 'number' (all formats)                             | double                                                                                                                       |
 | 'integer' (all formats)                            | int (64)                                                                                                                     |
+| <no equivalent>                                    | uint (64)                                                                                                                    |
 | 'null'                                             | null_type                                                                                                                    |
 | 'string'                                           | string                                                                                                                       |
 | 'string' with format=byte (base64 encoded)         | bytes                                                                                                                        |
@@ -567,17 +568,25 @@ The initial changes made in the type integration will be:
 
 So instead of treating "associative lists" as maps in CEL, we will continue to treat them as lists, but override equality to ignore object order (i.e. use map equality semantics).
 
-Looking up entiries by keys is available primarily via the `exists_one` and `filter` macros. Examples:
+Looking up and iterating over entiries is available via the `exists`, `exists_one` and `all` macros:
 
 ```
-// exists_one() and exists() behave similarly if all map keys are checked, but exists_one() has slightly stricter
-// semantics, which make it preferable
+// Since there is already a guarantee that "associative lists" only one entry
+// exists in the list for each key, `exists` can be used to check if a map contains a particular key instead of `exists_one`.
+// Note that `exists_one` can also be used, but handles any errors encountered more strictly.
+// See the CEL language spec how errors are handled by `exists_one` and `exists` for more details.
 
-// To check if the map contains a entry with a particular key:
-associativeList.exists_one(e, e.key1 == 'a' && e.key2 == 'b')
+// Check if an "associative list" contains an entry for a key:
+associativeList.exists(e, e.key1 == 'a' && e.key2 == 'b')
 
-// To lookup a map entry by key and check if some condition is met on the other fields of the entry:
-associativeList.exists_one(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
+// To validate a map contains an entry with a particular key and that some condition is met on the other fields of the entry:
+associativeList.exists(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
+
+// To check the value for a particular key meets some condition (but also allow the entry to be absent):
+associativeList.all(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
+
+// To check some condition on all entries of an "associative list":
+associativeList.all(e, e.val == 100)
 ```
 
 ### Test Plan
@@ -603,6 +612,7 @@ developers to test their validation rules.
 - CEL numeric comparison issue is resolved (e.g. ability to compare ints to doubles)
 - [Reduce noise of invalid data messages reported from cel.UnstructuredToVal](https://github.com/kubernetes/kubernetes/issues/106440)
 - [Benchmark cel.UnstructuredToVal and optimize away repeated wrapper object construction](https://github.com/kubernetes/kubernetes/issues/106438)
+- Demonstrate adoption and successful feature usage in the community
 
 ## Production Readiness Review Questionnaire
 
