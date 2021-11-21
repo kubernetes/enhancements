@@ -204,7 +204,7 @@ top base images to the final artifacts downloaded by end users. This proposal
 provides a path to achieve increasing levels of security, integrity, and availability
 in our releases by engineering new features to our processes. The objective is
 to achieve the highest possible compliance with the
-[SLSA framework](https://slsa.dev/) (Supply-chain Levels for Software Artifacts).
+[SLSA framework](https://slsa.dev/).
 
 We consider SLSA compliance to be an effort in line with the three objectives outlined
 in our roadmap: Artifacts can be consumed easier and with more trust.
