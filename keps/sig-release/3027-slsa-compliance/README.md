@@ -236,7 +236,13 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 The main goal of this KEP is to define the highest possible
 SLSA compliance as final objective in enhancing the Kubernetes release process. While providing a roadmap
 this KEP can be considered complete when a SLSA level is deemed as not
-implementable by the community at large (see Graduation Criteria).
+implementable by the community at large (see [Graduation Criteria](#graduation-criteria)).
+
+It is also the goal of this KEP to produce full documentation about changes
+to technical and human processes, tooling, and all artifacts produced as
+of the compliance effort. The documentation effort shall include complete
+specifications of provenance attestations and software bill of materials
+as well as handbook updates for contributors to follow.
 
 ### Non-Goals
 
