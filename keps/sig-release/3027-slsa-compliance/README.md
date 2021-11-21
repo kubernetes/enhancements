@@ -147,8 +147,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This document proposes a plan to harden the Kubernetes releases by
 making the necessary adjustments to comply with the SLSA Framework.
 [SLSA (Supply-chain Levels for Software Artifacts)](https://slsa.dev/)
-is a framework to harden software supply currently being defined by the 
-[OpenSSF](https://openssf.org/)'s 
+is a framework to harden software supply chains, currently in actove
+development defined by the [OpenSSF](https://openssf.org/)'s 
 [Supply Chain Integrity WG](https://github.com/ossf/wg-supply-chain-integrity).
 
 The framework provides requirements and recommendations to software
@@ -160,9 +160,12 @@ The main goal of this enhancement is to provide downstream consumers of our
 artifacts the highest assurance about the integrity of each Kubernetes release.
 
 SLSA defines several levels of hardening, each touching more aspects of the
-release process that go beyond its technical implementation. This document is
-meant to serve as a guide to reach the highest possible levels after 
-consensus has been reached about their viability.
+release process that go beyond its technical implementation. This KEP proposes
+to use SLSA as a standard framework for hardening the Kubernetes release
+software supply chain. SIG Release will also recommend SLSA as a hardening 
+framework to other projects under the Kubernetes organization, all new practices
+and tools derived from the effort in this KEP will be available for the
+benefit of those who choose to adopt it.
 
 <!--
 This section is incredibly important for producing high-quality, user-focused
