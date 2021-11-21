@@ -305,7 +305,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-Failure to pursue this enhancement poses three problems for the project:
+Failure to pursue this enhancement poses two problems for the project.
 
 
 #### Leaving Common Threats Unaddressed
