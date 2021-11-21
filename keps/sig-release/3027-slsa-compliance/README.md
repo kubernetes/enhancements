@@ -378,7 +378,8 @@ and/or systems, contributor experience, policy, and other domains beyond what
 deems to be acceptable.
 
 Tracking issues will be opened to track and discuss the viability of the
-required enhancements to reach each SLSA level.
+required enhancements to reach each SLSA level while the SIG Release
+rodamap will be constantly updated to reflect the state of the project.
 
 ### Graduation Milestones
 
