@@ -230,8 +230,8 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ### Goals
 
-The main goal of this KEP is to provide a plan to achieve the highest possible
-SLSA compliance in the Kubernetes release process. While providing a roadmap
+The main goal of this KEP is to define the highest possible
+SLSA compliance as final objective in enhancing the Kubernetes release process. While providing a roadmap
 this KEP can be considered complete when a SLSA level is deemed as not
 implementable by the community at large (see Graduation Criteria).
 
