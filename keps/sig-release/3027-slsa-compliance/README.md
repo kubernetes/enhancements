@@ -199,7 +199,7 @@ further down the distribution stream.
 All current work done by SIG Release on the Kubernetes supply chain centers
 around three focus areas: Artifact Consumption, Introspection, and Security.
 These areas are explained in more detail in our [_Roadmap for 2021 and Beyond_ 
-document](https://github.com/kubernetes/sig-release/blob/master/roadmap.md).
+document](https://github.com/kubernetes/sig-release/blob/f62149d29f1361bd3f1c910f5f7a8268d2208bb3/roadmap.md).
 
 As the world hardens its software distribution methods, the Kubernetes project needs
 to do its part to achieve a secure supply chain from end to end: from the
