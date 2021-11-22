@@ -44,7 +44,7 @@ This KEP replaces the existing in-tree container image registry credential provi
 
 ## Motivation
 
-Kubelet uses cloud provider specific SDKs to obtain credentials when pulling container images from cloud provider specific registries. The use of cloud provider specific SDKs from within the main Kubernetes tree is deprecated by [KEP-0002](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180530-cloud-controller-manager.md) and all existing uses need to be migrated out-of-tree. This KEP supports that migration process by removing this SDK usage.
+Kubelet uses cloud provider specific SDKs to obtain credentials when pulling container images from cloud provider specific registries. The use of cloud provider specific SDKs from within the main Kubernetes tree is deprecated by [KEP-0002](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/2392-cloud-controller-manager/README.md) and all existing uses need to be migrated out-of-tree. This KEP supports that migration process by removing this SDK usage.
 
 ### Goals
 
@@ -56,7 +56,7 @@ Kubelet uses cloud provider specific SDKs to obtain credentials when pulling con
 
 ### Non-Goals
 
-* Broad removal of cloud SDK usage falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md).
+* Broad removal of cloud SDK usage falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers).
 * Continuing to support projects that import the credential provider package.
 
 ## Proposal

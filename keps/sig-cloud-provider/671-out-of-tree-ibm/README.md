@@ -36,7 +36,7 @@ that has feature parity to the kube-controller-manager.
 
 ## Motivation
 
-Motivation for supporting out-of-tree providers can be found in the [Cloud Controller Manager KEP](/keps/sig-cloud-provider/20180530-cloud-controller-manager.md). 
+Motivation for supporting out-of-tree providers can be found in the [Cloud Controller Manager KEP](/keps/sig-cloud-provider/2392-cloud-controller-manager/README.md).
 This KEP is specifically tracking progress for the IBM cloud provider.
 
 ### Goals
@@ -46,7 +46,7 @@ This KEP is specifically tracking progress for the IBM cloud provider.
 
 ### Non-Goals
 
-* Removing in-tree IBM cloud provider code, this effort falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md).
+* Removing in-tree IBM cloud provider code, this effort falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers).
 
 ## Proposal
 

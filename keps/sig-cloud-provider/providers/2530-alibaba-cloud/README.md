@@ -58,7 +58,7 @@ E.g.
 
 [Alibaba Cloud Controller Manager](https://github.com/AliyunContainerService/alicloud-controller-manager) is a working implementation of the [Kubernetes Cloud Controller Manager](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller/).
 
-The repo requirements is mainly a copy from [cloudprovider KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180530-cloud-controller-manager.md#repository-requirements). Open the link for more detail.
+The repo requirements is mainly a copy from [cloudprovider KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/2392-cloud-controller-manager/README.md#repository-requirements). Open the link for more detail.
 
 ### User Experience Reports
 As a CNCF Platinum member, Alibaba Cloud is dedicated in providing users with highly secure , stable and efficient cloud service.

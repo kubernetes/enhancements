@@ -55,7 +55,7 @@ Build support for the out-of-tree Azure cloud provider. This involves a well-tes
 
 ## Motivation
 
-Motivation for supporting out-of-tree providers can be found in the [Cloud Controller Manager KEP](/keps/sig-cloud-provider/20180530-cloud-controller-manager.md).
+Motivation for supporting out-of-tree providers can be found in the [Cloud Controller Manager KEP](/keps/sig-cloud-provider/2392-cloud-controller-manager/README.md).
 This KEP is specifically tracking progress for the Azure cloud provider.
 
 ### Goals
