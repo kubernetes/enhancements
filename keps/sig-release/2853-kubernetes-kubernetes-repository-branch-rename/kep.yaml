@@ -6,6 +6,9 @@ owning-sig: sig-release
 participating-sigs:
   - sig-release
   - sig-security
+  - sig-testing
+  - sig-k8s-infra
+  - sig-contribex
 status: provisional
 creation-date: 2021-11-19
 reviewers:

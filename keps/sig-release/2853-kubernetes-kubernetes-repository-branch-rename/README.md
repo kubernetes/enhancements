@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-2853: Kubernetes repository branch rename
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -89,6 +89,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+    - [Survey Questions](#survey-questions)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -170,7 +171,7 @@ updates.
 -->
 
 Many communities, both on GitHub and in the wider Git community, are considering renaming the default branch name of their repository from `master`. The Kubernetes GitHub repositories is gradually renaming the default branch of our own repositories from `master` to `main`.
-This KEP is to we rename the branch for the main repository in the Kubernetes community.
+This KEP proposes that we rename the branch for the principal code repository in the Kubernetes project.
 
 ## Motivation
 
@@ -218,9 +219,10 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-- The change can be applied in the middle of December 2021. This is a good time because we will have less activity due to the Christmas and new year celebrations
-- Announce the change in the kubernetes-dev and kubernetes-announcement mailing list and maybe in a blog post. As well as use Twitter and other social media to announce.
-- Change all open Pull Requests to the `Draft mode` with that when we rename the branch, the tests will not be triggered and will avoid a massive queue in the CI infrastructure.
+- We aim to make the change during the start of v1.25 release (spring 2022).
+- Perform a Survey to gather information on downstream consumers and how this might affects their workflow. See [Survey Questions](#survey-questions).
+- Announce the change in the kubernetes-dev and kubernetes-announcement mailing list and in a blog post. As well as use Twitter and other social media to announce.
+- Change all open Pull Requests to `Draft mode` (so that when we rename the branch, tests will not be triggered, and we avoid a massive queue in the CI infrastructure).
 - Update all Prow jobs that use `kubernetes/kubernetes` and use the `master` branch to listen to the `main` branch as well
 - Follow the guide on https://github.com/kubernetes/community/blob/master/github-management/default-branch-migration.md to rename the repository branch name.
 - After the branch rename, announce that in the mailing list
@@ -244,6 +246,10 @@ Include as much detail as possible so that people can understand the "how" of
 the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
+As a contributor, I have to remember to use `master` when working with repositories that
+haven't yet switched.
+Switching k/k to `main` will reduce the burden slightly.
+
 
 #### Story 1
 
@@ -280,6 +286,13 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+#### Survey Questions
+
+The survey we will send out to gether information from the downstream consumer will have the following questions:
+
+1. On which companies behalf do you submit the response?
+2. Would a kubernetes/kubernetes branch rename affect your downstream workflow? If yes, how?
+3. How much time would you need in advance before the migration happens?
 
 ### Test Plan
 
@@ -454,6 +467,10 @@ feature, can it break the existing applications?).
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+
+Once we rename the branch from `master` to `main` GitHub offers the follow redirections.
+We don't have plans to switch back to the original name once that is renamed, and issues, if that appears,
+will be handled as an exception and as high priority.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
