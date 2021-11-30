@@ -285,8 +285,8 @@ be recognized as a single combined service. For example, if 5 clusters export
 all exporting clusters. Properties of the `ServiceImport` (e.g. ports, topology)
 will be derived from a merger of component `Service` properties.
 
-Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
-extended to present `ServiceImports` alongside traditional `Services`.
+This specification is not prescriptive on exact implementation details. Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
+extended to present `ServiceImports` alongside traditional `Services`. One often discussed implementation requiring no changes to kube-proxy is to have the mcs-controller maintain ServiceImports and create "dummy" or "shadow" Service objects, named after a mcs-controller managed EndpointSlice that aggregates all cross-cluster backend IPs, so that kube-proxy programs those endpoints like a regular Service. Other implementations are encouraged as long as the properties of the API described in this document are maintained.
 
 ### User Stories
 
@@ -790,6 +790,7 @@ connection with the source cluster is confirmed alive. When a lease expires, the
 cluster name and `multicluster.kubernetes.io/source-cluster` label may be used
 to find and remove all `EndpointSlices` containing endpoints from the
 unreachable cluster.
+
 
 ## Constraints and Conflict Resolution
 
