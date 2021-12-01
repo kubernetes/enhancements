@@ -317,7 +317,7 @@ The schema for `ClusterProperty` is intentionally loose to support multiple form
 
 ### Well known properties
 
-The `ClusterProperty` CRD will support two specific properties under the well known names `id.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowledge of a cluster's ID or ClusterSet membership.
+The `ClusterProperty` CRD will support three specific properties under the well known names `id.k8s.io`, `network.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowledge of a cluster's ID or ClusterSet membership.
 
 The requirements below use the keywords **must, should,** and **may** purposefully in accordance with [RFC-2119](https://tools.ietf.org/html/rfc2119).
 
@@ -370,23 +370,23 @@ Contains an identifier representing the network for the cluster.
 
 ##### Uniqueness
 
-*   The identifier **need not be** unique but **should** remain the same for a cluster for the duration of the cluster’s membership.
+*   The identifier **may not** exist (as its only applicable for multi-network scenario) and **need not** be unique
 
 ##### Lifespan
 
-*   The identifier if exists **should** be immutable for the lifespan of a ClusterSet membership.
+*   The identifier, if exists, **should** be immutable for the lifespan of a ClusterSet membership.
 
 
 ##### Contents
 
-*   The identifier **must** be a valid RFC-1123 DNS label [as described for object names in the Kubernetes docs](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
+*   The identifier **should** be a valid RFC-1123 DNS label [as described for object names in the Kubernetes docs](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
     *   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
-*   The identifier **may** be a human readable description.
+*   The identifier **should** be a human readable description.
 
 
 ##### Consumers
 
-*   **Must** be able to rely on the identifier, if exists, unmodified for the entire duration of its membership in a ClusterSet.
+*   **Should** be able to rely on the identifier, if exists, unmodified for the entire duration of its membership in a ClusterSet.
 *   **Should** watch the `network.k8s.io` property to handle potential changes if they live beyond the ClusterSet membership.
 *   **May** rely on the existence of an identifier for clusters that do not belong to a ClusterSet so long as the implementation provides one.
 
