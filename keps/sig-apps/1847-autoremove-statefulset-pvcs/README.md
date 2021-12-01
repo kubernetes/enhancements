@@ -19,10 +19,10 @@
 - [Design Details](#design-details)
   - [Objects Associated with the StatefulSet](#objects-associated-with-the-statefulset)
   - [Volume delete policy for the StatefulSet created PVCs](#volume-delete-policy-for-the-statefulset-created-pvcs)
-    - [<code>OnScaleDown</code> policy of <code>Delete</code>.](#-policy-of-)
-    - [<code>OnSetDeletion</code> policy of <code>Delete</code>.](#-policy-of--1)
+    - [<code>whenScaled</code> policy of <code>Delete</code>.](#-policy-of-)
+    - [<code>whenDeleted</code> policy of <code>Delete</code>.](#-policy-of--1)
     - [Non-Cascading Deletion](#non-cascading-deletion)
-    - [Mutating <code>PersistentVolumeClaimPolicy</code>](#mutating-)
+    - [Mutating <code>PersistentVolumeClaimRetentionPolicy</code>](#mutating-)
   - [Cluster role change for statefulset controller](#cluster-role-change-for-statefulset-controller)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -86,7 +86,7 @@ delete the PVC.
 ### Non-Goals
 
 This proposal does not plan to address how the underlying PVs are treated on PVC deletion. 
-That functionality will continue to be governed by the ReclaimPolicy of the storage class. 
+That functionality will continue to be governed by the reclaim policy of the storage class. 
 
 ## Proposal
 
@@ -102,10 +102,10 @@ delete the PVCs created by the controller from the StatefulSet's VolumeClaimTemp
 
 The following changes are required:
 
-1. Add `PersistentVolumeClaimPolicy` to the StatefulSet spec with the following fields.
-   * `OnSetDeletion` - specifies if the VolumeClaimTemplate PVCs are deleted when
+1. Add `persistentVolumeClaimRetentionPolicy` to the StatefulSet spec with the following fields.
+   * `whenDeleted` - specifies if the VolumeClaimTemplate PVCs are deleted when
      their StatefulSet is deleted.
-   * `OnScaleDown` - specifies if VolumeClaimTemplate PVCs are deleted when
+   * `whenScaled` - specifies if VolumeClaimTemplate PVCs are deleted when
      their corresponding pod is deleted on a StatefulSet scale-down, that is,
      when the number of pods in a StatefulSet is reduced via the Replicas field.
 
@@ -122,7 +122,7 @@ The following changes are required:
 
 #### Story 0
 The user is happy with legacy behavior of a stateful set. They leave all fields
-of `PersistentVolumeClaimPolicy` to `Retain`. Nothing traditional
+of `PersistentVolumeClaimRetentionPolicy` to `Retain`. Nothing traditional
 StatefulSet behavior changes neither on set deletion nor on scale-down.
 
 #### Story 1
@@ -133,7 +133,7 @@ so that scale-up can leverage the existing volumes. When the application is fini
 volumes created by the StatefulSet are no longer needed and can be automatically
 reclaimed.
 
-The user would set `PersistentVolumeClaimPolicy.OnSetDeletion` to `Delete, which
+The user would set `persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete, which
 would ensure that the PVCs created automatically during the StatefulSet
 activation is deleted once the StatefulSet is deleted.
 
@@ -143,8 +143,8 @@ scale-down, because scaling events are rare, and volume data can be
 reconstructed, albeit slowly, during a scale up. However, it is necessary to
 bring down the StatefulSet temporarily by deleting it, and then bring it back up
 by reusing the volumes. This is accomplished by setting
-`PersistentVolumeClaimPolicy.OnScaleDown` to `Delete`, and leaving
-`PersistentVolumeClaimPolicy.OnSetDeletion` at `Retain`.
+`persistentVolumeClaimRetentionPolicy.whenScaled` to `Delete`, and leaving
+`persistentVolumeClaimRetentionPolicy.whenDeleted` at `Retain`.
 
 #### Story 3
 User is very cost conscious, and can sustain slower scale-up speeds even after a
@@ -156,8 +156,8 @@ recreated, like a rolling update or node disruptions, the data on volumes is
 persisted. This is a key property that ephemeral storage, like emptyDir, cannot
 provide.
 
-User would set the `PersistentVolumeClaimPolicy.OnScaleDown` as well as
-`PersistentVolumeClaimPolicy.OnSetDeletion` to `Delete`, ensuring PVCs are
+User would set the `persistentVolumeClaimRetentionPolicy.whenScaled` as well as
+`persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete`, ensuring PVCs are
 deleted when corresponding Pods are deleted. New Pods created during scale-up
 followed by a scale-down will wait for freshly created PVCs. PVCs are deleted as
 well when the set is deleted, reclaiming volumes as quickly as possible and
@@ -175,7 +175,7 @@ VolumeClaimTemplate it will be deleted according to the deletion policy.
 ### Risks and Mitigations
 
 Currently the PVCs created by StatefulSet are not deleted automatically. Using
-`OnScaleDown` or `OnSetDeletion` set to `Delete` would delete the PVCs
+`whenScaled` or `whenDeleted` set to `Delete` would delete the PVCs
 automatically. Since this involves persistent data being deleted, users should
 take appropriate care using this feature. Having the `Retain` behaviour as
 default will ensure that the PVCs remain intact by default and only a conscious
@@ -211,13 +211,13 @@ are affected.
 
 ### Volume delete policy for the StatefulSet created PVCs
 
-A new field named `PersistentVolumeClaimPolicy` of the type
-`StatefulSetPersistentVolumeClaimPolicy` will be added to the StatefulSet. This
+A new field named `PersistentVolumeClaimRetentionPolicy` of the type
+`StatefulSetPersistentVolumeClaimRetentionPolicy` will be added to the StatefulSet. This
 will represent the user indication for which circumstances the associated PVCs
 can be automatically deleted or not, as described above. The default policy
 would be to retain PVCs in all cases.
 
-The `PersistentVolumeClaimPolicy` object will be mutable. The deletion
+The `PersistentVolumeClaimRetentionPolicy` object will be mutable. The deletion
 mechanism will be based on reconciliation, so as long as the field is changed
 far from StatefulSet deletion or scale-down, the policy will work as
 expected. Mutability does introduce race conditions if it is changed while a
@@ -230,9 +230,9 @@ manually deleting PVCs. The latter case will result in lost data, but only in
 PVCs that were originally declared to have been deleted. Life does not always
 have an undo button.
 
-#### `OnScaleDown` policy of `Delete`.
+#### `whenScaled` policy of `Delete`.
 
-If `PersistentVolumeClaimPolicy.OnScaleDown` is set to `Delete`, the Pod will be
+If `persistentVolumeClaimRetentionPolicy.whenScaled` is set to `Delete`, the Pod will be
 set as the owner of the PVCs created from the `VolumeClaimTemplates` just before
 the scale-down is performed by the StatefulSet controller.  When a Pod is
 deleted, the PVC owned by the Pod is also deleted.
@@ -247,9 +247,9 @@ the PVC was referred to by the deleted Pod and is in the process of getting
 deleted. The controller will skip the reconcile loop until PVC deletion finishes, avoiding
 a race condition.
 
-#### `OnSetDeletion` policy of `Delete`.
+#### `whenDeleted` policy of `Delete`.
 
-When `PersistentVolumeClaimPolicy.OnSetDeletion` is set to `Delete`, when a
+When `persistentVolumeClaimRetentionPolicy.whenDeleted` is set to `Delete`, when a
 VolumeClaimTemplate PVC is created, an owner reference in PVC will be added to
 point to the StatefulSet. When a scale-up or scale-down occurs, the PVC is
 unchanged.  PVCs previously in use before scale-down will be used again when the
@@ -257,7 +257,7 @@ scale-up occurs.
 
 In the existing StatefulSet reconcile loop, the associated VolumeClaimTemplate
 PVCs will be checked to see if the ownerRef is correct according to the
-`PersistentVolumeClaimPolicy` and updated accordingly. This includes PVCs
+`persistentVolumeClaimRetentionPolicy` and updated accordingly. This includes PVCs
 that have been manually provisioned. It will be most consistent and easy
 to reason about if all VolumeClaimTemplate PVCs are treated uniformly rather
 than trying to guess at their provenance.
@@ -279,7 +279,7 @@ When StatefulSet is deleted without cascading, eg `kubectl delete --cascade=fals
 existing behavior is retained and no PVC will be deleted. Only the StatefulSet resource
 will be affected.
 
-#### Mutating `PersistentVolumeClaimPolicy`
+#### Mutating `PersistentVolumeClaimRetentionPolicy`
 
 Recall that as defined above, the PVCs associated with a StatefulSet are found
 by the StatefulSet volumeClaimTemplate static naming scheme. The Pods associated
@@ -308,7 +308,7 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
 1. Unit tests
 
 1. e2e/integration tests
-    - With `Delete` policies for `OnSetDeletion` and `OnScaleDown`
+    - With `Delete` policies for `whenScaled` and `whenDeleted`
       1. Create 2 pod statefulset, scale to 1 pod, confirm PVC deleted
       1. Create 2 pod statefulset, add data to PVs, scale to 1 pod, scale back to 2, confirm PV empty.
       1. Create 2 pod statefulset, delete stateful set, confirm PVCs deleted.
@@ -317,7 +317,7 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
       1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, confirm PVC is deleted.
       1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, scale back to two pods, confirm PV is empty.
       1. Create 2 pod statefulset, add data to PVs, perform rolling confirm PVC don't get deleted and PV contents remain intact and useful in the updated pods.
-    - With `Delete` policy for `OnSetDeletion` only
+    - With `Delete` policy for `whenDeleted` only
       1. Create 2 pod statefulset, scale to 1 pod, confirm PVC still exists,
       1. Create 2 pod statefulset, add data to PVs, scale to 1 pod, scale back to 2, confirm PV has data (PVC not deleted).
       1. Create 2 pod statefulset, delete stateful set, confirm PVCs deleted
@@ -350,7 +350,7 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
 This features adds a new field to the StatefulSet. The default value for the new field
 maintains the existing behavior of StatefulSets.
 
-On a downgrade, the `PersistentVolumeClaimPolicy` field will be hidden on
+On a downgrade, the `PersistentVolumeClaimRetentionPolicy` field will be hidden on
 any StatefulSets. The behavior in this case will be identical to mutating they
 policy field to `Retain`, as described above, including the edge cases
 introduced if this is done during a scale-down or StatefulSet deletion.
@@ -382,9 +382,8 @@ are not involved so there is no version skew between nodes and the control plane
   Yes. Disabling the feature gate will cause the new field to be ignored. If the feature
   gate is re-enabled, the new behavior will start working.
   
-  When the `PersistentVolumeClaimDeletePolicy` is set to
-  `DeleteOnStatefulSetDeletion`, then VolumeClaimTemplate PVCs ownerRefs must be
-  removed.
+  When the `PersistentVolumeClaimRetentionPolicy` has `WhenDeleted` set to
+ `Delete`, then VolumeClaimTemplate PVCs ownerRefs must be removed.
 
   There are new corner cases here. For example, if a StatefulSet deletion is in
   process when the feature is disabled or enabled, the appropriate ownerRefs
@@ -394,8 +393,8 @@ are not involved so there is no version skew between nodes and the control plane
   
 * **What happens if we reenable the feature if it was previously rolled back?**  
   In the simple case of reenabling the feature without concurrent StatefulSet
-  deletion or scale-down, nothing needs to be done when the deletion policy is
-  `DeleteOnScaleDown`. On a policy of `DeleteOnStatefulSetDeletion`, the
+  deletion or scale-down, nothing needs to be done when the deletion policy has
+  `whenScaled` set to `Delete`. When the policy has `whenDeleted` set to `Delete`, the
   VolumeClaimTemplate PVC ownerRefs must be set to the StatefulSet.
   
   As above, if there is a concurrent scale-down or StatefulSet deletion, more
