@@ -393,7 +393,7 @@ Contains an identifier representing the network for the cluster.
 
 ##### Notable scenarios
 
-**Cluster changes its network**: Since a `network.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the property contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
+**Cluster changes its network**: Since a `network.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the property contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new network name.
 
 #### Property: `clusterset.k8s.io`
 
