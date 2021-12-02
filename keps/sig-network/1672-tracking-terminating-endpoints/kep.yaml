@@ -16,7 +16,7 @@ reviewers:
 approvers:
   - "@thockin"
 see-also:
-  - /kep/sig-network/20190603-EndpointSlice-API.md
+  - /keps/sig-network/0752-endpointslices/README.md
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.

@@ -12,8 +12,8 @@ reviewers:
 approvers:
   - "@cheftako"
 see-also:
-  - "/kep/sig-cloud-provider/20190125-removing-in-tree-providers.md"
-  - "/kep/sig-cloud-provider/2392-cloud-controller-manager/README.md"
+  - "/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers/README.md"
+  - "/keps/sig-cloud-provider/2392-cloud-controller-manager/README.md"
 replaces:
 
 latest-milestone: "0.0"
