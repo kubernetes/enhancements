@@ -183,7 +183,7 @@ This is also not a user facing change.
 
 ##### Beta -> GA Graduation
 
-Likely unnecessary, as we will eventually remove the in-tree provider code entirely for  [removing-in-tree-providers](keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers).
+Likely unnecessary, as we will eventually remove the in-tree provider code entirely for  [removing-in-tree-providers](/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers).
 This is also not a user facing change.
 
 Final graduation can be considered to be when the cloud provider code is actually
