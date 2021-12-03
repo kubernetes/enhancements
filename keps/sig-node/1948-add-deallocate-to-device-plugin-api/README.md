@@ -52,7 +52,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This KEP proposes adding two extra API calls:
 - `Deallocate`: (Optional). Which is the opposite of allocate, and is needed to inform device plugins that some devices are no longer being used.
-- `PostStopContainer`: (Optional). Which allow the device plugins to do device cleanup, driver unloading, and any other actions that may be needed.
+- `PostStopContainer`: (Optional). Which allows the device plugins to do device cleanup, driver unloading, and any other actions that may be needed.
 
 Since both additions are optional, existing device plugins should continue functioning properly with no needed modifications. Only device plugins that wish to utilize the new API calls will need to be modified.
 
