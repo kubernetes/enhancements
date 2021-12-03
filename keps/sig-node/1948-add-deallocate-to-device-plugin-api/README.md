@@ -86,11 +86,11 @@ The following are some use cases and motivations for the proposed change:
 
 The device plugin API includes API calls for:
 - `Allocate`: Which is used to instruct device plugins to allocate device(s) to requesting containers.
-- `PreStartContainer`: (Optional). Which allow the device plugins to do device initialization, loading drivers, and any other initialization actions that may be needed.
+- `PreStartContainer`: (Optional). Which allows the device plugins to do device initialization, loading drivers, and any other initialization actions that may be needed.
 
 This KEP proposes adding two extra API calls, maintaining the same logical reasoning of the previous two. Those are:
 - `Deallocate`: (Optional). Which is the opposite of allocate, and is needed to inform device plugins that some devices are no longer being used (this used to happen silently before)
-- `PostStopContainer`: (Optional). Which allow the device plugins to do device cleanup, driver unloading, and any other cleanup actions that may be needed.
+- `PostStopContainer`: (Optional). Which allows the device plugins to do device cleanup, driver unloading, and any other cleanup actions that may be needed.
 
 Since both additions are optional, existing device plugins should continue functioning properly with no needed modifications. Only device plugins that wish to utilize the new API calls will need to be modified.
 
