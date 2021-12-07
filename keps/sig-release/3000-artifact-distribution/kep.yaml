@@ -1,0 +1,19 @@
+title: Artifact Promotion and Distribution Policy and Procedure
+kep-number: NNNN
+authors:
+  - "@hh"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-release
+status: provisional
+creation-date: 2021-11-26
+reviewers:
+  - TBD
+ approvers:
+  - TBD
+stage: alpha
+latest-milestone: "v1.24"
+milestone:
+  alpha: "NA"
+  beta: "NA"
+  stable: "v1.24"
