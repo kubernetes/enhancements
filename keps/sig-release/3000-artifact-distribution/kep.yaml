@@ -1,19 +1,23 @@
-title: Artifact Promotion and Distribution Policy and Procedure
-kep-number: NNNN
+title: Artifact Distribution Policy
+kep-number: 3000
 authors:
   - "@hh"
-owning-sig: sig-architecture
+owning-sig: sig-release
 participating-sigs:
-  - sig-release
+  - sig-k8s-infra
 status: provisional
 creation-date: 2021-11-26
 reviewers:
-  - TBD
- approvers:
-  - TBD
+  - "@cpanato"
+  - "@puerco"
+  - "@spiffxp"
+  - "@thockin"
+approvers:
+  - "@ameukam"
+  - "@justaugustus"
 stage: alpha
 latest-milestone: "v1.24"
 milestone:
-  alpha: "NA"
-  beta: "NA"
-  stable: "v1.24"
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.26"
