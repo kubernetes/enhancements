@@ -1,0 +1,27 @@
+title: Add Deallocate and PostStopContainer to device plugin API
+kep-number: 1948
+authors:
+  - "@zvonkok"
+owning-sig: sig-node
+participating-sigs: []
+status: implementable
+creation-date: 2020-08-18
+
+reviewers:
+  - TBD
+approvers:
+  - TBD
+prr-approvers:
+  - "@deads2k"
+see-also: []
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+latest-milestone: "v1.24"
+milestone:
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.26"
