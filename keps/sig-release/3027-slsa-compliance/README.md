@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3027: SLSA Compliance in the Kubernetes Release Process 
+# KEP-3027: SLSA Level 3 Compliance in the Kubernetes Release Process 
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -374,18 +374,13 @@ when drafting this test plan.
 
 ### Graduation Criteria
 
-This KEP can be considered complete when one of two scenarios is reached:
+This KEP can be considered complete when the Kubernetes release process can
+be certified to be SLSA level 3 compliant.
 
-1. All SLSA levels have been successfully complied with 
-1. The community determines one of the levels as not implementable. This
-may be concluded if the nature of necessary changes proves to be too
-disruptive or implies altering aspects of technical environments
-and/or systems, contributor experience, policy, and other domains beyond what
-deems to be acceptable.
-
-Tracking issues will be opened to track and discuss the viability of the
-required enhancements to reach each SLSA level while the SIG Release
-rodamap will be constantly updated to reflect the state of the project.
+Tracking issues and follow-up KEPs will be opened to track and discuss the
+viability of the required enhancements to reach each SLSA level. The
+[SIG Release rodamap](https://github.com/kubernetes/sig-release/blob/master/roadmap.md)
+will be kept in sync, to reflect the state of the project.
 
 ### Graduation Milestones
 
@@ -453,6 +448,21 @@ guarantees provided by SLSA. This is mostly true at the moment but more
 transparency is needed to ensure risks and policies are understood by the
 community.
 
+This KEP currently considers SLSA level 4 unimplementable. While the community
+has made great strides to move workloads to infrstructure under its control,
+the GCP projects that control the build process and artifact storage are not
+fully managed by relevant community groups (ie SIG K8s Infra). This makes it
+impossible to provide the access control and superuser guarantees required to
+reach SLSA level 4:
+
+> All physical and remote access must be rare, logged, and gated behind
+> multi-party approval[^1].
+
+> Only a small number of platform admins may override the guarantees
+> listed here. Doing so MUST require approval of a second platform admin[^2].
+
+[^1]: https://slsa.dev/requirements#access
+[^2]: https://slsa.dev/requirements#superusers
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -864,6 +874,7 @@ For each of them, fill in the following information by copying the below templat
 
 - 2021-10-31 Initial Draft
 - 2021-11-17 Broader descriptions of required work for each SLSA level
+- 2021-12-07 Scoped the KEP to SLSA3 and removed dual graduation criteria
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

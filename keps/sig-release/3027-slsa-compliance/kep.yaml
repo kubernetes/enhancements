@@ -9,7 +9,7 @@ participating-sigs:
 status: provisional
 creation-date: 2021-10-31
 reviewers:
-  - TBD
+  - "@tpepper"
 approvers:
   - TBD
 # status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
