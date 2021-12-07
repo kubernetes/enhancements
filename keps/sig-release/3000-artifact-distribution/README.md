@@ -1,4 +1,4 @@
-# KEP/MST-3000: Artifact Promotion and Distribution Policy
+# KEP 3000: Artifact Distribution Policy
 
 <!-- toc -->
 - [Summary](#summary)
@@ -12,7 +12,7 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Release Promotion](#release-promotion)
+  - [Artifact Promotion](#artifact-promotion)
     - [Policy](#policy)
     - [Process](#process)
   - [Artifact Distribution](#artifact-distribution)
@@ -21,6 +21,7 @@
 - [Alternatives / Background](#alternatives--background)
   - [How much is this going to save us?](#how-much-is-this-going-to-save-us)
 - [Infrastructure Needed](#infrastructure-needed)
+- [Hack on this doc](#hack-on-this-doc)
 <!-- /toc -->
 
 ## Summary
@@ -35,7 +36,7 @@ This KEP should cover the policy and distribution mechanisms we will put in plac
 
 Currently we push to a single provider, and distributing to the rest of community comes at great cost nearing $150k/month (mostly egress) in donations.
 
-Additonally some of our community members are unable to access the official release artifacts due to country level firewalls that do not them connect to Google services.
+Additionally, some of our community members are unable to access the official release artifacts due to country level firewalls that do not them connect to Google services.
 
 Ideally we can dramatically reduce cost and allow everyone in the world to download the artifacts released by our community.
 
@@ -53,7 +54,7 @@ Anything related to creation of artifacts, bom, digital signatures.
 
 There are two intertwined concepts that are part of this proposal.
 
-First, the policy and procedures to promote/upload our artifacts to multiple providers. Our existing processes upload only to GCS buckets. Ideally we extend the existing software/promotion process to push directly to multiple providers. Alternatively we use a second process to syncronize artifacts from our existing production buckets to similar contructs at other providers.
+First, the policy and procedures to promote/upload our artifacts to multiple providers. Our existing processes upload only to GCS buckets. Ideally we extend the existing software/promotion process to push directly to multiple providers. Alternatively we use a second process to synchronize artifacts from our existing production buckets to similar constructs at other providers.
 
 Additionally we require a registry and artifact url-redirection solution to the local cloud provider or country.
 
@@ -65,7 +66,7 @@ Additionally we require a registry and artifact url-redirection solution to the 
 As a SIG Release volunteer
 I want to promote our binaries/images to multiple clouds
 
-Given a promotion / mainifest
+Given a promotion / manifest
 When my PR is merged
 Then the promotion process occurs
 ```
@@ -74,7 +75,7 @@ Then the promotion process occurs
 
 ```feature
 As a CLOUD end-user
-I want to install kubernetes
+I want to install Kubernetes
 
 Given some compute resources at CLOUD
 When I use kubeadm to deploy Kubernetes
@@ -89,11 +90,11 @@ There has been a lot of activity around the technology and tooling for both goal
 
 ### Risks and Mitigations
 
-This is the primary pipeline for delivering Kubernetes worldwide. Ensuring the appropriate SLAs and support as well as artifact integrite are crucial.
+This is the primary pipeline for delivering Kubernetes worldwide. Ensuring the appropriate SLAs and support as well as artifact integrity is crucial.
 
 ## Design Details
 
-### Release Promotion
+### Artifact Promotion
 
 #### Policy
 
@@ -101,7 +102,7 @@ This is the primary pipeline for delivering Kubernetes worldwide. Ensuring the a
 
 #### Process
 
-Currently the promotion process is primarily driven by the CIP/[promo-tool#kpromo](https://github.com/kubernetes-sigs/promo-tools#kpromo)? 
+Currently the promotion process is primarily driven by the CIP/[promo-tool#kpromo](https://github.com/kubernetes-sigs/promo-tools#kpromo)?
 
 ### Artifact Distribution
 
@@ -110,8 +111,9 @@ Currently the promotion process is primarily driven by the CIP/[promo-tool#kprom
 #### Process
 
 ## Alternatives / Background
+
 - Apache has a widespread mirror network
-  - @dims has experince here
+  - @dims has experience here
   - http://ws.apache.org/mirrors.cgi
   - https://infra.apache.org/mirrors.html
 - [Umbrella issue: k8s.gcr.io => registry.k8s.io solution k/k8s.io#1834
@@ -119,14 +121,15 @@ Currently the promotion process is primarily driven by the CIP/[promo-tool#kprom
 - [ii/registry.k8s.io Implementation proposals](https://github.com/ii/registry.k8s.io#registryk8sio)
 - [ii.nz/blog :: Building a data pipline for displaying Kubernetes public artifact traffic
 ](https://ii.nz/post/building-a-data-pipline-for-displaying-kubernetes-public-artifact-traffic/)
+
 ### How much is this going to save us?
-Cost of K8s Artifact hosting - Data Studio Graphs
 
-![](https://i.imgur.com/LAn4UIE.png)
-
+![Cost of K8s Artifact hosting - Data Studio Graphs](https://i.imgur.com/LAn4UIE.png)
 
 ## Infrastructure Needed
 
-It would be good to request some donations for some larger providers, including one in China, via cncf.io/credits
+It would be good to request some donations for some larger providers, including one in China, via [Cloud Native Credits program](https://www.cncf.io/credits/).
+
+## Hack on this doc
 
 [![hackmd-github-sync-badge](https://hackmd.io/KjHufZssQR654ShkZFUzyA/badge)](https://hackmd.io/KjHufZssQR654ShkZFUzyA)
