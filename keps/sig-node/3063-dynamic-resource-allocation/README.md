@@ -64,7 +64,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Dynamic resource allocation
+# [KEP-3063](https://github.com/kubernetes/enhancements/issues/3063): Dynamic resource allocation
 
 
 <!-- toc -->
