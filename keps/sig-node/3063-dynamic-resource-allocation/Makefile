@@ -1,4 +1,4 @@
-IMAGES += components.svg
+IMAGES += components.png allocation.png
 
 all: $(IMAGES)
 clean:

@@ -1,4 +1,5 @@
 @startuml
+!theme reddress-lightblue
 skinparam componentStyle rectangle
 
 cloud "3rd party\ncluster add-on" as 3rdparty {

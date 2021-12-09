@@ -535,7 +535,7 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Implementation
 
-![components](./components.svg)
+![components](./components.png)
 
 Several components must be implemented or modified in Kubernetes:
 - The new API must be added to kube-apiserver.
@@ -570,8 +570,6 @@ to be used by plugins, therefore it is not described further in this KEP.
 <<[UNRESOLVED @pohly]>>
 All of the changes in Kubernetes need to be specified in a lot more detail.
 
-A flow diagram showing the state transitions of a ResourceClaim needs to be added.
-
 Upgrade and downgrade scenarios should already be considered for v1alpha1 to ensure
 that whatever changes will be needed are in place before going to v1beta1 where
 downgrades have to be supported.
@@ -579,6 +577,25 @@ downgrades have to be supported.
 All of that will be added once there is consensus to move ahead with this proposal.
 <<[/UNRESOLVED]>>
 ```
+
+### Resource allocation flow
+
+The following diagram shows how resource allocation works for a resource that
+gets defined inline in a Pod. For a full definition of ResourceClass,
+ResourceClaim and ResourceClaimTemplate see the [API](#API) section below.
+
+Several of these operations may fail without changing the system state. They
+then must be retried until they succeed or something else changes in the
+system, like for example deleting objects. These additional state transitions
+are not shown for the sake of simplicity.
+
+![allocation](./allocation.png)
+
+The flow is similar for a ResourceClaim that gets created as a stand-alone
+object by the user. In that case, the Pod reference that ResourceClaim by
+name. The ResourceClaim does not get deleted at the end and can be reused by
+another Pod and/or used by multiple different Pods at the same time (if
+supported by the plugin).
 
 ### API
 
@@ -641,6 +658,11 @@ type ResourceClaimSpec struct {
     // ResourceClassName references the plugin and additional
     // parameters via the name of a ResourceClass that was
     // created as part of the plugin deployment.
+    //
+    // The apiserver does not check that the referenced class
+    // exists, but a plugin-specific admission webhook
+    // may require that and is allowed to reject claims where
+    // the class is missing.
     ResourceClassName string
 
     // Parameters holds arbitrary values that will be available to the plugin
@@ -664,6 +686,13 @@ type ResourceClaimStatus struct {
    // determines which component needs to do something.
    Phase ResourceClaimPhase
 
+   // A copy of the plugin name from the ResourceClass at
+   // the time when allocation started. Plugins can
+   // filter claims by this field. It's also necessary to
+   // support deallocation when the class gets deleted before
+   // a claim.
+   PluginName string
+
    // When allocation is delayed, the scheduler must set
    // the node for which it wants the resource to be allocated
    // before the plugin proceeds with allocation.
@@ -678,7 +707,8 @@ type ResourceClaimStatus struct {
    // ask the plugin on which nodes the resource might be
    // made available. To trigger that check, the scheduler must
    // provide the names of nodes which might be suitable
-   // for the Pod.
+   // for the Pod. Will be updated periodically until
+   // the claim is allocated.
    PotentialNodes []string
 
    // A change of the node candidates triggers a check
@@ -697,6 +727,10 @@ type ResourceClaimStatus struct {
    // the allocated resource. This is opaque for Kubernetes.
    // Plugin documentation may explain to users how to interpret
    // this data if needed.
+   //
+   // The attributes must be sufficient to deallocate the resource
+   // because the ResourceClass might not be available anymore
+   // when deallocation starts.
    Attributes map[string]string
 
     // UsersLimit determines how many entities are allowed to use this resource
@@ -715,14 +749,15 @@ type ResourceClaimStatus struct {
 type ResourceClaimPhase string
 
 const (
-    // The claim is waiting for a Pod. This the default for
-    // a new claim with delayed allocation. Once the scheduler
-    // sees a Pod which needs the claim, it changes the status
-    // to “pending”.
-    ResourceClaimWaitingForPod = “WaitingForPod”
+    // The claim is waiting for someone to trigger allocation.
+    // This is the default for a new claim.
+    ResourceClaimIdle = “Idle”
 
-    // The claim is waiting for allocation by the plugin. This is the default
-    // for a new claim with immediate allocation.
+    // The claim is waiting for allocation by the plugin.
+    //
+    // If it uses delayed allocation, SuitableNodes must have
+    // been set, otherwise the plugin cannot proceed with
+    // the allocation.
     ResourceClaimPending ResourceClaimPhase = “Pending”
 
     // Set by the plugin once the resource has been successfully
@@ -737,10 +772,6 @@ const (
     // free the resource. The plugin does that and moves it
     // back to pending.
     ResourceClaimReallocate ResourceClaimPhase = “Reallocate”
-
-    // Set by the plugin once a resource allocation attempt
-    // failed. The plugin will retry the allocation.
-    ResourceClaimFailed ResourceClaimPhase = “Failed”
 
     // Deleting the ResourceClaim triggers freeing the resource.
     // Because of the plugin’s finalizer, such a claim then
