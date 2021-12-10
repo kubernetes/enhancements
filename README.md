@@ -9,6 +9,8 @@
 - [Why Are Enhancements Tracked](#why-are-enhancements-tracked)
 - [When to Comment on an Enhancement Issue](#when-to-comment-on-an-enhancement-issue)
 - [Enhancements Tracking Spreadsheet](#enhancements-tracking-spreadsheet)
+- [Current Release Cycle](#current-release-cycle)
+- [Exceptions to Enhancement Milestone Dates](#exceptions-to-enhancement-milestone-dates)
 - [Labels](#labels)
 - [Glossary](#glossary)
 
@@ -88,6 +90,14 @@ Links:
 
 Procedure:
 *TBA*
+
+### Current Release Cycle
+
+[Dates and further information for the 1.23 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.23)
+
+## Exceptions to Enhancement Milestone Dates
+
+The Exceptions Process is handled by the Release Team, please see their [documentation](https://github.com/kubernetes/sig-release/blob/master/releases/EXCEPTIONS.md) for further details.
 
 ## Labels
 
