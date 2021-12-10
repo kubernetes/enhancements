@@ -77,7 +77,7 @@ mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
-This KEP proposes adding two extra API calls:
+This KEP proposes adding two additional API calls:
 
 - `Deallocate`: (Optional). This API call is the opposite of `Allocate` and is
 needed to inform device plugins that some devices are no longer being used.
@@ -226,7 +226,7 @@ working.
 - Gather feedback from developers and surveys, specially about the device reuse
 and possible alternatives.
 - Complete implementation for the new API calls.
-- Tests are in Testgrid and linked in KEP.
+- Tests (unit, e2e) are in Testgrid and linked in KEP.
 
 #### Beta -> GA Graduation
 
@@ -251,87 +251,95 @@ the required API version it wants. No version skew issues will arise.
 
 ### Feature Enablement and Rollback
 
-- **How can this feature be enabled / disabled in a live cluster?**
+#### How can this feature be enabled / disabled in a live cluster?**
 
-  - The API versioning meechanism can be usedto enable/disable this feature per
-  application as needed. The feature itself also adds optional API calls, so
-  enabling/disabling the features is not really required.
-  - No downtime required for enabling/disabling this feature.
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `DeviceManagerDeallocate`
+  - Components depending on the feature gate: `kubelet`
 
-- **Does enabling the feature change any default behavior?**
-  No. The feature is optional, no default behavior will change.
+#### Does enabling the feature change any default behavior?**
 
-- **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  yes. the feature is optional, so not using it should suffice. Fully
-  disabling/rolling back can happen by simply using an older version of the API
-  from the application side.
+No. The feature is optional, no default behavior will change.
+Feature Gate must be enabled for this new functionality.
 
-- **What happens if we reenable the feature if it was previously rolled back?**
-  No side effects expected.
+#### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-- **Are there any tests for feature enablement/disablement?**
-  No
+Yes, the feature can be disabled by disabling the `DeviceManagerDeallocate` feature gate.
 
-### Rollout, Upgrade and Rollback Planning
+#### What happens if we reenable the feature if it was previously rolled back?
 
-_This section must be completed when targeting beta graduation to a release._
+No side effects expected.
 
-- **How can a rollout fail? Can it impact already running workloads?**
-  No effect on already running workloads. Feature has to be specifically
-  enabled/requested   from the application side.
+#### Are there any tests for feature enablement/disablement?
 
-- **Is the rollout accompanied by any deprecations and/or removals of features,
-APIs, fields of API types, flags, etc.?**
-  No
+- A specific e2e test will demonstrate that the default behaviour is preserved
+when the feature gate is disabled, or when the feature is not used (2 separate
+tests)
+- Another test will demonstrate that the new feature is working when the feature
+gate is enabled.
 
 ### Monitoring Requirements
 
-- **How can an operator determine if the feature is in use by workloads?**
-  Currently, as far as I know, there's no way to monitor device plugin API calls
-  (and whether or not devices are in use) except by checking logs from the
-  kubelet iself and/or user created device plugins.
+#### How can an operator determine if the feature is in use by workloads?
 
-- **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
-  N/A (needs checking)
+Inspect the kubelet configuration of a node -- check for the presence of the
+feature gate and use a device plugin that uses the new API calls.
 
-- **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  N/A
+#### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-- **Are there any missing metrics that would be useful to have to improve
-observability of this feature?**
-  N/A
+There are no specific SLOs for this feature.
 
-### Dependencies
+#### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- **Does this feature depend on any specific services running in the cluster?**
-  No
+None
+
+#### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+None
+
+#### Does this feature depend on any specific services running in the cluster?
+
+No.
 
 ### Scalability
 
-- **Will enabling / using this feature result in any new API calls?**
-  The mere enablement of this feature has no effect. However, using this API by
-  user   applications may result in extra calls to the Device Manager API. These
-  extra calls only happen at the end of the lifecycle of some containers (those
-  who have previously requested devices).
-  The extra API calls originate from the kubelet to the device plugin running on
-  the same node. Since they are only happening on the node level, there's no
-  risk of congestion, or a need to measure their throughput, etc.
+#### Will enabling / using this feature result in any new API calls?**
 
-### Troubleshooting
+The mere enablement of this feature has no effect. However, using this API by
+user applications may result in extra calls to the Device Manager API. These
+extra calls only happen at the end of the lifecycle of some containers (those
+who have previously requested devices).
 
-Detection of failures can only be done through using test/mock device plugins,
-along with checking the kubelet logs. Extra tests according to the test plan
-mentioned above should help mitigating issues.
+The extra API calls originate from the kubelet to the device plugin running on
+the same node. Since they are only happening on the node level, there's no
+risk of congestion, or a need to measure their throughput, etc.
+
+#### Will enabling / using this feature result in introducing new API types?
+
+No
+
+#### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+#### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+
+#### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+The new API calls could delay:
+
+- Pod deletion time, some HW, SW may take longer to do a specific deallocation
+
+#### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
 
 ## Implementation History
 
-A possible fix has already been submitted as a PR: [#91190](https://github.com/kubernetes/kubernetes/pull/91190) (outdated, needs rebase)
-
-## Drawbacks
-
-None, as this is an optional feature, it can simply be overlooked when not needed.
+- 2021-07-12: Initial KEP created
+- 2021-10-12: Moved to the newer template
 
 ---
 
