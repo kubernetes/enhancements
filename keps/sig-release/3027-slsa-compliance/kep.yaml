@@ -9,11 +9,13 @@ participating-sigs:
 status: provisional
 creation-date: 2021-10-31
 reviewers:
+  - "@saschagrunert"
   - "@tpepper"
+  - "@JTarasovic"
+approvers:
   - "@cpanato"
   - "@saschagrunert"
-approvers:
-  - TBD
+
 # status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
