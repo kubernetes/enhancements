@@ -749,10 +749,6 @@ type ResourceClaimStatus struct {
 type ResourceClaimPhase string
 
 const (
-    // The claim is waiting for someone to trigger allocation.
-    // This is the default for a new claim.
-    ResourceClaimIdle = “Idle”
-
     // The claim is waiting for allocation by the plugin.
     //
     // If it uses delayed allocation, SuitableNodes must have
