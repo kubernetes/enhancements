@@ -89,6 +89,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Function Metadata Schema](#function-metadata-schema)
   - [Determining the Function to Execute](#determining-the-function-to-execute)
   - [Use of OCI Artifacts](#use-of-oci-artifacts)
   - [OCI Artifacts](#oci-artifacts)
@@ -167,7 +168,7 @@ This new API will provide a standardized way to define a collection of one or mo
 
  *Function*: A program conforming to the spec described in [this document](https://github.com/kubernetes-sigs/kustomize/blob/master/cmd/config/docs/api-conventions/functions-spec.md#krm-functions-specification).
 
- *Function config*: The KRM-style YAML document that declares the desired state the function implements well as the function provider to execute and the specification to follow in doing so. Analogous to a custom resource object.
+ *Function config*: The KRM-style YAML document that declares the desired state the function implements well as the function runtime to execute and the specification to follow in doing so. Analogous to a custom resource object.
  
 
 ## Motivation
@@ -218,13 +219,13 @@ modules:
 # generate resources for a Java application
 - apiVersion: example.com/v1
   kind: JavaApplication
-  provider: {container: {image: example/module_providers/java:v1.0.0}}
+  runtime: {container: {image: example/module_providers/java:v1.0.0}}
   spec:
     application: team/my-app
     version: v1.0
 ```
 
-Once the explicit container reference is provided, Kustomize is able to download and run this image as part of the Kustomize build step, by invoking the user installed Docker client and leveraging local images or OCI registries. In addition to container based functions, ad-hoc functions can also currently be written using the [Starlark programming language](https://github.com/bazelbuild/starlark) and other non-container based mechanisms. Unlike container based functions, these functions do not currently have an associated registry concept and they must be stored locally. Discovery and installation of these providers are both currently left to the users. 
+Once the explicit container reference is provided, Kustomize is able to download and run this image as part of the Kustomize build step, by invoking the user installed Docker client and leveraging local images or OCI registries. In addition to container based functions, ad-hoc functions can also currently be written using the [Starlark programming language](https://github.com/bazelbuild/starlark) and other non-container based mechanisms. Unlike container based functions, these functions do not currently have an associated registry concept and they must be stored locally. Discovery and installation of these runtimes are both currently left to the users. 
 
 In addition to these user defined functions, this KEP is also partially motivated by a need to change how Kustomize provides officially supported functionality. Currently, to support a given piece of functionality officially a built-in function must be created (and typically also added to the Kustomization API). Some of these features would be better implemented as extensions for security reasons or to limit the dependency graph of Kustomize and the integration with kubectl. No mechanism currently exists, however, to support official distribution of these capabilities, so they are instead built into Kustomize. This would also enable the Kustomize maintainers to make breaking changes to address legacy technical debt, without needing to update all functions as part of that action. This would also enable users to mix and match the version of the Kustomize binary with function versions, enabling a less disruptive migration approach. 
 
@@ -236,7 +237,7 @@ Develop an API (`kind`) for Kustomize that is focused on function discovery, as 
 
 A successful implementation of this API should have the following characteristics:
 
-1. Function based workflows are driven by seamless invocation of sets of functions without individual out-of-band discovery or installation steps for specific providers.
+1. Function based workflows are driven by seamless invocation of sets of functions without individual out-of-band discovery or installation steps for specific runtimes.
 1. The new API is integrated with the existing Kustomize tool (i.e. `kustomize build`) through references provided in Kustomization, Component, and Composition resources.
 1. Eligible Kustomize functionality could be extracted and distributed as official extensions. This won't be completed as part of this KEP but the required changes to support this will be implemented. 
 
@@ -263,12 +264,12 @@ spec:
   - apiVersion: example.com/v1
     kind: JavaApplication
     description: "A Kustomize function that represents a Java based app"
-    provider: 
+    runtime: 
       container: 
         image: example/module_providers/java:v1.0.0
 ```
 
-This will enable a users to use a function with provider information omitted, such as:
+This will enable a users to use a function with runtime information omitted, such as:
 
 ```yaml
 # app/kustomization.yaml
@@ -288,7 +289,7 @@ spec:
   version: v1.0
 ```
 
-When this Kustomization is processed by `kustomize build`, the referenced catalog (or catalogs) will be used to locate a function implementation that supports the apiVersion `example.com/v1` and kind `JavaApplication`. If found in one of the referenced catalogs, kustomize can determine the provider configuration without the need for the user to specify it in the kustomization resources directly. The catalogs will be searched in order specified. If more than one catalog defines the target apiVersion and kind, the first will be selected. A catalog can be referenced by either a local file reference or a remote HTTPS, Git, or OCI reference.
+When this Kustomization is processed by `kustomize build`, the referenced catalog (or catalogs) will be used to locate a function implementation that supports the apiVersion `example.com/v1` and kind `JavaApplication`. If found in one of the referenced catalogs, kustomize can determine the runtime configuration without the need for the user to specify it in the kustomization resources directly. The catalogs will be searched in order specified. If more than one catalog defines the target apiVersion and kind, the first will be selected. A catalog can be referenced by either a local file reference or a remote HTTPS, Git, or OCI reference.
 
 In addition to the new catalog kind, `kustomize build` will accept a repeatable flag `--trusted-catalog=""`. The values passed to this flag should match the values declared within the catalog. When present, this flag instructs `kustomize build` to automatically fetch and execute functions that are defined by the catalog and referenced within the Kustomization, Component or Composition, if needed. When a resource is processed by `kustomize build` and a catalog is referenced but not specified using the `--trusted-catalog=""` flag, an error will occur. 
 
@@ -308,7 +309,7 @@ spec:
   - apiVersion: example.com/v1
     kind: GroovyApplication
     description: "A Kustomize function that can handle groovy apps"
-    provider:  
+    runtime:  
       starlark: https://example.co/module_providers/starlark-func:v1.0.0
 ```
 
@@ -336,19 +337,19 @@ spec:
   - apiVersion: example.com/v1
     kind: JavaApplication
     description: "A Kustomize function that can handle Java apps"
-    provider: 
+    runtime: 
       container: 
         image: docker.example.co/functions/java:v1.0.0
   - apiVersion: example.com/v1
     kind: Logger
     description: "A Kustomize function that adds our bespoke logging"
-    provider: 
+    runtime: 
       container: 
         image: docker.example.co/functions/logger:v1.0.0
   - apiVersion: example.com/v1
     kind: SecretSidecar
     description: "A Kustomize function that adds our bespoke secret sidecar"
-    provider: 
+    runtime: 
       container: 
         image: docker.example.co/functions/secrets:v1.0.0
 ```
@@ -359,7 +360,7 @@ I then publish this catalog to https://example.co/kustomize/catalog.yaml, for us
 
 As an application developer at Example Co, I want to use the published Example Co Catalog in the `Kustomization` for my application, after locating the published location of the catalog. I copy the Catalog to the file system, parallel to my `Kustomization`, so that I can version control it along with my other resources.
 
-While building my `Kustomization`, I don't want to care about the provider configuration and I want Kustomize to figure things out for me, based on the catalog.
+While building my `Kustomization`, I don't want to care about the runtime configuration and I want Kustomize to figure things out for me, based on the catalog.
 
 
 ```yaml
@@ -393,11 +394,11 @@ spec:
 
 I then run `kustomize build app/ -catalog=https://example.co/kustomize/catalog.yaml`. 
 
-When this command is run, Kustomize detects the use of `example.com/v1/JavaApplication` and `example.com/v1/SecretSidecar`. As these are not built in transformers and there was no explicit provider configuration specified, Kustomize will check for any referenced catalogs. It will see that I have specified `https://example.co/kustomize/catalog.yaml` and allowed it as a trusted catalog. It will then fetch the catalog and attempt to resolve these two transformers. It will match the specified apiVersion and Kinds with entries in the catalog and utilize the referenced docker images for the provider configuration.
+When this command is run, Kustomize detects the use of `example.com/v1/JavaApplication` and `example.com/v1/SecretSidecar`. As these are not built in transformers and there was no explicit runtime configuration specified, Kustomize will check for any referenced catalogs. It will see that I have specified `https://example.co/kustomize/catalog.yaml` and allowed it as a trusted catalog. It will then fetch the catalog and attempt to resolve these two transformers. It will match the specified apiVersion and Kinds with entries in the catalog and utilize the referenced docker images for the runtime configuration.
 
 #### Story 3
 
-As an application developer at Example Co, I want to use the published Example Co Catalog in the `Composition` for my application, but I want to pin to a specific version of the `SecretSidecar` module . While building my `Composition`, I don't want to care about the provider configuration, except for `SecretSidecar` and I want Kustomize to figure the rest of the providers out for me, based on the catalog.
+As an application developer at Example Co, I want to use the published Example Co Catalog in the `Composition` for my application, but I want to pin to a specific version of the `SecretSidecar` module . While building my `Composition`, I don't want to care about the runtime configuration, except for `SecretSidecar` and I want Kustomize to figure the rest of the runtimes out for me, based on the catalog.
 
 ```yaml
 # app/composition.yaml
@@ -419,7 +420,7 @@ modules:
     logPath: /var/logs
 - apiVersion: example.com/v1
   kind: SecretSidecar
-  provider: {container: {image: docker.example.co/module_providers/secrets:v0.9.0}}
+  runtime: {container: {image: docker.example.co/module_providers/secrets:v0.9.0}}
   metadata:
     name: my-secrets
   spec:
@@ -427,7 +428,7 @@ modules:
     path: /etc/secrets
 ```
 
-Unlike the previous execution of Kustomize, Kustomize will not use the catalog to resolve the `SecretSidecar`, as the provider configuration was specified. 
+Unlike the previous execution of Kustomize, Kustomize will not use the catalog to resolve the `SecretSidecar`, as the runtime configuration was specified. 
 
 #### Story 4
 
@@ -468,7 +469,7 @@ spec:
   - apiVersion: kustomize.io/v1
     kind: Helm
     description: "A Kustomize function that can handle Helm charts"
-    provider: 
+    runtime: 
       container: 
         image:  k8s.gcr.io/kustomize/helm-function:v1.0.0
 ```
@@ -483,7 +484,7 @@ As a KRM function developer at company Example Co, I want to contribute a KRM fu
 
 I publish the implementation of my function as a container to a public Docker registry. I then contribute the necessary metadata to the public catalog, including:
 
-* Provider information
+* Runtime information
 * Network access requirements
 * Storage/volume requirements
 
@@ -499,13 +500,13 @@ spec:
   - apiVersion: kustomize.io/v1
     kind: Helm
     description: "A Kustomize function that can handle Helm charts"
-    provider: 
+    runtime: 
       container: 
         image:  k8s.gcr.io/kustomize/helm-function:v1.0.0
   - apiVersion: example.co/v1
     kind: McGuffin
     description: "A KRM function that everyone is searching for"
-    provider: 
+    runtime: 
       container: 
         image:  docker.example.io/krm/mcguffin-function:v1.0.0
 ```
@@ -518,7 +519,7 @@ As a platform developer at enterprise company Example Co, I wish to publish a tr
 * One plugin developed by Watermelon Co
 * One plugin developed by my company Example Co
 
-Using the provider information and the metadata for each function, I publish a trusted catalog for use at Example Co
+Using the runtime information and the metadata for each function, I publish a trusted catalog for use at Example Co
 
 ```yaml
 apiVersion: kustomize.io/v1
@@ -530,20 +531,19 @@ spec:
   - apiVersion: banana.co/v1
     kind: Split
     description: "A KRM function that splits a deployment into multiple deployments"
-    provider: 
+    runtime: 
       container: 
         image:  banana.gcr.io/functions/split-function:v1.0.0
   - apiVersion: watermelon.co/v1
     kind: Salt
     description: "A KRM function that applies salt"
-    provider: 
+    runtime: 
       container: 
         image:  watermelon.gcr.io/krm-functions/salt-function:v1.0.0
   - apiVersion: example.com/v1
     kind: JavaApplication
-    description: "A Kustomize function provider that can handle Java apps"
-    definition: "https://example.com/java/definition"
-    provider: 
+    description: "A Kustomize function that can handle Java apps"
+    runtime: 
       container: 
         image: example/module_providers/java:v1.0.0
         requireNetwork: true
@@ -569,11 +569,246 @@ This proposal introduces extension capabilities to Kustomize that may expose use
 
 ## Design Details
 
-The catalog kind will have a YAML representation. This representation will contain metadata about the catalog, such as name labels, as well as a collection of functions. Each function entry will contain an apiVersion and kind, along with one or more references to a function provider (such as a container), as well as an optional information, such as Open API v3 definitions. Function provider references can contain https, git, or OCI references. Additionally, a provider can declare that it requires the use of network or storage mounts, which would otherwise be prohibited. The use of these requires [additional flags](https://github.com/kubernetes-sigs/kustomize/blob/1e1b9b484a836714b57b25c2cd47dda1780610e7/api/types/pluginrestrictions.go#L51-L55) on the command line. 
+### Function Metadata Schema
+
+The same function metadata will be used for both publishing KRM functions in
+[the public function registry] and in the function catalog (this KEP).
+
+[the public function registry]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2906-kustomize-function-catalog
+
+<details>
+<summary>
+Full OpenAPI schema
+</summary>
+
+```yaml
+swagger: "2.0"
+info:
+  title: KRM Function Metadata
+  version: v1alpha1
+definitions:
+  FunctionSpec:
+    type: object
+    description: spec contains the metadata for a KRM function.
+    required:
+      - group
+      - kind
+      - description
+      - publisher
+      - versions
+    properties:
+      group:
+        description: group of the functionConfig
+        type: string
+      kind:
+        description: kind of the functionConfig
+        type: string
+      versions:
+        description: the versions of the functionConfig
+        type: array
+        items:
+          type: object
+          required:
+            - name
+            - schema
+            - idempotent
+            - runtime
+            - usage
+            - examples
+            - license
+          properties:
+            name:
+              description: Version of the functionConfig
+              type: string
+            schema:
+              description: a URI pointing to the schema of the functionConfig
+              type: object
+              required:
+                - openAPIV3Schema
+              properties:
+                openAPIV3Schema:
+                  description: openAPIV3Schema is the OpenAPI v3 schema to use for validation
+                  $ref: "#/definitions/io.k8s.apiextensions-apiserver.pkg.apis.apiextensions.v1.JSONSchemaProps"
+            idempotent:
+              description: If the function is idempotent.
+              type: boolean
+            usage:
+              description: |
+                A URI pointing to a README.md that describe the details of how to
+                use the KRM function. It should at least cover what the function
+                does and what functionConfig does it support and it should give
+                detailed explanation about each field in the functionConfig.
+              type: string
+            examples:
+              description: |
+                A list of URIs that point to README.md files. At least one example
+                must be provided. Each README.md should cover an example. It
+                should at least cover how to get input resources, how to run it
+                and what is the expected output.
+              type: array
+              items:
+                type: string
+            license:
+              description: The license of the KRM function.
+              type: string
+              enum:
+                - Apache 2.0
+            maintainers:
+              description: |
+                The maintainers for the function. It should only be used
+                when the maintainers are different from the ones in
+                `spec.maintainers`. When this field is specified, it
+                override `spec.maintainers`.
+              type: array
+              items:
+                type: string
+            runtime:
+              description: |
+                The runtime information about the KRM function. At least one of 
+                container and exec must be set.
+              type: object
+              properties:
+                container:
+                  description: The runtime information for container-based KRM function.
+                  type: object
+                  required:
+                    - image
+                  properties:
+                    image:
+                      description: The image name of the KRM function.
+                      type: string
+                    sha256:
+                      description: |
+                        The digest of the image that can be verified against. It
+                        is required only when the image is using semver.
+                      type: string
+                    requireNetwork:
+                      description: If network is required to run this function.
+                      type: boolean
+                    requireStorageMount:
+                      description: If storage mount is required to run this function.
+                      type: boolean
+                exec:
+                  description: The runtime information for exec-based KRM function.
+                  type: object
+                  required:
+                    - platform
+                  properties:
+                    platforms:
+                      description: Per platform runtime information.
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - bin
+                          - os
+                          - arch
+                          - uri
+                          - sha256
+                        properties:
+                          bin:
+                            description: The binary name.
+                            type: string
+                          os:
+                            description: The target operating system to run the KRM function.
+                            type: string
+                            enum:
+                              - linux
+                              - darwin
+                              - windows
+                          arch:
+                            description: The target architecture to run the KRM function.
+                            type: string
+                            enum:
+                              - amd64
+                              - arm64
+                          uri:
+                            description: The location to download the binary.
+                            type: string
+                          sha256:
+                            description: The degist of the binary that can be used to verify the binary.
+                            type: string
+      home:
+        description: A URI pointing the home page of the KRM function.
+        type: string
+      maintainers:
+        description: The maintainers for the function.
+        type: array
+        items:
+          type: string
+      tags:
+        description: |
+          The tags (or keywords) of the function. e.g. mutator, validator,
+          generator, prefix, GCP.
+        type: array
+        items:
+          type: string
+  KRMFunction:
+    type: object
+    description: KRMFunction is metadata of a KRM function.
+    x-kubernetes-group-version-kind:
+      - group: config.kubernetes.io
+        kind: KRMFunction
+        version: v1alpha1
+    required:
+      - apiVersion
+      - kind
+      - spec
+    properties:
+      apiVersion:
+        description: apiVersion of KRMFunction. i.e. config.kubernetes.io/v1alpha1
+        type: string
+        enum:
+          - config.kubernetes.io/v1alpha1
+      kind:
+        description: kind of the KRMFunction. It must be KRMFunction.
+        type: string
+        enum:
+          - KRMFunction
+      spec:
+        $ref: "#/definitions/FunctionSpec"
+  KRMFunctionCatalog:
+    type: object
+    description: KRMFunctionCatalog is the metadata of a collection of KRM functions.
+    x-kubernetes-group-version-kind:
+      - group: config.kubernetes.io
+        kind: KRMFunctionCatalog
+        version: v1alpha1
+    required:
+      - apiVersion
+      - kind
+      - spec
+    properties:
+      apiVersion:
+        description: apiVersion of KRMFunctionCatalog. i.e. config.kubernetes.io/v1alpha1
+        type: string
+        enum:
+          - config.kubernetes.io/v1alpha1
+      kind:
+        description: kind of the KRMFunctionCatalog. It must be KRMFunctionCatalog.
+        type: string
+        enum:
+          - KRMFunctionCatalog
+      metadata:
+        $ref: "https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json#io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+      spec:
+        type: object
+        required:
+          - krmFunctions
+        properties:
+          krmFunctions:
+            type: array
+            items:
+              $ref: "#/definitions/FunctionSpec"
+paths: {}
+```
+</details>
+
+The catalog kind will have a YAML representation following the schema above. This representation will contain metadata about the catalog, such as name labels, as well as a collection of functions. Each function entry will contain an apiVersion and kind, along with one or more references to a function runtime (such as a container), as well as an optional information, such as Open API v3 definitions. Function runtime references can contain https, git, or OCI references. Additionally, a runtime can declare that it requires the use of network or storage mounts, which would otherwise be prohibited. The use of these requires [additional flags](https://github.com/kubernetes-sigs/kustomize/blob/1e1b9b484a836714b57b25c2cd47dda1780610e7/api/types/pluginrestrictions.go#L51-L55) on the command line. 
 
 When using OCI references, either a tag or digest reference can be provided. Exec functions must include an sha256 hash for verification purposes, although this can also be done by using an OCI digest reference. When a hash verification fails, or a verification hash has not been provided, Kustomize will emit an error to inform the user.
 
-A complete representation is shown below:
+An example representation is shown below:
 
 ```yaml
 apiVersion: kustomize.io/v1
@@ -584,47 +819,82 @@ metadata:
     author: ExampleCo
 spec: 
   krmFunctions: 
-  - apiVersion: example.com/v1
-    kind: JavaApplication
-    description: "A Kustomize function provider that can handle Java apps"
-    definition: "https://example.com/java/definition"
-    provider: 
-      container: 
-        image: example/module_providers/java:v1.0.0
-        requireNetwork: true
-        requireFilesystem: true
-      starlark:
-        path: oci://docker.example.com/javaapp/provider:v1.0.0
-      exec:
-        - os: darwin
-          arch: arm64
-          path: https://example.com/java
-          sha256: [a hash] 
-        - os: darwin
-          arch: amd64
-          path: https://example.com/java
-          sha256: [a hash]
-  - apiVersion: example.com/v1
-    kind: SiderCarInjector
-    description: "A Kustomize functionthat injects our custom sidecar"
-    provider: 
-      starlark:
-        path: https://github.example.com/functions-catalog.git/providers/starlark@sidecar/v1.0
+  - group: example.com
+    kind: SetNamespace
+    description: "A short description of the KRM function"
+    publisher: example.com
+    versions:
+      - name: v1
+        schema:
+          openAPIV3Schema: ... # inline schema like CRD
+        idempotent: true|false
+        runtime:
+          container:
+            image: docker.example.co/functions/set-namespace:v1.2.3
+            sha256: a428de... # The digest of the image which can be verified against. This field is required if the version is semver.
+            requireNetwork: true|false
+            requireStorageMount: true|false
+        usage: <a URL pointing to a README.md>
+        examples:
+          - <a URL pointing to a README.md>
+          - <another URL pointing to another README.md>
+        license: Apache 2.0
+      - name: v1beta1
+        ...
+    maintainers: # The maintainers for this function. It doesn't need to be the same as the publisher OWNERS. 
+      - foo@example.com
+    tags: # keywords of the KRM functions
+      - mutator
+      - namespace
+  - group: example.com
+    kind: SetLogger
+    description: "A short description of the KRM function"
+    publisher: example.com
+    versions:
+      - name: v1
+        schema:
+          openAPIV3Schema: ...
+        idempotent: true|false
+        runtime:
+          exec:
+            platforms:
+              - bin: foo-amd64-linux
+                os: linux
+                arch: amd64
+                uri: https://example.com/foo-amd64-linux.tar.gz
+                sha256: <hash>
+              - bin: foo-amd64-darwin
+                os: darwin
+                arch: amd64
+                uri: https://example.com/foo-amd64-darwin.tar.gz
+                sha256: <hash>
+        usage: <a URL pointing to a README.md>
+        examples:
+          - <a URL pointing to a README.md>
+          - <another URL pointing to another README.md>
+        license: Apache 2.0
+      - name: v1beta1
+        ...
+    home: <a URL pointing to the home page>
+    maintainers: # The maintainers for this function. It doesn't need to be the same as the publisher OWNERS. 
+      - foo@example.com
+    tags: # keywords of the KRM functions
+      - mutator
 ```
 
 ### Determining the Function to Execute
 
-When a `Composition`, or other Kustomize resource that utilizes funcions is loaded, Kustomize will leverage the `Catalog` to determine function providers that should be run. The order in which funcions are resolved is determined by the type of resource being processed, and will be clearly addressed in user facing documentation. When multiple catalogs are specified, they will be searched in the specified order. Within a catalog, the functions referenced will be searched in the specified order. This means that if two catalogs specify the same function, the first one referenced will be used. This also applies to a function being defined twice within a single catalog.
+When a `Composition`, or other Kustomize resource that utilizes funcions is loaded, Kustomize will leverage the `Catalog` to determine function runtimes that should be run. The order in which funcions are resolved is determined by the type of resource being processed, and will be clearly addressed in user facing documentation. When multiple catalogs are specified, they will be searched in the specified order. Within a catalog, the functions referenced will be searched in the specified order. This means that if two catalogs specify the same function, the first one referenced will be used. This also applies to a function being defined twice within a single catalog.
 
-For a `Kustomization`, a catalog reference is local to a given layer and individual layers could reference different catalog or provider versions. As the layer is processed, Kustomize will evaluate any catalog references and select the appropriate version based on the referenced catalog. 
+For a `Kustomization`, a catalog reference is local to a given layer and individual layers could reference different catalog or runtime versions. As the layer is processed, Kustomize will evaluate any catalog references and select the appropriate version based on the referenced catalog. 
 
 For a `Composition`, on the other hand, `Kustomize` will consolidate the modules (functions) defined in the `Composition` and it's imports into a finalized list of modules. Next, it will consolidate the list of `Catalog`s in the module and it's imports to build a finalized list of `Catalog`s. Each of the `Catalog` resources will be fetched and used to build a unified catalog representation. When two catalogs define the same module, the first definition will be used.
 
-Once the module list and the catalogs for the resolved composition have been generated, the following steps will be performed in order to determine the `provider` to execute:
+Once the module list and the catalogs for the resolved composition have been generated, the following steps will be performed in order to determine the `runtime` to execute:
 
-* If a KRM-style resource includes the `provider` field, that will be used
-* The `provider` field will continue to support `container.image`, `starlark.path`, and `exec.path` options, for the time being. This short-circuits `Catalog` for the given function, and the flags currently required for function execution (`--enable-alpha-plugins`, `--enable-exec`) will continue to be required in this case.
-* If the `provider` field is absent, the configured `Catalog` resources will be used to determine the provider to execute, based on the `kind` and `apiVersion` fields of the resource specification. If an official catalog has been created for Kustomize, it will be checked first.
+* If a KRM-style resource includes the `runtime` field, that will be used
+* The `runtime` field will continue to support `container.image`, `starlark.path`, and `exec.path` options, for the time being. This short-circuits `Catalog` for the given function, and the flags currently required for function execution (`--enable-alpha-plugins`, `--enable-exec`) will continue to be required in this case.
+* If the `runtime` field is absent, the configured `Catalog` resources will be used to determine the runtime to execute, based on the `kind` and `apiVersion` fields of the resource specification. If an official catalog has been created for Kustomize, it will be checked first.
 * If there is no matching module, the processing of the resource will result in an error.
 
 ### Use of OCI Artifacts
@@ -632,7 +902,7 @@ Once the module list and the catalogs for the resolved composition have been gen
 <<[UNRESOLVED]>>
 ### OCI Artifacts
 
-While this proposal is largely focused on the introduction of the new Catalog `kind`, the introduction of this kind enables additional distribution and trust mechanisms for non container based function providers and associated resources, like Open API v3 schemas through the use of OCI Artifacts. 
+While this proposal is largely focused on the introduction of the new Catalog `kind`, the introduction of this kind enables additional distribution and trust mechanisms for non container based function runtimes and associated resources, like Open API v3 schemas through the use of OCI Artifacts. 
 
 When OCI references are used, either a `tag` or `digest` reference can be used. This proposal does not address publishing functions or the `Catalog` resource to an OCI registry but will define the following media types, based on guidance in the [OCI Artifacts](https://github.com/opencontainers/artifacts/blob/master/artifact-authors.md#defining-a-unique-artifact-type) documentation:
 
@@ -640,16 +910,16 @@ When OCI references are used, either a `tag` or `digest` reference can be used. 
 |-----------------------------|------------------------------------------------------------|
 | Kustomize Catalog           | application/vnd.cncf.kubernetes.krm-func-catalog.layer.v1+yaml      |
 | Kustomize Function Definition | application/vnd.cncf.kubernetes.krm-func-definition.layer.v1+yaml   |
-| Kustomize Function (Starlark) | application/vnd.cncf.kubernetes.krm-func-provider-starlark.layer.v1 |
-| Kustomize Function (Exec)     | application/vnd.cncf.kubernetes.krm-func-provider-starlark.layer.v1 |
+| Kustomize Function (Starlark) | application/vnd.cncf.kubernetes.krm-func-runtime-starlark.layer.v1 |
+| Kustomize Function (Exec)     | application/vnd.cncf.kubernetes.krm-func-runtime-starlark.layer.v1 |
 
 The [ORAS](https://oras.land) library and CLI can be used to publish these artifacts and can be used to build specific publishing tooling, but Kustomize will not be changed to add publishing capabilities. Instead, appropriate user documentation and examples will be provided. 
 
 In order to support pulling these resources, the ORAS library could be included as a dependency to support automatic fetching of OCI artifacts, however this will introduce a number of dependencies and could be undesirable. Alternatively, the ORAS binary can be installed by the user and used as the locally installed Docker client is used today. When an OCI artifact is referenced and fetched using ORAS, it will be stored locally within the file-system and can then be used within the `kustomize build` step. 
 
-Kustomize function providers that are packaged as OCI images will continue to use the existing OCI media types. 
+Kustomize function runtimes that are packaged as OCI images will continue to use the existing OCI media types. 
 
-While out of scope of this KEP, the use of OCI artifacts enables additional verification use cases, like the signing and verification of function providers, definitions, and the catalog itself.
+While out of scope of this KEP, the use of OCI artifacts enables additional verification use cases, like the signing and verification of function runtimes, definitions, and the catalog itself.
 <<[/UNRESOLVED]>>
 
 ### Test Plan
@@ -668,14 +938,14 @@ TBD
 
 - Feature integrated with the `kustomize build` command, and all currently implemented Kustomize kinds.
 - Initial e2e tests completed and enabled
-- Container based function provider support.
+- Container based function runtime support.
 - HTTPs and Git based catalog storage
 
 #### Beta
 
 - Gather feedback from developers and surveys
 - Starlark and Exec function support
-- OCI artifact support for catalog and provider distribution
+- OCI artifact support for catalog and runtime distribution
 
 #### GA
 
@@ -714,15 +984,15 @@ NA -- distributed as a client-side binary
 
 ### Dependencies
 
-The ability for kustomize, and by extension kubectl, to pull function providers specified in the catalog may introduce additional compile time or runtime dependencies. For example, pulling OCI artifacts is a net new capability and will either require the use of something like ORAS as a compile-time library dependency, or as a run-time client dependency like Docker. This will be examined as part of the work to move this enhancement to the beta state and a decision will be made based on an analysis of the dependencies that would be introduced.
+The ability for kustomize, and by extension kubectl, to pull function runtimes specified in the catalog may introduce additional compile time or runtime dependencies. For example, pulling OCI artifacts is a net new capability and will either require the use of something like ORAS as a compile-time library dependency, or as a run-time client dependency like Docker. This will be examined as part of the work to move this enhancement to the beta state and a decision will be made based on an analysis of the dependencies that would be introduced.
 
-This enhancement also introduces a dependency on catalogs and providers that may not be on the users local environment. When a catalog is unavailable and required for successful execution of kustomize build, an error will occur. If the catalog is referenced, but not actually required for the execution of kustomize build (i.e. no functions are actually used in a given kustomization or composition), the operation will complete successfully.
+This enhancement also introduces a dependency on catalogs and runtimes that may not be on the users local environment. When a catalog is unavailable and required for successful execution of kustomize build, an error will occur. If the catalog is referenced, but not actually required for the execution of kustomize build (i.e. no functions are actually used in a given kustomization or composition), the operation will complete successfully.
 
 While most testing can occur without community infrastructure, we will require a place to publish and host catalog resources, along with functions, for testing purposes. We will investigate the use of Github registries or other Kubernetes community infrastructure to enable this. 
 
 ### Scalability
 
-End users will encounter a cold-start period related to pulling the catalog resources and associated providers, if they do not exist locally on the file-system.
+End users will encounter a cold-start period related to pulling the catalog resources and associated runtimes, if they do not exist locally on the file-system.
 
 ### Troubleshooting
 
@@ -738,8 +1008,8 @@ The discovery mechanism imposed by this KEP does expose an additional layer of i
 
 ## Alternatives
 
-* Do nothing - as outlined in the drawbacks section, users can continue to leverage explicit references to providers, at the cost of module discoverability and ease of use.
-* An alternative tool could be developed outside of kustomize that supports the catalog resource and installation of function providers, much like Krew does for kubectl functions. Such a tool would provide a less integrated experience and would require users to execute steps outside of the `kustomize build` flow and would need to modify the local Kustomize resources to add explicit provider configuration.
+* Do nothing - as outlined in the drawbacks section, users can continue to leverage explicit references to runtimes, at the cost of module discoverability and ease of use.
+* An alternative tool could be developed outside of kustomize that supports the catalog resource and installation of function runtimes, much like Krew does for kubectl functions. Such a tool would provide a less integrated experience and would require users to execute steps outside of the `kustomize build` flow and would need to modify the local Kustomize resources to add explicit runtime configuration.
 
 ## Infrastructure Needed (Optional)
 
