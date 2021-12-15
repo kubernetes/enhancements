@@ -11,7 +11,6 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [Field paths and field patterns](#field-paths-and-field-patterns)
     - [Expression lifecycle](#expression-lifecycle)
     - [Function library](#function-library)
   - [User Stories](#user-stories)
@@ -101,9 +100,7 @@ CRDs validation, they significantly complicate the development and
 operability of CRDs.
 
 This KEP proposes that an inline expression language be integrated directly into CRDs such that a
-much larger portion of validation use cases can be solved without the use of webhooks. When
-selecting an exression language, we want to be sure that it can support defaulting and CRD
-conversion in the future.
+much larger portion of validation use cases can be solved without the use of webhooks. 
 
 This KEP proposes the adoption of [Common Expression Language
 (CEL)](https://github.com/google/cel-go). It is sufficiently lightweight and safe to be run directly
@@ -142,7 +139,7 @@ suited or insufficient.
 These improvements are largely complementary to expression support and either
 are (or should be) addressed by in separate KEPs.
 
-For use cases cannot be covered by build-in validation support:
+For use cases that cannot be covered by build-in validation support:
 
 - Admission Webhooks: have validating admission webhook for further validation
 - Custom validators: write custom checks in several languages such as Rego 
@@ -218,7 +215,7 @@ kind: CustomResourceDefinition
       properties:
         spec:
           x-kubernetes-validations: 
-            - rule: "minReplicas <= maxReplicas"
+            - rule: "self.minReplicas <= self.maxReplicas"
               message: "minReplicas cannot be larger than maxReplicas"
           type: object
           properties:
@@ -227,6 +224,24 @@ kind: CustomResourceDefinition
             maxReplicas:
               type: integer
 ```
+
+Example Validation Rules:
+
+| Rule                                                                               | Purpose                                                                           |
+| ----------------                                                                   | ------------                                                                      |
+| `self.minReplicas <= self.replicas && self.replicas <= self.maxReplicas`           | Validate that the three fields defining replicas are ordered appropriately        |
+| `'Available' in self.stateCounts`                                                  | Validate that an entry with the 'Available' key exists in a map                   |
+| `(self.list1.size() == 0) != self.list2.size() == 0)`                              | Validate that one of two lists is non-empty, but not both                         |
+| `!('MY_KEY' in self.map1) \|\| self['MY_KEY'].matches('^[a-zA-Z]*$')`              | Validate the value of a map for a specific key, if it is in the map               |
+| `self.envars.filter(e, e.name = 'MY_ENV').all(e, e.value.matches('^[a-zA-Z]*$')`   | Validate the 'value' field of a listMap entry where key field 'name' is 'MY_ENV'  |
+| `has(self.expired) && self.created + self.ttl < self.expired`                      | Validate that 'expired' date is after a 'create' date plus a 'ttl' duration       |
+| `self.health.startsWith('ok')`                                                     | Validate a 'health' string field has the prefix 'ok'                              |
+| `self.widgets.exists(w, w.key == 'x' && w.foo < 10)`                               | Validate that the 'foo' property of a listMap item with a key 'x' is less than 10 |
+| `type(self) == string ? self == '100%' : self == 1000`                             | Validate an int-or-string field for both the the int and string cases             |
+| `self.metadata.name == 'singleton'`                                                | Validate that an object's name matches a specific value (making it a singleton)   |
+| `self.set1.all(e, !(e in self.set2))`                                              | Validate that two listSets are disjoint                                           |
+| `self.names.size() == self.details.size() && self.names.all(n, n in self.details)` | Validate the 'details' map is keyed by the items in the 'names' listSet           |
+
 
 - Each validator may have multiple validation rules.
 
@@ -237,12 +252,14 @@ will be surfaced when the validation rule evaluates to false.
 extension in the schema. In the above example, the validator is scoped to the
 `spec` field. `self` will be used to represent the name of the field which the validator
 is scoped to.
-  - Consideration under adding the representative of scoped filed name: There would be composition problem while generating CRD with tools like `controller-gen`.
-  When trying to add validation as a marker comment to a field, the validation rule will 
-  be hard to define without the actual field name. As the example showing below. When we want to put cel validation on ToySpec, the field name as `spec` has not 
-  been identified yet which makes rule hard to define.
+
+  - Consideration under adding the representative of scoped field name: There would be composition
+    problem while generating CRD with tools like `controller-gen`.  When trying to add validation as
+    a marker comment to a field, the validation rule will be hard to define without the actual field
+    name. As the example showing below. When we want to put cel validation on ToySpec, the field
+    name as `spec` has not been identified yet which makes rule hard to define.
   
-     ```azure
+     ```
      // +kubebuilder:validation:XValidator=
      type ToySpec struct {
        fieldSample string `json:"fieldSample"`
@@ -263,12 +280,13 @@ is scoped to.
     
       It will cause a lot of keywords to be reserved and users have to memorize those variable when writing rules.
     - Using other names like `this`, `me`, `value`, `_`. The name should be self-explanatory, less chance of conflict and easy to be picked up.
-- For OpenAPIv3 object types, the expression will have direct access to all the
-fields of the object the validator is scoped to.
+
+- For OpenAPIv3 object types, the expression may use field selection to access all the
+  properties of the object the validator is scoped to, e.g. `self.field == 10`.
   
 - For OpenAPIv3 scalar types (integer, string & boolean), the expression will have access to the
-scalar data element the validator is scoped to. The data element will be accessible to CEL
-expressions via `self`, e.g. `len(self) > 10`.
+  scalar data element the validator is scoped to. The data element will be accessible to CEL
+  expressions via `self`, e.g. `self.size() > 10`.
 
 - For OpenAPIv3 list and map types, the expression will have access to the data element of the list
 or map. These will be accessible to CEL via `self`. The elements of a map or list can be validated using the CEL support for collections
@@ -276,21 +294,38 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
 <predicate>)`.
   
 - For immutability use case, validator will have access to the existing version of the object. This
-  will be accessible to CEL via the `old<propertyName>` identifier.
+  will be accessible to CEL via the `oldSelf` identifier.
   - This will only be available on mergable collection types such as objects (unless
     `x-kubernetes-map-type=atomic`), maps with `x-kubernetes-map-type=granular` and lists
     with `x-kubernetes-list-type` set to `set` or `map`.  See [Merge
     Strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) for
     details.
   - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
-    `oldObject`. To avoid name collisions `old<propertyName>` will be treated the same as a CEL
-    keyword for escaping purposes (see below).
+    `oldObject`.
   - xref [analysis of possible interactions with immutability and
     validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
 
-- If a object property collides with a CEL keyword (see RESERVED in [CEL Syntax](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)),
-  it will be escaped by prepending a _ prefix. To prevent this from causing a subsequent collision, all properties with a `_` prefix will always be
-  prefixed by `__` (generally, N+1 the existing number of `_`s).
+- Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible and are escaped
+  according to the following rules when accessed in the expression:
+	- `__` escapes to `__underscores__`
+	- `.` escapes to `__dot__`
+	- `-` escapes to `__dash__`
+	- `/` escapes to `__slash__`
+	- Property names that match a CEL RESERVED keyword exactly escape to `__{keyword}__`. The
+	keywords are: "true", "false", "null", "in", "as", "break", "const", "continue", "else", "for",
+	"function", "if", "import", "let", "loop", "package", "namespace", "return".
+
+- Rules may be written at the root of an object, and may make field selection into any fields
+  declared in the OpenAPIv3 schema of the CRD as well as `apiVersion`, `kind`, `metadata.name` and
+  `metadata.generateName`. This includes selection of fields in both the `spec` and `status` in the
+  same expression, e.g. `self.status.quantity <= self.spec.maxQuantity`. Because CRDs only allow the
+  `name` and `generateName` to be declared in the `metadata` of an object, these are the only
+  metadata fields that may be validated using CEL validator rules. For example,
+  `self.metadata.name.endsWith('mySuffix')` is allowed, but `self.metadata.labels.size() < 3` it not
+  allowed. The limit on which `metadata` fields may be validated is an intentional design choice
+  (that aims to allow for generic access to labels and annotations across all kinds) and applies to
+  all validation mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator
+  rules. xref rule 4 in [specifying a structural schema](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema).
 
 - We plan to allow access to the current state of the object to allow validation rules to check the
   new value against the current value, e.g. for immutability checks (for validation racheting we would
@@ -302,15 +337,6 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   and we can use CEL expression complexity estimations
   ([xref](https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265))
   during CRD update to bound complexity.
-
-#### Field paths and field patterns
-
-A field path is a patch to a single node in the data tree. I.e. it specifies the
-exact indices of the list items and the keys of map entries it traverses.
-
-A field *pattern* is a path to all nodes in the data tree that match the pattern. I.e.
-it may wildcard list item and map keys.
-
 
 #### Expression lifecycle
 
@@ -329,7 +355,6 @@ List of functions to include for the initial release:
 - Equality and Ordering (customized to do Kuberenetes semantic equality that handles "associative lists")
 - Regular Expressions
 - Some Standard Definitions
-
 
 Considerations:
 - The functions will become VERY difficult to change as this feature matures. We
@@ -475,24 +500,50 @@ coverage of interactions in these dimensions:
 
 Types:
 
-| OpenAPIv3 type                          | CEL type                       |
-| --------------------------------------- | ------------------------------ |
-| 'object' with Properties                | object / "message type"        |
-| 'object' with AdditionalProperties      | map                            |
-| 'array                                  | list                           |
-| 'array' with x-kubernetes-list-type=map | list with map based Equality & unique key guarantees   |
-| 'array' with x-kubernetes-list-type=set | list with set based Equality & unique entry guarantees |
-| 'boolean'                               | boolean                        |
-| 'number' (all formats)                  | double                         |
-| 'integer' (all formats)                 | int (64)                       |
-| 'null'                                  | null                           |
-| 'string'                                | string                         |
-| 'string' with format=byte               | bytes                          |
-| 'string' with format=binary             | bytes                          |
-| 'string' with format=date               | timestamp (protobuf.Timestamp) |
-| 'string' with format=datetime           | timestamp (protobuf.Timestamp) |
+| OpenAPIv3 type                                     | CEL type                                                                                                                     |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 'object' with Properties                           | object / "message type" (`type(<object>)` evaluates to `selfType<uniqueNumber>.path.to.object.from.self`                     |
+| 'object' with AdditionalProperties                 | map                                                                                                                          |
+| 'object' with x-kubernetes-embedded-type           | object / "message type", 'apiVersion', 'kind', 'metadata.name' and 'metadata.generateName' are implicitly included in schema |
+| 'object' with x-kubernetes-preserve-unknown-fields | object / "message type", unknown fields are NOT accessible in CEL expression                                                 |
+| x-kubernetes-int-or-string                         | dynamic object that is either an int or a string, `type(value)` can be used to check the type                                |
+| 'array                                             | list                                                                                                                         |
+| 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                                         |
+| 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                                       |
+| 'boolean'                                          | boolean                                                                                                                      |
+| 'number' (all formats)                             | double                                                                                                                       |
+| 'integer' (all formats)                            | int (64)                                                                                                                     |
+| <no equivalent>                                    | uint (64)                                                                                                                    |
+| 'null'                                             | null_type                                                                                                                    |
+| 'string'                                           | string                                                                                                                       |
+| 'string' with format=byte (base64 encoded)         | bytes                                                                                                                        |
+| 'string' with format=date                          | timestamp (google.protobuf.Timestamp)                                                                                        |
+| 'string' with format=datetime                      | timestamp (google.protobuf.Timestamp)                                                                                        |
+| 'string' with format=duration                      | duration (google.protobuf.Duration)                                                                                          |
 
-xref: [CEL types](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values), [OpenAPI types](https://swagger.io/specification/#data-types).
+xref: [CEL types](https://github.com/google/cel-spec/blob/master/doc/langdef.md#values), [OpenAPI
+types](https://swagger.io/specification/#data-types), [Kubernetes Structural Schemas](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema).
+
+Although `x-kubernetes-preserve-unknown-fields` allows custom resources to contain values without
+corresponding schema information, we will not provide access to these "schemaless" values in CEL
+expressions. Reasons for this include:
+
+- Without schema information, types (e.g. `map` vs. `object`), formats (e.g. plain `string`
+  vs. `date`) and list types (plain `list` vs. `set`) are not available, and this feature depends
+  on this schema information to integrate custom resources values with CEL.
+
+- The contents of unknown fields are unvalidated. So it is possible for the contents to be any
+  possible values. This significantly complicates the authoring of validation rules and makes them
+  far more difficult write safely. Specifically, all unchecked field selection and assumptions about
+  value types will result in runtime errors when the values contents of the unknown data does not
+  match the expectations of the validation rule author. None of the benefits of static type checking
+  at CRD registration time would apply.
+
+- For objects with both `x-kubernetes-embedded-type` and `x-kubernetes-preserve-unknown-fields` set to `true`,
+  if we were to allow for validation of embedded resource while the validation rules that are part of
+  the embedded resource are not enforced, we would be allowing for developers to use CEL to validate
+  the contents of embedded types without allowing developers to write validation rules directly on the
+  embedded type to validate it. We don't want to do that.
 
 Implementation:
 
@@ -515,18 +566,28 @@ The initial changes made in the type integration will be:
   - We couldn't have both: (a) equality of string keys, which implies a canonical ordering of key fields, and (b) ability for developers to successfully lookup a map entry regardless of how they order the keys in the string representation
 
 
-So instead of treating "associative lists" as maps in CEL, we will continue to treat them as lists, but override equality to ignore object order (i.e. use map equality semantics) and introduce utility functions to make the list representation easy to use in CEL. E.g. instead of:
+So instead of treating "associative lists" as maps in CEL, we will continue to treat them as lists, but override equality to ignore object order (i.e. use map equality semantics).
+
+Looking up and iterating over entiries is available via the `exists`, `exists_one` and `all` macros:
 
 ```
-associativeList.filter(e, e.key1 == 'a' && e.key2 == 'b').all(e, e.val == 100)
-```
+// Since there is already a guarantee that "associative lists" only one entry
+// exists in the list for each key, `exists` can be used to check if a map contains a particular key instead of `exists_one`.
+// Note that `exists_one` can also be used, but handles any errors encountered more strictly.
+// See the CEL language spec how errors are handled by `exists_one` and `exists` for more details.
 
-We plan to add a `get()` builtin function (exact name and semantics TBD) that allows for lookup of a single map entry:
+// Check if an "associative list" contains an entry for a key:
+associativeList.exists(e, e.key1 == 'a' && e.key2 == 'b')
 
-```
-associativeList.get(e, e.key1 == 'a' && e.key2 == 'b').val == 100
-```
+// To validate a map contains an entry with a particular key and that some condition is met on the other fields of the entry:
+associativeList.exists(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
 
+// To check the value for a particular key meets some condition (but also allow the entry to be absent):
+associativeList.all(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
+
+// To check some condition on all entries of an "associative list":
+associativeList.all(e, e.val == 100)
+```
 
 ### Test Plan
 
@@ -544,9 +605,14 @@ developers to test their validation rules.
 
 #### Beta
 
+- Resolve topic of what support we should provide for access to the previous versions of object (ie. 'oldSelf' feature)
+- x-kubernetes-int-or-string is upgraded to use a union type of just int or string, not a dynamic type (CEL go support is planned in lates 2021)
 - Understanding of upper bounds of CPU/memory usage and appropriate limits set to prevent abuse.
 - Build-in macro/function library is comprehensive and stable (any changes to this will be a breaking change)
-- CEL numeric comparison issue is resolved
+- CEL numeric comparison issue is resolved (e.g. ability to compare ints to doubles)
+- [Reduce noise of invalid data messages reported from cel.UnstructuredToVal](https://github.com/kubernetes/kubernetes/issues/106440)
+- [Benchmark cel.UnstructuredToVal and optimize away repeated wrapper object construction](https://github.com/kubernetes/kubernetes/issues/106438)
+- Demonstrate adoption and successful feature usage in the community
 
 ## Production Readiness Review Questionnaire
 
