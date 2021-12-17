@@ -158,43 +158,28 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Support PodDusruptionBundget for DaemonSet Pods.
+Support PodDusruptionBudget (PDB) for DaemonSet Pods. DaemonSet pods are evicted all at once
+ignoring PDB. It creates the load spike for apiserver especially in relatively big clusters. This
+KEP proposes to change this behavior so that users could rely on PDB for DaemonSet pods like for all
+other built-in controller.
 
 ## Motivation
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
-
 
 PodDisruptionBudget can be not only a tool to keep user apps available during evictions, but also a
 mean of reducing of load targeting kube-apiserver when an eviction causes a restart of big number of
 pods.
 
-Additionally, the disruption controller works on pods level while it tracks all built-in Pod
-controllers except DaemonSets. This behavior in inconsistent across built-in Pod controllers.
+Additionally, the disruption controller tracks all built-in Pod controllers except DaemonSets when
+it calculated the allowed disruptions. This behavior in inconsistent across built-in Pod controllers
+and may cause confusion.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
-- Support the disruption budget for DaemonSet the same way it works for other built-in Pod controllers.
-- Reduce the load to apiserver caused by the recreation of DaemonSet pods being evicted.
+- Support the disruption budget for DaemonSet the same way it works for other built-in Pod
+  controllers.
+- Reduce the load to kube-apiserver caused by the recreation of DaemonSet pods being evicted.
 
 ### Non-Goals
-
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
 
 - Introduce API changes.
 
@@ -226,7 +211,7 @@ In a cluster with big number of nodes, DaemonSet pods can be evicted by VPA. The
 of pods is scaled as number of nodes multiplied by number of DaemonSets being affected
 simultaneously. In order to reduce the load, one can set a PDB for DaemonSet Pods.
 
-For example, in case of 100 nodes and 3 DaemonSets affected by eviction, one would prefer the
+For example, in case of 100 nodes and 3 DaemonSets affected by an eviction, one would prefer the
 simultaneous recreation of 30 Pods instead of 300.
 
 #### Story 2
@@ -264,15 +249,12 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 In disruption controller, DaemonSet pods can be supported the same way as for other built-in pods
-controllers.
+controllers. It is easily achieved single the code iq euite similar for all controllers.
 
 The specific part is the calculation of allowed disruption for DaemonSets. The dusruption is
 calculated using DaemonSet status.
 
 ### Test Plan
-
-In practice, the patch provided by PR [#98307](https://github.com/kubernetes/kubernetes/pull/98307)
-proves it workes in production environment. See https://github.com/deckhouse/deckhouse/blob/main/modules/040-control-plane-manager/images/kube-controller-manager/patches/1.21/pdb-daemonset.patch
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -291,6 +273,10 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
+
+In practice, the patch provided by PR [#98307](https://github.com/kubernetes/kubernetes/pull/98307)
+proves it workes in production environment. See
+https://github.com/deckhouse/deckhouse/blob/main/modules/040-control-plane-manager/images/kube-controller-manager/patches/1.21/pdb-daemonset.patch
 
 ### Graduation Criteria
 
