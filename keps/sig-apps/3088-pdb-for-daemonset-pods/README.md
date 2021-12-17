@@ -3,26 +3,15 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
+- [x] **Pick a hosting SIG.** sig/apps proposed to make the KEP in https://github.com/kubernetes/kubernetes/pull/98307
+- [x] **Create an issue in kubernetes/enhancements** https://github.com/kubernetes/enhancements/issues/3088
+- [x] **Make a copy of this template directory.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
 - [ ] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [ ] **Create a PR for this KEP.** https://github.com/kubernetes/enhancements/pull/3089
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -58,7 +47,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-3088: Support disruption budget for DaemonSet pods
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -129,10 +118,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -169,6 +158,8 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+Support PodDusruptionBundget for DaemonSet Pods.
+
 ## Motivation
 
 <!--
@@ -180,6 +171,14 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+
+PodDisruptionBudget can be not only a tool to keep user apps available during evictions, but also a
+mean of reducing of load targeting kube-apiserver when an eviction causes a restart of big number of
+pods.
+
+Additionally, the disruption controller works on pods level while it tracks all built-in Pod
+controllers except DaemonSets. This behavior in inconsistent across built-in Pod controllers.
+
 ### Goals
 
 <!--
@@ -187,12 +186,17 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+- Support the disruption budget for DaemonSet the same way it works for other built-in Pod controllers.
+- Reduce the load to apiserver caused by the recreation of DaemonSet pods being evicted.
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- Introduce API changes.
 
 ## Proposal
 
@@ -205,7 +209,9 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+For now, PDB does not support DaemonSet pods. This KEP aims to add the support.
+
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -215,6 +221,13 @@ bogged down.
 -->
 
 #### Story 1
+
+In a cluster with big number of nodes, DaemonSet pods can be evicted by VPA. The load of re-creation
+of pods is scaled as number of nodes multiplied by number of DaemonSets being affected
+simultaneously. In order to reduce the load, one can set a PDB for DaemonSet Pods.
+
+For example, in case of 100 nodes and 3 DaemonSets affected by eviction, one would prefer the
+simultaneous recreation of 30 Pods instead of 300.
 
 #### Story 2
 
@@ -250,7 +263,16 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+In disruption controller, DaemonSet pods can be supported the same way as for other built-in pods
+controllers.
+
+The specific part is the calculation of allowed disruption for DaemonSets. The dusruption is
+calculated using DaemonSet status.
+
 ### Test Plan
+
+In practice, the patch provided by PR [#98307](https://github.com/kubernetes/kubernetes/pull/98307)
+proves it workes in production environment. See https://github.com/deckhouse/deckhouse/blob/main/modules/040-control-plane-manager/images/kube-controller-manager/patches/1.21/pdb-daemonset.patch
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -499,10 +521,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
