@@ -66,19 +66,18 @@ tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
-- [KEP-3088: Support pod disruption budget for DaemonSet pods](#kep-3088-support-pod-disruption-budget-for-daemonset-pods)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [User Stories](#user-stories)
-      - [Story 1](#story-1)
-  - [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-      - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
-  - [Alternatives](#alternatives)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Story 1](#story-1)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+    - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
