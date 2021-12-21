@@ -3,7 +3,7 @@ kep-number: 2155
 authors:
   - "@jpbetz"
 owning-sig: sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2020-11-16
 reviewers:
   - "@apelisse"
