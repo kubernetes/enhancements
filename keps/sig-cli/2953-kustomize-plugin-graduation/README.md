@@ -177,9 +177,11 @@ This KEP proposes converging Kustomize's various alpha extension mechanisms into
 
 *KRM*: [Kubernetes Resource Model](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/architecture/resource-management.md)
 
-*Plugin*: User-authored generator, transformer or validator (refers to both the "provider" program that implements it and the "config" YAML required to use it).
+*Plugin*: User-authored generator, transformer or validator (refers to both the program that implements it and the "config" YAML required to use it).
 
 *Plugin provider*: The program that implements the plugin (e.g. container, script, Go program). Analogous to the controller for a custom resource.
+
+*Plugin runtime*: The substrate upon which the plugin provider must be executed. Supported runtimes include container and exec.
 
 *Plugin config*: The KRM-style YAML document that declares the desired state the plugin implements. In some plugin styles, it must also specify the plugin provider to execute and the specification to follow in doing so. Analogous to a custom resource object.
 
@@ -261,7 +263,7 @@ This KEP proposes using the concept of a "trusted plugin catalog" from the [Cata
 
 **Plugins from a user-specified trusted catalog**
 
-When using plugins with a trusted catalog, only one flag will be required, regardless of the runtime type of the provider: `--trusted-plugin-catalog=""` .
+When using plugins with a trusted catalog, only one flag will be required, regardless of the runtime type of the provider: `--trusted-catalog=""` .
 
 This new repeatable flag will be introduced by the [Catalog KEP]. When that flag is present, plugins in the referenced catalogs will be executed without the need for any additional flags. The integrity of the plugin provider will be validated against the Catalog entry before execution. This all applies whether the providers are defined explicitly in the Kustomization (and the explicit entry matches the catalog) or looked up dynamically in the catalog.
 
@@ -273,25 +275,23 @@ Optionally, it should be possible for a user to compile a bespoke distribution o
 
 **Plugins NOT in a trusted catalog**
 
-*Recommended Option: no such thing*
+*There's no such thing*
 
-Trusted catalogs are always required to use plugins; uncatalogued plugins will not be executed. Kustomizations that require ad-hoc plugins must be accompanied by a `Catalog` that the end user can reference locally, e.g. `kustomize build dir/ --trusted-plugin-catalog=dir/catalog.yaml`. There will be no additional plugin-related flags. The end user will be expected to inspect this catalog before trusting it, which must always be done explicitly on the command line.
+Trusted catalogs are always required to use plugins; uncatalogued plugins will not be executed. Kustomizations that require ad-hoc plugins must be accompanied by a `Catalog` that the end user can reference locally, e.g. `kustomize build dir/ --trusted-catalog=dir/catalog.yaml`. There will be no additional plugin-related flags. The end user will be expected to inspect this catalog before trusting it, which must always be done explicitly on the command line.
 
 A `kustomize edit generate-catalog` command will be implemented to streamline local plugin workflows. That command will take a Kustomization, collect all the uncatalogued plugins into a list, and build that list into the catalog resource format, using local references relative to the root Kustomization (plugins outside the root will result in an error). Optionally, this command can extract the provider references from the Kustomization, since they are most likely redundant once the catalog has been constructed. Optionally, this command can localize all required entries from referenced remote catalogs into the generated catalog.
 
 While this does introduce some friction, it is far less than is required to install and use plugins today. It also has the advantage of making the plugins required highly reviewable in a gitops workflow, and of not requiring the large suite of CLI flags needed for plugin execution today.
 
-*Alternative: many flags*
+To mitigate the inconvenience to users who tend to work with a specific set of catalogs across many Kustomizations, we will introduce a Kustomize user preferences file in which a list of catalogs to be trusted by default can be stored. This list of trusted catalogs should support wildcard specification of catalog sources, e.g. `github.com/my-co/krm-functions/catalogs/*` to trust all catalogs published in or below that location. The contents of the preferences file will itself be properly typed KRM object, extensible to other use cases.
 
-By default, plugins not listed in a trusted catalog will not be executed and an error will be printed. The providers for these plugins must be listed explicitly in each plugin config, and additional flags are always required to use them. Which flags are required depends on the provider type.
+**Additional constraints for local exec providers**
 
-For plugins distributed as containers, the `--enable-container-plugins` flag will need to be provided. The containers will continue to be denied disk and network access by default. To enable access, the existing network/mount restriction flags will be retained but renamed to clarify what they govern:  `--plugin-container-networks=[STRING]` `--plugin-container-mounts=[STRING]`.
-
-For plugins distributed as executables (typically committed in git along with the Kustomization), every provider the Kustomization needs must be explicitly named in a new flag:  `--trust-embedded-exec-plugins=base/plugin/transformer.sh,overlay/scripts/gen.sh`. By using this flag, the user demonstrates they are aware of what will be executed and accept the risk of running each one. To make the list less painful to construct, the error message thrown when this list is not provided or is incomplete will inform the user of which are missing.
-
-**Additional constraints for exec providers**
-
-The location of exec providers that are local will be subject Kustomize's load restrictor, i.e. the LoadRestrictionsRootOnly policy will apply to them by default (it does not today). If this is deemed insufficient, we could take it a step further and force the LoadRestrictionsRootOnly policy even when a different loader policy is provided by flag.
+The location of exec providers that are local will be constrained as follows:
+- We will stop using `exec.LookPath` to find plugins. Local plugin locations will always need to be explicit, to guarantee that what Catalog is allowing and what Kustomize invokes are indeed the same thing.
+- Relative paths will be subject Kustomize's load restrictor, i.e. the LoadRestrictionsRootOnly policy will apply to them by default (it does not today).
+- Absolute paths will be permitted, and will be subjected to a new load restriction rule that requires them to be within a specific root, such as `$XGD_CONFIG_HOME/kustomize/plugins`. This is needed to support airgap use cases, as discussed in https://github.com/kubernetes-sigs/kustomize/issues/4288.
+  + This also provides a migration path for legacy exec plugins, which already exist in such a location. Kustomize should be able to derive Catalogs for them automatically in cases where they are already configured declaratively (i.e. do not require bespoke args).
 
 ### Supported runtimes
 
@@ -311,7 +311,7 @@ A plugin developer guide will be added to the Kustomize documentation, replacing
 
 All plugins must be configured using KRM-style custom-resource-like objects.
 
-The `config.kubernetes.io/function` annotation that currently contains a nested JSON blob of plugin provider configuration will be graduated to a reserved top-level field called `provider` (ALTERNATIVE: it could be nested as `metadata.provider`, but that would make the object meta non-standard). That field will be made optional by the [Catalog KEP].
+The `config.kubernetes.io/function` contains a nested JSON blob of plugin provider configuration. This field will be made optional by the [Catalog KEP]. If we find that users still need to author it frequently in practice, we should consider graduating it to a top-level `runtime` field. If we do, orchestrators will need to strip it from plugin configuration objects when they are read, since it is not a valid part of the plugin's own schema. Alternatively, plugin authors could be expected to include it in their schemas, as with object and type metadata.
 
 The `metadata.name` field is optional as long as the config's GVK uniquely identifies it. In Kustomization, it is not required unless the config is being handled as a resource. In Composition, it is always recommended, because transformer config is always handled as a resource before execution and uniqueness must be global across all Compositions in the tree. 
 
@@ -321,7 +321,7 @@ The `env` field for container plugins will be deprecated. In line with Kustomize
 
 Although legacy plugins are still in alpha, the alpha has been around in standalone Kustomize for quite a while. Documentation on the migration process will be provided. See the [Rollout Plan](#rollout-plan) section for more detail on deprecation and removal of the existing alphas.
 
-The exec plugin conversion process should be relatively straightforward: copy the provider in-tree and update the configuration that referred to it to have a Provider stanza pointing to the new location. `argsFromFile` and `argsOneLiner` can be straightforwardly converted to the `args` subfield the KRM Functions style already supports.
+The exec plugin conversion process should be relatively straightforward: copy the provider in-tree and update the configuration that referred to it to have a Provider stanza pointing to the new location. Plugins using `argsFromFile` and `argsOneLiner` will need to be modified to accept the data in question declaratively instead of as args.
 
 For authors who build plugins for distribution (as opposed to bespoke plugins where embedding within an end-user Kustomization is an appropriate solution), the recommendation will be to upgrade to the Catalog model. A Catalog guide will be added to the Kustomize website and will address the scenario of migrating a legacy style plugin.
 
@@ -336,7 +336,7 @@ As an end user, I want to develop a simple plugin for my particular Kustomizatio
 1. Write a script that adheres to the [KRM Functions Specification] and place it within the Kustomization root.
 2. Write a corresponding plugin config and reference it from the Kustomization's generator or transformer field as appropriate.
 3. Run `kustomize edit generate-catalog`
-3. Run `kustomize build --trusted-plugin-catalog=catalog.yaml`
+3. Run `kustomize build --trusted-catalog=catalog.yaml`
 
 ```bash
 # Possible directory structure
@@ -365,7 +365,7 @@ transformers:
 # Example reorder.yaml
 apiVersion: local-config.example.co/v1
 kind: CustomSorter
-provider:
+runtime:
   exec: 
   	path: plugins/sorter/sorter.rb
 spec:
@@ -380,10 +380,13 @@ kind: Catalog
 metadata:
   name: "local-plugins"
 spec:
-  modules:
-  - apiVersion: local-config.example.co/v1
-    kind: CustomSorter
-    provider:
+  krmFunctions:
+  - group: local-config.example.co
+    names:
+      kind: CustomSorter
+    versions:
+    - name: v1
+    runtime:
       exec:
         - path: plugins/sorter/sorter.rb
           sha256: [a hash]
@@ -395,7 +398,7 @@ spec:
 As an end user, I want to use one or more plugins published by a third party I trust.
 
 1. Write the config objects for the plugins you want to use, and reference them from your Kustomization's generators or transformers field as appropriate.
-2. Run `kustomize build --trusted-plugin-catalog=https://catalog.kpt.dev/1.2.3.json`
+2. Run `kustomize build --trusted-catalog=https://catalog.kpt.dev/1.2.3.json`
 
 
 ```bash
@@ -461,7 +464,7 @@ As a platform developer for a large organization, I want to provide internal use
 ```yaml
 # Example end-user Composition
 kind: Composition
-modules:
+transformers:
 - apiVersion: kustomize.example.co/v1
   kind: JavaApplication
   metadata:
@@ -475,6 +478,23 @@ modules:
   collectPaths: ["/path/to/logs"]
 ```
 
+
+#### Story 4
+
+As a Kustomize user who regularly works with a consistent set of plugins, I can trust certain plugin catalogs by default in my Kustomize preferences file.
+
+1. Run `kustomize config trust [catalog]`
+2. Run `kustomize build` on Kustomizations that require plugins from my default trusted catalogs, without needing the `--trusted-catalog` flag.
+
+```yaml
+# Example $XDG_CONFIG_HOME/kustomize/config.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: KustomizeConfig
+trustedCatalogs:
+- github.com/my-co/krm-functions/catalogs/*
+- https://krm-functions.io/catalogs/kustomize/v20210924.yaml
+- ~/kustomize/my-own-plugins.yaml
+```
 
 
 ### Notes/Constraints/Caveats (Optional)
@@ -493,10 +513,11 @@ Individual Kustomizations/Compositions can contain catalog references. These ref
 
 ## Design Details
 
-Example execution flow for `kustomize build --trusted-plugin-catalog=company.com/foo.json`:
+Example execution flow for `kustomize build --trusted-catalog=company.com/foo.json`:
 
 1. Kustomize retrieves all trusted catalogs specified on the command line.
-1. Kustomization is read. If it includes a `catalogs` field, that field is compared to the trusted catalogs from the command line. If any required catalogs have not been trusted, a warning is printed with the details of the missing catalog (which remains untrusted).
+1. Kustomize reads the user's Kustomize preferences file and loads the list of default trusted catalogs, combining this with the list from the command line.
+1. Kustomization is read. If it includes a `catalogs` field, that field is compared to the trusted catalogs. If any required catalogs have not been trusted, a warning is printed with the details of the missing catalog (which remains untrusted).
 1. When preparing to execute a plugin, Kustomize looks for a corresponding entry in the trusted catalogs. If none is found, an error is thrown an execution halts. If one is found, the plugin provider configuration (e.g. network, storage) listed in the plugin config (if any) is compared to the requirements declared in the catalog entry. If they are not a strict subset, an error is thrown and execution halts.
 1. Having successfully identified the catalog entry for the given plugin, Kustomize attempts to retrieve the plugin provider from the specified location.
 1. Having successfully retrieved the plugin provider, Kustomize hashes it and compares the result to the catalog entry. If it is not an exact match, an error is thrown and execution halts.
@@ -526,12 +547,14 @@ Kustomize already has a test harness capable of running plugins, but coverage of
 
 - Beta GVs for Composition and Catalog introduced
 - `kustomize edit fix` supports migrating legacy exec to non-KRM exec plugins
-- "alpha" removed from `--trusted-plugin-catalog` flag name
+- "alpha" removed from `--trusted-catalog` flag name
+- Kustomize user preferences file created with support for default sets of trusted catalogs.
 - Deprecated plugin-related flags removed.
 - Starlark, legacy exec and Go plugin support removed.
 - Plugin provider identity verification implemented.
 - New plugin developer guide published. Exec provider documentation enhanced.
 - `kubectl kustomize` released with beta Catalog support, beta Composition support, identical build flags to standalone kustomize, and full beta plugins support (including KRM exec support)
+- Function annotation graduated to reserved `runtime` field, if deemed necessary.
 
 #### GA
 
@@ -744,6 +767,17 @@ It makes it easier for Kustomize users to invoke third party code, which can be 
   * Only container-based plugins currently have a distribution story viable enough to recommend.
 * Graduate "KRM Function style" plugins as described (including removing starlark and further restricting exec), but do not introduce Catalog or Composition.
   * This would be a less usable and useful plugin system than the one proposed, but better than nothing. Catalog and Composition are encapsulated enough that plugin GA can proceed without them if they fail or lose contributor bandwidth before completion. Changes to the flag strategy would be required.
+
+
+_Alternative for the handling of plugins that are not included in a Catalog:_
+
+Instead of disallowing uncatalogued plugins, we could introduce a series of flags to govern them specifically. This is not recommended because it complicates the overall mental model of how plugins work, and because the flags themselves would likely be unwieldy to use. That said, this is how such an alternative could work.
+
+By default, plugins not listed in a trusted catalog will not be executed and an error will be printed. The providers for these plugins must be listed explicitly in each plugin config, and additional flags are always required to use them. Which flags are required depends on the provider type.
+
+For plugins distributed as containers, the `--enable-container-plugins` flag will need to be provided. The containers will continue to be denied disk and network access by default. To enable access, the existing network/mount restriction flags will be retained but renamed to clarify what they govern:  `--plugin-container-networks=[STRING]` `--plugin-container-mounts=[STRING]`.
+
+For plugins distributed as executables (typically committed in git along with the Kustomization), every provider the Kustomization needs must be explicitly named in a new flag:  `--trust-embedded-exec-plugins=base/plugin/transformer.sh,overlay/scripts/gen.sh`. By using this flag, the user demonstrates they are aware of what will be executed and accept the risk of running each one. To make the list less painful to construct, the error message thrown when this list is not provided or is incomplete will inform the user of which are missing.
 
 ## Infrastructure Needed (Optional)
 
