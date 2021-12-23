@@ -7,6 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Deprecation](#deprecation)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Performance overhead](#performance-overhead)
 - [Design Details](#design-details)
@@ -104,6 +105,16 @@ When it comes to standard go lang types and third party libraries used in Kubern
 We also propose to implement a small library which could use the above information to verify if any of the provided values contain reference to sensitive data.
 
 Finally we propose to integrate this library with the klog logging library used by Kubernetes in a way that when enabled the log entries which contain information marked as sensitive will be redacted from the logs.
+
+### Deprecation
+
+Dynamic log sanitization was added as an experimental alpha feature under SIG Instrumentation in the 1.20 release. When it was introduced, the SIG had some reservations about the feature and its performance, but concluded that an alpha POC would be low risk. We encouraged exploring alternatives, and that eventually resulted in the implementation of static analysis as part of our presubmit CI to ensure secrets are not being logged. This alternative implementation has graduated to stable in the 1.23 cycle.
+
+During SIG Instrumentation's Dec. 9 meeting, we discussed the support burden of this feature and the issues this may cause in blocking other new logging improvements. Hence, we would like to deprecate the feature in the 1.24 cycle. Since this is an alpha feature, this means it will be entirely removed.
+
+Note that [data policy tags](#source-code-tags) will not be deprecated or removed, as they are currently in use by [KEP-1933] and may be used by other automated tools in the future.
+
+[KEP-1933]: /keps/sig-security/1933-secret-logging-static-analysis/README.md
 
 ### Risks and Mitigations
 
@@ -231,6 +242,7 @@ To address them we propose:
 
 * 2020-05-08 - Original Proposal
 * 2020-08-07 - Merged as provisional
+* 2021-12-23 - Marked for deprecation
 
 ## Drawbacks
 
