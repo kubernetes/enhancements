@@ -161,8 +161,10 @@ Additionally, there may be some end-user confusion on the functional consequence
 
 - Pod Security Standards will be reviewed and updated to indicate which Pod OSes they apply to
 - The restricted Pod Security Standard will be reviewed to see if there are OS-specific requirements that should be added
-- The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS.
-- Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field.
+- The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS
+- Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field
+
+Pod Security Standards are to be changed in 1.25 timeframe to accomodate the supported kubelet and kube-apiserver skew.
 
 
 ### Changes to Kubelet
@@ -211,7 +213,6 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 
 If the feature gate is enabled there are some kubelet implications as the code to strip security constraints based on OS can be removed and we need to add
 admission/denying in the kubelet logic which was mentioned above. Older Kubelets without this change will continue stripping the unnecessary fields in the pod spec which is the current behavior.
-
 
 ## Production Readiness Review Questionnaire
 
