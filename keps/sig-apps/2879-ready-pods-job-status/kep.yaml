@@ -15,14 +15,13 @@ approvers:
 see-also:
 replaces:
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.23"
+latest-milestone: "v1.24"
 
 milestone:
   alpha: "v1.23"
   beta: "v1.24"
-  stable: "v1.25"
 
 feature-gates:
   - name: JobReadyPods
