@@ -109,7 +109,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
-  - [Content-Type Header](#content-type-header)
+  - [HTTP header mechanism](#http-header-mechanism)
   - [Other Alternatives Considered](#other-alternatives-considered)
 <!-- /toc -->
 
@@ -286,6 +286,17 @@ On the other hand, the downside of continuing to maintain client-side
 validation is that it uses openapiv2 which will be less actively supported
 as openapiv3 becomes standard and will cause client-side validation to
 continue to diverge from server-side validation.
+
+We propose offering a separate KEP to tackle deprecating client-side validation
+once server-side validation is GA. Our initial thoughts on this are that in
+order to deprecate client-side validation we will need to build a separate
+out-of-tree client-side validation mechanism so that users can continue to
+validate their configs.
+
+The [kubeval](https://www.kubeval.com/) project is an example of an out-of-tree solution that does this, and
+we will look into expanding its support of open API to v3, and investigate
+whether it makes sense as a permanent solution to client-side validation that
+will allow for deprecation of current client-side validation.
 
 <!--
 What are the caveats to the proposal?
@@ -908,7 +919,7 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-### Content-Type Header
+### HTTP header mechanism
 
 Instead of opting-in to server-side validation via a query parameter, we
 considered passing a specific content-type header that would indiciate strict
