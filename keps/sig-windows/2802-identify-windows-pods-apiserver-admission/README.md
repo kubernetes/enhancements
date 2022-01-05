@@ -164,7 +164,7 @@ Additionally, there may be some end-user confusion on the functional consequence
 - The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS
 - Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field
 
-Pod Security Standards are to be changed in 1.25 timeframe to accomodate the supported kubelet and kube-apiserver skew.
+Pod Security Standards are to be changed in 1.25 timeframe to accommodate the supported kubelet and kube-apiserver skew.
 
 
 ### Changes to Kubelet
