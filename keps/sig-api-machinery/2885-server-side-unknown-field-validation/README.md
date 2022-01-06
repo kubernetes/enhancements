@@ -225,8 +225,11 @@ know that this has succeeded?
 misspelled), nor are any fields duplicated (for json and yaml data).
 * We must maintain compatibility with all existing clients, thus server side
 unknown field validation should be opt-in.
-* kubectl should provide the ability for a user to request server-side
-  validation.
+* kubectl should default to server-side validation against servers that support
+  it.
+* kubectl should provide the ability for a user to request no validation,
+  warning only validation, or client-side validation (while it is still supported)
+  instead of strict server-side validation on a per-request basis.
 
 ### Non-Goals
 
@@ -266,12 +269,14 @@ presence of unknown/duplicate fields.
 
 For beta, we propose modifying the kubectl `--validate` flag to enable users
 to choose between client-side validation or server-side
-validation (either strict or warning)
+validation (either strict or warning), when server-side validation is supported
+by the server (and default to strict server-side validation).
 
 ### Notes/Constraints/Caveats (Optional)
 
 #### Future Work
 
+##### Deprecating Client Side Validation
 Upon successfully providing kubectl access to server-side validation via the
 `--validate` flag, an open question will remain as to the future of client
 side validation.
@@ -352,7 +357,6 @@ parameter to indicate the level of field validation the server should perform,
 such as `?fieldValidation=Strict`.
 
 Primary arguments for using query parameter include:
-* Being able version them with the API version.
 * Parameters are discoverable in openapi.
 * We have precedent for using query parameters for write requests already (via CreateOptions,
   PatchOptions, UpdateOptions)
@@ -498,21 +502,21 @@ for strict server-side validation.
 encounters any validation errors before sending a request to the server. If no
 client-side validation errors are found, the request sent to the server has
 fieldValidation param set to `Ignore`. This will be the default behavior in beta
-as it is identical to the current validation behavior pre-1.24
+as it is identical to the current validation behavior pre-1.24.
 * `ignore`: This performs no client-side validation or server-side validation,
 sending a request to the server with fieldValidation param set to `Ignore`.
 * `warn`: This sends a request to the server with the fieldValidation param set
   to `Warn`. It performs server-side validation, but validation errors are
   exposed as warnings in the result header rather than failing the request. This
   will be the default once server-side validation goes GA.
-* `strict`: same behavior as `--validate=server`.
-* `true`: This is the same as `--validate=client`, but throws a warning along
-  the lines of "`--validate=true` is being deprecated, use `--validate=client`
-  instead". This is also the default behavior if `--validate` flag is passed
-  withouth a value set.
-* `false`: This is the same as `--validate=ignore`, but throws a warning along
-  the lines of "`--validate=false` is being deprecated use `--validate=ignore`
-  instead".
+* `strict`: same behavior as `--validate=server`. This will be the default
+  behavior for servers with the server-side field validation feature enabled.
+* `true`: This is the same as `--validate=strict` for servers where server side field
+  validation is enabled. For pre-1.24 servers and servers with the server-side
+  field validation feature disabled, this will perform client-side validation
+  identical to `--validate=client`. Passing the `--validate` flag
+  without a value set behaves identical to `--validate=true`.
+* `false`: This is the same as `--validate=ignore`
 
 
 ### Test Plan
@@ -580,18 +584,10 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### Beta
 
-- kubectl validate flag offers ability to perform server-side validation
-- All follow-ups from alpha are complete (see below)
-
-##### Alpha Follow Ups
-
-These are some tasks that were initially planned for alpha, but did not make it
-and should be addressed before beta is considered complete.
+- [  ]kubectl validate flag offers ability to perform server-side validation
 - [ ] endpoints handler unit testing of field validation
 - [ ] customresource handler unit testing of field validation
 - [ ] field validation integration tests check for exact match of strict errors
-- [ ] [sigs.k8s.io/yaml should
-  report](https://github.com/kubernetes/kubernetes/pull/105916#discussion_r748530682) strict errors consistent with kjson
 - [ ] [make
   use](https://github.com/kubernetes/kubernetes/pull/105916#discussion_r746125180) of the decoded object rather than decoding multiple times
 - [ ]
@@ -747,8 +743,9 @@ No
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-For beta we will be warning kubectl users that `--validate={true,false}` is
-being deprecated in favor of `--validate={client,server,strict,warn,ignore}`.
+No deprecations or removals however the kubectl flag `--validate=true` is being changed
+to perform server-side validation instead of client-side validation (for servers
+that support it).
 
 ### Monitoring Requirements
 
@@ -871,7 +868,12 @@ Think about adding additional work or introducing new steps in between
 -->
 Mutating API calls that opt-in to validation will be slower.
 Benchmarks of alpha changes indicate that performing validation results in
-~2-5% slower request latency and ~4-8% more memory usage.
+~2-5% slower request latency and ~4-8% more memory usage for json and yaml
+requests.
+
+Given that the majority of high-frequency requests made by system
+components use protobuf, we expect a negligible increase in overall resource
+usage.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
