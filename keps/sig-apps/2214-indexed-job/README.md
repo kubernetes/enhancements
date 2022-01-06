@@ -44,13 +44,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -459,8 +463,7 @@ gate enabled and disabled.
 
 #### Beta -> GA Graduation
 
-- E2E test graduates to conformance
-- 2 examples of operators using Indexed Jobs.
+- [E2E](https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=Indexed) test graduates to conformance
 
 ### Upgrade / Downgrade Strategy
 
@@ -496,9 +499,12 @@ This feature has no node runtime implications.
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
+<!--
+This section must be completed when targeting alpha to a release.
+-->
 
-* **How can this feature be enabled / disabled in a live cluster?**
+###### How can this feature be enabled / disabled in a live cluster?
+
 
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: IndexedJob
@@ -506,30 +512,31 @@ _This section must be completed when targeting alpha to a release._
       - kube-apiserver
       - kube-controller-manager
 
-* **Does enabling the feature change any default behavior?**
+###### Does enabling the feature change any default behavior?
 
   No. Jobs need to opt-in with `.spec.completionMode=Indexed`.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
   
   Yes. Using the feature gate is the recommended way.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
 
   The Job controller starts managing Indexed Jobs again.
   More details covered in [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
-* **Are there any tests for feature enablement/disablement?**
+###### Are there any tests for feature enablement/disablement?
 
   Yes, unit and integration test for the feature enabled, disabled and
   transitions.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
+<!--
+This section must be completed when targeting beta to a release.
+-->
 
-* **How can a rollout fail? Can it impact already running workloads?**
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
   If the new kube-controller-manager crashes, it's possible that an older
   version of it would pick it up. In 1.21, when the IndexedJob feature is
@@ -537,7 +544,7 @@ _This section must be completed when targeting beta graduation to a release._
   controller doesn't create or delete Pods and doesn't update Job status.
   Running Pods are not affected.
 
-* **What specific metrics should inform a rollback?**
+###### What specific metrics should inform a rollback?
 
   - job_sync_duration_seconds shows significantly more latency for label
     completion_mode=Indexed Jobs than completion_mode=NonIndexed.
@@ -545,9 +552,9 @@ _This section must be completed when targeting beta graduation to a release._
     completion_mode=NonIndexed.
   - job_finished_total shows that Jobs with completion_mode=Indexed don't finish.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-  Manual test:
+  Manual test performed:
   
   1. Deploy k8s 1.21 cluster
   1. Upgrade to 1.22
@@ -555,21 +562,36 @@ _This section must be completed when targeting beta graduation to a release._
   1. Downgrade to 1.21. Verify that no new pods are created for the Indexed Job.
   1. Upgrade to 1.22. Verify that new pods are created for Indexed Job.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
   No
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+<!--
+This section must be completed when targeting beta to a release.
+-->
 
-* **How can an operator determine if the feature is in use by workloads?**
+###### How can an operator determine if the feature is in use by workloads?
 
   - job_sync_total has values for the label completion_mode=Indexed.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
+###### How can someone using this feature know that it is working for their instance?
+
+- [x] Events
+  - Event Reason: SuccessfulCreate
+  - The message includes the pod name.
+- [x] API .status
+  - Condition name: 
+  - Other field: `completedIndexes` will not be empty as pods terminate.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+  - per-day percentage of job_sync_total with label result=error <= 1%
+  - 99% percentile over day for job_sync_duration_seconds is <= 15s, assuming
+    a client-side QPS limit of 50 calls per second.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
   - [x] Metrics
     - Metric name (all new):
@@ -579,51 +601,46 @@ the health of the service?**
         result=failed/succeeded
     - Components exposing the metric: kube-controller-manager
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-  - per-day percentage of job_sync_total with label result=error <= 1%
-  - 99% percentile over day for job_sync_duration_seconds is <= 15s, assuming
-    a client-side QPS limit of 50 calls per second.
-  
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
-
-  N/A
+  No
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
+<!--
+This section must be completed when targeting beta to a release.
+-->
 
-* **Does this feature depend on any specific services running in the cluster?**
+###### Does this feature depend on any specific services running in the cluster?
 
-  Feature only involves kube-apiserver and kube-controller-manager.
+  No, the feature only involves kube-apiserver and kube-controller-manager.
 
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
 
-_For beta, this section is required: reviewers must answer these questions._
+For beta, this section is required: reviewers must answer these questions.
 
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
 
-* **Will enabling / using this feature result in any new API calls?**
-
-  No.
-
-* **Will enabling / using this feature result in introducing new API types?**
+###### Will enabling / using this feature result in any new API calls?
 
   No.
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+###### Will enabling / using this feature result in introducing new API types?
 
   No.
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+  No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
   Yes.
   
@@ -639,36 +656,36 @@ the existing API objects?**
   - Estimated increase in size: new annotation of about 50 bytes and hostname
     which includes the index.
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
   No.
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
   Additional CPU and memory increase in the controller-manager is negligible
   and restricted to Jobs using the new completion mode.
 
 ### Troubleshooting
 
+<!--
+This section must be completed when targeting beta to a release.
+
 The Troubleshooting section currently serves the `Playbook` role. We may consider
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
+-->
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **How does this feature react if the API server and/or etcd is unavailable?**
+###### How does this feature react if the API server and/or etcd is unavailable?
 
   The job controller can't create or delete pods nor update job status.
   The metric job_sync_total increases for label result=error.
   Existing pods continue to run.
 
-* **What are other known failure modes?**
+###### What are other known failure modes?
 
   None.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+###### What steps should be taken if SLOs are not being met to determine the problem?
 
   1. Check job_sync_total with label result=error. See if it varies for
      different completion modes.
@@ -686,6 +703,7 @@ _This section must be completed when targeting beta graduation to a release._
   completed.
 * 2021-03-09: Feature implemented under feature gate disabled by default.
 * 2021-04-09: KEP updated for graduation to beta.
+* 2022-01-06: KEP updated for graduation to stable.
 
 ## Drawbacks
 
