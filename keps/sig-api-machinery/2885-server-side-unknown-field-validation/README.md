@@ -303,6 +303,27 @@ we will look into expanding its support of open API to v3, and investigate
 whether it makes sense as a permanent solution to client-side validation that
 will allow for deprecation of current client-side validation.
 
+##### Aligning json and yaml errors
+
+A few discrepancies between sigs.k8s.io/yaml and sigs.k8s.io/json make detecting
+and reporting strict errors inconsistent and should be addressed at some point.
+
+1. sigs.k8s.io/yaml does not currently have a strict unmarshaling mechanism to
+   distinguish between strict and non-strict errors while sigs.k8s.io/json does.
+   This results in having to perform unmarshaling twice for yaml data in some
+   cases.
+   See [this
+   discussion](https://github.com/kubernetes/kubernetes/pull/105916#discussion_r748530682) from the the alpha PR and the follow-up [tracking
+   issue](https://github.com/kubernetes-sigs/yaml/issues/70).
+
+2. kyaml and kjson currently report strict decoding errors in different formats.
+   For example a duplicate field error appears from kyaml as `line 26: key
+   "imagePullPolicy" already set in map`, while kjson reports the error as
+   `duplicate field "spec.template.spec.containers[0].imagePullPolicy"`. For
+   consistencies sake, these two libraries should eventually report the same
+   errors in the same format.
+
+
 <!--
 What are the caveats to the proposal?
 What are some important details that didn't come across above?
@@ -588,8 +609,6 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - [ ] endpoints handler unit testing of field validation
 - [ ] customresource handler unit testing of field validation
 - [ ] field validation integration tests check for exact match of strict errors
-- [ ] [make
-  use](https://github.com/kubernetes/kubernetes/pull/105916#discussion_r746125180) of the decoded object rather than decoding multiple times
 - [ ]
   [decide](https://github.com/kubernetes/kubernetes/pull/105916#discussion_r750769609) whether a fieldValidation=Strict fatal error should return before
   an error from the apply operation.
