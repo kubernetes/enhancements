@@ -2,6 +2,7 @@ title: kubectl return code normalization
 kep-number: 2551
 authors:
   - "@rikatz"
+  - "@deejross"
 owning-sig: sig-cli
 status: provisional
 creation-date: 2021-03-16
