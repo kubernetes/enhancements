@@ -4,14 +4,17 @@ authors:
   - "@44past4"
   - "@immutableT"
   - "@PurelyApplied"
-owning-sig: sig-security
+owning-sig: sig-instrumentation
 participating-sigs:
-  - sig-instrumentation
-status: implementable
+  - sig-security
+status: implemented (alpha)
 creation-date: 2020-05-07
-last-updated: 2020-10-14
-stage: alpha
-latest-milestone: "1.19"
+stage: alpha (deprecated)
+latest-milestone: "1.24"
+milestone:
+  alpha: "v1.19"
+  deprecated: "v1.24"
+  removed: "v1.24"
 reviewers:
   - "@ehashman"
 approvers:
