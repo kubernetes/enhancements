@@ -6,25 +6,25 @@ To get started with this template:
 - [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -104,8 +104,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -225,6 +225,9 @@ period is honoured. Pods terminated this way are considered a failure and the
 controller does not count terminated Pods towards completions. This behaviour
 is similar to decreasing the Job's parallelism to zero.
 
+Completed pods before suspension will count towards completion after the job is unsuspended. 
+For example, for jobs with `completionMode: Indexed`; successfully completed indexes will not run again.
+
 Similar to existing [JobConditionType](https://github.com/kubernetes/kubernetes/blob/c98f6bf30890f2c5826067ae50cfc36958106e68/staging/src/k8s.io/api/batch/v1/types.go#L167)s
 "Complete" and "Failed", we propose adding a new condition type called
 "Suspended" as a part of the Job's status as follows:
@@ -291,67 +294,12 @@ Unit, integration, and end-to-end tests will be added to test that:
 * We're confident that no further semantical changes will be needed to achieve the goals of the KEP
 * All known functional bugs have been fixed
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-#### Beta -> GA Graduation
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-#### Removing a Deprecated Flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include 
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
--->
-
 ### Upgrade / Downgrade Strategy
 
 Upgrading from 1.20 and below will not change the behaviour of how Jobs work.
 
 To make use of this feature, the `SuspendJob` feature gate must be explicitly
-enabled on the API server and the controller manager and the `suspend` field
+enabled on the api-server and kube-controller-manager and the `suspend` field
 must be explicitly set in the Job spec.
 
 ### Version Skew Strategy
@@ -414,10 +362,7 @@ _This section must be completed when targeting beta graduation to a release._
   While the above list isn't exhaustive, they're signals in favour of rollbacks.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path
-  tested?** <!-- I'll answer this after implementation.
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now. -->
+  tested? yes manually tested successfully. 
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?** No.
@@ -430,6 +375,14 @@ _This section must be completed when targeting beta graduation to a release._
   The `.spec.suspend` field is set to true by Jobs. The status conditions of a
   Job can also be used to determine whether a Job is using the feature (look
   for a condition of type "Suspended").
+
+* **How can someone using this feature know that it is working for their instance?**
+- [x] Events
+  - Event Reason: Suspended
+  - The message includes the job name.
+- [x] API .status
+  - Condition name: Suspended
+  - Other field: 
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -532,6 +485,7 @@ _This section must be completed when targeting beta graduation to a release._
 2021-02-01: Initial KEP merged, alpha targeted for 1.21
 2021-03-08: Implementation merged in 1.21 with feature gate disabled by default
 2021-04-22: KEP updated for beta graduation in 1.22
+2022-01-18: KEP updated for GA graduation in 1.24
 
 ## Drawbacks
 
