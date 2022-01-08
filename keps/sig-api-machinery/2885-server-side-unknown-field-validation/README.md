@@ -228,8 +228,8 @@ unknown field validation should be opt-in.
 * kubectl should default to server-side validation against servers that support
   it.
 * kubectl should provide the ability for a user to request no validation,
-  warning only validation, or client-side validation (while it is still supported)
-  instead of strict server-side validation on a per-request basis.
+  or warning only validation, instead of strict server-side validation on
+  a per-request basis.
 
 ### Non-Goals
 
@@ -245,7 +245,10 @@ on version X send a request to the server of version less than X which does not 
 some of the fields (or a similar situation). We do not think it is worth
 supporting this use case initially and will error if clients attempt to validate
 schema server-side with protobuf data.
-
+* Enhanced offline validation. Current client-side validation has been used as a
+  form of offline validation to simply validate configs that have no intention
+  of being actually applied to a server. Ideally users would have a supported
+  way to perform offline validation, but that is outside the scope of this KEP.
 
 ## Proposal
 
@@ -517,27 +520,16 @@ object has any unknown or duplicate fields.
 For beta, we will modify the kubectl `--validate` flag from being a bool flag to
 a string flag that accepts the following values:
 
-* `server`: This sends a request with the fieldValidation param set to `Strict`
-for strict server-side validation.
-* `client`: This performs client-side validation in kubectl that breaks if it
-encounters any validation errors before sending a request to the server. If no
-client-side validation errors are found, the request sent to the server has
-fieldValidation param set to `Ignore`. This will be the default behavior in beta
-as it is identical to the current validation behavior pre-1.24.
-* `ignore`: This performs no client-side validation or server-side validation,
-sending a request to the server with fieldValidation param set to `Ignore`.
+* `true` or `strict`: If server-side validation is enabled on the server it sends
+  a request with the fieldValidation param set to `Strict`, otherwise it falls
+  back to client-side validation. This is the default
+* `false` or `ignore`: This performs no server-side validation or client-side validation,
+sending a request to the server with fieldValidation param set to `Ignore` if
+server-side validation is enabled.
 * `warn`: This sends a request to the server with the fieldValidation param set
   to `Warn`. It performs server-side validation, but validation errors are
   exposed as warnings in the result header rather than failing the request. This
   will be the default once server-side validation goes GA.
-* `strict`: same behavior as `--validate=server`. This will be the default
-  behavior for servers with the server-side field validation feature enabled.
-* `true`: This is the same as `--validate=strict` for servers where server side field
-  validation is enabled. For pre-1.24 servers and servers with the server-side
-  field validation feature disabled, this will perform client-side validation
-  identical to `--validate=client`. Passing the `--validate` flag
-  without a value set behaves identical to `--validate=true`.
-* `false`: This is the same as `--validate=ignore`
 
 
 ### Test Plan
@@ -605,7 +597,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### Beta
 
-- [  ]kubectl validate flag offers ability to perform server-side validation
+- [ ] kubectl validate flag offers ability to perform server-side validation
 - [ ] endpoints handler unit testing of field validation
 - [ ] customresource handler unit testing of field validation
 - [ ] field validation integration tests check for exact match of strict errors
