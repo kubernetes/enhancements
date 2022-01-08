@@ -15,12 +15,12 @@ prr-approvers:
   - "@wojtek-t"
 see-also:
 - "/keps/sig-scheduling/895-pod-topology-spread"
-stage: beta
-latest-milestone: "v1.20"
+stage: stable
+latest-milestone: "v1.24"
 milestone:
   alpha: "v1.19"
   beta: "v1.20"
-  stable: "v1.22"
+  stable: "v1.24"
 feature-gates:
   - name: DefaultPodTopologySpread
     components:
