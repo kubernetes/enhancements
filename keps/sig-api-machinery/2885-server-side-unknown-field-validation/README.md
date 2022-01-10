@@ -270,10 +270,10 @@ that server-side validation should either not be performed at all, provide
 warnings for the presence of unknown/duplicate fields, or error out in the
 presence of unknown/duplicate fields.
 
-For beta, we propose modifying the kubectl `--validate` flag to enable users
-to choose between client-side validation or server-side
-validation (either strict or warning), when server-side validation is supported
-by the server (and default to strict server-side validation).
+When server-side validation is enabled on the server (as will be the default
+starting in beta), we propose modifying the kubectl `--validate` flag to
+default to server-side strict validation and allow the user to choose between
+strict, warn-only, or no validation.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -284,12 +284,16 @@ Upon successfully providing kubectl access to server-side validation via the
 `--validate` flag, an open question will remain as to the future of client
 side validation.
 
-While we would like kubectl to use server-side validation by default once it
-is GA, the question remains whether client-side validation be optionally
-available to kubectl users or completely deprecated.
+Kubectl will use server-side validation by default starting in beta for servers
+that have it enabled. If kubectl does not recognize a server with server-side
+validation enabled, however, it will fall back to using client-side validation.
+This requires maintaining client-side validation indefinitely in kubectl, which
+has both pros and cons.
 
-Maintaining client-side validation indefinitely provides the benefit of
-allowing users to validate their objects without needing access to a server.
+On the one hand, maintaining client-side validation gives users a way to
+validate their objects without needing access to a server, (albeit this
+mechanism is error-prone and not officially supported).
+
 On the other hand, the downside of continuing to maintain client-side
 validation is that it uses openapiv2 which will be less actively supported
 as openapiv3 becomes standard and will cause client-side validation to
@@ -522,14 +526,14 @@ a string flag that accepts the following values:
 
 * `true` or `strict`: If server-side validation is enabled on the server it sends
   a request with the fieldValidation param set to `Strict`, otherwise it falls
-  back to client-side validation. This is the default
+  back to client-side validation. The default remains `true`, as it currently is
+  today.
 * `false` or `ignore`: This performs no server-side validation or client-side validation,
 sending a request to the server with fieldValidation param set to `Ignore` if
 server-side validation is enabled.
 * `warn`: This sends a request to the server with the fieldValidation param set
   to `Warn`. It performs server-side validation, but validation errors are
-  exposed as warnings in the result header rather than failing the request. This
-  will be the default once server-side validation goes GA.
+  exposed as warnings in the result header rather than failing the request.
 
 
 ### Test Plan
