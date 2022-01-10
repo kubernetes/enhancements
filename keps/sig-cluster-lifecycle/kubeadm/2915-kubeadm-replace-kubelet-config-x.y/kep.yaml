@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-cluster-lifecycle
 status: implementable
 creation-date: 2021-08-30
+last-updated: 2022-01-10
 reviewers:
   - "@fabriziopandini"
   - "@pacoxu"
@@ -14,17 +15,17 @@ approvers:
   - "@SataQiu"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "0.0"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.23"
-  beta: TBD
+  beta: "v1.24"
   stable: TBD
 
 # The following PRR answers are required at alpha release
