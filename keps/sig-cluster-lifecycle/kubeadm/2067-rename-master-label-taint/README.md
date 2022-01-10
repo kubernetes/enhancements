@@ -294,8 +294,9 @@ Not applicable.
 ## Implementation History
 
 - 2020-10-03 - initial provisional KEP created
-- 2020-10-05 - KEP marked as implementable
+- 2020-10-05 - KEP marked as implementable for 1.20 (stage 1)
 - 2020-11-09 - added link to "master-control-plane.md" ADR
+- 2022-01-10 - KEP marked as implementable for 1.24 (stage 2)
 
 ## Drawbacks
 
