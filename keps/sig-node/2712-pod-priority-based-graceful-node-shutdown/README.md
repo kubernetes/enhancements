@@ -111,7 +111,7 @@ shutdown order.
 
 This implementation builds on top of the node graceful shutdown feature
 by introducing additional configuration. A new feature flag called
-`PodPriortityBasedGracefulShutdown` will be added to control the behavior
+`GracefulNodeShutdownBasedOnPodPriority` will be added to control the behavior
 of the kubelet.
 
 We will describe the configuration by using an example. Say, the
@@ -174,8 +174,8 @@ get the difference of total time and critical pods time):
 
 |Pod priority class value|Shutdown period|
 |------------------------|---------------|
-| 2000000000             |180 seconds    |
-| 0                      |120 seconds    |
+| 2000000000             |120 seconds    |
+| 0                      |180 seconds    |
 
 Kubelet will be modified to only work with the config proposed in this KEP or the
 Node shutdown KEP. If both are specified, then it will be treated as a configuration
