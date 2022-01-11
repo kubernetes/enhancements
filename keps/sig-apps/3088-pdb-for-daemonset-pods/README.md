@@ -66,18 +66,19 @@ tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [User Stories](#user-stories)
-    - [Story 1](#story-1)
-- [Design Details](#design-details)
-  - [Test Plan](#test-plan)
-    - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
-- [Alternatives](#alternatives)
+- [KEP-3088: Support pod disruption budget for DaemonSet pods](#kep-3088-support-pod-disruption-budget-for-daemonset-pods)
+  - [Release Signoff Checklist](#release-signoff-checklist)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [User Stories](#user-stories)
+      - [Story 1](#story-1)
+  - [Design Details](#design-details)
+    - [Test Plan](#test-plan)
+      - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
+  - [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -233,10 +234,7 @@ specific part for DaemonSets is the calculation of allowed disruption from its s
 
 ### Test Plan
 
-In practice, the patch provided by PR [k/k #98307](https://github.com/kubernetes/kubernetes/pull/98307)
-proves it works in production environments at Flant since March 2020
-([kube-controller-manager patch in deckhouse/deckhouse](https://github.com/deckhouse/deckhouse/blob/main/modules/040-control-plane-manager/images/kube-controller-manager/patches/1.21/pdb-daemonset.patch)
-is used in 1.18, 1.19, 1.20, 1.21).
+- __Unit tests__ in the disruption controller
 
 #### How can someone using this feature know that it is working for their instance?
 
