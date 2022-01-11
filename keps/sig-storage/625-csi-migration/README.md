@@ -93,7 +93,7 @@ internal APIs.
 ## Proposal
 
 ### Implementation Details/Notes/Constraints
-The detailed design was originally implemented as a [design proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md)
+The detailed design was originally implemented as a [design proposal](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration/csi-migration-design.md)
 
 ### Risks and Mitigations
 
@@ -149,7 +149,7 @@ know what configuration it’s running in and validate the expected result.
 Configurations to test:
 
 | ADC               | Kubelet                                            | Expected Result                                                          |
-|-------------------|----------------------------------------------------|--------------------------------------------------------------------------|
+| ----------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
 | ADC Migration On  | Kubelet Migration On                               | Fully migrated - result should be same as “Migration Shim Testing” above |
 | ADC Migration On  | Kubelet Migration Off (or Kubelet version too low) | No calls made to driver. All operations serviced by in-tree plugin       |
 | ADC Migration Off | Kubelet Migration On                               | Not supported config - Undefined behavior                                |
@@ -196,7 +196,7 @@ you need any help or guidance.
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: CSIMigration, CSIMigration{vendor}, InTreePlugin{vendor}Unregister
     - Components depending on the feature gate: kubelet, kube-controller-manager, kube-scheduler
-    - Please refer to this design doc on the [Step to enable the feature](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md#upgradedowngrade-migrateunmigrate-scenarios)
+    - Please refer to this design doc on the [Step to enable the feature](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration/csi-migration-design.md#upgradedowngrade-migrateunmigrate-scenarios)
 
 * **Does enabling the feature change any default behavior?**
 
@@ -219,17 +219,17 @@ you need any help or guidance.
   for it should be enabled align with kube-controller-manager otherwise the volume topology && volume limit function could
   be impacted.
   
-| Kube-Controller-Manager| Kubelet                                            | Expected Behavior Change                                                 |
-|------------------------|----------------------------------------------------|--------------------------------------------------------------------------|
-| `CSIMigration{vendor}` On | `CSIMigration{vendor}` On                       | Fully migrated. All operations serviced by CSI plugin. From user perspective, nothing changed.                    |
-| `CSIMigration{vendor}` On | `CSIMigration{vendor}` Off                      | `InTreePlugin{vendor}Unregister` enabled on Kubelet: Broken state, Provision/Delete/Attach/Detach by CSI, Mount/Unmount not function. `InTreePlugin{vendor}Unregister` enabled on KCM: Provision/Deletion/Attach/Detach by CSI, Mount/Unmount by in-tree. `InTreePlugin{vendor}Unregister` disabled at all: Provision/Deletion by CSI, other operations by In-tree.|
-| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` On                      | Broken state. Operations like volume provision will still work. But operations like volume Attach/Mount will be broken                        |
-| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` Off                     | No behavior change        |
+| Kube-Controller-Manager    | Kubelet                    | Expected Behavior Change                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CSIMigration{vendor}` On  | `CSIMigration{vendor}` On  | Fully migrated. All operations serviced by CSI plugin. From user perspective, nothing changed.                                                                                                                                                                                                                                                                      |
+| `CSIMigration{vendor}` On  | `CSIMigration{vendor}` Off | `InTreePlugin{vendor}Unregister` enabled on Kubelet: Broken state, Provision/Delete/Attach/Detach by CSI, Mount/Unmount not function. `InTreePlugin{vendor}Unregister` enabled on KCM: Provision/Deletion/Attach/Detach by CSI, Mount/Unmount by in-tree. `InTreePlugin{vendor}Unregister` disabled at all: Provision/Deletion by CSI, other operations by In-tree. |
+| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` On  | Broken state. Operations like volume provision will still work. But operations like volume Attach/Mount will be broken                                                                                                                                                                                                                                              |
+| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` Off | No behavior change                                                                                                                                                                                                                                                                                                                                                  |
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
   - Yes - can be disabled by disabling feature flags. 
-  Please refer to the [upgrade/downgrade](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md#upgradedowngrade-migrateunmigrate-scenarios) sections on how to downgrade the cluster to roll back the enablement.
+  Please refer to the [upgrade/downgrade](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration/csi-migration-design.md#upgradedowngrade-migrateunmigrate-scenarios) sections on how to downgrade the cluster to roll back the enablement.
 
   - For `InTreePlugin{vendor}Unregister`, yes we can disable the feature gate once we enabled. This will register the corresponding 
   in-tree storage plugin into the supported list and user will be able to use it to do all storage related operations again.
@@ -243,9 +243,14 @@ like Provision/Deletion/Attach/Detach/Mount/Unmount will not be available if CSI
 
 * **Are there any tests for feature enablement/disablement?**
 We have CSI Migration e2e test for each plugin that are implemented and maintained by each driver maintainer. 
-Specifically, for each in-tree plugin corresponding CSI drivers, it will have 
+Specifically, for each in-tree plugin corresponding CSI drivers, it havs
   - Full k8s storage e2e tests
-  - Migration enabled functional e2e tests. 
+  - Migration enabled functional e2e tests. For example:
+    - GCE PD [migration testgrid](https://testgrid.k8s.io/provider-gcp-compute-persistent-disk-csi-driver#Migration%20Kubernetes%20Master%20Driver%20Stable).
+    - AWS EBS [migration testgrid](https://k8s-testgrid.appspot.com/provider-aws-ebs-csi-driver#ci-migration-test)
+    - Azuredisk [migration testgrid](https://testgrid.k8s.io/provider-azure-azuredisk-csi-driver#pr-azuredisk-csi-driver-e2e-migration).
+    - Azurefile has [migration testgrid](https://testgrid.k8s.io/provider-azure-azurefile-csi-driver#pr-azurefile-csi-driver-e2e-migration).
+    - Openstack has CSI migration tests for GCE/AWS/Azure/Cinder at [testgrid](https://testgrid.k8s.io/redhat-openshift-ocp-release-4.10-broken#Summary). And an upgrade test will be added soon in the future.
   - Upgrade/downgrade/version skew tests that test the transition from feature turning on to off.
 
   For core K8s, we have unit tests including but not limited to:
@@ -279,9 +284,9 @@ Specifically, for each in-tree plugin corresponding CSI drivers, it will have
 
 * **What specific metrics should inform a rollback?**
   We have metrics on the CSI sidecar side called `csi_operation_duration_seconds` and core k8s metrics on both kube-controller-manager and kubelet side called `storage_operation_duration_seconds`. 
-  Both of them will have a `migrated` field to indicate whether this operation is a migrated PV operation. 
-    - For `csi_operation_duration_seconds`, we will have a `grpc_status` field
-    - For `storage_operation_duration_seconds`, we will have a `status` field
+  Both of them have a `migrated` field to indicate whether this operation is a migrated PV operation. 
+    - For `csi_operation_duration_seconds`, we have a `grpc_status` field
+    - For `storage_operation_duration_seconds`, we have a `status` field
   
   If the error ratio of these two metrics has an unusual strike or is keeping at a relatively higher level compared to in-tree model, it means something went wrong and we need a rollback.
 
@@ -302,7 +307,7 @@ In addition, some CSI drivers are not able to maintain 100% backwards compatibil
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  We will have metrics `csi_sidecar_duration_seconds` on the CSI sidecars and `storage_operation_duration_seconds` on the kube-controller-manager and kubelet side to indicate whether this operation is a migrated operation or not. These metrics will have a `migrated` field to indicate if this is a migrated operation.
+  We have metrics `csi_sidecar_duration_seconds` on the CSI sidecars and `storage_operation_duration_seconds` on the kube-controller-manager and kubelet side to indicate whether this operation is a migrated operation or not. These metrics have a `migrated` field to indicate if this is a migrated operation.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
@@ -319,6 +324,7 @@ the health of the service?**
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 Node side CSI operation metrics. It will be implemented in the GA phase.
+GA Update: It has been implemented in [Kubernetes#PR#98979](https://github.com/kubernetes/kubernetes/pull/98979).
 
 ### Dependencies
 
@@ -415,17 +421,37 @@ Major milestones in the life cycle of a KEP should be tracked in `Implementation
 
 Major milestones for each in-tree plugin CSI migration:
 
+- 1.24
+  - AWS EBS CSI migration to GA
+  - Azuredisk CSI migration to GA
+  - GCE PD CSI migration to GA
+  - OpenStack Cinder CSI migration to GA
+  - Azurefile CSI migration to Beta, on by default
+  - vSphere CSI migration to Beta, on by default
+  - Cephfs CSI migration to Alpha
+  - Ceph RBD CSI migration to Beta, off by default
+  - Portworx CSI migration to Beta, off by default
+- 1.23
+  - AWS EBS CSI migration to Beta, on by default
+  - Azuredisk CSI migration to Beta, on by default
+  - GCE PD CSI migration to Beta, on by default
+  - Portworx CSI migration to Alpha
+  - Ceph RBD CSI migration to Alpha
 - 1.21
-  - Azurefile CSI migration to Beta
+  - Azurefile CSI migration to Beta, off by default
+  - OpenStack Cinder CSI migration to Beta, on by default
 - 1.19
-  - vSphere CSI migration to Beta
-  - Azuredisk CSI migration to Beta
+  - vSphere CSI migration to Beta, off by default
+  - Azuredisk CSI migration to Beta, off by default
+- 1.18
+  - vSphere CSI migration to Alpha
 - 1.17
-  - GCE PD CSI migration to Beta
-  - AWS EBS CSI migration to Beta
+  - GCE PD CSI migration to Beta, off by default
+  - AWS EBS CSI migration to Beta, off by default
 - 1.15
   - Azuredisk CSI migration to Alpha
   - Azurefile CSI migration to Alpha
 - 1.14
   - GCE PD CSI migration to Alpha
   - AWS EBS CSI migration to Alpha
+  - OpenStack Cinder CSI migration to Alpha

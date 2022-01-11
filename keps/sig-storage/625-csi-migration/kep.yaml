@@ -12,29 +12,30 @@ reviewers:
   - "@msau42"
 approvers:
   - "@saadali"
-editor: "@davidz627"
+editor: "@Jiawei0227"
 creation-date: 2019-01-29
-last-updated: 2021-09-08
+last-updated: 2022-01-11
 disable-supported: true
 status: implementable
 see-also:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
+  - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration/csi-migration-design.md"
 prr-approvers:
   - "@wojtek-t"
 replaces:
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "v1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.14"
   beta: "v1.17"
+  stable: "v1.24"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
