@@ -55,6 +55,8 @@ runtimes, without the need to recompile.
 CRI for docker (i.e. dockershim) is currently a built-in container runtime in kubelet code base. This proposal aims 
 at a deprecation and subsequent removal of dockershim from kubelet.
 
+Find more information on dockershim removal: https://k8s.io/dockershim)
+
 ## Motivation
 
 In Kubernetes, the CRI interface is used to talk to a container runtime, The design of CRI is to be able to run a CRI
