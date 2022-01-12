@@ -399,7 +399,14 @@ proposal will be implemented, this is the place to discuss them.
 - Benchmark Tests: 
   - evaluate performance for the case where the selector matches a large number of pods 
     in large number of namespaces. The evaluation shows that using NamespaceSelector has no
-    impact on performance (see https://github.com/kubernetes/kubernetes/pull/101329 for details).
+    impact on performance, summarized as follows:
+    - compares affinity performance without namespace selector 
+      of a workload that puts all pods in one namespace vs splitting them across 100 namespaces 
+      and using namespace selector
+    - tests both required and preferred, and for each affinity and anti-affinity
+    - measures the performance (latency and throughput) of scheduling 1000 pods on
+      5k nodes with 5k existing pods (4k in case of required anti-affinity)
+    - (see https://github.com/kubernetes/kubernetes/pull/101329 for details).
 
 <!--
 **Note:** *Not required until targeted at a release.*
