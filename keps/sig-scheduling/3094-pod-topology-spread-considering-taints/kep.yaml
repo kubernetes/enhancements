@@ -7,7 +7,9 @@ participating-sigs:
 status: implementable
 creation-date: 2021-12-30
 reviewers:
-  - TBD
+  - "@ahg-g"
+  - "@alculquicondor"
+  - "@Huang-Wei"
 approvers:
   - TBD
 
@@ -39,7 +41,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: TaintStrategy
+  - name: PodTopologySpreadTaintPolicy
     components:
       - kube-apiserver
       - kube-scheduler
