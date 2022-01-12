@@ -388,6 +388,25 @@ To ensure `gracePeriodOverride` is respected, Github issue
 addressed to ensure that `gracePeriod` override will be respected for `preStop`
 hooks.
 
+**Pod termination during graceful node shutdown**
+
+From kubernetes 1.20, the behavior of graceful node shutdown placed pods into
+the `Failed` phase upon shutdown, thus resulting in the pods going into
+terminal phase during graceful shutdown. If the pod is backed by a controller
+like a deployment / replicaset, the controller would create a new pod, that
+will go through the scheduler and could ultimately start on a new node.
+However, some users would prefer that pods would not go into `Failed` phase
+during graceful shutdown, and rather continue running, so that if the node ends
+up being rebooted and kubelet starts again on the same node, pods can continue
+running. See Github [issue
+104531](https://github.com/kubernetes/kubernetes/issues/104531) for more
+discussion.
+
+To ensure that graceful shutdown can be used for both uses cases, a new kubelet
+config option will be introduced that will toggle the behavior of either
+putting pods into Failed phase or only terminating them and not setting the
+phase.
+
 POC: I’ve prototyped an initial POC
 [here](https://github.com/bobbypage/kubernetes/tree/shutdown) of the proposed
 implementation on the `shutdown` branch.
