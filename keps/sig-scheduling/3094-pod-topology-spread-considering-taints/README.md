@@ -168,10 +168,8 @@ updates.
 
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
-This KEP introduces a new field as an option for end-users to honor all taints or
-only system-generated unschedulable taints when computing pod topology spread skew.
-This helps improving the scheduling efficiency by filtering out nodes don't meet the
-toleration requirements.
+This KEP introduces an option for end-users to specify whether to take taints/tolerations
+into consideration when calculating pod topology spread skew.
 
 ## Motivation
 
@@ -183,13 +181,14 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
-Currently, when we compute pod topology spread skew, we will ignore the impact of
-node taints whatever pod tolerates or not, which may lead to some unexpected results.
-E.g. node with pod untolerated taints might be the candidate node after computing,
-then the pod would be stuck in Pending state. So toleration/taints should be taken into
-consideration when computing pod topology spread skew. For backwards compatibility,
-we'd like to define this as an option for end-users to honor all taints or
-only system-generated unschedulable taints.
+Currently in calculating pod topology spread skew, we will ignore node taints
+as node with pod untolerated taints will also be taken into calculation. This
+behavior doesn't match user expectations and will lead pod to unexpected Pending
+state(See [issue](https://github.com/kubernetes/kubernetes/issues/106127)).
+
+Besides, given that we have already some node inclusion policies(nodeAffinity/nodeSelector)
+plumbed into PodTopologySpread implicitly, we'd like to redefine all of them into
+a new struct explicitly this time.
 
 ### Goals
 
@@ -197,9 +196,9 @@ only system-generated unschedulable taints.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- Filtering out pod untolerated nodes when computing pod topology spread skew
-- Provide an option for end-users to specify whether to honor all taints or
-only system-generated unschedulable taints
+
+- Introduce a new struct to define all node inclusion policies explicitly
+- Provide an option for end-users to specify whether to respect taints or not
 
 ### Non-Goals
 
@@ -207,7 +206,7 @@ only system-generated unschedulable taints
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-- Refactor or introduce any breaking changes to PodTopologySpread plugin
+- Support customized taints in array
 
 ## Proposal
 
@@ -219,8 +218,8 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-A new field `TaintStrategy` defined in `TopologySpreadConstraint` will be available for
-end-users to specify different strategies about how to treat taints in computing skew.
+Introduce a new field to `TopologySpreadConstraint` to define all node inclusion
+policies including nodeAffinity and nodeTaint.
 
 ### User Stories (Optional)
 
@@ -232,23 +231,8 @@ bogged down.
 -->
 
 #### Story 1
-When computing pod topology spread skew, I want to exclude nodes that don't tolerate
-all taints to prevent pods from falling into unexpected Pending state. I can simply
-configure this by specifying a taintStrategy:
-
-    apiVersion: v1
-    kind: Pod
-    metadata:
-    name: mypod
-    spec:
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: zone
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              foo: bar
-          taintStrategy: "honorAllTaints"
+When calculating pod topology spread skew, I want to exclude nodes that don't tolerate
+all taints to prevent pods from falling into unexpected Pending state.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -275,8 +259,6 @@ Consider including folks who also work outside the SIG or subproject.
 
 - Looping all the toleration/taints to filter out unsatisfied nodes may
 lead to performance problem.
-- Some usual schedulable nodes may become unschedulable, which might be
-confusing for end-users.
 
 ## Design Details
 
@@ -287,40 +269,38 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-A new field named `TaintStrategy` will be introduced to `TopologySpreadConstraint`:
+A new field named `NodeInclusionPolicies` will be introduced to `TopologySpreadConstraint`:
+```golang
+type TopologySpreadConstraint struct {
+  // NodeInclusionPolicies includes several policies
+  // when calculating pod topology spread skew
+  NodeInclusionPolicies nodeInclusionPolicies
+}
+```
 
-    type TopologySpreadConstraint struct {
-      MaxSkew int32
-      TopologyKey string
-      WhenUnsatisfiable UnsatisfiableConstraintAction
-      LabelSelector *metav1.LabelSelector
-      TaintStrategy taintStrategy
-    }
+There are two policies now regarding to nodeAffinity and nodeTaint:
+```golang
+type nodeInclusionPolicies struct {
+  // Respect nodeAffinity/nodeSelector or not in calculating.
+  // By default we will respect this policy.
+  nodeAffinityPolicy policyName
+  // Respect all nodeTaints or not in calculating.
+  // By default we will ignore this policy to maintain current behavior.
+  nodeTaintPolicy policyName
+}
+```
 
-Correspondingly, the internal version for v1.TopologySpreadConstraint named
-`topologySpreadConstraint` will also add a `TaintStrategy` field:
+We will define two policyNames by default:
+```golang
+type policyName string
 
-    type topologySpreadConstraint struct {
-      MaxSkew       int32
-      TopologyKey   string
-      Selector      labels.Selector
-      TaintStrategy taintStrategy
-    }
-
-`taintStrategy` is a potential type of `String`, and there are two available options
-for users.
-
-One is `honorAllTaints` which means when computing pod topology spread skew,
-all kinds of node taints should be taken into consideration, if any of these taints pod
-doesn't tolerate, the node is excluded.
-
-The other one is `honorUnschedulableTaint`, which means instead of considering all taints
-node carried, we only concern about taint `node.kubernetes.io/unschedulable:NoSchedule`.
-
-This behavior is controlled by feature gate `TaintStrategy`, if this feature gate is on
-and `TaintStrategy` doesn't set, `honorAllTaints` will take effect by default.
-
-We'd like to implement this part of logic before computing skew for code efficiency.
+const (
+  // Ignore means ignore this policy in calculating.
+  ignore policyName  = "ignore"
+  // Respect means use this policy in calculating.
+  respect policyName  = "respect"
+)
+```
 
 ### Test Plan
 
@@ -343,10 +323,11 @@ when drafting this test plan.
 -->
 - Unit and integration tests:
   - Defaulting and validation tests
-  - Feature gate enable/disable tests.
-  - `TaintStrategy` works as expected
+  - Feature gate enable/disable tests
+  - `nodeAffinityPolicy` works as expected
+  - `nodeTaintPolicy` works as expected
 - Benchmark tests:
-  - Verify the performance of looping all toleration and taints in computing skew is acceptable
+  - Verify the performance of looping all toleration and taints in calculating skew is acceptable
 
 ### Graduation Criteria
 
@@ -411,12 +392,12 @@ in back-to-back releases.
 -->
 #### Alpha
 - Feature implemented behind feature gate.
-- Test cases mentioned in Test Plan
+- Unit and integration tests passed.
 
 #### Beta
 - Feature is enabled by default
+- Benchmark tests passed, and there is no performance problem.
 - Gather feedback from developers and surveys.
-- No performance problem.
 
 #### GA
 - No negative feedback.
@@ -436,15 +417,12 @@ enhancement:
 -->
 
 - Upgrade
-  - While the feature gate is disabled, field `TaintStrategy` will be ignored.
-  - While the feature gate is enabled, `TaintStrategy` provides two optional values
-  for end-users to specify how to treat node taints.
-  - While the feature gate is enabled, and we don't set this field, `taintStrategy` of
-   `honorAllTaints` will take effect by default.
+  - While the feature gate is disabled, field `NodeInclusionPolicies` will be ignored.
+  - While the feature gate is enabled, `NodeInclusionPolicies` is allowed to use by end-users.
+  - While the feature gate is enabled, and we don't set this field, default values
+  will be configured, which will maintain previous behavior.
 - Downgrade
-  - Whatever we enable/disable feature gate, previously configured values will
-  be ignored.
-
+  - Whatever we enable/disable feature gate, previously configured values will be ignored.
 
 ### Version Skew Strategy
 N/A
@@ -499,22 +477,8 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: TaintStrategy
+  - Feature gate name: PodTopologySpreadTaintPolicy
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
-- [x] Other
-  - Describe the mechanism:
-
-    Specify strategy about how to treat taints.
-
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-
-    Yes.
-
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-
-    No.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -522,7 +486,7 @@ Pick one of these and delete the rest.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Yes, some usual schedulable nodes might be unschedulable.
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -605,8 +569,8 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Operator can query `pod.spec.topologySpreadConstraints[].taintStrategy` field
-and identify if this is set.
+Operator can query `pod.spec.topologySpreadConstraints[].NodeInclusionPolicies` field
+and identify if this is set to non-default values
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -626,7 +590,6 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field:
 - [ ] Other (treat as last resort)
   - Details: -->
-
 N/A
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -832,7 +795,7 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-- 2021.01.05: KEP proposed for review, including motivation, proposal, risks,
+- 2021.01.12: KEP proposed for review, including motivation, proposal, risks,
 test plan and graduation criteria.
 
 ## Drawbacks
