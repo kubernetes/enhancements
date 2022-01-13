@@ -348,25 +348,106 @@ to fail with a descriptive error.
 
 #### Function library
 
-The function library available to expressions can be augmented using [extension
-functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions).
+The functions will become VERY difficult to change as this feature matures.
+There are two types of risks here:
 
-List of functions to include for the initial release:
-- Equality and Ordering (customized to do Kuberenetes semantic equality that handles "associative lists")
-- Regular Expressions
-- Some Standard Definitions
+- We add a function and later need to change it.
+- We don't add a function that is essential for use cases and later need to add it.
 
-Considerations:
-- The functions will become VERY difficult to change as this feature matures. We
-  should limit ourselves initially to functions that we have a high level of
-  confidence will not need to be changed or rethought.
+First let's look at what CEL provides, and then look at what some of the core libraries of major programming
+languages provide, and see what notable absences there are.
 
-- Support kubernetes specific concepts, like accessing associative lists by key may be needed, but
-  we need to review more use cases to determine if this is needed.
-  
-- The Kubernetes associated list equality uses map semantic equality which is different from CEL. 
-  We would consider overwriting in CEL or adding a workaround utility function.
+CEL standard functions, defined in the [list of standard definitions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions) include:
 
+- `size` (or string, lists, maps, ...)
+- String inspection: `startsWith`, `endsWith`, `contains`
+- Regex: `matches`
+- Date/time accessors: `getDate`, `getDayOfMonth`, `getDayOfWeek`, `getDayOfYear`, `getFullYear`, `getHours`, `getMilliseconds`, `getMinutes`, `getMonth`, `getSeconds`
+
+CEL standard [macros](https://github.com/google/cel-spec/blob/master/doc/langdef.md#macros) include:
+
+- `has`
+- `all`
+- `exists`
+- `exists_one`
+- `map`
+- `filter`
+
+CEL [extended string function library](https://github.com/google/cel-go/blob/master/ext/strings.go) includes:
+- 
+- `charAt`
+- `indexOf`, `lastIndexOf`
+- `upperAscii`, `lowerAscii`
+- `replace` (string literal replacement, not regex)
+- `split`
+- `substring`
+- `trim`
+
+Notable absences from the standard functions, when comparing against the core libraries of Go, Java and Python are:
+
+Strings:
+
+- trim/trimLeft/trimRight (trimming either by whitespace or by provided cutset)
+- trimPrefix/trimSuffix
+- join
+- replace (regex)
+- format (e.g. `fmt.Sprintf()`)
+
+Lists:
+
+- sort
+- indexOf/lastIndexOf
+- replace
+- sublist
+- split
+- reverse
+- reduce or sum/min/max (reduce is more general, the others are more concrete)
+
+Numbers:
+
+- abs/cel/floor/round
+- exp/log/log10/logN/pow/sqrt
+- max(x, y, ..)/min(x, y, ...)
+- <trig functions>
+
+Maps:
+
+- <Ability to construct a map using a comprehension>
+
+Some considerations when selecting which of the above we should include in CEL expressions in Kubernetes:
+
+- We should include functions that will be needed for future use cases of CEL in Kubernetes (e.g. general admission) as
+  ones needed for validation.
+- Regex replace is very powerful and useful. It is also potentially dangerous due to its ability to allocate memory.
+- `format`: Since CEL supports string concatenation, the value of having format would only be to do things like format floats.
+  Formatting functions are complex and require extensive documentation to teach.
+- `sort` makes it possible to check if a list is sorted. It can be an expensive operation.
+- `indexOf` / `lastIndexOf` / `split` / `replace` (the string functions) could be overloaded to provide the equivalent list functions?
+   Keeping string and list functions consistent seems like a good way to keep the learning curve down.
+- `reduce` is going to non-obvious to anyone that doesn't have a functional programming background?
+  - CEL already provides `map`..
+  - I don't want to ever be expected to expose `fold` (or `zip` either, I think)
+- "Ability to construct a map using a comprehension": this appears mechanically problematic to support in CEL?
+
+Proposal:
+
+- Keep all the CEL standard functions and macros as well as the extended string library.
+- Add regex replace support. It's very useful, and we already allow regex matching.
+- Add `trim` / `trimLeft` / `trimRight` (overloaded to take an optional cutset arg) for strings
+- Add `trimPrefix` / `trimSuffix` for strings
+- Add `sort` for lists with comparable elements
+- Add a `reduce` macro? (I'm on the fence on this one)
+- Add `sum`, `min` and `max` functions for lists of summable/comparable elements
+- Add the core math functions (exp/log/log10/logN/pow/sqrt/abs/cel/floor/round) and trig. Can we put this in a math extension library in cel-go?
+  - What types of abuse do we open ourselves up to? What are the mining / code breaking uses that get unlocked?
+  - Lists literals can be constructed to do sum, min, max on any values, e.g. `[spec.x, spec.y].max()`.
+- Add `indexOf` / `lastIndexOf` / `split` / `replace` support for lists (overloading the existing string functions)
+- Add `sublist` support for lists (consistent with substring). Since `substring` is an extension function, replace it
+  with a single function that can be used for both strings and lists?
+
+The function libraries we need can be added using [extension
+functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
+or directly to the Kubernetes codebase.
 
 ### User Stories
 
@@ -486,6 +567,8 @@ for our use case.
 The good news is that https://github.com/google/cel-policy-templates-go already has
 demonstrated integrating CEL with OpenAPIv3. We plan to leverage this work.
 
+Support for comparing integers and floats is supported in beta and later (in alpha, ints could only be compared to ints and floats to floats).
+
 We will add detailed test coverage for numeric comparisons due to
 [google/cel-spec#54](https://github.com/google/cel-spec/issues/54#issuecomment-491464172) including
 coverage of interactions in these dimensions:
@@ -501,12 +584,12 @@ coverage of interactions in these dimensions:
 Types:
 
 | OpenAPIv3 type                                     | CEL type                                                                                                                     |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
 | 'object' with Properties                           | object / "message type" (`type(<object>)` evaluates to `selfType<uniqueNumber>.path.to.object.from.self`                     |
 | 'object' with AdditionalProperties                 | map                                                                                                                          |
 | 'object' with x-kubernetes-embedded-type           | object / "message type", 'apiVersion', 'kind', 'metadata.name' and 'metadata.generateName' are implicitly included in schema |
 | 'object' with x-kubernetes-preserve-unknown-fields | object / "message type", unknown fields are NOT accessible in CEL expression                                                 |
-| x-kubernetes-int-or-string                         | dynamic object that is either an int or a string, `type(value)` can be used to check the type                                |
+| x-kubernetes-int-or-string                         | union of int or string,  `self.intOrString < 100 \|\| self.intOrString == '50%'` evalutes to true for both `50` and `"50%"`  |
 | 'array                                             | list                                                                                                                         |
 | 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                                         |
 | 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                                       |
@@ -786,7 +869,7 @@ to minimize negative impact to ecosystem.
 
 See also the future plans section for this. We believe that CEL for General Admission Control is
 valuable and should be implemented. We are implementing CRD validation with CEL first because is is
-a more constrainted problem and is complementary to CEL for general admission (even if we already
+a more constrained problem and is complementary to CEL for general admission (even if we already
 had CEL for general admission implemented, the convenience of inline CEL validation expressions in
 CRDs is sufficiently convenient to justify it being added).
 
