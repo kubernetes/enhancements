@@ -762,11 +762,11 @@ const (
     ResourceClaimAllocated ResourceClaimPhase = “Allocated”
 
     // It can happen that a resource got allocated for a Pod and
-    // then the Pod cannot run on the nodes where the allocated
+    // then the Pod cannot be scheduled onto the nodes where the allocated
     // resource is available. The scheduler detects this and
     // then sets the “reallocate” phase to tell the plugin that it must
-    // free the resource. The plugin does that and moves it
-    // back to pending.
+    // free the resource. The plugin does that and resets
+    // the ResourceClaimPhase back to "Pending".
     ResourceClaimReallocate ResourceClaimPhase = “Reallocate”
 )
 
