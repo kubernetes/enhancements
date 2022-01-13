@@ -456,12 +456,24 @@ my hardware and how to use it inside a container.
 
 #### Cluster configuration
 
-As a cluster administrator, I want to make certain hardware available to users
+As a cluster administrator, I want to make GPUs from vendor ACME available to users
 of that cluster. I prepare the nodes and deploy the vendor's components with
 `kubectl create`.
 
 I create a ResourceClass for the hardware with parameters that only I as the
-administrator are allowed to choose.
+administrator are allowed to choose, like for example running a command with
+root privileges that does some cluster-specific initialization for each allocation:
+```
+apiVersion: cdi.k8s.io/v1alpha1
+metadata:
+  name: acme-gpu
+pluginName: gpu.acme.com
+parameters:
+  initCommand:
+  - /usr/local/bin/acme-gpu-init
+  - --cluster
+  - my-cluster
+```
 
 #### Partial GPU allocation
 
