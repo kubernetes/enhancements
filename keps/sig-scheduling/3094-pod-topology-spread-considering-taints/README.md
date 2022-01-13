@@ -282,11 +282,13 @@ type TopologySpreadConstraint struct {
 There are two policies now regarding to nodeAffinity and nodeTaint:
 ```golang
 type NodeInclusionPolicies struct {
-  // Respect nodeAffinity/nodeSelector or not in calculating.
-  // By default we will respect this policy.
+  // NodeAffinity policy indicates how we will treat nodeAffinity/nodeSelector
+  // when calculating pod topology spread skew. The value could be Respect/Ignore.
+  // By default, the policy is Respect.
   NodeAffinity PolicyName
-  // Respect all nodeTaints or not in calculating.
-  // By default we will ignore this policy to maintain current behavior.
+  // NodeTaint policy indicates how we will treat node taints
+  // when calculating pod topology spread skew. The value could be Respect/Ignore.
+  // By default, the policy is Ignore for backwards compatibility.
   NodeTaint PolicyName
 }
 ```
@@ -397,7 +399,7 @@ in back-to-back releases.
 #### Beta
 - Feature is enabled by default
 - Benchmark tests passed, and there is no performance problem.
-- Gather feedback from developers and surveys.
+- Gather feedback from developers.
 
 #### GA
 - No negative feedback.
@@ -417,12 +419,11 @@ enhancement:
 -->
 
 - Upgrade
-  - While the feature gate is disabled, field `NodeInclusionPolicies` will be ignored.
   - While the feature gate is enabled, `NodeInclusionPolicies` is allowed to use by end-users.
   - While the feature gate is enabled, and we don't set this field, default values
   will be configured, which will maintain previous behavior.
 - Downgrade
-  - Whatever we enable/disable feature gate, previously configured values will be ignored.
+  - Previously configured values will be ignored.
 
 ### Version Skew Strategy
 N/A
@@ -477,7 +478,7 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PodTopologySpreadTaintPolicy
+  - Feature gate name: PodTopologySpreadNodePolicies
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -499,7 +500,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
-N/A.
+The policies are respected again.
 
 ###### Are there any tests for feature enablement/disablement?
 Yes, unit test will switch the feature gate manually to compare the different behavior.
