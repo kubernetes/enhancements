@@ -7,7 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
