@@ -598,7 +598,7 @@ raising or lowering that figure.
 
 We will provide time and space benchmarks to show what can be expected in typical and worst-case
 scenarios for CEL expressions, and that for most use cases, the timeout alone will be sufficient.
-The cost subsystem would be more aimed at malformed/malicious expressions.
+The alternatives listed below would be more aimed at malformed/malicious expressions.
 
 If the context timeout proves to be insufficient, we have other alternatives to explore, such as
 limiting nested list comprehensions to a depth of 2. According to the performance section of
