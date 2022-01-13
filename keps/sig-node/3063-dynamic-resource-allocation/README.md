@@ -439,18 +439,39 @@ unlimited number of pods.
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+#### Cluster add-on development
 
-#### Story 1
+As a hardware vendor, I want to make my hardware available also to applications
+that run in a container under Kubernetes. I want to make it easy for a cluster
+administrator to configure a cluster where some nodes have this hardware.
 
-Partial allocation.
+I develop two components, one that runs as part of the Kubernetes control plane
+and one that runs on each node, and package those inside container images. YAML
+files describe how to deploy my software on a Kubernetes cluster that supports
+dynamic resource allocation.
 
-Pod requests GPU resource with 2Gb memory:
+Documentation for administrators explains how the nodes need to be set
+up. Documentation for users explains which parameters control the behavior of
+my hardware and how to use it inside a container.
+
+#### Cluster configuration
+
+As a cluster administrator, I want to make certain hardware available to users
+of that cluster. I prepare the nodes and deploy the vendor's components with
+`kubectl create`.
+
+I create a ResourceClass for the hardware with parameters that only I as the
+administrator are allowed to choose.
+
+#### Partial GPU allocation
+
+As a user, I want to use a GPU as accelerator, but don't need exclusive access
+to that GPU. Running my workload with just 2Gb of memory is sufficient. This is
+supported by the ACME GPU hardware. I know that the administrator has created
+an "acme-gpu" ResourceClass.
+
+For a simple trial, I create a Pod directly where two containers share the same subset
+of the GPU:
 ```
 apiVersion: v1
 kind: Pod
@@ -458,11 +479,11 @@ metadata:
   name: device-consumer
 spec:
   containers:
-  - name: my-ubuntu
-    image: ubuntu
+  - name: workload
+    image: my-app
     command: ["/bin/program"]
     podResources:
-    - name: gpu_2Gb
+    - name: gpu
     resources:
       requests:
         memory: "64Mi"
@@ -470,23 +491,32 @@ spec:
       limits:
         memory: "128Mi"
         cpu: "500m"
+  - name: monitor
+    image: my-app
+    command: ["/bin/other-program"]
+    podResources:
+    - name: gpu
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "25m"
+      limits:
+        memory: "64Mi"
+        cpu: "50m"
   resources:
-  - name: gpu_2Gb
+  - name: gpu
     template:
-      resourceClassName: "gpu"
+      resourceClassName: "acme-gpu"
       parameters:
-        memory: "2Gb"
+        memory: "2Gi"
 ```
 
-This request triggers partial resource allocation on the node that has
-a GPU device with 4Gb of memory for the duration of the execution of
-this Pod.
+This request triggers resource allocation on a node that has a GPU device with
+2Gi of memory available and then the Pod runs on that node. The remaining
+capacity of the GPU can be used by other pods. The resource is deallocated
+automatically once the Pod is deleted.
 
-If some other Pod uses 1Gb of that device, then 1Gb free GPU memory
-will left on that device after the resource is allocated. It can be
-used by another Pod requesting up to 1Gb of GPU memory.
-
-#### Story 2
+In production, a similar PodTemplateSpec in a Deployment will be used.
 
 ### Notes/Constraints/Caveats (Optional)
 
