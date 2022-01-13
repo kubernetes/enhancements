@@ -125,7 +125,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -256,9 +256,10 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-
-- Looping all the toleration/taints to filter out unsatisfied nodes may
-lead to performance problem.
+- Checking nodeAffinity and nodeTaints the same time may lead to performance
+problem, we need to verify this by adding performance tests. If performance problem
+does exists, we'd like to add a node selector parser and cache the parsed object
+during PreFilter.
 
 ## Design Details
 
@@ -274,31 +275,31 @@ A new field named `NodeInclusionPolicies` will be introduced to `TopologySpreadC
 type TopologySpreadConstraint struct {
   // NodeInclusionPolicies includes several policies
   // when calculating pod topology spread skew
-  NodeInclusionPolicies nodeInclusionPolicies
+  NodeInclusionPolicies NodeInclusionPolicies
 }
 ```
 
 There are two policies now regarding to nodeAffinity and nodeTaint:
 ```golang
-type nodeInclusionPolicies struct {
+type NodeInclusionPolicies struct {
   // Respect nodeAffinity/nodeSelector or not in calculating.
   // By default we will respect this policy.
-  nodeAffinityPolicy policyName
+  NodeAffinity PolicyName
   // Respect all nodeTaints or not in calculating.
   // By default we will ignore this policy to maintain current behavior.
-  nodeTaintPolicy policyName
+  NodeTaint PolicyName
 }
 ```
 
 We will define two policyNames by default:
 ```golang
-type policyName string
+type PolicyName string
 
 const (
   // Ignore means ignore this policy in calculating.
-  ignore policyName  = "ignore"
+  Ignore PolicyName  = "ignore"
   // Respect means use this policy in calculating.
-  respect policyName  = "respect"
+  Respect PolicyName  = "respect"
 )
 ```
 
@@ -324,8 +325,7 @@ when drafting this test plan.
 - Unit and integration tests:
   - Defaulting and validation tests
   - Feature gate enable/disable tests
-  - `nodeAffinityPolicy` works as expected
-  - `nodeTaintPolicy` works as expected
+  - `NodeInclusionPolicies` works as expected
 - Benchmark tests:
   - Verify the performance of looping all toleration and taints in calculating skew is acceptable
 
@@ -502,7 +502,7 @@ Yes.
 N/A.
 
 ###### Are there any tests for feature enablement/disablement?
-Yes.
+Yes, unit test will switch the feature gate manually to compare the different behavior.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -528,7 +528,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-A malformed configuration will cause the scheduler failing to start. Running workloads are not affected.
+A malformed configuration like non-exist policy will cause the scheduler failing to start. Running workloads are not affected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -812,7 +812,8 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
-N/A
+- Changing the current behavior without introducing control.
+- Checking specific taints.
 
 ## Infrastructure Needed (Optional)
 
