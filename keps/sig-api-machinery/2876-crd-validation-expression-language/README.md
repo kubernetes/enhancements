@@ -424,9 +424,8 @@ Some considerations when selecting which of the above we should include in CEL e
 - `sort` makes it possible to check if a list is sorted. It can be an expensive operation.
 - `indexOf` / `lastIndexOf` / `split` / `replace` (the string functions) could be overloaded to provide the equivalent list functions?
    Keeping string and list functions consistent seems like a good way to keep the learning curve down.
-- `reduce` is going to non-obvious to anyone that doesn't have a functional programming background?
-  - CEL already provides `map`..
-  - I don't want to ever be expected to expose `fold` (or `zip` either, I think)
+- `reduce` is going to be non-obvious to anyone that doesn't have a functional programming background?
+  - If we provide `reduce` are developers going to also expect to have `fold` or `zip`?
 - "Ability to construct a map using a comprehension": this appears mechanically problematic to support in CEL?
 
 Proposal:
@@ -436,7 +435,6 @@ Proposal:
 - Add `trim` / `trimLeft` / `trimRight` (overloaded to take an optional cutset arg) for strings
 - Add `trimPrefix` / `trimSuffix` for strings
 - Add `sort` for lists with comparable elements
-- Add a `reduce` macro? (I'm on the fence on this one)
 - Add `sum`, `min` and `max` functions for lists of summable/comparable elements
 - Add the core math functions (exp/log/log10/logN/pow/sqrt/abs/cel/floor/round) and trig. Can we put this in a math extension library in cel-go?
   - What types of abuse do we open ourselves up to? What are the mining / code breaking uses that get unlocked?
