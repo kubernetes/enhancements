@@ -13,6 +13,7 @@
 - [Proposal](#proposal)
     - [Expression lifecycle](#expression-lifecycle)
     - [Function library](#function-library)
+- [CEL <a href="https://github.com/google/cel-go/blob/master/ext/strings.go">extended string function library</a> includes:](#cel-extended-string-function-library-includes)
   - [User Stories](#user-stories)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
