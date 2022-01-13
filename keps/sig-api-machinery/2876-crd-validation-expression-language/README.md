@@ -591,7 +591,10 @@ associativeList.all(e, e.val == 100)
 
 ### Resource constraints
 
-For Beta, per-expression execution time will be constrained via a context-passed timeout.
+For Beta, per-expression execution time will be constrained via a context-passed timeout. This
+timeout will be set for Beta at 10 seconds, the same duration as with webhooks. We want to see
+how CEL performs in Beta before raising or lowering that figure.
+
 CEL provides a cost subsystem that could be used in the future, but the cost subsystem would need to
 know the length of any relevant lists in order to be useful. That information can be supplied using
 `maxLength`, but this is an optional field, and if not passed, CEL would not be able to provide a
@@ -609,9 +612,6 @@ limiting nested list comprehensions to a depth of 2. According to the performanc
 time complexity of these operations are all O(n), so by limiting nesting to 2 deep, we limit
 expression complexity to O(n<sup>2</sup>). We can limit regular expression complexity
 as well.
-
-For Beta, we will use the same timeout as webhooks - 10 seconds. We want to see how CEL performs in
-Beta before raising or lowering that figure.
 
 ### Test Plan
 
