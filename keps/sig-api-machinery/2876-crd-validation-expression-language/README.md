@@ -591,7 +591,7 @@ associativeList.all(e, e.val == 100)
 
 ### Resource constraints
 
-For Beta, per-expression execution time will be constrained via a context-passed timeout. This
+For Beta, per-request execution time will be constrained via a context-passed timeout. This
 timeout will be set for Beta at 10 seconds, the same duration as with webhooks. We want to see
 how CEL performs in Beta before raising or lowering that figure.
 
