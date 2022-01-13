@@ -595,17 +595,20 @@ For Beta, per-expression execution time will be constrained via a context-passed
 CEL provides a cost subsystem that could be used in the future, but the cost subsystem would need to
 know the length of any relevant lists in order to be useful. That information can be supplied using
 `maxLength`, but this is an optional field, and if not passed, CEL would not be able to provide a
-useful figure. If the context timeout proves to be insufficient during Beta, then we will work on
-adding `maxLength` support to  CEL's cost subsystem.
+useful figure. If the context timeout proves to be insufficient during Beta, then we will look at
+alternative ways to bound time and space complexity, such as working on adding `maxLength` support
+to CEL's cost subsystem.
 
 We will provide time and space benchmarks to show what can be expected in typical and worst-case
 scenarios for CEL expressions, and that for most use cases, the timeout alone will be sufficient.
 The cost subsystem would be more aimed at malformed/malicious expressions.
 
-We will also work with the CEL authors to limit nested list comprehensions to a depth of 2. According
-to the performance section of [the CEL spec](https://github.com/google/cel-spec/blob/master/doc/langdef.md#performance), the time complexity of these operations are all O(n), so by limiting
-nesting to 2 deep, we limit expression complexity to O(n<sup>2</sup>). We will also limit regular
-expression complexity as well, but for Beta, we want to focus on context timeouts.
+If the context timeout proves to be insufficient, we have other alternatives to explore, such as
+limiting nested list comprehensions to a depth of 2. According to the performance section of
+[the CEL spec](https://github.com/google/cel-spec/blob/master/doc/langdef.md#performance), the
+time complexity of these operations are all O(n), so by limiting nesting to 2 deep, we limit
+expression complexity to O(n<sup>2</sup>). We can limit regular expression complexity
+as well.
 
 For Beta, we will use the same timeout as webhooks - 10 seconds. We want to see how CEL performs in
 Beta before raising or lowering that figure.
