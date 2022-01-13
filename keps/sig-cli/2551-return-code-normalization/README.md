@@ -155,9 +155,8 @@ To enable the feature, the value must be non-empty, and not equal `0`, or `false
 ## Design Details
 
 The majority of commands already are organized as the following:
-* Run Complete to complete missing information with defaults. This runs on the client side
-* Run Validation to check command syntax and missing arguments. This runs on the client side
-* Execute command itself. This might run on the client side, be dry-run, run an external command or call the APIServer.
+* Validation: check `Options` and set defaults. This runs on the client side.
+* Execute based on `Options`. This might run on the client side, be dry-run, run an external command or call the APIServer.
 
 One thing that should be done is map all the error codes/ints as constants in some file, so they can be automatically
 documented.
@@ -215,10 +214,10 @@ call to the old checkErr or the new function according to the value of the Envir
 ### Creating new error parser functions
 
 Another design solution is to create helper functions for each steps:
-* When running Complete, Validate or other client side steps, call cmdutil.CheckClientErr(err) and exits with some well defined client error code, mapped to ErrorCodeClient
-* When running the Run* step, delegate the returning error to a new function (cmdutil.CheckRunErr) that
+* When running validation, call cmdutil.CheckValidationErr(err) and exits with some well defined client error code, mapped to ErrorCodeClient
+* When executing, delegate the returning error to a new function (cmdutil.CheckExecutionErr) that
 can assess if the error contains some APIError (like forbidden, not found) or Client Error and return the proper
-error. Any new Return Code from Run step should be added to errors.go and the case predicted here. 
+error. Any new Return Code from execution step should be added to errors.go and the case predicted here. 
 
 The pro of this approach is that we can re-develop everything controlling the behavior.
 
@@ -236,7 +235,7 @@ There's an Hybrid approach that can be used:
 * For the steps that run on the client side, create a new function that does an early exit/return with 
 an well known exit code that will be used for all client side operations (no difference between yaml
 validation, missing flag, etc)
-* For the Run* step, call CheckErr, that might delegate the error validation to a new function or follow
+* For the execution step, call CheckErr, that might delegate the error validation to a new function or follow
 with the old behavior, depending on the Environment Variable described above
 
 ```
