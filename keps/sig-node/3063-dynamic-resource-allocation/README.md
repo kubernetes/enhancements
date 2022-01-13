@@ -632,7 +632,7 @@ supported by the plugin).
 ResourceClaim, ResourceClass and ResourcePlugin are new built-in types
 in a new `cdi.k8s.io/v1alpha1` API group. This was chosen instead of
 using CRDs because core Kubernetes components must interact with them
-and installing of CRDs as part of cluster creation is an unsolved
+and installation of CRDs as part of cluster creation is an unsolved
 problem.
 
 The PodSpec gets extended.
