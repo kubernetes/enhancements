@@ -768,15 +768,6 @@ const (
     // free the resource. The plugin does that and moves it
     // back to pending.
     ResourceClaimReallocate ResourceClaimPhase = “Reallocate”
-
-    // Deleting the ResourceClaim triggers freeing the resource.
-    // Because of the plugin’s finalizer, such a claim then
-    // continues to exist with a DeletionTimeStamp.
-    // Once the plugin has successfully freed the resource,
-    // it sets this status and removes the finalizer. Usually
-    // the claim object will then be removed quickly, but
-    // additional finalizers might also keep it around longer.
-    ResourceClaimFreed ResourceClaimPhase = “Freed”
 )
 
 type PodSpec {
