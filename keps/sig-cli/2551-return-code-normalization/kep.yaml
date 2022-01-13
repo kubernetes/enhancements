@@ -7,16 +7,13 @@ owning-sig: sig-cli
 status: provisional
 creation-date: 2021-03-16
 reviewers:
-  - TBD
+  - "@soltysh"
+  - "@sftim"
+  - "@rikatz"
+  - "@deejross"
 approvers:
-  - TBD
-prr-approvers:
-  - TBD
-see-also:
-  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
-replaces:
-  - "/keps/sig-ccc/3456-replaced-kep"
+  - "@soltysh"
+
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -24,22 +21,9 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.22"
+latest-milestone: "v1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.22"
-  beta: "v1.23"
-  stable: "v1.24"
+  alpha: "v1.24"
 
-# The following PRR answers are required at alpha release
-# List the feature gate name and the components for which it must be enabled
-feature-gates:
-  - name: MyFeature
-    components:
-      - kubectl
-disable-supported: true
-
-# The following PRR answers are required at beta release
-metrics:
-  - my_feature_metric
