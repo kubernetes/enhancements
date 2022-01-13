@@ -595,13 +595,6 @@ For Beta, per-request execution time will be constrained via a context-passed ti
 timeout will be set for Beta at 10 seconds, the same duration as with webhooks. We want to see
 how CEL performs in Beta before raising or lowering that figure.
 
-CEL provides a [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) that could be used in the future,
-but the cost subsystem would need to know the length of any relevant lists in order to be useful. 
-That information can be supplied using `maxLength`, but this is an optional field, and if not
-passed, CEL would not be able to provide a useful figure. If the context timeout proves to be 
-insufficient during Beta, then we will look at alternative ways to bound time and space complexity,
-such as working on adding `maxLength` support to CEL's cost subsystem.
-
 We will provide time and space benchmarks to show what can be expected in typical and worst-case
 scenarios for CEL expressions, and that for most use cases, the timeout alone will be sufficient.
 The cost subsystem would be more aimed at malformed/malicious expressions.
@@ -612,6 +605,11 @@ limiting nested list comprehensions to a depth of 2. According to the performanc
 time complexity of these operations are all O(n), so by limiting nesting to 2 deep, we limit
 expression complexity to O(n<sup>2</sup>). We can limit regular expression complexity
 as well.
+
+CEL also provides a [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) that could be used in the future,
+but the cost subsystem would need to know the length of any relevant lists in order to be useful. 
+That information can be supplied using `maxLength`, but this is an optional field, and if not
+passed, CEL would not be able to provide a useful figure.
 
 ### Test Plan
 
