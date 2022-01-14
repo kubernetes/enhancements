@@ -1,0 +1,19 @@
+title: NodeConformance and NodeFeature labels cleanup
+kep-number: 3041
+authors:
+  - "@SergeyKanzhelev"
+owning-sig: sig-testing
+participating-sigs:
+- sig-node
+status: provisional
+creation-date: 2021-11-08
+reviewers:
+  - danielle
+  - ehashman
+  - mmiranda96
+approvers:
+  - BenTheElder
+  - aojea
+  - dchen1107
+stage: stable
+latest-milestone: "v1.26"
