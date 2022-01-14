@@ -26,6 +26,7 @@
   - [Type Checking](#type-checking)
   - [Type System Integration](#type-system-integration)
     - [Why not represent associative lists as maps in CEL?](#why-not-represent-associative-lists-as-maps-in-cel)
+  - [Resource constraints](#resource-constraints)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
