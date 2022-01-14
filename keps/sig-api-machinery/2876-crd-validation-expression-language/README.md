@@ -591,11 +591,9 @@ associativeList.all(e, e.val == 100)
 
 ### Resource constraints
 
-For Beta, per-request execution time will be constrained via a context-passed timeout. This
-timeout will be set for Beta at 5 seconds. We are allocating 10 seconds total for validation,
-and giving CEL expressions half of that time. We want to see how CEL performs in Beta before
-raising or lowering that figure. If the timeout is exceeded, the error message will include how
-long each expression took to evaluate.
+For Beta, per-request execution time will be constrained via a context-passed timeout. For Beta, we are looking at a range between 100 milliseconds and 1 second for the timeout. We want to see how
+CEL performs in Beta before deciding what specific duration to set the timeout to. If the timeout is 
+exceeded, the error message will include how long each expression took to evaluate.
 
 We will provide time and space benchmarks to show what can be expected in typical and worst-case
 scenarios for CEL expressions, and that for most use cases, the timeout alone will be sufficient.
