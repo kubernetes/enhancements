@@ -260,7 +260,7 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 - Checking nodeAffinity and nodeTaints the same time may lead to performance
 problem, we need to verify this by adding performance tests. If performance problem
-does exists, we'd like to add a node selector parser and cache the parsed object
+does exists, we'd like to add a toleration parser and cache the parsed object
 during PreFilter.
 
 ## Design Details
@@ -301,9 +301,9 @@ type PolicyName string
 
 const (
   // Ignore means ignore this policy in calculating.
-  Ignore PolicyName  = "ignore"
+  Ignore PolicyName  = "Ignore"
   // Respect means use this policy in calculating.
-  Respect PolicyName  = "respect"
+  Respect PolicyName  = "Respect"
 )
 ```
 
@@ -531,7 +531,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-A malformed configuration like non-exist policy will cause the scheduler failing to start. Running workloads are not affected.
+N/A
 
 ###### What specific metrics should inform a rollback?
 
@@ -815,8 +815,11 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
-- Changing the current behavior without introducing control.
-- Checking specific taints.
+- The community has discussed about changing the current behavior implicitly,
+but considering this will introduce a break user-facing change, for backwards
+compatibility, we decided to add a feature as switch for end-users.
+- We have also discussed about whether to support specific taints, but considering
+there's no strong demands from end-users, we will delay this until needed.
 
 ## Infrastructure Needed (Optional)
 
