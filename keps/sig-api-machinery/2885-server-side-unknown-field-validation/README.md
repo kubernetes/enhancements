@@ -606,8 +606,6 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - [ ] endpoints handler unit testing of field validation
 - [ ] customresource handler unit testing of field validation
 - [ ] field validation integration tests check for exact match of strict errors
-- [ ] applyPatcher no longer unmarshals twice for strict/warn validation
-  [#107544](https://github.com/kubernetes/kubernetes/issues/107544)
 - [ ] In tree NestedObjectDecoders no longer short circuit on strict decoding
   errors [#107545](https://github.com/kubernetes/kubernetes/issues/107545)
 
