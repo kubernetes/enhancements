@@ -1,0 +1,16 @@
+title: Introduce HPA updateMode field to enable dry-run
+kep-number: 3148
+authors:
+  - "@minbaev"
+owning-sig: sig-autoscaling
+participating-sigs:
+reviewers:
+  - "@mwielgus"
+  - "@josephburnett"
+approvers:
+  - "@mwielgus"
+  - "@josephburnett"
+editor: TBD
+creation-date: 2022-01-17
+status: provisional
+stage: alpha
