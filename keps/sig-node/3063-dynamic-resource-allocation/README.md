@@ -426,12 +426,20 @@ Allocation of a resource happens either immediately (“immediate
 allocation”) or when a Pod needs the resource (“delayed allocation”),
 depending on a flag in the ResourceClaim spec. Pods reference resource
 claims in a new PodSpec.Resources list. Each resource in that list
-then can be made available to one or more containers in that Pod.  To
-support ephemeral resources, an entry in the new PodSpec.Resources
-list can also be a ResourceClaimTemplate. When a Pod gets created,
-such a template will be used to create a normal ResourceClaim with the
-Pod as owner, and then the normal allocation of the resource takes
-place.
+then can be made available to one or more containers in that Pod.
+
+When a PodTemplateSpec in an app controller spec references a ResourceClaim by
+name, all Pods created by that controller also use that name and thus share the
+resources allocated for that ResourceClaim. This might be supported by the
+resource driver and can be useful, depending on the characteristics of the
+resource.
+
+But often, each Pod is meant to have exclusive access to its own ResourceClaim
+instance instead. To support such ephemeral resources without having to modify
+all controllers that create Pods, an entry in the new PodSpec.Resources list
+can also be a ResourceClaimTemplate. When a Pod gets created, such a template
+will be used to create a normal ResourceClaim with the Pod as owner, and then
+the normal allocation of the resource takes place.
 
 For immediate allocation, scheduling Pods is simple because the
 resource is already allocated and determines the nodes on which the
