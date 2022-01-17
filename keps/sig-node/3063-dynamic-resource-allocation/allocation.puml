@@ -11,18 +11,18 @@
 
 ==B1== -->[= __delayed allocation__] "ResourceClaim\lfor delayed allocation with\l* phase=pending\l* plugin name set\l* without deletion timestamp"
   -->[ **scheduler** filters nodes\l and sets PotentialNodes ] "ResourceClaim\lfor delayed allocation with\l* phase=pending\l* PotentialNodes set"
-  -->[ **resource controller** checks nodes\l and sets SuitableNodes] "ResourceClaim with\l* phase=pending\l* SuitableNodes set" as READY_FOR_SCHEDULING
+  -->[ **resource controller** checks nodes\l and sets UnsuitableNodes] "ResourceClaim with\l* phase=pending\l* UnsuitableNodes set" as READY_FOR_SCHEDULING
   -->[ **scheduler** picks a node candidate ] "ResourceClaim with\l* phase=pending\l* SelectedNode set"
   -->[ **resource plugin**\l updates claim\l to prevent deletion] "ResourceClaim\lfor delayed allocation\lwith finalizer" as ALLOCATING
   -->[ **resource plugin**\l finishes allocation ] ALLOCATED
 
   ALLOCATING -->[ **resource plugin**\l detects that resource cannot be allocated for node\n and removes SelectedNode and finalizer ] READY_FOR_SCHEDULING
 
-ALLOCATED -->[ **scheduler** reserves resource for pod ]  "ResourceClaim\lwith one additional UsedBy entry"
+ALLOCATED -->[ **scheduler** reserves resource for pod ]  "ResourceClaim\lwith one additional ReservedFor entry"
 -->[ **scheduler** schedules pod ] "Pod ready to run"
 -->[ **kubelet** calls NodePrepareResource\l and adds CDI devices for the runtime ] "Pod runs"
--->[ Pod stops, gets deleted\l **garbage collector** marks ResourceClaim for deletion ] "ResourceClaim with\l* deletion timestamp\l* UsedBy non-empty"
--->[ **resource controller** removes deleted Pod from UsedBy ] "ResourceClaim with\l* deletion timestamp\l* UsedBy empty"
+-->[ Pod stops, gets deleted\l **garbage collector** marks ResourceClaim for deletion ] "ResourceClaim with\l* deletion timestamp\l* ReservedFor non-empty"
+-->[ **resource controller** removes deleted Pod from ReservedFor ] "ResourceClaim with\l* deletion timestamp\l* ReservedFor empty"
 -->[ **resource plugin** finishes deallocation ] "ResourceClaim\l* with deletion timestamp\l* without finalizer\l* phase=pending"
 -->[ **garbage collector** deletes ResourceClaim ] (*)
 @enduml

@@ -75,21 +75,32 @@ SIG Architecture for cross-cutting KEPs).
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Cluster add-on development](#cluster-add-on-development)
+    - [Cluster configuration](#cluster-configuration)
+    - [Partial GPU allocation](#partial-gpu-allocation)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Implementation](#implementation)
+  - [Resource allocation flow](#resource-allocation-flow)
   - [API](#api)
-  - [Communication between kubelet and resource node plugin](#communication-between-kubelet-and-resource-node-plugin)
-    - [<code>NodePrepareResource</code>](#)
-      - [NodePrepareResource Errors](#nodeprepareresource-errors)
-    - [<code>NodeUnprepareResource</code>](#-1)
-      - [NodeUnprepareResource Errors](#nodeunprepareresource-errors)
+  - [kube-controller-manager](#kube-controller-manager)
+  - [kube-scheduler](#kube-scheduler)
+    - [Pre-filter](#pre-filter)
+    - [Filter](#filter)
+    - [Post-filter](#post-filter)
+    - [Reserve](#reserve)
+    - [Unreserve](#unreserve)
+  - [kubelet](#kubelet)
+    - [Managing resources](#managing-resources)
+    - [Communication between kubelet and resource node plugin](#communication-between-kubelet-and-resource-node-plugin)
+      - [<code>NodePrepareResource</code>](#)
+      - [<code>NodeUnprepareResource</code>](#-1)
     - [Implementing a plugin for node resources](#implementing-a-plugin-for-node-resources)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -590,10 +601,7 @@ Several components must be implemented or modified in Kubernetes:
   https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/scheduling/scheduler_binder.go
 - Kubelet must be extended to retrieve information from ResourceClaims
   and then invoke local resource plugin methods. It must pass information about
-  the additional resources to the container runtime. It must detect
-  whether the container runtime has the necessary support and
-  advertise that in the cluster via node labels to simplify deployment
-  of plugins and Pod scheduling.
+  the additional resources to the container runtime.
 
 For a resource plugin the following components are needed:
 - Some utility library similar to
@@ -606,19 +614,6 @@ For a resource plugin the following components are needed:
 
 The utility library will be developed outside of Kubernetes and does not have
 to be used by plugins, therefore it is not described further in this KEP.
-
-
-```
-<<[UNRESOLVED @pohly]>>
-All of the changes in Kubernetes need to be specified in a lot more detail.
-
-Upgrade and downgrade scenarios should already be considered for v1alpha1 to ensure
-that whatever changes will be needed are in place before going to v1beta1 where
-downgrades have to be supported.
-
-All of that will be added once there is consensus to move ahead with this proposal.
-<<[/UNRESOLVED]>>
-```
 
 ### Resource allocation flow
 
@@ -755,10 +750,15 @@ type ResourceClaimStatus struct {
 
    // A change of the node candidates triggers a check
    // on which nodes the resource could be made available.
+   // Unsuitable nodes will be ignored when selecting
+   // a node. All other nodes are potential candidates,
+   // either because no information is available yet
+   // or because allocation is expected to succeed.
+   //
    // This can change, so the plugin must refresh
    // this information periodically until a node gets
    // selected by the scheduler.
-   SuitableNodes []string
+   UnsuitableNodes []string
 
    // An allocated resource is available on nodes that match this
    // selector. If nil, the resource is available everywhere.
@@ -781,11 +781,10 @@ type ResourceClaimStatus struct {
    // is.
    UserLimit int
 
-   // UsedBy indicates which entities are currently using the resource.
-   // Usually those are Pods. Only Pods listed as users can be scheduled,
-   // all others must wait. Updated by kube-scheduler as part of Pod scheduling
-   // (TBD – a separate controller might also work).
-   UsedBy []metav1.OwnerReference
+   // ReservedFor indicates which entities are currently allowed to use the resource.
+   // Usually those are Pods. Only Pods holding a reservation can be scheduled,
+   // all others must wait. Updated by kube-scheduler as part of Pod scheduling.
+   ReservedFor []metav1.OwnerReference
 }
 
 type ResourceClaimPhase string
@@ -793,9 +792,8 @@ type ResourceClaimPhase string
 const (
     // The claim is waiting for allocation by the plugin.
     //
-    // If it uses delayed allocation, SuitableNodes must have
-    // been set, otherwise the plugin cannot proceed with
-    // the allocation.
+    // For delayed allocation, the plugin will wait for
+    // a selected node before it starts an allocation attempt.
     ResourceClaimPending ResourceClaimPhase = “Pending”
 
     // Set by the plugin once the resource has been successfully
@@ -871,20 +869,142 @@ type ResourceClaimTemplate struct {
 }
 ```
 
-### Communication between kubelet and resource node plugin
+### kube-controller-manager
 
-This gRPC interface is provided by the resource node plugin and invoked by
-kubelet. It is inspired by
+The code that creates a ResourceClaim from an inline ResourceClaimTemplate will
+be an almost verbatim copy of the [generic ephemeral volume
+code](https://github.com/kubernetes/kubernetes/tree/master/pkg/controller/volume/ephemeral),
+just with different types.
+
+kube-controller-manager will need new [RBAC
+permissions](https://github.com/kubernetes/kubernetes/commit/ff3e5e06a79bc69ad3d7ccedd277542b6712514b#diff-2ad93af2302076e0bdb5c7a4ebe68dd3188eee8959c72832181a7597417cd196) that allow creating ResourceClaims.
+
+As a future extension, kube-controller-manager could also remove ReservedBy
+entries that reference deleted objects. This could serve as fallback for cases
+where the entity that normal removes those entries was unable to do so, for
+example kubelet on a node that shut down unexpectedly.
+
+### kube-scheduler
+
+The scheduler plugin needs to implement several extension points. The [volume
+binder
+plugin](https://github.com/kubernetes/kubernetes/tree/master/pkg/scheduler/framework/plugins/volumebinding)
+can serve as a reference.
+
+#### Pre-filter
+
+This checks whether a Pod uses any ResourceClaims. If there are ResourceClaims
+with immediate binding that are not allocated yet, then the Pod will be marked
+as unschedulable at the moment.
+
+#### Filter
+
+This checks whether the given node has access to those ResourceClaims which
+were already allocated.
+
+For unallocated ResourceClaims with delayed allocation, only those nodes are
+filtered out that are explicitly listed in UnsuitableNodes. There are several
+reasons why such a deny list is more suitable than an allow list:
+- Nodes for which no information is available must pass the filter phase to be
+  included in the list that will be passed to the post-filter and to get copied
+  into the PotentialNodes field there.
+- A node can already be chosen while there is no information yet and, if
+  allocation for that node actually works, the Pod can get scheduled sooner.
+- Some resource plugins might not have any unsuitable nodes, for example
+  because they modify containers and that works on all nodes at all
+  times. Forcing such plugins to set an allow list would cause unnecessary
+  work.
+
+In its state for the Pod the scheduler plugin must remember when it rejected a
+node because of UnsuitableNodes. That information will be used in Post-filter
+to deallocate resources.
+
+
+#### Post-filter
+
+This is passed a list of nodes that have passed filtering by the resource
+plugin and the other plugins. The PotentialNodes field of unallocated
+ResourceClaims with delayed allocation gets updated now if the field doesn't
+match the current list already.
+
+If no node fits the Pod and the Pod depends on ResourceClaims with delayed
+allocation, then deallocating one or more of these ResourceClaims may make the
+Pod schedulable after allocating the resource elsewhere. Therefore each
+ResourceClaim with delayed allocation is checked whether all of the following
+conditions apply:
+- allocated
+- not currently in use
+- it was the reason why some node could not fit the Pod, as recorded earlier in
+  Filter
+
+One of the ResourceClaims satisfying these criteria is picked randomly and its
+Phase is set to Deallocate. This may make it possible to run the Pod
+elsewhere. If it still doesn't help, deallocation may continue with another
+ResourceClaim, if there is one. To prevent deallocating all resources merely
+because the scheduler happens to check quickly, the next deallocation will only
+requested when there is none currently running.
+
+At the moment, the scheduler has no information that might enable it to
+prioritize which resource to deallocate first. Future extensions of this KEP
+might attempt to improve this.
+
+#### Reserve
+
+A node has been chosen for the Pod.
+
+If necessary, the SelectedNode field of ResourceClaims with delayed allocation
+gets set here and the scheduling attempt gets stopped for now. It will be
+retried when the ResourceClaim status changes.
+
+The Pod gets added to the ReservedFor field of its ResourceClaims to ensure that
+no-one else gets to use those.
+
+#### Unreserve
+
+The Pod gets removed from the ReservedFor field because it cannot be scheduled after
+all.
+
+### kubelet
+
+#### Managing resources
+
+kubelet must ensure that resources are ready for use on the node before running
+the first Pod that uses a specific resource instance and make the resource
+available elsewhere again when the last Pod has terminated that uses it. For
+both operations, kubelet calls a resource node plugin as explained in the next
+section.
+
+Pods that are not listed in ReservedFor or where the ResourceClaim doesn't
+exist at all must not be allowed to run. Instead, a suitable event must be
+emitted which explains the problem. Such a situation can occur as part of
+downgrade scenarios.
+
+In addition, kubelet must remove a Pod from ResourceClaim.ReservedFor before
+deleting the Pod. If this was the last Pod on the node that uses the specific
+resource instance, then NodeUnprepareResource (see below) must have been called
+successfully. This ensures that network-attached resource are available again
+for other Pods, including those that might get scheduled to other nodes. It
+also signals that it is safe to deallocate and delete the ResourceClaim.
+
+#### Communication between kubelet and resource node plugin
+
+Resource node plugins are discovered through the [kubelet plugin registration
+mechanism](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#device-plugin-registration). A
+new "ResourcePlugin" type will be used in the Type field of the
+[PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
+response to distinguish the plugin from device and CSI plugins.
+
+Under the advertised Unix Domain socket the node plugin provides the following
+gRPC interface. It was inspired by
 [CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
 with “volume” replaced by “resource” and volume specific parts removed.
 
-```
-<<[UNRESOLVED @pohly]>>
-Do plugin operations need secrets? They are currently not part of the proposed Kubernetes API.
-<<[/UNRESOLVED]>>
-```
+Secrets are not part of this interface: if a plugin needs secrets, for example
+to access its own backplane, then it can define custom parameters for those
+secrets and retrieve them directly from the apiserver. This works because
+plugins are expected to be written for Kubernetes.
 
-#### `NodePrepareResource`
+##### `NodePrepareResource`
 
 This RPC is called by kubelet when a Pod that wants to use the
 specified resource is scheduled on a node.  The Plugin SHALL assume
@@ -942,7 +1062,7 @@ message CDIDevice {
 }
 ```
 
-##### NodePrepareResource Errors
+###### NodePrepareResource Errors
 
 If the plugin is unable to complete the NodePrepareResource call
 successfully, it MUST return a non-ok gRPC code in the gRPC status.
@@ -956,7 +1076,7 @@ code.
 | Resource does not exist | 5 NOT_FOUND | Indicates that a resource corresponding to the specified `resource_id` does not exist. | Caller MUST verify that the `resource_id` is correct and that the resource is accessible and has not been deleted before retrying with exponential back off. |
  
 
-#### `NodeUnprepareResource`
+##### `NodeUnprepareResource`
 
 A Node Plugin MUST implement this RPC call. This RPC is a reverse
 operation of `NodePrepareResource`. This RPC MUST undo the work by
@@ -983,7 +1103,7 @@ message NodeUnprepareResourceResponse {
 }
 ```
 
-##### NodeUnprepareResource Errors
+###### NodeUnprepareResource Errors
 
 If the plugin is unable to complete the NodeUprepareResource call
 successfully, it MUST return a non-ok gRPC code in the gRPC status.
@@ -1023,8 +1143,8 @@ module.
   can keep track of claims that are in the process of being allocated
   and consider that when determining where another claim might get
   allocated. For delayed allocation, the controller plugin informs the
-  scheduler by updating the ResourceClaimStatus.SuitableNodes field
-  which then sets the selected node field. For immediate allocation,
+  scheduler by updating the ResourceClaimStatus.UnsuitableNodes field.
+  Eventually, the scheduler sets the selected node field. For immediate allocation,
   the controller plugin itself sets the selected node field.
 - In both cases, the node plugin waits for a ResourceClaim assigned to
   its own node and tries to allocate the resource. If that fails, it
@@ -1033,375 +1153,261 @@ module.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
+Unit tests will be added together with all new code. End-to-end testing depends
+on a working cluster add-on and a container runtime with CDI support. A mock
+add-on will be developed in parallel to developing the code in Kubernetes, but
+as it will depend on the new APIs, we have to get those merged first.
 
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
+Such a mock add-on could be as simple as taking parameters from ResourceClass
+and ResourceClaim and turning them into environment variables that then get
+checked inside containers. Tests for different behavior of an add-on in various
+scenarios can be simulated by running the control-plane part of it in the E2E
+test itself. For interaction with kubelet, proxying of the gRPC interface can
+be used, as in the
+[csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path/blob/16251932ab81ad94c9ec585867104400bf4f02e5/cmd/hostpathplugin/main.go#L61-L63):
+then the kubelet plugin runs on the node(s), but the actual processing of gRPC
+calls happens inside the E2E test.
 
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+All tests that don't involve actually running a Pod can become part of
+conformance testing. Those tests that run Pods cannot be because CDI support in
+runtimes is not required.
 
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
+Once we have end-to-end tests, at least two Prow jobs will be defined:
+- A pre-merge job that will be required and run only for the in-tree code of
+  this KEP (`optional: false`, `run_if_changed` set, `always_run: false`).
+- A periodic job that runs the same tests to determine stability and detect
+  unexpected regressions.
 
 ### Graduation Criteria
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 
 #### Alpha -> Beta Graduation
 
 - Gather feedback from developers and surveys
-- Complete features A, B, C
 - Tests are in Testgrid and linked in KEP
+- In addition to the basic features, we also handle:
+  - reuse of network-attached resources after unexpected node shutdown
 
 #### Beta -> GA Graduation
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- 3 examples of real-world usage
+- Conformance, downgrade tests and scalability tests
 - Allowing time for feedback
 
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-#### Removing a Deprecated Flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include 
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
--->
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+The usual Kubernetes upgrade and downgrade strategy applies for in-tree
+components. Vendors must take care that upgrades and downgrades work with the
+add-ons that they provide to customers.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+There may be situations where dynamic resource allocation is enabled in some
+parts of the cluster (apiserver, kube-scheduler), but not on some nodes. The
+resource add-on is responsible for setting ResourceClaim.AvailableOnNodes so
+that those nodes are not included.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+But if a Pod with ResoureClaims already got scheduled onto a node without the
+feature enabled, kubelet will start it without those additional
+resources. Applications must be prepared for this and refuse to run. This will
+put the Pod into a failed state that administrators or users need to resolve by
+deleting the Pod.
+
+The same applies when the entire cluster gets downgraded to a version where
+dynamic resource allocation is unsupported or the feature gets disabled via
+feature gates: existing Pods with ResoureClaims will be scheduled as if those
+resources were not requested.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: DynamicResourceAllocation
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+    - kubelet
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes. Applications that were already deployed and are running will continue to
+work, but they will stop working when containers get restarted because those
+restarted containers won't have the additional resources.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+Pods might have been scheduled without handling resources. Those Pods must be
+deleted to ensure that the re-created Pods will get scheduled properly.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
--->
+Tests for apiserver will cover disabling the feature. This primarily matters
+for the extended PodSpec: the new fields must be preserved during updates even
+when the feature is disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
--->
+Workloads not using ResourceClaims should not be impacted because the new code
+will not done anything besides checking the Pod for ResourceClaims.
+
+When kube-controller-manager fails to create ResourceClaims from inline
+ResourceClaimTemplates, those Pods will not get scheduled. Bugs in
+kube-scheduler might lead to not scheduling Pods that could run or worse,
+schedule Pods that should not run. Those then will get stuck on a node where
+kubelet will refuse to start them. None of these scenarios affect already
+running workloads.
+
+Failures in kubelet might affect running workloads, but only if containers for
+those workloads need to be restarted.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+
+One indicator are unexpected restarts of the cluster control plane
+components. Another are an increase in the number of pods that fail to
+start. In both cases further analysis of logs and pod events is needed to
+determine whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+This will be done manually before transition to beta by bringing up a KinD
+cluster with kubeadm and changing the feature gate for individual components.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+There will be pods which have a non-empty PodSpec.Resources field and ResourceClaim objects.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+For kube-controller-manager, metrics similar to the generic ephemeral volume
+controller will be added:
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: `resource_controller_create_total`
+  - Metric name: `resource_controller_create_failures_total`
+  - Metric name: `workqueue` with `name="resource_claim"`
+
+For kube-scheduler and kubelet, the existing metrics for handling Pods will be
+used.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
-<!--
-At a high level, this usually will be in the form of "high percentile of SLI
-per day <= X". It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
--->
+For Pods not using ResourceClaims, the same SLOs apply as before.
+
+For kube-controller-manager, metrics for the new controller could be checked to
+ensure that work items do not remain in the queue for too long, for some
+definition of "too long".
+
+Pod scheduling and startup are more important. However, expected performance
+will depend on how resources are used (for example, how often new Pods are
+created), therefore it is impossible to predict what reasonable SLOs might be.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+The container runtime must support CDI.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+A third-party add-on is required for allocating resources.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+For Pods not using ResourceClaims, not much changes. kube-controller-manager,
+kube-scheduler and kubelet will have additional watches for ResourceClaim,
+ResourceClass, and ResourcePlugin, but if the feature isn't used, those watches
+will not cause much overhead.
+
+If the feature is used, ResourceClaim will be modified during Pod scheduling,
+startup and teardown by kube-scheduler, the third-party add-on and
+kubelet. Once a ResourceClaim is allocated and the Pod runs, there will be no
+periodic API calls. How much this impacts performance of the apiserver
+therefore mostly depends on how often this feature is used for new
+ResourceClaims and Pods. Because it is meant for long-running applications, the
+impact should not be too high.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+For ResourcePlugin and ResourceClass, only a few (something like 10 to 20)
+objects per cluster are expected. Admins need to create those.
+
+The number of ResourceClaim objects depends on how much the feature is
+used. They are namespaced and get created directly or indirectly by users. In
+the most extreme case, there will be one or more ResourceClaim for each Pod.
+But that seems unlikely for the intended use cases.
+
+Kubernetes itself will not impose specific limitations for the number of these
+objects.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+Only if the third-party add-on uses features of the cloud provider.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+The PodSpec potentially changes and thus all objects where it is embedded as
+template. Merely enabling the feature does not change the size, only using it
+does.
+
+In the simple case, a Pod references existing ResourceClaims by name, which
+will add some short strings to the PodSpec and to the ContainerSpec. Embedding
+a ResourceClaimTemplate will increase the size more, but that will depend on
+the number of custom parameters supported by an add-on and thus is hard to
+predict.
+
+The ResourceClaim objects will initially be fairly small. However, if delayed
+allocation is used, then the list of node names or NodeSelector instances
+inside it might become rather large and in the worst case will scale with the
+number of nodes in the cluster.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+Startup latency of schedulable stateless pods may be affected by enabling the
+feature because some CPU cycles are needed for each Pod to determine whether it
+uses ResourceClaims.
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+Actively using the feature will increase load on the apiserver, so latency of
+API calls may get affected.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
+Merely enabling the feature is not expected to increase resource usage much.
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+How much using it will increase resource usage depends on the usage patterns
+and is hard to predict.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The Kubernetes control plane will be down, so no new Pods get
+scheduled. kubelet may still be able to start or or restart containers if it
+already received all the relevant updates (Pod, ResourceClaim, etc.).
+
 ###### What are other known failure modes?
+
+To be added for beta.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -1417,6 +1423,8 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+To be added for beta.
 
 ## Implementation History
 
@@ -1438,12 +1446,6 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
-
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
 
 ### ResourceClaimTemplate
 
@@ -1530,8 +1532,8 @@ ResourceClaim objects.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
---> 
+Initially, all development will happen inside the main Kubernetes
+repository. The mock add-on can be developed inside test/integration. Once we
+understand better what kind of support code might be useful for add-on
+developers, we may want to share that in a staging repository where the in-tree
+mock add-on and third-party add-ons can use it.
