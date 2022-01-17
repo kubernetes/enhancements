@@ -2619,6 +2619,14 @@ Beta:
   - Automatically manages versions of mandatory/suggested configuration
   - Discrimates paginated LIST requests
 
+GA:
+
+- Satisfaction with LIST and WATCH support
+- APF allows us to disable client-side rate limiting (or we know the reason why not)
+- Satisfaction that the API can be extended in a backward-compatible way to support borrowing between priority levels
+- Satisfaction that the API is sufficient to support auto-tuning of capacity and resource costs
+- API annotations properly support strategic merge patch
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
