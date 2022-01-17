@@ -8,11 +8,10 @@ participating-sigs:
 status: provisional
 creation-date: 2021-05-17
 reviewers:
-  - TBD
-  - "@alice.doe"
+  - "@klueska"
+  - "@ahg-g"
 approvers:
-  - TBD
-  - "@oscar.doe"
+  - "@ehashman"
 
 see-also:
 replaces:
