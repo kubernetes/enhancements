@@ -2,9 +2,9 @@
 !theme reddress-lightblue
 skinparam componentStyle rectangle
 
-cloud "3rd party\ncluster add-on" as 3rdparty {
-  component "resource controller" as vendorcontroller
-  component "resource node plugin" as vendornodeplugin
+cloud "resource driver" {
+  component "resource driver controller" as drivercontroller
+  component "resource kubelet plugin" as driverplugin
 }
 
 component Kubernetes {
@@ -25,7 +25,7 @@ component Kubernetes {
   }
 }
 
-vendorcontroller -[hidden]> vendornodeplugin
+drivercontroller -[hidden]> driverplugin
 Pod -[hidden]> otherapi
 otherapi -[hidden]> ResourceClaim
 
@@ -35,7 +35,7 @@ ResourceClaim <-u- k8sresourceclaimcontroller: create
 Pod <--> scheduler
 ResourceClaim <--> k8sresourceplugin
 
-ResourceClaim <-> vendorcontroller
-pluginmanager <-> vendornodeplugin
-resourcemanager <-> vendornodeplugin
+ResourceClaim <-> drivercontroller
+pluginmanager <-> driverplugin
+resourcemanager <-> driverplugin
 @enduml

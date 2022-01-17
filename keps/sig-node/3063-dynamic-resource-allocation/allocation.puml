@@ -2,27 +2,27 @@
 !theme reddress-lightblue
 
 (*) -->[ **user** creates Pod with inline ResourceClaimTemplate ] "Pod exists"
--->[ **resource controller** checks ResourceClaimTemplate and ResourceClass,\l then creates ResourceClaim with Pod as owner ] ==B1==
+-->[ **scheduler resource controller** checks ResourceClaimTemplate and ResourceClass,\l then creates ResourceClaim with Pod as owner ] ==B1==
 
 ==B1== -->[= __immediate allocation__] "ResourceClaim\lfor immediate allocation with\l* phase=pending\l* plugin name set\l* without deletion timestamp"
-  -->[ **resource plugin**\l updates claim\l to prevent deletion] "ResourceClaim\lfor immediate allocation\lwith finalizer"
-  -->[ **resource plugin**\l finishes allocation] "ResourceClaim with\l* phase=allocated\n* Attributes and UserLimit set" as ALLOCATED
+  -->[ **resource driver**\l updates claim\l to prevent deletion] "ResourceClaim\lfor immediate allocation\lwith finalizer"
+  -->[ **resource driver**\l finishes allocation] "ResourceClaim with\l* phase=allocated\n* Attributes and UserLimit set" as ALLOCATED
 
 
 ==B1== -->[= __delayed allocation__] "ResourceClaim\lfor delayed allocation with\l* phase=pending\l* plugin name set\l* without deletion timestamp"
   -->[ **scheduler** filters nodes\l and sets PotentialNodes ] "ResourceClaim\lfor delayed allocation with\l* phase=pending\l* PotentialNodes set"
-  -->[ **resource controller** checks nodes\l and sets UnsuitableNodes] "ResourceClaim with\l* phase=pending\l* UnsuitableNodes set" as READY_FOR_SCHEDULING
+  -->[ **resource driver** checks nodes\l and sets UnsuitableNodes] "ResourceClaim with\l* phase=pending\l* UnsuitableNodes set" as READY_FOR_SCHEDULING
   -->[ **scheduler** picks a node candidate ] "ResourceClaim with\l* phase=pending\l* SelectedNode set"
-  -->[ **resource plugin**\l updates claim\l to prevent deletion] "ResourceClaim\lfor delayed allocation\lwith finalizer" as ALLOCATING
-  -->[ **resource plugin**\l finishes allocation ] ALLOCATED
+  -->[ **resource driver**\l updates claim\l to prevent deletion] "ResourceClaim\lfor delayed allocation\lwith finalizer" as ALLOCATING
+  -->[ **resource driver**\l finishes allocation ] ALLOCATED
 
-  ALLOCATING -->[ **resource plugin**\l detects that resource cannot be allocated for node\n and removes SelectedNode and finalizer ] READY_FOR_SCHEDULING
+  ALLOCATING -->[ **resource driver**\l detects that resource cannot be allocated for node\n and removes SelectedNode and finalizer ] READY_FOR_SCHEDULING
 
 ALLOCATED -->[ **scheduler** reserves resource for pod ]  "ResourceClaim\lwith one additional ReservedFor entry"
 -->[ **scheduler** schedules pod ] "Pod ready to run"
 -->[ **kubelet** calls NodePrepareResource\l and adds CDI devices for the runtime ] "Pod runs"
--->[ Pod stops, gets deleted\l **garbage collector** marks ResourceClaim for deletion ] "ResourceClaim with\l* deletion timestamp\l* ReservedFor non-empty"
--->[ **resource controller** removes deleted Pod from ReservedFor ] "ResourceClaim with\l* deletion timestamp\l* ReservedFor empty"
--->[ **resource plugin** finishes deallocation ] "ResourceClaim\l* with deletion timestamp\l* without finalizer\l* phase=pending"
+-->[ Pod stops\l **kubelet**\l * calls NodeUnprepareResource\l * removes Pod from ReservedFor] "ResourceClaim with\l* ReservedFor empty"
+-->[ Pod gets deleted\l **garbage collector** marks ResourceClaim for deletion ] "ResourceClaim with\l* deletion timestamp"
+-->[ **resource driver** finishes deallocation ] "ResourceClaim\l* with deletion timestamp\l* without finalizer\l* phase=pending"
 -->[ **garbage collector** deletes ResourceClaim ] (*)
 @enduml

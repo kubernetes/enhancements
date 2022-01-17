@@ -93,7 +93,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Unreserve](#unreserve)
   - [kubelet](#kubelet)
     - [Managing resources](#managing-resources)
-    - [Communication between kubelet and resource node plugin](#communication-between-kubelet-and-resource-node-plugin)
+    - [Communication between kubelet and resource kubelet plugin](#communication-between-kubelet-and-resource-kubelet-plugin)
       - [<code>NodePrepareResource</code>](#)
       - [<code>NodeUnprepareResource</code>](#-1)
     - [Implementing a plugin for node resources](#implementing-a-plugin-for-node-resources)
@@ -199,18 +199,18 @@ Several core Kubernetes components must be modified (see the
 [implementation](#implementation) section for details):
 - kube-apiserver (new API)
 - kube-controller-manager (new controller)
-- kube-scheduler (new builtin plugin)
-- kubelet (new third-party plugin kind)
+- kube-scheduler (new builtin scheduler plugin)
+- kubelet (new third-party kubelet plugin type)
 
-Resources are managed by third-party plugins that communicate with central
+Resources as described by this KEP are managed by third-party resource drivers that communicate with central
 Kubernetes components, in particular the kube-scheduler, by updating
 objects stored in the kube-apiserver. kube-scheduler only needs to be modified
-once to support dynamic resource allocation. Then multiple plugins from
+once to support dynamic resource allocation. Then multiple drivers from
 different vendors can be installed at the same time without making further
 changes to the scheduler.
 
-Communication between the kubelet and the local part of the plugin is
-handled through local Unix domain sockets and the plugin registration
+Communication between the kubelet and the node part of the driver is
+handled through local Unix domain sockets and the kubelet plugin registration
 mechanism, using a new plugin type and a new gRPC interface.
 The container runtime uses the
 [Container Device Interface
@@ -230,7 +230,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 Originally, Kubernetes and its scheduler only tracked CPU and RAM as
 resources for containers. Later, support for storage and discrete,
-countable per-node extended resources was added. The device plugin
+countable per-node extended resources was added. The kubelet device plugin
 interface then made such local resources available to containers. But
 for many newer devices, this approach and the Kubernetes API for
 requesting these custom resources is too limited. This KEP addresses
@@ -325,7 +325,7 @@ know that this has succeeded?
   * Custom matching of resource requests with available resources,
     including handling of optional resource requests
 * User-friendly API for describing resource requests
-* Allow resource management plugins that can be developed and deployed
+* Allow resource management cluster add-ons that can be developed and deployed
   separately from Kubernetes and are independent of specific container
   runtimes.
 
@@ -337,7 +337,7 @@ and make progress.
 -->
 
 * Extend the model that kube-scheduler has about
-  resources. Instead, it will need information from the plugin for
+  resources. Instead, it will need information from the resource driver for
   each resource request to determine where a Pod using the resource
   might run. The [Representing Compute Resources in Kubernetes
   proposal](https://docs.google.com/document/d/1666PPUs4Lz56TqKygcy6mXkNazde-vwA7q4e5H92sUc/edit#)
@@ -347,14 +347,14 @@ and make progress.
 
 * Standardize how to describe available resources. Only allocated
   resources are visible through the APIs defined below. How to
-  describe available resources is plugin specific because it depends
-  on the kind of resource which attributes might be relevant. Plugins
+  describe available resources is driver specific because it depends
+  on the kind of resource which attributes might be relevant. Drivers
   should use and document their individual approach for this (for
   example, defining a CRD and publishing through that).
 
 * Provide an abstraction layer for resource requests, i.e., something like a
   “I want some kind of GPU”. Users will need to know about specific
-  resource plugins and which parameters they support. Portability of
+  resource drivers and which parameters they support. Portability of
   workloads could be added on top of this proposal by introducing the
   selection of a resource implementation through labels and
   standardizing those labels and the associated parameters. The
@@ -373,35 +373,36 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The proposal is that a plugin handles all operations that are specific
-to the resources managed by that plugin. This includes operations at
+The proposal is that a resource driver handles all operations that are specific
+to the resources managed by that driver. This includes operations at
 the control plane level (tracking where in the cluster resources are
 available, helping with pod scheduling decisions, allocating resources
 when requested) as well as the node level (preparing container
-startup). Such a plugin can be implemented in arbitrary programming
+startup). Such a driver can be implemented in arbitrary programming
 languages as long as it supports the resource allocation protocol and
 gRPC interfaces defined in this KEP. An utility package with Go
 support code will be made available to simplify the development of
-such a plugin, but using it will not be required and its API is not
+such a driver, but using it will not be required and its API is not
 part of this KEP.
 
 Three new API object types get added in a new API group:
-- ResourcePlugin, not namespaced, with a description of the plugin.
+- ResourceDriver, not namespaced, with a description of the driver.
 - ResourceClass, not namespaced, with privileged parameters for
   multiple resource instances of a certain kind. All these instances
-  are provided by the same resource plugin, which is identified by a
+  are provided by the same resource driver, which is identified by a
   field in the class.
 - ResourceClaim, namespaced, with parameters provided by a normal user
   that describes a resource instance that needs to be allocated. A
   ResourceClaim contains the usual meta data, a spec and a status. The
-  spec identifies the plugin that handles the resource via a class
+  spec identifies the driver that handles the resource via a class
   name.
 
 To support arbitrarily complex parameters, both ResourceClass and
 ResourceClaim contain one field which holds a
-runtime.RawExtension. Validation can be handled by plugins through an
+[runtime.RawExtension](https://pkg.go.dev/k8s.io/apimachinery/pkg/runtime#RawExtension).
+Validation can be handled by drivers through an
 admission controller (if desired) or later at runtime when the
-parameters are passed to the plugin.
+parameters are passed to the driver.
 
 The ResourceClaim spec is read-only once created. The ResourceClaim
 status is reserved for system usage and holds the current state of the
@@ -409,14 +410,14 @@ resource. The status must not get lost. This is departing from how
 Kubernetes traditionally handled status, but something that more
 recently [became more
 acceptable](https://github.com/kubernetes/enhancements/pull/2537). Kube-scheduler
-and plugin communicate by modifying that status. The status is also
-how Kubernetes tracks that a plugin has allocated the resource and on
+and resource driver communicate by modifying that status. The status is also
+how Kubernetes tracks that a driver has allocated the resource and on
 which nodes the resource is available.
 
 This approach is an intentional simplification compared to the PV/PVC
 model for volumes because we don't need to deal with two objects when
 allocating resources and therefore don't need something like the
-volume binding controller. If desired, a resource plugin can implement
+volume binding controller. If desired, a resource driver can implement
 support for manually allocated (“static provisioning” in the context
 of volumes) and/or existing resources by reacting to ResourceClaims by
 using those resources to satisfy a claim.
@@ -435,8 +436,8 @@ place.
 For immediate allocation, scheduling Pods is simple because the
 resource is already allocated and determines the nodes on which the
 Pod may run. For delayed allocation, a node is selected tentatively
-and plugin(s) try to allocate their resources for that node. If that
-succeeds, the Pod can start to run. If it fails, the scheduler must
+and driver(s) try to allocate their resources for that node. If that
+succeeds, the Pod can get scheduled. If it fails, the scheduler must
 determine whether some other node fits the requirements and if so,
 request allocation again. If no node fits because some resources were
 already allocated for a node and are only usable there, then those
@@ -444,7 +445,7 @@ resources must be released and then get allocated elsewhere.
 
 The resources allocated for a ResourceClaim can be shared by multiple
 containers in a pod. Depending on the capabilities defined in the
-ResourceClaim by the plugin, a ResourceClaim can be used exclusively
+ResourceClaim by the driver, a ResourceClaim can be used exclusively
 by one pod at a time, by a certain maximum number of pods, or an
 unlimited number of pods.
 
@@ -478,7 +479,7 @@ root privileges that does some cluster-specific initialization for each allocati
 apiVersion: cdi.k8s.io/v1alpha1
 metadata:
   name: acme-gpu
-pluginName: gpu.acme.com
+driverName: gpu.acme.com
 parameters:
   initCommand:
   - /usr/local/bin/acme-gpu-init
@@ -600,20 +601,20 @@ Several components must be implemented or modified in Kubernetes:
   resource is allocated before the Pod gets scheduled, similar to
   https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/scheduling/scheduler_binder.go
 - Kubelet must be extended to retrieve information from ResourceClaims
-  and then invoke local resource plugin methods. It must pass information about
+  and then invoke local resource driver methods. It must pass information about
   the additional resources to the container runtime.
 
-For a resource plugin the following components are needed:
+For a resource driver the following components are needed:
 - Some utility library similar to
   https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner
   and the code in driver-registrar.
-- *Resource controller*: a central component which handles resource allocation
+- *Resource driver controller*: a central component which handles resource allocation
   by watching and modifying ResourceClaims.
-- *Resource node plugin*: a component which cooperates with kubelet to prepare
+- *Resource kubelet plugin*: a component which cooperates with kubelet to prepare
   the usage of the resource on a node.
 
 The utility library will be developed outside of Kubernetes and does not have
-to be used by plugins, therefore it is not described further in this KEP.
+to be used by drivers, therefore it is not described further in this KEP.
 
 ### Resource allocation flow
 
@@ -632,11 +633,11 @@ The flow is similar for a ResourceClaim that gets created as a stand-alone
 object by the user. In that case, the Pod reference that ResourceClaim by
 name. The ResourceClaim does not get deleted at the end and can be reused by
 another Pod and/or used by multiple different Pods at the same time (if
-supported by the plugin).
+supported by the driver).
 
 ### API
 
-ResourceClaim, ResourceClass and ResourcePlugin are new built-in types
+ResourceClaim, ResourceClass and ResourceDriver are new built-in types
 in a new `cdi.k8s.io/v1alpha1` API group. This was chosen instead of
 using CRDs because core Kubernetes components must interact with them
 and installation of CRDs as part of cluster creation is an unsolved
@@ -644,39 +645,44 @@ problem.
 
 The PodSpec gets extended.
 
+Secrets are not part of this API: if a resource driver needs secrets, for
+example to access its own backplane, then it can define custom parameters for
+those secrets and retrieve them directly from the apiserver. This works because
+drivers are expected to be written for Kubernetes.
+
 ```
 type ResourceClass struct {
-    // Resource plugins have a unique name in reverse domain order (acme.example.com).
-    PluginName string
-    // Parameters holds arbitrary values that will be available to the plugin
-    // when allocating a resource that uses this class. The plugin will
+    // Resource drivers have a unique name in reverse domain order (acme.example.com).
+    DriverName string
+    // Parameters holds arbitrary values that will be available to the driver
+    // when allocating a resource that uses this class. The driver will
     // be able to distinguish between parameters stored here and
     // and those stored in ResourceClaimSpec. These parameters
     // here can only be set by cluster administrators.
     Parameters runtime.RawExtension
 }
 
-type ResourcePlugin struct {
-    // The name of the object is the unique plugin name.
+type ResourceDriver struct {
+    // The name of the object is the unique driver name.
     ObjectMeta
 
-    // Features contains a list of features supported by the plugin.
+    // Features contains a list of features supported by the driver.
     // New features may be added over time and must be ignored
     // by code that does not know about them.
-    Features []ResourcePluginFeature
+    Features []ResourceDriverFeature
 }
 
-type ResourcePluginFeature struct {
+type ResourceDriverFeature struct {
     // Name is one of the pre-defined names for a feature.
-    Name ResourcePluginFeatureName
+    Name ResourceDriverFeatureName
     // Parameters might provide additional information about how
-    // the plugin supports the feature. Boolean features have
+    // the driver supports the feature. Boolean features have
     // no parameters, merely listing them indicates support.
     Parameters runtime.RawExtension
 }
 
 type ResourceClaim struct {
-    // The plugin must set a finalizer here before it attempts to
+    // The driver must set a finalizer here before it attempts to
     // allocate the resource. It removes the finalizer again when
     // a) the allocation attempt has definitely failed or b) when
     // the allocated resource was freed. This ensures that
@@ -692,17 +698,17 @@ type ResourceClaim struct {
 }
 
 type ResourceClaimSpec struct {
-    // ResourceClassName references the plugin and additional
+    // ResourceClassName references the driver and additional
     // parameters via the name of a ResourceClass that was
-    // created as part of the plugin deployment.
+    // created as part of the driver deployment.
     //
     // The apiserver does not check that the referenced class
-    // exists, but a plugin-specific admission webhook
+    // exists, but a driver-specific admission webhook
     // may require that and is allowed to reject claims where
     // the class is missing.
     ResourceClassName string
 
-    // Parameters holds arbitrary values that will be available to the plugin
+    // Parameters holds arbitrary values that will be available to the driver
     // when allocating a resource for the claim.
     Parameters runtime.RawExtension
 
@@ -723,27 +729,28 @@ type ResourceClaimStatus struct {
    // determines which component needs to do something.
    Phase ResourceClaimPhase
 
-   // A copy of the plugin name from the ResourceClass at
-   // the time when allocation started. Plugins can
+   // A copy of the driver name from the ResourceClass at
+   // the time when allocation started. Drivers can
    // filter claims by this field. It's also necessary to
    // support deallocation when the class gets deleted before
    // a claim.
-   PluginName string
+   DriverName string
 
    // When allocation is delayed, the scheduler must set
    // the node for which it wants the resource to be allocated
-   // before the plugin proceeds with allocation.
+   // before the driver proceeds with allocation.
+   //
    // For immediate allocation, the scheduler will not set
-   // this field. The plugin controller component may then
+   // this field. The resource driver controller may
    // set it to trigger allocation on a specific node if the
    // resources are local to nodes.
    SelectedNode string
 
    // When allocation is delayed, and the scheduler needs to
-   // decide on which node a Pod should run, it must first
-   // ask the plugin on which nodes the resource might be
-   // made available. To trigger that check, the scheduler must
-   // provide the names of nodes which might be suitable
+   // decide on which node a Pod should run, it will first
+   // ask the driver on which nodes the resource might be
+   // made available. To trigger that check, the scheduler
+   // provides the names of nodes which might be suitable
    // for the Pod. Will be updated periodically until
    // the claim is allocated.
    PotentialNodes []string
@@ -755,7 +762,7 @@ type ResourceClaimStatus struct {
    // either because no information is available yet
    // or because allocation is expected to succeed.
    //
-   // This can change, so the plugin must refresh
+   // This can change, so the driver must refresh
    // this information periodically until a node gets
    // selected by the scheduler.
    UnsuitableNodes []string
@@ -764,10 +771,10 @@ type ResourceClaimStatus struct {
    // selector. If nil, the resource is available everywhere.
    AvailableOnNodes *corev1.NodeSelector
 
-   // Arbitrary data returned by the plugin after a successful allocation.
-   // This data is passed to the plugin for all operations involving
+   // Arbitrary data returned by the driver after a successful allocation.
+   // This data is passed to the driver for all operations involving
    // the allocated resource. This is opaque for Kubernetes.
-   // Plugin documentation may explain to users how to interpret
+   // Driver documentation may explain to users how to interpret
    // this data if needed.
    //
    // The attributes must be sufficient to deallocate the resource
@@ -790,13 +797,13 @@ type ResourceClaimStatus struct {
 type ResourceClaimPhase string
 
 const (
-    // The claim is waiting for allocation by the plugin.
+    // The claim is waiting for allocation by the driver.
     //
-    // For delayed allocation, the plugin will wait for
+    // For delayed allocation, the driver will wait for
     // a selected node before it starts an allocation attempt.
     ResourceClaimPending ResourceClaimPhase = “Pending”
 
-    // Set by the plugin once the resource has been successfully
+    // Set by the driver once the resource has been successfully
     // allocated. The scheduler waits for all resources used by
     // a Pod to be in this phase.
     ResourceClaimAllocated ResourceClaimPhase = “Allocated”
@@ -804,8 +811,8 @@ const (
     // It can happen that a resource got allocated for a Pod and
     // then the Pod cannot be scheduled onto the nodes where the allocated
     // resource is available. The scheduler detects this and
-    // then sets the “reallocate” phase to tell the plugin that it must
-    // free the resource. The plugin does that and resets
+    // then sets the “reallocate” phase to tell the driver that it must
+    // free the resource. The driver does that and resets
     // the ResourceClaimPhase back to "Pending".
     ResourceClaimReallocate ResourceClaimPhase = “Reallocate”
 )
@@ -910,9 +917,9 @@ reasons why such a deny list is more suitable than an allow list:
   into the PotentialNodes field there.
 - A node can already be chosen while there is no information yet and, if
   allocation for that node actually works, the Pod can get scheduled sooner.
-- Some resource plugins might not have any unsuitable nodes, for example
+- Some resource drivers might not have any unsuitable nodes, for example
   because they modify containers and that works on all nodes at all
-  times. Forcing such plugins to set an allow list would cause unnecessary
+  times. Forcing such drivers to set an allow list would cause unnecessary
   work.
 
 In its state for the Pod the scheduler plugin must remember when it rejected a
@@ -971,7 +978,7 @@ all.
 kubelet must ensure that resources are ready for use on the node before running
 the first Pod that uses a specific resource instance and make the resource
 available elsewhere again when the last Pod has terminated that uses it. For
-both operations, kubelet calls a resource node plugin as explained in the next
+both operations, kubelet calls a resource kubelet plugin as explained in the next
 section.
 
 Pods that are not listed in ReservedFor or where the ResourceClaim doesn't
@@ -986,23 +993,18 @@ successfully. This ensures that network-attached resource are available again
 for other Pods, including those that might get scheduled to other nodes. It
 also signals that it is safe to deallocate and delete the ResourceClaim.
 
-#### Communication between kubelet and resource node plugin
+#### Communication between kubelet and resource kubelet plugin
 
-Resource node plugins are discovered through the [kubelet plugin registration
+Resource kubelet plugins are discovered through the [kubelet plugin registration
 mechanism](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#device-plugin-registration). A
 new "ResourcePlugin" type will be used in the Type field of the
 [PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
 response to distinguish the plugin from device and CSI plugins.
 
-Under the advertised Unix Domain socket the node plugin provides the following
+Under the advertised Unix Domain socket the kubelet plugin provides the following
 gRPC interface. It was inspired by
 [CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
 with “volume” replaced by “resource” and volume specific parts removed.
-
-Secrets are not part of this interface: if a plugin needs secrets, for example
-to access its own backplane, then it can define custom parameters for those
-secrets and retrieve them directly from the apiserver. This works because
-plugins are expected to be written for Kubernetes.
 
 ##### `NodePrepareResource`
 
@@ -1078,7 +1080,7 @@ code.
 
 ##### `NodeUnprepareResource`
 
-A Node Plugin MUST implement this RPC call. This RPC is a reverse
+A Kubelet Plugin MUST implement this RPC call. This RPC is a reverse
 operation of `NodePrepareResource`. This RPC MUST undo the work by
 the corresponding `NodePrepareResource`. This RPC SHALL be called by
 kubelet at least once for each successful `NodePrepareResource`. The
@@ -1119,34 +1121,34 @@ code.
 
 #### Implementing a plugin for node resources
 
-The proposal depends on a central controller plugin. Implementing that
-part poses an additional challenge for plugins that so far only ran
-locally on a node because they now need to establish a secure
-communication path between node and controller.
+The proposal depends on a central resource driver controller. Implementing that
+part poses an additional challenge for drivers that manage resources
+locally on a node because they need to establish a secure
+communication path between nodes and the central controller.
 
-How plugins implement that is up to the developer. This section
+How drivers implement that is up to the developer. This section
 outlines a possible solution. If there is sufficient demand, common
 code for this solution could be made available as a reusable Go
 module.
 
-- Each plugin defines a CRD which describes how much resources are
+- Each driver defines a CRD which describes how much resources are
   available per node and how much is currently allocated.
-- RBAC rules ensure that only the plugin can modify objects of that
+- RBAC rules ensure that only the driver can modify objects of that
   type. The objects can and should be namespaced, which makes it
   possible to add automatic cleanup via owner references (similar to
   CSIStorageCapacity).
-- The node plugin publishes information about the local state via a
-  CRD object named after the node. Plugin developers can document
+- The kubelet driver publishes information about the local state via a
+  CRD object named after the node. Driver developers can document
   those CRDs and then users can query the cluster state by listing
   those objects.
-- The controller plugin watches those objects and resource claims. It
+- The driver controller watches those objects and ResourceClaims. It
   can keep track of claims that are in the process of being allocated
   and consider that when determining where another claim might get
-  allocated. For delayed allocation, the controller plugin informs the
+  allocated. For delayed allocation, the driver controller informs the
   scheduler by updating the ResourceClaimStatus.UnsuitableNodes field.
   Eventually, the scheduler sets the selected node field. For immediate allocation,
-  the controller plugin itself sets the selected node field.
-- In both cases, the node plugin waits for a ResourceClaim assigned to
+  the driver controller itself sets the selected node field.
+- In both cases, the kubelet plugin waits for a ResourceClaim assigned to
   its own node and tries to allocate the resource. If that fails, it
   can unset the selected node field to trigger another allocation
   attempt elsewhere.
@@ -1154,13 +1156,13 @@ module.
 ### Test Plan
 
 Unit tests will be added together with all new code. End-to-end testing depends
-on a working cluster add-on and a container runtime with CDI support. A mock
-add-on will be developed in parallel to developing the code in Kubernetes, but
+on a working resource driver and a container runtime with CDI support. A mock
+driver will be developed in parallel to developing the code in Kubernetes, but
 as it will depend on the new APIs, we have to get those merged first.
 
-Such a mock add-on could be as simple as taking parameters from ResourceClass
+Such a mock driver could be as simple as taking parameters from ResourceClass
 and ResourceClaim and turning them into environment variables that then get
-checked inside containers. Tests for different behavior of an add-on in various
+checked inside containers. Tests for different behavior of an driver in various
 scenarios can be simulated by running the control-plane part of it in the E2E
 test itself. For interaction with kubelet, proxying of the gRPC interface can
 be used, as in the
@@ -1198,13 +1200,13 @@ Once we have end-to-end tests, at least two Prow jobs will be defined:
 
 The usual Kubernetes upgrade and downgrade strategy applies for in-tree
 components. Vendors must take care that upgrades and downgrades work with the
-add-ons that they provide to customers.
+drivers that they provide to customers.
 
 ### Version Skew Strategy
 
 There may be situations where dynamic resource allocation is enabled in some
 parts of the cluster (apiserver, kube-scheduler), but not on some nodes. The
-resource add-on is responsible for setting ResourceClaim.AvailableOnNodes so
+resource driver is responsible for setting ResourceClaim.AvailableOnNodes so
 that those nodes are not included.
 
 But if a Pod with ResoureClaims already got scheduled onto a node without the
@@ -1328,7 +1330,7 @@ The container runtime must support CDI.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-A third-party add-on is required for allocating resources.
+A third-party resource driver is required for allocating resources.
 
 ### Scalability
 
@@ -1336,11 +1338,11 @@ A third-party add-on is required for allocating resources.
 
 For Pods not using ResourceClaims, not much changes. kube-controller-manager,
 kube-scheduler and kubelet will have additional watches for ResourceClaim,
-ResourceClass, and ResourcePlugin, but if the feature isn't used, those watches
+ResourceClass, and ResourceDriver, but if the feature isn't used, those watches
 will not cause much overhead.
 
 If the feature is used, ResourceClaim will be modified during Pod scheduling,
-startup and teardown by kube-scheduler, the third-party add-on and
+startup and teardown by kube-scheduler, the third-party resource driver and
 kubelet. Once a ResourceClaim is allocated and the Pod runs, there will be no
 periodic API calls. How much this impacts performance of the apiserver
 therefore mostly depends on how often this feature is used for new
@@ -1349,7 +1351,7 @@ impact should not be too high.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-For ResourcePlugin and ResourceClass, only a few (something like 10 to 20)
+For ResourceDriver and ResourceClass, only a few (something like 10 to 20)
 objects per cluster are expected. Admins need to create those.
 
 The number of ResourceClaim objects depends on how much the feature is
@@ -1362,7 +1364,7 @@ objects.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-Only if the third-party add-on uses features of the cloud provider.
+Only if the third-party resource driver uses features of the cloud provider.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1373,7 +1375,7 @@ does.
 In the simple case, a Pod references existing ResourceClaims by name, which
 will add some short strings to the PodSpec and to the ContainerSpec. Embedding
 a ResourceClaimTemplate will increase the size more, but that will depend on
-the number of custom parameters supported by an add-on and thus is hard to
+the number of custom parameters supported by a resource driver and thus is hard to
 predict.
 
 The ResourceClaim objects will initially be fairly small. However, if delayed
@@ -1533,7 +1535,7 @@ ResourceClaim objects.
 ## Infrastructure Needed (Optional)
 
 Initially, all development will happen inside the main Kubernetes
-repository. The mock add-on can be developed inside test/integration. Once we
-understand better what kind of support code might be useful for add-on
+repository. The mock driver can be developed inside test/integration. Once we
+understand better what kind of support code might be useful for driver
 developers, we may want to share that in a staging repository where the in-tree
-mock add-on and third-party add-ons can use it.
+mock driver and third-party drivers can use it.
