@@ -536,6 +536,10 @@ server-side validation is enabled.
   to `Warn`. It performs server-side validation, but validation errors are
   exposed as warnings in the result header rather than failing the request.
 
+The goal here is for the flag to be intent based, whether we use client-side or
+server-side under the hood is based solely on whether or not server-side
+validation is supported by the apiserver kubectl is connected to.
+
 
 ### Test Plan
 
