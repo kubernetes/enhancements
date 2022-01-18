@@ -358,16 +358,28 @@ No
 
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-
+The API validation would fail if API server and/or etcd is unavailable. The pod object won't be persisted to etcd.
 
 ###### What are other known failure modes?
-
+- Windows Pod by passing windows specific validation and linux pods by passing linux specific validation even after `IdentifyPodOS` featuregate is enabled.
+  - Detection: Looking at `kube_pod_status_phase` metric
+  - Mitigations: Disable the `IdentifyPodOS` featuregate
+  - Diagnostics: Increasing the log-level of APIServer
+  - Testing: Yes, unit tests are already in place
+- Both windows and linux pods are getting rejected when `IdentifyPodOS` featuregate is enabled.
+  - Detection: Looking at `apiserver_request_total` metric
+  - Mitigations: Disable the `IdentifyPodOS` featuregate
+  - Diagnostics: Increasing the log-level of APIServer
+  - Testing: Yes, unit tests are already in place
 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+Disabling the `IdentifyPodOS` featuregate will help in determining the problem.
 
 ## Implementation History
-
+- 2021-09-08: Initial KEP merged
+- 2021-10-29: Initial implementation PR merged
+- 2022-01-19: Graduate the feature to Beta proposed 
 
 
 ## Drawbacks
