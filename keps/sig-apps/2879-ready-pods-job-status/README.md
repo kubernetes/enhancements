@@ -206,11 +206,21 @@ The field is only informative, it doesn't affect running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+- An increase in `job_sync_duration_seconds`.
+- A reduction in `job_sync_num`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+A manual test will be performed, as follows:
+
+1. Create a cluster in 1.23.
+1. Upgrade to 1.24.
+1. Create long running Job A, ensure that the ready field is populated.
+1. Downgrade to 1.23.
+1. Verify that ready field in Job A is not lost, but also not updated.
+1. Create long running Job B, ensure that ready field is not populated.
+1. Upgrade to 1.24.
+1. Verify that Job A and B ready field is tracked again.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
