@@ -588,7 +588,7 @@ Types:
 | 'object' with AdditionalProperties                 | map                                                                                                                          |
 | 'object' with x-kubernetes-embedded-type           | object / "message type", 'apiVersion', 'kind', 'metadata.name' and 'metadata.generateName' are implicitly included in schema |
 | 'object' with x-kubernetes-preserve-unknown-fields | object / "message type", unknown fields are NOT accessible in CEL expression                                                 |
-| x-kubernetes-int-or-string                         | union of int or string,  `self.intOrString < 100 \|\| self.intOrString == '50%'` evalutes to true for both `50` and `"50%"`  |
+| x-kubernetes-int-or-string                         | union of int or string,  `self.intOrString < 100 \|\| self.intOrString == '50%'` evaluates to true for both `50` and `"50%"`  |
 | 'array                                             | list                                                                                                                         |
 | 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                                         |
 | 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                                       |
