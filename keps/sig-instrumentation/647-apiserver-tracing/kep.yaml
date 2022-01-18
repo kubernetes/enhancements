@@ -21,11 +21,12 @@ prr-approvers:
   - "@wojtek-t"
 see-also:
 replaces:
-stage: alpha
-last-updated: 2021-07-15
-latest-milestone: "v1.22"
+stage: beta
+last-updated: 2022-01-18
+latest-milestone: "v1.24"
 milestone:
   alpha: "v1.22"
+  beta: "v1.24"
 feature-gates:
   - name: APIServerTracing
 disable-supported: true

@@ -40,11 +40,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
-- [x] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [X] (R) Production readiness review completed
+- [X] Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -170,8 +170,8 @@ expected from the request.
 
 Alpha
 
-- [] Implement tracing of incoming and outgoing http/grpc requests in the kube-apiserver
-- [] Integration testing of tracing
+- [X] Implement tracing of incoming and outgoing http/grpc requests in the kube-apiserver
+- [X] Integration testing of tracing
 
 Beta
 
@@ -209,7 +209,7 @@ GA
   It will start sending traces again.  This will happen regardless of whether it was disabled by removing the `--opentelemetry-config-file` flag, or by disabling via feature gate.
 
 * **Are there any tests for feature enablement/disablement?**
-  Unit tests switching feature gates will be added.
+  [Unit tests](https://github.com/kubernetes/kubernetes/blob/5426da8f69c1d5fa99814526c1878aeb99b2456e/test/integration/apiserver/tracing/tracing_test.go) exist which enable the feature gate.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -218,67 +218,48 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
+   * If APIServer tracing is rolled out with a high sampling rate, it is possible for it to have a performance impact on the api server, which can have a variety of impacts on the cluster.
 
 * **What specific metrics should inform a rollback?**
 
+  * API Server [SLOs](https://github.com/kubernetes/community/tree/master/sig-scalability/slos) are the signals that should guide a rollback.  In particular, the [`apiserver_request_duration_seconds` and `apiserver_request_slo_duration_seconds`](apiserver_request_slo_duration_seconds) metrics would surface issues resulting in slower API Server responses.
+
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  Manually enabled the feature-gate and tracing, verified the apiserver in my cluster was reachable, and disabled the feature-gate and tracing in a dev cluster.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+  This is an operator-facing feature.  Look for traces to see if tracing is enabled.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - OpenTelemetry does not currently expose metrics about the number of traces successfully sent: https://github.com/open-telemetry/opentelemetry-go/issues/2547
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  N/A
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+  N/A
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
+  The feature itself (tracing in the API Server) does not depend on services running in the cluster.  However, like with other signals (metrics, logs), collecting traces from the API Server requires a trace collection pipeline, which will differ depending on the cluster.  The following is an example, and other OTLP-compatible collection mechanisms may be substituted for it.  The impact of outages are likely to be the same, regardless of collection pipeline.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  - [OpenTelemetry Collector (optional)]
+    - Usage description: Deploy the collector as a sidecar container to the API Server, and route traces to your backend of choice.
+      - Impact of its outage on the feature: Spans will continue to be collected by the kube-apiserver, but may be lost before they reach the trace backend.
+      - Impact of its degraded performance or high-error rates on the feature:  Spans may be lost before they reach the trace backend.
 
 
 ### Scalability
@@ -316,7 +297,7 @@ operations covered by [existing SLIs/SLOs]?**
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  The tracing client library has a small, in-memory cache for outgoing spans.
+  The tracing client library has a small, in-memory cache for outgoing spans.  Based on current benchmarks, a full cache could use as much as 5 Mb of memory.
 
 ### Troubleshooting
 
@@ -327,18 +308,14 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  This feature does not have a dependency on the API Server or etcd (it is built into the API Server).
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  - [Trace endpoint misconfigured, or unavailable]
+    - Detection: No traces processed by trace ingestion pipeline
+    - Mitigations: None
+    - Diagnostics: API Server logs containing: "traces exporter is disconnected from the server"
+    - Testing: The feature will simply not work if misconfigured. It doesn't seem worth verifying.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
