@@ -307,6 +307,10 @@ const (
 )
 ```
 
+We will check these policies in the extension points of `PreFilter/PreScore`
+in PodTopologySpread plugin, some refactoring works are also needed, but we will
+not change the default behavior.
+
 ### Test Plan
 
 <!--
