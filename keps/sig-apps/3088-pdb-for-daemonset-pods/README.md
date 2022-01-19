@@ -204,7 +204,7 @@ For example, in case of 100 nodes and 3 DaemonSets affected by eviction, one wou
 simultaneous recreation of 30 pods instead of 300 that could be specified in PDB as
 MaxUnavailable=10%.
 
-From the API perspective, PDB status for DaemonSet will contain calculated distuprion-related
+From the API perspective, PDB status for DaemonSet will contain calculated disruption-related
 numbers, as for any other built-in pod controller.
 
 <!-- ### Notes/Constraints/Caveats (Optional) -->
@@ -241,7 +241,7 @@ For all built-in controller types, there are ['finder'
 functions](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L182)
 which return the controller UID and the desired number of pods. These 'finder' functions contain the
 specifics of each built-in controller, and have their corresponding unit tests. Supported built-in
-controller are Deployment, StatefulSet, ReplicaSet, and ResplicationController.
+controllers are Deployment, StatefulSet, ReplicaSet, and ReplicationController.
 
 Adding DaemonSet support to PDB requires the implementing the 'finder' function for DaemonSets and
 covering it with unit tests to adhere the common pattern. The specific part for DaemonSets is that
