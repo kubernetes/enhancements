@@ -263,7 +263,7 @@ yet but we think may be interesting to consider in the future.
 - Helping load balancers do a better job, considering each apiserver's
   current load state.
 
-- Do something about WATCH and/or CONNECT requests.
+- Do something about CONNECT requests.
 
 - React somehow to etcd overloads.
 
