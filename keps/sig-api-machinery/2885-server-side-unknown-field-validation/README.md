@@ -85,7 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Future Work](#future-work)
-      - [Deprecating Client Side Validation](#deprecating-client-side-validation)
+      - [Out-of-Tree Alternatives to Client Side Validation](#out-of-tree-alternatives-to-client-side-validation)
       - [Aligning json and yaml errors](#aligning-json-and-yaml-errors)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Performance Considerations](#performance-considerations)
