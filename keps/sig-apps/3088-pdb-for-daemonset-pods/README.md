@@ -160,7 +160,7 @@ calculates allowed disruption. This behavior in inconsistent across built-in pod
 cause confusion.
 
 ### Goals
-****
+
 - Support the disruption budget for DaemonSet the same way it works for other built-in pod
   controllers.
 - Reduce the load to kube-apiserver caused by the recreation of DaemonSet pods being evicted.
@@ -238,20 +238,18 @@ its corresponding controller and the desired number of pods. Using the desired n
 calculates the allowed disruption number for PDB status.
 
 For all built-in controller types, there are ['finder'
-functions](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L702)
+functions](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L182)
 which return the controller UID and the desired number of pods. These 'finder' functions contain the
-specifics of each built-in controller, and have their corresponding unit tests. The [covered
-built-in controller
-kinds](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L182)
-are Deployment, StatefulSet, ReplicaSet, and ResplicationController.
+specifics of each built-in controller, and have their corresponding unit tests. Supported built-in
+controller are Deployment, StatefulSet, ReplicaSet, and ResplicationController.
 
-Thus, adding DaemonSet support to PDB implies implementing the 'finder' function for DaemonSets and
+Adding DaemonSet support to PDB requires the implementing the 'finder' function for DaemonSets and
 covering it with unit tests to adhere the common pattern. The specific part for DaemonSets is that
 the desired number of pods can be taken from `status.DesiredNumberScheduled`.
 
 ### Test Plan
 
-- __Unit tests__ in the disruption controller
+- Unit tests in the disruption controller
 
 #### How can someone using this feature know that it is working for their instance?
 
