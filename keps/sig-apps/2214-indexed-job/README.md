@@ -501,10 +501,6 @@ This feature has no node runtime implications.
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 
@@ -533,10 +529,6 @@ This section must be completed when targeting alpha to a release.
   transitions.
 
 ### Rollout, Upgrade and Rollback Planning
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -569,10 +561,6 @@ This section must be completed when targeting beta to a release.
   No
 
 ### Monitoring Requirements
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -609,10 +597,6 @@ This section must be completed when targeting beta to a release.
   No
 
 ### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -669,14 +653,6 @@ previous answers based on experience in the field.
   and restricted to Jobs using the new completion mode.
 
 ### Troubleshooting
-
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
