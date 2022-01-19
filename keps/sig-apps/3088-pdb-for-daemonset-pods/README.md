@@ -145,8 +145,8 @@ updates.
 -->
 
 Support podDusruptionBudget (PDB) for DaemonSet pods. DaemonSet pods are evicted all at once
-ignoring PDB. It creates a load spike for apiserver especially in relatively big clusters. This KEP
-proposes to change this behavior so that users could rely on PDB for DaemonSet pods like for all
+ignoring PDB. It creates a load spike for kube-apiserver especially in relatively big clusters. This
+KEP proposes to change this behavior so that users could rely on PDB for DaemonSet pods like for all
 other built-in controllers.
 
 ## Motivation
@@ -244,7 +244,7 @@ other kubernetes controller.
 ## Alternatives
 
 [DaemonSet](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/apps/v1/types.go#L629)
-does not have scale subresource. Implementing it could be another solution to the problems outlined
-above. At the same time this path would condradict to current approach where built-in contollers are
-intentionally supported via shared informers in the disruption controller ([KEP-981 "Risks and
+does not have scale sub-resource. Implementing it could be another solution to the problems outlined
+above. At the same time this path would contradict to current approach where built-in controllers
+are intentionally supported via shared informers in the disruption controller ([KEP-981 "Risks and
 Mitigations"](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/981-poddisruptionbudget-for-custom-resources#risks-and-mitigations)).
