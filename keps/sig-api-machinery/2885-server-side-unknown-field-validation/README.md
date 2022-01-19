@@ -542,10 +542,14 @@ server-side validation is enabled.
   to `Warn`. It performs server-side validation, but validation errors are
   exposed as warnings in the result header rather than failing the request.
 
+We will introduce a mechanism similar to the cli-runtime
+[DryRunVerifier](https://github.com/kubernetes/cli-runtime/blob/cfe3fe3837db26e9afb75e9491348080a4f0ef23/pkg/resource/dry_run_verifier.go#L73:26)
+to read the server's published OpenAPI to determine whether or not server-side
+validation is enabled on the server.
+
 The goal here is for the flag to be intent based, whether we use client-side or
 server-side under the hood is based solely on whether or not server-side
 validation is supported by the apiserver kubectl is connected to.
-
 
 ### Test Plan
 
@@ -916,8 +920,8 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Opt out of server-side validation if the performance impact of it is not
-tolerable.
+Operators can disable server-side validation by setting the feature-gate to false if
+the performance impact of it is not tolerable.
 
 ## Implementation History
 
