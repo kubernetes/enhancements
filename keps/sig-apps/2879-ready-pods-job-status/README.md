@@ -139,6 +139,9 @@ pods that have the `Ready` condition.
 
 - Feature gate enabled by default.
 - Existing [E2E] and [conformance] tests passing.
+- Scalability tests for Jobs of varying sizes, up to 500 parallelism, that keep
+  track of metric `job_sync_duration_seconds`. There should be no significant
+  degradation after enabling the feature gate.
 
 [E2E]: https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=apps%5C%5D%20Job
 [Conformance]: https://testgrid.k8s.io/conformance-all#Conformance%20-%20GCE%20-%20master&include-filter-by-regex=sig-apps&include-filter-by-regex=Job&exclude-filter-by-regex=CronJob
