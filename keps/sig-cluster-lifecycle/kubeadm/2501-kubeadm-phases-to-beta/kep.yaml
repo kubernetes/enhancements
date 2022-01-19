@@ -13,7 +13,10 @@ approvers:
   - "@timothysc"
 editor: "@fabriziopandini"
 creation-date: 2018-03-16
-last-updated: 2019-01-22
-status: provisional
+last-updated: 2022-01-17
+status: implemented
 see-also:
   - KEP 0008
+
+latest-milestone: "0.0"
+stage: "beta"

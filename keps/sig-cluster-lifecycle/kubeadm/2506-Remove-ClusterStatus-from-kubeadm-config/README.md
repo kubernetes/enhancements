@@ -123,3 +123,4 @@ NA
 - the `Summary` and `Motivation` sections being merged signaling SIG acceptance
 - the `Proposal` section being merged signaling agreement on a proposed design
 - the date implementation started
+- v1.24 retroactively promoted to GA
