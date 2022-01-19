@@ -276,40 +276,44 @@ starting in beta), we propose modifying the kubectl `--validate` flag to
 default to server-side strict validation and allow the user to choose between
 strict, warn-only, or no validation.
 
+We propose documenting that client-side validation is deprecated and server-side
+validation will be used instead by default if available. We will fallback to
+client-side validation in the mean time if kubectl does not connect to a server
+with server-side validation enabled (either because the server it is connected
+to is older or has the feature-gate disabled, or because kubectl is not
+connected to any server at all).
+
+When we fallback to client-side validation we will send a warning to let users
+know that their request is being validated by the deprecated client-side
+validation.
+
 ### Notes/Constraints/Caveats (Optional)
 
 #### Future Work
 
-##### Deprecating Client Side Validation
+##### Out-of-Tree Alternatives to Client Side Validation
 Upon successfully providing kubectl access to server-side validation via the
 `--validate` flag, an open question will remain as to the future of client
 side validation.
 
 Kubectl will use server-side validation by default starting in beta for servers
 that have it enabled. If kubectl does not recognize a server with server-side
-validation enabled, however, it will fall back to using client-side validation.
-This requires maintaining client-side validation indefinitely in kubectl, which
-has both pros and cons.
+validation enabled, however, it will fall back to using client-side validation
+with a deprecation warning.
 
-On the one hand, maintaining client-side validation gives users a way to
-validate their objects without needing access to a server, (albeit this
-mechanism is error-prone and not officially supported).
+Even though we feel deprecating client-side validation is justified due to the
+inevitability of it always being less correct than server-side validation, we
+still acknowledge that their are benefits to giving users a way to validate
+their objects without needing access to a server (which is a current use-case of
+client-side validation, albeit one that is error-prone and not officially
+supported).
 
-On the other hand, the downside of continuing to maintain client-side
-validation is that it uses openapiv2 which will be less actively supported
-as openapiv3 becomes standard and will cause client-side validation to
-continue to diverge from server-side validation.
-
-We propose offering a separate KEP to tackle deprecating client-side validation
-once server-side validation is GA. Our initial thoughts on this are that in
-order to deprecate client-side validation we will need to build a separate
-out-of-tree client-side validation mechanism so that users can continue to
-validate their configs.
+Long-term, we want to favor using out-of-tree solutions for client-side
+validation, though this idea is still in its infancy.
 
 The [kubeval](https://www.kubeval.com/) project is an example of an out-of-tree solution that does this, and
 we will look into expanding its support of open API to v3, and investigate
-whether it makes sense as a permanent solution to client-side validation that
-will allow for deprecation of current client-side validation.
+whether it makes sense as a permanent solution to client-side validation.
 
 ##### Aligning json and yaml errors
 
@@ -527,8 +531,10 @@ a string flag that accepts the following values:
 
 * `true` or `strict`: If server-side validation is enabled on the server it sends
   a request with the fieldValidation param set to `Strict`, otherwise it falls
-  back to client-side validation. The default remains `true`, as it currently is
-  today.
+  back to client-side validation. It will also fall back to client-side
+  validation if the request has `--dry-run=client`, because the request is not
+  actually being sent to a server-side validation enabled server.
+  The default remains `true`, as it currently is today.
 * `false` or `ignore`: This performs no server-side validation or client-side validation,
 sending a request to the server with fieldValidation param set to `Ignore` if
 server-side validation is enabled.
