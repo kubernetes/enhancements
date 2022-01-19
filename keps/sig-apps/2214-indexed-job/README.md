@@ -464,6 +464,8 @@ gate enabled and disabled.
 #### Beta -> GA Graduation
 
 - [E2E](https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=Indexed) test graduates to conformance
+- Scalability tests for Jobs of varying sizes, up to 500 parallelism, that keep
+  track of metric `job_sync_duration_seconds`.
 
 ### Upgrade / Downgrade Strategy
 
@@ -589,7 +591,8 @@ This section must be completed when targeting beta to a release.
 
   - per-day percentage of job_sync_total with label result=error <= 1%
   - 99% percentile over day for job_sync_duration_seconds is <= 15s, assuming
-    a client-side QPS limit of 50 calls per second.
+    a client-side QPS limit of 50 calls per second. Note that this is the
+    expected SLO for NonIndexed jobs as well.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
