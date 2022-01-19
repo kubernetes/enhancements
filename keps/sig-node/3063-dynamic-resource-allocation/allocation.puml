@@ -2,7 +2,7 @@
 !theme reddress-lightblue
 
 (*) -->[ **user** creates Pod with inline ResourceClaimTemplate ] "Pod exists"
--->[ **scheduler resource controller** checks ResourceClaimTemplate and ResourceClass,\l then creates ResourceClaim with Pod as owner ] ==B1==
+-->[ **resource claim controller** checks ResourceClaimTemplate and ResourceClass,\l then creates ResourceClaim with Pod as owner ] ==B1==
 
 ==B1== -->[= __immediate allocation__] "ResourceClaim\lfor immediate allocation with\l* phase=pending\l* plugin name set\l* without deletion timestamp"
   -->[ **resource driver**\l updates claim\l to prevent deletion] "ResourceClaim\lfor immediate allocation\lwith finalizer"
