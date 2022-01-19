@@ -161,8 +161,10 @@ Additionally, there may be some end-user confusion on the functional consequence
 
 - Pod Security Standards will be reviewed and updated to indicate which Pod OSes they apply to
 - The restricted Pod Security Standard will be reviewed to see if there are OS-specific requirements that should be added
-- The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS.
-- Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field.
+- The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS
+- Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field
+
+Pod Security Standards are to be changed in 1.25 timeframe to accommodate the supported kubelet and kube-apiserver skew.
 
 
 ### Changes to Kubelet
@@ -211,7 +213,6 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 
 If the feature gate is enabled there are some kubelet implications as the code to strip security constraints based on OS can be removed and we need to add
 admission/denying in the kubelet logic which was mentioned above. Older Kubelets without this change will continue stripping the unnecessary fields in the pod spec which is the current behavior.
-
 
 ## Production Readiness Review Questionnaire
 
@@ -357,16 +358,28 @@ No
 
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-
+The API validation would fail if API server and/or etcd is unavailable. The pod object won't be persisted to etcd.
 
 ###### What are other known failure modes?
-
+- Windows Pod by passing windows specific validation and linux pods by passing linux specific validation even after `IdentifyPodOS` featuregate is enabled.
+  - Detection: Looking at `kube_pod_status_phase` metric
+  - Mitigations: Disable the `IdentifyPodOS` featuregate
+  - Diagnostics: Increasing the log-level of APIServer
+  - Testing: Yes, unit tests are already in place
+- Both windows and linux pods are getting rejected when `IdentifyPodOS` featuregate is enabled.
+  - Detection: Looking at `apiserver_request_total` metric
+  - Mitigations: Disable the `IdentifyPodOS` featuregate
+  - Diagnostics: Increasing the log-level of APIServer
+  - Testing: Yes, unit tests are already in place
 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+Disabling the `IdentifyPodOS` featuregate will help in determining the problem.
 
 ## Implementation History
-
+- 2021-09-08: Initial KEP merged
+- 2021-10-29: Initial implementation PR merged
+- 2022-01-19: Graduate the feature to Beta proposed 
 
 
 ## Drawbacks
