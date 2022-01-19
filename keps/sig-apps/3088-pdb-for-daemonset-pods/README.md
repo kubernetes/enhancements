@@ -180,23 +180,10 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-For now, PDB does not support DaemonSet pods. This KEP aims to add this support.
-
-Currently, the disruption controller (DC) has a common pattern for built-in Pod controllers. For
-each PDB it finds a list of targeted pods. For each pod, it finds the owning Pod controller along
-with the desired number of pods for it. Using the desired number of pods, DC calculates the allowed
-disruption number.
-
-For all built-in controller types, there are ['finder'
-functions](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L702)
-which return the controller UID and the desired number of pods. These 'finder' functions contain the
-specifics of each built-in controllers, and have their corresponding unit tests. The [covered
-built-in controller
-kinds](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L182)
-are Deployment, StatefulSet, ReplicaSet, and ResplicationController.
-
-Thus, adding DamonSet support to PDB implies at minimum implementing the 'finder' function for
-DaemonSets and covering it with unit tests to adhere the common pattern.
+For now, PDB does not let to control DaemonSet pods evictions. If one creates PDB for DaemonSet
+pods, it will have no effect. Effectively, PDB status does not change its initial state regardless
+of target Pod conditions. This proposal aims to add the support of DaemonSets in the Disruption
+Controller as it is supported for other built-in controllers.
 
 ### User Stories
 
@@ -213,11 +200,12 @@ In a cluster with big number of nodes, DaemonSet pods can be evicted by VPA. The
 of pods is scaled as number of nodes multiplied by number of DaemonSets being affected
 simultaneously. In order to reduce the load, one can set a PDB for DaemonSet pods.
 
-For example, in case of 100 nodes and 3 DaemonSets affected by an eviction, one would prefer the
-simultaneous recreation of 30 pods instead of 300.
+For example, in case of 100 nodes and 3 DaemonSets affected by eviction, one would prefer the
+simultaneous recreation of 30 pods instead of 300 that could be specified in PDB as
+MaxUnavailable=10%.
 
 From the API perspective, PDB status for DaemonSet will contain calculated distuprion-related
-numbers, as for any other kubernetes controller.
+numbers, as for any other built-in pod controller.
 
 <!-- ### Notes/Constraints/Caveats (Optional) -->
 
@@ -244,9 +232,22 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-In disruption controller, DaemonSet pods can be supported the same way as for other built-in pods
-controllers. It is easily achieved single the code is quite similar for all controllers. The
-specific part for DaemonSets is the calculation of allowed disruption from its status.
+Currently, the disruption controller (DC) has a common pattern for built-in Pod controllers (except
+DaemonSets). For each PDB it finds the list of targeted pods. For each pod from the list, it finds
+its corresponding controller and the desired number of pods. Using the desired number of pods, DC
+calculates the allowed disruption number for PDB status.
+
+For all built-in controller types, there are ['finder'
+functions](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L702)
+which return the controller UID and the desired number of pods. These 'finder' functions contain the
+specifics of each built-in controller, and have their corresponding unit tests. The [covered
+built-in controller
+kinds](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L182)
+are Deployment, StatefulSet, ReplicaSet, and ResplicationController.
+
+Thus, adding DaemonSet support to PDB implies implementing the 'finder' function for DaemonSets and
+covering it with unit tests to adhere the common pattern. The specific part for DaemonSets is that
+the desired number of pods can be taken from `status.DesiredNumberScheduled`.
 
 ### Test Plan
 
