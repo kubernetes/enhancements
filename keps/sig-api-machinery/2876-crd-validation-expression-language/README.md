@@ -402,7 +402,7 @@ Lists:
 - sublist
 - split
 - reverse
-- reduce or sum/min/max (reduce is more general, the others are more concrete)
+- sum/min/max (xref: [Rego function library](https://www.openpolicyagent.org/docs/latest/policy-reference/#built-in-functions))
 
 Numbers:
 
@@ -410,6 +410,11 @@ Numbers:
 - exp/log/log10/logN/pow/sqrt
 - max(x, y, ..)/min(x, y, ...)
 - <trig functions>
+
+Formats:
+
+- semver: compare (xref [Kyverno function library](https://github.com/kyverno/kyverno/blob/main/pkg/engine/jmespath/functions.go))
+
 
 Maps:
 
@@ -422,31 +427,39 @@ Some considerations when selecting which of the above we should include in CEL e
 - Regex replace is very powerful and useful. It is also potentially dangerous due to its ability to allocate memory.
 - `format`: Since CEL supports string concatenation, the value of having format would only be to do things like format floats.
   Formatting functions are complex and require extensive documentation to teach.
-- `sort` makes it possible to check if a list is sorted. It can be an expensive operation.
-- `indexOf` / `lastIndexOf` / `split` / `replace` (the string functions) could be overloaded to provide the equivalent list functions?
-   Keeping string and list functions consistent seems like a good way to keep the learning curve down.
+- `isSorted` makes it possible to check if a list is sorted without the expensive of performing a sort
+- `indexOf` / `lastIndexOf` / `split` / `replace` (the string functions) will be overloaded to provide the equivalent list functions.
 - `reduce` is going to be non-obvious to anyone that doesn't have a functional programming background?
   - If we provide `reduce` are developers going to also expect to have `fold` or `zip`?
 - "Ability to construct a map using a comprehension": this appears mechanically problematic to support in CEL?
+- None of the other policy libraries provide extended math/trig support and I asked Tristan (maintainer of CEL) if
+  they are requested and he said "almost never", which he clarified to mean it has been requested exactly one time.
+- Average and quantile (median, 99th percentile, ...) and stddev are, however, often requested by other CEL users
+- `hasPrefix` / `hasSuffix` is useful but an be performed trivially using regex matching
 
 Proposal:
 
 - Keep all the CEL standard functions and macros as well as the extended string library.
-- Add regex replace support. It's very useful, and we already allow regex matching.
-- Add `trim` / `trimLeft` / `trimRight` (overloaded to take an optional cutset arg) for strings
-- Add `trimPrefix` / `trimSuffix` for strings
-- Add `sort` for lists with comparable elements
-- Add `sum`, `min` and `max` functions for lists of summable/comparable elements
-- Add the core math functions (exp/log/log10/logN/pow/sqrt/abs/cel/floor/round) and trig. Can we put this in a math extension library in cel-go?
-  - What types of abuse do we open ourselves up to? What are the mining / code breaking uses that get unlocked?
-  - Lists literals can be constructed to do sum, min, max on any values, e.g. `[spec.x, spec.y].max()`.
-- Add `indexOf` / `lastIndexOf` / `split` / `replace` support for lists (overloading the existing string functions)
-- Add `sublist` support for lists (consistent with substring). Since `substring` is an extension function, replace it
-  with a single function that can be used for both strings and lists?
+- Add `isSorted` for lists with comparable elements. This is useful for ensuring that a list is kept in-order.
+- Add `sum`, `min` and `max` functions for lists of summable/comparable elements. This is the
+  core set of aggregate functions for lists, with CEL they can also be used on scalars by using defining list literals
+  inline , e.g. `[self.val1, self.val2].max()`
+- Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
+- validating partial order (i.e. the tasks of a workflow)
 
 The function libraries we need can be added using [extension
 functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
 or directly to the Kubernetes codebase.
+
+Future work:
+
+We've NOT to add the following functions. They may be useful for mutation, in which case we will consider adding them as part
+of any future work done involving CEL and mutating admission control:
+
+- Regex replace
+- Add `trimPrefix` / `trimSuffix` for strings
+- Add `trim` / `trimLeft` / `trimRight` (overloaded to take an optional cutset arg) for strings
+- `sublist`, `split`, `replace` and `reverse` for lists (overloading existing string functions where appropriate)
 
 ### User Stories
 
