@@ -152,15 +152,15 @@ other built-in controllers.
 ## Motivation
 
 PodDisruptionBudget can be not only a tool to keep user apps available during evictions, but also a
-mean of reducing of load targeting kube-apiserver when a massive pod eviction causes a restart of
-big number of pods.
+mean of reducing of load on kube-apiserver. The can be caused by a restart of big number of
+DaemonSet pods due to eviction.
 
 Additionally, the disruption controller tracks all built-in pod controllers except DaemonSets when
 calculates allowed disruption. This behavior in inconsistent across built-in pod controllers and may
 cause confusion.
 
 ### Goals
-
+****
 - Support the disruption budget for DaemonSet the same way it works for other built-in pod
   controllers.
 - Reduce the load to kube-apiserver caused by the recreation of DaemonSet pods being evicted.
@@ -181,6 +181,22 @@ nitty-gritty.
 -->
 
 For now, PDB does not support DaemonSet pods. This KEP aims to add this support.
+
+Currently, the disruption controller (DC) has a common pattern for built-in Pod controllers. For
+each PDB it finds a list of targeted pods. For each pod, it finds the owning Pod controller along
+with the desired number of pods for it. Using the desired number of pods, DC calculates the allowed
+disruption number.
+
+For all built-in controller types, there are ['finder'
+functions](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L702)
+which return the controller UID and the desired number of pods. These 'finder' functions contain the
+specifics of each built-in controllers, and have their corresponding unit tests. The [covered
+built-in controller
+kinds](https://github.com/kubernetes/kubernetes/blob/d7123a65248e25b86018ba8220b671cd483d6797/pkg/controller/disruption/disruption.go#L182)
+are Deployment, StatefulSet, ReplicaSet, and ResplicationController.
+
+Thus, adding DamonSet support to PDB implies at minimum implementing the 'finder' function for
+DaemonSets and covering it with unit tests to adhere the common pattern.
 
 ### User Stories
 
