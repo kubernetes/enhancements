@@ -205,8 +205,12 @@ Given how kubernetes is now treated, this is a good thing, not a bad thing.
 Those users that want to move quickly and get new features can do so by enabling all beta feature
 or just enabling those that are important for their workload.
 The [PRR survey](https://datastudio.google.com/reporting/2e9c7439-202b-48a9-8c57-4459e0d69c8d/page/Cv5HB) shows that 
-over 30% of production clusters have alpha features enabled, so clsuter-admins are willing and able to enable features
+over 30% of production clusters have alpha features enabled, so cluster-admins are willing and able to enable features
 that are not on by default when they are desired.
+
+If two or more APIs are tightly coupled together, it will now be possible to enable them independently.
+This can lead to unanticipated failure modes, but should only impact beta APIs with beta dependencies.
+While this is a risk, it is not very common and components should fail safe as a general principle.
 
 ## Design Details
 
@@ -234,6 +238,9 @@ This KEP is a policy KEP, not a feature KEP.  It will start as GA.
   - https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#using-a-feature 
     Even though that is talking about feature gates, it is likely worth calling out there that new beta REST APIs are no
     longer enabled by default)
+- email to dev@kubernetes.io to explain the new policy
+- blog post explaining change in time for 1.24 release
+- CI configuration updated to have a testing mode that enables beta APIs, likely set using `kube-apiserver --runtime-config=api/beta=true`
 
 ### Upgrade / Downgrade Strategy
 
