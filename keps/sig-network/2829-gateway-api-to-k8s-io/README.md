@@ -37,7 +37,7 @@ process](https://github.com/kubernetes/community/blob/master/sig-architecture/ap
 Although Gateway API started as an experimental API, we are preparing a v1alpha2
 release that we believe will be a significant step towards stabilizing the API.
 The number of [implementations of the
-API](https://gateway-api.sigs.k8s.io/references/implementations/) continues to
+API](https://gateway-api.sigs.k8s.io/implementations/) continues to
 grow, and we believe that transitioning to an official Kubernetes API will help
 provide greater quality and stability going forward.
 
