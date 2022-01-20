@@ -72,6 +72,7 @@ Architecture for cross-cutting KEPs). -->
     - [Aggregator](#aggregator)
   - [OpenAPI](#openapi)
   - [Version Skew](#version-skew)
+  - [OpenAPI V3 Proto](#openapi-v3-proto)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -226,7 +227,7 @@ proposal will be implemented, this is the place to discuss them. -->
 
 ### Paths
 
-The overarching `/openapi/v3` endpoint will contain the list of paths (groups)
+The root `/openapi/v3` endpoint will contain the list of paths (groups)
 available and serve as a discovery endpoint. Clients can then choose the
 group(s) to fetch and send additional requests.
 
@@ -234,22 +235,47 @@ group(s) to fetch and send additional requests.
 
 ```json
 {
-   "Paths" : [
-      "api",
-      "api/v1",
-      "apis",
-      "apis/admissionregistration.k8s.io",
-      "apis/apiextensions.k8s.io",
-      "apis/apps",
-      "apis/authentication.k8s.io",
+   "Paths" : {
+      "api": "/openapi/v3/api?etag=tag",
+      "api/v1": "/openapi/v3/api/v1?etag=tag",
+      "apis": "/openapi/v3/apis?etag=tag",
+      "apis/admissionregistration.k8s.io/v1": "/openapi/v3/apis/admissionregistration.k8s.io/v1?etag=tag",
+      "apis/apiextensions.k8s.io/v1": "/openapi/v3/apis/apiextensions.k8s.io/v1?etag=tag",
+      "apis/apps/v1": "/openapi/v3/apis/apps/v1?etag=tag",
       ...
-   ]
+   }
 }
 ```
 
 Based on the provided group, clients can then request `openapi/v3/apis/apps/v1`,
 `/openapi/v3/apis/networking.k8s.io/v1` and etc. These leaf node specs are self
 contained OpenAPI v3 specs and include all referenced types.
+
+The discovery document has the format of a map with the key being the
+group-version and value representing the URL of the OpenAPI for the
+particular group version. Note that the URL can be constructed by the
+client by prepending the group-version name with the `openapi/v3`
+prefix. The URL listed here provides a special etag query parameter to
+denote the latest etag for the OpenAPI spec for the particular
+group-version. The concept of using and changing the query parameter
+when a new version of the spec is available is a pattern used
+frequently in browser caching known as cache busting. All OpenAPI spec
+requests with the `?etag` query parameter will return a response with
+`Cache Control: immutable`. This allows clients to cache the OpenAPI
+spec when the etag is not changed. The `max-age` will also be set to a
+large value that is equivalent to publishing a spec that never
+expires.
+
+Support for caching is built into the httpcache library used in
+client-go, and no change is needed on the client side to support this
+mechanism other than passing the additional query parameter. Passing
+the etag as the query parameter allows clients to check the etag in
+the root discovery document. Clients can avoid sending an additional
+request to fetch an ETag from specific group-versions, and the root
+document itself can provide information on group-version changes and
+updates. If there is a race and the client passes in an outdated etag
+value, the server will send a 301 to redirect the client to the URL
+with the latest etag value.
 
 ### Controllers
 
@@ -271,11 +297,12 @@ the endpoint for their specific group.
 
 The aggregator has a mapping of all the APIServices and refreshes the aggregated
 spec on an interval. APIService already publish by group-version so their
-behavior is unchanged. Instead of aggregating in the aggregator, we will simply
-copy the spec to be published at the corresponding aggregator endpoint. For
-CRDs, instead of downloading the entire spec for CRDs, they will be downloaded
-per group-version, increasing the number of requests sent internally when a CRD
-with multiple groups is registered.
+behavior is unchanged. Because OpenAPI V3 is published by
+group-version, the fully aggregated spec is not needed and thus
+aggregation can be skipped. No spec downloading will be done by the
+aggregator. The aggregator in OpenAPI V3 will act as a proxy
+rather than aggregator, proxing group-version requests to downstream
+API servers.
 
 ### OpenAPI
 
@@ -324,6 +351,39 @@ support for v2. The drawback is that v2 is lossy and converting it to
 v3 will provide a lossy v3 schema. This problem will be fixed when aggregated
 apiservers upgrade to publishing v3.
 
+### OpenAPI V3 Proto
+
+Kubernetes relies on a "bug" (relaxed constraint) in the gnostic library for OpenAPI v2 where a `$ref` and `description` can coexist in the same object. See [Issue](https://github.com/kubernetes/kubernetes/issues/106387) for more details. This is disallowed per JSON Schema Draft 4 which is the schema version OpenAPI v2 follows. The `$ref` and `description` coexistence is important to Kubernetes because kubectl explain uses it for providing documentation for reference fields.
+
+For instance, a PodSpec object could have the properties:
+
+```
+"affinity": {
+  "$ref": "#/definitions/io.k8s.api.core.v1.Affinity",
+  "description": "If specified, the pod's scheduling constraints"
+},
+```
+
+kubectl explain uses the description to provide documentation for struct fields that are represented as references in the OpenAPI schema. The description here describes a field/struct's role in the PodSpec object rather than the struct itself. The gnostic library for OpenAPI 3.0 currently disallows the relaxed constraint and removes the description field when the OpenAPI spec is passed through proto. We will work with the gnostic team to update the library to support the same constraint relaxation as in OpenAPI 2.0 to fix the OpenAPI 3.0 protobuf.
+
+Another workaround to this problem could be to wrap reference structures with `allOf`.
+
+Eg:
+
+```
+"affinity": {
+  "allOf": [{
+    "$ref": "#/definitions/io.k8s.api.core.v1.Affinity",
+  }],
+  "description": "If specified, the pod's scheduling constraints"
+},
+```
+
+This solves the immediate protobuf issue but adds complexity to the OpenAPI schema.
+
+The final alternative is to upgrade to OpenAPI 3.1 where the new JSON Schema version it is based off of supports fields alongside a `$ref`. However, OpenAPI does not follow semvar and 3.1 is a major upgrade over 3.0 and introduces various backwards incompatible changes. Furthermore, library support is currently lacking (gnostic) and doesn't fully support OpenAPI 3.1. One important backwards incompatible change is the removal of the nullable field and replacing it by changing the type field from a single string to an array of strings.
+
+
 ### Test Plan
 
 <!-- **Note:** *Not required until targeted at a release.*
@@ -357,6 +417,7 @@ generated is valid OpenAPI v3.
 #### Beta
 
 - Native types are updated to capture capabilities introduced with v3
+  - Incorrect OpenAPI polymorphic types (IntOrString, Quantity) are updated to use `anyOf` in OpenAPI V3
 - Definition names of native resources are updated to omit their package paths
 - Parameters are reused as components
 - `kubectl explain` to support using the OpenAPI v3 Schema
@@ -364,6 +425,7 @@ generated is valid OpenAPI v3.
   publish v3 if they do not directly publish v3
 - Heuristics are used for the OpenAPI v2 to v3 conversion to maximize
   correctness of published spec
+- Aggregation for OpenAPI v3 will serve as a proxy to downstream OpenAPI paths
 
 ### Upgrade / Downgrade Strategy
 
@@ -437,7 +499,7 @@ you need any help or guidance. -->
 <!-- Pick one of these and delete the rest. -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: OpenAPIv3Enabled
+  - Feature gate name: OpenAPIV3
   - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
@@ -489,10 +551,14 @@ will be enabled on some API servers and not others during the rollout.
 Similarly, consider large clusters and how enablement/disablement will rollout
 across nodes. -->
 
+Version skew is discussed in a section above during a rolling control plane upgrade.
+
 ###### What specific metrics should inform a rollback?
 
 <!-- What signals should users be paying attention to when the feature is young
 that might indicate a serious problem? -->
+
+Non 200 responses from the `openapi/v3` endpoint could indicate a problem. A long response time from the apiserver for OpenAPI requests could also be an indicator of a problem.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -500,10 +566,14 @@ that might indicate a serious problem? -->
 want to require automated upgrade/rollback tests, but we are missing a bunch of
 machinery and tooling and can't do that now. -->
 
+n/a
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!-- Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -511,9 +581,7 @@ machinery and tooling and can't do that now. -->
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!-- Ideally, this should be a metric. Operations against the Kubernetes API
-(e.g., checking if there are objects with field X set) may be a last resort.
-Avoid logs or events for this purpose. -->
+The OpenAPI path `/openapi/v3` is populated. On the metrics side, an OpenAPI V3 specific metric is `crd_openapi_v3_aggregation_duration_seconds`, and should emit data if the feature is enabled.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -524,13 +592,7 @@ users below with sufficient detail so that they can verify correct enablement
 and operation of this feature. Recall that end users cannot usually observe
 component logs or access metrics. -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+The `openapi/v3` endpoint will be populated with the list of groups if OpenAPI V3 is enabled.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -547,27 +609,44 @@ It's impossible to provide comprehensive guidance, but at the very high level
 These goals will help you determine what you need to measure (SLIs) in the next
 question. -->
 
+This feature should not affect the SLO of any components.
+
+OpenAPI v3 aggregation comes on-top of v2 aggregation => there is additional load. But v3 aggregation is cheap:
+
+- OpenAPI v3 aggregation is much cheaper as every group-version is aggregated independently.
+- APIServices (aggregated apiservers) coming and going (due to availability changes) do not lead to aggregation because kube-apiserver only acts as a proxy
+- CRD aggregation is structurally trivial (no unification of definition names, which is quadratic in schema sizes) and hence linear in the number of CRDs per group-version.
+- CRDs do not "come and go" as aggregated APIs, but it's a one-time per CRD schema change and API server startup operation.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!-- Pick one more of these and delete the rest. -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+A new metric will be added in CRD controller to measure the time taken to aggregate CRD OpenAPI specs.
+
+ - [X] Metrics
+  - Metric name: `crd_openapi_v3_aggregation_duration_seconds`
+  - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!-- Describe the metrics themselves and the reasons why they weren't added
 (e.g., cost, implementation difficulties, etc.). -->
 
+Not at the moment.
+
 ### Dependencies
 
 <!-- This section must be completed when targeting beta to a release. -->
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+OpenAPI V3 aggregates from apiservers provided by APIService.
+
+  - APIService
+    - OpenAPI V3 fetches the `openapi/v3` endpoint and specs from aggregated API
+      - Impact of its outage on the feature: If an APIService is unavailable, the OpenAPI spec of the corresponding APIService will be unavailable but other OpenAPI specs will be unaffected. The resource usage will be better than with OpenAPI V2 because no aggregation is needed when APIServices become unavailable and available.
+      - Impact of its degraded performance or high-error rates on the feature: Same as above.
 
 <!-- Think about both cluster-level services (e.g. metrics-server) as well as
 node-level agents (e.g. specific version of CRI). Focus on external or optional
@@ -608,7 +687,7 @@ mostly on:
     heartbeats, leader election, etc.) -->
 
 Yes. Get on the `/openapi/v3` endpoint as well as
-`/openapi/v3/{group}/{version}` for each API group provided by Kubernetes
+`/openapi/v3/{group}/{version}` for each API group provided by Kubernetes.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -673,6 +752,8 @@ some monitoring details). For now, we leave it here. -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The feature is part of the API server and will not function if it is unavailable. It does not depend on the availability of etcd.
+
 ###### What are other known failure modes?
 
 <!-- For each of them, fill in the following information by copying the below
@@ -686,6 +767,28 @@ template:
       levels that could help debug the issue? Not required until feature
       graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why. -->
+
+      - Failure in endpoint
+    - Detection: How can it be detected via metrics? Stated another way: how can
+      an operator troubleshoot without logging into a master or worker node?
+
+      Lack of 200 status in the OpenAPI endpoint. High latency in apiserver responses
+
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+
+      OpenAPI V3 can be rolled back and disabled via the feature flag
+
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue? Not required until feature
+      graduated to beta.
+
+      Warning and Error logging messages having openapi/swagger/spec keywords.
+
+    - Testing: Are there any tests for failure mode? If not, describe why.
+
+      Tests will be added for failure conditions.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
