@@ -1,0 +1,42 @@
+title: SecretRef field addition to NodeExpandVolume request
+kep-number: 3107
+authors:
+  - "@humblec"
+owning-sig: sig-storage
+participating-sigs:
+creation-date: 2022-01-23
+last-updated: 2021-01-23
+status: implementable
+reviewers:
+  - "@msau42"
+  - "gnufied"
+approvers:
+  - "@msau42"
+see-also:
+  - TBD
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.24"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.26"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CSINodeExpandSecret
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
