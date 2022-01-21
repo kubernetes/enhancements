@@ -19,4 +19,8 @@ items.
 Full documentation on the production readiness review process can be found on
 the SIG Architecture page [here][prod-readiness].
 
+**Note:** The kubeadm tool is considered out-of-tree and does not fall under PRR.
+If the kubeadm maintainers have to, they could still ask the PRR team for advisory on
+a particular production related topic.
+
 [prod-readiness]: https://git.k8s.io/community/sig-architecture/production-readiness.md

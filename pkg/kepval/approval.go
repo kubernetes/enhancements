@@ -100,6 +100,12 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage bool, err error) {
 	logrus.Debug("checking if PRR is required")
 
+	// kubeadm is considered out-of-tree. Skip PRR checks for KEPs in the kubeadm directory.
+	kubeadmPath := "keps/sig-cluster-lifecycle/kubeadm/"
+	if strings.Contains(kep.Filename, kubeadmPath) {
+		return required, missingMilestone, missingStage, nil
+	}
+
 	required = kep.Status == api.ImplementableStatus || kep.Status == api.ImplementedStatus
 	missingMilestone = kep.IsMissingMilestone()
 	missingStage = kep.IsMissingStage()
