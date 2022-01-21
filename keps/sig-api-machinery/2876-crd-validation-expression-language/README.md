@@ -14,6 +14,7 @@
     - [Expression lifecycle](#expression-lifecycle)
     - [Function library](#function-library)
 - [CEL <a href="https://github.com/google/cel-go/blob/master/ext/strings.go">extended string function library</a> includes:](#cel-extended-string-function-library-includes)
+      - [Function Library Updates](#function-library-updates)
   - [User Stories](#user-stories)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -355,6 +356,23 @@ There are two types of risks here:
 - We add a function and later need to change it.
 - We don't add a function that is essential for use cases and later need to add it.
 
+Proposal:
+
+- Keep all the CEL standard functions and macros as well as the extended string library.
+- Introduce a new "kubernetes" CEL extension library.
+  - Add `isSorted` for lists with comparable elements. This is useful for ensuring that a list is kept in-order.
+  - Add `sum`, `min` and `max` functions for lists of summable/comparable elements. This is the
+    core set of aggregate functions for lists, with CEL they can also be used on scalars by using defining list literals
+    inline , e.g. `[self.val1, self.val2].max()`
+  - Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
+    validating partial order (i.e. the tasks of a workflow)
+
+The function libraries we need can be added using [extension
+functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
+or directly to the Kubernetes codebase.
+
+How we selected this function library:
+
 First let's look at what CEL provides, and then look at what some of the core libraries of major programming
 languages provide, and see what notable absences there are.
 
@@ -415,7 +433,6 @@ Formats:
 
 - semver: compare (xref [Kyverno function library](https://github.com/kyverno/kyverno/blob/main/pkg/engine/jmespath/functions.go))
 
-
 Maps:
 
 - <Ability to construct a map using a comprehension>
@@ -437,20 +454,6 @@ Some considerations when selecting which of the above we should include in CEL e
 - Average and quantile (median, 99th percentile, ...) and stddev are, however, often requested by other CEL users
 - `hasPrefix` / `hasSuffix` is useful but can be performed trivially using regex matching
 
-Proposal:
-
-- Keep all the CEL standard functions and macros as well as the extended string library.
-- Add `isSorted` for lists with comparable elements. This is useful for ensuring that a list is kept in-order.
-- Add `sum`, `min` and `max` functions for lists of summable/comparable elements. This is the
-  core set of aggregate functions for lists, with CEL they can also be used on scalars by using defining list literals
-  inline , e.g. `[self.val1, self.val2].max()`
-- Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
-  validating partial order (i.e. the tasks of a workflow)
-
-The function libraries we need can be added using [extension
-functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
-or directly to the Kubernetes codebase.
-
 Future work:
 
 We've decided NOT to add the following functions. They may be useful for mutation, in which case we will consider adding them as part
@@ -460,6 +463,48 @@ of any future work done involving CEL and mutating admission control:
 - Add `trimPrefix` / `trimSuffix` for strings
 - Add `trim` / `trimLeft` / `trimRight` (overloaded to take an optional cutset arg) for strings
 - `sublist`, `split`, `replace` and `reverse` for lists (overloading existing string functions where appropriate)
+
+##### Function Library Updates
+
+Any function library changes must follow the [API Changes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
+guidelines. Since a change to the function library is a change to the `x-kubernetes-validations.rule` field, it must be
+introduced one Kubernetes release prior to when it may be included in create/update requests to CRDs. Specifically:
+
+- Kubernetes Version N-1: Entirely unaware of the library update.
+- Kubernetes Version N: Supports CRD that use library updates, but does not allow the library updates to used when
+  setting `x-kubernetes-validations.rule` fields.
+- Kubernetes Version N+1: Library update fully enabled.
+
+The mechanism for this will be:
+
+- All new functions, macros, or overloads of existing functions, will be added to a separate "kubernetes-future-compatibility" CEL extension library. (Better naming suggestions welcome).
+- For create requests, and for any CEL expression that are changed as part of an update, the CEL expression will be 
+  compiled **without** the "kubernetes-future-compatibility" CEL extension.
+- For CEL expressions not change in an update, the CEL expression will be compiled **with** the
+  "kubernetes-future-compatibility" CEL extension. This ensures that persisted fields that already use the change continue
+  to compile.
+- The "kubernetes-future-compatibility" CEL extension will always be included when CEL expressions are evaluated.
+- When the next version of Kubernetes is release, the library functions are be moved from "kubernetes-future-compatibility"
+- to the "kubernetes" library.
+
+Alternatives considered:
+
+Versioning Alternative:
+
+- All changes to CEL (core language and libraries) will be versioned and CEL expressions must specify the version they
+  are compatible with.
+- All versions must be backward compatible (a newer version of CEL is compatible with all older versions of CEL)
+- The API server rejects requests containing CEL versions newer than it supports.
+
+Pros:
+
+- Very clear what CRDs are compatible with what Kubernetes versions.
+
+Cons:
+
+- Validating that a CEL expression is the version it claims to be is difficult for older version of CEL. Either the API
+  server would need to contain multiple versions of the CEL compiler, or it would need a compiler that can be configured to
+  compile a CEL expression according to the language rules of an older version.
 
 ### User Stories
 
