@@ -427,7 +427,7 @@ Some considerations when selecting which of the above we should include in CEL e
 - Regex replace is very powerful and useful. It is also potentially dangerous due to its ability to allocate memory.
 - `format`: Since CEL supports string concatenation, the value of having format would only be to do things like format floats.
   Formatting functions are complex and require extensive documentation to teach.
-- `isSorted` makes it possible to check if a list is sorted without the expensive of performing a sort
+- `isSorted` makes it possible to check if a list is sorted without the expense of performing a sort
 - `indexOf` / `lastIndexOf` / `split` / `replace` (the string functions) will be overloaded to provide the equivalent list functions.
 - `reduce` is going to be non-obvious to anyone that doesn't have a functional programming background?
   - If we provide `reduce` are developers going to also expect to have `fold` or `zip`?
@@ -435,7 +435,7 @@ Some considerations when selecting which of the above we should include in CEL e
 - None of the other policy libraries provide extended math/trig support and I asked Tristan (maintainer of CEL) if
   they are requested and he said "almost never", which he clarified to mean it has been requested exactly one time.
 - Average and quantile (median, 99th percentile, ...) and stddev are, however, often requested by other CEL users
-- `hasPrefix` / `hasSuffix` is useful but an be performed trivially using regex matching
+- `hasPrefix` / `hasSuffix` is useful but can be performed trivially using regex matching
 
 Proposal:
 
@@ -445,7 +445,7 @@ Proposal:
   core set of aggregate functions for lists, with CEL they can also be used on scalars by using defining list literals
   inline , e.g. `[self.val1, self.val2].max()`
 - Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
-- validating partial order (i.e. the tasks of a workflow)
+  validating partial order (i.e. the tasks of a workflow)
 
 The function libraries we need can be added using [extension
 functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
@@ -453,7 +453,7 @@ or directly to the Kubernetes codebase.
 
 Future work:
 
-We've NOT to add the following functions. They may be useful for mutation, in which case we will consider adding them as part
+We've decided NOT to add the following functions. They may be useful for mutation, in which case we will consider adding them as part
 of any future work done involving CEL and mutating admission control:
 
 - Regex replace
