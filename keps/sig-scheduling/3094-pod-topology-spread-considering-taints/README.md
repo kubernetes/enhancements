@@ -509,7 +509,7 @@ Yes.
 The policies are respected again.
 
 ###### Are there any tests for feature enablement/disablement?
-Yes, unit test will switch the feature gate manually to compare the different behavior.
+No, appropriate unit tests will be added for Alpha.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -535,7 +535,8 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-N/A
+It's an opt-in feature for end-users and will maintain current behaviors if not set, so
+it will not impact the running workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -548,7 +549,7 @@ that might indicate a serious problem?
 - A spike on failure events with keyword "failed spreadConstraint" in scheduler log.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-N/A
+No. This will be tested upon beta graduation.
 
 <!--
 Describe manual testing that was done and the outcomes.
