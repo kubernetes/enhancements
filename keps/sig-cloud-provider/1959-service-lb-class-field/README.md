@@ -16,6 +16,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha:](#alpha)
     - [Beta:](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -185,6 +186,10 @@ E2E tests:
 
 * Feature gate is on by default.
 * E2E tests checking that default load balancer implementation ignores LoadBalancer type of Services when `loadBalancerClass` set.
+
+#### GA
+
+* Ensure integration/E2E tests continue to work and provide sufficient coverage.
 
 ### Upgrade / Downgrade Strategy
 
