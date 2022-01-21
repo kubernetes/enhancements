@@ -1,4 +1,4 @@
-# KEP-1669: Graceful Termination for Local External Traffic Policy
+# KEP-1669: Proxy Terminating Endpoints
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -50,29 +50,68 @@
 
 ## Summary
 
-Services with externalTrafficPolicy=Local lack the ability to gracefully handle traffic from a loadbalancer when it goes from N to 0 endpoints.
-Since terminating pods are never considered "ready" in Endpoints/EndpointSlice, a node with only terminating endpoints would drop traffic even though
-it may still be part of a loadbalancer's node pool. Even with loadbalancer health checks, there is usually a delay between when the health check
-fails and when a node is completely decommissioned. This KEP proposes changes to gracefully handle traffic to a node that has only terminating endpoints
-for a Service with externalTrafficPolicy=Local.
+This KEP proposes some enhancements to kube-proxy to handle terminating endpoints in an effort to improve the traffic engineering capabilities and overall relability of Kubernetes.
+These changes will depend on recent changes to the EndpointSlice API as part of KEP-1672 to include terminating pods in the EndpointSlice API.
 
 ## Motivation
 
+Historically, Kubernetes has ignored terminating Pods from both the Endpoints and EndpointSlice API. KEP-1672 recently introduced an API change in EndpointSlice
+where terminating endpoints are now included in EndpointSlice, with the addition of two new endpoint conditions "Serving" and "Terminating". Even though the EndpointSlice
+API now includes terminating endpoints, kube-proxy strictly forwards traffic to only "Ready" pods that are not terminating. There are several scenarios where not handling
+terminating endpoints can lead to traffic loss. It's worth diving into one specific scenario described in [this issue](https://github.com/kubernetes/kubernetes/issues/85643):
+
+When using Service Type=LoadBalancer w/ externalTrafficPolicy=Local, the availability of node backend is determined by the healthCheckNodePort served by kube-proxy.
+Kube-proxy returns a 200 on this endpoint if there is a local ready endpoint for a Serivce, otherwise it returns 500 signalling to the load balancer that the node should be removed
+from the backend pool. Upon performing a rolling update of a Deployment, there can be a small window of time where old pods on a node are terminating (hence not "Ready") but the load balancer
+has not probed kube-proxy's healthCheckNodePort yet. In this event, there is traffic loss because the load balancer is routing traffic to a node where the proxy rules will blackhole
+the traffic due to a lack of local endpoints. The likihood of this traffic loss is impacted by two factors: the number of local endpoints on the node and the interval between health checks
+from the load balancer. The worse case scenario is a node with 1 local endpoint and a load balancer with a long health check interval.
+
+Currently there are several workarounds that users can leverage:
+* Use Kubernetes scheduling/deployment features such that a node would never only have terminating endpoints. For example, always scheduling two pods on a node and only allowing 1 pod to update a time.
+* Reducing the load balancer health check interval to very small time windows. This may not alwyays be possible based on the load balancer implementation.
+* Use a preStop hook in the Pod to delay the time between a Pod terminating and the process receiving SIGTERM.
+
+While some of these solutions help, there's more that Kubernetes can do to handle this complexity for users.
+
 ### Goals
 
-* enable zero downtime rolling updates for Services with ExternalTrafficPolicy=Local via nodeports/loadbalancerIPs/externalIPs.
+* Reduce potential traffic loss that occurs on rolling updates because trafffic is sent to Pods that are terminating.
 
 ### Non-Goals
 
-* changing the behavior of terminating pods/endpoints outside the scope of Services with ExternalTrafficPolicy=Local via a nodeport/loadbalancerIPs/externalIPs.
+* Changing the behavior of how pods terminate.
 
 ## Proposal
 
-This KEP proposes that if all endpoints for a given Service (with externalTrafficPolicy=Local) within the bounds of a node are terminating (i.e pod.DeletionTimestamp != nil),
-then all external traffic on this node should be sent to **ready** and **not ready** terminating endpoints, preferring the former if there are any. This ensures that traffic
-is not dropped between the time a node fails its health check (has 0 endpoints) and when a node is decommissioned from the loadbalancer's node pool.
+This KEP proposes that if all endpoints for a given Service scoped to its traffic policy are terminating (i.e. pod.DeletionTimestamp != nil), then all traffic should be sent to
+terminating Pods that are still Ready. Note that the EndpointSlice API introduced a new condition called "Serving" which is semantically equivalent to "Ready" except that the Ready condition
+must always be "False" for terminating pods for compatibility reasons. For consumers of the EndpointSLice API that want to route traffic strictly based on a Pod's readiness ignoring
+it's terminating state, they should be reading the Serving condition going forward. Below are some examples to help illustrate the proposed behavior:
 
-The proposed changes in this KEP depend on KEP-1672 and the EndpointSlice API.
+### Example: only some endpoints terminating when traffic policy is "Cluster"
+
+When the traffic policy is "Cluster" and some endpoints are terminating, all traffic should be routed to the ready endpoints that are not terminating..
+
+### Example: only some endpoints terminating on a node when traffic policy is "Local"
+
+When the traffic policy is "Local" and some endpoints are terminating within a single node, traffic should be routed to ready endpoints on that node that are not terminating.
+
+### Example: all endpoints terminating and traffic policy is "Cluster"
+
+When the traffic policy is "Cluster" and all endpoints are terminating, then traffic should be routed to any terminating endpoint that is ready.
+
+### Example: all endpoints terminating on a node when traffic policy is "Local"
+
+When the traffic policy is "Local" and all endpoints are terminating within a single node, then traffic should be routed to any terminating endpoint that is ready on that node.
+
+
+### Handling terminating endpoints that are not ready.
+
+It is worth noting that traffic should not be routed to terminating pods if their readiness probe is failing, even if it is the only endpoints remaining. This is to give workloads
+the flexibility/control to opt out of this behavior by either exiting immediately or failing the readiness probe when receiving SIGTERM from kubelet. This would also be counter-intuitive
+to the current understanding of readiness probes.
+
 
 ### User Stories (optional)
 
@@ -99,11 +138,9 @@ This work depends on the `Terminating` condition existing on the EndpointSlice A
 Updates to kube-proxy when watching EndpointSlice:
 * update kube-proxy endpoints info to track terminating endpoints based on endpoint.condition.terminating in EndpointSlice.
 * update kube-proxy endpoints info to track endpoint readiness based on endpoint.condition.ready in EndpointSlice
-* if externalTrafficPolicy=Local, record all local endpoints that are ready && terminating and endpoints that are !ready && terminating. When there are no local ready endpoints, fall back in the preferred order:
-  * local ready & terminating endpoints
-  * local not ready & terminating endpoints
-  * blackhole traffic
-* for all other traffic (i.e. externalTrafficPolicy=Cluster), preserve existing behavior where traffic is only sent to ready && !terminating endpoints.
+* within the scope of the traffic policy for a Service, iterate the following prioritized set of endpoints, picking the first set that has at least 1 ready endpoint:
+  * ready endpoints that are not terminating
+  * ready endpoints that are terminating
 
 In addition, kube-proxy's node port health check should fail if there are only `Terminating` endpoints, regardless of their readiness in order to:
 * remove the node from a loadbalancer's node pool as quickly as possible
@@ -117,13 +154,14 @@ In addition, kube-proxy's node port health check should fail if there are only `
 kube-proxy unit tests:
 
 * Unit tests will validate the correct behavior when there are only local terminating endpoints.
-* Unit tests will validate the new change in behavior only applies for Services with ExternalTrafficPolicy=Local via nodeports/loadbalancerIPs/externalIPs.
-* Existing unit tests will validate that terminating endpoints are only used when there are no ready endpoints AND externalTrafficPolicy=Local, otherwise ready && !terminating endpoints are used.
+* Unit tests will validate the changein behavior against the matrix of possible Service configurations using both internalTrafficPolicy and externalTrafficPolicy.
+* Existing unit tests will validate that terminating endpoints are only used when there are no ready endpoints, otherwise ready && !terminating endpoints are used.
 * Unit tests will validate health check node port succeeds only when there are ready && !terminating endpoints.
 
 #### E2E Tests
 
-E2E tests will be added to validate that no traffic is dropped during a rolling update for a Service with ExternalTrafficPolicy=Local.
+E2E tests will be added to validate that no traffic is dropped during a rolling update for a Service. E2E tests should cover all permutations of externalTrafficPolicy
+and internalTrafficPolicy.
 
 All existing E2E tests for Services should continue to pass.
 
@@ -135,6 +173,11 @@ All existing E2E tests for Services should continue to pass.
 * kube-proxy falls back to terminating endpoints if and only if they are the only available endpoints.
 * feature is only enabled if the feature gate `ProxyTerminatingEndpoints` is on.
 * unit tests in kube-proxy.
+
+#### Beta
+
+* E2E tests are in place, exercising all permutations of internalTrafficPolicy and externalTrafficPolicy.
+* Metrics to publish how many Services/Endpoints are routing traffic to terminating endpoints.
 
 ### Upgrade / Downgrade Strategy
 
@@ -160,9 +203,8 @@ There's not much risk involved as the worse case scenario is falling back to exi
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, when externalTrafficPolicy=Local and there are only terminating endpoints,
-kube-proxy will route traffic to those endpoints. Before this change, kube-proxy
-dropped this traffic instead.
+Yes, when there are only terminating (and ready) endpoints, kube-proxy will route traffic to those endpoints. Before this change, kube-proxy
+dropped or disallowed this traffic instead.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
