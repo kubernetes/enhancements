@@ -1089,10 +1089,10 @@ that this RPC will be executed on the node where the resource will be
 used.  The Plugin SHALL return device name and kind for allocated
 device[s].
 
-The Plugin SHALL create or update json file[s] in CDI format for each
-allocated device. These files SHALL be used by runtime to update
-runtime configuration before creating containers that use the
-device[s].
+The Plugin SHALL ensure that there are json file[s] in CDI format
+for the allocated resource. These files SHALL be used by runtime to
+update runtime configuration before creating containers that use the
+resource.
 
 This operation SHALL do as little work as possible as it’s called
 after a pod is scheduled to a node. All potentially failing operations
@@ -1106,15 +1106,9 @@ If this RPC failed, or kubelet does not know if it failed or not, it
 MAY choose to call `NodePrepareResource` again, or choose to call
 `NodeUnprepareResource`.
 
-After a successful call, Kubelet MUST pass device names and kinds to
-the runtime through the CRI protocol.
-
-```
-<<[UNRESOLVED @bart0sh]>>
-CRI protocol may need to be extended for
-this purpose, e.g. device id can be added to the CRI Device structure.
-<<[/UNRESOLVED]>>
-```
+On a successful call this RPC should return set of fully qualified
+CDI device names, which kubelet MUST pass to the runtime through the CRI
+protocol.
 
 ```protobuf
 message NodePrepareResourceRequest {
@@ -1126,16 +1120,20 @@ message NodePrepareResourceResponse {
   // These are the additional devices that kubelet must
   // make available via the container runtime. A resource
   // may have zero or more devices.
-  repeated CDIDevice devices = 1;
+  repeated string cdi_device = 1;
 }
+```
 
-message CDIDevice {
-  // Kind is the string that together with the name identifies a device
-  // (https://github.com/container-orchestrated-devices/container-device-interface/blob/master/SPEC.md#kind).
-  string kind = 1;
-  // Name is the name that within its kind uniquely identifies a
-  // device (https://github.com/container-orchestrated-devices/container-device-interface/blob/master/SPEC.md#cdi-devices).
-  string name = 2;
+CRI protocol MUST be extended for this purpose, e.g. list of CDI
+device ids should be added to the CRI Device structure:
+
+```protobuf
+// Device specifies a host device to mount into a container.
+message Device {
+    ...
+    string permissions = 3;
+    // Set of fully qualified CDI device names
+    repeated string cdi_device = 4;
 }
 ```
 
@@ -1144,7 +1142,7 @@ message CDIDevice {
 If the plugin is unable to complete the NodePrepareResource call
 successfully, it MUST return a non-ok gRPC code in the gRPC status.
 If the conditions defined below are encountered, the plugin MUST
-return the specified gRPC error code.  Kublet MUST implement the
+return the specified gRPC error code.  Kubelet MUST implement the
 specified error recovery behavior when it encounters the gRPC error
 code.
 
