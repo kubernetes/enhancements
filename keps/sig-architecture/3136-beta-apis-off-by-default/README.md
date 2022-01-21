@@ -156,7 +156,7 @@ guaranteed migration pain for users when the APIs move to stable, and the risk t
 grow around unfinished APIs.
 Enabling beta APIs by default, exacerbates these problems by making them on in nearly every cluster.
 We observed these problems as we removed long-standing beta APIs and the PRR survey tells us that over
-90% of production clusters leave these APIs enabled.
+90% of cluster-admins leave production clusters with these APIs enabled.
 Unsuitability for production use is documented at https://kubernetes.io/docs/reference/using-api/#api-versioning 
 ("The software is not recommended for production uses"), but defaulting on means they are present in nearly every 
 production cluster.
@@ -198,6 +198,9 @@ This already exists and will continue to function.
 
 ### Notes/Constraints/Caveats (Optional)
 
+Installers, utilities, controllers, etc that need to know if a certain beta API is present can continue to use the
+existing discovery mechanisms (example: kubectl's api-resources sub command or the `/api/apps/v1` REST API).
+
 ### Risks and Mitigations
 
 Adoption of beta features will slow.
@@ -205,12 +208,20 @@ Given how kubernetes is now treated, this is a good thing, not a bad thing.
 Those users that want to move quickly and get new features can do so by enabling all beta feature
 or just enabling those that are important for their workload.
 The [PRR survey](https://datastudio.google.com/reporting/2e9c7439-202b-48a9-8c57-4459e0d69c8d/page/Cv5HB) shows that 
-over 30% of production clusters have alpha features enabled, so cluster-admins are willing and able to enable features
+over 30% of cluster-admins have enabled alpha features on at least some production clusters, so cluster-admins are willing and able to enable features
 that are not on by default when they are desired.
 
 If two or more APIs are tightly coupled together, it will now be possible to enable them independently.
 This can lead to unanticipated failure modes, but should only impact beta APIs with beta dependencies.
 While this is a risk, it is not very common and components should fail safe as a general principle.
+
+If beta APIs are off by default, it's possible that fewer clients will use them and provide feedback.
+This is a risk, but early adopters are able to enable these features and have a history of enabling alpha features.
+When moving from beta to GA, it will be important for sigs to explicitly seek feedback.
+
+If beta APIs are off by default, it is possible that sigs don't treat taking an API as an indication of a "mostly-baked" API.
+If this happens, then more transformation may be required.
+Keeping our beta API rules consistent and continuing to enforce easy to use APIs seems to be the best option.
 
 ## Design Details
 
