@@ -303,7 +303,7 @@ with a deprecation warning.
 
 Even though we feel deprecating client-side validation is justified due to the
 inevitability of it always being less correct than server-side validation, we
-still acknowledge that their are benefits to giving users a way to validate
+still acknowledge that there are benefits to giving users a way to validate
 their objects without needing access to a server (which is a current use-case of
 client-side validation, albeit one that is error-prone and not officially
 supported).
