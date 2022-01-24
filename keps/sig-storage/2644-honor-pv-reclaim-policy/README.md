@@ -7,6 +7,8 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [CSI Driver volumes](#csi-driver-volumes)
+  - [In-Tree Plugin volumes](#in-tree-plugin-volumes)
   - [Test Plan](#test-plan)
     - [E2E tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
@@ -17,6 +19,7 @@
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Monitoring Requirements](#monitoring-requirements)
   - [Scalability](#scalability)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
@@ -32,10 +35,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] (R) "Implementation History" section is up-to-date for milestone
@@ -61,7 +64,6 @@ Prevent volumes from being leaked by honoring the PV Reclaim policy after the `B
 To better understand the existing issue we will initially walk through existing behavior when a Bound PV is deleted prior
 to deleting the PVC.
 
-
 ```
 kubectl delete pv <pv-name>
 ```
@@ -77,19 +79,19 @@ kubectl -n <namespace> delete pvc <pvc-name>
 
 1. A `deletionTimestamp` is added on the PVC object.
 2. The PVC-protection-controller picks the update, verifies if `deletionTimestamp` is present and there are no pods that
-are currently using the PVC.
+   are currently using the PVC.
 3. If there are no Pods using the PVC, the PVC finalizers are removed, eventually triggering a PVC delete event.
 4. The PV-PVC-controller processes delete PVC event, leading to removal of the PVC from it's in-memory cache followed
-by triggering an explicit sync on the PV.
+   by triggering an explicit sync on the PV.
 5. The PV-PVC-controller processes the triggered explicit sync, here, it observes that the PVC is no longer available
-and updates the PV phase to `Released` state.
+   and updates the PV phase to `Released` state.
 6. If the PV-protection-controller picks the update, it observes that there is a `deletionTimestamp` and the PV is not
-in a `Bound` phase, this causes the finalizers to be removed.
+   in a `Bound` phase, this causes the finalizers to be removed.
 7. This is followed by PV-PVC-controller initiating the reclaim volume workflows.
 8. The reclaim volume workflow observes the `persistentVolumeReclaimPolicy` as `Delete` and schedules a volume deletion.
 9. Under the event that (6) has occurred and when `deleteVolumeOperation` executes it attempts to retrieve the latest PV
-state from the API server, however, due to (6) the PV is removed from the API server, leading to an error state. This
-results in the plugin volume deletion not being exercised hence leaking the volume.
+   state from the API server, however, due to (6) the PV is removed from the API server, leading to an error state. This
+   results in the plugin volume deletion not being exercised hence leaking the volume.
 ```go
 func (ctrl *PersistentVolumeController) deleteVolumeOperation(volume *v1.PersistentVolume) (string, error) {
 	klog.V(4).Infof("deleteVolumeOperation [%s] started", volume.Name)
@@ -106,8 +108,8 @@ func (ctrl *PersistentVolumeController) deleteVolumeOperation(volume *v1.Persist
     // Please refer pkg/controller/volume/persistentvolume/pv_controller.go in kubernetes/kubernetes for the full code. 
 ```
 10. Under the event that (6) has not occurred yet, during execution of  `deleteVolumeOperation` it is observed that the
-PV has a pre-existing `deletionTimestamp`, this makes the method assume that delete is already being processed. This
-results in the plugin volume deletion not being exercised hence leaking the volume.
+    PV has a pre-existing `deletionTimestamp`, this makes the method assume that delete is already being processed. This
+    results in the plugin volume deletion not being exercised hence leaking the volume.
 ```go
 func (ctrl *PersistentVolumeController) deleteVolumeOperation(volume *v1.PersistentVolume) (string, error) {
 	klog.V(4).Infof("deleteVolumeOperation [%s] started", volume.Name)
@@ -129,7 +131,7 @@ func (ctrl *PersistentVolumeController) deleteVolumeOperation(volume *v1.Persist
     // Please refer pkg/controller/volume/persistentvolume/pv_controller.go in kubernetes/kubernetes for the full code.
 ```
 11. Meanwhile, the external-provisioner checks if there is a `deletionTimestamp` on the PV, if so, it assumes that its
-in a transitory state and returns false for the `shouldDelete` check.
+    in a transitory state and returns false for the `shouldDelete` check.
 ```go
 // shouldDelete returns whether a volume should have its backing volume
 // deleted, i.e. whether a Delete is "desired"
@@ -149,14 +151,18 @@ func (ctrl *ProvisionController) shouldDelete(ctx context.Context, volume *v1.Pe
     // Please refer sig-storage-lib-external-provisioner/controller/controller.go for the full code.
 ```
 
-The main approach in fixing the issue involves using an existing finalizer already implemented in sig-storage-lib-external-provisioner. It is `external-provisioner.volume.kubernetes.io/finalizer` which is added on the Persistent Volume. Currently it is applied only during provisioning if the feature is enabled. The proposal is to not only add this finalizer to newly provisioned PVs, but also to extend the library to add the finalizer to existing PVs. Adding the finalizer prevents the PV from being removed from the API server. The finalizer will be removed only after the physical volume on the storage system is deleted.
+The fix applies to both csi driver volumes and in-tree plugin volumes.
+
+The main approach in fixing the issue for csi driver volumes involves using an existing finalizer already implemented in sig-storage-lib-external-provisioner. It is `external-provisioner.volume.kubernetes.io/finalizer` which is added on the Persistent Volume. Currently, it is applied only during provisioning if the feature is enabled. The proposal is to not only add this finalizer to newly provisioned PVs, but also to extend the library to add the finalizer to existing PVs. Adding the finalizer prevents the PV from being removed from the API server. The finalizer will be removed only after the physical volume on the storage system is deleted.
+
+The main approach in fixing the issue for in-tree volumes involves introducing a new finalizer `kubernetes.io/pv-controller`. The new finalizer will be added on the Persistent Volume when it is created. The finalizer will be removed only after the plugin reports a successful delete. If the in-tree volume is migrated then any existing finalizer `kubernetes.io/pv-controller` will be removed. If the migration is turned off, the finalizer `kubernetes.io/pv-controller` will be added back to the Persistent Volume.
 
 When the PVC is deleted, the PV is moved into `Released` state and following checks are made:
 
-1. Plugin:
-If the volume has the finalizer `external-provisioner.volume.kubernetes.io/finalizer`, then, `DeletionTimestamp` checks can be ignored.
+1. In-Tree Volumes:
+   `DeletionTimestamp` checks can be ignored, instead volume being in a `Released` state is sufficient criteria. The existing `DeletionTimestamp` check incorrectly assumes that the PV cannot be deleted prior to deleting the PVC. On deleting a PV, a `DeletionTimestamp` is set on the PV, when the PVC is deleted, an explicit sync on the PV is triggered, the existing `DeletionTimestamp` check assumes that the volume is already under deletion and skips calling the plugin to delete the volume from underlying storage.
 
-3. CSI driver
+2. CSI driver
 
 If when processing the PV update it is observed that it has `external-provisioner.volume.kubernetes.io/finalizer` finalizer and
 `DeletionTimestamp` set, then the volume deletion request is forwarded to the driver, provided other pre-defined conditions are met.
@@ -172,16 +178,41 @@ the current behavior.
 
 A feature gate named `HonorPVReclaimPolicy` will be introduced for both `kube-controller-manager` and `external-provisioner`.
 
-An existing finalizer `external-provisioner.volume.kubernetes.io/finalizer` is already implemented in sig-storage-lib-external-provisioner. It is added on the Persistent Volume. Currently it is applied only during provisioning if the feature is enabled. The proposal is to not only add this finalizer to newly provisioned PVs, but also to extend the library to add the finalizer to existing PVs. The existing `AddFinalizer` config option will be used to apply the finalizer. Adding the finalizer prevents the PV from being removed from the API server. The finalizer will be removed only after the physical volume on the storage system is deleted.
+### CSI Driver volumes
 
-When CSI Migration is enabled, external-provisioner adds `external-provisioner.volume.kubernetes.io/finalizer` to all the PVs it creates, including in-tree ones. When CSI Migraiton is disabled, however, these PVs will be deleted by in-tree volume plugin. Therefore, in-tree PV controller needs to be modified to remove the finalizer when the PV is being deleted when CSI Migration is disabled.
+An existing finalizer `external-provisioner.volume.kubernetes.io/finalizer` is already implemented in sig-storage-lib-external-provisioner. It is added on the Persistent Volume. Currently, it is applied only during provisioning if the feature is enabled. The proposal is to not only add this finalizer to newly provisioned PVs, but also to extend the library to add the finalizer to existing PVs. The existing `AddFinalizer` config option will be used to apply the finalizer. Adding the finalizer prevents the PV from being removed from the API server. The finalizer will be removed only after the physical volume on the storage system is deleted.
+
+When CSI Migration is enabled, external-provisioner adds `external-provisioner.volume.kubernetes.io/finalizer` to all the PVs it creates, including in-tree ones. When CSI Migration is disabled, however, these PVs will be deleted by in-tree volume plugin. Therefore, in-tree PV controller needs to be modified to remove the finalizer when the PV is being deleted when CSI Migration is disabled.
 
 ```go
 // PVDeletionProtectionFinalizer finalizer is added to the PV to prevent PV from being deleted before the physical volume
 PVDeletionProtectionFinalizer = "external-provisioner.volume.kubernetes.io/finalizer"
 ```
 
-In `deleteVolumeOperation` in kubernetes/pkg/controller/volume/persistentvolume/pv_controller.go, PV without `PVDeletionProtectionFinalizer` will be skipped as it is already processed and PV with `PVDeletionProtectionFinalizer` will proceed with volume deletion. This will allow external-provisioner to handle the deletion of the CSI volumes. The finalizer `PVDeletionProtectionFinalizer` will only be deleted after the underlying CSI volume is deleted.
+On the CSI driver side, the library adds the finalizer only to newly provisioned PVs. The proposal is to extend the library to (optionally) add the finalizer to all PVs (that are handled by the external-provisioner), to have all PVs protected once the feature is enabled.
+
+When the `shouldDelete` checks succeed, a delete volume request is initiated on the driver. This ensures that the volume is deleted on the backend.
+
+Once the volume is deleted from the backend, the finalizer can be removed. This allows the pv to be removed from the api server.
+
+Note: This feature should work with CSI Migration disabled or enabled.
+
+### In-Tree Plugin volumes
+
+A new finalizer `kubernetes.io/pv-controller` will be introduced. The finalizer will be added to newly created in-tree volumes as well as existing in-tree volumes. The finalizer will only be removed after the plugin successfully deletes the in-tree volume.
+
+When CSI Migration is enabled, the finalizer `kubernetes.io/pv-controller` will be removed from the in-tree volume PV, and as stated previously, the external-provisioner adds `external-provisioner.volume.kubernetes.io/finalizer` finalizer on to the PV. However, when CSI Migration is disabled, the finalizer `kubernetes.io/pv-controller` is added back on the PV.
+
+```go
+// PVDeletionInTreeProtectionFinalizer is the finalizer added to protect PV deletion for in-tree volumes.
+PVDeletionInTreeProtectionFinalizer = "kubernetes.io/pv-controller"
+
+// Please refer pkg/controller/volume/persistentvolume/util/util.go for the full code.
+```
+
+In `deleteVolumeOperation` in kubernetes/pkg/controller/volume/persistentvolume/pv_controller.go, checks for `DeletionTimestamp` should be ignored, the check currently prevents the volume from being deleted by the underlying storage by the plugin. In cases where the PV is deleted first, the `DeletionTimestamp` is expected to be set on the PV.
+
+The PV could be removed from the API server if the in-tree pv-controller removed the `kubernetes.io/pv-controller` finalizer, and the external-provisioner hasn't added `external-provisioner.volume.kubernetes.io/finalizer` finalizer.
 
 ```go
 // deleteVolumeOperation deletes a volume. This method is running in standalone
@@ -193,9 +224,9 @@ func (ctrl *PersistentVolumeController) deleteVolumeOperation(volume *v1.Persist
 		klog.V(3).Infof("error reading persistent volume %q: %v", volume.Name, err)
 		return "", nil
 	}
-
-	// PV without PVDeletionProtectionFinalizer was already processed and its volume deleted.
-	if !ctrl.hasPVDeletionProtectionFinalizer(volume, pvutil.PVDeletionProtectionFinalizer) {
+    
+	// Ignore the DeletionTimeStamp checks if the feature is enabled.
+	if !utilfeature.DefaultFeatureGate.Enabled(features.HonorPVReclaimPolicy) {
 		if newVolume.GetDeletionTimestamp() != nil {
 			klog.V(3).Infof("Volume %q is already being deleted", volume.Name)
 			return "", nil
@@ -211,13 +242,11 @@ func (ctrl *PersistentVolumeController) deleteVolumeOperation(volume *v1.Persist
 // Please refer pkg/controller/volume/persistentvolume/pv_controller.go in kubernetes/kubernetes for the full code.
 ```
 
-On the driver side, the library adds the finalizer only to newly provisioned PVs. The proposal is to extend the library to (optionally) add the finalizer to all PVs (that are handled by the external-provisioner), to have all PVs protected once the feature is enabled.
+The pv-controller is expected to add the finalizer when the claim is provisioned and PV is created, and the finalizer is to be removed when the plugin confirms a successful volume deletion.
 
-When the `shouldDelete` checks succeed, a delete volume request is initiated on the driver. This ensures that the volume is deleted on the backend.
+The pv-controller is also expected to add the finalizer to all existing in-tree plugin volumes.
 
-Once the volume is deleted from the backend, the finalizer can be removed. This allows the pv to be removed from the api server.
-
-Note: This feature should work with CSI Migration disabled or enabled.
+The pv-controller would also be responsible to add or remove the finalizer based on CSI Migration being disabled or enabled respectively.
 
 ### Test Plan
 
@@ -248,6 +277,14 @@ if there are PVs that have a valid associated PVC and deletion timestamp set, th
 
 In this case, there may be PVs with the deletion finalizer that the older Kubernetes does not remove. Such PVs will be in the API server forever unless if the user manually removes them.
 
+* Upgrade from old Kubernetes(1.23) to new Kubernetes(1.24) with `HonorPVReclaimPolicy` flag enabled
+
+On Kubernetes(1.23) with `HonorPVReclaimPolicy` flag enabled, in-tree plugin volumes still exhibited the issue described in the kep. On upgrading to Kubernetes(1.24) with `HonorPVReclaimPolicy` flag enabled, the in-tree plugin volumes will exhibit the new behavior described in this kep.
+
+* Downgrade from new Kubernetes(1.24) to old Kubernetes(1.23).
+
+In this case, the in-tree plugin volume PVs will have the newly introduced finalizer, such PVs cannot be removed from the API server unless the user manually removes the finalizer.
+
 ### Version Skew Strategy
 The fix is part of `kube-controller-manager` and `external-provisioner`.
 
@@ -255,11 +292,15 @@ The fix is part of `kube-controller-manager` and `external-provisioner`.
 
 In this case the drivers would still have the issue since the `external-provisioner` is not updated.
 
+This does not have effect on in-tree plugin volumes, as the upgraded `kube-controller-manager` ensures the protection by adding and removing the newly introduced `kubernetes.io/pv-controller` finalizer.
+
 2. `external-provisioner` is upgraded but `kube-controller-manager` is not:
 
-In this case the finalizer will be added and removed by the external-provisioner. PVs backed by the in-tree volume plugin are not protected.
+In this case the finalizer will be added and removed by the external-provisioner, hence, driver volumes will be protected.
 
-In addition, PVs migrated to CSI have the finalizer. When the CSI migration is disabled, in-tree volume plugin / controller-manager does not remove the finalizer. The finalizer must be manually removed by the cluster admin.
+PVs backed by the in-tree volume plugin will not be protected and  would still have the issue.
+
+In addition, PVs migrated to CSI will have the finalizer. When the CSI migration is disabled, in-tree volume plugin / controller-manager does not remove the finalizer. The finalizer must be manually removed by the cluster admin.
 
 ## Production Readiness Review Questionnaire
 
@@ -277,7 +318,9 @@ Enabling the feature will delete the volume from underlying storage when the PV 
 a bound PV-PVC pair where the PV reclaim policy is delete.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-Yes. Disabling the feature flag will continue previous behavior.
+Yes. Disabling the feature flag will continue previous behavior. However, after the rollback if there are existing PVs
+that have the finalizer `external-provisioner.volume.kubernetes.io/finalizer` or `kubernetes.io/pv-controller` cannot
+be deleted from the API server(due to the finalizers), these PVs must be explicitly patched to remove the finalizers.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 Will pick the new behavior as described before.
@@ -285,6 +328,36 @@ Will pick the new behavior as described before.
 ###### Are there any tests for feature enablement/disablement?
 
 There will be unit tests for the feature `HonorPVReclaimPolicy` enablement/disablement.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+The presence of finalizer described above in Persistent Volume will indicate that the feature is enabled.
+The finalizer `external-provisioner.volume.kubernetes.io/finalizer` will be present on the CSI Driver volumes.
+The finalizer `kubernetes.io/pv-controller` will be present on In-Tree Plugin volumes.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+  the health of the service?**
+  - [X] Metrics
+    - Metric name: For CSI Driver volumes, `persistentvolume_delete_duration_seconds` metric is used to track the time
+      taken for PV deletion. `volume_operation_total_seconds` metrics tracks the end-to-end latency for delete
+      operation, it is applicable to both CSI driver volumes and in-tree plugin volumes.
+    - [Optional] Aggregation method:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  The current SLOs for `persistentvolume_delete_duration_seconds` and `volume_operation_total_seconds` would be
+  increased by the amount of time taken to remove the newly introduced finalizer. This should be an insignificant
+  increase.
+
+* **Are there any missing metrics that would be useful to have to improve observability
+  of this feature?**
+
+  No
 
 ### Scalability
 
@@ -310,6 +383,7 @@ No.
 ## Implementation History
 
 1.23: Alpha
+1.24: Beta
 
 ## Drawbacks
 None. The current behavior could be considered as a drawback, the KEP presents the fix to the drawback. The current
