@@ -35,7 +35,7 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
@@ -47,7 +47,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -95,9 +95,9 @@ field based on the number of Pods that have the `Ready` condition.
 ### Risks and Mitigations
 
 - An increase in Job status updates. To mitigate this, the job controller holds
-  the Pod updates that happen in X ms before syncing a Job. X will be determined
-  from experiments on integration tests, but we expect it to be between 500ms
-  and 1s.
+  the Pod updates that happen in X ms before syncing a Job.
+  From experiments using integration tests, X=500ms was found to be a reasonable
+  value.
 
 ## Design Details
 
@@ -107,7 +107,7 @@ field based on the number of Pods that have the `Ready` condition.
 type JobStatus struct {
 	...
 	Active    int32
-	Ready     int32  // new field
+	Ready     *int32  // new field
 	Succeeded int32
 	Failed    int32
 }
@@ -131,12 +131,20 @@ pods that have the `Ready` condition.
 #### Alpha
 
 - Feature gate disabled by default.
-- Unit and integration tests passing.
+- Unit and [integration] tests passing.
+
+[integration]: https://testgrid.k8s.io/conformance-all#Conformance%20-%20GCE%20-%20master&include-filter-by-regex=sig-apps&include-filter-by-regex=Job&exclude-filter-by-regex=CronJob
 
 #### Beta
 
 - Feature gate enabled by default.
-- Existing E2E and conformance tests passing.
+- Existing [E2E] and [conformance] tests passing.
+- Scalability tests for Jobs of varying sizes, up to 500 parallelism, that keep
+  track of metric `job_sync_duration_seconds`. There should be no significant
+  degradation after enabling the feature gate.
+
+[E2E]: https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=apps%5C%5D%20Job
+[Conformance]: https://testgrid.k8s.io/conformance-all#Conformance%20-%20GCE%20-%20master&include-filter-by-regex=sig-apps&include-filter-by-regex=Job&exclude-filter-by-regex=CronJob
 
 #### GA
 
@@ -191,7 +199,7 @@ The Job controller will start populating the field again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, there will be tests at unit and integration level.
+Yes, there are tests at unit and [integration] level.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -201,11 +209,21 @@ The field is only informative, it doesn't affect running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+- An increase in `job_sync_duration_seconds`.
+- A reduction in `job_sync_num`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+A manual test will be performed, as follows:
+
+1. Create a cluster in 1.23.
+1. Upgrade to 1.24.
+1. Create long running Job A, ensure that the ready field is populated.
+1. Downgrade to 1.23.
+1. Verify that ready field in Job A is not lost, but also not updated.
+1. Create long running Job B, ensure that ready field is not populated.
+1. Upgrade to 1.24.
+1. Verify that Job A and B ready field is tracked again.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -301,7 +319,8 @@ No change from existing behavior of the Job controller.
 
 ## Implementation History
 
-- 2021-08-19: Proposed KEP starting in beta status.
+- 2021-08-19: Proposed KEP starting in alpha status, including full PRR questionnaire.
+- 2022-01-05: Proposed graduation to beta.
 
 ## Drawbacks
 
