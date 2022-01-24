@@ -74,7 +74,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Cluster add-on development](#cluster-add-on-development)
     - [Cluster configuration](#cluster-configuration)
     - [Partial GPU allocation](#partial-gpu-allocation)
@@ -89,6 +89,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Pre-filter](#pre-filter)
     - [Filter](#filter)
     - [Post-filter](#post-filter)
+    - [Pre-score](#pre-score)
     - [Reserve](#reserve)
     - [Unreserve](#unreserve)
   - [kubelet](#kubelet)
@@ -387,10 +388,10 @@ not needed yet.
 
 To support arbitrarily complex parameters, both ResourceClass and
 ResourceClaim contain one field which holds a
-[runtime.RawExtension](https://pkg.go.dev/k8s.io/apimachinery/pkg/runtime#RawExtension).
+[runtime.RawExtension](https://pkg.go.dev/k8s.io/apimachinery/pkg/runtime#RawExtension) (see [user stories](#user-stories) for examples).
 Validation can be handled by drivers through an
 admission controller (if desired) or later at runtime when the
-parameters are passed to the driver.
+parameters are passed to the driver. 
 
 The ResourceClaim spec is read-only once created. The ResourceClaim
 status is reserved for system usage and holds the current state of the
@@ -473,7 +474,7 @@ that depend on a ResourceClaim, but the API and some custom resource driver
 might also be useful for controllers to manage resources without using those
 resources for Pods.
 
-### User Stories (Optional)
+### User Stories
 
 #### Cluster add-on development
 
@@ -497,7 +498,7 @@ of that cluster. I prepare the nodes and deploy the vendor's components with
 `kubectl create`.
 
 I create a ResourceClass for the hardware with parameters that only I as the
-administrator are allowed to choose, like for example running a command with
+administrator am allowed to choose, like for example running a command with
 root privileges that does some cluster-specific initialization for each allocation:
 ```
 apiVersion: cdi.k8s.io/v1alpha1
@@ -1334,7 +1335,7 @@ when the feature is disabled.
 ###### How can a rollout fail? Can it impact already running workloads?
 
 Workloads not using ResourceClaims should not be impacted because the new code
-will not done anything besides checking the Pod for ResourceClaims.
+will not do anything besides checking the Pod for ResourceClaims.
 
 When kube-controller-manager fails to create ResourceClaims from inline
 ResourceClaimTemplates, those Pods will not get scheduled. Bugs in
