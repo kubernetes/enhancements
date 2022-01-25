@@ -67,10 +67,10 @@ API now includes terminating endpoints, kube-proxy strictly forwards traffic to 
 terminating endpoints can lead to traffic loss. It's worth diving into one specific scenario described in [this issue](https://github.com/kubernetes/kubernetes/issues/85643):
 
 When using Service Type=LoadBalancer w/ externalTrafficPolicy=Local, the availability of node backend is determined by the healthCheckNodePort served by kube-proxy.
-Kube-proxy returns a "200 OK" http response on this endpoint if there is a local ready endpoint for a Serivce, otherwise it returns 500 http response signalling to the load balancer that the node should be removed
+Kube-proxy returns a "200 OK" http response on this endpoint if there is a local ready endpoint for a Service, otherwise it returns 500 http response signalling to the load balancer that the node should be removed
 from the backend pool. Upon performing a rolling update of a Deployment, there can be a small window of time where old pods on a node are terminating (hence not "Ready") but the load balancer
 has not probed kube-proxy's healthCheckNodePort yet. In this event, there is traffic loss because the load balancer is routing traffic to a node where the proxy rules will blackhole
-the traffic due to a lack of local endpoints. The likihood of this traffic loss is impacted by two factors: the number of local endpoints on the node and the interval between health checks
+the traffic due to a lack of local endpoints. The likihood  of this traffic loss is impacted by two factors: the number of local endpoints on the node and the interval between health checks
 from the load balancer. The worse case scenario is a node with 1 local endpoint and a load balancer with a long health check interval.
 
 Currently there are several workarounds that users can leverage:
@@ -82,7 +82,7 @@ While some of these solutions help, there's more that Kubernetes can do to handl
 
 ### Goals
 
-* Reduce potential traffic loss from kube-proxy that occurs on rolling updates because trafffic is sent to Pods that are terminating.
+* Reduce potential traffic loss from kube-proxy that occurs on rolling updates because traffic is sent to Pods that are terminating.
 
 ### Non-Goals
 
@@ -132,7 +132,7 @@ until either one of the conditions are satisfied.
 ### Risks and Mitigations
 
 There are scalability implications to tracking termination state in EndpointSlice. For now we are assuming that the performance trade-offs are worthwhile but
-future testing may change this decision. See KEP 1672 for more details.
+future testing may change this decision. See [KEP 1672](../1672-tracking-terminating-endpoints) for more details.
 
 ## Design Details
 
