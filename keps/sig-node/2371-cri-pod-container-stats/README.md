@@ -515,13 +515,11 @@ Each compliant CRI implementation must:
 
 Below is the proposed strategy for doing so:
 
-1. The Alpha release will strictly cover research, performance testing and the creation of conformance tests.
+1. The Alpha release will focus solely on `/stats/summary` endpoint, and `/metrics/cadvisor` support will follow in Beta.
+2. For the Beta release, add initial support for CRI implementations to report these metrics
     - Initial research on the set of metrics required should be done. This will, possibly, allow the community to declare metrics that are not required to be moved to the CRI implementations.
     - Testing on how performant cAdvisor+Kubelet are today should be done, to find a target, acceptable threshold of performance for the CRI implementations
     - Creation of tests verifying the metrics are reported correctly should be created and verified with the existing cAdvisor implementation.
-2. For the Beta release, add initial support for CRI implementations to report these metrics
-    - This set of metrics will be based on the research done in alpha
-    - Each will be validated against the conformance and performance tests created in alpha.
 3. For the GA release, the CRI implementation should be the source of truth for all pod and container level metrics that external parties rely on (no matter how many endpoints the Kubelet advertises).
 
 #### cAdvisor
@@ -540,19 +538,19 @@ As a requirement for the Beta stage, cAdvisor must support optionally collecting
 
 - CRI should be extended to provide required stats for `/stats/summary`
 - Kubelet should be extended to provide the required stats from CRI implementation for `/stats/summary`.
-- cAdvisor should be updated to support no longer collecting stats that are duplicated with CRI implementation.
 - This new behavior will be gated by a feature gate to prevent regressions for users that rely on the old behavior.
-- Conduct research to find the set of metrics from `/metrics/cadvisor` that compliant CRI implementations must expose.
-- Conformance tests for the fields in `/metrics/cadvisor` should be created
-- Performance tests for CPU/memory usage between Kubelet/cAdvisor/CRI implementation should be added.
+
 #### Alpha -> Beta Graduation
 
-- CRI implementations should report any difficulties collecting the stats, and by Beta the CRI stats implementation should perform better than they did with CRI+cAdvisor.
-- CRI implementations should support their equivalent of `/metrics/cadvisor`, passing the performance and conformance suite created in Alpha.
+- Conduct research to find the set of metrics from `/metrics/cadvisor` that compliant CRI implementations must expose.
+- Conformance tests for the fields in `/metrics/cadvisor` should be created.
+- Performance tests for CPU/memory usage between Kubelet/cAdvisor/CRI implementation should be added.
+	- The CRI stats implementation should perform better than they did with CRI+cAdvisor.
 - cAdvisor stats provider may be marked as deprecated (depending on stability of new CRI based implementations).
 - cAdvisor should be able to optionally not report the metrics needed for both summary API and `/metrics/cadvisor`. This behavior will be toggled by the Kubelet feature gate.
 
 #### Beta -> GA Graduation
+
 - The CRI stats provider in the Kubelet should be fully formed, and able to satisfy all the needs of downstream consumers
 - cAdvisor stats provider will likely be marked as deprecated (depending on dockershim deprecation).
 - Feature gate removed and the CRI stats provider will no longer rely on cAdvisor for container/pod level metrics.
@@ -562,7 +560,7 @@ As a requirement for the Beta stage, cAdvisor must support optionally collecting
 - There needs to be a way for the Kubelet to verify the CRI provider is capable of providing the correct metrics.
   Upon upgrading to a version that relies on this new behavior (assuming the feature gate is enabled),
   Kubelet should fail early if the CRI implementation won't report the expected metrics.
-- For Beta/GA releases, components that rely on `/metrics/cadvisor` should take the decided action (use `/stats/summary`, or use the Kubelet provided `/metrics/cadvisor`).
+- For Beta/GA releases, components that rely on `/metrics/cadvisor` should take the decided action (use `/stats/summary`, or use the CRI provided `/metrics/cadvisor`).
 
 ### Version Skew Strategy
 
@@ -735,7 +733,7 @@ operations covered by [existing SLIs/SLOs]?**
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
   - It most likely will reduce resource utilization. Right now, there is duplicate work being done between CRI and cAdvisor.
     This will not happen anymore.
-  - The CRI implementation may scrape the metrics less efficiently than cAdvisor currently does. This should be measured and evaluated before Beta.
+  - The CRI implementation may scrape the metrics less efficiently than cAdvisor currently does. This should be measured and evaluated as a requirement of Beta.
 
 ### Troubleshooting
 
