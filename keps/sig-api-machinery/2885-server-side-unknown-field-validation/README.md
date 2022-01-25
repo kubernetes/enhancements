@@ -85,28 +85,33 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Future Work](#future-work)
+      - [Out-of-Tree Alternatives to Client Side Validation](#out-of-tree-alternatives-to-client-side-validation)
+      - [Aligning json and yaml errors](#aligning-json-and-yaml-errors)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Performance Considerations](#performance-considerations)
 - [Design Details](#design-details)
-  - [Opt-in API Mechanism](#opt-in-api-mechanism)
-    - [Content-Type Header](#content-type-header)
-    - [Query Parameter](#query-parameter)
+  - [Opt-in API Mechanism (Query Parameter)](#opt-in-api-mechanism-query-parameter)
   - [Create (POST) and Update (PUT)](#create-post-and-update-put)
   - [Patch (PATCH)](#patch-patch)
     - [JSON Patch](#json-patch)
     - [Strategic Merge Patch](#strategic-merge-patch)
     - [Apply Patch](#apply-patch)
+    - [Kubectl Flag](#kubectl-flag)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+  - [HTTP header mechanism](#http-header-mechanism)
+  - [Other Alternatives Considered](#other-alternatives-considered)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -127,8 +132,8 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -137,7 +142,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
-- [x] (R) Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -220,7 +225,12 @@ know that this has succeeded?
 * Server should validate that no extra fields are present or invalid (e.g.
 misspelled), nor are any fields duplicated (for json and yaml data).
 * We must maintain compatibility with all existing clients, thus server side
-unknown field validation should be opt-in
+unknown field validation should be opt-in.
+* kubectl should default to server-side validation against servers that support
+  it.
+* kubectl should provide the ability for a user to request no validation,
+  or warning only validation, instead of strict server-side validation on
+  a per-request basis.
 
 ### Non-Goals
 
@@ -236,7 +246,10 @@ on version X send a request to the server of version less than X which does not 
 some of the fields (or a similar situation). We do not think it is worth
 supporting this use case initially and will error if clients attempt to validate
 schema server-side with protobuf data.
-
+* Enhanced offline validation. Current client-side validation has been used as a
+  form of offline validation to simply validate configs that have no intention
+  of being actually applied to a server. Ideally users would have a supported
+  way to perform offline validation, but that is outside the scope of this KEP.
 
 ## Proposal
 
@@ -248,26 +261,80 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-We propose using an opt-in API mechanism (such as content-type header or query
-param) to indicate to the server that it should fail when the kubernetes object
-in the request body supplied to POST, PUT, and PATCH requests contains
-extra/unknown fields.
 
-Clients such as kubectl will continue to use the `--validate=true` flag as
-before, but instead of triggering validation on the client-side, it will
-instruct the server to validate for unknown fields server-side.
+We propose adding server-side schema validation, enabling the API server
+to validate that objects received in the request body in POST, PUT, and
+PATCH requests contain no unknown or duplicate fields.
 
-This change will be made in at least two steps, one where we introduce the
-server side validation and a second where we modify kubectl to use the
-server-side validation (and mark the existing client-side validation as
-deprecated).
+We introduce a query parameter that enables the user/client to indicate
+that server-side validation should either not be performed at all, provide
+warnings for the presence of unknown/duplicate fields, or error out in the
+presence of unknown/duplicate fields.
+
+When server-side validation is enabled on the server (as will be the default
+starting in beta), we propose modifying the kubectl `--validate` flag to
+default to server-side strict validation and allow the user to choose between
+strict, warn-only, or no validation.
+
+We propose documenting that client-side validation is deprecated and server-side
+validation will be used instead by default if available. We will fallback to
+client-side validation in the mean time if kubectl does not connect to a server
+with server-side validation enabled (either because the server it is connected
+to is older or has the feature-gate disabled, or because kubectl is not
+connected to any server at all).
+
+When we fallback to client-side validation we will send a warning to let users
+know that their request is being validated by the deprecated client-side
+validation.
 
 ### Notes/Constraints/Caveats (Optional)
 
 #### Future Work
-After server side unknown field validation is implemented we can begin work to
-deprecate and remove client side validate and have kubectl use server side
-validation instead. A separate KEP will be published for that.
+
+##### Out-of-Tree Alternatives to Client Side Validation
+Upon successfully providing kubectl access to server-side validation via the
+`--validate` flag, an open question will remain as to the future of client
+side validation.
+
+Kubectl will use server-side validation by default starting in beta for servers
+that have it enabled. If kubectl does not recognize a server with server-side
+validation enabled, however, it will fall back to using client-side validation
+with a deprecation warning.
+
+Even though we feel deprecating client-side validation is justified due to the
+inevitability of it always being less correct than server-side validation, we
+still acknowledge that there are benefits to giving users a way to validate
+their objects without needing access to a server (which is a current use-case of
+client-side validation, albeit one that is error-prone and not officially
+supported).
+
+Long-term, we want to favor using out-of-tree solutions for client-side
+validation, though this idea is still in its infancy.
+
+The [kubeval](https://www.kubeval.com/) project is an example of an out-of-tree solution that does this, and
+we will look into expanding its support of open API to v3, and investigate
+whether it makes sense as a permanent solution to client-side validation.
+
+##### Aligning json and yaml errors
+
+A few discrepancies between sigs.k8s.io/yaml and sigs.k8s.io/json make detecting
+and reporting strict errors inconsistent and should be addressed at some point.
+
+1. sigs.k8s.io/yaml does not currently have a strict unmarshaling mechanism to
+   distinguish between strict and non-strict errors while sigs.k8s.io/json does.
+   This results in having to perform unmarshaling twice for yaml data in some
+   cases.
+   See [this
+   discussion](https://github.com/kubernetes/kubernetes/pull/105916#discussion_r748530682) from the the alpha PR and the follow-up [tracking
+   issue](https://github.com/kubernetes-sigs/yaml/issues/70).
+
+2. kyaml and kjson currently report strict decoding errors in different formats.
+   For example a duplicate field error appears from kyaml as `line 26: key
+   "imagePullPolicy" already set in map`, while kjson reports the error as
+   `duplicate field "spec.template.spec.containers[0].imagePullPolicy"`. For
+   consistencies sake, these two libraries should eventually report the same
+   errors in the same format.
+
 
 <!--
 What are the caveats to the proposal?
@@ -315,54 +382,20 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
-### Opt-in API Mechanism
+### Opt-in API Mechanism (Query Parameter)
 
 There are a few ways we could allow a client to opt-in to server-side unknown
-field validation, we present two options **Content-Type Header** and **query
-parameter**.
+field validation, we believe the best option is to introduce a new query
+parameter to indicate the level of field validation the server should perform,
+such as `?fieldValidation=Strict`.
 
-#### Content-Type Header
-
-Requests that contain a kubernetes object, also pass along with it a
-content-type header such as “application/json”. One way to indicate to the
-server that it should use strict schema validation and fail when unknown fields
-are passed is to send a mime-type parameter indicating the strict validation
-such as “application/json;validation=strict”. Alternatively we could use a new
-header such as “X-Kubernetes-Validation:strict”.
-
-One could argue that this is the more appropriate way to parameterize opting-in
-to server side schema validation because on the server we are fundamentally
-treating the content as a different type (“application/json” is json data that
-we don’t care if it has extra fields, “application/json;validation=strict” is
-json data that is sensitive to extra fields).
-
-A precedent for using a mime-type parameter is from how we [receive resources as
-tables](https://kubernetes.io/docs/reference/using-api/_print/#receiving-resources-as-tables).
-
-On the other hand, one could also argue that interpreting input strictly or not
-according to the target schema is independent of the content type and that this
-is an inappropriate way to parameterize validation opt-in.
-
-Another argument against this method is that for patch, strictness is handled
-when decoding the *result* of the patch, so it wouldn’t make sense to use
-Content-Type which is providing information about the inbound request body.
-
-#### Query Parameter
-
-Alternatively, if we don’t like the idea of using Content-Type header to
-determine whether the apiserver should accept or fail on unknown fields, we
-could pass a query param such as “?fieldValidation=Strict”.
-
-This might make it more obvious to consumers of the API that strict schema
-validation is a choice of the client. On the other hand, query parameters are
-more typically used for filtering/sorting data returned from the API server.
-
-Arguments for using query parameter include:
-* Being able version them with the API version (unlike content-type which must
-  be versioned with the type)
-* Parameters are more discoverable in openapi, less so for mime types.
+Primary arguments for using query parameter include:
+* Parameters are discoverable in openapi.
 * We have precedent for using query parameters for write requests already (via CreateOptions,
   PatchOptions, UpdateOptions)
+
+An alternative to using a query parameter, using content-type header is
+discussed in the [#alternatives](#alternatives) section.
 
 For client-go support, we will add a `FieldValidation` field to
 CreateOptions, PatchOptions, and UpdateOptions that can supply the query
@@ -491,6 +524,33 @@ TypedValue](https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405
 object has any unknown or duplicate fields.
 
 
+#### Kubectl Flag
+
+For beta, we will modify the kubectl `--validate` flag from being a bool flag to
+a string flag that accepts the following values:
+
+* `true` or `strict`: If server-side validation is enabled on the server it sends
+  a request with the fieldValidation param set to `Strict`, otherwise it falls
+  back to client-side validation. It will also fall back to client-side
+  validation if the request has `--dry-run=client`, because the request is not
+  actually being sent to a server-side validation enabled server.
+  The default remains `true`, as it currently is today.
+* `false` or `ignore`: This performs no server-side validation or client-side validation,
+sending a request to the server with fieldValidation param set to `Ignore` if
+server-side validation is enabled.
+* `warn`: This sends a request to the server with the fieldValidation param set
+  to `Warn`. It performs server-side validation, but validation errors are
+  exposed as warnings in the result header rather than failing the request.
+
+We will introduce a mechanism similar to the cli-runtime
+[DryRunVerifier](https://github.com/kubernetes/cli-runtime/blob/cfe3fe3837db26e9afb75e9491348080a4f0ef23/pkg/resource/dry_run_verifier.go#L73:26)
+to read the server's published OpenAPI to determine whether or not server-side
+validation is enabled on the server.
+
+The goal here is for the flag to be intent based, whether we use client-side or
+server-side under the hood is based solely on whether or not server-side
+validation is supported by the apiserver kubectl is connected to.
+
 ### Test Plan
 
 <!--
@@ -551,16 +611,20 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 -->
 #### Alpha
 
-- Feature implemented behind a feature flag
+- Feature implemented behind a feature gate
 - Integration tests added for all relevant verbs (POST, PUT, and PATCH)
 
-<!--
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- [ ] kubectl validate flag offers ability to perform server-side validation
+- [ ] endpoints handler unit testing of field validation
+- [ ] customresource handler unit testing of field validation
+- [ ] field validation integration tests check for exact match of strict errors
+- [ ] In tree NestedObjectDecoders no longer short circuit on strict decoding
+  errors [#107545](https://github.com/kubernetes/kubernetes/issues/107545)
 
+
+<!--
 #### GA
 
 - N examples of real-world usage
@@ -662,7 +726,7 @@ No, strict validation is false by default.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. From the cluster operator's side, they can restart the kube-apiserver without
-the ServerSideFieldValidation flag set and this will disable the feature
+the ServerSideFieldValidation feature gate set and this will disable the feature
 cluster-wide.
 
 For end-users that no longer wish to perform server-side strict validation,
@@ -677,51 +741,47 @@ only new requests to the api-server will trigger strict validation.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Testing for both presence and absence of query param.
+Testing for both presence and absence of query param when the feature is enabled. We also test
+that modified codepaths that could be triggered when the feature is enabled are
+inert when the feature is disabled.
+
+For example, unknown field path tracking in both the unstructured converter and
+structural pruning algorithm affect performance when server-side field
+validation is performed, but are tested to ensure that they are never invoked
+when server side field validation is disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
-This section must be completed when targeting beta to a release.
-
-N/A
-
-<!--
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+API servers rolled out with field validation enabled could start erroneously
+failing requests if there are problems with how field validation is implemented.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
+Also, performance issues could slow down API server performance or memory usage
+if extraneous validation is being invoked.
 
 ###### What specific metrics should inform a rollback?
 
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
+A drastic deterioration in API server performance could indicate an issue with
+the feature and a need to rollback (i.e. `apiserver_request_duration_seconds`).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
+No
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-Even if applying deprecation policies, they may still surprise some users.
--->
+No deprecations or removals however the kubectl flag `--validate=true` is being changed
+to perform server-side validation instead of client-side validation (for servers
+that support it).
+
 ### Monitoring Requirements
 
-This section must be completed when targeting beta to a release.
-
-<!--
 ###### How can an operator determine if the feature is in use by workloads?
 
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+One could create a metric to track the number of validation errors on the
+server. We will not be implementing this for beta as it seems like overkill.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 The easiest way to know that the feature is enabled and working is to query the
@@ -780,44 +840,21 @@ question.
 Pick one more of these and delete the rest.
 
 - [x] Metrics
-  - Metric name: CPU Usage
-  - Components exposing the metric: kube-apiserver
-- [x] Metrics
-  - Metric name: Memory Consumption
-  - Components exposing the metric: kube-apiserver
-- [x] Metrics
-  - Metric name: Request Latency
+  - Metric name: apiserver_request_duration_seconds
   - Components exposing the metric: kube-apiserver
 
-<!--
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
+As mentioned above, one could implement a metric to track the quantity of field validation errors
+reported by the apiserver. Unnecessary because it provides insight about how
+clients are misusing the API (by sending invalid fields), more so than it
+provides any useful insight on the feature itself.
 
--->
 ### Dependencies
 
-This section must be completed when targeting beta to a release.
-
-N/A
-
-<!--
 ###### Does this feature depend on any specific services running in the cluster?
 
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No
 
 ### Scalability
 
@@ -829,40 +866,23 @@ For beta, this section is required: reviewers must answer these questions.
 
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
+-->
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+No
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -874,46 +894,34 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-Mutating API calls that opt-in to validation will be slower ([initial
-benchmarks](https://github.com/kubernetes/kubernetes/pull/104433#issuecomment-901398507)
-estimate ~20% slower 25-30% more memory consumption)
+Mutating API calls that opt-in to validation will be slower.
+Benchmarks of alpha changes indicate that performing validation results in
+~2-5% slower request latency and ~4-8% more memory usage for json and yaml
+requests.
 
-<!--
+Given that the majority of high-frequency requests made by system
+components use protobuf, we expect a negligible increase in overall resource
+usage.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+Non-negligible increase to RAM of kube-apiserver when server-side validation is
+heavily utilized.
 
 ### Troubleshooting
 
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+Same as without the feature
 
 ###### What are other known failure modes?
 
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
--->
+
+Operators can disable server-side validation by setting the feature-gate to false if
+the performance impact of it is not tolerable.
 
 ## Implementation History
 
@@ -927,8 +935,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
-* Proof of Concept [PR](https://github.com/kubernetes/kubernetes/pull/104433) for Create and Update.
-* Proof of Concept [PR](https://github.com/kubernetes/kubernetes/pull/104619) for JSON Patch.
+* 2021-11-19 Alpha Implementation
+  [PR](https://github.com/kubernetes/kubernetes/pull/105916) of Server Side Field Validation merged.
+* 2021-12-07 Kubernetes 1.23 released with alpha implementation present.
+* 2021-12-08 Better documentation for fieldValidation parameter
+  [merged](https://github.com/kubernetes/kubernetes/pull/106722).
 
 <!--
 ## Drawbacks
@@ -937,7 +948,37 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
-* Content-Type Header vs Query Param (see [#proposal](#proposal))
+
+### HTTP header mechanism
+
+Instead of opting-in to server-side validation via a query parameter, we
+considered passing a specific content-type header that would indiciate strict
+schema validation.
+
+This could be done by passing a mime-type parameter indicating strict validation
+such as `application/json;validation=strict` or we could use an entirely new
+header such as `X-Kubernetes-Validation:Strict`.
+
+One could argue that this is the more appropriate way to parameterize opting-in
+to server side schema validation because on the server we are fundamentally
+treating the content as a different type (“application/json” is json data that
+we don’t care if it has extra fields, “application/json;validation=strict” is
+json data that is sensitive to extra fields).
+
+A precedent for using a mime-type parameter is from how we [receive resources as
+tables](https://kubernetes.io/docs/reference/using-api/_print/#receiving-resources-as-tables).
+
+On the other hand, one could also argue that interpreting input strictly or not
+according to the target schema is independent of the content type and that this
+is an inappropriate way to parameterize validation opt-in.
+
+Another argument against this method is that for patch, strictness is handled
+when decoding the *result* of the patch, so it wouldn’t make sense to use
+Content-Type which is providing information about the inbound request body.
+
+
+### Other Alternatives Considered
+
 * Passing multiple decoders around in the request scope
 * Change the Decode signature itself (or adding a new DecodeStrict that Decode
   calls into)
