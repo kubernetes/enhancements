@@ -16,7 +16,7 @@ approvers:
 prr-approvers:
   - "@ehashman"
 creation-date: 2021-01-27
-last-updated: 2021-09-08
+last-updated: 2022-01-25
 status: implementable
 stage: beta
 latest-milestone: "v1.24"

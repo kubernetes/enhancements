@@ -756,6 +756,10 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 2021-1-27: KEP opened
+2021-5-12: KEP merged, targeted at Alpha in 1.22
+2021-7-8: KEP deemed not ready for Alpha in 1.22
+2021-12-07: KEP successfully implemented at Alpha in 1.23
+2022-1-25: KEP targeted at Beta in 1.24
 
 ## Drawbacks
 
