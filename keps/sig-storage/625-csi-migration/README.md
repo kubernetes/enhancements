@@ -408,6 +408,64 @@ When the feature is not enabled, only provision/deletion/resize should fail.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   - Take the CSI driver log, kube-controller-manager log and kubelet log to analyze why the SLOs are not being met. What is the most error status and why is it error.
+  - For example, if the error occurs on volume provisioning side, there will be events on the PersistentVolume/PersistentVolumeClaim object to surface some error messages.
+    - If the error occurs from CSI driver side, fetch the corresponding csi driver logs as well as the csi-sidecar logs(csi-provisioner in this case). Looking for where the error was thrown and analyze the problem.
+    - If the error occurs from Kube-Controller-Manager side, take the Kube-Controller-Manager log and find logs related to pv_controller and pv_controller_base.
+    - If everything works fine for provisioning, you should see logs like this on Kube-Controller-Manager:
+    ```
+    I0121 17:33:51.866049       9 event.go:294] "Event occurred" object="default/podpvc-intree" kind="PersistentVolumeClaim" apiVersion="v1" type="Normal" reason="ExternalProvisioning" message="waiting for a volume to be created, either by external provisioner \"pd.csi.storage.gke.io\" or manually created by system administrator"
+    I0121 17:33:52.650352       9 pv_controller.go:887] volume "pvc-20b16944-176d-46dc-b164-dd6f9bd07351" entered phase "Bound"
+    I0121 17:33:52.650437       9 pv_controller.go:990] volume "pvc-20b16944-176d-46dc-b164-dd6f9bd07351" bound to claim "default/podpvc-intree"
+    I0121 17:33:52.665254       9 pv_controller.go:831] claim "default/podpvc-intree" entered phase "Bound"
+    ```
+    - And you should expect logs like these in the csi-provisioner:
+    ```
+    I0121 17:33:48.307191       1 csi-provisioner.go:215] Supports migration from in-tree plugin: kubernetes.io/gce-pd
+    I0121 17:33:48.532065       1 controller.go:1279] provision "default/podpvc-intree" class "slow": started
+    I0121 17:33:48.532186       1 controller.go:527] translating storage class for in-tree plugin kubernetes.io/gce-pd to CSI
+    ```
+    - The PV that gets provisioned should have annotations like `pv.kubernetes.io/migrated-to: pd.csi.storage.gke.io`.
+  - If there are issues regarding volume attachment. Check the api server VolumeAttachment objects to see if there are any events or error messages there. Check the pod that needs to attach the volume and see if there are error messages/events there.
+    - If the error occurs from CSI driver side, check the CSI driver log and csi-attacher logs to locate the issue.
+    - If the error occurs from Kube-Controller-Manager, check the logs from attach_detach_controller to find useful information.
+    - If everything works fine for attaching, you should see logs like this on Kube-Controller-Manager:
+    ```
+    util.go:313] "CSI Migration: Translate InTree Volume Spec to CSI" VolumeSpec=&{Volume:nil PersistentVolume:&PersistentVolume{ObjectMeta:{xxx
+    operation_generator.go:413] AttachVolume.Attach succeeded for volume "pvc-20b16944-176d-46dc-b164-dd6f9bd07351" (UniqueName: "kubernetes.io/csi/pd.csi.storage.gke.io^projects/UNSPECIFIED/zones/us-central1-b/disks/pvc-20b16944-176d-46dc-b164-dd6f9bd07351") from node "kubernetes-minion-group-c76l"
+    ```
+    - And you should expect logs like these in the csi-attacher, this proves that the VolumeAttachment object is created:
+    ```
+    I0121 17:33:54.751633       1 controller.go:208] Started VA processing "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    I0121 17:33:54.751669       1 csi_handler.go:218] CSIHandler: processing VA "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    I0121 17:33:54.751684       1 csi_handler.go:245] Attaching "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    I0121 17:33:54.751693       1 csi_handler.go:424] Starting attach operation for "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    ```
+  - If there are issues regarding volume mount, check the error message or event from the pod that need to mount the volume.
+    - If the error occurs from the CSI driver side, check the CSI driver log to find the error that has been thrown.
+    - If the error occurs from the Kubelet side, check kubelet logs from the node that the pod was assigned to. Also, there will be logs from Kube-Controller-Manager which related to OperationExecutor and OperationGenerator that might provide some other insights related to the issue.
+    - You should expect logs from Kubelet regarding mount if it succeeded successfully:
+    ```
+    "MountVolume.MountDevice succeeded for volume \"pvc-20b16944-176d-46dc-b164-dd6f9bd07351\" device mount path \"/var/lib/kubelet/plugins/kubernetes.io/csi/pd.csi.storage.gke.io/******\"
+    "MountVolume.SetUp succeeded for volume \"pvc-20b16944-176d-46dc-b164-dd6f9bd07351\"
+    ```
+  - One of the most commonly seen failure scenario would be CSI driver is not installed but CSI migration is enabled. This could lead to volume operation failure. You can find logs like following in Kube-Controller-Manager. Note that the following logs also show up in successful cases too. In the error case though, the difference is there is no csi driver to act on it so there is no progress; installing the correct CSI driver should unblock the provisioning:
+    ```
+    I0125 04:59:14.147567      11 pv_controller.go:1730] provisionClaimOperationExternal provisioning claim "default/podpvc-intree": csi migration has been enabled for provisioner: kubernetes.io/gce-pd; waiting for a volume to be created, either by external provisioner "pd.csi.storage.gke.io" or manually created by system administrator
+    ```
+    There will also be events on PVC during provisioning
+    ```
+    Normal  ExternalProvisioning  4s (x2 over 4s)  persistentvolume-controller  csi migration has been enabled for provisioner: kubernetes.io/gce-pd; waiting for a volume to be created, either by external provisioner "pd.csi.storage.gke.io" or manually created by system administrator
+    ```
+    If the CSI driver is missing but the PVC already exists. Volume attach/detach will fail with the following log in Kube-Controller-Manager:
+    ```
+    E0125 11:54:12.388111       9 util.go:239] Error processing volume "mypvc" for pod "default"/"web-server": error performing CSI migration checks and translation for PVC "default"/"podpvc-intree": in-tree plugin kubernetes.io/gce-pd is migrated on node kubernetes-minion-group-hsv0 but driver pd.csi.storage.gke.io is not installed
+    ```
+  - If an error is occurred by a bug in the translation library, one can look at the logs of the csi parameters to see what the csi migration translation result was, the grpc parameters are logged in the CSI driver as well as the corresponding csi sidecars at verbose level 5. For example:
+    ```
+    I0126 07:23:30.882579       1 connection.go:184] GRPC request: {"accessibility_requirements":{"preferred":[{"segments":{"topology.gke.io/zone":"us-central1-b"}}],"requisite":[{"segments":{"topology.gke.io/zone":"us-central1-b"}}]},"capacity_range":{"required_bytes":21474836480},"name":"pvc-34b73b42-2754-4704-bc0a-80f6b089e9d0","parameters":{"csi.storage.k8s.io/pv/name":"pvc-34b73b42-2754-4704-bc0a-80f6b089e9d0","csi.storage.k8s.io/pvc/name":"podpvc-intree3","csi.storage.k8s.io/pvc/namespace":"default","replication-type":"none","type":"pd-standard"},"volume_capabilities":[{"AccessType":{"Mount":{"fs_type":"ext4"}},"access_mode":{"mode":1}}]}
+    I0126 07:23:34.864303       1 connection.go:186] GRPC response: {"volume":{"accessible_topology":[{"segments":{"topology.gke.io/zone":"us-central1-b"}}],"capacity_bytes":21474836480,"volume_id":"projects/xxxx/zones/us-central1-b/disks/pvc-34b73b42-2754-4704-bc0a-80f6b089e9d0"}}
+    ```
+  - If there is not any obvious error message or information surfaced but the SLOs are still not being meet, please contact your cloud-provider and the CSI driver owner for further assistance.
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
@@ -421,10 +479,11 @@ Major milestones in the life cycle of a KEP should be tracked in `Implementation
 
 Major milestones for each in-tree plugin CSI migration:
 
+- 1.25
+  - GCE PD CSI migration to GA
 - 1.24
   - AWS EBS CSI migration to GA
   - Azuredisk CSI migration to GA
-  - GCE PD CSI migration to GA
   - OpenStack Cinder CSI migration to GA
   - Azurefile CSI migration to Beta, on by default
   - vSphere CSI migration to Beta, on by default
