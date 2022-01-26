@@ -674,7 +674,7 @@ this cluster.
 
 
 #### Multi-network scenario
-One of more clusters in a ClusterSet can be running on a discrete network (a non-flat network). An MCS controller can use the `network.k8s.io` `ClusterProperty` to determine if a cluster in a `ClusterSet` is running on a discrete network. In this scenario. Note that the endpoints of the `EndpointSlice` for a cluster on discrete network may only be representative of the pods backing the multi-cluster service and not the real pod addresses.
+One or more clusters in a ClusterSet can be running on a discrete network (a non-flat network). An MCS controller can use the `network.k8s.io` `ClusterProperty` to determine if a cluster in a `ClusterSet` is running on a discrete network. Note that the endpoints of the `EndpointSlice` for a cluster on discrete network may only be representative of the pods backing the multi-cluster service and not the real pod addresses.
 ##### Known limitation
 In a multi-network scenario where the `EndpointSlice`s do not contain the actual pod addresses, there isn't currently a way (K8s native support) to proportionately distribute the traffic based on the actual number of pods. There is active ongoing work in SIG-Network to add an attribute to represent the number of endpoints for `EndpointSlice`s. This will provide a way for kube-proxy to load balance across `EndpointSlice`s .
 
