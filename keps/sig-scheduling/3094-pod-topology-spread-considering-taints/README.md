@@ -183,14 +183,13 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
-Currently in calculating pod topology spread skew, we will ignore node taints
-as node with pod untolerated taints will also be taken into calculation. This
-behavior doesn't match user expectations and will lead pod to unexpected Pending
-state(See [issue](https://github.com/kubernetes/kubernetes/issues/106127)).
+Currently when calculating pod topology spread skew, tainted nodes are treated the same as
+other regular nodes. This behavior may lead to unexpected Pending pods as the skew constraint
+can only be satisfied on the tainted nodes.(See [issue](https://github.com/kubernetes/kubernetes/issues/106127)).
 
 Besides, given that we have already some node inclusion policies(nodeAffinity/nodeSelector)
-plumbed into PodTopologySpread implicitly, we'd like to redefine all of them into
-a new struct explicitly this time.
+plumbed into PodTopologySpread implicitly, we'd like to use this chance
+to use a new API to represent the semantics explicitly.
 
 ### Goals
 
@@ -285,12 +284,14 @@ There are two policies now regarding to nodeAffinity and nodeTaint:
 ```golang
 type NodeInclusionPolicies struct {
   // NodeAffinity policy indicates how we will treat nodeAffinity/nodeSelector
-  // when calculating pod topology spread skew. The value could be Respect/Ignore.
-  // By default, the policy is Respect.
+  // when calculating pod topology spread skew. The semantics vary by PolicyName:
+  // - Respect (default): nodes matching nodeAffinity/nodeSelector will be included.
+  // - Ignore: all nodes will be included.
   NodeAffinity PolicyName
   // NodeTaint policy indicates how we will treat node taints
-  // when calculating pod topology spread skew. The value could be Respect/Ignore.
-  // By default, the policy is Ignore for backwards compatibility.
+  // when calculating pod topology spread skew. The semantics vary by PolicyName:
+  // - Respect: tainted nodes that tolerate the incoming pod, along with regular nodes, will be included.
+  // - Ignore (default): all nodes will be included.
   NodeTaint PolicyName
 }
 ```
@@ -400,7 +401,7 @@ in back-to-back releases.
 -->
 #### Alpha
 - Feature implemented behind feature gate.
-- Unit and integration tests passed.
+- Unit and integration tests passed as designed in [TestPlan](###TestPlan).
 
 #### Beta
 - Feature is enabled by default
