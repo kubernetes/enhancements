@@ -1172,6 +1172,9 @@ not know if it failed or not, it can choose to call
 message NodeUnprepareResourceRequest {
   // The UID of the ResourceClaim. This field is REQUIRED.
   string resource_id = 1;
+  // List of fully qualified CDI device names
+  // Kubelet plugin returns them in the NodePrepareResourceResponse
+  repeated string cdi_device = 1;
 }
 
 message NodeUnprepareResourceResponse {
