@@ -1,0 +1,6 @@
+# The KEP must have an approver from the
+# "prod-readiness-approvers" group
+# of http://git.k8s.io/enhancements/OWNERS_ALIASES
+kep-number: 0661
+alpha:
+  approver: "@wojtek-t"

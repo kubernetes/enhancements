@@ -242,7 +242,7 @@ in creating and managing the persistent volumes associated with `StatefulSet`.
 spawned from it. Reconciliation logic runs for every change made to the StatefulSet
 `Spec` and `Status` reflects the progress towards making the real world state equal to the
 `Spec`.
-- The admission controller in the API server is responsible for restricting the fields
+- The validation logic in the API server is responsible for restricting the fields
 which can be edited in a StatefulSet specification.
 - The RBAC specification in the controller policy is responsible for adding the required 
 RBAC permission for StatefulSet.
