@@ -10,7 +10,6 @@
   - [AdminNetworkPolicy resource](#adminnetworkpolicy-resource)
     - [Actions](#actions)
     - [Priority](#priority)
-    - [Multiple AppliedTos per policy instance](#multiple-appliedtos-per-policy-instance)
     - [Rule Names](#rule-names)
   - [User Stories](#user-stories)
     - [Story 1: Deny traffic at a cluster level](#story-1-deny-traffic-at-a-cluster-level)
@@ -19,14 +18,14 @@
     - [Story 4: Create and Isolate multiple tenants in a cluster](#story-4-create-and-isolate-multiple-tenants-in-a-cluster)
     - [Story 5: Cluster Wide Default Guardrails](#story-5-cluster-wide-default-guardrails)
   - [RBAC](#rbac)
-  - [Key differences between Cluster-scoped policies and Network Policies](#key-differences-between-cluster-scoped-policies-and-network-policies)
+  - [Key differences between AdminNetworkPolicies and NetworkPolicies](#key-differences-between-adminnetworkpolicies-and-networkpolicies)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
-  - [Risks and Mitigations](#risks-and-mitigations)
+  - [Risks and Mitigation](#risks-and-mitigation)
   - [Future Work](#future-work)
 - [Design Details](#design-details)
   - [AdminNetworkPolicy API Design](#adminnetworkpolicy-api-design)
     - [General Notes on the AdminNetworkPolicy API](#general-notes-on-the-adminnetworkpolicy-api)
-    - [Further examples utilizing the <code>scope</code> field for <code>NamespaceSet*</code> objects](#further-examples-utilizing-the--field-for--objects)
+    - [Further examples utilizing the self field for <code>NamespaceSet</code> objects](#further-examples-utilizing-the-self-field-for--objects)
   - [Sample Specs for User Stories](#sample-specs-for-user-stories)
     - [Sample spec for Story 1: Deny traffic at a cluster level](#sample-spec-for-story-1-deny-traffic-at-a-cluster-level)
     - [Sample spec for Story 2: Allow traffic at a cluster level](#sample-spec-for-story-2-allow-traffic-at-a-cluster-level)
@@ -106,8 +105,8 @@ a new API that captures the administrator's intent.
 
 The goals for this KEP are to satisfy the following key user stories:
 
-1. As a cluster administrator, I want to enforce irrevocable guardrails that
-   all workloads must adhere to in order to guarantee the safety of my clusters.
+1. As a cluster administrator, I want to enforce irrevocable in-cluster guardrails 
+   that all workloads must adhere to in order to guarantee the safety of my clusters.
    In particular I want to enforce certain network level access controls that are
    cluster scoped and cannot be overridden or bypassed by namespace scoped
    NetworkPolicies.
@@ -115,7 +114,7 @@ The goals for this KEP are to satisfy the following key user stories:
    Example: I would like to explicitly allow all pods in my cluster to reach
    kubeDNS.
 
-2. As a cluster administrator, I want to have the option to enforce network level
+2. As a cluster administrator, I want to have the option to enforce in-cluster network level
    access controls that facilitate network multi-tenancy and strict network level
    isolation between multiple teams and tenants sharing a cluster via use of namespaces
    or groupings of namespaces per tenant.
@@ -125,7 +124,8 @@ The goals for this KEP are to satisfy the following key user stories:
    traffic is denied.
 
 3. As a cluster administrator, I want to optionally also deploy an additional default
-   set of policies to all workloads that may be overridden by the developers if needed
+   set of policies to all in-cluster workloads that may be overridden by the developers
+   if needed
 
    Example: I would like to explicitly delegate the restriction of traffic destined
    for cluster monitoring pods to the developer, allowing them to setup network policy
@@ -145,7 +145,8 @@ That is, we don't want to solve for every possible policy permutation a user
 can think of. Instead, we want to design an API that addresses 90-95% use cases
 while keeping the mental model easy to understand and use.
 The focus of this KEP is on cluster scoped controls for east-west traffic within
-a cluster. Cluster scoped controls for north-south traffic may be addressed via
+a cluster, meaning that an AdminNetworkPolicyPeer is _always_ defined as a set of 
+in cluster objects. Cluster scoped controls for north-south traffic may be addressed via
 future versions of the api resources introduced in this or other future KEPs.
 For the time being, the AdminNetworkPolicy resource introduced by this KEP will
 never affect north-south traffic, and thus also don't override or bypass NetworkPolicies
@@ -176,15 +177,16 @@ be read as-is, i.e. there will not be any implicit isolation effects for the Pod
 selected by the AdminNetworkPolicy, as opposed to what NetworkPolicy rules imply.
 
 - Pass: Traffic that matches a `Pass` rule will skip all further rules from all 
-  ANPs and instead be enforced by the K8s NetworkPolicies. If there is no K8s 
-  NetworkPolicy rule match, traffic will be allowed.
+  positive priority ANPs and instead be enforced by the K8s NetworkPolicies. 
+  If there is no K8s NetworkPolicy rule match, and no ANP priority "0" rule 
+  match, traffic will be allowed.
 - Deny: Traffic that matches a `Deny` rule will be dropped. 
 - Allow: Traffic that matches an `Allow` rule will be allowed.
 
 AdminNetworkPolicy `Deny` rules are useful for administrators to explicitly
-block traffic with malicious clients, or workloads that poses security risks.
-Those traffic restrictions can only be lifted once the `Deny` rules are deleted
-or modified by the admin.
+block traffic with malicious in-cluster clients, or workloads that pose security risks.
+Those traffic restrictions can only be lifted once the `Deny` rules are deleted, 
+modified by the admin, or overridden by a higher priority rule.
 
 On the other hand, the `Allow` rules can be used to call out traffic in the cluster
 that needs to be allowed for certain components to work as expected (egress to
@@ -199,46 +201,33 @@ admins explicitly by the cluster admin with the use of `Pass` rules.
 #### Priority
 
 The policy instances will be ordered based on the numeric priority assigned to the
-ANP. A larger number corresponds to a higher precedence. For example, ANP with `priority`
-set to "1" will be considered as the policy with the lowest precedence, while "999" will
-be considered as highest precedence. Any positive priority, however, will have
-higher precedence over the namespaced NetworkPolicy instances in the cluster.
+ANP. `Priority` is a 32 bit integer value, where a larger number corresponds to 
+a higher precedence. The lowest "regular" value (see below for 
+special cases) is "1", which corresponds to the lowest "importance". High values 
+have higher importance. For alpha, this API defines "1000" as the maximum value, 
+but this may be revisited as the proposal advances. For future-safety, clients may 
+assume that higher values will eventually be allowed, and simply treat it as an int32.
+Any positive priority will have higher precedence over the namespaced NetworkPolicy 
+instances in the cluster, unless the traffic matches on a `Pass` rule that allows 
+it to bypass any lower positive priority ANP rules.
 
 Additionally, the special priority "0" can be used in the priority field to indicate
 that the rules in that policy instance shall be created at a priority lower than the
 Namespaced NetworkPolicies. 
 
-The relative precedence of the rules within a ANP will be determined by the order in which the
-rule is written. Thus, a rule that appears at the top of the ingress/egress rules would take the
-highest precedence.
+The relative precedence of the rules within a single ANP object (all of which 
+share a priority) will be determined by the order in which the rule is written. 
+Thus, a rule that appears at the top of the ingress/egress rules would take the 
+highest precedence. The maximum number of rules, which will be calculated as the 
+total summation of the AdminNetworkPolicyIngressRules and AdminNetworkPolicyEgressRules
+in a single ANP instance, will be 100.
 
 Conflict resolution: Two policies are considered to be conflicting if they are assigned the
 same `priority` and apply to the same resources or a union of resources. In order to avoid such conflicts, 
 we propose to include tooling for ANP resources to help alert the admin to potentially ambiguous ANP
-priority scenarios, more details in [risks and mitigations](#risks-and-mitigations). However, ultimately
-it will be the job of the CNI to decide how to handle overlapping priority situations in the respective 
-implementations. 
-
-For conformance and portability purposes, it will be required that implementations
-support the range of 1000 numeric ANP priorities (0 through 999) per cluster and a maximum of 100 rules
-within an ANP instance. This ensures that policy manifests written using priorities
-0 through 999 are portable across clusters and implementations without the
-need to re-write policy manifests or re-adjust priority allocations and also ensures we maintain 
-safe upper bounds. 
-
-#### Multiple AppliedTos per policy instance
-
-With the current Kubernetes NetworkPolicy v1 api, an instance of a policy can be applied
-to a single set of pods defined using a single selector instance.
-However with the proposed ANP specification it shall be possible to apply the policy to 
-multiple unique sets of Namespaces/pods within a single ANP policy instance, where each such set can 
-be configured with its own set of peer endpoints and policy actions. This enables greater flexibility
-of configuration, and improves ease of use by not requiring cluster admins to have to come up
-with unique priority values for each instance of rule while retaining explicit rule ordering
-within each policy (multiple rules wihin a ANP instance are prioritized by their listing
-order within the ANP manifest). A fully specified new rule (including AppliedTo selector, peer and action
-type definitions) can hence be unambiguously inserted into an existing ANP without requiring any reshuffling 
-of priority values.
+priority scenarios, more details in [risks and mitigation](#risks-and-mitigation). However, ultimately
+it will be the job of the network policy implementation to decide how to handle overlapping priority 
+situations. 
 
 #### Rule Names
 
@@ -246,8 +235,10 @@ In order to help future proof the ANP api, a built in mechanism to identify each
 allow/deny/pass rule is required. Such a mechanism will help administrators organize 
 and identify individual rules within an AdminNetworkPolicy resource.
 We propose to introduce a new string field, called `name`, in each `AdminNetworkPolicy`
-ingress/egress rule. The `name` of a rule must be unique within the same ANP. However,
-two ANP instances could have rules with same names.
+ingress/egress rule. Currently the `name` of a rule is optional and does not need to 
+be unique, due to the fact that there's no easy way to validate this in-tree. It 
+is suggested that implementations provide a mechanism to validate any name 
+duplications.
 
 ### User Stories
 
@@ -262,7 +253,8 @@ to certain pod(s) and(or) Namespace(s) that isolate the selected
 resources from all other cluster internal traffic.
 
 For Example: In this diagram there is a AdminNetworkPolicy applied to the 
-`sensitive-ns` denying ingress from all other in-cluster resources. 
+`sensitive-ns` denying ingress from all other in-cluster resources for all 
+ports and protocols. 
 
 ![Alt text](explicit_deny.png?raw=true "Explicit Deny")
 
@@ -274,7 +266,7 @@ to communicate with all other cluster internal entities.
 
 For Example: In this diagram there is a AdminNetworkPolicy applied to every 
 namespace in the cluster allowing egress traffic to `kube-dns` pods, and ingress 
-traffic from pods in `monitoring-ns`. 
+traffic from pods in `monitoring-ns` for all ports and protocols. 
 
 ![Alt text](explicit_allow.png?raw=true "Explicit Allow")
 
@@ -285,7 +277,7 @@ skips any remaining cluster network policies and is handled by standard
 namespace scoped network policies.
 
 For Example: In the diagram below egress traffic destined for the service svc-pub
-in namespace bar-ns-1 is delegated to the k8s network policies
+in namespace bar-ns-1 on TCP port 8080 is delegated to the k8s network policies
 implemented in foo-ns-1 and foo-ns-2. If no k8s network policies touch the
 delegated traffic the traffic will be allowed.
 
@@ -318,13 +310,13 @@ resource is denied by a baseline deny rule.
 
 ### RBAC
 
-Cluster-scoped NetworkPolicy resources are meant for cluster administrators.
+AdminNetworkPolicy resources are meant for cluster administrators.
 Thus, access to manage these resources must be granted to subjects which have
 the authority to outline the security policies for the cluster. Therefore, by
-default, the `admin` and `edit` ClusterRoles will be granted the permissions
-to edit the cluster-scoped NetworkPolicy resources.
+default, the `cluster-admin` ClusterRole will be granted the permissions
+to edit the AdminNetworkPolicy resources.
 
-### Key differences between Cluster-scoped policies and Network Policies
+### Key differences between AdminNetworkPolicies and NetworkPolicies
 
 |                          | AdminNetworkPolicy                                                                                             | K8s NetworkPolicies                                                                |
 |--------------------------|------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
@@ -354,7 +346,7 @@ policy APIs will not be provided as part of this KEP. Such controllers which
 realize the intent of these APIs will be provided by individual network policy
 providers, as is the case with the NetworkPolicy API.
 
-### Risks and Mitigations
+### Risks and Mitigation
 
 To understand why traffic between a pair of Pods is allowed or denied, a list of 
 NetworkPolicy resources in both Pods' Namespace used to be sufficient (considering 
@@ -362,11 +354,10 @@ no other CRDs in the cluster tries to alter traffic behavior). With the introduc
 of AdminNetworkPolicy this is no longer the case, and users could face difficulty 
 in determining why NetworkPolicies did not take effect. 
 
-For example, in the case where a AdminNetworkPolicy `Pass` rule,
-AdminNetworkPolicy `Deny` rule, AdminNetworkPolicy `Allow` rule,
-NetworkPolicy rule and default rule applies to an overlapping
+For example, in the case where a positive priority AdminNetworkPolicy rule,
+NetworkPolicy rule and "0" priority AdminNetworkPolicy rule apply to an overlapping
 set of Pods, users will need to refer to the priority associated with the
-rule, to determine which rule would take effect. Figuring out how stacked policies
+rule to determine which rule would take effect. Figuring out how stacked policies
 affect traffic between workloads might not be very straightforward.
 
 To mitigate this risk and improve usability, some additional in-tree tooling
@@ -402,182 +393,262 @@ The following new `AdminNetworkPolicy` API will be added to the `policy.networki
 API group.  
 
 ```golang
+
+// AdminNetworkPolicy describes cluster-level network traffic control rules
 type AdminNetworkPolicy struct {
   metav1.TypeMeta
   metav1.ObjectMeta
+
   // Specification of the desired behavior of AdminNetworkPolicy.
   Spec     AdminNetworkPolicySpec
-  // Status to be reported by the CNI, this is not standardized in alpha and 
-  // CNIs should report what they see fit in relation to their AdminNetworkPolicy
-  // implementation
+
+  // ANPStatus is the status to be reported by the implementation, this is not 
+  // standardized in alpha and consumers should report what they see fit in 
+  // relation to their AdminNetworkPolicy implementation
   // +optional 
-  Status   []metav1.Condition
+  Status  AdminNetworkPolicyStatus
 }
 
+type AdminNetworkPolicyStatus struct { 
+  conditions   []metav1.Condition  
+}
+
+// AdminNetworkPolicySpec provides the specification of AdminNetworkPolicy
 type AdminNetworkPolicySpec struct {
-  // Int value bound to 0 - 999, with 0 signaling the special "baseline" priority
-  Priority      Int 
-  // Allows for multiple AdminNetworkPolicy rules at a single priority level
-  // If empty no rules are applied
-  // A total of 100 total rules will be allowed per each network policy instance, 
-  // this rule count will be calculated as the total summation of the 
-  // AdminNetworkPolicyRules, AdminNetworkPolicyIngressRules, and AdminNetworkPolicyEgressRules
-  // in a single AdminNetworkPolicy Instance. 
-  PolicyRules   []AdminNetworkPolicyRule
-}
+  // Priority is an int32 value bound to 0 - 1000, the lowest positive priority, 
+  // "1" corresponds to the lowest importance, while higher priorities have 
+  // higher importance. An ANP with a priority of "0" will be evaluated after all 
+  // positive priority AdminNetworkPolicies and standard NetworkPolicies.
+  // The Priority for an ANP must be set 
+  Priority    *int32
 
-type AdminNetworkPolicyRule struct {
-  // No implicit isolation of AppliedTo Pods/Namespaces. 
-  // If no rules are a defined no behavior will be observed 
-  AppliedTo   AppliedTo
+  // Subject defines the objects to which this AdminNetworkPolicy applies.  
+  Subject     AdminNetworkPolicySubject
+
+  // List of Ingress rules to be applied to the selected objects.
+  // A total of 100 rules will be allowed per each network policy instance, 
+  // this rule count will be calculated as the total summation of the 
+  // Ingress and Egress rules in a single AdminNetworkPolicy Instance. 
   Ingress     []AdminNetworkPolicyIngressRule
+
+  // List of Egress rules to be applied to the selected objects.
+  // A total of 100 rules will be allowed per each network policy instance, 
+  // this rule count will be calculated as the total summation of the 
+  // Ingress and Egress rules in a single AdminNetworkPolicy Instance. 
   Egress      []AdminNetworkPolicyEgressRule
 }
 
-// Exactly one of the selector pointers should be set in a given AppliedTo
-type AppliedTo struct {
+// AdminNetworkPolicySubject defines what objects the policy selects. 
+// Exactly one of the selector pointers should be set.  
+type AdminNetworkPolicySubject struct {
   NamespaceSelector         *metav1.LabelSelector
   NamespaceAndPodSelector   *NamespaceAndPodSelector
 }
 
-// NamespaceAndPodSelector allows the user to select a namespace/s and optionally 
-// select a given set of pods in that namespace/s
+// NamespaceAndPodSelector allows the user to select a Namespace(s) and optionally 
+// select a given set of pod(s) in that namespace(s)
 type NamespaceAndPodSelector struct {
+  // This field follows standard label selector semantics; if present but empty, 
+  // it selects all Namespaces.  
   NamespaceSelector   metav1.LabelSelector
-  // Used to explicitly select pods within a namespace
-  PodSelector         *metav1.LabelSelector
+
+  // Used to explicitly select pods within a namespace; if present but empty, 
+  // it selects all Pods.  
+  PodSelector         metav1.LabelSelector
 }
 
+// AdminNetworkPolicyIngressRule describes an action to take on a particular 
+// set of traffic destined for pods selected by an AdminNetworkPolicy's 
+// Subject field. The traffic must match both l4Selector and from. 
 type AdminNetworkPolicyIngressRule struct {
-  // Name is an identifier for this rule. Must be unique within an instance of ANP. Can be
-  // same across policy instances.
+  // Name is an identifier for this rule.
   // +optional
-  Name      string
+  Name         string
+
   // Action specifies whether this rule must pass, allow or deny traffic. 
-  // Allow: explicitly allows the selected traffic 
-  // Deny: explicitly denies the selected traffic
-  // Pass: explicitly allows the selected traffic to skip and remaining ANP rules 
+  // Allow: allows the selected traffic 
+  // Deny: denies the selected traffic
+  // Pass: allows the selected traffic to skip and remaining positive priority ANP rules 
   // and be delegated by K8's Network Policy. 
-  Action    RuleAction
-  // List of ports for incoming traffic.
-  // Each item in this list is combined using a logical OR. If this field is
-  // empty or missing, this rule matches no ports (traffic not restricted by port).
-  // If this field is present and contains at least one item, then this rule 
-  // allows/denies/passes traffic only if the traffic matches at least one port in the list.
-  // +optional
-  Ports     []networkingv1.NetworkPolicyPort
-	// List of sources from which traffic will be allowed/denied/passed to the entities 
+  Action       AdminNetPolRuleAction
+  
+  // L4Selector allows for matching traffic based on L4 constructs. 
+  L4Selector   AdminNetworkPolicyL4Selector
+
+  // List of sources from which traffic will be allowed/denied/passed to the entities 
   // selected by this AdminNetworkPolicyRule. Items in this list are combined using a logical OR 
-  // operation. If this field is empty or missing, this rule matches no sources. 
+  // operation. If this field is empty, this rule matches no sources. 
   // If this field is present and contains at least one item, this rule
-  // allows/denies/passes traffic from the defined AdminNetworkPolicyPeer
-  From      []AdminNetworkPolicyPeer
+  // allows/denies/passes traffic from the defined AdminNetworkPolicyPeer(s)
+  From         []AdminNetworkPolicyPeer
 }
 
-
+// AdminNetworkPolicyEgressRule describes an action to take on a particular 
+// set of traffic originating from pods selected by a AdminNetworkPolicy's 
+// Subject field. The traffic must match both l4Selector and to. 
 type AdminNetworkPolicyEgressRule struct {
-  // Name is an identifier for this rule. Must be unique within an instance of ANP. Can be
-  // same across policy instances.
+  // Name is an identifier for this rule. 
   // +optional
-  Name     string
+  Name         string
+
   // Action specifies whether this rule must pass, allow or deny traffic. 
-  // Allow: explicitly allows the selected traffic 
-  // Deny: explicitly denies the selected traffic
-  // Pass: explicitly allows the selected traffic to skip and remaining AMP rules 
+  // Allow: allows the selected traffic 
+  // Deny: denies the selected traffic
+  // Pass: allows the selected traffic to skip and remaining positive priority AMP rules 
   // and be delegated by K8's Network Policy. 
-  Action   RuleAction
+  Action       AdminNetPolRuleAction
+
+  // L4Selector allows for matching on traffic based on L4 constructs. 
+  L4Selector   AdminNetworkPolicyL4Selector
+
+  // List of destinations to which traffic will be allowed/denied/passed from the entities 
+  // selected by this AdminNetworkPolicyRule. Items in this list are combined using a logical OR 
+  // operation. If this field is empty, this rule matches no destinations. 
+  // If this field is present and contains at least one item, this rule
+  // allows/denies/passes traffic to the defined AdminNetworkPolicyPeer(s)
+  To           []AdminNetworkPolicyPeer
+}
+
+// AdminNetworkPolicyL4Selector handles selection of traffic for based on L4 
+// constructs. Exactly one of the fields must be defined.
+type AdminNetworkPolicyL4Selector struct { 
+  // AllPorts cannot be "false" when it is set 
+  // AllPorts allows the user to select all ports for all protocols, thus not 
+  // selecting traffic based on L4 principles.
+  // If "true" then all ports are selected for the all protocols
+  AllPorts   *bool
+
   // List of ports for outgoing traffic.
   // Each item in this list is combined using a logical OR. If this field is
   // empty or missing, this rule matches no ports (traffic not restricted by port).
   // If this field is present and contains at least one item, then this rule 
   // allows/denies/passes traffic only if the traffic matches at least one port in the list.
   // +optional
-  Ports    []networkingv1.NetworkPolicyPort
-  // List of destinations to which traffic will be allowed/denied/passed from the entities 
-  // selected by this AdminNetworkPolicyRule. Items in this list are combined using a logical OR 
-  // operation. If this field is empty or missing, this rule matches no destinations. 
-  // If this field is present and contains at least one item, this rule
-  // allows/denies/Passes traffic to the defined AdminNetworkPolicyPeer
+  Ports      []AdminNetworkPolicyPort 
+}
+
+
+// AdminNetworkPolicyPort describes a port to select
+type AdminNetworkPolicyPort struct {
+  // The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
+  // field defaults to TCP.
   // +optional
-  To       []AdminNetworkPolicyPeer
+  Protocol   *v1.Protocol
+
+  // The port on the given protocol. This can either be a numerical or named
+  // port on a pod. If this field is not provided, this matches no port names and
+  // numbers.
+  // If present, only traffic on the specified protocol AND port will be matched.
+  // +optional
+  Port       *intstr.IntOrString
+    
+  // If set, indicates that the range of ports from port to endPort, inclusive,
+  // should be allowed by the policy. This field cannot be defined if the port field
+  // is not defined or if the port field is defined as a named (string) port.
+  // The endPort must be equal or greater than port.
+  // This feature is in Beta state and is enabled by default.
+  // It can be disabled using the Feature Gate "NetworkPolicyEndPort".
+  // +optional
+  EndPort     *int32 
 }
 
 const (
   // RuleActionPass enables admins to provide exceptions to ClusterNetworkPolicies and delegate this rule to
   // K8s NetworkPolicies.
-  RuleActionPass    RuleAction = "Pass"
+  AdminNetPolRuleActionPass    AdminNetPolRuleAction = "Pass"
   // RuleActionDeny enables admins to deny specific traffic.
-  RuleActionDeny    RuleAction = "Deny"
+  AdminNetPolRuleActionDeny    AdminNetPolRuleAction = "Deny"
   // RuleActionAllow enables admins to specifically allow certain traffic.
-  RuleActionAllow   RuleAction = "Allow"
+  AdminNetPolRuleActionAllow   AdminNetPolRuleAction = "Allow"
 )
 
-// Exactly one of the selector pointers should be set in a given AdminNetworkPolicyPeer
+// AdminNetworkPolicyPeer defines an in-cluster peer to allow traffic to/from. 
+// Exactly one of the selector pointers should be set for a given peer. 
 type AdminNetworkPolicyPeer struct {
-  NamespaceSetSelector         *NamespaceSet
-  NamespaceSetAndPodSelector   *NamespaceSetAndPod
+  Namespaces       *NamespaceSet
+  NamespacedPods   *NamespaceAndPodSet
 }
 
 // NamespaceSet defines a flexible way to select Namespaces in a cluster.
+// Exactly one of the selectors should be set.  If a consumer observes none of 
+// its fields are set, they should assume an option they are not aware of has 
+// been specified and fail closed.
 type NamespaceSet struct {
-  Scope               NamespaceMatchType
-  // Labels should be set only when scope is "SameLabels" or "NotSameLabels.
-  // +optional
-  Labels              []string
-  // NamespaceSelector should be set only when scope is "Selector". 
+  // Self cannot be "false" when it is set.  
+  // If Self is "true" then all pods in the subject's namespace are selected.
+  Self                *bool
+  // NotSelf cannot be "false" when it is set.  
+  // if NotSelf is "true" then all pods not in the subject's Namespace are selected.
+  NotSelf             *bool
+  // NamespaceSelector is a labelSelector used to select Namespaces, This field 
+  // follows standard label selector semantics; if present but empty, it selects 
+  // all Namespaces. 
   NamespaceSelector   *metav1.LabelSelector
+  // SameLabels is used to select a set of Namespaces that share the same label(s).  
+  // To be selected a Namespace must have all of the labels defined in SameLabels, 
+  // If Samelabels is Empty then nothing is selected
+  SameLabels          []string
+  // NotSameLabels is used to select a set of Namespaces that do not have a set 
+  // of label(s). To be selected a Namespace must have none of the labels defined 
+  // in NotSameLabels. If NotSameLabels is empty then nothing is selected
+  NotSameLabels       []string
 }
 
-// NamespaceSetAndPod defines a way to select Namespaces and Pods in a cluster 
-type NamespaceSetAndPod struct {
-  Scope               NamespaceMatchType
-  // Labels should be set only when scope is "SameLabels" or "NotSameLabels.
-  // +optional
-  Labels              []string
-  // NamespaceSelector should be set only when scope is "Selector". 
-  NamespaceSelector   *metav1.LabelSelector
-  // PodSelector should be set only when scope is "Selector", "Self", or "NotSelf".
-  // This allows the user to select matching pods in the same namespace
-  PodSelector         *metav1.LabelSelector 
+// PodSet defines a flexible way to select pods in a cluster. Exactly one of the 
+// selectors should be set.  If a consumer observes none of its fields are set, 
+// they should assume an option they are not aware of has been specified and fail closed.
+type PodSet struct { 
+  // PodSelector is a labelSelector used to select Pods, This field 
+  // follows standard label selector semantics; if present but empty, it selects 
+  // all Pods.  
+  PodSelector     *metav1.LabelSelector   
+  // SameLabels is used to select a set of Pods that share the same label(s).  
+  // To be selected a Pod must have all of the labels defined in SameLabels, 
+  // If Samelabels is Empty then nothing is selected
+  SameLabels      []string
+  // NotSameLabels is used to select a set of Pods that do not have a set 
+  // of label(s). To be selected a Pod must have none of the labels defined 
+  // in NotSameLabels. If NotSameLabels is empty then nothing is selected
+  NotSameLabels   []string
 }
 
-// NamespaceMatchType describes Namespace matching strategy. 
-type NamespaceMatchType string
-
-// This list can/might get expanded in the future.
-const (
-  NamespaceMatchSelector     NamespaceMatchType = "Selector"
-  NamespaceMatchSelf         NamespaceMatchType = "Self"
-  NamespaceMatchNotSelf      NamespaceMatchType = "NotSelf"
-  NamespaceMatchSameLabels   NamespaceMatchType = "SameLabels"
-  NamespaceMatchSameLabels   NamespaceMatchType = "NotSameLabels"
-)
-
+// NamespaceSetAndPod defines a flexible way to select Namespaces and pods in a 
+// cluster.
+type NamespaceAndPodSet struct { 
+  // Namespaces is used to select a set of Namespaces.  It must be defined 
+  Namespaces   NamespaceSet 
+  // Namespaces is used to select a set of Pods in the set of Namespaces. It must 
+  // must be defined 
+  Pods         PodSet 
+} 
 ```
 
 #### General Notes on the AdminNetworkPolicy API 
 
-- Much of the behavior of certain fields proposed below is intentionally not aligned with
-K8s NetworkPolicy resource, especially in regards to the behavior of empty fields. Please pay attention 
+- Much of the proposed behavior is intentionally not aligned with
+K8s NetworkPolicy resource, especially in regards to the behavior of empty fields. 
+Specifically this api is designed to be verbose and explicit. Please pay attention 
 to the comments above each field for more information. 
 
 - For the AdminNetworkPolicy ingress/egress rule, the `Action` field dictates whether
 traffic should be allowed/denied/passed from/to the AdminNetworkPolicyPeer. This will be a required field.
 
-- The `AppliedTo` and `AdminNetworkPolicyPeer` types are explicitly designed to allow for future extensibility 
-with a focus on the addition of new types of selectors. Specifically it will allow for failing closed 
-in the event a CNI does not implement a defined selector.  For example, If a new type (`NamespaceSetAndService`) was added to the 
-`AdminNetworkPolicyPeer` struct, and a CNI had not yet implemented support for such a selector, an ANP 
-using the new selector would have no effect since the CNI would simply see an empty `AdminNetworkPolicyPeer` 
+- The `AdminNetworkPolicySubject` and `AdminNetworkPolicyPeer` types are explicitly 
+designed to allow for future extensibility with a focus on the addition of new types 
+of selectors. Specifically it will allow for failing closed in the event a CNI does 
+not implement a defined selector.  For example, If a new type (`NamespaceSetAndService`) 
+was added to the `AdminNetworkPolicyPeer` struct, and an implementation had not 
+yet implemented support for such a selector, an ANP using the new selector would 
+have no effect since the implementation would simply see an empty `AdminNetworkPolicyPeer` 
 object. 
 
-#### Further examples utilizing the `scope` field for `NamespaceSet*` objects
+#### Further examples utilizing the self field for `NamespaceSet` objects
 
 __Self:__
 This is a special strategy to indicate that the rule only applies to the Namespace for
 which the ingress/egress rule is currently being evaluated upon. Since the Pods
-selected by the AdminNetworkPolicy `appliedTo` could be from multiple Namespaces,
-the scope of ingress/egress rules whose `scope=self` will be the Pod's
+selected by the AdminNetworkPolicy `subject` could be from multiple Namespaces,
+the scope of ingress/egress rules whose `self=true` will be the Pod's
 own Namespace for each selected Pod.
 Consider the following example:
 
@@ -589,26 +660,30 @@ apiVersion: policy.networking.k8s.io/v1alpha1
 kind: AdminNetworkPolicy
 spec:
   priority: 100
-  - appliedTo:
-     namespaceSelector: {}
-    ingress:
-    - action: Allow
-      from:
-      - namespaceSetAndPodSelector:
-          scope: Self
+  subject:
+    namespaceSelector: {}
+  ingress:
+  - action: Allow
+    from:
+    - namespacedPods:
+        namespaces: 
+          self: true 
+        pods: 
           podSelector:
             matchLabels:
               app: b
+    l4Selector:
+      allPorts: true 
 ```
 
 The above AdminNetworkPolicy should be interpreted as: for each Namespace in
 the cluster, all Pods in that Namespace should strictly allow traffic from Pods in
-the _same Namespace_ who has label app=b. Hence, the policy above allows
+the _same Namespace_ who has label app=b at all ports. Hence, the policy above allows
 x/b1 -> x/a1 and y/b2 -> y/a2, but does not allow y/b2 -> x/a1 and x/b1 -> y/a2.
 
 __SameLabels:__
 This is a special strategy to indicate that the rule only applies to the Namespaces
-which share the same label value. Since the Pods selected by the AdminNetworkPolicy `appliedTo`
+which share the same label value. Since the Pods selected by the AdminNetworkPolicy `subject`
 could be from multiple Namespaces, the scope of ingress/egress rules whose `scope=samelabels; labels: [tenant]`
 will be all the Pods from the Namespaces who have the same label value for the "tenant" key.
 Consider the following example:
@@ -623,16 +698,17 @@ apiVersion: policy.networking.k8s.io/v1alpha1
 kind: AdminNetworkPolicy
 spec:
   priority: 50
-  - appliedTo:
-     namespaceSelector:
-       matchExpressions: {key: "tenant"; operator: Exists}
-    ingress:
-     - action: Pass
-       from:
-       - namespaceSetSelector:
-          scope: SameLabels
-          labels:
-            - tenant
+  subject:
+    namespaceSelector:
+      matchExpressions: {key: "tenant"; operator: Exists}
+  ingress:
+    - action: Pass
+      from:
+      - namespaces:
+          sameLabels: 
+          - tenant
+      l4Selector:
+        allPorts: true
 ```
 
 The above AdminNetworkPolicy should be interpreted as: for each Namespace in
@@ -656,17 +732,17 @@ metadata:
   name: cluster-wide-deny-example
 spec:
   priority: 10
-  - appliedTo:
-     namespaceSelector: 
+  subject:
+    namespaceSelector: 
       matchLabels: 
         kubernetes.io/metadata.name: sensitive-ns
-    ingress:
-     - action: Deny
-       from:
-       - namespaceSetSelector:
-          scope: Selector
-          namespaceSelector: 
-            matchLabels: {}
+  ingress:
+    - action: Deny
+      from:
+      - namespaces:
+         namespaceSelector: {}
+      l4Selector: 
+        allPorts: true
 ```
 
 #### Sample spec for Story 2: Allow traffic at a cluster level
@@ -678,27 +754,32 @@ metadata:
   name: cluster-wide-allow-example
 spec:
   priority: 30
-  - appliedTo:
-     namespaceSelector: {}
-    ingress:
-     - action: Allow
-       from:
-       - namespaceSetSelector: 
-          scope: Selector
+  subject:
+    namespaceSelector: {}
+  ingress:
+    - action: Allow
+      from:
+      - namespaces: 
           namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring-ns
-    egress: 
-      - action: Allow
-        to: 
-        - namespaceSetAndPodSelector:
-            scope: Selector
+      l4Selector: 
+        allPorts: true
+  egress: 
+    - action: Allow
+      to: 
+      - namespacedPods:
+          namespaces: 
             namespaceSelector:
               matchlabels: 
                 kubernetes.io/metadata.name: kube-system 
+          pods:   
             podSelector: 
               matchlabels: 
                 app: kube-dns
+      l4Selector: 
+        allPorts: true
+        
 ```
 
 #### Sample spec for Story 3: Explicitly Delegate traffic to existing K8s Network Policy
@@ -710,19 +791,24 @@ metadata:
   name: pub-svc-delegate-example
 spec:
   priority: 20
-  - appliedTo:
-      namespaceSelector: {}
-    egress:
-    - action: Pass
-      to:
-      - namespaceSetAndPodSelector:
-          scope: Selector 
+  subject:
+    namespaceSelector: {}
+  egress:
+  - action: Pass
+    to:
+    - namespacedPods:
+        namespaces:
           namespaceSelector: 
             matchLabels:
               kubernetes.io/metadata.name: bar-ns-1 
+        pods: 
           podSelector: 
             matchLabels:
               app: svc-pub
+    l4Selector: 
+      ports: 
+       - protocol: TCP 
+         port: 8080
 ```
 
 #### Sample spec for Story 4: Create and Isolate multiple tenants in a cluster
@@ -734,16 +820,17 @@ metadata:
   name: tenant-creation-example
 spec:
   priority: 50
-  - appliedTo:
-     namespaceSelector:
-       matchExpressions: {key: "tenant"; operator: Exists}
-    ingress:
-     - action: Deny
-       from:
-       - namespaceSetSelector:
-          scope: NotSameLabels
-          labels:
-            - tenant
+  subject:
+    namespaceSelector:
+      matchExpressions: {key: "tenant"; operator: Exists}
+  ingress:
+    - action: Deny
+      from:
+      - namespaces:
+          notSameLabels:
+          - tenant
+      l4Selector: 
+        allPorts: true 
 ```
 
 Note: the above AdminNetworkPolicy can also be written in the following fashion:
@@ -754,26 +841,28 @@ metadata:
   name: tenant-creation-example
 spec:
   priority: 50
-  - appliedTo:
-     namespaceSelector:
-       matchExpressions: {key: "tenant"; operator: Exists}
-    ingress:
-     - action: Pass
-       from:
-       - namespaceSetSelector:
-          scope: SameLabels
-          labels:
-            - tenant
-     - action: Deny   # Deny everything else other than same tenant traffic
-       from:
-       - namespaceSetSelector:
-          scope: Selector
+  subject:
+    namespaceSelector:
+      matchExpressions: {key: "tenant"; operator: Exists}
+  ingress:
+    - action: Pass
+      from:
+      - namespaces:
+          sameLabels:
+          - tenant
+      l4Selector: 
+        allPorts: true 
+    - action: Deny   # Deny everything else other than same tenant traffic
+      from:
+      - namespaces:
           namespaceSelector: {}
+      l4Selector: 
+        allPorts: true 
 ```
 The difference is that in the first case, traffic within tenant Namespaces will fall
 through, and be evaluated against lower-priority ClusterNetworkPolicies, and then
 NetworkPolicies. In the second case, the matching packet will skip all AdminNetworkPolicy
-evaluation (except for AdminNetworkPolicy priority=baseline), and only match
+evaluation (except for AdminNetworkPolicy priority=0), and only match
 against NetworkPolicy rules in the cluster. In other words, the second AdminNetworkPolicy
 specifies intra-tenant traffic must be delegated to the tenant Namespace owners.
 
@@ -786,14 +875,15 @@ metadata:
   name: baseline-rule-example
 spec:
   priority: 0
-  - appliedTo:
-     namespaceSelector: {}
-    ingress:
-     - action: Deny   # zero-trust cluster default security posture
-       from:
-       - namespaceSetSelector:
-          scope: Selector 
+  subject:
+    namespaceSelector: {}
+  ingress:
+    - action: Deny   # zero-trust cluster default security posture
+      from:
+      - namespaces:
           namespaceSelector: {}
+      l4Selector: 
+        allPorts: true 
 ```
 
 ### Test Plan
@@ -804,35 +894,37 @@ spec:
   - Ensure `Allow` rules allow traffic.
   - Ensure that in stacked ClusterNetworkPolicies/K8s NetworkPolicies, precedence is maintained
     as per the `priority` set in ANP.
-- e2e test cases must cover ingress and egress rules
-- e2e test cases must cover port-ranges, named ports, integer ports etc
-- e2e test cases must cover various combinations of `appliedTos` and `namespaceSet*s` in each ingress/egress rule
-- Ensure that namespace matching strategies work as expected
-- Add unit tests to test the validation logic which shall be introduced for cluster-scoped policy resources
-  - Ensure exactly one selector has to be set in an `AppliedTo` section
-  - Ensure exactly one selector has to be set in an `AdminNetworkPolicyPeer` section
-  - For a `NamespaceSetSelector` Ensure that `NamepaceSelector` can only be used when `scope: Selector`
-  - For a `NamespaceSetSelector` Ensure that `Labels` can only be used when `scope: SameLabels || NotSameLabels` 
-  - for a `NamespaceSetAndPodSelector` Ensure that `NamespaceSelector` and `PodSelector` can only be used when 
-  `scope:Selector` 
-  - for a `NamespaceSetAndPodSelector` Ensure that `PodSelector` can/cannot be use when `scope: Selector || Self || NotSelf`
-  - for a `NamespaceSetAndPodSelector` Ensure that `Labels` can only be used when `scope: SameLabels || NotSameLabels`
+- e2e test cases must cover ingress and egress rules.
+- e2e test cases must cover port-ranges, named ports, integer ports etc.
+- e2e test cases must cover various combinations of `namespaceSet*s` in each ingress/egress rule.
+- Ensure that namespace matching strategies work as expected.
+- Add unit tests to test the validation logic which shall be introduced for cluster-scoped policy resources.
+  - Ensure exactly one selector has to be set in an `Subject` section.
+  - Ensure exactly one selector has to be set in an `AdminNetworkPolicyPeer` section.
   - Test cases for fields which are shared with NetworkPolicy, like `endPort` etc.
-- Ensure that only administrators or assigned roles can create/update/delete cluster-scoped policy resources
+- Ensure that only administrators or assigned roles can create/update/delete cluster-scoped policy resources.
+- Ensure smooth integration with existing Kubernetes NetworkPolicy.
+  - Ensure all positive priority ANP rules are evaluated before any NetworkPolicy rules. 
+  - Ensure ANP rules with priority="0" are evaluated after any NetworkPolicy rules.
 
 ### Graduation Criteria
 
 #### Alpha to Beta Graduation
 
 - Gather feedback from developers and surveys
-- At least 2 CNI provider must provide the implementation for the complete set
-  of alpha features
-- Evaluate "future work" items based on feedback from community
-- Ensure extensibility of adding new fields. i.e. adding new fields do not "fail-open" traffic for older clients
+- At least 2 CNI providers must provide a functional and scalable implementation 
+  for the complete set of alpha features.
+    - Specifically,  ensure that only selecting E/W cluster traffic is plausible 
+      at scale 
+- Evaluate the need for multiple `Subject`s per ANP 
+- Evaluate "future work" items based on feedback from community and challenges 
+  faced by implementors.
+- Ensure extensibility of adding new fields. i.e. adding new fields do not "fail-open" 
+  traffic for older clients. 
 
 #### Beta to GA Graduation
 
-- At least 4 CNI providers must provide the implementation for the complete set
+- At least 4 CNI providers must provide a scalable implementation for the complete set
   of beta features
 - More rigorous forms of testing
   — e.g., downgrade tests and scalability tests
@@ -895,17 +987,17 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-1.23:
+1.24:
 - disable by default
 - allow gate to enable the feature
 - release note
 
-1.25:
+1.26:
 - enable by default
 - allow gate to disable the feature
 - release note
 
-1.27:
+1.28:
 - remove gate
 
 ###### How can this feature be enabled / disabled in a live cluster?
@@ -947,6 +1039,13 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+While focusing only on E/W traffic for now prevents functional overloading of the 
+AdminNetworkPolicy API, it also creates some concerns around scalability.  Specifically, 
+the implementations will need to keep track of all in cluster IPs in order to only 
+select cluster-internal entities while ignoring everything else.  Specific graduation 
+requirements have been constructed to ensure this does not become an issue for 
+future versions and implementations. 
 
 ###### Will enabling / using this feature result in any new API calls?
 
