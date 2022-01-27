@@ -370,7 +370,7 @@ Contains an identifier representing the network for the cluster.
 
 ##### Uniqueness
 
-*   The identifier **may not** exist (as its only applicable for multi-network scenario) and **need not** be unique
+*   The identifier **need not** exist (as its only applicable for multi-network scenario) and **need not** be unique
 
 ##### Lifespan
 
@@ -380,7 +380,7 @@ Contains an identifier representing the network for the cluster.
 ##### Contents
 
 *   The identifier **should** be a valid RFC-1123 DNS label [as described for object names in the Kubernetes docs](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
-    *   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
+*   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
 *   The identifier **should** be a human readable description.
 
 
