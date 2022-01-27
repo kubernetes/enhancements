@@ -171,7 +171,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Currently kubernetes supports volume expansion as a beta feature since v1.16. However, 
+Kubernetes has supported volume expansion as a beta feature since v1.16. However,
 this feature support is only limited to standalone pods and deployments. Expansion of 
 volumes associated with a Statefulset is not supported. This enhancement proposes to add 
 the ability to resize volumes associated with a StatefulSet via modifications to its specification.
@@ -190,8 +190,8 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Stable persistent volumes can be created by specifying `volumeClaimTemplates` in `StatefulSet`
-[specification](https://kubernetes.io/docs/concepts/workloads/controllers/StatefulSet/).
+Stable persistent volumes can be created by specifying `.spec.volumeClaimTemplates`
+for a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/).
 Currently, StatefulSets do not allow the associated volumes to be resized directly by modifying the
 `volumeClaimTemplates`. Instead users have to modify each PVC one by one to achieve this. In such cases, 
 when the statefulset scales up, the new PVC(s) will be created with the older size and this again needs 
