@@ -401,7 +401,7 @@ in back-to-back releases.
 -->
 #### Alpha
 - Feature implemented behind feature gate.
-- Unit and integration tests passed as designed in [TestPlan](###TestPlan).
+- Unit and integration tests passed as designed in [TestPlan](#test-plan).
 
 #### Beta
 - Feature is enabled by default
