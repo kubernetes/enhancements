@@ -2,7 +2,11 @@
 
 reviewers:
   - sig-api-machinery-leads
+  - apelisse
+  - jpbetz
 approvers:
   - sig-api-machinery-leads
+  - apelisse
+  - jpbetz
 labels:
   - sig/api-machinery

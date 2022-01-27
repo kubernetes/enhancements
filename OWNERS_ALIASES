@@ -6,7 +6,6 @@ aliases:
   sig-apps-leads:
     - janetkuo
     - kow3ns
-    - mattfarina
     - soltysh
   sig-architecture-leads:
     - derekwaynecarr
@@ -22,8 +21,8 @@ aliases:
     - gjtempleton
     - mwielgus
   sig-cli-leads:
+    - KnVerey
     - eddiezane
-    - pwittrock
     - seans3
     - soltysh
   sig-cloud-provider-leads:
@@ -33,13 +32,14 @@ aliases:
     - fabriziopandini
     - justinsb
     - neolit123
-    - timothysc
+    - vincepri
   sig-contributor-experience-leads:
     - alisondy
     - cblecker
     - mrbobbytables
     - nikhita
   sig-docs-leads:
+    - divya-mohan0209
     - jimangel
     - kbhawkey
     - onlydole
@@ -49,6 +49,11 @@ aliases:
     - dashpole
     - ehashman
     - logicalhan
+  sig-k8s-infra-leads:
+    - ameukam
+    - dims
+    - spiffxp
+    - thockin
   sig-multicluster-leads:
     - jeremyot
     - pmorie
@@ -60,9 +65,10 @@ aliases:
     - dchen1107
     - derekwaynecarr
   sig-release-leads:
-    - alejandrox1
-    - hasheddan
+    - cpanato
+    - jeremyrickard
     - justaugustus
+    - puerco
     - saschagrunert
   sig-scalability-leads:
     - mm4tt
@@ -71,6 +77,7 @@ aliases:
   sig-scheduling-leads:
     - Huang-Wei
     - ahg-g
+    - alculquicondor
   sig-security-leads:
     - IanColdwater
     - tabbysable
@@ -84,6 +91,8 @@ aliases:
     - xing-yang
   sig-testing-leads:
     - BenTheElder
+    - alvaroaleman
+    - cjwagner
     - spiffxp
     - stevekuznetsov
   sig-ui-leads:
@@ -92,18 +101,16 @@ aliases:
     - shu-mutou
   sig-usability-leads:
     - hpandeycodeit
+    - morengab
     - tashimi
   sig-windows-leads:
-    - ddebroy
+    - claudiubelu
     - jayunit100
     - jsturtevant
     - marosset
   wg-api-expression-leads:
     - apelisse
     - kwiesmueller
-  wg-component-standard-leads:
-    - mtaufen
-    - stealthybox
   wg-data-protection-leads:
     - xing-yang
     - yuxiangqian
@@ -111,24 +118,19 @@ aliases:
     - cantbewong
     - cindyxing
     - dejanb
-  wg-k8s-infra-leads:
-    - bartsmykla
-    - dims
-    - spiffxp
   wg-multitenancy-leads:
     - srampal
     - tashimi
-  wg-naming-leads:
-    - celestehorgan
-    - jdumars
-    - justaugustus
   wg-policy-leads:
-    - ericavonb
-    - hannibalhuang
+    - JimBugwadia
+    - rficcaglia
   wg-reliability-leads:
     - deads2k
     - stevekuznetsov
     - wojtek-t
+  wg-structured-logging-leads:
+    - pohly
+    - serathius
   ug-big-data-leads:
     - erikerlandson
     - foxish
@@ -139,42 +141,38 @@ aliases:
     - mylesagray
     - phenixblue
   committee-code-of-conduct:
-    - AevaOnline
     - celestehorgan
     - karenhchu
-    - tashimi
+    - palnabarun
     - tpepper
-  committee-product-security:
+    - vllry
+  committee-security-response:
     - cjcullen
-    - cji
     - joelsmith
     - lukehinds
     - micahhausler
     - swamymsft
+    - tabbysable
     - tallclair
   committee-steering:
     - cblecker
-    - derekwaynecarr
     - dims
+    - justaugustus
     - liggitt
     - mrbobbytables
-    - nikhita
     - parispittman
+    - tpepper
 ## BEGIN CUSTOM CONTENT
   enhancements-approvers:
     - jeremyrickard
     - johnbelamaric
-    - justaugustus
     - kikisdeliveryservice
-    - LappleApple
     - mrbobbytables
   enhancements-reviewers:
     - annajung
     - jeremyrickard
     - johnbelamaric
-    - justaugustus
     - kikisdeliveryservice
-    - LappleApple
     - mrbobbytables
     - palnabarun
   kep-tools-approvers:
@@ -182,6 +180,7 @@ aliases:
     - johnbelamaric
     - justaugustus
     - mrbobbytables
+    - palnabarun
   kep-tools-reviewers:
     - jeremyrickard
     - johnbelamaric
@@ -194,12 +193,11 @@ aliases:
     - wojtek-t
     - ehashman
   provider-aws:
-    - d-nishi
     - justinsb
-    - kris-nova
+    - nckturner
+    - wongma7
   provider-azure:
     - craiglpeters
-    - justaugustus
     - feiskyer
     - khenidak
   provider-gcp:

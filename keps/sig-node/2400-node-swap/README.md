@@ -401,8 +401,14 @@ For alpha:
   and further development efforts.
   - Focus should be on supported user stories as listed above.
 
-Once this data is available, additional test plans should be added for the next
-phase of graduation.
+For beta:
+
+- Add e2e tests that exercise all available swap configurations via the CRI.
+- Add e2e tests that verify pod-level control of swap utilization.
+- Add e2e tests that verify swap performance with pods using a tmpfs.
+- Verify new system-reserved settings for swap memory.
+- Verify MemoryPressure behaviour with swap enabled and document any changes
+  for configuring eviction.
 
 ### Graduation Criteria
 
@@ -416,8 +422,6 @@ phase of graduation.
 
 #### Beta
 
-_(Tentative.)_
-
 - Add support for controlling swap consumption at the pod level [via cgroups].
   - Handle usage of swap during container restart boundaries for writes to tmpfs
     (which may require pod cgroup change beyond what container runtime will do at
@@ -426,6 +430,7 @@ _(Tentative.)_
   detects on the host.
 - Consider introducing new configuration modes for swap, such as a node-wide
   swap limit for workloads.
+- Add swap memory to the Kubelet stats api.
 - Determine a set of metrics for node QoS in order to evaluate the performance
   of nodes with and without swap enabled.
   - Better understand relationship of swap with memory QoS in cgroup v2
@@ -436,6 +441,8 @@ _(Tentative.)_
 [via cgroups]: #restrict-swap-usage-at-the-cgroup-level
 
 #### GA
+
+_(Tentative.)_
 
 - Test a wide variety of scenarios that may be affected by swap support.
 - Remove feature flag.
@@ -587,12 +594,29 @@ Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
 -->
 
+If a new node with swap memory fails to come online, it will not impact any
+running components.
+
+It is possible that if a cluster administrator adds swap memory to an already
+running node, and then performs an in-place upgrade, the new kubelet could fail
+to start unless the configuration was modified to tolerate swap. However, we
+would expect that if a cluster admin is adding swap to the node, they will also
+update the kubelet's configuration to not fail with swap present.
+
+Generally, it is considered best practice to add a swap memory partition at
+node image/boot time and not provision it dynamically after a kubelet is
+already running and reporting Ready on a node.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Workload churn or performance degradations on nodes. The metrics will be
+application/use-case specific, but we can provide some suggestions, based on
+the stability metrics identified earlier.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -602,11 +626,16 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+N/A because swap support lacks a runtime upgrade/downgrade path; kubelet must
+be restarted with or without swap support.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -622,11 +651,25 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+KubeletConfiguration has set `failOnSwap: false`.
+
+The prometheus `node_exporter` will also export stats on swap memory
+utilization.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
+
+TBD. We will determine a set of metrics as a requirement for beta graduation.
+We will need more production data; there is not a single metric or set of
+metrics that can be used to generally quantify node performance.
+
+This section to be updated before the feature can be marked as graduated, and
+to be worked on during 1.23 development.
+
+We will also add swap memory utilization to the Kubelet stats API, to provide a means of monitoring this beyond cadvisor Prometheus stats.
 
 - [ ] Metrics
   - Metric name:
@@ -647,12 +690,16 @@ high level (needs more precise definitions) those may be things like:
   - 99,9% of /health requests per day finish with 200 code
 -->
 
+N/A
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+N/A
 
 ### Dependencies
 
@@ -784,6 +831,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No change. Feature is specific to individual nodes.
+
 ###### What are other known failure modes?
 
 <!--
@@ -799,7 +848,22 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+
+Individual nodes with swap memory enabled may experience performance
+degradations under load. This could potentially cause a cascading failure on
+nodes without swap: if nodes with swap fail Ready checks, workloads may be
+rescheduled en masse.
+
+Thus, cluster administrators should be careful while enabling swap. To minimize
+disruption, you may want to taint nodes with swap available to protect against
+this problem. Taints will ensure that workloads which tolerate swap will not
+spill onto nodes without swap under load.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+It is suggested that if nodes with swap memory enabled cause performance or
+stability degradations, those nodes are cordoned, drained, and replaced with
+nodes that do not use swap memory.
 
 ## Implementation History
 

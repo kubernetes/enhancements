@@ -183,9 +183,9 @@ We want to avoid using cAdvisor for container & pod level stats and move metric 
 * cAdvisor and metric dependency: CRI mission is not fully fulfilled - container runtime is not fully plugable.
 * Break the monolithic design of cAdvisor, which needs to be aware of the underlying container runtime.
 * Duplicate stats are collected by both cAdvisor and the CRI runtime, which can lead to:
-	* Different information from different sources
-	* Confusion from unclear origin of a given metric
-	* Performance degradations (increased CPU / Memory / etc) [xref][perf-issue]
+    * Different information from different sources
+    * Confusion from unclear origin of a given metric
+    * Performance degradations (increased CPU / Memory / etc) [xref][perf-issue]
 * Stats should be reported by the container runtime which knows behavior of the container/pod the best.
 * cAdvisor only supports runtimes that run processes on the host, not e.g. VM based runtime like Kata Containers.
 * cAdvisor only supports linux containers, not Windows ones.
@@ -304,7 +304,8 @@ These correspond to some fields of the [ContainerStats](#summary-container-stats
 +    // Corresponds to Stats Summary API CPUStats UsageCoreNanoSeconds
 =    UInt64Value usage_core_nano_seconds = 2;
 +    // Total CPU usage (sum of all cores) averaged over the sample window.
-+    UInt64Value usage_nano_seconds = 3;
++    // The "core" unit can be interpreted as CPU core-nanoseconds per second.
++    UInt64Value usage_nano_cores = 3;
 =}
 
 =// MemoryUsage provides the memory usage information.
@@ -315,74 +316,19 @@ These correspond to some fields of the [ContainerStats](#summary-container-stats
 =    // The amount of working set memory in bytes.
 +    // Corresponds to Stats Summary API MemoryStats WorkingSetBytes field
 =    UInt64Value working_set_bytes = 2;
-+    // Available memory for use.  This is defined as the memory limit = workingSetBytes.
-+    // If memory limit is undefined, the available bytes is omitted.
++    // Available memory for use. This is defined as the memory limit - workingSetBytes.
 +    UInt64Value available_bytes = 3;
 +    // Total memory in use. This includes all memory regardless of when it was accessed.
-+    UInt64Value usage_bytes
-+    // The amount of working set memory. This includes recently accessed memory,
-+    // dirty memory, and kernel memory. WorkingSetBytes is <= UsageBytes
-+    UInt64Value working_set_bytes = 4;
-+    // The amount of anonymous and swap cache memory (includes transparent
-+    // hugepages).
++    UInt64Value usage_bytes = 4;
++    // The amount of anonymous and swap cache memory (includes transparent hugepages).
 +    UInt64Value rss_bytes = 5;
 +    // Cumulative number of minor page faults.
-+    Uint64Value page_faults = 6;
++    UInt64Value page_faults = 6;
 +    // Cumulative number of major page faults.
-+    Uint64Value major_page_faults = 6;
-=}
-
-=// FilesystemUsage provides the filesystem usage information.
-=message FilesystemUsage {
-=    // Timestamp in nanoseconds at which the information were collected. Must be > 0.
-+    // Corresponds to Stats Summary API FsStats Time field
-=    int64 timestamp = 1;
-=    // The unique identifier of the filesystem.
-+    // Does not correspond to any field in Stats Summary API FsStats
-=    FilesystemIdentifier fs_id = 2;
-=    // UsedBytes represents the bytes used for images on the filesystem.
-=    // This may differ from the total bytes used on the filesystem and may not
-=    // equal CapacityBytes - AvailableBytes.
-=    // Corresponds to Stats Summary API FsStats UsedBytes field
-=    UInt64Value used_bytes = 3;
-=    // InodesUsed represents the inodes used by the images.
-=    // This may not equal InodesCapacity - InodesAvailable because the underlying
-=    // filesystem may also be used for purposes other than storing images.
-=    // Corresponds to Stats Summary API FsStats InodesUsed field
-=    UInt64Value inodes_used = 4;
-+    // TODO: Unclear how the remaining fields relate to container stats. Is it filled in cAdvisor?
-+    // AvailableBytes represents the storage space available (bytes) for the filesystem.
-+    UInt64Value available_bytes = 5;
-+    // CapacityBytes represents the total capacity (bytes) of the filesystems underlying storage.
-+    UInt64Value capacity_bytes = 6;
-+    // InodesFree represents the free inodes in the filesystem.
-+    UInt64Value inodes_free = 7;
-+    // Inodes represents the total inodes in the filesystem.
-+    UInt64Value inodes = 8;
++    UInt64Value major_page_faults = 7;
 =}
 ```
 
-All together, below is the proposition for the new `ContainerStats` object:
-```
-=// ContainerStats provides the resource usage statistics for a container.
-=message ContainerStats {
-=    // Information of the container.
-+    // Corresponds to the Stats Summary API ContainerStats Name field
-=    ContainerAttributes attributes = 1;
-=    // CPU usage gathered from the container.
-+    // Corresponds to Stats Summary API ContainerStats CPUStats field
-=    CpuUsage cpu = 2;
-=    // Memory usage gathered from the container.
-+    // Corresponds to Stats Summary API ContainerStats MemoryStats field
-=    MemoryUsage memory = 3;
-=    // Usage of the writable layer.
-+    // Corresponds to Stats Summary API ContainerStats Rootfs field
-=    FilesystemUsage writable_layer = 4;
-+    // Stats pertaining to container logs usage of filesystem resources
-+    // Logs.UsedBytes is the number of bytes used for the container logs.
-+    FilesystemUsage logs = 5;
-=}
-```
 Notes:
 - In Stats Summary API ContainerStats object, there's a timestamp field. We do not need such a field, as each struct in the ContainerStats object
   has its own timestamp, allowing CRI implementations flexibility when they collect which metrics.
@@ -402,49 +348,45 @@ They will be defined as follows:
 // Runtime service defines the public APIs for remote pod runtimes
 service RuntimeService {
     ...
-    // PodSandboxStats returns stats of the pod. If the pod does not
+    // PodSandboxStats returns stats of the pod. If the pod sandbox does not
     // exist, the call returns an error.
     rpc PodSandboxStats(PodSandboxStatsRequest) returns (PodSandboxStatsResponse) {}
-    // ListPodSandboxStats returns stats of all running pods.
+    // ListPodSandboxStats returns stats of the pods matching a filter.
     rpc ListPodSandboxStats(ListPodSandboxStatsRequest) returns (ListPodSandboxStatsResponse) {}
     ...
 }
 ...
-
-message PodSandboxStatsRequest{
-    // ID of the pod for which to retrieve stats.
-    string pod_id = 1;
+message PodSandboxStatsRequest {
+    // ID of the pod sandbox for which to retrieve stats.
+    string pod_sandbox_id = 1;
 }
 
 message PodSandboxStatsResponse {
-    // Stats of the pod.
     PodSandboxStats stats = 1;
 }
 
-
-// PodSandboxStatsFilter is used to filter containers.
-// All those fields are combined with 'AND'
+// PodSandboxStatsFilter is used to filter the list of pod sandboxes to retrieve stats for.
+// All those fields are combined with 'AND'.
 message PodSandboxStatsFilter {
-    // ID of the container.
+    // ID of the pod sandbox.
     string id = 1;
-	// LabelSelector to select matches.
+    // LabelSelector to select matches.
     // Only api.MatchLabels is supported for now and the requirements
     // are ANDed. MatchExpressions is not supported yet.
     map<string, string> label_selector = 2;
 }
 
-message ListPodSandboxStatsRequest{
+message ListPodSandboxStatsRequest {
     // Filter for the list request.
     PodSandboxStatsFilter filter = 1;
 }
 
 message ListPodSandboxStatsResponse {
-    // Stats of the pod.
+    // Stats of the pod sandbox.
     repeated PodSandboxStats stats = 1;
 }
 
-
-// PodSandboxAttributes provides basic information of the container.
+// PodSandboxAttributes provides basic information of the pod sandbox.
 message PodSandboxAttributes {
     // ID of the pod.
     string id = 1;
@@ -460,58 +402,65 @@ message PodSandboxAttributes {
 }
 
 // PodSandboxStats provides the resource usage statistics for a pod.
+// The linux or windows field will be populated depending on the platform.
 message PodSandboxStats {
     // Information of the pod.
-    // Corresponds to PodRef in SummaryAPI
     PodSandboxAttributes attributes = 1;
-    // CPU usage gathered from the pod.
-    // Corresponds to Stats SummaryAPI CPUStats field
-    CpuUsage cpu = 2;
-    // Memory usage gathered from the pod.
-    // Corresponds to Stats SummaryAPI MemoryStats field
-    MemoryUsage memory = 3;
-    // TODO: do we want a start time field?
-    // The time at which data collection for the pod-scoped (e.g. network) stats was (re)started.
-    // int64 timestamp = 1;
-    // Stats of containers in the measured pod.
-    repeated ContainerStats containers
-    // Stats pertaining to CPU resources consumed by pod cgroup (which includes all containers' resource usage and pod overhead).
-    NetworkStats network = 4;
-    // Note the specific omission of VolumeStats and EphemeralStorage
-    // Each of these fields will be calculated Kubelet-level
-    // ProcessStats pertaining to processes.
-    ProcessStats process = 5;
+    // Stats from linux.
+    LinuxPodSandboxStats linux = 2;
+    // Stats from windows.
+    WindowsPodSandboxStats windows = 3;
 }
 
-// NetworkStats contains data about network resources.
-message NetworkStats {
+// LinuxPodSandboxStats provides the resource usage statistics for a pod sandbox on linux.
+message LinuxPodSandboxStats {
+    // CPU usage gathered for the pod sandbox.
+    CpuUsage cpu = 1;
+    // Memory usage gathered for the pod sandbox.
+    MemoryUsage memory = 2;
+    // Network usage gathered for the pod sandbox
+    NetworkUsage network = 3;
+    // Stats pertaining to processes in the pod sandbox.
+    ProcessUsage process = 4;
+    // Stats of containers in the measured pod sandbox.
+    repeated ContainerStats containers = 5;
+}
+
+// WindowsPodSandboxStats provides the resource usage statistics for a pod sandbox on windows
+message WindowsPodSandboxStats {
+    // TODO: Add stats relevant to windows.
+}
+
+// NetworkUsage contains data about network resources.
+message NetworkUsage {
     // The time at which these stats were updated.
     int64 timestamp = 1;
-
-    // Stats for the default interface, if found
-    InterfaceStats default_interface = 2;
-
-    repeated InterfaceStats interfaces = 3;
+    // Stats for the default network interface.
+    NetworkInterfaceUsage default_interface = 2;
+    // Stats for all found network interfaces, excluding the default.
+    repeated NetworkInterfaceUsage interfaces = 3;
 }
 
-// InterfaceStats contains resource value data about interface.
-type InterfaceStats struct {
-    // The name of the interface
+// NetworkInterfaceUsage contains resource value data about a network interface.
+message NetworkInterfaceUsage {
+    // The name of the network interface.
     string name = 1;
     // Cumulative count of bytes received.
-    Uint64Value rx_bytes = 2;
+    UInt64Value rx_bytes = 2;
     // Cumulative count of receive errors encountered.
-    Uint64Value rx_errors = 2;
+    UInt64Value rx_errors = 3;
     // Cumulative count of bytes transmitted.
-    Uint64Value tx_bytes = 2;
+    UInt64Value tx_bytes = 4;
     // Cumulative count of transmit errors encountered.
-    Uint64Value tx_errors = 2;
+    UInt64Value tx_errors = 5;
 }
 
-// ProcessStats are stats pertaining to processes.
-message ProcessStats {
-    // Number of processes in the pod.
-    Uint64Value process_count = 1;
+// ProcessUsage are stats pertaining to processes.
+message ProcessUsage {
+    // The time at which these stats were updated.
+    int64 timestamp = 1;
+    // Number of processes.
+    UInt64Value process_count = 2;
 }
 ```
 
@@ -561,18 +510,18 @@ The table above describes the various metrics that are in this endpoint.
 Each compliant CRI implementation must:
 - Have a location broadcasted about where these metrics can be gathered from. The endpoint name must not necessarily be `/metrics/cadvisor`, nor be gathererd from the same port as it was from cAdvisor
 - Implement *all* metrics within the set of metrics that are decided on.
-	- **TODO** How will we decide this set? We could support all, or take polls from the community and come up with a set of sufficiently useful metrics.
+    - **TODO** How will we decide this set? We could support all, or take polls from the community and come up with a set of sufficiently useful metrics.
 - Pass a set of tests in the critest suite that verify they report the correct values for *all* supported metrics labels (to ensure continued conformance and standardization).
 
 Below is the proposed strategy for doing so:
 
 1. The Alpha release will strictly cover research, performance testing and the creation of conformance tests.
-	- Initial research on the set of metrics required should be done. This will, possibly, allow the community to declare metrics that are not required to be moved to the CRI implementations.
-	- Testing on how performant cAdvisor+Kubelet are today should be done, to find a target, acceptable threshold of performance for the CRI implementations
-	- Creation of tests verifying the metrics are reported correctly should be created and verified with the existing cAdvisor implementation.
+    - Initial research on the set of metrics required should be done. This will, possibly, allow the community to declare metrics that are not required to be moved to the CRI implementations.
+    - Testing on how performant cAdvisor+Kubelet are today should be done, to find a target, acceptable threshold of performance for the CRI implementations
+    - Creation of tests verifying the metrics are reported correctly should be created and verified with the existing cAdvisor implementation.
 2. For the Beta release, add initial support for CRI implementations to report these metrics
-	- This set of metrics will be based on the research done in alpha
-	- Each will be validated against the conformance and performance tests created in alpha.
+    - This set of metrics will be based on the research done in alpha
+    - Each will be validated against the conformance and performance tests created in alpha.
 3. For the GA release, the CRI implementation should be the source of truth for all pod and container level metrics that external parties rely on (no matter how many endpoints the Kubelet advertises).
 
 #### cAdvisor
@@ -618,7 +567,7 @@ As a requirement for the Beta stage, cAdvisor must support optionally collecting
 ### Version Skew Strategy
 
 - Breaking changes between versions will be mitigated by the FeatureGate.
-	- By the time the FeatureGate is deprecated, it is expected the transition between CRI and cAdvisor is complete, and CRI has had at least one release to expose the required metrics (to allow for `n-1` CRI skew).
+    - By the time the FeatureGate is deprecated, it is expected the transition between CRI and cAdvisor is complete, and CRI has had at least one release to expose the required metrics (to allow for `n-1` CRI skew).
 - In general, CRI should be updated in tandem with or before the Kubelet.
 
 ## Production Readiness Review Questionnaire
@@ -775,13 +724,13 @@ operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
   - The process of collecting and reporting the metrics should not differ too much between cAdvisor and the CRI implementation:
-	- At a high level, both need to watch the changes to the stats (from cgroups, disk and network stats)
-	- Once collected, the CRI implementation will need to report them (both through the CRI and eventually through the prometheus endpoint).
-	- Both of these steps are already done by cAdvisor, so the work is changing hands, but not fundamentally changing.
+    - At a high level, both need to watch the changes to the stats (from cgroups, disk and network stats)
+    - Once collected, the CRI implementation will need to report them (both through the CRI and eventually through the prometheus endpoint).
+    - Both of these steps are already done by cAdvisor, so the work is changing hands, but not fundamentally changing.
   - It is possible the Alpha iteration of this KEP may affect CPU/memory usage on the node:
     - This may come because cAdvisor's performance has been fine-tuned, and changing the location of work may loose some optimizations.
-	- However, it is explicitly stated that a requirement for transition from Alpha->Beta is little to no performance degradation.
-	- The existence of the feature gate will allow users to mitigate this potential blip in performance (by not opting-in).
+    - However, it is explicitly stated that a requirement for transition from Alpha->Beta is little to no performance degradation.
+    - The existence of the feature gate will allow users to mitigate this potential blip in performance (by not opting-in).
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
   - It most likely will reduce resource utilization. Right now, there is duplicate work being done between CRI and cAdvisor.
@@ -818,6 +767,6 @@ Note: This is by design as this will enable to decouple runtime implementation d
 ## Alternatives
 
 - Instead of teaching CRI how to do *everything* cAdvisor does, we could instead have cAdvisor not do the work the CRI stats end up doing (specifically when reporting disk stats, which are the most expensive operation to report).
-	- However, this doesn't address the anti-pattern of having multiple parties confusingly responsible for a wide array of metrics and other issues described.
+    - However, this doesn't address the anti-pattern of having multiple parties confusingly responsible for a wide array of metrics and other issues described.
 - Have cAdvisor implement the summary API. A cAdvisor daemonset could be a drop-in replacement for the summary API.
 - Don't keep supporting the summary API. Replace it with a "better" format, like prometheus. Or help users migrate to equivalent APIs that container runtimes already expose for monitoring.

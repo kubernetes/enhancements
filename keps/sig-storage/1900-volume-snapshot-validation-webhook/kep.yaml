@@ -25,3 +25,4 @@ milestone:
   beta: "v1.19"
   stable: "v1.20"
 disable-supported: true
+stage: stable

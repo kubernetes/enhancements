@@ -31,7 +31,7 @@
 ## Summary
 
 This document presents a detailed design for migrating in-tree storage plugins
-to CSI. This will be an opt-in feature turned on at cluster creation time that
+to CSI. This will be an opt-in feature turned on at cluster start time that
 will redirect in-tree plugin operations to a corresponding CSI Driver.
 
 ### Glossary
@@ -86,13 +86,14 @@ internal APIs.
 * Design a mechanism for deploying  CSI drivers on all systems so that users can
   use the current storage system the same way they do today without having to do
   extra set up.
-* Implementing CSI Drivers for existing plugins
-* Define set of volume plugins that should be migrated to CSI
+* Implementing CSI Drivers for existing plugins.
+* Define set of volume plugins that should be migrated to CSI.
+* Implement CSI specific features like volume snapshot for in-tree volume plugins.
 
 ## Proposal
 
 ### Implementation Details/Notes/Constraints
-The detailed design was originally implemented as a [design proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md)
+The detailed design was originally implemented as a [design proposal](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration/csi-migration-design.md)
 
 ### Risks and Mitigations
 
@@ -135,7 +136,7 @@ The above is done by checking that no in-tree plugin code is emitting metrics
 when migration is on. We will also confirm that metrics are being emitted in
 general by confirming the existence of an indicator metric.
 
-Passing these tests in Public CI is the main graduation criterea for the
+Passing these tests in Public CI is the main graduation criteria for the
 `CSIMigration{provider}` flag to Beta.
 
 ### Upgrade/Downgrade/Skew Testing
@@ -148,7 +149,7 @@ know what configuration it’s running in and validate the expected result.
 Configurations to test:
 
 | ADC               | Kubelet                                            | Expected Result                                                          |
-|-------------------|----------------------------------------------------|--------------------------------------------------------------------------|
+| ----------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
 | ADC Migration On  | Kubelet Migration On                               | Fully migrated - result should be same as “Migration Shim Testing” above |
 | ADC Migration On  | Kubelet Migration Off (or Kubelet version too low) | No calls made to driver. All operations serviced by in-tree plugin       |
 | ADC Migration Off | Kubelet Migration On                               | Not supported config - Undefined behavior                                |
@@ -193,26 +194,63 @@ you need any help or guidance.
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: CSIMigration, CSIMigration{cloud-provider}
+    - Feature gate name: CSIMigration, CSIMigration{vendor}, InTreePlugin{vendor}Unregister
     - Components depending on the feature gate: kubelet, kube-controller-manager, kube-scheduler
-    - Please refer to this design doc on the [Step to enable the feature](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md#upgradedowngrade-migrateunmigrate-scenarios)
+    - Please refer to this design doc on the [Step to enable the feature](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration/csi-migration-design.md#upgradedowngrade-migrateunmigrate-scenarios)
 
 * **Does enabling the feature change any default behavior?**
-  Yes and No. If only CSIMigration feature flag is enabled, nothing will change on the cluster behavior. However, if CSIMigration && CSIMigration{cloud-provider} are both enabled, the behavior will change. The in-tree volume plugin that the cloud-provider use will be redirect to use the corresponding CSI driver. But from a user perspective, nothing will be noticed.
+
+  Yes and No.
+  - If only `CSIMigration` feature flag is enabled, nothing will change on the cluster behavior. `CSIMigration`
+  is a big umbrella feature gate. It takes control of vendor-agnostic controllers. Without this feature gate on,
+  the entire CSI Migration feature is disabled.
+  - If only `CSIMigration{vendor}` feature flag is enabled, nothing will change on the cluster behavior.
+  This feature gate controls the vendor-specific logic.
+  - Both `CSIMigration` and `CSIMigration{vendor}` need to be enabled on Kubernetes Components, 
+  including scheduler, KCM, Kubelet, for CSI Migration to take effect.
+  - `InTreePlugin{vendor}Unregister` is a standalone feature gate that can be enabled and disabled
+  even out of CSI Migration scope. The name speaks for itself, when enabled, the component will not 
+  register the specific in-tree storage plugin to the supported list. If the cluster operator only enables this flag, 
+  they will get an error from PVC saying it cannot find the plugin when the plugin is used. The cluster operator
+  may want to enable this regardless of CSI Migration if they do not want to support the legacy in-tree APIs and
+  only support CSI going forward.
+  - The table below assumes `CSIMigration` is enabled whenever `CSIMigration{vendor}` is on, since if not, there will 
+  be no effect to the behaviors. The table does not take into account feature gates on kube-scheduler, the feature gates
+  for it should be enabled align with kube-controller-manager otherwise the volume topology && volume limit function could
+  be impacted.
+  
+| Kube-Controller-Manager    | Kubelet                    | Expected Behavior Change                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CSIMigration{vendor}` On  | `CSIMigration{vendor}` On  | Fully migrated. All operations serviced by CSI plugin. From user perspective, nothing changed.                                                                                                                                                                                                                                                                      |
+| `CSIMigration{vendor}` On  | `CSIMigration{vendor}` Off | `InTreePlugin{vendor}Unregister` enabled on Kubelet: Broken state, Provision/Delete/Attach/Detach by CSI, Mount/Unmount not function. `InTreePlugin{vendor}Unregister` enabled on KCM: Provision/Deletion/Attach/Detach by CSI, Mount/Unmount by in-tree. `InTreePlugin{vendor}Unregister` disabled at all: Provision/Deletion by CSI, other operations by In-tree. |
+| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` On  | Broken state. Operations like volume provision will still work. But operations like volume Attach/Mount will be broken                                                                                                                                                                                                                                              |
+| `CSIMigration{vendor}` Off | `CSIMigration{vendor}` Off | No behavior change                                                                                                                                                                                                                                                                                                                                                  |
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes - can be disabled by disabling feature flags. 
-  Please refer to the [upgrade/downgrade](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md#upgradedowngrade-migrateunmigrate-scenarios) sections on how to downgrade the cluster to roll back the enablement.
+  - Yes - can be disabled by disabling feature flags. 
+  Please refer to the [upgrade/downgrade](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration/csi-migration-design.md#upgradedowngrade-migrateunmigrate-scenarios) sections on how to downgrade the cluster to roll back the enablement.
+
+  - For `InTreePlugin{vendor}Unregister`, yes we can disable the feature gate once we enabled. This will register the corresponding 
+  in-tree storage plugin into the supported list and user will be able to use it to do all storage related operations again.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-The CSI migration feature will start to work again. The out-of-tree CSI driver will start to work instead of in-tree plugin again.
+- The CSI migration feature will start to work again. The out-of-tree CSI driver will start to work instead of in-tree plugin again.
+- For `InTreePlugin{vendor}Unregister`, if we enabled the feature the plugin will not be supported. And when we reenable it, it will 
+again unregister the storage plugin at the component restart time and then the specific storage plugin will become unavailable again
+to the end user. For any workload that is already using the in-tree plugin, running workloads will not be impacted. But new operations
+like Provision/Deletion/Attach/Detach/Mount/Unmount will not be available if CSI migration for the specific plugin is not enabled.
 
 * **Are there any tests for feature enablement/disablement?**
 We have CSI Migration e2e test for each plugin that are implemented and maintained by each driver maintainer. 
-Specifically, for each in-tree plugin corresponding CSI drivers, it will have 
+Specifically, for each in-tree plugin corresponding CSI drivers, it havs
   - Full k8s storage e2e tests
-  - Migration enabled functional e2e tests. 
+  - Migration enabled functional e2e tests. For example:
+    - GCE PD [migration testgrid](https://testgrid.k8s.io/provider-gcp-compute-persistent-disk-csi-driver#Migration%20Kubernetes%20Master%20Driver%20Stable).
+    - AWS EBS [migration testgrid](https://k8s-testgrid.appspot.com/provider-aws-ebs-csi-driver#ci-migration-test)
+    - Azuredisk [migration testgrid](https://testgrid.k8s.io/provider-azure-azuredisk-csi-driver#pr-azuredisk-csi-driver-e2e-migration).
+    - Azurefile has [migration testgrid](https://testgrid.k8s.io/provider-azure-azurefile-csi-driver#pr-azurefile-csi-driver-e2e-migration).
+    - Openstack has CSI migration tests for GCE/AWS/Azure/Cinder at [testgrid](https://testgrid.k8s.io/redhat-openshift-ocp-release-4.10-broken#Summary). And an upgrade test will be added soon in the future.
   - Upgrade/downgrade/version skew tests that test the transition from feature turning on to off.
 
   For core K8s, we have unit tests including but not limited to:
@@ -228,17 +266,27 @@ Specifically, for each in-tree plugin corresponding CSI drivers, it will have
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**  
-  - The rollout can fail if the ordering of CSIMigration{cloud-provider} flag was wrongly enabled on kubelet and kube-controller-manager. Specifically, if on the node side kubelet enables the flag and control-plane side the flag is not enabled, then the volume will not be able to be mounted successfully. 
-    - For workloads that running on nodes have not enable CSI migration, those pods will not be impacted. 
-    - For any pod that is being deleted by node drain before turning on migration and created on new node that has CSI migration turned on, the volume mount will fail and pod will not come up correctly.
-  - Additionally, CSI Migration has a strong dependency on CSI drivers. So if the in-tree corresponding CSI driver is not properly installed, any volume related operation could fail.
-  - If feature parity is not guaranteed or if any bug exists in the CSI driver/csi-translation-lib, the rollout could fail because pod using the PV could fail to execute provision/delete/attach/detach/mount/unmount/resize operations depend on the bug itself.
+  For `CSIMigration` and `CSIMigration{vendor}`
+    - The rollout can fail if the ordering of `CSIMigration{vendor}` flag was wrongly enabled on kubelet and kube-controller-manager. Specifically, if on the node side kubelet enables the flag and control-plane side the flag is not enabled, then the volume will not be able to be mounted successfully. 
+      - For workloads that running on nodes have not enable CSI migration, those pods will not be impacted. 
+      - For any pod that is being deleted by node drain before turning on migration and created on new node that has CSI migration turned on, the volume mount will fail and pod will not come up correctly.
+    - Additionally, CSI Migration has a strong dependency on CSI drivers. So if the in-tree corresponding CSI driver is not properly installed, any volume related operation could fail.
+    - If feature parity is not guaranteed or if any bug exists in the CSI driver/csi-translation-lib, the rollout could fail because pod using the PV could fail to execute provision/delete/attach/detach/mount/unmount/resize operations depend on the bug itself.
+
+  For `InTreePlugin{vendor}Unregister`
+    - rollout of the feature gate will not fail. The component(kube-controller-manager, kubelet) will be able to start
+    and running without failures. 
+    - However, it can impact running workloads when the feature is enabled on clusters that still have running workloads using the 
+    specific in-tree storage plugin, the further operations related to that volume(unmount/detach/delete) will all fail when CSI migration for that 
+    plugin is not enabled. This is expected and user should not turn on this feature gate without CSI migration when there are still workloads using the 
+    corresponding in-tree storage plugin.
+    - There will be no impact when the feature is disabled at cluster runtime with or without workloads.
 
 * **What specific metrics should inform a rollback?**
   We have metrics on the CSI sidecar side called `csi_operation_duration_seconds` and core k8s metrics on both kube-controller-manager and kubelet side called `storage_operation_duration_seconds`. 
-  Both of them will have a `migrated` field to indicate whether this operation is a migrated PV operation. 
-    - For `csi_operation_duration_seconds`, we will have a `grpc_status` field
-    - For `storage_operation_duration_seconds`, we will have a `status` field
+  Both of them have a `migrated` field to indicate whether this operation is a migrated PV operation. 
+    - For `csi_operation_duration_seconds`, we have a `grpc_status` field
+    - For `storage_operation_duration_seconds`, we have a `status` field
   
   If the error ratio of these two metrics has an unusual strike or is keeping at a relatively higher level compared to in-tree model, it means something went wrong and we need a rollback.
 
@@ -249,7 +297,7 @@ For GA, we require such test exists in each driver's test CI.
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
 There will not be API removal in CSI migration itself. But eventually when CSI migration is all finished. We will plan to remove all in-tree plugins.
-So we will have in-tree plugin deprecated when CSIMigration{cloud-provider} goes to beta. And code removal will be required eventually.
+So we will have in-tree plugin deprecated when CSIMigration{vendor} goes to beta. And code removal will be required eventually.
 In addition, some CSI drivers are not able to maintain 100% backwards compatibility, so those drivers need to deprecate certain behaviors. 
 - vSphere [kubernetes#98546](https://github.com/kubernetes/kubernetes/pull/98546).
 - Azure drivers links TBD.
@@ -259,7 +307,7 @@ In addition, some CSI drivers are not able to maintain 100% backwards compatibil
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  We will have metrics `csi_sidecar_duration_seconds` on the CSI sidecars and `storage_operation_duration_seconds` on the kube-controller-manager and kubelet side to indicate whether this operation is a migrated operation or not. These metrics will have a `migrated` field to indicate if this is a migrated operation.
+  We have metrics `csi_sidecar_duration_seconds` on the CSI sidecars and `storage_operation_duration_seconds` on the kube-controller-manager and kubelet side to indicate whether this operation is a migrated operation or not. These metrics have a `migrated` field to indicate if this is a migrated operation.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
@@ -276,6 +324,7 @@ the health of the service?**
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 Node side CSI operation metrics. It will be implemented in the GA phase.
+GA Update: It has been implemented in [Kubernetes#PR#98979](https://github.com/kubernetes/kubernetes/pull/98979).
 
 ### Dependencies
 
@@ -320,6 +369,7 @@ Node side CSI operation metrics. It will be implemented in the GA phase.
   CSI migration specific fields:
   - The size of PV will increase with the new annotation `volume.beta.kubernetes.io/migrated-to`.
   - For existing in-line volumes, there will be a new field under `VolumeAttachment.Spec.Source.VolumeAttachmentSource.InlineVolumeSpec` that will be populated if in-line volumes of migrated in-tree plugin is used.
+  - For CSINode object that maps to a node which installs CSIDriver, if CSI Migration is turned on, a new annotation will be added `storage.alpha.kubernetes.io/migrated-plugins`
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
@@ -358,6 +408,64 @@ When the feature is not enabled, only provision/deletion/resize should fail.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   - Take the CSI driver log, kube-controller-manager log and kubelet log to analyze why the SLOs are not being met. What is the most error status and why is it error.
+  - For example, if the error occurs on volume provisioning side, there will be events on the PersistentVolume/PersistentVolumeClaim object to surface some error messages.
+    - If the error occurs from CSI driver side, fetch the corresponding csi driver logs as well as the csi-sidecar logs(csi-provisioner in this case). Looking for where the error was thrown and analyze the problem.
+    - If the error occurs from Kube-Controller-Manager side, take the Kube-Controller-Manager log and find logs related to pv_controller and pv_controller_base.
+    - If everything works fine for provisioning, you should see logs like this on Kube-Controller-Manager:
+    ```
+    I0121 17:33:51.866049       9 event.go:294] "Event occurred" object="default/podpvc-intree" kind="PersistentVolumeClaim" apiVersion="v1" type="Normal" reason="ExternalProvisioning" message="waiting for a volume to be created, either by external provisioner \"pd.csi.storage.gke.io\" or manually created by system administrator"
+    I0121 17:33:52.650352       9 pv_controller.go:887] volume "pvc-20b16944-176d-46dc-b164-dd6f9bd07351" entered phase "Bound"
+    I0121 17:33:52.650437       9 pv_controller.go:990] volume "pvc-20b16944-176d-46dc-b164-dd6f9bd07351" bound to claim "default/podpvc-intree"
+    I0121 17:33:52.665254       9 pv_controller.go:831] claim "default/podpvc-intree" entered phase "Bound"
+    ```
+    - And you should expect logs like these in the csi-provisioner:
+    ```
+    I0121 17:33:48.307191       1 csi-provisioner.go:215] Supports migration from in-tree plugin: kubernetes.io/gce-pd
+    I0121 17:33:48.532065       1 controller.go:1279] provision "default/podpvc-intree" class "slow": started
+    I0121 17:33:48.532186       1 controller.go:527] translating storage class for in-tree plugin kubernetes.io/gce-pd to CSI
+    ```
+    - The PV that gets provisioned should have annotations like `pv.kubernetes.io/migrated-to: pd.csi.storage.gke.io`.
+  - If there are issues regarding volume attachment. Check the api server VolumeAttachment objects to see if there are any events or error messages there. Check the pod that needs to attach the volume and see if there are error messages/events there.
+    - If the error occurs from CSI driver side, check the CSI driver log and csi-attacher logs to locate the issue.
+    - If the error occurs from Kube-Controller-Manager, check the logs from attach_detach_controller to find useful information.
+    - If everything works fine for attaching, you should see logs like this on Kube-Controller-Manager:
+    ```
+    util.go:313] "CSI Migration: Translate InTree Volume Spec to CSI" VolumeSpec=&{Volume:nil PersistentVolume:&PersistentVolume{ObjectMeta:{xxx
+    operation_generator.go:413] AttachVolume.Attach succeeded for volume "pvc-20b16944-176d-46dc-b164-dd6f9bd07351" (UniqueName: "kubernetes.io/csi/pd.csi.storage.gke.io^projects/UNSPECIFIED/zones/us-central1-b/disks/pvc-20b16944-176d-46dc-b164-dd6f9bd07351") from node "kubernetes-minion-group-c76l"
+    ```
+    - And you should expect logs like these in the csi-attacher, this proves that the VolumeAttachment object is created:
+    ```
+    I0121 17:33:54.751633       1 controller.go:208] Started VA processing "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    I0121 17:33:54.751669       1 csi_handler.go:218] CSIHandler: processing VA "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    I0121 17:33:54.751684       1 csi_handler.go:245] Attaching "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    I0121 17:33:54.751693       1 csi_handler.go:424] Starting attach operation for "csi-5c520a9e6aa4752597d0fcdc01a4fd5106ae643f3d969d3f4fe875d538f06aa1"
+    ```
+  - If there are issues regarding volume mount, check the error message or event from the pod that need to mount the volume.
+    - If the error occurs from the CSI driver side, check the CSI driver log to find the error that has been thrown.
+    - If the error occurs from the Kubelet side, check kubelet logs from the node that the pod was assigned to. Also, there will be logs from Kube-Controller-Manager which related to OperationExecutor and OperationGenerator that might provide some other insights related to the issue.
+    - You should expect logs from Kubelet regarding mount if it succeeded successfully:
+    ```
+    "MountVolume.MountDevice succeeded for volume \"pvc-20b16944-176d-46dc-b164-dd6f9bd07351\" device mount path \"/var/lib/kubelet/plugins/kubernetes.io/csi/pd.csi.storage.gke.io/******\"
+    "MountVolume.SetUp succeeded for volume \"pvc-20b16944-176d-46dc-b164-dd6f9bd07351\"
+    ```
+  - One of the most commonly seen failure scenario would be CSI driver is not installed but CSI migration is enabled. This could lead to volume operation failure. You can find logs like following in Kube-Controller-Manager. Note that the following logs also show up in successful cases too. In the error case though, the difference is there is no csi driver to act on it so there is no progress; installing the correct CSI driver should unblock the provisioning:
+    ```
+    I0125 04:59:14.147567      11 pv_controller.go:1730] provisionClaimOperationExternal provisioning claim "default/podpvc-intree": csi migration has been enabled for provisioner: kubernetes.io/gce-pd; waiting for a volume to be created, either by external provisioner "pd.csi.storage.gke.io" or manually created by system administrator
+    ```
+    There will also be events on PVC during provisioning
+    ```
+    Normal  ExternalProvisioning  4s (x2 over 4s)  persistentvolume-controller  csi migration has been enabled for provisioner: kubernetes.io/gce-pd; waiting for a volume to be created, either by external provisioner "pd.csi.storage.gke.io" or manually created by system administrator
+    ```
+    If the CSI driver is missing but the PVC already exists. Volume attach/detach will fail with the following log in Kube-Controller-Manager:
+    ```
+    E0125 11:54:12.388111       9 util.go:239] Error processing volume "mypvc" for pod "default"/"web-server": error performing CSI migration checks and translation for PVC "default"/"podpvc-intree": in-tree plugin kubernetes.io/gce-pd is migrated on node kubernetes-minion-group-hsv0 but driver pd.csi.storage.gke.io is not installed
+    ```
+  - If an error is occurred by a bug in the translation library, one can look at the logs of the csi parameters to see what the csi migration translation result was, the grpc parameters are logged in the CSI driver as well as the corresponding csi sidecars at verbose level 5. For example:
+    ```
+    I0126 07:23:30.882579       1 connection.go:184] GRPC request: {"accessibility_requirements":{"preferred":[{"segments":{"topology.gke.io/zone":"us-central1-b"}}],"requisite":[{"segments":{"topology.gke.io/zone":"us-central1-b"}}]},"capacity_range":{"required_bytes":21474836480},"name":"pvc-34b73b42-2754-4704-bc0a-80f6b089e9d0","parameters":{"csi.storage.k8s.io/pv/name":"pvc-34b73b42-2754-4704-bc0a-80f6b089e9d0","csi.storage.k8s.io/pvc/name":"podpvc-intree3","csi.storage.k8s.io/pvc/namespace":"default","replication-type":"none","type":"pd-standard"},"volume_capabilities":[{"AccessType":{"Mount":{"fs_type":"ext4"}},"access_mode":{"mode":1}}]}
+    I0126 07:23:34.864303       1 connection.go:186] GRPC response: {"volume":{"accessible_topology":[{"segments":{"topology.gke.io/zone":"us-central1-b"}}],"capacity_bytes":21474836480,"volume_id":"projects/xxxx/zones/us-central1-b/disks/pvc-34b73b42-2754-4704-bc0a-80f6b089e9d0"}}
+    ```
+  - If there is not any obvious error message or information surfaced but the SLOs are still not being meet, please contact your cloud-provider and the CSI driver owner for further assistance.
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
@@ -371,17 +479,38 @@ Major milestones in the life cycle of a KEP should be tracked in `Implementation
 
 Major milestones for each in-tree plugin CSI migration:
 
+- 1.25
+  - GCE PD CSI migration to GA
+- 1.24
+  - AWS EBS CSI migration to GA
+  - Azuredisk CSI migration to GA
+  - OpenStack Cinder CSI migration to GA
+  - Azurefile CSI migration to Beta, on by default
+  - vSphere CSI migration to Beta, on by default
+  - Cephfs CSI migration to Alpha
+  - Ceph RBD CSI migration to Beta, off by default
+  - Portworx CSI migration to Beta, off by default
+- 1.23
+  - AWS EBS CSI migration to Beta, on by default
+  - Azuredisk CSI migration to Beta, on by default
+  - GCE PD CSI migration to Beta, on by default
+  - Portworx CSI migration to Alpha
+  - Ceph RBD CSI migration to Alpha
 - 1.21
-  - Azurefile CSI migration to Beta
+  - Azurefile CSI migration to Beta, off by default
+  - OpenStack Cinder CSI migration to Beta, on by default
 - 1.19
-  - vSphere CSI migration to Beta
-  - Azuredisk CSI migration to Beta
+  - vSphere CSI migration to Beta, off by default
+  - Azuredisk CSI migration to Beta, off by default
+- 1.18
+  - vSphere CSI migration to Alpha
 - 1.17
-  - GCE PD CSI migration to Beta
-  - AWS EBS CSI migration to Beta
+  - GCE PD CSI migration to Beta, off by default
+  - AWS EBS CSI migration to Beta, off by default
 - 1.15
   - Azuredisk CSI migration to Alpha
   - Azurefile CSI migration to Alpha
 - 1.14
   - GCE PD CSI migration to Alpha
   - AWS EBS CSI migration to Alpha
+  - OpenStack Cinder CSI migration to Alpha

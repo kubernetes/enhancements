@@ -1,0 +1,41 @@
+title: Proxy Terminating Endpoints
+kep-number: 1669
+authors:
+  - "@andrewsykim"
+owning-sig: sig-network
+participating-sigs:
+  - sig-scalability
+reviewers:
+  - "@thockin"
+  - "@wojtek-t"
+  - "@smarterclayton"
+approvers:
+  - "@thockin"
+prr-approvers:
+  - "@johnbelamaric"
+creation-date: 2020-04-07
+last-updated: 2022-01-21
+status: implementable
+see-also:
+  - "/keps/sig-network/1672-tracking-terminating-endpoints/README.md"
+  - https://github.com/kubernetes/kubernetes/issues/85643
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.24"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.22"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ProxyTerminatingEndpoints
+    components:
+      - kube-proxy
+disable-supported: true

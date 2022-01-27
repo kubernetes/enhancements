@@ -285,8 +285,8 @@ be recognized as a single combined service. For example, if 5 clusters export
 all exporting clusters. Properties of the `ServiceImport` (e.g. ports, topology)
 will be derived from a merger of component `Service` properties.
 
-Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
-extended to present `ServiceImports` alongside traditional `Services`.
+This specification is not prescriptive on exact implementation details. Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
+extended to present `ServiceImports` alongside traditional `Services`. One often discussed implementation requiring no changes to kube-proxy is to have the mcs-controller maintain ServiceImports and create "dummy" or "shadow" Service objects, named after a mcs-controller managed EndpointSlice that aggregates all cross-cluster backend IPs, so that kube-proxy programs those endpoints like a regular Service. Other implementations are encouraged as long as the properties of the API described in this document are maintained.
 
 ### User Stories
 
@@ -791,6 +791,7 @@ cluster name and `multicluster.kubernetes.io/source-cluster` label may be used
 to find and remove all `EndpointSlices` containing endpoints from the
 unreachable cluster.
 
+
 ## Constraints and Conflict Resolution
 
 Exported services are derived from the properties of each component service and
@@ -870,19 +871,18 @@ when drafting this test plan.
 - A detailed DNS spec for multi-cluster services.
 - NetworkPolicy either solved or explicitly ruled out.
 - API group chosen and approved.
-- Implementation strategy defined and approved.
-- Kube-proxy can consume ServiceImport and EndpointSlice.
 - E2E tests exist for MCS services.
 - Beta -> GA Graduation criteria defined.
 - At least one MCS DNS implementation.
 - A formal plan for a standard Cluster ID.
 - Finalize a name for the "supercluster" concept.
+- [Cluster ID KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid) is in beta
 
 #### Beta -> GA Graduation
 
 - Scalability/performance testing, understanding impact on cluster-local service
   scalability.
-- Cluster ID defined, with at least one other multi-cluster use case.
+- [Cluster ID KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid) is GA, with at least one other multi-cluster use case.
 
 <!--
 **Note:** *Not required until targeted at a release.*

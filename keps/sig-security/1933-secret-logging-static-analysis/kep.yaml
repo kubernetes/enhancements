@@ -25,14 +25,14 @@ see-also:
 - /keps/sig-instrumentation/1602-structured-logging
 replaces: []
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.21"
+latest-milestone: "v1.23"
 
 milestone:
   alpha: "v1.20"
   beta: "v1.21"
-  stable: "v1.22"
+  stable: "v1.23"
 
 # This KEP enhances Kubernetes testing.  It does not directly impact any component.
 feature-gates: []

@@ -2,5 +2,10 @@ title: Move ExternalDNS out of Kubernetes incubator
 kep-number: 2449
 authors:
   - "@njuettner"
+approvers:
+  - bowei
+  - thockin
 owning-sig: sig-network
 status: implemented
+latest-milestone: '0.0'
+stage: stable

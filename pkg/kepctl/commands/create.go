@@ -20,6 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
+	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/proposal"
 	"k8s.io/enhancements/pkg/repo"
 )
@@ -89,7 +90,7 @@ func addCreate(topLevel *cobra.Command) {
 		&co.State,
 		"state",
 		"s",
-		"provisional",
+		string(api.ProvisionalStatus),
 		"KEP State",
 	)
 

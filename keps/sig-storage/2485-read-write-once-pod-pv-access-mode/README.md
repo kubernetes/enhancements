@@ -437,29 +437,48 @@ These access modes are modeled after the existing `MULTI_NODE_SINGLE_WRITER` and
 is because the `SINGLE_NODE_WRITER` volume capability has conflicting
 definitions (see the [motivation](#motivation) section for context).
 
-For CSI clients, the new ReadWriteOncePod Kubernetes access mode will map to the
-`SINGLE_NODE_SINGLE_WRITER` volume capability access mode in the CSI spec.
+In order to preserve backwards compatibility, we must be careful about how to
+map between Kubernetes access modes and the new CSI access modes. The way we
+control this is by maintaining different mappings based on the CSI driver's
+capabilities.
 
-For the ReadWriteOnce access mode, the value it maps to depends on the CSI
-driver. If the CSI driver supports the `SINGLE_NODE_MULTI_WRITER` access mode,
-then ReadWriteOnce will map to that value. If the CSI driver does not support
-the `SINGLE_NODE_MULTI_WRITER` access mode, then ReadWriteOnce will map to
-`SINGLE_NODE_WRITER` to preserve backwards compatibility. In order to determine
-which mapping to use, both the controller and node services should have
-capability bits for this access mode.
+Both the controller and node services should have capability bits that
+represent that they support the new access modes:
 
 ```protobuf
-      // Indicates the SP supports the SINGLE_NODE_MULTI_WRITER access
-      // mode.
+      // Indicates the SP supports the SINGLE_NODE_SINGLE_WRITER and/or
+      // SINGLE_NODE_MULTI_WRITER access modes.
+      // These access modes are intended to replace the
+      // SINGLE_NODE_WRITER access mode to clarify the number of writers
+      // for a volume on a single node. Plugins MUST accept and allow
+      // use of the SINGLE_NODE_WRITER access mode when either
+      // SINGLE_NODE_SINGLE_WRITER and/or SINGLE_NODE_MULTI_WRITER are
+      // supported, in order to permit older COs to continue working.
       SINGLE_NODE_MULTI_WRITER = 13;
 ```
 
+Although it controls support for two access modes, `SINGLE_NODE_MULTI_WRTIER`
+is chosen as the capability name because it represents the access mode that is
+unsupported.
+
+For ReadWriteOncePod, if the CSI driver supports the `SINGLE_NODE_MULTI_WRTER`
+capability, then ReadWriteOncePod will map to `SINGLE_NODE_SINGLE_WRITER`. If
+it does not, then ReadWriteOncePod will map to `SINGLE_NODE_WRITER`. This
+mapping is chosen because we can safely rely on Kubernetes to enforce the
+access mode outside of the CSI driver. It also has the advantage of enabling
+existing CSI drivers to start using ReadWriteOncePod.
+
+For ReadWriteOnce, if the CSI driver supports the `SINGLE_NODE_MULTI_WRITER`
+capability, then ReadWriteOnce will map to `SINGLE_NODE_MULTI_WRITER`. If it
+does not, then ReadWriteOnce will map to `SINGLE_NODE_WRITER`, which is the
+existing behavior.
+
 Put more succinctly:
 
-|                  | Driver Supports `SINGLE_NODE_*_WRITER` | Driver Does Not Support `SINGLE_NODE_*_WRITER`    |
-|------------------|----------------------------------------|---------------------------------------------------|
-| ReadWriteOncePod | SINGLE_NODE_SINGLE_WRITER              | Don't use ReadWriteOncePod if driver is incapable |
-| ReadWriteOnce    | SINGLE_NODE_MULTI_WRITER               | SINGLE_NODE_WRITER (Existing behavior)            |
+|                  | Driver Supports `SINGLE_NODE_MULTI_WRITER` Capability | Driver Does Not Support `SINGLE_NODE_MULTI_WRITER` Capability |
+|------------------|-------------------------------------------------------|---------------------------------------------------------------|
+| ReadWriteOncePod | SINGLE_NODE_SINGLE_WRITER                             | SINGLE_NODE_WRITER                                            |
+| ReadWriteOnce    | SINGLE_NODE_MULTI_WRITER                              | SINGLE_NODE_WRITER (Existing behavior)                        |
 
 CSI clients that will need updating are kubelet, external-provisioner,
 external-attacher, and external-resizer.

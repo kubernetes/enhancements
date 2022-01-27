@@ -472,41 +472,66 @@ Because Windows privileged containers will work much differently than Linux priv
 ![Privileged Container Diagram](Privileged.png)
 
 #### Networking
+
 - The container will be in the host’s network namespace (default network compartment) so it will have access to all the host’s network interfaces and have the host's IP as well.
 
 #### Resource Limits
-- Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
-- Disk resource tracking may work slightly differently for privileged Windows containers due to how these containers are bootstrapped. The extent of these differences are still being investigated but will be fully documented when understood. Resource usage will be trackable the differences would be in how resource usage is calculated.
 
-#### Container Lifecycle 
+- Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
+- Disk resource tracking may work slightly differently for `hostProcess` containers due to how these containers are bootstrapped. Resource usage will be trackable and the differences would be in how resource usage is calculated.
+
+#### Container Lifecycle
+
 - The container's lifecycle will be managed by the container runtime just like other Windows container types.
 
 #### Container users
 
-- The privileged container can run as any user that's available on the host or in the domain of the host machine. Password accounts are being investigated.
+- The `hostProcess` container can run as any user that's available on the host or in the domain of the host machine.
 Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
 More information on Windows resource access can be found at https://docs.microsoft.com/en-us/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions.
+- Note: Support for local accounts with passwords is being investigated. Support for this scenario will most likely involve retrieving credential from the 'Windows Credential Manager' as shown in the following [proposed hcsshim changes](https://github.com/marosset/hcsshim/commit/cf42f301cf507f98d7137c8be008902306df9609). Any changes here will not require any changes to Kubernetes or pod/deployment manifests.
 
 #### Container Mounts
 
-- When privileged containers are started a new volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume. Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
-Note: there will be no `chroot` equivalent.
-- An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted.
+- When `hostProcess` containers are started a new Windows volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume.
+Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
+  - Note: there will be no `chroot` equivalent.
+- An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted for `hostProcess` containers.
+  - Note: Syntax for referencing environment variables differs depending on what shell you are using. In cmd.exe env vars are surrounded by %'s (ex: `%CONTAINER_SANDBOX_MOUNT_POINT%`) and in powershell env vars are prefixed with $env: (ex: `$env:CONTAINER_SANDBOX_MOUNT_POINT`).
+  - This environment variable will be set to `c:\c\<containerid>\` (trailing \ included!) for each container.
+  - This environment variable can be used inside the Pod manifest / command line args for containers. See files in this [pull request](https://github.com/kubernetes-sigs/sig-windows-tools/pull/161/files#diff-b8195f7a2ad8f9ae9ebdd1bde8a0f3756c4508c1d9d9dd99f4a3bfa19fc3b828R135) for examples of using `$CONTAINER_SANDBOX_MOUNT_POINT` inside deployment manifests.
+- `$CONTAINER_SANDBOX_MOUNT_POINT` will not be set for non-`hostProcess` containers.
 - Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
-- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess`containers. This will be re-evaluated when transistioning from `alpha` to `beta` as we get more feedback.
-Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
-- Named Pipe mounts will **not** be supported. Instead named pipes should access via their path on the host (\\\\.\\pipe\\*). Unix domain sockets mounts **will** be supported.
-- All other volume types supported for normal containers on Windows will work with privileged containers.
+  - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` (trailing \ included) would be the root instead of `c:\c\<container id>\`).
+  This would make it so files from volume mounts would be accessible via relative paths (ex: `/foo.exe` instead of needing to specify `$CONTAINER_SANDBOX_MOUNT_POINT/foo.exe`)
+  HostProcess containers would still have full access to the host file-system and `$CONTAINER_SANDBOX_MOUNT_POINT` would continue to be set so that workloads which already access files from inside volume months using this environment variable would continue to work without modification.
+  https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
+  This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done before this features becomes stable.
+
+- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers.
+The decision to update client libraries (or not) will be postponed until the above mentioned merged container/OS filesystem investigations are concluded. Until then various workloads running in `hostProcess` containers need to communicate with the cluster can inject the `$CONTAINER_SANDBOX_MOUNT_POINT` environment variables into a kubeconfig file manually. Here is an example of how to do this today - https://github.com/jsturtevant/sig-windows-tools/blob/c9be1f0a9e95a34fda91bb7e8fc519e3447d8d93/hostprocess/calico/kube-proxy/start.ps1#L44-L52.
+  - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after `hostProcess` containers while this feature is in `alpha`.
+  - [kubernetes/kubernetes#104490](https://github.com/kubernetes/kubernetes/pull/104490) adds support for `HostProcess` containers to the golang client library.
+- Named Pipe mounts will **not** be supported. Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
+  - The following error will be returned if `hostProcess` containers attempt to use name pipe mounts - https://github.com/microsoft/hcsshim/blob/358f05d43d423310a265d006700ee81eb85725ed/internal/jobcontainers/mounts.go#L40.
+- Unix domain sockets mounts support will be added before `HostProcess` containers graduate to `stable`. For `alpha` and `beta` Unix domain sockets can be accessed via their paths on the host like named pipes.
+  - The Windows APIs needed to support mounting unix domain socket mounts in `hostProcess` containers was introduced in Windows Server Ver, 2004. Microsoft is planning on backporting these APIs to Windows Server 2019 (min support Windows Server OS) to provide a consistent user experience.
+- Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers - kubelet will explicitly block this scenario.
+- All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
 
 #### Container Images
 
-- Privileged containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
-- A slim base image may be introduced to act as a replacement for [scratch]. On windows graphdriver calls expect some files (mainly registry hives) and these would be included in the slim base image.
-- Privileged containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to skip OS version checks when pulling/starting these containers in the future. This will continue to be investigated as the feature matures.
+- `HostProcess` containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
+- A new Windows container base image will not be introduced for `HostProcess` containers.
+- It is recommended to use nanoserver as the base image for `hostProcess` containers since it has the smallest footprint.
+- `HostProcess` containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to identify `HostProcess` containers and skip OS version checks when pulling/starting these containers in the future.
 
 #### Container Image Build/Definition
 
-- This is another ongoing area of investigation and open to feedback. Currently only a subset of dockerfile operations are supported (ADD, COPY, PATH, ENTRYPOINT, etc).
+- `HostProcess` container images can be built with Docker.
+- Only a subset of dockerfile operations will be supported (ADD, COPY, PATH, ENTRYPOINT, etc).
+  - Note: The subset of dockerfile operations supported for `HostProcess` containers is very close to the subset of operations supported when building images for other OS's with buildkit (similar to how the [pause image](https://github.com/kubernetes/kubernetes/tree/master/build/pause) is built in kubernetes/kubernetes)
+- Documentation on building `HostProcess` containers will be added at either docs.microsoft.com or a new github repository.
 
 ### CRI Implementation Details
 
@@ -690,6 +715,8 @@ Beta
 - Validate running kubeproxy as a daemon set
 - Validate CSI-proxy running as a daemon set
 - Validate running a CNI implementation as a daemon set
+- Validate behaviors of various volume mount types as described in [Container Mounts](#container-mounts) with e2e tests
+- Add e2e tests to test different ways to construct paths for container command, args, and workingDir fields for both `hostProcess` and non-hostProcess containers. These tests will include constructing paths with and without `$CONTAINER_SANDBOX_MOUNT_POINT` set and with different combinations of forward and backward slashes.
 
 ### Graduation Criteria
 
@@ -757,22 +784,25 @@ Alpha plan
 
 Graduation to Beta
 
-(https://github.com/kubernetes/kubernetes/pull/99576#discussion_r635392090)
+- Kubernetes Target 1.23
+- Set `WindowsHostProcessContainers` feature gate to `beta`
 - Go through PSP Linux test (e2e: validation & conformance) and make them relevant for Windows (which apply, which don't and where we need to write new tests).
-- Provide guidance similar to Pod Security Standards for Windows privileged containers
-- Containerd: v1.5
-- Kubernetes Target 1.23 or later
-- OS support: Windows 2019 LTSC and all future versions of Windows Server
-- Beta Feature Gate for passing privilege flag to CRI
-- Extensive documentation around `HostProcess` containers on https://kubernetes.io/
-  - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits)
-- Ensure that ephemeral containers are validated for HostProcess requirements
-- Remove the `windowsHostProcessContainer` label used for hostprocess annotations. Requires updating Containerd to support hostprocess directly.  
+- Provide guidance similar to Pod Security Standards for Windows privileged containers.
+- CRI Support for HostProcess containers.
+  - Containerd release is available with HostProcess support (Either v1.6 OR changes backported to a v1.5 patch) - (https://github.com/containerd/containerd/pull/5131)
+  - [Windows Host Process annotations](https://github.com/kubernetes/kubernetes/blob/7705b300e2085c3864bb1e49a7302bf17f080219/pkg/kubelet/kuberuntime/labels.go#L46-L50) removed from CRI. (Discussed at (https://github.com/kubernetes/kubernetes/pull/99576#discussion_r635392090))
+- OS support: Windows 2019 LTSC and all future versions of Windows Server.
+- Documentation for `HostProcess` containers on https://kubernetes.io/.
+  - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits).
+  - Documentation on docs.microsoft.com for building `HostProcess` container images.
+- Update validation logic for `HostProcess` containers in api-server to handle [ephemeral containers](https://github.com/kubernetes/enhancements/tree/d4aa2b45412bae677e14d44477a73288e3e987fc/keps/sig-node/277-ephemeral-containers)
+  - Note: If ephemeral container is also a `HostProcess` container then all containers in the pod must also be `HostProcess` containers (and vise versa).
 
 Graduation to GA:
 
 - Address any issues uncovered in alpha/beta
-- Remove feature gate for passing privileged flag
+- Set `WindowsHostProcessContainers` feature gate to `GA`
+- TBD
 
 ### Upgrade / Downgrade Strategy
 
@@ -841,7 +871,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: WindowsPrivilegedContainers
+    - Feature gate name: WindowsHostProcessContainers
     - Components depending on the feature gate: Kubelet, kube-apiserver
   - [ ] Other
     - Describe the mechanism:
@@ -889,50 +919,42 @@ fields of API types, flags, etc.?**
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  Kubelet metrics will be updated to report the number of HostProcess containers started and number of errors started.
+
+  TBD: Confirm the best way to accomplish this is to add new [values/metric labels](https://github.com/kubernetes/kubernetes/blob/fe099b2abdb023b21a17cd6a127e381b846c1a1f/pkg/kubelet/metrics/metrics.go#L96-L99) for `StartedContainersTotal` and `StartedContainersError` counters. Otherwise we could add new counters.
+
+
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+  - [x] Metrics
+    - Metric name: Add labels to report counts of `HostProcess` containers (host_process_container, host_process_init_container, and host_process_ephemeral_container) to `started_containers_total` and `started_containers_errors_total`
+    TODO: get confirmation from sig-node / ehashman
     - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - Components exposing the metric: Kubelet
   - [ ] Other (treat as last resort)
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+ The same SLOs for starting/stopping non-hostprocess containers would apply here.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+  N/A
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
+  - [ContainerD]
     - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+      - `HostProcess` containers support will not be added to dockershim.
+      - Containerd v1.5.6+ is required.
+      - Impact of its outage on the feature: Containers will fail to start.
+      - Impact of its degraded performance or high-error rates on the feature: Containers may behave expectantly and node may go into the NotReady state.
 
 ### Scalability
 
@@ -964,7 +986,7 @@ operations covered by [existing SLIs/SLOs]?**
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  No - Privileged containers will honor limits/reserves specified in the specs and will count against node quota just like unprivilged containers.
+  No - `HostProcess` containers will honor limits/reserves specified in the specs and will count against node quota just like unprivileged containers.
 
 ### Troubleshooting
 
@@ -975,25 +997,26 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  This feature will not change any behaviors around Pod scheduling if API server and/or etcd is unavailable.
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  N/A
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
+  Kubelet and/or containerd logs will need to be inspected if problems are encountered creating HostProcess containers on Windows nodes.
+
 ## Implementation History
+
+- **2020-09-11:** [Issue #1981](https://github.com/kubernetes/enhancements/issues/1981) created.
+- **2021-12-17:** Initial KEP draft merged - [#2037](https://github.com/kubernetes/enhancements/pull/2037).
+- **2021-02-17:** KEP approved for alpha release - [#2288](https://github.com/kubernetes/enhancements/pull/2288).
+- **2021-05-20:** Alpha implementation PR merged - [kubernetes/kubernetes#99576](https://github.com/kubernetes/kubernetes/pull/99576).
+- **2021-08-05:** K8s 1.22 released with alpha support for `HostProcess` containers.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

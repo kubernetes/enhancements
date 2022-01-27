@@ -139,6 +139,7 @@ workflows e.g. reuse of phase `certs` in both `kubeadm init` and `kubeadm join` 
 * v1.14 implementation of phases in the `kubeadm join` workflow
 * v1.15 implementation of phases in the `kubeadm upgrade node` workflow
 * v1.17 implementation of phases in the `kubeadm upgrade apply` workflow (planned)
+- v1.24 retroactively promoted to Beta. `upgrade apply` might need a separate KEP.
 
 ## Drawbacks
 

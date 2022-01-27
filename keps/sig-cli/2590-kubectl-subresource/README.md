@@ -89,7 +89,7 @@ new flag `--subresource=[subresource-name]` which will allow fetching and updati
 `status` and `scale` subresources for all API resources.
 
 Note that the API contract against the subresource is identical to a full resource. Therefore updating
-the status subresource to hold new value which could protentially be reconciled by a controller 
+the status subresource to hold new value which could potentially be reconciled by a controller 
 to a different value is *expected behavior*.
 
 If `--subresource` flag is used for a resource that doesn't support the subresource, 
@@ -119,11 +119,11 @@ nginx-deployment   3                 3
 # for CRDS
 # a `get` on a status subresource will return identical information
 # to that of a full resource
-$ kubectl get crontab cron--subresource=status
+$ kubectl get crontab cron --subresource=status
 NAME   SPEC          REPLICAS   AGE
 cron   * * * * */5   3          4m52s
 
-$ kubectl get vmset vmset-1 --subresource=scale
+$ kubectl get crontab cron --subresource=scale
 NAME   DESIREDREPLICAS   AVAILABLEREPLICAS
 cron   3                 0
 ```
@@ -147,7 +147,7 @@ $ kubectl patch deployment nginx-deployment --subresource='scale' --type='merge'
 scale.autoscaling/nginx-deployment patched
 
 # spec.replicas is updated for the main resource
-$ k get deploy nginx-deployment
+$ kubectl get deploy nginx-deployment
 NAME               READY   UP-TO-DATE   AVAILABLE   AGE
 nginx-deployment   2/2     2            2           4m
 

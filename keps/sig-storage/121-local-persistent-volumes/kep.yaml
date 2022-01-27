@@ -23,3 +23,5 @@ see-also:
 replaces:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md"
 superseded-by:
+latest-milestone: '0.0'
+stage: stable

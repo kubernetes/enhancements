@@ -26,6 +26,7 @@ approvers:
 creation-date: 2020-01-22
 latest-milestone: v1.19
 status: implemented
+stage: stable
 see-also:
 replaces:
 superseded-by:

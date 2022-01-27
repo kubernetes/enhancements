@@ -111,7 +111,7 @@ shutdown order.
 
 This implementation builds on top of the node graceful shutdown feature
 by introducing additional configuration. A new feature flag called
-`PodPriortityBasedGracefulShutdown` will be added to control the behavior
+`GracefulNodeShutdownBasedOnPodPriority` will be added to control the behavior
 of the kubelet.
 
 We will describe the configuration by using an example. Say, the
@@ -174,8 +174,8 @@ get the difference of total time and critical pods time):
 
 |Pod priority class value|Shutdown period|
 |------------------------|---------------|
-| 2000000000             |180 seconds    |
-| 0                      |120 seconds    |
+| 2000000000             |120 seconds    |
+| 0                      |180 seconds    |
 
 Kubelet will be modified to only work with the config proposed in this KEP or the
 Node shutdown KEP. If both are specified, then it will be treated as a configuration
@@ -188,16 +188,16 @@ Same as the graceful shutdown KEP.
 ## Design Details
 
 The configuration will be controlled by a new Kubelet Config setting,
-`kubeletConfig.PodPriorityShutdownGracePeriods`:
+`kubeletConfig.ShutdownGracePeriodByPodPriority`:
 
 ```
-type PodPriorityShutdownGracePeriod struct {
+type ShutdownGracePeriodByPodPriority struct {
 	Priority int32
 	ShutdownGracePeriodSeconds int64
 }
 
 type KubeletConfiguration struct {
-  PodPriorityShutdownGracePeriods []PodPriorityShutdownGracePeriod
+  ShutdownGracePeriodByPodPriority []ShutdownGracePeriodByPodPriority
 }
 ```
 
@@ -292,7 +292,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: `PodPriorityBasedGracefulNodeShutdown`
+    - Feature gate name: `GracefulNodeShutdownBasedOnPodPriority`
     - Components depending on the feature gate:
       - `kubelet`
   - [ ] Other

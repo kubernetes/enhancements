@@ -14,7 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Proposed Change](#proposed-change)
-  - [Implementation strategy of reject-non-smt-aligned CPU Manager policy option](#implementation-strategy-of-reject-non-smt-aligned-cpu-manager-policy-option)
+  - [Implementation strategy of full-pcpus-only CPU Manager policy option](#implementation-strategy-of-full-pcpus-only-cpu-manager-policy-option)
   - [Resource Accounting](#resource-accounting)
   - [Alternatives](#alternatives)
     - [Add extra resources](#add-extra-resources)
@@ -27,6 +27,9 @@
     - [Alpha](#alpha)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
     - [Beta to G.A Graduation](#beta-to-ga-graduation)
+  - [Graduation Criteria of Options](#graduation-criteria-of-options)
+    - [Graduation of Options to <code>Beta-quality</code> (non-hidden)](#graduation-of-options-to--non-hidden)
+    - [Graduation of Options from <code>Beta-quality</code> to <code>G.A-quality</code>](#graduation-of-options-from--to-)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -43,16 +46,16 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements](https://github.com/kubernetes/enhancements/issues/2404)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements](https://github.com/kubernetes/enhancements/issues/2404)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
 - ~~ [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io] ~~
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -114,30 +117,30 @@ The impact in the shared codebase will be addressed enhancing the current testsu
 
 We propose to
 - add a new flag in Kubelet called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` which allows the user to specify the CPU Manager policy option.
-- add a new cpu manager option called `reject-non-smt-aligned`; if present, this option will enable further refinements of the existing static policy.
+- add a new cpu manager option called `full-pcpus-only`; if present, this option will enable further refinements of the existing static policy.
 
 The static policy allocates CPUs using a topology-aware best-fit allocation. This enhancement wants to provide stronger guarantees by restricting the allocation of threads.
 The aim is to achieve the isolation for workloads managed by Kubernetes. The other part of isolation is (as of now) not managed by Kubernetes, as described in [Explicitly Reserved CPU List](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#explicitly-reserved-cpu-list) and [Static policy](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#static-policy).
 
-Let's summarize the key properties of the `reject-non-smt-aligned` option:
+Let's summarize the key properties of the `full-pcpus-only` option:
 - Preserve all the properties of the `static` policy.
 - Never allocate less than a physical-cpu worth amount of cores.
 - With this requirement enforced, the CPUManager allocation algorithm will guarantee avoidance of physical core sharing.
 - Should the node not have enough free physical cores, the Pod will be put in Failed state, with `SMTAlignmentError` as reason.
 
-### Implementation strategy of reject-non-smt-aligned CPU Manager policy option
+### Implementation strategy of full-pcpus-only CPU Manager policy option
 
-- In order to introduce the SMT-alignment check in CPU Manager, we introduce a new flag in Kubelet to allow the user to specify `cpumanager-policy-options` which when specified with `reject-non-smt-aligned` as its value provides the capability to modify the behaviour of static policy to strictly guarantee allocation of whole cores to a workload.
+- In order to introduce the SMT-alignment check in CPU Manager, we introduce a new flag in Kubelet to allow the user to specify `cpumanager-policy-options` which when specified with `full-pcpus-only` as its value provides the capability to modify the behaviour of static policy to strictly guarantee allocation of whole cores to a workload.
 - The `CPUManagerPolicyOptions` received from the kubelet config/command line args is propogated to the Container Manager.
 - The responsibility of admission control is centralized in containermanager. The resource managers and/or the resource allocation orchestrator (Topology Manager) still have the responsibility of running the checks to admit the pods, but the handling of these errors and the building of the pod lifecycle result are now factored in containermanager.
 - Prior to this feature, the Container Manager admission handler was delegated to the topology manager if the latter was enabled. This worked well under the assumption that only Topology Manager had the ability to reject admissions with pods. But with the introduction of this feature, the CPU Manager also needs the ability to possibly reject pods if strict SMT alignment is requested. In order to do so, we introduce a new error and let it drive the rejection. Due to an already existing dependency between CPUManager and TopologyManager as the former imports the latter in order to support the `topologymanager.HintProvider` interface, container manager is considered as the appropriate for performing admission control.
-- When `reject-non-smt-aligned` policy option is specified along with `static` CPU Manager policy, an additional check in the allocation logic of the `static` policy ensures that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores.
+- When `full-pcpus-only` policy option is specified along with `static` CPU Manager policy, an additional check in the allocation logic of the `static` policy ensures that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores.
 - In case request translates to partial occupancy of the cores, the Pod will not be admitted and would fail with `SMTAlignmentError`.
 
 
 ### Resource Accounting
 
-To illustrate the behaviour of the `reject-non-smt-aligned` policy option, we will consider the following CPU topology. We will use as example a CPU package with 16 physical cores, 2-way SMT-capable.
+To illustrate the behaviour of the `full-pcpus-only` policy option, we will consider the following CPU topology. We will use as example a CPU package with 16 physical cores, 2-way SMT-capable.
 
 ![Example Topology](smtalign-topology.png)
 
@@ -162,11 +165,11 @@ spec:
         cpu: "5"
 ```
 
-The `reject-non-smt-aligned` policy option will cause the pod to be rejected since it doesn't request enough cores to consume all virtual threads exposed by the CPU.
+The `full-pcpus-only` policy option will cause the pod to be rejected since it doesn't request enough cores to consume all virtual threads exposed by the CPU.
 
  would need to make sure the remaining core on the half-allocated physical CPU is left unallocated to avoid noisy neighbours.
 
-![Example core allocation with the reject-non-smt-aligned policy option when requesting a odd number of cores](smtalign-allocation-odd-cores.png)
+![Example core allocation with the full-pcpus-only policy option when requesting a odd number of cores](smtalign-allocation-odd-cores.png)
 
 The container will then actually get more virtual cores (6) than what is requesting (5).
 
@@ -250,7 +253,7 @@ We would like to mention a further extension of this work, which we are *not* pr
 A further subset of the latency sensitive class of workload we identified (CNF, HFT) benefits most of non-SMT system, delivering the best possible performance here.
 For these applications, just disabling SMT at machine level solves the need of the workload, but overall creates worse usage of hardware resources and poorer container density.
 
-Another policy option, or a further refinement of `reject-non-smt-aligned`, which enables non-SMT emulation on SMT-enabled system would allow to accommodate these needs, but this would cause even more significant resource accounting mismatches
+Another policy option, or a further refinement of `full-pcpus-only`, which enables non-SMT emulation on SMT-enabled system would allow to accommodate these needs, but this would cause even more significant resource accounting mismatches
 as described above. Furthermore, at the moment of writing we are still assessing how large is the set of the classes which benefit of these extra guarantees.
 
 For all these reasons we postponed this work to a later date.
@@ -268,9 +271,33 @@ The [implementation PR](https://github.com/kubernetes/kubernetes/pull/101432) wi
 #### Alpha to Beta Graduation
 - [X] Gather feedback from the consumer of the policy.
 - [X] No major bugs reported in the previous cycle.
+- [X] Use of this policy option to further configure the behavior of CPU manager. Another CPUManager policy option `distribute-cpus-across-numa` is being proposed in 1.23 release to distribute CPUs across NUMA nodes instead of packing them.
 
 #### Beta to G.A Graduation
 - [X] Allowing time for feedback (1 year).
+- [X] Risks have been addressed.
+
+### Graduation Criteria of Options
+
+In 1.23 release, as we are graduating this feature to Beta meaning `CPUManagerPolicyOptions` is enabled by default allowing the user to configure CPU Manager static policy with the option `full-pcpus-only`.
+NOTE: Even though the feature gate is enabled by default the user still has to explicitly use the Kubelet flag called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` along with a specific policy option to use this feature.
+- In addition to this, in order to not have all alpha-quality experimental options introduced in the future available by default, we are introducing an additional feature gates called `CPUManagerPolicyAlphaOptions` and `CPUManagerPolicyBetaOptions`.
+  These feature gates control all the non-stable options. We introduce feature gates guarding groups of options to avoid the proliferation of feature gates, and to make the management easier: tracking a feature gate per option would be too cumbersome.
+  The alpha-quality options are hidden by default and only if the `CPUManagerPolicyAlphaOptions` feature gate is enabled the user has the ability to use them.
+  The beta-quality options are visible by default, and the feature gate allows a positive acknowledgement that non stable features are being used, and also allows to optionally turn them off.
+  Based on the graduation criteria described below, a policy option will graduate from a group to the other (alpha to beta).
+  We plan to removete the `CPUManagerPolicyAlphaOptions` and `CPUManagerPolicyBetaOptions` after all options graduated to stable, after a feature cycle passes without new planned options, and not before 1.28, to give ample time to the work in progress option to graduate at least to beta.
+- Since the feature that allows the ability to customize the behaviour of CPUManager static policy as well as the CPUManager Policy option `full-pcpus-only` were both introduced in 1.22 release and meet the above graduation criterion, `full-pcpus-only` would be considered as a non-hidden option i.e. available to be used when explicitly used along with `CPUManagerPolicyOptions` Kubelet flag in the kubelet config or command line argument called `cpumanager-policy-options` .
+-  The introduction of this new feature gate gives us the ability to move the feature to beta and later stable without implying all that the options are beta or stable.
+
+The graduation Criteria of options is described below:
+
+#### Graduation of Options to `Beta-quality` (non-hidden)
+- [X] Gather feedback from the consumer of the policy option.
+- [X] No major bugs reported in the previous cycle.
+
+#### Graduation of Options from `Beta-quality` to `G.A-quality`
+- [X] Allowing time for feedback (1 year) on the policy option.
 - [X] Risks have been addressed.
 
 ### Upgrade / Downgrade Strategy
@@ -287,17 +314,23 @@ No changes needed
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`).
     - Feature gate name: `CPUManagerPolicyOptions`.
+    - Feature gate name: `CPUManagerPolicyBetaOptions`.
+    - Feature gate name: `CPUManagerPolicyAlphaOptions`.
     - Components depending on the feature gate: kubelet
-  - [X] Change the kubelet configuration to set the CPUManager policy to `configurable`
-  - [X] Change the kubelet configuration adding the CPUManager policy option to `reject-non-smt-aligned`
+  - [X] Change the kubelet configuration adding the CPUManager policy option to `full-pcpus-only`
 * **Does enabling the feature change any default behavior?**
-  - Yes, it makes the behaviour of the CPUManager static policy more restrictive and can lead to pod admission rejection.
+  - Enabling the `CPUManagerPolicyOptions` makes the behaviour of the CPUManager static policy more restrictive and can lead to pod admission rejection.
+  - Enabling the `CPUManagerPolicyAlphaOptions` provides the ability to use alpha-quality options which can change the behaviour of the CPUManager static policy.
+  - Enabling the `CPUManagerPolicyBetaOptions` provides the ability to use beta-quality options which can change the behaviour of the CPUManager static policy.
+    This allows a positive acknowledgment from the cluster admin that they are using a non-stable feature; additionally, the feature gate allows to _disable_ a set of options.
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
-  - Yes, disabling the feature gate shuts down the feature completely; alternatively,
-  - Yes, through kubelet configuration - switch to a different policy.
+  - Yes, disabling the `CPUManagerPolicyOptions` feature gate shuts down the feature completely; alternatively through kubelet configuration - switch to a different policy.
+  - Also, disabling `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` feature gates disables the use of non-stable options, respectively alpha or beta quality,
+    and the behavior would depend on how `CPUManagerPolicyOptions` feature gate is configured.
+  - Disabling both the feature gates would allow complete rollback of this enablement. 
 * **What happens if we reenable the feature if it was previously rolled back?** No changes. Existing container will not see their allocation changed. New containers will.
 * **Are there any tests for feature enablement/disablement?**
-  - A specific e2e test will demonstrate that the default behaviour is preserved when the feature gate is disabled, or when the feature is not used (2 separate tests)
+  - A specific e2e test will demonstrate that the default behaviour is preserved when the `CPUManagerPolicyOptions` feature gate is disabled, or when the feature is not used (2 separate tests)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -309,7 +342,7 @@ No changes needed
 
 ### Monitoring requirements
 * **How can an operator determine if the feature is in use by workloads?**
-  - Inspect the kubelet configuration of the nodes: check feature gate and usage of the new option
+  - Inspect the kubelet configuration of the nodes: check feature gates and usage of the new options
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - No change
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** N/A.
@@ -332,7 +365,7 @@ No changes needed
 ### Troubleshooting
 
 * **How does this feature react if the API server and/or etcd is unavailable?**: No effect.
-* **What are other known failure modes?** TBD
+* **What are other known failure modes?** No known failure mode.
 * **What steps should be taken if SLOs are not being met to determine the problem?** N/A
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
@@ -349,3 +382,6 @@ No changes needed
 - 2021-05-10: KEP update to add to rename the `smtalign` to `reject-non-smt-aligned` for better clarity and address review comments
 - 2021-05-11: KEP update to add to the `configurable` alias and address review comments
 - 2021-05-13: KEP update to postpone the `configurable` alias, per review comments
+- 2021-09-02: KEP update to capture the policy name `full-pcpus-only` based on the implementation merged in 1.22, explain how this feature is being used for introduction of another policy option and updates pertaining to promotion of the feature to Beta.
+- 2021-09-08: KEP update to introduce `CPUManagerPolicyExperimentalOptions` feature gate to prevent alpha-quality options from being non-hidden (available) by default and explain the graduation criteria of the options.
+- 2021-09-27: KEP update to split `CPUManagerPolicyExperimentalOptions` feature gate into `CPUManagerPolicyAlphaOptions` and `CPUManagerPolicyBetaOptions` after discussion on [sig-arch](https://groups.google.com/u/1/g/kubernetes-sig-architecture/c/Nxsc7pfe5rw)

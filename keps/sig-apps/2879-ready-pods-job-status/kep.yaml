@@ -1,0 +1,35 @@
+title: Track ready Pods in Job status
+kep-number: 2879
+authors:
+  - "@alculquicondor"
+owning-sig: sig-apps
+participating-sigs:
+status: implementable
+creation-date: 2021-08-19
+reviewers:
+  - "@soltysh"
+  - "@lavalamp"
+approvers:
+  - "@soltysh"
+
+see-also:
+replaces:
+
+stage: beta
+
+latest-milestone: "v1.24"
+
+milestone:
+  alpha: "v1.23"
+  beta: "v1.24"
+
+feature-gates:
+  - name: JobReadyPods
+    components:
+    - kube-controller-manager
+    - kube-apiserver
+disable-supported: true
+
+metrics:
+  - job_sync_duration_seconds
+  - job_sync_total

@@ -41,12 +41,11 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Optional Future Extensions](#optional-future-extensions)
+  - [Automated PSP migration tooling](#automated-psp-migration-tooling)
   - [Rollout of baseline-by-default for unlabeled namespaces](#rollout-of-baseline-by-default-for-unlabeled-namespaces)
-  - [Custom Profiles](#custom-profiles)
   - [Custom Warning Messages](#custom-warning-messages)
   - [Windows restricted profile support](#windows-restricted-profile-support)
   - [Offline Policy Checking](#offline-policy-checking)
-  - [Event recording](#event-recording)
   - [Conformance](#conformance)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
@@ -225,13 +224,7 @@ field wasn't added until Kubernetes v1.8, and all containers prior to v1.8 impli
 - `true` (equal in privilege to a v1.7 pod that didn't set the field)
 - `false` (strictly less privileged than other allowed values)
 
-<<[UNRESOLVED]>>
-
-_Blocking for Beta._
-
-How long will old profiles be kept for? What is the removal policy?
-
-<<[/UNRESOLVED]>>
+Definitions of policy levels for previous versions will be kept in place indefinitely.
 
 ### PodTemplate Resources
 
@@ -265,11 +258,10 @@ leveraging the library implementation.
 
 When an `enforce` policy (or version) label is added or changed, the admission plugin will test each pod
 in the namespace against the new policy. Violations are returned to the user as warnings. These
-checks have a timeout of XX seconds and a limit of YY pods, and will return a warning in the event
+checks have a timeout of 1 second and a limit of 3,000 pods, and will return a warning in the event
 that not every pod was checked. User exemptions are ignored by these checks, but runtime class
-exemptions still apply. Namespace exemptions are also ignored, but an additional warning will be
-returned when updating the policy on an exempt namespace. These checks only consider actual Pod
-resources, not [templated pods].
+exemptions and namespace exemptions still apply when determining whether to check the new `enforce` policy
+against existing pods in the namespace. These checks only consider actual Pod resources, not [templated pods].
 
 These checks are also performed when making a dry-run request, which can be an effective way of
 checking for breakages before updating a policy, for example:
@@ -278,23 +270,17 @@ checking for breakages before updating a policy, for example:
 kubectl label --dry-run=server --overwrite ns --all pod-security.kubernetes.io/enforce=baseline
 ```
 
-<<[UNRESOLVED]>>
+Evaluation of pods in a namespace is limited in the following dimensions, and a warning emitted if not all pods are checked:
+* max of 3,000 pods ([documented](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md)
+  scalability limit for per-namespace pod count)
+* no more than 1 second or 50% of remaining request deadline (whichever is less).
+* benchmarks show checking 3,000 pods takes ~0.01 second running with 100% of a 2.60GHz CPU
 
-_Non-blocking: can be decided on the implementing PR_
+If multiple pods have identical warnings, the warnings are aggregated.
 
-- What should the timeout be for pod update warnings?
-  - Total is a parameter on the context (query parameter for webhooks). Cap should be
-    `min(timeout_param, hard_cap)`, where the `hard_cap` is a small number of seconds.
-  - Expect evaluation to be fast, so even 3k pods should come in well under the timeout.
-- What should the pod limit be set to?
-  - 3,000 is the
-    [documented](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md)
-    scalability limit for per-namespace pod count.
-  - Warnings should be aggregated for large namespaces (soft cap number of warnings, hard cap number
-    of evaluations).
-
-<<[/UNRESOLVED]>>
-
+If there are multiple pods with an ownerReference pointing to the same controller,
+controlled pods after the first one are checked only if sufficient pod count and time remain.
+This prioritizes checking unique pods over checking many identical replicas.
 
 ### Admission Configuration
 
@@ -425,41 +411,25 @@ against audit & warn policies, independent of which fields are being modified.
 
 #### Ephemeral Containers
 
-In the initial implementation, ephemeral containers will be subject to the same policy restrictions,
+Ephemeral containers will be subject to the same policy restrictions,
 and adding or updating ephemeral containers will require a full policy check.
-
-<<[UNRESOLVED]>>
-
-_Non-blocking for alpha. This should be resolved for beta._
-
-Once ephemeral containers allow [custom security contexts], it may be desirable to run an ephemeral
-container with higher privileges for debugging purposes. For example, CAP_SYS_PTRACE is forbidden by
-the baseline policy but can be useful in debugging. We could introduce yet-another-mode-label that
-only applies enforcement to ephemeral containers (defaults to the enforce policy).
-
-[custom security contexts]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/277-ephemeral-containers#configurable-security-policy
-
-One way this could be handled under the current model is:
-1. Exempt a special username (not one that can be authenticated directly) from policy enforcement,
-   e.g. `ops:privileged-debugger`
-2. Grant the special user permission to ONLY operate on the ephemeral containers subresource (it is
-   critical that they cannot create or update pods directly).
-3. Grant (real) users that should have privileged debug capability the ability to impersonate the
-   exempt user.
-
-We could consider ways to streamline the user experience of this, for instance adding a special RBAC
-binding that exempts users when operating on the ephemeral containers subresource (e.g. an
-`escalate-privilege` verb on the ephemeral containers subresource).
-
-<<[/UNRESOLVED]>>
+This means that an existing pod which is not valid according to the current
+`enforce` policy will not be permitted to add or modify ephemeral containers.
 
 #### Other Pod Subresources
 
-Aside from ephemeral containers, the policy is not checked for any other Pod subresources (status,
-bind, logs, exec, attach, port-forward).
+The policy is not checked for the following Pod subresources:
+- attach
+- binding
+- eviction
+- exec
+- log
+- portforward
+- proxy
+- status
 
 Although annotations can be updated through the status subresource, the apparmor annotations are
-immutable and the seccomp annotations are deprecated and slated for removal in v1.23.
+immutable and the seccomp annotations are validated to match the `seccompProfile` field present in the pod spec.
 
 ### Pod Security Standards
 
@@ -561,16 +531,14 @@ _Note: These fields should be unconditionally restricted, regardless of targeted
 
 ### Windows Support
 
-In the initial alpha implementation, Windows pods will be supported by both the `privileged` and
-`baseline` profiles. Windows pods _may_ be broken by the restricted field, which requires setting
-linux-specific settings (such as seccomp profile, run as non root, and disallow privilege
-escalation). If the Kubelet and/or container runtime choose to ignore these linux-specific values at
-runtime, then windows pods should still be allowed under the restricted profile, although the
-profile will not add additional enforcement over baseline (for Windows).
+The `privileged` and `baseline` levels do not require any OS-specific fields to be set.
 
-Windows support will be reevaluated prior to this policy feature going to beta, or if/when
-Kubernetes adds support to definitively distinguish between Windows and Linux workloads. See
-[Windows restricted profile support](#windows-restricted-profile-support) for more details.
+The `restricted` level currently requires fields that are Linux-specific, which may prevent
+Windows pods from running or require Windows kubelets to ignore those fields.
+
+A mechanism for Windows-specific exemptions or requirements in the `restricted` profile is
+described in the ["future work" section](#windows-restricted-profile-support) and addressed by
+[KEP-2802](https://github.com/kubernetes/enhancements/issues/2802).
 
 ### Flexible Extension Support
 
@@ -623,109 +591,116 @@ coverage of unit tests.
 
 ### Monitoring
 
-A single metric will be added to track policy evaluations against pods and [templated pods].
-[Namespace evaluations](#namespace-policy-update-warnings) are not counted.
+Three metrics will be introduced:
 
 ```
 pod_security_evaluations_total
 ```
 
+This metric will be added to track policy evaluations against pods and [templated pods].
+[Namespace evaluations](#namespace-policy-update-warnings) are not counted.
+The metric will only be incremented when the policy check is actually performed. In other words,
+this metric will not be incremented if any of the following are true:
+
+- Ignored resource types, subresources, or workload resources without a pod template
+- Update requests that are out of scope (see [Updates](#updates) above)
+- Exempt requests (these are reported in the `pod_security_exemptions_total` metric instead)
+- Errors that make policy evaluation impossible (these are reported in the `pod_security_exemptions_total` metric instead)
+
 The metric will use the following labels:
 
-1. `decision {allow, deny, exempt, error}` - The policy decision. Error is reserved for panics or
-   other errors in policy evaluation. Update requests that are out of scope (see [Updates](#updates)
-   above) are not counted.
+1. `decision {allow, deny}` - The policy decision. `allow` is only recorded with `enforce` mode.
 3. `policy_level {privileged, baseline, restricted}` - The policy level that the request was
    evaluated against.
-4. `policy_version {latest, v1.YY, >v1.ZZ}` - The policy version that was used for the evaluation.
-   How to constrain cardinality is unresolved (see below).
+4. `policy_version {v1.X, v1.Y, latest, future}` - The policy version that was used for the evaluation.
+   Explicit versions less than or equal to the build of the API server or webhook are recorded in the form `v1.x` (e.g. `v1.22`).
+   Explicit versions greater than the build of the API server or webhook (which are evaluated as `latest`) are recorded as `future`.
+   Explicit use of the `latest` version or implicit use by omitting a version or specifying an unparseable version will be recorded as `latest`.
 5. `mode {enforce, warn, audit}` - The type of evaluation mode being recorded. Note that a single
-   request can increment this metric 3 times, once for each mode. If this admission controller is
-   enabled, every every create request and in-scope update request will at least increment the
-   `enforce` total.
+   request can increment this metric 3 times, once for each mode. `audit` and `warn` mode metrics
+   are only incremented for violations. If this admission controller is enabled, every
+   evaluated request will at least increment the `enforce` total.
 6. `request_operation {create, update}` - The operation of the request being checked.
 7. `resource {pod, controller}` - Whether the request object is a Pod, or a [templated
    pod](#podtemplate-resources) resource.
+8. `subresource {ephemeralcontainers}` - The subresource, when relevant & in scope.
 
-<<[UNRESOLVED]>>
+```
+pod_security_exemptions_total
+```
 
-_Non-blocking: can be decided on the implementing PR_
+This metric will be added to track requests that are considered exempt. Ignored resources and out of
+scope requests do not count towards the total. Errors encountered before the exemption logic will
+not be counted as exempt.
 
-How should policy version labels be handled, to control cardinality? Specifically:
-- How should future versions be labeled?
-- How should (very old) past versions be labeled?
+The metric will use the following labels. The definitions match from the above label definitions.
 
-Ideas:
-- If the version is set higher than `v{latest+1}`, then `>v{latest+1}`
-  will be used. In other words, if the current version of the admission controller is v1.22, then a
-  version of `v1.23` would be unchanged, but `v1.24` would be recorded as `>v1.23`.
-    - Concern that the sliding-window approach will cause issues with historical data.
-- If the version is set higher than latest, simply record it as `future`. Allow recording of all
-  past versions.
+1. `request_operation {create, update}`
+2. `resource {pod, controller}`
+3. `subresource {ephemeralcontainers}`
 
-<<[/UNRESOLVED]>>
+```
+pod_security_errors_total
+```
+
+This metric will be added to track errors encountered during request evaluation.
+
+The metric will use the following labels. The definitions match from the above label definitions.
+
+1. `fatal {true, false}` - Whether the error prevented evaluation (short-circuit deny). If
+   `fatal=false` then the latest restricted profile may be used to evaluate the pod.
+2. `request_operation {create, update}`
+3. `resource {pod, controller}`
+4. `subresource {ephemeralcontainers}`
 
 ### Audit Annotations
 
 The following audit annotations will be added:
 
-1. `pod-security.kubernetes.io/enforce-policy = <policy_level>:<resolved_version>` Record which policy was evaluated
+1. `pod-security.kubernetes.io/enforce-policy = "<policy_level>:<version>"` - Record which policy was evaluated
    for enforcing mode.
-    - Resolved version is the actual version of the policy that was evaluated, so in the case of
-      `latest` or future versions, it will be `latest@<version>` where `<version>` is the tagged
-      version of the apiserver or webhook (e.g. `latest@v1.22.5-build.8`).
+    - version is `latest` or a specific version in the form `v1.x`
     - This annotation is only recorded when a policy is enforced. Specifically, it will not be
       recorded for irrelevant updates or exempt requests.
-2. `pod-security.kubernetes.io/audit-policy = <policy_level>:<resolved_version>` Same as `enforce-policy`, but for
-   audit mode policies (only included when an audit policy is set).
-3. `pod-security.kubernetes.io/enforce-violations = <policy violations>` When an enforcing policy is violated, record
-   the violations here.
-4. `pod-security.kubernetes.io/audit-violations = <policy violations>` When an audit mode policy is violated, record
-   the violations here.
-5. `pod-security.kubernetes.io/exempt = [user, namespace, runtimeClass]` For exempt requests, record the parameters
-   that triggered the exemption here.
+2. `pod-security.kubernetes.io/audit-violations = "<policy violations>"` - When an audit mode policy is violated, record
+   the violation messages here.
+3. `pod-security.kubernetes.io/exempt = "namespace" | "user" | "runtimeClass"` - For exempt requests, record the parameter
+   that triggered the exemption here. If multiple parameters are exempt, the first in this ordered list will be returned:
+   - namespace
+   - user
+   - runtimeClass
+4. `pod-security.kubernetes.io/error = "<evaluation errors>"` - Errors evaluating policies are recorded here
+
+Violation messages returned by enforcing policies are included in the `responseStatus` portion of audit events in the `ResponseComplete` stage.
 
 ### PodSecurityPolicy Migration
-
-<<[UNRESOLVED]>>
-
-_Targeting Beta or GA, non-blocking for Alpha._
 
 Migrating to the replacement policy from PodSecurityPolicies can be done effectively using a
 combination of dry-run and audit/warn modes (although this becomes harder if mutating PSPs are
 used).
 
-We could also ship a standalone tool to assist with the PodSecurityPolicy migration. Here are some
-ideas for the sorts of things the tool could assist with:
-
-- Analyze PSP resources, identify the closest profile level, and highlight the differences
-- Check the authorization mode for existing pods. For example, if a pod’s service account is not
-  authorized to use the PSP that validated it (based on the `kubernetes.io/psp` annotation), then
-  that should trigger a warning.
-- Automate the dry-run and/or labeling process.
-- Automatically select (and optionally apply) a policy level for each namespace.
-
-We should also publish a step-by-step migration guide. A rough approach might look something like
+Publish a step-by-step migration guide. A rough approach might look something like
 this, with the items tagged (automated) having support from the PSP migration tool.
 
-1. Enable 3-tier policy admission plugin, default everything to privileged.
+1. Enable the `PodSecurity` admission plugin, default everything to privileged.
 2. Eliminate mutating PSPs:
-    1. Clone all mutating PSPs to a non-mutating version (automated)
+    1. Clone all mutating PSPs to a non-mutating version
     2. Update all ClusterRoles authorizing use of the mutating PSPs to also authorize use of the
-       non-mutating variant (automated)
+       non-mutating variant
     3. Watch for pods using the mutating PSPs (check via the `kubernetes.io/psp` annotation), and
        work with code owners to migrate to valid non-mutating resources.
     4. Delete mutating PSPs
-3. Select a compatible profile for each namespace, based on the existing resources in the namespace
-   (automated)
-    1. Review the profile choices
-    2. Evaluate the difference in privileges that would come from disabling the PSP controller
-       (automated).
-4. (optional) Apply the profiles in `warn` and `audit` mode (automated)
-5. Apply the profiles in `enforce` mode (automated)
-6. Disable PodSecurityPolicy
+3. Select a compatible pod security level for each namespace, based on the existing resources in the namespace
+    1. Review the pod security level choices
+    2. Evaluate the difference in privileges that would come from disabling the PSP controller.
+4. Apply the pod security levels in `warn` and `audit` mode
+5. Iterate on Pod and workload configurations until no warnings or audit violations exist
+6. Apply the pod security levels in `enforce` mode
+7. Disable `PodSecurityPolicy` admission plugin
 
-<<[/UNRESOLVED]>>
+This was published at https://kubernetes.io/docs/tasks/configure-pod-container/migrate-from-psp/ in 1.22.
+
+
 
 ### Graduation Criteria
 
@@ -746,10 +721,10 @@ The initial alpha implementation targeting v1.22 includes:
 We are targeting Beta in v1.23.
 
 1. Resolve the following sections:
-    - [ ] [Restricted policy support for Windows pods](#windows-restricted-profile-support)
-    - [ ] [Deprecation / removal policy for old profile versions](#versioning)
-    - [ ] [Ephemeral containers support](#ephemeral-containers)
-    - [ ] [PSP migration workflow & support](#podsecuritypolicy-migration)
+    - [x] [Restricted policy support for Windows pods](#windows-restricted-profile-support)
+    - [x] [Deprecation / removal policy for old profile versions](#versioning)
+    - [x] [Ephemeral containers support](#ephemeral-containers)
+    - [x] [PSP migration workflow & support](#podsecuritypolicy-migration)
 2. Collect feedback from the alpha, analyze usage of the webhook implementation. In particular, re-assess these API decisions:
     - Distinct `audit` and `warn` modes
     - Whether `enforce` should warn on templated pod resources
@@ -852,116 +827,116 @@ _This section must be completed when targeting alpha to a release._
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+
+  If `pod-security.kubernetes.io/enforce` labels are already present on namespaces,
+  upgrading to enable the feature could prevent new pods violating the opted-into
+  policy level from being created. Existing running pods would not be disrupted.
 
 * **What specific metrics should inform a rollback?**
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  On a cluster that has not yet opted into enforcement, non-zero counts for either 
+  of the following metrics mean the feature is not working as expected:
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  * `pod_security_evaluations_total{decision=deny,mode=enforce}`
+  * `pod_security_errors_total`
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+  * Manual upgrade of the control plane to a version with the feature enabled was tested.
+    Existing pods remained running. Creation of new pods in namespaces that did not opt into enforcement was unaffected.
+
+  * Manual downgrade of the control plane to a version with the feature disabled was tested.
+    Existing pods remained running. Creation of new pods in namespaces that had previously opted into enforcement was allowed once more.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
+  
+  No.
 
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
   - non-zero `pod_security_evaluations_total` metrics indicate the feature is in use
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
+* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - [x] Metrics
-    - Metric name: `pod_security_evaluations_total`
+    - Metric name: `pod_security_evaluations_total`, `pod_security_errors_total`
     - Components exposing the metric: `kube-apiserver`
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  - `pod_security_evaluations_total{decision=error}`
+  - `pod_security_errors_total`
     - any rising count of these metrics indicates an unexpected problem evaluating the policy
-  - `pod_security_evaluations_total{decision=error,mode=enforce}`
+  - `pod_security_errors_total{fatal=true}`
     - any rising count of these metrics indicates an unexpected problem evaluating the policy that
       is preventing pod write requests
+  - `pod_security_errors_total{fatal=false}`,
+    `pod_security_evaluations_total{decision=deny,mode=enforce,level=restricted,version=latest}`
+    - a rising count of non-fatal errors indicates an error resolving namespace policies, which
+      causes PodSecurity to default to enforcing `restricted:latest`
+    - a corresponding rise in `restricted:latest` denials may indicate that these errors are
+      preventing pod write requests
   - `pod_security_evaluations_total{decision=deny,mode=enforce}`
     - a rising count indicates that the policy is preventing pod creation as intended, but is
       preventing a user or controller from successfully writing pods
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  
+  - An error rate other than 0 means invalid policy levels or versions were configured 
+    on a namespace prior to the feature having been enabled. Until this is corrected, 
+    that namespace will use the latest version of the "restricted" policy for the mode 
+    that specified an invalid level/version.
 
-* **Are there any missing metrics that would be useful to have to improve observability
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+* **Are there any missing metrics that would be useful to have to improve observability of this feature?**
+  
+  - None we are aware of
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+  * It exists in the kube-apiserver process and makes use of pre-existing
+    capabilities (etcd, namespace/pod informers) that are already inherent to the
+    operation of the kube-apiserver.
 
 ### Scalability
-
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
 
 _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
-  - Updating namespace labels will trigger a list of pods in that namespace. With the built-in
-    admission plugin, this call will be local within the apiserver. There will be a hard cap on the
-    number of pods analyzed, and a timeout for the review of those pods. See [Namespace policy
-    update warnings](#namespace-policy-update-warnings).
+  - Updating namespace enforcement labels will trigger a list of pods in that namespace.
+    With the built-in admission plugin, this call will be local within the apiserver and will use the existing pod informer.
+    There will be a hard cap on the number of pods analyzed, and a timeout for the review of those pods 
+    that ensures evaluation does not exceed a percentage of the time allocated to the request.
+    See [Namespace policy update warnings](#namespace-policy-update-warnings).
 
 * **Will enabling / using this feature result in introducing new API types?**
   - No.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
+* **Will enabling / using this feature result in any new calls to the cloud provider?**
   - No.
 
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
+* **Will enabling / using this feature result in increasing size or count of the existing API objects?**
   Describe them, providing:
   - API type(s): Namespaces
   - Estimated increase in size: new labels, up to 300 bytes if all are provided
   - Estimated amount of new objects: 0
 
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  - This will require negligible additional work in Pod create/update admission. Namespace label
-    updates may heavier, but have limits in place.
+* **Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs]?**
+  - This will require negligible additional work in Pod create/update admission.
+  - Namespace label updates may heavier, but have limits in place.
 
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+* **Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?**
   - No. Resource usage will be negligible.
+  - Initial benchmark cost of pod admission to a fully privileged namespace (default on feature enablement without explicit opt-in)
+    - Time: 245.4 ns/op
+    - Memory: 112 B/op
+    - Allocs: 1 allocs/op
+  - Initial benchmark cost of pod admission to a namespace requiring both baseline and restricted evaluation
+    - Time: 4826 ns/op
+    - Memory: 4616 B/op
+    - Allocs: 22 allocs/op
 
 ### Troubleshooting
 
@@ -969,21 +944,27 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  - It blocks creation/update of Pod objects, which would have been unavailable anyway.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+
+  - Invalid admission configuration
+    - Detection: API server will not start / is unavailable
+    - Mitigations: Disable the feature or fix the configuration
+    - Diagnostics: API server error log
+    - Testing: unit testing on configuration validation
+
+  - Enforce mode rejects pods because invalid level/version defaulted to `restricted` level
+    - Detection: rising `pod_security_errors_total{fatal=false}` metric counts
+    - Mitigations: fix the malformed labels
+    - Diagnostics:
+      - Locate audit logs containing `pod-security.kubernetes.io/error` annotations on affected requests
+      - Locate namespaces with malformed level labels:
+        - `kubectl get ns --show-labels -l "pod-security.kubernetes.io/enforce,pod-security.kubernetes.io/enforce notin (privileged,baseline,restricted)"`
+      - Locate namespaces with malformed version labels:
+        - `kubectl get ns --show-labels -l pod-security.kubernetes.io/enforce-version | egrep -v 'pod-security.kubernetes.io/enforce-version=v1\.[0-9]+(,|$)'`
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
@@ -997,6 +978,20 @@ of scope for the initial proposal and/or implementation, but may be implemented 
 which case they should be moved out of this section).
 
 This whole section should be considered <<[UNRESOLVED]>>.
+
+### Automated PSP migration tooling
+
+We could also ship a standalone tool to assist with the steps identified above.
+Here are some ideas for the sorts of things the tool could assist with:
+
+- Analyze PSP resources
+  - identify mutating PSPs
+  - for non-mutating PSPs, identify the closest Pod Security Standards levels and highlight the differences
+- Check the authorization mode for existing pods. For example, if a pod’s service account is not
+  authorized to use the PSP that validated it (based on the `kubernetes.io/psp` annotation), then
+  that should trigger a warning.
+- Automate the dry-run and/or labeling process.
+- Automatically select (and optionally apply) a policy level for each namespace.
 
 ### Rollout of baseline-by-default for unlabeled namespaces
 
@@ -1013,13 +1008,6 @@ or combined for a more aggressive rollout:
 4. Default unlabeled namespaces to enforce=baseline
 
 Each step in the rollout could be overridden with a flag (e.g. force the admission plugin to step N)
-
-### Custom Profiles
-
-Allow custom profile levels to be statically configured. E.g.
-`--extra-pod-security-levels=host-network`. Custom profiles are ignored by the built-in admission
-plugin, and must be handled completely by a 3rd party webhook (including the dry-run implementation,
-if desired).
 
 ### Custom Warning Messages
 
@@ -1042,15 +1030,19 @@ a user can just create a linux pod with the Windows RuntimeClass and manually sc
 node to bypass the policy checks. For example, this would be the case if the cluster was exclusively
 using the dockershim runtime, which requires the hardcoded `docker` runtime handler to be set.
 
+[KEP-2802](https://github.com/kubernetes/enhancements/issues/2802) proposes allowing a Pod to indicate its OS.
+As part of that KEP:
+* Pod validation will be adjusted to ensure values are not required
+  for OS-specific fields that are irrelevant to the Pod's OS.
+* Pod Security Standards will be reviewed and updated to indicate which Pod OSes they apply to
+* The `restricted` Pod Security Standard will be reviewed to see if there are Windows-specific requirements that should be added
+* The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS.
+
 ### Offline Policy Checking
 
 We could provide a standalone tool that is capable of checking the policies against resource files
 or through stdin. It should be capable of evaluating `AdmissionReview` resources, but also pod and
 templated pod resources. This could be useful in CI/CD pipelines and tests.
-
-### Event recording
-
-Allow recording an event in response to a pod creation attempt that exceeds a given level.
 
 ### Conformance
 
@@ -1066,6 +1058,9 @@ As this feature progresses towards GA, we should think more about how it interac
 
 - 2021-03-16: [Initial proposal](https://docs.google.com/document/d/1dpfDF3Dk4HhbQe74AyCpzUYMjp4ZhiEgGXSMpVWLlqQ/edit?ts=604b85df#)
               provisionally accepted.
+- 2021-08-04: v1.22 Alpha version released
+- 2021-08-24: v1.23 Beta KEP updates
+- 2021-11-03: v1.23 Beta version released
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:

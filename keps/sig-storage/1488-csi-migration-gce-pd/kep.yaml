@@ -1,0 +1,56 @@
+title: In-tree Storage Plugin to CSI Migration - GCE PD
+kep-number: 1488
+authors:
+  - "@davidz627"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-cluster-lifecycle
+reviewers:
+  - "@Jiawei0227"
+  - "@msau42"
+  - "@mattcary"
+approvers:
+  - "@msau42"
+editor: "@Jiawei0227"
+creation-date: 2021-12-17
+last-updated: 2022-01-05
+disable-supported: true
+status: implementable
+see-also:
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
+prr-approvers:
+  - "@wojtek-t"
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.25"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.14"
+  beta: "v1.17"
+  stable: "v1.25"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CSIMigrationGCE
+    components:
+    - kube-controller-manager
+    - kubelet
+    - kube-scheduler
+  - name: InTreePluginGCEUnregister
+    components:
+    - kube-controller-manager
+    - kubelet
+    - kube-scheduler
+
+# The following PRR answers are required at beta release
+metrics:
+  - csi_sidecar_duration_operation
+  - storage_operation_duration_seconds

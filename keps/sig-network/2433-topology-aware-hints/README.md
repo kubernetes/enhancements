@@ -10,6 +10,7 @@
 - [Design Details](#design-details)
   - [Assumptions](#assumptions)
   - [Identifying Zones](#identifying-zones)
+  - [Excluding Control Plane Nodes](#excluding-control-plane-nodes)
   - [Configuration](#configuration)
     - [Interoperability](#interoperability)
     - [Feature Gate](#feature-gate)
@@ -187,6 +188,14 @@ with a new Service annotation.
 The EndpointSlice controller reads the standard `topology.kubernetes.io/zone`
 label on Nodes to determine which zone a Pod is running in. Kube-Proxy would be
 updated to read the same information to identify which zone it is running in.
+
+### Excluding Control Plane Nodes
+
+Any Nodes with the following labels (set to any value) will be excluded when
+calculating allocatable cores in a zone:
+
+* `node-role.kubernetes.io/control-plane`
+* `node-role.kubernetes.io/master`
 
 ### Configuration
 
@@ -451,7 +460,6 @@ EndpointSliceSyncs = metrics.NewCounterVec(
 
 **Beta:**
 - Tests expanded to include e2e coverage described above.
-- Interoperability with Internal and External TrafficPolicy fields.
 
 ### Version Skew Strategy
 This KEP requires updates to both the EndpointSlice Controller and kube-proxy.

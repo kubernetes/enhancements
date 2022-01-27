@@ -1,3 +1,5 @@
 kep-number: 1933
 beta:
   approver: "@deads2k"
+stable:
+  approver: "@deads2k"

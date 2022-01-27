@@ -5,3 +5,6 @@ approvers:
   - sig-architecture-leads
 reviewers:
   - enhancements-reviewers
+emeritus_approvers:
+  - justaugustus    # 2021-11-11
+  - LappleApple     # 2021-04-13: https://kubernetes.slack.com/archives/C1L57L91V/p1618348221078400

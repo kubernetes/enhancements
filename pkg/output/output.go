@@ -210,8 +210,8 @@ func DefaultPrintConfigs(names ...string) []PrintConfig {
 
 			return k.OwningSIG
 		}},
-		"Stage":  {"Stage", func(k *api.Proposal) string { return k.Stage }},
-		"Status": {"Status", func(k *api.Proposal) string { return k.Status }},
+		"Stage":  {"Stage", func(k *api.Proposal) string { return string(k.Stage) }},
+		"Status": {"Status", func(k *api.Proposal) string { return string(k.Status) }},
 		"Title": {"Title", func(k *api.Proposal) string {
 			if k.PRNumber == "" {
 				return k.Title

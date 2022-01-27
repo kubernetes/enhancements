@@ -14,12 +14,12 @@ prr-approvers:
   - "@johnbelamaric"
 
 creation-date: 2021-04-06
-last-updated: 2021-04-06
+last-updated: 2022-01-20
 
 status: implementable
 stage: alpha
 
-latest-milestone: "v1.22"
+latest-milestone: "v1.24"
 
 milestone:
-  alpha: "v1.22"
+  alpha: "v1.24"

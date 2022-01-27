@@ -15,3 +15,5 @@ last-updated: 2019-02-04
 status: implemented
 see-also:
   - "[Admission Control Webhook Beta Design Doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/admission-control-webhooks.md)"
+latest-milestone: '0.0'
+stage: stable

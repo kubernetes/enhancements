@@ -17,3 +17,5 @@ approvers:
   - "@liggitt"
 see-also:
 replaces:
+latest-milestone: '0.0'
+stage: stable

@@ -19,6 +19,7 @@
       - [Proposed Change](#proposed-change)
       - [Alternatives](#alternatives)
       - [Implementation History](#implementation-history)
+    - [API Audit](#api-audit)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -285,6 +286,67 @@ The conversion between the two and creating the diff was complex and would have 
 ##### Implementation History
 
 - 12/2019 [#86083](https://github.com/kubernetes/kubernetes/pull/86083) implementing a poc for the described approach
+
+
+#### API Audit
+
+The `ManagedFields` fields of an object in the API audit log may not be very useful. We want to provide a mechanism, 
+so the cluster operator can opt in so that the managed fields can be omitted from the audit log.
+
+We propose the following changes to the `audit.k8s.io/Policy` API that provides the cluster operator with a more 
+granular way to control the omission of managed fields in audit log:
+```go
+type Policy struct {
+	// +optional
+	OmitManagedFields bool `json:"omitManagedFields,omitempty"`
+}
+
+type PolicyRule struct {
+	// +optional
+	OmitManagedFields *bool `json:"omitManagedFields,omitempty"`
+}
+```
+The above API changes will be introduced in `v1`, `v1beta1` and `v1alpha1` of `audit.k8s.io`
+
+A new field `OmitManagedFields` is added to both `Policy` and `PolicyRule` making the following possible:
+- `Policy.OmitManagedFields` sets the default policy for omitting managed fields globally.
+  - the default value is `false`, managed fields are not omitted, this retains the current behavior.
+  - a value of `true` will omit managed fields from being written to the API audit log unless `PolicyRule` overrides.
+- `PolicyRule:OmitManagedFields` can be used to override the global default for a particular set of request(s), 
+  it has three possible values:
+  - `nil` (default value): the cluster operator did not specify any value, 
+    the global default specified in `Policy.OmitManagedFields` is in effect.
+  - `true`: the cluster operator opted in to omit managed fields for a given set of request(s), and it overrides the global default.
+  - `false`: the cluster operator opted in to not omit managed fields for a given set of request(s), and it overrides the global default.
+
+This ensures the following:
+- with an existing `Policy` object, the new version of the apiserver will maintain current behavior which 
+  is to include managed fields in audit log
+- the cluster operator must opt in to enable omission of managed fields
+
+Let's look at a few examples:
+```yaml
+    # omit managed fields for all request and all response bodies
+    apiVersion: audit.k8s.io/v1
+    kind: Policy
+    omitManagedFields: true
+    rules:
+    - level: RequestResponse   
+```
+
+```yaml
+    # omit managed fields for all request and all response bodies
+    # except for Pod for which we want to include managed fields in audit log
+    apiVersion: audit.k8s.io/v1
+    kind: Policy
+    omitManagedFields: true
+    rules:
+    - level: RequestResponse
+      omitManagedFields: false
+      resources: ["pods"]
+        
+    - level: RequestResponse
+```
 
 ## Production Readiness Review Questionnaire
 

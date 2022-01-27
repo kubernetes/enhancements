@@ -10,3 +10,4 @@ approvers:
 creation-date: 2020-09-22
 latest-milestone: v1.20
 status: implemented
+stage: stable

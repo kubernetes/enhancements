@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
-status: implementable
+status: implemented
 creation-date: 2020-04-17
 reviewers:
   - "@jsafrane"
@@ -13,8 +13,8 @@ approvers:
   - "@saad-ali"
 prr-approvers:
   - "@wojtek-t"
-stage: beta
-latest-milestone: "v1.21"
+stage: stable
+latest-milestone: "v1.23"
 milestone:
   alpha: "v1.19"
   beta: "v1.21"

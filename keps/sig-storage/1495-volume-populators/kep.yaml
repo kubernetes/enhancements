@@ -7,7 +7,7 @@ participating-sigs:
   - sig-api-machinery
 status: implementable
 creation-date: 2019-12-03
-last-updated: 2021-05-13
+last-updated: 2021-09-02
 reviewers:
   - "@thockin"
   - "@saad-ali"
@@ -20,8 +20,8 @@ prr-approvers:
   - "@deads2k"
 replaces:
   - "/keps/sig-storage/20200120-generic-data-populators.md"
-stage: alpha
-latest-milestone: "v1.22"
+stage: beta
+latest-milestone: "v1.23"
 milestone:
   alpha: "v1.18"
   beta: "v1.23"

@@ -1,0 +1,12 @@
+title: whatever
+kep-number: 4321
+authors:
+  - "@alice"
+  - "@beth"
+owning-sig: sig-api-machinery
+prr-approvers:
+  - not-a-prr-approver
+approvers:
+  - "@dorothy"
+status: provisional
+stage: beta

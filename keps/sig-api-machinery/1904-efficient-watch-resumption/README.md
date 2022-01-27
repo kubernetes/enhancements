@@ -300,8 +300,8 @@ Alpha should provide basic functionality covered with tests described above.
 #### Beta -> GA Graduation
 
 - Enabled in Beta for at least two releases without complaints
-- Rolling-upgrade of kube-apiservers in 5k-node cluster test is
-   automated and running periodically.
+- Benefits of the feature during rolling upgrade of kube-apiserver at scale
+   (thousands of nodes) proven in production
 
 ### Upgrade / Downgrade Strategy
 

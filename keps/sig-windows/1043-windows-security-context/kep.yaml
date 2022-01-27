@@ -17,3 +17,5 @@ see-also:
   - "keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md"
 replaces:
 superseded-by:
+latest-milestone: '0.0'
+stage: stable

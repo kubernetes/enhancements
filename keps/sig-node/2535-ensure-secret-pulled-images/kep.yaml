@@ -1,0 +1,31 @@
+title: Ensure Secret Pulled Images
+kep-number: 2535
+authors:
+  - "@mikebrow"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: implementable
+creation-date: 2021-03-10
+reviewers:
+  - "@Random-Liu"
+  - "@yujuhong"
+  - "@mrunalp"
+  - "@adisky"
+approvers:
+  - "@dchen1107"
+  - "@derekwaynecarr"
+prr-approvers:
+  - "@johnbelarmic"
+stage: alpha
+latest-milestone: "v1.24"
+milestone:
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.27"
+feature-gates:
+  - name: KubeletEnsureSecretPulledImages
+    components:
+      - kubelet
+disable-supported: true
+metrics:

@@ -1243,7 +1243,7 @@ v1.21: Moved from `Alpha` to `Beta`
 
 v1.22: Gathering beta user feedback and making bugfixes as needed.
 
-v1.23: Planning to move from `Beta` to `Stable`
+v1.23: Moved from `Beta` to `Stable`
 
 ## Alternatives
 
@@ -1377,12 +1377,12 @@ This capability will move to beta when the following criteria have been met.
 * Service resource supports pods with multi-IP
 * Kubenet to support multi-IPs
 
-This capability will move to stable when the following criteria have been met.
+This capability will move to stable when the following criteria have been met:
 
-* Support of at least one CNI plugin to provide multi-IP
-* e2e test successfully running on two platforms
-* testing ingress controller infrastructure with updated dual-stack services
-* dual-stack tests run as pre-submit blocking for PRs
+* Support of at least one CNI plugin to provide multi-IP ([Cilium](https://cilium.io/blog/2021/05/20/cilium-110) and [Calico](https://www.tigera.io/blog/dual-stack-operation-with-calico-on-kubernetes/))
+* e2e test successfully running on two platforms (Azure and kind)
+* dual-stack service object is backwards-compatible with existing ingress controllers, so ingress controller infrastructure remains the same with updated dual-stack services
+* dual-stack tests always run as pre-submit (non-blocking) for PRs
 
 
 ## Production Readiness Review Questionnaire
@@ -1404,6 +1404,11 @@ This capability will move to stable when the following criteria have been met.
     to only one address block.
 
 * **Does enabling the feature change any default behavior?**
+  When this feature moves to stable, the dual-stack feature is available in
+  all clusters. However, Pods and Services will default to single-stack unless
+  ipFamilyPolicy field is modified in a Service to be either PreferDualStack
+  or RequireDualStack.
+
   Pods and Services will remain single-stack until cli flags have been modified
   as described in this KEP. Existing and new Services will remain single-stack
   until the ipFamilyPolicy field is modified in a Service to be either
@@ -1413,7 +1418,11 @@ This capability will move to stable when the following criteria have been met.
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
 
-  Yes. If you decide to turn off dual-stack after turning on:
+  The feature gate will be removed for the stable release, so this feature is
+  always available. However, single-stack is the default until dual-stack is
+  configured.
+
+  In beta, if you decide to turn off dual-stack after turning on:
     1. Ensure all services are converted to single-stack first (downgraded to
        single-stack as described in this KEP)
     2. Remove the CLI parameters.
@@ -1432,6 +1441,8 @@ This capability will move to stable when the following criteria have been met.
     need not be used.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
+
+  When the feature is stable, it will always be available.
 
   If the system has no existing dual-stack services, then it will be treated
   as a new enablement. However, if dual-stack services exist in the cluster,
@@ -1464,7 +1475,7 @@ This capability will move to stable when the following criteria have been met.
   cluster networking was configured.
 
   Existing workloads are not expected to be impacted during rollout. When you
-  disable dual-stack, existing services aren't deleted, but routes for
+  set a cluster to single-stack, existing services aren't deleted, but routes for
   alternative families are disabled. A component restart during rollout might
   delay generating endpoints and endpointSlices for alternative IP families.
   If there are *new* workloads that depend on the endpointSlices, these
@@ -1572,6 +1583,10 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   No
 
 ### Troubleshooting
+
+  When the feature is stable, the feature gate is no longer present, so no
+  disabling of the feature gate is applicable, and the feature is always
+  enabled; it may be used or not used as desired.
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
   This feature will not be operable if either kube-apiserver or etcd is unavailable.

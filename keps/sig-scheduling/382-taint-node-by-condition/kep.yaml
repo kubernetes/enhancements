@@ -17,3 +17,5 @@ last-updated: 2019-10-12
 status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/taint-node-by-condition.md"
+latest-milestone: '0.0'
+stage: stable

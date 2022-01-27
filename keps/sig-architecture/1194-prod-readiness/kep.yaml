@@ -18,3 +18,5 @@ approvers:
 creation-date: 2019-07-31
 last-updated: 2020-12-15
 status: implemented
+latest-milestone: '0.0'
+stage: stable

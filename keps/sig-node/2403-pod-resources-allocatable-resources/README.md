@@ -43,7 +43,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [X] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - ~~ [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io] ~~
 - [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -102,6 +102,10 @@ The GRPC Service will expose an additional endpoint:
 - 'GetAllocatableResources`, which returns a single AllocatableResourcesResponse, enabling monitor applications to query for the allocatable set of resources available on the node.
 This endpoint will return error if the corresponding feature gate is disabled.
 
+NOTE:
+
+- `GetAllocatableResources` should only be used to evaluate [allocatable](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#node-allocatable) resources on a node. If the goal is to evaluate free/unallocated resources it should be used in conjunction with the List() endpoint. The result obtained by `GetAllocatableResources` would remain the same unless the underlying resources exposed to kubelet change. This happens rarely but when it does (e.g. CPUs onlined/offlined, devices added/removed), client is expected to call `GetAlloctableResources` endpoint.
+
 The extended interface is shown in proto below:
 ```protobuf
 // PodResources is a service provided by the kubelet that provides information about the
@@ -139,6 +143,7 @@ message ContainerResources {
     string name = 1;
     repeated ContainerDevices devices = 2;
     repeated int64 cpu_ids = 3;
+    repeated ContainerMemory memory = 4;
 }
 
 // Topology describes hardware topology of the resource
@@ -165,6 +170,8 @@ message ContainerDevices {
 The implementation PR adds a suite of E2E tests which cover both the existing `List` endpoint already implemented in the podresources API and
 the new proposed `GetAllocatableResources` API.
 
+Add additional tests to prove that unhealthy devices are skipped as part of GetAllocatable and empty NUMA topology is not returned.
+
 ### Graduation Criteria
 
 #### Alpha
@@ -174,6 +181,13 @@ the new proposed `GetAllocatableResources` API.
 #### Alpha to Beta Graduation
 - [X] The new API is consumed by other public software components (e.g. NFD).
 - [X] No major bugs reported in the previous cycle.
+- [X] Ensure that empty NUMA topology is handled properly.
+- [X] Ensure that unhealthy devices are skipped in GetAllocatable.
+- [X] External clients are using this capability in their solutions
+    Topology aware Scheduling is one of the primary use cases of GetAllocatableResource podresource endpoint. As part of this initiative an exporter populates CRs per node to expose the information of resources available per NUMA. Pod Resource API `List` and `GetAllocatableResources` API endpoints are used to obtain resource allocation of running pods along with the underlying hardware topology (NUMA) information. Topology aware scheduler can be configured such that users can create custom exporters or use already existing exporters to expose the NodeResourceTopology information as CRs and then [Topology aware Scheduler](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/pkg/noderesourcetopology) uses this information to make a NUMA aware placement decision leading to the reduction of occurrence of Topology affinity Errors highlighted in the issue [here](https://github.com/kubernetes/kubernetes/issues/84869).
+    Examples of two such exporters are:
+     - [Node feature Discovery](https://github.com/kubernetes-sigs/node-feature-discovery) for exposing resource topology information as part of the initiative here: [Introducing NFD Topology Updater exposing Resource hardware Topology info through CRs](https://github.com/kubernetes-sigs/node-feature-discovery/pull/525).
+     - [Resource Topology Exporter](https://github.com/k8stopologyawareschedwg/resource-topology-exporter)
 
 #### Beta to G.A Graduation
 - [X] Allowing time for feedback (1 year).
@@ -253,6 +267,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2021-02-02: KEP extracted from [previous iteration](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2043-pod-resource-concrete-assigments)
 - 2021-02-04: KEP polished, added feature gate, clarified the graduation criteria.
 - 2021-02-08: KEP updated adding per-specific-endpoint metrics to the podresources API and clarifying failure modes.
+- 2021-09-02: KEP updated to explicitly clarify the behavior of `GetAllocatableResources` and graduate to Beta in 1.23.
 
 ## Alternatives
 

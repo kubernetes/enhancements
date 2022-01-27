@@ -34,7 +34,7 @@
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -171,9 +171,10 @@ type PodSecurityContext struct {
         - Metric name: storage_operation_errors_total{operation_name=volume_mount}
         - [Optional] Aggregation method: cumulative counter
         - Components exposing the metric: kubelet
-    - volume ownerhip change timing mtrics: We are also going to add metrics that track time it takes for volume ownerhip change to happen. We will update this section with the name of metrics.
-
-
+    - volume ownerhip change timing mtrics:
+        - Metric name: storage_operation_duration_seconds{operation_name=volume_fsgroup_recursive_apply}
+        - [Optional] Aggregation method: percentile
+        - Components exposing the metric: kubelet
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   It is hard to give numbers that an admin could use to determine health of mount operation. In general we expect that after this feature is rolled out
@@ -253,7 +254,7 @@ details). For now we leave it here though.
   (non-production), with discussions in SIG-Storage regarding success of
   deployments.  A metric will be added to report time taken to perform a
   volume ownership change. Also e2e tests that verify volume permissions with various `FSGroupChangePolicy`.
-* GA in 1.21, with Node E2E tests in place tagged with feature Storage
+* GA in 1.23, with Node E2E tests in place tagged with feature Storage
 
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/issues/69699
@@ -276,6 +277,7 @@ We will add a metric that measures the volume ownership change times.
 ## Implementation History
 
 - 2020-01-20 Initial KEP pull request submitted
+- 2020-11-05 Feature moved to beta
 
 ## Drawbacks [optional]
 

@@ -3,10 +3,11 @@ kep-number: 592
 authors:
   - "@janetkuo"
   - "@ahg-g"
+  - "@sahilvv"
 owning-sig: sig-apps
 participating-sigs:
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2018-08-16
 reviewers:
   - "@enisoc"
@@ -23,12 +24,12 @@ superseded-by:
   - n/a
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.21"
+latest-milestone: "v1.23"
   
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
