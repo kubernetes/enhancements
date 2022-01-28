@@ -51,7 +51,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -512,6 +512,7 @@ N/A
 - 1.22: 2021-06-21: KEP review comments addressed
 - 1.22: 2021-07-02: Implementation [pull request](https://github.com/kubernetes/kubernetes/pull/99494) merged
 - 1.22: 2021-07-12: KEP updated with implementation details
+- 1.24: 2022-01-28: KEP updated with GA milestone details
 
 ## Drawbacks
 
