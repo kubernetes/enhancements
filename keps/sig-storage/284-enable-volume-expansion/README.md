@@ -394,7 +394,7 @@ different feature gates that control various aspects of expansion.
 ###### Does enabling the feature change any default behavior?
 
 Enabling the feature gate allows users to increase size of pvc by editing `pvc.Spec.Resources` which results
-in Kubernetes trying to full-fill the request by actually expanding the volume in controller and then performing
+in Kubernetes trying to fulfill the request by actually expanding the volume in controller and then performing
 file system or any other kind of expansion needed on the node.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
