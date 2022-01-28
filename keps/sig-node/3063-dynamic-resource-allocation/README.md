@@ -119,6 +119,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Extend volume support](#extend-volume-support)
   - [Extend Device Plugins](#extend-device-plugins)
   - [Webhooks instead of ResourceClaim updates](#webhooks-instead-of-resourceclaim-updates)
+  - [ResourceDriver](#resourcedriver)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -674,10 +675,6 @@ example to access its own backplane, then it can define custom parameters for
 those secrets and retrieve them directly from the apiserver. This works because
 drivers are expected to be written for Kubernetes.
 
-ResourceDriver is also described below to show what it might look like. Because
-we currently don't have any optional driver features, we don't need the type
-and won't implement it until we have a specific use case that depends on it.
-
 ```
 type ResourceClass struct {
     // Resource drivers have a unique name in reverse domain order (acme.example.com).
@@ -687,25 +684,6 @@ type ResourceClass struct {
     // be able to distinguish between parameters stored here and
     // and those stored in ResourceClaimSpec. These parameters
     // here can only be set by cluster administrators.
-    Parameters runtime.RawExtension
-}
-
-type ResourceDriver struct {
-    // The name of the object is the unique driver name.
-    ObjectMeta
-
-    // Features contains a list of features supported by the driver.
-    // New features may be added over time and must be ignored
-    // by code that does not know about them.
-    Features []ResourceDriverFeature
-}
-
-type ResourceDriverFeature struct {
-    // Name is one of the pre-defined names for a feature.
-    Name ResourceDriverFeatureName
-    // Parameters might provide additional information about how
-    // the driver supports the feature. Boolean features have
-    // no parameters, merely listing them indicates support.
     Parameters runtime.RawExtension
 }
 
@@ -745,6 +723,11 @@ type ResourceClaimSpec struct {
     AllocationMode AllocationMode
 }
 
+// AllocationMode describes whether a ResourceClaim gets allocated
+// immediately when it gets created (AllocationModeImmediate)
+// or whether allocation is delayed until it is needed for
+// a Pod (AllocationModeDelayed). Other modes might get
+// added in the future.
 type AllocationMode string
 
 const (
@@ -1035,16 +1018,18 @@ match the current list already.
 
 A node has been chosen for the Pod.
 
-If necessary, the SelectedNode field of ResourceClaims with delayed allocation
+If using delayed allocation and the resource has not been allocated yet,
+the SelectedNode field of the ResourceClaim
 gets set here and the scheduling attempt gets stopped for now. It will be
 retried when the ResourceClaim status changes.
 
-The Pod gets added to the ReservedFor field of its ResourceClaims to ensure that
+If all resources have been allocated already,
+the scheduler adds the Pod to the ReservedFor field of its ResourceClaims to ensure that
 no-one else gets to use those.
 
 #### Unreserve
 
-The Pod gets removed from the ReservedFor field because it cannot be scheduled after
+The scheduler removes the Pod from the ReservedFor field because it cannot be scheduled after
 all.
 
 ### kubelet
@@ -1415,8 +1400,8 @@ A third-party resource driver is required for allocating resources.
 ###### Will enabling / using this feature result in any new API calls?
 
 For Pods not using ResourceClaims, not much changes. kube-controller-manager,
-kube-scheduler and kubelet will have additional watches for ResourceClaim,
-ResourceClass, and ResourceDriver, but if the feature isn't used, those watches
+kube-scheduler and kubelet will have additional watches for ResourceClaim and
+ResourceClass, but if the feature isn't used, those watches
 will not cause much overhead.
 
 If the feature is used, ResourceClaim will be modified during Pod scheduling,
@@ -1429,7 +1414,7 @@ impact should not be too high.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-For ResourceDriver and ResourceClass, only a few (something like 10 to 20)
+For ResourceClass, only a few (something like 10 to 20)
 objects per cluster are expected. Admins need to create those.
 
 The number of ResourceClaim objects depends on how much the feature is
@@ -1609,6 +1594,36 @@ via HTTP:
 
 The downside is higher load on the apiserver and an increase of the size of
 ResourceClaim objects.
+
+### ResourceDriver
+
+Similar to CSIDriver for storage, a separate object describing a resource
+driver might be useful at some point. At the moment it is not needed yet and
+therefore not part of the v1alpha1 API. If it becomes necessary to describe
+optional features of a resource driver, such a ResourceDriver type might look
+like this:
+
+```
+type ResourceDriver struct {
+    // The name of the object is the unique driver name.
+    ObjectMeta
+
+    // Features contains a list of features supported by the driver.
+    // New features may be added over time and must be ignored
+    // by code that does not know about them.
+    Features []ResourceDriverFeature
+}
+
+type ResourceDriverFeature struct {
+    // Name is one of the pre-defined names for a feature.
+    Name ResourceDriverFeatureName
+    // Parameters might provide additional information about how
+    // the driver supports the feature. Boolean features have
+    // no parameters, merely listing them indicates support.
+    Parameters runtime.RawExtension
+}
+```
+
 
 ## Infrastructure Needed (Optional)
 
