@@ -21,7 +21,8 @@ approvers:
 # You should create your own in keps/prod-readiness
 # Please make a copy of keps/prod-readiness/template/nnnn.yaml
 # to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
-#prr-approvers:
+prr-approvers:
+  - "@wojtek-t"
 
 see-also:
   - "/keps/sig-storage/1790-recover-resize-failure"
