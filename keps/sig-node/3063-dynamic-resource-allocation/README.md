@@ -401,7 +401,7 @@ Validation can be handled by drivers through an
 admission controller (if desired) or later at runtime when the
 parameters are passed to the driver. 
 
-The ResourceClaim spec is read-only once created. The ResourceClaim
+The ResourceClaim spec is immutable. The ResourceClaim
 status is reserved for system usage and holds the current state of the
 resource. The status must not get lost, which in the past was not ruled
 out. For example, status could have been stored in a separate etcd instance
