@@ -145,7 +145,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-New beta APIs will not be enabled in clusters by default.
+From the Kubernetes release where this change is introduced, and onwards, beta APIs will not be enabled in clusters by default.
 Existing beta APIs and new versions of existing beta APIs, will continue to be enabled by default: 
 if v1beta.some.group is currently enabled by default and we create v1beta2.some.group, v1beta2.some.group will still be enabled by default.
 
@@ -162,6 +162,7 @@ Unsuitability for production use is documented at https://kubernetes.io/docs/ref
 production cluster.
 By disabling beta APIs by default, a cluster-admin can opt-in for specific APIs without having every
 incomplete API present in the cluster.
+This is now practical to do since conformance no longer relies on non-stable APIs.
 
 ### Goals
 
