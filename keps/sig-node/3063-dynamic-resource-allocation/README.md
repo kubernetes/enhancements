@@ -440,7 +440,7 @@ with Pod scheduling.
 
 Allocation must be complete before a Pod is allowed to be scheduled onto a
 node. This avoids scenarios where a Pod is permanently assigned to a node which
-doesn't have enough resource to run it.
+can't fit the pod because of the pod's other resource requirements.
 
 When a PodTemplateSpec in an app controller spec references a ResourceClaim by
 name, all Pods created by that controller also use that name and thus share the
