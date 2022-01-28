@@ -537,12 +537,16 @@ kind: Pod
 metadata:
   name: device-consumer
 spec:
+  resourceClaims:
+  - name: "gpu" # this name gets referenced below under "claims"
+    template:
+      resourceClassName: "acme-gpu"
+      parameters:
+        memory: "2Gi"
   containers:
   - name: workload
     image: my-app
     command: ["/bin/program"]
-    podResources:
-    - name: gpu
     resources:
       requests:
         memory: "64Mi"
@@ -550,11 +554,11 @@ spec:
       limits:
         memory: "128Mi"
         cpu: "500m"
+      claims:
+        - "gpu"
   - name: monitor
     image: my-app
     command: ["/bin/other-program"]
-    podResources:
-    - name: gpu
     resources:
       requests:
         memory: "32Mi"
@@ -562,12 +566,8 @@ spec:
       limits:
         memory: "64Mi"
         cpu: "50m"
-  resources:
-  - name: gpu
-    template:
-      resourceClassName: "acme-gpu"
-      parameters:
-        memory: "2Gi"
+      claims:
+      - "gpu"
 ```
 
 This request triggers resource allocation on a node that has a GPU device with
@@ -879,22 +879,28 @@ const (
 
 type PodSpec {
    ...
-   Resources []PodResource
+   // ResourceClaims defines which ResourceClaims must be allocated
+   // and reserved before the Pod is allowed to start. The resources
+   // will be made available to those containers which reference them
+   // by name.
+   ResourceClaims []PodResourceClaim
    ...
 }
 
-type Container {
+type  ResourceRequirements {
+   Limits ResourceList
+   Requests ResourceList
    ...
-   // The entries are the names of resources in PodSpec.Resources
+   // The entries are the names of resources in PodSpec.ResourceClaims
    // that are used by the container.
-   PodResources []string
+   Claims []string
    ...
 }
 
-// PodResource references exactly one ResourceClaim, either by name or
+// PodResourceClaim references exactly one ResourceClaim, either by name or
 // by embedding a template for a ResourceClaim that will get created
 // by the resource claim controller in kube-controller-manager.
-type PodResource struct {
+type PodResourceClaim struct {
    // A name under which this resource can be referenced by the containers.
    Name string
 
