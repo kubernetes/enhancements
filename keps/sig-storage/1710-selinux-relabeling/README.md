@@ -321,6 +321,9 @@ Apart from the obvious API change and behavior described above, kubelet + volume
 * Kubelet's VolumeManager needs to track which SELinux label should get a volume in global mount (to call `MountDevice()` with the right mount options).
   * It must call `UnmountDevice()` even when another pod wants to re-use a mounted volume, but it has a different SELinux context.
   * While tracking SELinux labels of volumes, it can emit metrics suggested below.
+  * After kubelet restart, kubelet must reconstruct the original SELinux label it used to SetUp (MountDevice) each volume.
+    * Volume reconstruction must be updated to get the SELinux label from mount (in-tree volume plugins) or stored json file (CSI).
+      This label must be updated in VolumeManager's ActualStateOfWorld after reconstruction.
 * Volume plugins will get SELinux context as a new parameter of `MountDevice` and `SetUp`/`SetupAt` calls (resp. as a new field in `DeviceMounterArgs` / `MounterArgs`).
   * Each volume plugin can choose to use the mount option `-o context=` (e.g. when `CSIDriver.SELinuxRelabelPolicy` is `true`) or ignore it (e.g. in-tree volume plugins for shared filesystems or when `CSIDriver.SELinuxRelabelPolicy` is `false` or `nil`).
   * Each volume plugin then returns `SupportsSELinux` from `GetAttributes()` call, depending on if it wants the container runtime to relabel the volume (`true`) or not (`false`; the volume was already mounted with the right label or it does not support SELinux at all).
@@ -412,7 +415,7 @@ _This section must be completed when targeting alpha to a release._
   Describe the consequences on existing workloads (e.g. if this is runtime
   feature, can it break the existing applications?).
   
-  Yes, it can be disabled / rolled back. 
+  Yes, it can be disabled / rolled back.
   Corresponding API fields get cleared and Kubernetes uses previous SELinux label handling.
   If the feature gate is enabled/disabled in kubelet without draining the node, volumes mounted by the previous kubelet are still mounted with the same mount option and thus may / may not have `-o context=` mount option.
   I.e. the disabled / enabled feature affects only newly started Pods.
