@@ -421,7 +421,7 @@ PV object was used to capture status. That model allowed operations like
 pre-provisioning volumes and then having Kubernetes bind those to claims that
 get created later. For resources, the resource driver can and must handle such
 pre-provisioning internally. Kubernetes wouldn't know how to match
-pre-provisioned resources against claims because it has no understand about the
+pre-provisioned resources against claims because it has no understanding about the
 parameters.
 
 Allocation of a resource happens either immediately when a ResourceClaim gets
