@@ -211,6 +211,13 @@ once to support dynamic resource allocation. Then multiple drivers from
 different vendors can be installed at the same time without making further
 changes to the scheduler.
 
+The scope of this KEP is smaller compared to two previous proposals (linked to
+below under non-goals) and therefore it is easier to implement:
+- kube-scheduler doesn't need to know about different kinds of resources
+  and therefore we don't need to define those in advance and later
+  update those definitions as new hardware appears.
+- There is no need to define standardized parameters for resources.
+
 Communication between the kubelet and the node part of the driver is
 handled through local Unix domain sockets and the kubelet plugin registration
 mechanism, using a new plugin type and a new gRPC interface.
@@ -627,7 +634,7 @@ Several components must be implemented or modified in Kubernetes:
   resource is allocated before the Pod gets scheduled, similar to
   https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/scheduling/scheduler_binder.go
 - Kubelet must be extended to retrieve information from ResourceClaims
-  and to invoke a local resource driver method. That method returns CDI device ID(s)
+  and to call a resource kubelet plugin. That plugin returns CDI device ID(s)
   which then must be passed to the container runtime.
 
 For a resource driver the following components are needed:

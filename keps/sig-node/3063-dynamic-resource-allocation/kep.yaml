@@ -40,6 +40,7 @@ feature-gates:
       - kubelet
 disable-supported: true
 
-# The following PRR answers are required at beta release
 metrics:
-  - my_feature_metric
+  - resource_controller_create_total
+  - resource_controller_create_failures_total
+  - resource controller workqueue with name="resource_claim"

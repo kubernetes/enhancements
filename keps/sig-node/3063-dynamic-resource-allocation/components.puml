@@ -31,6 +31,7 @@ otherapi -[hidden]> ResourceClaim
 
 Pod -u-> k8sresourceclaimcontroller: read resource template\nfrom Pod spec
 ResourceClaim <-u- k8sresourceclaimcontroller: create
+ResourceClaim <-u-> kubelet
 
 Pod <--> scheduler
 ResourceClaim <--> k8sresourceplugin
