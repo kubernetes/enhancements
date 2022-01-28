@@ -331,7 +331,7 @@ and make progress.
 
 * Standardize how to describe available resources. Only allocated
   resources are visible through the APIs defined below. How to
-  describe available resources is driver specific because it depends
+  advertise available resources is driver specific because it depends
   on the kind of resource which attributes might be relevant. Drivers
   should use and document their individual approach for this (for
   example, defining a CRD and publishing through that).
@@ -435,8 +435,10 @@ Immediate allocation is useful when allocating a resource is expensive (for
 example, programming an FPGA) and the resource therefore is meant to be used by
 multiple different Pods, either in parallel or one after the other. The
 downside is that Pod resource requirements cannot be considered when choosing
-where to allocate. Delayed allocation solves this by integrating allocation
-with Pod scheduling.
+where to allocate. If a Pod then cannot run on the node (or nodes, for
+network-attached resources) where the resource is available because resources
+like RAM or CPU are exhausted there, then the Pod also cannot run elsewhere.
+Delayed allocation solves this by integrating allocation with Pod scheduling.
 
 Allocation must be complete before a Pod is allowed to be scheduled onto a
 node. This avoids scenarios where a Pod is permanently assigned to a node which
@@ -1033,6 +1035,10 @@ retried when the ResourceClaim status changes.
 If all resources have been allocated already,
 the scheduler adds the Pod to the ReservedFor field of its ResourceClaims to ensure that
 no-one else gets to use those.
+
+If some resources are not allocated yet or reserving an allocated resource
+fails, the scheduling attempt needs to be aborted and retried at a later time
+or when the ResourceClaims change.
 
 #### Unreserve
 
