@@ -3,7 +3,8 @@ kep-number: 3189
 authors:
   - "@thesuperzapper"
 owning-sig: sig-apps
-participating-sigs: []
+participating-sigs:
+  - sig-architecture
 status: provisional
 creation-date: 2022-01-27
 reviewers:
@@ -19,9 +20,7 @@ approvers:
 #prr-approvers:
 
 see-also:
-  - https://github.com/kubernetes/kubernetes/issues/107598
-  - https://github.com/kubernetes/kubernetes/issues/45509
-  - https://github.com/kubernetes/kubernetes/issues/4301
+  - "/keps/sig-apps/2255-pod-cost"
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
@@ -30,13 +29,13 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.24"
+latest-milestone: "v1.25"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.24"
-  beta: "v1.25"
-  stable: "v1.26"
+  alpha: "v1.25"
+  beta: "v1.26"
+  stable: "v1.27"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

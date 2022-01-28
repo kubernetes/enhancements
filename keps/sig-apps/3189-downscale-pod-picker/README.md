@@ -204,97 +204,10 @@ Solution:
 
 ## Design Details
 
-#### API Contract:
+#### K8S API Changes:
 
-The contract for a `downscalePodPicker` API will be as follows:
-
-- Request payloads to the API will contain:
-   - `number_of_pods_requested` (`int`): minimum number of Pods to return
-   - `candidate_pods` (`list[string]`): list of Pod-names to choose from
-- Response payloads from the API will contain:
-   - `chosen_pods` (`list[string]`): list of Pod-names chosen to be removed
-   - `tied_pods` (`list[string]`): list of Pod-names we can't decide between
-- Other requirements:
-   - both `chosen_pods` and `tied_pods` can be non-empty
-   - total number of pods returned must be AT LEAST `number_of_pods_requested` (more if there are ties)
-   - only Pod-names contained in `candidate_pods` may be returned
-
-The response payload is split into two lists, because when `number_of_pods_requested > 1`, it is possible to have some Pods
-which were definitely chosen, and others which we cannot decide between, but who are definitely the "next best" after the chosen Pods.
-(e.g. if the Pods have the following metrics `[1,2,2,2]` and `number_of_pods_requested = 2`, 
-we might return `chosen_pods = [pod-1]`, `tied_pods = [pod-2, pod-3, pod-4]`)
-
-This contract doesn't require that `downscalePodPicker` APIs make a decision about ALL `candidate_pods`, and allows them
-to be designed such that they exit early from their search if they find enough good candidates before considering all Pods.
-(e.g. if the API is looking for the least-active Pods, it can exit early if enough fully-idle Pods are found to meet `number_of_pods_requested`)
-
-As Unassigned/PodPending/PodUnknown/Unready Pods will always be preferred by the controller for killing, it can be assumed that `candidate_pods` will not
-include Pods in these states (however, the state of any Pod may change in the time it takes for the request to be processed).
-
-#### Controller Behaviour Changes:
-
-When a ReplicaSet has a `downscalePodPicker` API specified, the controller will replace its `"Pods on nodes with more
-replicas come before pods on nodes with fewer replicas"` ranking with a call to the `downscalePodPicker` API.
-
-The new priority ordering for choosing which Pods are removed when downscaling a ReplicaSet will be:
-
-1. Pods not yet assigned to Node
-2. Pods in "Pending" phase
-3. Pods in "Unknown" phase
-4. Pods without "Ready" condition
-5. Pods with lower `controller.kubernetes.io/pod-deletion-cost` annotation
-6. Pods with lower "rank":
-    - If `downscalePodPicker` is specified on the ReplicaSet:
-       - Returned `chosen_pods` have `rank = 0`
-       - Returned `tied_pods` have `rank = 1`
-       - All remaining Pods have `rank = 3`
-    - Else:
-       - Pods have `rank` equal to `number of Pods on the same Node in a "Running" phase`
-7. Pods with less time having "Ready" condition:
-    - If "LogarithmicScaleDown" feature gate is enabled:
-       - Times are compared by first applying `Log2` and then rounding
-       - (This has the effect of "bucketing" the time intervals)
-    - Else:
-       - Times are compared directly
-8. Pods with higher restart count
-9. Pods with newer creation time
-
-#### Controller Code Changes:
-
-To make the ReplicaSet controller preform the required `downscalePodPicker` API requests, we will be making the following changes:
-
-1. `getPodsToDelete()` found at [pkg/controller/replicaset/replica_set.go#L801](https://github.com/kubernetes/kubernetes/blob/876d4e0ab029ac7c314bb0e033bdd036531fe426/pkg/controller/replicaset/replica_set.go#L801):
-    - We will change how the `podWithRanks` instance of type [ActivePodsWithRanks](https://github.com/kubernetes/kubernetes/blob/876d4e0ab029ac7c314bb0e033bdd036531fe426/pkg/controller/controller_utils.go#L785-L797) is created.
-    - If `downscalePodPicker` is specified on the ReplicaSet:
-       - initialise a `number_of_pods_requested` integer with a value of `diff`
-       - construct a `candidate_pods` list by starting from `filteredPods`:
-          - remove Unassigned/PodPending/PodUnknown/Unready Pods:
-             - decrement `number_of_pods_requested` by 1
-             - if `number_of_pods_requested` is 0:
-                - set rank of all Pods to 0
-                - RETURN
-          - populate a mapping from "pod name" -> "filteredPods list-index"
-       - send `number_of_pods_requested` and `candidate_pods` to the `downscalePodPicker` API:
-          - if timeout reached:
-             - set rank of all Pods to 0
-             - RETURN
-          - if transport error:
-             - set rank of all Pods to 0
-             - RETURN
-          - if response malformed or too large:
-             - set rank of all Pods to 0
-             - RETURN
-       - get `chosen_pods` and `tied_pods` from the API response:
-          - set rank of Pods in `chosen_pods` to 0
-          - set rank of Pods in `tied_pods` to 1
-          - set rank of remaining Pods to 3
-          - RETURN
-    - Else:
-       - Use existing `getPodsRankedByRelatedPodsOnSameNode()` function
-2. `manageReplicas()` found at [pkg/controller/replicaset/replica_set.go#L599](https://github.com/kubernetes/kubernetes/blob/876d4e0ab029ac7c314bb0e033bdd036531fe426/pkg/controller/replicaset/replica_set.go#L599):
-    - Calculating `relatedPods` will only be necessary if `downscalePodPicker` is not specified.
-
-#### YAML API Spec:
+A new `downscalePodPicker` field will be added to `ReplicaSetSpec` and `DeploymentSpec`,
+this field specifies a "Pod Picker" REST API that informs which Pods are removed when `replicas` is decreased.
 
 Here is an example ReplicaSet with thew new `downscalePodPicker` field:
 
@@ -379,6 +292,97 @@ The `secretKeyRef` field has type [`SecretKeySelector`](https://kubernetes.io/do
 | `key`  | string | The key of the secret to select from. Must be a valid secret key. |
 | `name` | string | Name of the referent.                                             |
 | `key`  | string | Specify whether the Secret or its key must be defined.            |
+
+
+#### "Pod Picker" API contract:
+
+The contract for a `downscalePodPicker` API will be as follows:
+
+- Request payloads to the API will contain:
+   - `number_of_pods_requested` (`int`): minimum number of Pods to return
+   - `candidate_pods` (`list[string]`): list of Pod-names to choose from
+- Response payloads from the API will contain:
+   - `chosen_pods` (`list[string]`): list of Pod-names chosen to be removed
+   - `tied_pods` (`list[string]`): list of Pod-names we can't decide between
+- Other requirements:
+   - both `chosen_pods` and `tied_pods` can be non-empty
+   - total number of pods returned must be AT LEAST `number_of_pods_requested` (more if there are ties)
+   - only Pod-names contained in `candidate_pods` may be returned
+
+The response payload is split into two lists, because when `number_of_pods_requested > 1`, it is possible to have some Pods
+which were definitely chosen, and others which we cannot decide between, but who are definitely the "next best" after the chosen Pods.
+(e.g. if the Pods have the following metrics `[1,2,2,2]` and `number_of_pods_requested = 2`, 
+we might return `chosen_pods = [pod-1]`, `tied_pods = [pod-2, pod-3, pod-4]`)
+
+This contract doesn't require that `downscalePodPicker` APIs make a decision about ALL `candidate_pods`, and allows them
+to be designed such that they exit early from their search if they find enough good candidates before considering all Pods.
+(e.g. if the API is looking for the least-active Pods, it can exit early if enough fully-idle Pods are found to meet `number_of_pods_requested`)
+
+As Unassigned/PodPending/PodUnknown/Unready Pods will always be preferred by the controller for killing, it can be assumed that `candidate_pods` will not
+include Pods in these states (however, the state of any Pod may change in the time it takes for the request to be processed).
+
+#### Controller Behaviour Changes:
+
+When a ReplicaSet has a `downscalePodPicker` API specified, the controller will replace its `"Pods on nodes with more
+replicas come before pods on nodes with fewer replicas"` ranking (step 6 below) with a call to the `downscalePodPicker` API.
+
+The new priority ordering for choosing which Pods are removed when downscaling a ReplicaSet will be:
+
+1. Pods not yet assigned to Node
+2. Pods in "Pending" phase
+3. Pods in "Unknown" phase
+4. Pods without "Ready" condition
+5. Pods with lower `controller.kubernetes.io/pod-deletion-cost` annotation
+6. Pods with lower "rank":
+    - If `downscalePodPicker` is specified on the ReplicaSet:
+       - Returned `chosen_pods` have `rank = 0`
+       - Returned `tied_pods` have `rank = 1`
+       - All remaining Pods have `rank = 3`
+    - Else:
+       - Pods have `rank` equal to `number of Pods on the same Node in a "Running" phase`
+7. Pods with less time having "Ready" condition:
+    - If "LogarithmicScaleDown" feature gate is enabled:
+       - Times are compared by first applying `Log2` and then rounding
+       - (This has the effect of "bucketing" the time intervals)
+    - Else:
+       - Times are compared directly
+8. Pods with higher restart count
+9. Pods with newer creation time
+
+#### Controller Code Changes:
+
+To make the ReplicaSet controller preform the required `downscalePodPicker` API requests, we will be making the following changes:
+
+1. `getPodsToDelete()` found at [pkg/controller/replicaset/replica_set.go#L801](https://github.com/kubernetes/kubernetes/blob/876d4e0ab029ac7c314bb0e033bdd036531fe426/pkg/controller/replicaset/replica_set.go#L801):
+    - We will change how the `podWithRanks` instance of type [ActivePodsWithRanks](https://github.com/kubernetes/kubernetes/blob/876d4e0ab029ac7c314bb0e033bdd036531fe426/pkg/controller/controller_utils.go#L785-L797) is created.
+    - If `downscalePodPicker` is specified on the ReplicaSet:
+       - initialise a `number_of_pods_requested` integer with a value of `diff`
+       - construct a `candidate_pods` list by starting from `filteredPods`:
+          - remove Unassigned/PodPending/PodUnknown/Unready Pods:
+             - decrement `number_of_pods_requested` by 1
+             - if `number_of_pods_requested` is 0:
+                - set rank of all Pods to 0
+                - RETURN
+          - populate a mapping from "pod name" -> "filteredPods list-index"
+       - send `number_of_pods_requested` and `candidate_pods` to the `downscalePodPicker` API:
+          - if timeout reached:
+             - set rank of all Pods to 0
+             - RETURN
+          - if transport error:
+             - set rank of all Pods to 0
+             - RETURN
+          - if response malformed or too large:
+             - set rank of all Pods to 0
+             - RETURN
+       - get `chosen_pods` and `tied_pods` from the API response:
+          - set rank of Pods in `chosen_pods` to 0
+          - set rank of Pods in `tied_pods` to 1
+          - set rank of remaining Pods to 3
+          - RETURN
+    - Else:
+       - Use existing `getPodsRankedByRelatedPodsOnSameNode()` function
+2. `manageReplicas()` found at [pkg/controller/replicaset/replica_set.go#L599](https://github.com/kubernetes/kubernetes/blob/876d4e0ab029ac7c314bb0e033bdd036531fe426/pkg/controller/replicaset/replica_set.go#L599):
+    - Calculating `relatedPods` will only be necessary if `downscalePodPicker` is not specified.
 
 
 ### Test Plan
