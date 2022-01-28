@@ -396,7 +396,14 @@ progressing through storage behaviors:
 
 For CRDs, the problem of avoiding database corruption is much simpler, because
 apiserver is in control of a resource type lifecycle. Apiserver should return
-error for CRD updates that try to delete a version still present in storage. 
+error for CRD updates that try to delete a version still present in storage.
+
+Optionally, the mechanism introduced here can be also extended to provide
+automatic migration for CRDs (despite their differing lifecycle) with the
+following changes:
+  * when apiserver notices an update in `CRDSpec.versions.storage`, it kicks off the rewrite loop that updates all instances of that CR. When completed, it updates `CRDStatus.storedVersions` field to reflect that the migration was successful (similar to the mechanism from [KEP 2855](https://github.com/kubernetes/enhancements/blob/53cfb5d1fd31390c67914b1ce4f1298e77b447cb/keps/sig-api-machinery/2855-automated-stored-versions/README.md)). It will rely on KRM's optimistic concurrency to ensure that no changes the the CR Definition object happened in the meantime.
+  * upon apiserver startup, the loop will be kicked off for CRDs with discrepancy between the information in `CRDSpec.versions.storage` and in `CRDStatus.storedVersions`.
+  * removal of `CRDSpec.versions` will be guarded based on the information in `CRDStatus.storedVersions`.
 
 ### FAQ
 
