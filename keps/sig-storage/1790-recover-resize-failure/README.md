@@ -306,11 +306,8 @@ after expansion is complete even with older kubelet. No recovery from expansion 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  For a PVC that has undergone recovery from expansion failure successfully, it is not possible
-  to identify the fact that - PVC used this feature. But for PVCs for which
-  recovery failed even after reducing size, an operator can determine the feature in-use
-  by looking at newly introduced `pvc.Status.ResizeStatus` field.
-
+  Any volume that has been recovered will emit a metric: `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`.
+  
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
   - [ ] Metrics
@@ -340,7 +337,13 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
-  Not applicable.
+  We are planning to add new counter metrics that will record success and failure of recovery operations.
+  In cases where recovery fails, the counter will forever be increasing until an admin action resolves the error.
+
+  Tentative name of metric is - `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`
+
+  The reason of using PV name as a label is - we do not expect this feature to be used in a cluster very often
+  and hence it should be okay to use name of PVs that were recovered this way.
 
 ### Dependencies
 
