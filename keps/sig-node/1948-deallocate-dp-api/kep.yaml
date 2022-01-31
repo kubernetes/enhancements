@@ -6,10 +6,8 @@ owning-sig: sig-node
 participating-sigs: []
 status: implementable
 creation-date: "2021-12-07"
-reviewers:
-- "@klueska"
-approvers:
-- "@sig-node-leads"
+reviewers: ["@klueska"]
+approvers: ["@sig-node-leads"]
 see-also: []
 replaces: []
 
