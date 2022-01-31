@@ -388,8 +388,12 @@ different feature gates that control various aspects of expansion.
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
     plane?
+    Enabling/Disabling this feature does not require complete downtime of control-plane
+    and feature gates can be enabled progressively on different control-plane nodes.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    Enabling this feature can be enabled progressively on nodes and as expansion is enabled
+    on the node then volume expansion will happen on kubelet.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -457,20 +461,12 @@ Having said that if file system requires expansion during mount then it is obvio
 
 - [ ] Metrics
   - controller expansion operation duration:
-    - Metric name: storage_operation_duration_seconds{operation_name=expand_volume}
+    - Metric name: storage_operation_duration_seconds{operation_name=expand_volume, status=success|fail-unknown}
     - [Optional] Aggregation method: percentile
-    - Components exposing the metric: kube-controller-manager
-  - controller expansion operation errors:
-    - Metric name: storage_operation_errors_total{operation_name=expand_volume}
-    - [Optional] Aggregation method: cumulative counter
     - Components exposing the metric: kube-controller-manager
   - node expansion operation duration:
-    - Metric name: storage_operation_duration_seconds{operation_name=volume_fs_resize}
+    - Metric name: storage_operation_duration_seconds{operation_name=volume_fs_resize, status=success|fail-unknown}
     - [Optional] Aggregation method: percentile
-    - Components exposing the metric: kubelet
-  - node expansion operation errors:
-    - Metric name: storage_operation_errors_total{operation_name=volume_fs_resize}
-    - [Optional] Aggregation method: cumulative counter
     - Components exposing the metric: kubelet
   - CSI operation metrics:
     - Metric name: csi_sidecar_operations_seconds
@@ -481,6 +477,8 @@ Having said that if file system requires expansion during mount then it is obvio
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+    We are going to add equivalent of intree storage_operation metrics for volume expansion when
+    expansion is performed externally via external-resizer.
 
 ### Dependencies
 
@@ -504,14 +502,18 @@ Yes enabling this feature requires new API calls.
     - GET PV
     - List PVs
   - originating components: kubelet, kube-controller-manager, external-resizer
-  - resync duration: 10mins
+  - resync duration: 10mins (also user configurable)
 - Update to PVCs:
   - API operations
     - PATCH PVC
     - GET PVC
     - List PVC
   - originating components: kubelet, kube-controller-manager, external-resizer
-  - resync duration: 10mins
+  - resync duration: 10mins (also user configurable)
+
+If user enables protection for not expanding PVCs that are in-use, external-resizer will
+also watch *all* pods in the cluster. This is an optional flag in external-resizer and generally
+only needed when some CSI drivers don't want to handle expansion calls for volumes which are potentially in-use by a pod.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -525,9 +527,11 @@ Yes, we expect new calls to modify existing volume objects.
 
 Describe them, providing:
   - API type(s): PVC
-  - Estimated increase in size: A PVC with conditions could have its size increased by anywhere between 100 to 250B.
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
-
+    - Estimated increase in size: A PVC with conditions could have its size increased by anywhere between 100 to 250B.
+    - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  - API type(s): StorageClass
+    - Estimated increase in size: A StorageClass with `AllowVolumeExpansion` has its size increased by 26bytes almost.
+    - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -540,6 +544,9 @@ Enabling this feature should not result in resource usage by significant margin,
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+    Since this feature is user driven and API server or etcd becomes unavailable then users won't be able to expand the PVC.
+    But if API server becomes unavailable midway through the expansion process then the expansion controller may not be able
+    save updated PVC in api-server but control-flow is designed to retry and recover from such failures.
 
 ###### What are other known failure modes?
 
