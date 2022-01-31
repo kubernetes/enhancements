@@ -22,7 +22,7 @@ milestone:
   stable: "v1.24"
 creation-date: 2019-02-26
 last-updated: 2022-01-14
-status: implemented
+status: implementable
 feature-gates:
   - name: PodOverhead
     components:
