@@ -368,7 +368,7 @@ indicate that feature is not working. However this is a proxy indication that
 is very unreliable - there is a big chance that evictions are caused by Pod or
 Runtime behavior.
 
-Checking Pod obejct and cgroup settings as described in [Usage Example](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-overhead/#usage-example)
+Checking Pod object and cgroup settings as described in [Usage Example](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-overhead/#usage-example)
 section of the documentation may be used as a good proxy to check that the
 feature is functional.
 
