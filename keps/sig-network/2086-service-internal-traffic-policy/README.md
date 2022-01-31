@@ -209,6 +209,11 @@ New Services should be able to set the `internalTrafficPolicy` field. Existing S
 
 There will be unit tests to verify that apiserver will drop the field when the `ServiceInternalTrafficPolicy` feature gate is disabled.
 
+Tests added so far:
+* https://github.com/kubernetes/kubernetes/blob/0038bcfad495a0458372867a77c8ca646f361c40pkg/registry/core/service/strategy_test.go#L368-L390
+* https://github.com/kubernetes/kubernetes/blob/0038bcfad495a0458372867a77c8ca646f361c40/pkg/registry/core/service/storage/storage_test.go#L682-L684
+* https://github.com/kubernetes/kubernetes/blob/0038bcfad495a0458372867a77c8ca646f361c40/test/integration/service/service_test.go
+
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
