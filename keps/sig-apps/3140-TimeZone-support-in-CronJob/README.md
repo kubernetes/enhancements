@@ -63,7 +63,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 CronJob creates Jobs based on the schedule specified by the author, but the Time
-Zone used during the creation depens on where kube-controller-manager is running.
+Zone used during the creation depends on where kube-controller-manager is running.
 This proposal aims to extend CronJob resource with the ability for a user to
 define the TimeZone when a Job should be created.
 
@@ -76,13 +76,13 @@ at the time was that introducing such functionality would require cluster operat
 to manually include TimeZone database since golang did not have one.
 Starting from [golang 1.15](https://go.dev/doc/go1.15) `time/tzdata` package can
 be embedded in the binary thus removing the requirement for external database.
-At that time the majority of the focus was towards [moving CronJob to GA](https://github.com/kubernetes/enhancements/issues/19)
+At that time, the majority of the focus was towards [moving CronJob to GA](https://github.com/kubernetes/enhancements/issues/19),
 so the effort to support TimeZone was again delayed. Now that we have CronJob
 fully GA-ed it's time to satisfy the original request.
 
 ### Goals
 
-- Add the field `.spec.timeZone` which allows specifying a valid TimeZone
+- Add the field `.spec.timeZone` which allows specifying a valid TimeZone name
 
 ### Non-Goals
 
@@ -95,14 +95,14 @@ and make progress.
 
 Add the field `.spec.timeZone` to the CronJob resource. The cronjob controller
 will take the field into account when scheduling the next Job run. In case the
-field is not specified or is empty the controller will maitain the current
-behavior which is to rely on the time zone of the kube-controller-manager
+field is not specified or is empty, the controller will maintain the current
+behavior, which is to rely on the time zone of the kube-controller-manager
 process.
 
 ### Notes/Constraints/Caveats (Optional)
 
-The current mechanism, which will still be the default behavior heavily relies
-on the time zone of the kube-controller-manager process which is hard for a
+The current mechanism, which will still be the default behavior, heavily relies
+on the time zone of the kube-controller-manager process, which is hard for a
 regular user to figure out. Exposing an explicit field for setting a time zone
 will allow CronJob authors to simplify the user experience when creating CronJobs.
 
@@ -125,20 +125,22 @@ CronJobs can be created per user.
 
 ### CronJob API
 
-The `CronJobSpec` structure is expanded with new `TimeZone` field which allows
+The `.spec` for a CronJob is expanded with a new `timeZone` field which allows
 specifying the name of the time zone to be used. Missing or empty value of the
 field indicates the current behavior, which relies on the time zone of the
 kube-controller-manager process.
+
+In the API code, that looks like:
 
 ```golang
 
 type CronJobSpec struct {
 
-	// The schedule in Cron format, see https://en.wikipedia.org/wiki/Cron.
-	Schedule string
+    // The schedule in Cron format, see https://en.wikipedia.org/wiki/Cron.
+    Schedule string
 
-  // Time zone for the above schedule
-  TimeZone *string
+    // Time zone for the above schedule
+    TimeZone *string
 
 }
 ```
@@ -149,7 +151,7 @@ golang timezone database.
 ### CronJob controller
 
 CronJob controller will use non-nil, non-empty value from `TimeZone` field when
-parsing the schedule and during scheduling the next run time. Additionally the
+parsing the schedule and during scheduling the next run time. Additionally, the
 time zone will be reflected in the `.status.lastSuccessfulTime` and `.status.lastScheduleTime`.
 In all other cases the controller will maintain the current behavior.
 
@@ -488,6 +490,9 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+Another approach was to specify time zone as an offset to UTC, but using the
+name instead seems more user friendly.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do

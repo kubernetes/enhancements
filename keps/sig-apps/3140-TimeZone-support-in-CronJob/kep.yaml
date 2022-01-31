@@ -8,6 +8,7 @@ status: implementable
 creation-date: 2022-01-14
 reviewers:
   - "@ravig"
+  - "@atiratree"
   - "@iterion"
 approvers:
   - "@janetkuo"
@@ -41,4 +42,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - my_feature_metric
+#   - my_feature_metric
