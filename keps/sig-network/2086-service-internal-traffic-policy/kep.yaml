@@ -39,3 +39,6 @@ feature-gates:
       - kube-apiserver
       - kube-proxy
 disable-supported: true
+
+metrics:
+  - kubeproxy/sync_proxy_rules_blackhole_total

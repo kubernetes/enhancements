@@ -168,7 +168,7 @@ Beta:
 * consensus on how internalTrafficPolicy overlaps with topology-aware routing.
 
 GA:
-* metrics for if a Service is dropping local traffic due to no endpoints (a.k.a black hole)
+* metrics for total number of Services that are dropping local traffic (kubeproxy/sync_proxy_rules_blackhole_total) due to no endpoints (a.k.a black hole).
 * consensus on whether or not "PreferLocal" should be included as a new policy type
 
 ### Upgrade / Downgrade Strategy
@@ -242,9 +242,7 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can an operator determine if the feature is in use by workloads?**
 
 * Check Service to see if `internalTrafficPolicy` is set to `Local`.
-* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints).
-
-TODO: add metric name once it's decided
+* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules/blackhole_total` (subject to rename).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
