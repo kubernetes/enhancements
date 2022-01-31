@@ -41,4 +41,4 @@ feature-gates:
 disable-supported: true
 
 metrics:
-  - kubeproxy/sync_proxy_rules_blackhole_total
+  - kubeproxy/sync_proxy_rules_local_no_endpoints

@@ -168,7 +168,7 @@ Beta:
 * consensus on how internalTrafficPolicy overlaps with topology-aware routing.
 
 GA:
-* metrics for total number of Services that are dropping local traffic (kubeproxy/sync_proxy_rules_blackhole_total) due to no endpoints (a.k.a black hole).
+* metrics for total number of Services that have no endpoints (kubeproxy/sync_proxy_rules_no_endpoints_total) with additional labels for internal/external and local/cluster policies.
 * consensus on whether or not "PreferLocal" should be included as a new policy type
 
 ### Upgrade / Downgrade Strategy
