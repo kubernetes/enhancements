@@ -167,6 +167,10 @@ Beta:
 * feature gate `ServiceInternalTrafficPolicy` is enabled by default.
 * consensus on how internalTrafficPolicy overlaps with topology-aware routing.
 
+GA:
+* metrics for if a Service is dropping local traffic due to no endpoints (a.k.a black hole)
+* consensus on whether or not "PreferLocal" should be included as a new policy type
+
 ### Upgrade / Downgrade Strategy
 
 * The `trafficPolicy` field will be off by default during the alpha stage but can handle any existing Services that has the field already set.
