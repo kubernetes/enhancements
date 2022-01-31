@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-release
 participating-sigs:
   - sig-security
-status: provisional
+status: implementable
 creation-date: 2021-11-02
 reviewers:
   - "@dlorenc"
@@ -34,13 +34,15 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "v1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.23"
+  alpha: "v1.24"
   # beta: "v1.20"
   # stable: "v1.22"
+
+disable-supported: true
 
 # The following PRR answers are required at beta release
 # metrics:
