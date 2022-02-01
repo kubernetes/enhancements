@@ -85,7 +85,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -204,6 +203,8 @@ know that this has succeeded?
 
 ### Non-Goals
 - Handling Container startup/shutdown ordering for application and sidecar containers.
+- Pod termination by kubelet if sidecar containers have exited (crash).
+
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
@@ -266,8 +267,11 @@ bogged down.
 
 #### Story 1
 
+A Job consisting of two containers needs to be scheduled. It consists in a batch application that exits once the processing is done, and a sidecar sending logs to an external log server.
 
-#### Story 2
+As of today it's impossible to successfully terminate the Pod hosting this Job after the business processing has been done, because the log sending container will keep running unless some RPC is implemented between the two containers.
+
+By defining the batch processing container as a keystone container within the Pod, kubelet will properly handle this lifecycle.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -369,7 +373,7 @@ when drafting this test plan.
 ### Graduation Criteria
 
 #### alpha: 
-- Implement the proposal limiting to 1 keystone container per pod and behind the feature flag.
+- Implement the proposal limiting to one keystone container per pod and behind the feature flag.
 - Use an alpha API field in the container list of the pod spec.
 - Add unit and e2e tests.
 
@@ -451,6 +455,8 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+Enabling or disabling the new feature will be done using the feature flag. Please refer to the version skew strategy for upgrade/downgrade paths which will in all case result in the default Pod lifecycle being applied.
+
 ### Version Skew Strategy
 
 <!--
@@ -465,6 +471,10 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+If the API server is updated before the kubelet, or if the feature isn't enabled in the latter, the kubelet won't handle the API field and default Pod lifecycle will be applied.
+
+If the kubelet is updated before the API server, or if the feature isn't enabled in the latter, no API field will be present in the Pod and default Pod lifecycle will be applied.
 
 ## Production Readiness Review Questionnaire
 
@@ -514,14 +524,17 @@ Pick one of these and delete the rest.
     
 
 ###### Does enabling the feature change any default behavior?
-No
+
+No.
+
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-Yes it can be rolled back, Kubelet will not simply ignore the alpha API field on the keystone containers. It will not have effect on other this or any other pod.
+
+Yes it can be rolled back, kubelet will simply ignore the alpha API field on the keystone containers. It will not have effect on this one or any other pod.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -532,6 +545,10 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+If the API field is still present in the pod in etcd, kubelet will again use the new lifecycle.
+
+If the API field is no longer there, the user might have to reimport his workloads.
+
 ###### Are there any tests for feature enablement/disablement?
 
 <!--
@@ -540,6 +557,8 @@ gates. However, unit tests in each component dealing with managing data, created
 with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
+
+No, but could be added before moving to beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -796,6 +815,8 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+The kubelet lifecycle code is very intricate and any change to it usually results in several regressions.
 
 ## Alternatives
 
