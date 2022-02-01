@@ -232,6 +232,9 @@ there are a few cases:
   should be no change in behavior.
   3. If TimeZone feature gate was not enabled there should be no change in behavior.
 
+Irrespectively of the option, cluster administrator should monitor `cronjob_job_creation_skew`
+which reports the skew between schedule and actual job creation.
+
 ### Version Skew Strategy
 
 This feature has no node runtime implications.
@@ -285,6 +288,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+
+An upgrade flow can be vulnerable to the enable, disable, enable if you have
+a lease that is acquired by a new kube-controller-manager, then an old
+kube-controller-manager, then a new kube-controller-manager.
 
 ###### What specific metrics should inform a rollback?
 
@@ -363,10 +370,9 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [x] Metrics
+  - Metric name: `cronjob_controller_rate_limiter_use`
+  - Components exposing the metric: `kube-controller-manager`
 - [ ] Other (treat as last resort)
   - Details:
 
