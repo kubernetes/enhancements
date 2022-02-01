@@ -379,8 +379,7 @@ Contains an identifier representing the network for the cluster.
 
 ##### Contents
 
-*   The identifier **should** be a valid RFC-1123 DNS label [as described for object names in the Kubernetes docs](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
-*   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
+*   The identifier **should** be a valid string.
 *   The identifier **should** be a human readable description.
 
 
