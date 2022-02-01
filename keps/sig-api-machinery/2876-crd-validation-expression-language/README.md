@@ -27,6 +27,8 @@
   - [Type System Integration](#type-system-integration)
     - [Why not represent associative lists as maps in CEL?](#why-not-represent-associative-lists-as-maps-in-cel)
   - [Resource constraints](#resource-constraints)
+    - [Cost limits](#cost-limits)
+    - [Time limits](#time-limits)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
