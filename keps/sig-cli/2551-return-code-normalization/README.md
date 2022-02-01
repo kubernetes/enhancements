@@ -11,7 +11,6 @@
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Feature Gating](#feature-gating)
 - [Design Details](#design-details)
@@ -36,7 +35,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -134,15 +132,6 @@ execution of kubernetes commands targeting a cluster, and fastly providing a fee
 was due to something on the client side (like a missing flag, an invalid yaml file because of...tabs...) or if this
 is due to some invalid operation on the server side.
 
-
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
 
 ### Risks and Mitigations
 
@@ -292,16 +281,19 @@ Not applicable, as this is just a kubectl change
 ###### How can this feature be enabled / disabled in a live cluster?
 
 
-- [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ENV VAR `KUBECTL_ERROR_CODES`
-  
+- [X] Other
+  - Describe the mechanism: Environment Variable `KUBECTL_ERROR_CODES`
+  - Will enabling / disabling the feature require downtime of the control plane?
+  No
+  - Will enabling / disabling the feature require downtime or reprovisioning of a node?
+  No 
 ###### Does enabling the feature change any default behavior?
 
-Yes, kubectl exit codes numbers will change after the FG is enabled
+Yes, kubectl exit codes numbers will change after the Environment variable is set
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, just remove the Env Var.
+Yes, just remove the Environment Variable.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -309,7 +301,8 @@ kubectl will start issuing different and standardized exit codes again when erro
 
 ###### Are there any tests for feature enablement/disablement?
 
-No.
+A test simulating an error can be created, and check a return code 
+so we can assert if the enablement is working.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -336,11 +329,15 @@ No
 
 Not applicable
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+###### How can someone using this feature know that it is working for their instance?
+- [X] Other 
+  - Details: There are some situations today were exit codes are not returned correctly. Knowing this situations, someone can test whether the expected exit code was returned given a well known situation.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 Not applicable
 
-###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 Not applicable
 
@@ -400,9 +397,7 @@ Not applicable
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+N/A
 
 ## Alternatives
 
@@ -410,12 +405,4 @@ Why should this KEP _not_ be implemented?
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
--->
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
 -->

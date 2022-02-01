@@ -27,3 +27,8 @@ latest-milestone: "v1.24"
 milestone:
   alpha: "v1.24"
 
+feature-gates:
+  - name: KUBECTL_ERROR_CODES
+    components:
+      - kubectl
+disable-supported: true
