@@ -332,6 +332,10 @@ Apart from the obvious API change and behavior described above, kubelet + volume
 * Volume plugins will get SELinux context as a new parameter of `MountDevice` and `SetUp`/`SetupAt` calls (resp. as a new field in `DeviceMounterArgs` / `MounterArgs`).
   * Each volume plugin can choose to use the mount option `-o context=` (e.g. when `CSIDriver.SELinuxRelabelPolicy` is `true`) or ignore it (e.g. in-tree volume plugins for shared filesystems or when `CSIDriver.SELinuxRelabelPolicy` is `false` or `nil`).
   * Each volume plugin then returns `SupportsSELinux` from `GetAttributes()` call, depending on if it wants the container runtime to relabel the volume (`true`) or not (`false`; the volume was already mounted with the right label or it does not support SELinux at all).
+* When a CSI driver announces `SELinuxMountSupported: true`, kubelet will check that `-o context=X` was correctly applied after `NodePublish()`.
+  It will report error when the context in `/proc/mounts` does not match the expected value.
+  It is a failure on CSI driver side, that it announces something that it is not able to fulfill.
+  * Note that kubelet can't check mount options after `NodeStage`, because a CSI driver does not need to mount during NodeStage or it may choose to mount to another directory than the staging one.
 
 ### Implementation phases
 
