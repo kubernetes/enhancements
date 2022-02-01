@@ -367,7 +367,9 @@ different feature gates that control various aspects of expansion.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: ExpandPersistentVolumes
-    - description: Parent feature gate that is required for expansion in general to work.
+    - description: |
+        This feature is required for `pvc.Spec.Resources` to be editable and must be
+        enabled for other expansion related feature gates to work.
     - Components depending on the feature gate:
         - kube-apiserver
         - kubelet
@@ -423,8 +425,12 @@ some kind of terminal error then it may prevent mount operation from succeeding.
 
 ###### What specific metrics should inform a rollback?
 
-The `volume_mount` operation failure metric - `storage_operation_errors_total{operation_name=volume_mount}`
-should tell us if expansion operation during volume mount is causing mount failures.
+The `volume_mount` operation failure metric - `storage_operation_duration_seconds{operation_name=volume_mount, status=fail-unknown}`
+combined with `storage_operation_duration_seconds{operation_name=volume_fs_resize, status=fail-unknown}` should tell us
+if expansion is failing on the node and if it is causing mount failures.
+
+Also `csi_sidecar_operations_seconds` and `csi_operations_seconds` metrics with high failure rates for expansion operation should indicate
+that expansion is not working in the cluster and hence feature should be rolled back.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -444,9 +450,14 @@ A PVC that is being expanded should have `pvc.Status.Conditions` set.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Events
-  - Event Reason: External resizer is resizing volume pvc-a71483ed-a5bc-48fa-9151-ca41e7e6634e
+  - Resizing (on PVC)
+    - Event Reason: External resizer is resizing volume pvc-a71483ed-a5bc-48fa-9151-ca41e7e6634e
+  - VolumeResizeSuccessful (on PVC)
+    - Event Reason: Volume resize is successful
+  - FileSystemResizeSuccessful (on PVC)
+    - Event Reason: Volume resize is successful. This event is emitted when resizing finishes on kubelet.
 - [x API .status
-  - Condition name: "Resizing" or "FileSystemResizePending"
+  - Condition name:
   - Other field:
 - [x] Other (treat as last resort)
   - Details: `pvc.Status.Capacity` should reflect user requested size after expansion is complete.
@@ -468,17 +479,22 @@ Having said that if file system requires expansion during mount then it is obvio
     - Metric name: storage_operation_duration_seconds{operation_name=volume_fs_resize, status=success|fail-unknown}
     - [Optional] Aggregation method: percentile
     - Components exposing the metric: kubelet
-  - CSI operation metrics:
+  - CSI operation metrics in controller:
     - Metric name: csi_sidecar_operations_seconds
     - [Optional] Aggregation method: percentile
     - Components exposing the metric: external-resizer
+  - CSI operation metrics in kubelet:
+    - Metric Name: csi_operations_seconds
+    - [Optional] Aggregation method: percentile
+    - Components exposing the metric: kubelet
 
 - [ ] Other (treat as last resort)
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-    We are going to add equivalent of intree storage_operation metrics for volume expansion when
-    expansion is performed externally via external-resizer.
+    All the intree operations from control plane emit `storage_operation_duration_seconds{operation_name=expand_volume, status=success|fail-unknown}` metrics but CSI equivalent from external-resizer is `csi_sidecar_operations_seconds` which will be
+    documented as alternative if CSI migration is enabled or driver being used is CSI driver.
+    We don't need to emit new metrics but we do need to document the naming change in metric names.
 
 ### Dependencies
 
