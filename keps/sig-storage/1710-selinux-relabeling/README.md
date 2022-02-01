@@ -196,8 +196,11 @@ This KEP changes behavior of Kubernetes when two pods with different SELinux con
 Let Pod A with SELinux context X runs and Pod B with SELinux context Y is about to start on the same node and both use the same volume.
 
 * *Before this KEP*: Pod A suddenly starts getting "permission denied" errors when accessing files on the volume, because the container runtime re-labeled all files on it with label Y when starting pod B. Pod B will start just fine and can access the volume.
-* *As proposed in this KEP*: Pod B won't even start, because the volume is already mounted with `-o context=X`. When kubelet tries to mount the same volume with `-o context=Y`, this mount fails. The Pod B with be `ContainerCreating` until Pod A is deleted and its volumes unmounted.
-  * Exact error message will depend on the CSI driver, if it uses `/bin/mount`, it will likely show a generic message like `mount: wrong fs type, bad option, bad superblock on /dev/sdb, missing codepage or helper program, or other error`. `/bind/mount` / kernel is not able to tell which mount option is wrong.
+* *As proposed in this KEP*: Pod B won't even start, because the volume is already mounted with `-o context=X`.
+  Since kubelet tracks SELinux contexts of all mounts it manages, it will see that a new pod wants to use an already mounted volume with a different context, and it will fail with a message like `volume X is already used by pod Y with another SELinux context`.
+  Note that this will not work for mounts of the volume done by something else than kubelet.
+  In that case, kubelet will pass `-o context=X` to the CSI driver, the driver will pass it to kernel and kernel will fail with a generic `mount: wrong fs type, bad option, bad superblock on /dev/sdb, missing codepage or helper program, or other error`.
+  `/bind/mount` / kernel is not able to tell which mount option is wrong.
 
 A special case of the previous example is when two pods with different SELinux contexts use the same volume, but different subpaths of it.
 The container runtime then re-labels only these subpaths and as long as the subpaths are different, both pods can run today.
@@ -320,10 +323,12 @@ Apart from the obvious API change and behavior described above, kubelet + volume
 
 * Kubelet's VolumeManager needs to track which SELinux label should get a volume in global mount (to call `MountDevice()` with the right mount options).
   * It must call `UnmountDevice()` even when another pod wants to re-use a mounted volume, but it has a different SELinux context.
-  * While tracking SELinux labels of volumes, it can emit metrics suggested below.
-  * After kubelet restart, kubelet must reconstruct the original SELinux label it used to SetUp (MountDevice) each volume.
+  * After kubelet restart, kubelet must reconstruct the original SELinux label it used to SetUp and MountDevice of each volume.
     * Volume reconstruction must be updated to get the SELinux label from mount (in-tree volume plugins) or stored json file (CSI).
       This label must be updated in VolumeManager's ActualStateOfWorld after reconstruction.
+  * Reconciler must check also SELinux context used to mount a volume (both mounted devices and volumes) before considering what operation to take on a volume (`MountVolume` or `UnmountVolume`/`UnmountDevice` or nothing).
+    It must throw proper error message telling that a Pod can't start because its volume is used by another Pod with a different SELinux context.
+    * This is a good point to capture any metrics proposed below.
 * Volume plugins will get SELinux context as a new parameter of `MountDevice` and `SetUp`/`SetupAt` calls (resp. as a new field in `DeviceMounterArgs` / `MounterArgs`).
   * Each volume plugin can choose to use the mount option `-o context=` (e.g. when `CSIDriver.SELinuxRelabelPolicy` is `true`) or ignore it (e.g. in-tree volume plugins for shared filesystems or when `CSIDriver.SELinuxRelabelPolicy` is `false` or `nil`).
   * Each volume plugin then returns `SupportsSELinux` from `GetAttributes()` call, depending on if it wants the container runtime to relabel the volume (`true`) or not (`false`; the volume was already mounted with the right label or it does not support SELinux at all).
