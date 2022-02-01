@@ -173,7 +173,10 @@ This is now practical to do since conformance no longer relies on non-stable API
 
 ### Non-Goals
 
-1. Change featuregate defaults.
+1. Change feature gate defaults.
+   Feature gates control new features (not just new APIs) and they are on by default for beta features.
+   This KEP is not changing the lifecycle flow for feature gates.
+   It is currently alpha=off-by-default, beta=on-by-default, stable=locked-to-on.
 
 ## Proposal
 
@@ -219,6 +222,8 @@ While this is a risk, it is not very common and components should fail safe as a
 If beta APIs are off by default, it's possible that fewer clients will use them and provide feedback.
 This is a risk, but early adopters are able to enable these features and have a history of enabling alpha features.
 When moving from beta to GA, it will be important for sigs to explicitly seek feedback.
+We will address this by extending the PRR questionnaire to include a GA-targeted question to validate that the feature
+was reasonably validated in production use-cases.
 
 If beta APIs are off by default, it is possible that sigs don't treat taking an API as an indication of a "mostly-baked" API.
 If this happens, then more transformation may be required.
@@ -253,6 +258,7 @@ This KEP is a policy KEP, not a feature KEP.  It will start as GA.
 - email to dev@kubernetes.io to explain the new policy
 - blog post explaining change in time for 1.24 release
 - CI configuration updated to have a testing mode that enables beta APIs, likely set using `kube-apiserver --runtime-config=api/beta=true`
+- extend the PRR questionnaire to include a GA-targeted question to validate that the feature was reasonably validated in production use-cases.
 
 ### Upgrade / Downgrade Strategy
 
