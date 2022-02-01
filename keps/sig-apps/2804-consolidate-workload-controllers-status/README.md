@@ -25,10 +25,6 @@
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-    - [Alpha](#alpha-1)
-    - [Beta](#beta)
-    - [GA](#ga)
-    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -49,14 +45,14 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -192,7 +188,7 @@ There are many factors that can cause failure to happen like:
 
 See the [Kubernetes API Conventions](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties) for more information on status conditions
 
-Because of the number of changes that are involved as part of this effort, we are thinking of a phased approach where we introduce these conditions to DaemonSet controller first and then make similar changes to ReplicaSet and StatefulSet controller. We would graduate ExtraWorkloadConditions to beta once all the features and `progressDeadlineSeconds` KEP are implemented.
+Because of the number of changes that are involved as part of this effort, we are thinking of a phased approach where we introduce these conditions to DaemonSet controller first and then make similar changes to ReplicaSet and StatefulSet controller. We would graduate ExtendedWorkloadConditions to beta once all the features and `progressDeadlineSeconds` KEP are implemented.
 This also needs some code refactoring of existing conditions for Deployment controller.
 
 #### Available
@@ -231,7 +227,7 @@ It is possible that we introduce a bug in the implementation. The bug can cause:
 - DaemonSet and StatefulSet controllers can be marked `Failed` even though rollout is in progress
 - The states could be misrepresented, for example a DaemonSet or StatefulSet can be marked `Progressing` when actually it is complete
 
-The mitigation currently is that these features will be in Alpha stage behind `ExtraWorkloadConditions` featuregate for people to try out and give feedback. In Beta phase when
+The mitigation currently is that these features will be in Alpha stage behind `ExtendedWorkloadConditions` featuregate for people to try out and give feedback. In Beta phase when
 these are enabled by default, people will only see issues or bugs when `progressDeadlineSeconds` is set to something greater than 0 and we choose default values for that field.
 Since people would have tried this feature in Alpha, we would have had time to fix issues.
 
@@ -259,70 +255,11 @@ API validation, behavioral change of controllers with feature gate enabled and d
 
 #### Beta -> GA Graduation
 - 2 examples of end users using this field
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 ### Upgrade / Downgrade Strategy
 
 - Upgrades
- When upgrading from a release without this feature, to a release with `ExtraWorkloadConditions` feature, 
+ When upgrading from a release without this feature, to a release with `ExtendedWorkloadConditions` feature,
  we will set new conditions on the mentioned workloads.
 - Downgrades
  When downgrading from a release with this feature, to a release without, 
@@ -336,14 +273,10 @@ None identified yet.
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ExtraWorkloadConditions
+  - Feature gate name: ExtendedWorkloadConditions
   - Components depending on the feature gate:
     - kube-controller-manager
 
@@ -363,12 +296,7 @@ Yes, unit, integration and e2e tests for feature enabled, disabled
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
-
 
 ###### What specific metrics should inform a rollback?
 
@@ -376,15 +304,9 @@ This section must be completed when targeting beta to a release.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
-
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -393,16 +315,11 @@ This section must be completed when targeting beta to a release.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 ### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -436,14 +353,6 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 ###### What are other known failure modes?
@@ -451,17 +360,6 @@ details). For now, we leave it here.
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
-
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
 
 ## Drawbacks
 Adds more complexity to Deployment, DaemonSet, Job, ReplicaSet, ReplicationController, StatefulSet controllers in terms of checking conditions and updating the conditions continuously.
