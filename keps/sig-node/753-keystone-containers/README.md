@@ -151,11 +151,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 [kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
-This KEP proposes to initiate pod termination on the status of application containers. Usually a pod with multiple containers have core application containers and some sidecar containers like logging, service mesh. We are proposing to distinguish between application containers and sidecar containers using a pod annotation and initiating pod termination  if application containers are terminated.
+This KEP proposes to initiate pod termination on the status of application containers. Usually a pod with multiple containers have core application containers and some sidecar containers like logging, service mesh. We are proposing to distinguish between application containers and sidecar containers using an API field and initiating pod termination if application containers are terminated.
 
 This is particularly helpful in solving the blocking issue of sidecar containers with jobs. This will also help us to make a step forward with the sidecar KEP. 
 
-We are calling `application/essential/main/critical` containers as `keystone` containers in this KEP to distnguish it from sidecars.
+We are calling `application/essential/main/critical` containers as `keystone` containers in this KEP to distinguish them from sidecars.
 <!--
 This section is incredibly important for producing high-quality, user-focused
 documentation such as release notes or a development roadmap. It should be
@@ -203,16 +203,16 @@ know that this has succeeded?
 -->
 
 ### Non-Goals
-- Handling Container startup/shutdown ordering for application and sidecar containers
+- Handling Container startup/shutdown ordering for application and sidecar containers.
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
 ## Proposal
-A pod annotation can be specified by users which contains a list of all core application containers in the pod. Depending on the user feedback and how we want to proceed with the sidecar proposal this annotation can be modified or promoted to an API field. 
+A container API field (I'm a keystone) can be specified by users to identify each core application containers in the pod.
 
-The annotation is used by kubelet to make a decision on pod termination based on the status of application containers and pod restart policy.
+This identification of application containers is used by kubelet to make a decision on pod termination based on the status of application containers and pod restart policy.
 
 - if all application containers exited successfully and the restart policy of the pod is "never" or "onFailure" then terminate the pod.
 
@@ -223,20 +223,27 @@ The following are existing behaviors just mentioned here for clarity:
 
 - if all application containers exited successfully and the restart policy of the pod is "always" then restart the containers.
 
-- if all app containers are failed and the restart policy is "onfailure", then kubelet will keep trying to restart containers, and no point in terminating the pod
+- if all app containers are failed and the restart policy is "onFailure", then kubelet will keep trying to restart containers, and no point in terminating the pod
 
-Since container annotations are not supported to be added by an end user, We need to use pod annotation to specify application containers.
-
-There are few options for annotations:
-
-1. Specifying a list of keystone or sidecar containers in one annotation
-   e.g. `alpha.node.kubernetes.io/sidecars:{list of sidecar containers}` or
-        `alpha.node.kubernetes.io/keystone:{list of keystone containers}`
-2. One annotation per container
-   e.g. `alpha.sidecars.kubernetes.io/<container name>:string`
-
-The motivation for one annotation per container is easy translation to api fields later on and it can be used for the sidecar ordering proposals.
-
+We propose the following API field (spec.containers[].lifecycle.type) to identify a keystone container:
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp-pod
+  labels:
+    app: myapp
+spec:
+  containers:
+  - name: myapp
+    image: myapp
+    command: ['do something']
+    lifecycle:
+      type: Keystone
+  - name: sidecar
+    image: sidecar-image
+    command: ["do something to help my app"]
+```
 
 <!--
 This is where we get down to the specifics of what the proposal actually is.
@@ -273,9 +280,9 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-If we choose to specify sidecars container in pod annotation then the user can add all containers in a pod as sidecars and kubelet will terminate the pod. This can be thought of as intended behavior and misuse of annotation than risk. In future, a validation can be added for it.
+If the user identifies several (or all) containers as keystones, current logic doesn't determine the correct behavior which is whether to terminate the pod or keep it running. We mitigate this risk by allowing only 1 keystone container per pod for the moment to safely gather user feedback. A validation will be added to ensure no pod can be created with more than 1 keystone.
 
-If we choose to specify keystone containers in pod annotation then even if a user specifies all containers as keystone, the pod will be keep running. And if the user has not specified any annotation kubelet will treat all containers as same as before.
+If the user forgets to identify any keystone container in the pod, kubelet will treat all containers as same as before.
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -301,7 +308,7 @@ func (...) computePodActions(...){
 ....
 ....
     if featureflag keystoneContainersEnabled 
-        keyContainers := getKeyContainersList(pod.Annotations["alpha.kubernetes.io/keycontainers"])
+        keyContainers := getKeyContainersList()
         keyContainersStatus := getKeyContainersStatus(keyContainers)
 
         if keyContainerStatus==Completed && restartPolicy != always
@@ -324,7 +331,7 @@ func getKeyContainersStatus() {
 pkg/kubelet/kuberuntime/helpers.go
 
 func getKeyContainersList() {
-    // parse the keycontainers list from annotation
+    // list keystone containers using API field
 }
 
 ```
@@ -362,12 +369,13 @@ when drafting this test plan.
 ### Graduation Criteria
 
 #### alpha: 
-- Implement the proposal using pod annotation and behind the feature flag.  
+- Implement the proposal limiting to 1 keystone container per pod and behind the feature flag.
+- Use an alpha API field in the container list of the pod spec.
 - Add unit and e2e tests.
 
 #### beta: 
 - Gather feedback from users.
-- Promote the annotation to API field
+- Eventually remove the limit on keystone containers.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -496,7 +504,7 @@ Pick one of these and delete the rest.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: KeystoneContainers
-  - Components depending on the feature gate: Kubelet
+  - Components depending on the feature gate: Kubelet, API server
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -513,7 +521,7 @@ automations, so be extremely careful here.
 -->
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-yes it can be rolled back, Kubelet will not honour the pod termination behaviour for the pods containing keystone container annotation. It will not have effect on other pods.
+Yes it can be rolled back, Kubelet will not simply ignore the alpha API field on the keystone containers. It will not have effect on other this or any other pod.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -797,9 +805,8 @@ Why should this KEP _not_ be implemented?
     - [Previous sidecar KEP ](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/753-sidecar-containers)
     - [Sidecar use cases doc](https://docs.google.com/document/d/1Drw9C_Ljpcr4X9UPLvms1fn8uMRnTfJLb-xipgX4C1M/edit#)
 
-There have been various proposals on sidecar containers but due to the complexity with API, kubelet code changes and various other dependecies none of the proposal could get a consenus. 
+There have been various proposals on sidecar containers but due to the complexity with API, kubelet code changes and various other dependencies none of the proposal could get a consensus. 
 
-This proposal is taking one step at time without involving api and major code changes.
 <!--
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
