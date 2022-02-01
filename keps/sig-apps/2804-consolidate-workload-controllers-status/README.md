@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-2804: Consolidate Workload controllers life cycle state
+# KEP-2804: Consolidate Workload controllers life cycle status
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -87,13 +87,13 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Overview of all conditions](#overview-of-all-conditions)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Proposed Conditions](#proposed-conditions)
     - [Progressing](#progressing)
     - [Complete](#complete)
     - [Failed](#failed)
     - [Available](#available)
     - [Batch Workloads Conditions: Waiting &amp; Running](#batch-workloads-conditions-waiting--running)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -209,14 +209,14 @@ This enhancement extends the scope of those and other conditions to other contro
 ### Goals
 
 The current status of a workload can be depicted via its conditions. It can be a subset of:
-- Progressing
-- Available
-- ReplicaFailure
-- Suspended
-- Complete
-- Failed (to progress)
-- Waiting (Job only)
-- Running (Job only)
+- Progressing: designates the state of the latest rollout.
+- Available: designates if the required number of available replicas is `available`.
+- ReplicaFailure: ReplicaSet failed to create/delete a Pod.
+- Suspended: execution of a Job is suspended.
+- Complete: Job run to a completion, or rollout completed (via Progressing condition).
+- Failed: Job failed to complete, or rollout failed to progress (via Progressing condition).
+- Waiting (Job only): waiting for at least one Pod to run.
+- Running (Job only): at least one Pod of a Job is running.
 
 Workload controllers should have above conditions (when applicable) to reflect their states.
 
@@ -228,10 +228,11 @@ and make progress.
 -->
 
 - Modifying the existing states of deployment controller
-- Changing the definition of States
+- Changing the definition of statuses
 - Introduce new api for existing conditions
-- To properly implement Progressing condition, `.spec.progressDeadlineSeconds` field has to be introduced in 
+- To properly implement Progressing condition. `.spec.progressDeadlineSeconds` field has to be introduced as part of an additional KEP in
   DaemonSet and StatefulSet to describe the time when the controllers should declare the workload as `failed`.
+- consider adding Conditions field to CronJob
 
 ## Proposal
 
@@ -256,11 +257,11 @@ bogged down.
 -->
 
 #### Story 1
-As an end-user of Kubernetes, I'd like all my workload controllers to have consistent states
+As an end-user of Kubernetes, I'd like all my workload controllers to have consistent statuses.
 
 #### Story 2
 As an developer building Kubernetes Operators, I'd like all my operators deployed to have
-consistent states.
+consistent statuses.
 
 
 ### Overview of all conditions
@@ -279,6 +280,14 @@ The following table gives an overview on what conditions each of the workload re
 **\* Success of the rollout is instead represented by a Progressing condition (status and reason)**
 
 **\*\* CronJob does not even have Conditions field in its Status**
+
+### Notes/Constraints/Caveats (Optional)
+
+As observed in some issues (https://github.com/kubernetes/website/pull/31226) and talking to the users, there is a misunderstanding about the meaning of the `Progressing` condition. These include:
+- Thinking that the `Progressing` condition reflects the state of the current Deployment instead of the last rollout. Which includes expectation that the `Progressing` condition will keep checking availability of replicas and revert to `progressing`/`failed` state even after the `complete` state is reached. And that the progressing condition will thus also reflect any changes in scaling.
+- Confusion that ProgressDeadlineExceeded does not occur after the Deployment rollout completes when the availability of pods degrades before the  `.spec.progressDeadlineSeconds` times out.
+
+To summarize, the name of the `Progressing` condition doesn't indicate its true meaning that its main responsibility is the indication of rollouts, and it confuses the users.
 
 ### Proposed Conditions
 
@@ -322,7 +331,7 @@ Kubernetes marks a DaemonSet, ReplicaSet or Stateful as `complete` when it has t
 - No old or mischeduled replicas/pods for the DaemonSet, ReplicaSet or Stateful are running.
 
 #### Failed
-In order to introduce this condition we need to come up with a new field called `.spec.progressDeadlineSeconds` which denotes the number of seconds the controller waits before indicating(in the workload controller status) that the controller progress has stalled.
+In order to introduce this condition we need to come up with a new field called `.spec.progressDeadlineSeconds` (additional KEP) which denotes the number of seconds the controller waits before indicating(in the workload controller status) that the controller progress has stalled.
 
 There are many factors that can cause failure to happen like:
 - Insufficient quota
@@ -332,7 +341,7 @@ There are many factors that can cause failure to happen like:
 
 See the [Kubernetes API Conventions](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties) for more information on status conditions
 
-Because of the number of changes that are involved as part of this effort, we are thinking of a phased approach where we introduce these conditions to DaemonSet controller behind a featuregate flag first in one release and then make similar changes to ReplicaSet and StatefulSet controller.
+Because of the number of changes that are involved as part of this effort, we are thinking of a phased approach where we introduce these conditions to DaemonSet controller first and then make similar changes to ReplicaSet and StatefulSet controller. We would graduate ExtraWorkloadConditions to beta once all the features and `progressDeadlineSeconds` KEP are implemented.
 This also needs some code refactoring of existing conditions for Deployment controller.
 
 #### Available
@@ -353,20 +362,11 @@ Batch workloads behaviour does not properly map to the other workloads that are 
 Kubernetes marks a Job as `waiting` if one of the following conditions is true:
 
 - There are no Pods with phase `Running` and there is at least one Pod with phase `Pending`.
-- The Job is suspended.
 
 Kubernetes marks a Job as `running` if there is at least one Pod with phase `Running`.
 
 This KEP does not introduce CronJob conditions as it is difficult to define conditions that would describe CronJob behaviour in useful manner.
 In case the user is interested if there are any running Jobs, `.status.active` field should be sufficient.
-
-### Notes/Constraints/Caveats (Optional)
-
-As observed in some issues (https://github.com/kubernetes/website/pull/31226) and talking to the users, there is a misunderstanding about the meaning of the `Progressing` condition. These include:
-- Thinking that the `Progressing` condition reflects the state of the current Deployment instead of the last rollout. Which includes expectation that the `Progressing` condition will keep checking availability of replicas and revert to `progressing`/`failed` state even after the `complete` state is reached. And that the progressing condition will thus also reflect any changes in scaling.
-- Confusion that ProgressDeadlineExceeded does not occur after the Deployment rollout completes when the availability of pods degrades before the  `.spec.progressDeadlineSeconds` times out.
-
-To summarize, the name of the `Progressing` condition doesn't indicate its true meaning that its main responsibility is the indication of rollouts, and it confuses the users.
 
 ### Risks and Mitigations
 
@@ -381,7 +381,7 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-We are proposing a new field called `.spec.progressDeadlineSeconds` to DaemonSet and StatefulSet whose default value will be set to the max value of int32 (i.e. 2147483647) by default, which means "no deadline".
+We are proposing a new field called `.spec.progressDeadlineSeconds` to DaemonSet and StatefulSet as part of a additional KEP whose default value will be set to the max value of int32 (i.e. 2147483647) by default, which means "no deadline".
 In this mode, DaemonSet and StatefulSet controllers will behave exactly like its current behavior but with no `Failed` mode as they're either `Progressing` or `Complete`.
 This is to ensure backward compatibility with current behavior. We will default to reasonable values for the controllers in a future release.
 Since a DaemonSet can make progress no faster than "healthy but not ready nodes", the default value for `progressDeadlineSeconds` can be set to 30 minutes but this value can vary depending on the node count in the cluster.
@@ -391,12 +391,9 @@ It is possible that we introduce a bug in the implementation. The bug can cause:
 - DaemonSet and StatefulSet controllers can be marked `Failed` even though rollout is in progress
 - The states could be misrepresented, for example a DaemonSet or StatefulSet can be marked `Progressing` when actually it is complete
 
-The mitigation currently is that these features will be in Alpha stage behind featuregates for people to try out and give feedback. In Beta phase when
+The mitigation currently is that these features will be in Alpha stage behind `ExtraWorkloadConditions` featuregate for people to try out and give feedback. In Beta phase when
 these are enabled by default, people will only see issues or bugs when `progressDeadlineSeconds` is set to something greater than 0 and we choose default values for that field.
 Since people would have tried this feature in Alpha, we would have had time to fix issues.
-The featuregates we use are `DaemonSetConditions` for DaemonSet controller,  `StatefulSetConditions` for StatefulSet controller.
-
-
 
 
 ## Design Details
@@ -410,7 +407,7 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Test Plan
 Unit and E2E tests will be added to cover the
-API validation, behavioral change of DaemonSet and StatefulSet with feature gate enabled and disabled.
+API validation, behavioral change of controllers with feature gate enabled and disabled.
 
 - Validating all possible states of old and new conditions. Checking that the changes in underlying Pod statuses correspond to the conditions.
 - Testing `progressDeadlineSeconds` and feature gates.
@@ -442,6 +439,7 @@ when drafting this test plan.
 #### Alpha -> Beta Graduation
 - Gather feedback from end users
 - Tests are in Testgrid and linked in KEP
+- all new features in the following controllers should be implemented: ReplicaSet & ReplicationController, StatefulSet, DaemonSet and Job. To fully support `failed` state of a progressing condition, `progressDeadlineSeconds` KEP should be also fully implemented.
 
 #### Beta -> GA Graduation
 - 2 examples of end users using this field
@@ -519,20 +517,11 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 - Upgrades
- When upgrading from a release without this feature, to a release with 
- `progressDeadlineSeconds`, we will set `progressDeadlineSeconds` to max value of int32 (i.e. 2147483647). This would give users 
- the same default behavior.
+ When upgrading from a release without this feature, to a release with `ExtraWorkloadConditions` feature, 
+ we will set new conditions on the mentioned workloads.
 - Downgrades
- When downgrading from a release with this feature, to a release without 
- `progressDeadlineSeconds`, there are two cases
-  - If `progressDeadlineSeconds` is greater than 0 -- in this case kube-apiserver
-    clears the `progressDeadlineSeconds` and the existing StatefulSet and DaemonSet controllers wouldn't honor 
-    `progressDeadlineSeconds` which is expected.
-  - If `progressDeadlineSeconds` is equal to 0 -- in this case user wont see any 
-    difference in behavior.
-
-We will ensure that the `progressDeadlineSeconds` field is properly validated
-before persisting. The validation includes checking for positive number for the `progressDeadlineSeconds` field.
+ When downgrading from a release with this feature, to a release without, 
+ we will remove the extra conditions from workload objects.
 
 ### Version Skew Strategy
 
@@ -588,15 +577,12 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: DaemonSetConditions, StatefulSetConditions
+  - Feature gate name: ExtraWorkloadConditions
   - Components depending on the feature gate:
     - kube-controller-manager
-    - kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
-No. The default behavior won't change.
-The default values for newly introduced `progressDeadlineSeconds` fields might change when graduating it after getting feedback from users.
-Only new conditions will be added with no effect on existing conditions.
+No. The default behavior won't change. Only new conditions will be added with no effect on existing conditions.
 
 <!--
 Any change of default behavior may be surprising to users or break existing
@@ -615,7 +601,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The DaemonSet, StatefulSet controller starts respecting the `progressDeadlineSeconds` again.
+The controllers start updating the new workload conditions again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -812,7 +798,6 @@ Describe them, providing:
 Yes.
 API type(s): DaemonSet, Deployment, Job, ReplicaSet, ReplicationController, StatefulSet
   - Estimated increase in size:
-    - New field in DaemonSet and StatefulSet spec about 4 bytes
     - Add new conditions in Deployment, DaemonSet, Job, ReplicaSet, ReplicationController, StatefulSet status
 <!--
 Describe them, providing:
