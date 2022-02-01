@@ -592,26 +592,149 @@ associativeList.all(e, e.val == 100)
 
 ### Resource constraints
 
-For Beta, per-request execution time will be constrained via a context-passed timeout. For Beta, we are looking at a range between 100 milliseconds and 1 second for the timeout. We want to see how
-CEL performs in benchmarks once our Beta optimizations are in place before deciding what specific 
-duration to set the timeout to. If the timeout is  exceeded, the error message will include how
-long each expression took to evaluate.
+CEL expressions have the potential to consume unacceptable amounts of API server resources. We intend to constrain the resource utilization in two ways:
 
-We will provide time and space benchmarks to show what can be expected in typical and worst-case
-scenarios for CEL expressions, and that for most use cases, the timeout alone will be sufficient.
-The alternatives listed below would be more aimed at malformed/malicious expressions.
+- Proactively by static analysis of the CEL expressions to compute a "cost", and limiting that cost
+- Reactively by enforcing CEL expression evaluation time limits using go context cancelation
 
-If the context timeout proves to be insufficient, we have other alternatives to explore, such as
-limiting nested list comprehensions to a depth of 2. According to the performance section of
-[the CEL spec](https://github.com/google/cel-spec/blob/master/doc/langdef.md#performance), the
-time complexity of these operations are all O(n), so by limiting nesting to 2 deep, we limit
-expression complexity to O(n<sup>2</sup>). We can limit regular expression complexity
-as well.
+We intend to enforce the limits both on a per-expression and per-request basis.
 
-CEL also provides a [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) that could be used in the future,
-but the cost subsystem would need to know the length of any relevant lists in order to be useful. 
-That information can be supplied using `maxLength`, but this is an optional field, and if not
-passed, CEL would not be able to provide a useful figure.
+Per-expression limits are primarily targeted at CEL expression authors and are intended to provide actionable feedback about expression cost. They are insufficient for ensuring that requests will be processed in a bounded amount of time. For example, a validation rule for a field within a list of objects, might be well within bounds each time it is evaluated, but the sum of the costs across the list of objects may be unacceptable. This is why we also have a per-request limit.
+
+#### Cost limits
+
+We will use CEL's [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) to provide our proactive limits. This is protects against both
+accidental and malicious misuse. If an expression is analyzed and has a cost greater than
+a predefined limit, it will not be allowed. If an expression is rejected for this reason, the error
+message will include how much the limit was exceeded.
+
+A major problem with the cost system is assigning the cost of list iteration. The cost of a CEL expression is 
+computed statically without any knowledge about the data that will be validated. Only the CEL expression is 
+available when computing cost. This means that the sizes of variable length data types (lists, maps, sets, 
+strings, byte arrays) are entirely unknown. This limits our options for computing the cost of CEL expressions 
+that iterate across these list types. Setting high costs for iteration is a major problem because, in 
+practice, lists are short. For example, a pod has a list of containers, but the list is usually quite short.
+
+There are a couple ways to address this problem:
+
+- We require CRD authors to provide `maxLength` on all variable length data types that they iterate across in CEL expressions so we know exactly how to compute cost
+- We do not attempt to statically compute a cost and instead rely entirely on time based limits
+- We prove that, in practice, the cost limits can be found that are operationally safe while still not being overly restrictive
+
+We have explored the cost system and realized (thanks @liggitt!) that O(n) iteration is bounded by custom 
+resource size limits (specifically the 3MB request limit) and we can use this to establish more manageable 
+worst case sizes.
+
+If a list contains small elements (e.g. an int64) then the worst case list size can be 3MB/4bytes=~786k 
+elements, but as the element size grows, the worst case list size quickly becomes manageable. We ran a [series of experiments](https://docs.google.com/document/d/1yR746Rf-rw-_zoq36Ypzu8LTqOa-LaCk1pv3e0kjF3A/edit?usp=sharing) to test the resource utilization of CEL expressions that iterate across lists.
+We found that:
+
+- O(n) iteration of a worst case list (list length == 786k) is <150ms
+- O(n) iteration of 10 byte data elements (list length == 300k) is < 70ms
+- O(n) iteration of 100 byte data elements (list length == 30k) is < 7ms
+
+Consider an example:
+
+```
+list.all(element, element.startsWith("prefix:"))
+```
+
+The cost of this expression is:
+
+```
+cost('startsWith()' function) * worst_case_length(list)
+```
+
+If the `worst_case_length()` is 30k for the list (e.g. the list elements are objects where the minimum size of 
+each object can be computed statically to be 100 bytes) and the cost of `statsWith()` is, say, 3, we know that 
+this is < 21ms to evaluate.
+
+Note that we could also have a much lower `worst_case_length()` if the CRD author provided a `maxLength` limit on their list size.
+
+This implies that we can use cost to:
+
+- Set limits that ensure CEL expressions evaluate within known time bounds
+- Allow O(n) operations so long as the per-element cost is moderate (e.g. 100 cost)
+  - And again, allow more expensive per-element cost when `maxLength` is set
+- Allow many (100s) CEL expressions in a CRD that are within these complexity bounds
+- Disallow O(n<sup>2</sup>) or worse operations based purely on their cost
+  - But still allow O(n<sup>2</sup>) or worse so long as the CRD author adds a `maxLength` limit to the lists and the resulting cost is within cost bounds (e.g. O(n<sup>3</sup>) is still fine for a list size of 3).
+
+Also, not requiring `maxLength` on most O(n) CEL expressions keeps the cost system low friction; the majority 
+of CEL expressions can be written and used without bumping into cost limits or needing to set `maxLength`.
+
+For the cases where a `maxLength` is needed to ensure cost is acceptable, encouraging CRD authors to include 
+`maxLength` on variable length data elements is generally considered good hygiene anyway, so having a cost 
+system that incentivizes developers to set this field, has other benefits.
+
+We will use the minimum possible size of list elements to estimate the size (e.g. objects with many fields 
+will have much larger minimum sizes). This helps us pick smaller worst case list sizes that we might pick if we had to assume all lists contain 1 byte elements.
+
+For example, the list element size `x` in this schema:
+
+```
+spec:
+  type: object
+  properties:
+    x:
+      x-kubernetes-validation:
+      - rule: "self.all(element, element.y.startsWith('prefix:'))"
+      type: array
+      items:
+        type: object
+        properties:
+          name: y
+          type: string
+          name: z
+          type: string
+```
+
+The worst case list size of `x` would be based on the size of an object with two strings (`y` and `z`).
+
+We will also account for where in a schema CEL expression is placed when calculating its cost. For example:
+
+```
+spec:
+  type: object
+  properties:
+    x:
+      type: array
+      items:
+        type: object
+        properties:
+          name: y
+          type: string
+          x-kubernetes-validation:
+          - rule: "self.startsWith('prefix:')"
+```
+
+In this example the validation rule is contained within a list, so its expression cost would be `cost(startsWith) * worst_case_length(x)`. Note that this means some of the cost calculation will
+happen outside of the CEL cost function (which would only calculate the `startsWith` cost).
+
+During CRD validation, when an expression exceeds the cost limit, the error message will include both the limit and the cost of the expression to facilitate debugging. The cost calculation rules will be documented.
+
+#### Time limits
+
+We believe CEL cost will be sufficient to bound the resource utilization of the vast majority of CEL
+expressions. As a backstop we will use timeouts. We will set these timeouts high enough that they are
+not disruptive to all but the most extremely resource starved api-servers. We don't believe this will
+cause problems in practice because there are other timeouts that will trigger under those conditions.
+
+Per-request and per-expression execution time will be constrained via go cancellation and a context-passed timeout.
+
+If the per-expression timeout is exceeded, the error message will include how long the expression in question took to execute. If the per-request timeout is exceeded, the error message will instead include how long every expression took to execute up to and including the one where the timeout was exceeded.
+
+We will continue to refine and improve this cost data. For example, optimizations to how CEL integrates with Kubernetes data may allow us to increase our cost bounds.
+
+Based on our current data we believe the limits should be:
+
+- per-expression cost: 120,000
+- per-request cost: 12,000,000
+- per-expression timeout limit: 100 milliseconds
+- per-request timeout limit: 1 second
+
+This is based on our evaluation of cost. The limits allow O(n) with a loop body with a cost of 4 (enough for a basic regex). Since basic CEL expressions have a cost of 1, this should be plenty in most cases, but `maxLength` can be set on any lists where more computation needs to be done.
+
 
 ### Test Plan
 
