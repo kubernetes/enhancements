@@ -374,17 +374,23 @@ _This section must be completed when targeting beta graduation to a release._
   logs or events for this purpose.
 
 Check if the feature gate and kubelet config settings are enabled on a node.
+Kubelet will be exposing metrics described below.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+  - [x] Metrics
+    - Metric name: GracefulShutdownStartTime, GracefulShutdownEndTime
     - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - Components exposing the metric: Kubelet
   - [ ] Other (treat as last resort)
     - Details:
 
-N/A
+Kubelet can write down the start and end time for the graceful shutdown to local
+storage and expose those metrics for scraping. In some cases, the metrics could
+ be missed based on scraping interval, but they can be served back up after the
+ kubelet comes online on a reboot. Operators could then look at these metrics to
+ troubleshoot issues with the feature across their nodes in a cluster.
+
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   At a high level, this usually will be in the form of "high percentile of SLI
@@ -395,7 +401,8 @@ N/A
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 
-N/A.
+Graceful shutdown feature should function outside of power failures or h/w failure
+rates on the nodes.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
@@ -502,15 +509,18 @@ The feature does not depend on the API server / etcd.
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+
+  - Kubelet does not detect the shutdown e.g. due to systemd inhibitor not registering. 
+    - Detection: Kubelet logs
+    - Mitigations: Workloads will not be affected, graceful node shutdown will not be enabled
+    - Diagnostics: At default (v2) logging verbosity, kubelet will log if inhibitor was registered
+    - Testing: Existing OSS SIG-Node E2E tests check for graceful node shutdown including priority based shutdown
+
+  - Priority based graceful node shutdown setting is not respected
+    - Detection: Kubelet logs contain time allocated to each pod shutdown
+    - Mitigations: Change priority based graceful node shutdown config or revert to existing beta graceful node shutdown config
+    - Diagnostics: Kubelet logging at v2 level
+    - Testing: Existing OSS SIG-Node E2E tests check that pod shutdown time is respected depending on the config 
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
