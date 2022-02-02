@@ -626,7 +626,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-N/A. Workloads that queries the OpenAPI specs automatically use this feature if enabled.
+N/A. Workloads that query the OpenAPI specs automatically use this feature if enabled.
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -699,7 +699,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-- kube-aapi-server
+- `kube-apiserver`
   - Usage description:
     - Impact of its outage on the feature: The `/openapi` endpoint is unavailable
     - Impact of its degraded performance or high-error rates on the feature: The `/openapi` endpoint is degraded.
