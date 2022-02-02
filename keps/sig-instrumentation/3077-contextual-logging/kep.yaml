@@ -1,0 +1,43 @@
+title: Contextual logging
+kep-number: 3077
+authors:
+  - "@pohly"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-scheduling
+status: implementable
+creation-date: 2021-12-06
+reviewers:
+  - "@alculquicondor"
+  - "@liggitt"
+  - "@serathius"
+approvers:
+  - "@ehashman"
+  - "@thockin"
+
+see-also:
+  - "/keps/sig-instrumentation/1602-structured-logging"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.24"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.24"
+  beta: "v1.28"
+  stable: "v1.30"
+
+feature-gates:
+ - name: ContextualLogging
+   components:
+   - Kubernetes commands
+   - Kubernetes e2e test suite
+disable-supported: yes
+
+# No metric.
+metrics:
