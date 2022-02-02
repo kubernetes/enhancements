@@ -126,9 +126,10 @@ CronJobs can be created per user.
 ### CronJob API
 
 The `.spec` for a CronJob is expanded with a new `timeZone` field which allows
-specifying the name of the time zone to be used. Missing or empty value of the
-field indicates the current behavior, which relies on the time zone of the
-kube-controller-manager process.
+specifying the name of the time zone to be used, the list of valid time zones
+can be found [in tz database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
+Missing or empty value of the field indicates the current behavior, which relies
+on the time zone of the kube-controller-manager process.
 
 In the API code, that looks like:
 
@@ -145,8 +146,9 @@ type CronJobSpec struct {
 }
 ```
 
-The value provided in `TimeZone` field will be validated against the embedded
-golang timezone database.
+The value provided in `TimeZone` field will be validated against the embedded golang
+timezone database, which will result in the `kube-apiserver` and `kube-controller-manager`
+binaries growing by roughly extra 500kB.
 
 ### CronJob controller
 
