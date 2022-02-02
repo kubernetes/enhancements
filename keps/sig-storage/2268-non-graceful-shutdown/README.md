@@ -101,6 +101,8 @@ In this section, we are describing the proposed changes to enable workloads to f
 
 Note: The proposal in the current KEP involves user manually add/remove a taint. In the future, we will look into a more automatic approach that does not require these manual steps.
 
+When users verify that a node is already in shutdown or power off state (not in the middle of restarting), either user intentionally shut it down or node is down due to hardware failures, OS issues, they can taint the node with `out-of-service` with `NoExecute` effect.
+
 Existing logic:
 1. When a node is not reachable from the control plane, the health check in Node lifecycle controller, part of kube-controller-manager, sets Node v1.NodeReady Condition to False or Unknown (unreachable) if lease is not renewed for a specific grace period. Node Status becomes NotReady.
 
@@ -118,6 +120,8 @@ Proposed logic change:
 1. This would trigger the deletion of the `volumeAttachment` objects. For CSI drivers, this would allow `ControllerUnpublishVolume` to happen without `NodeUnpublishVolume` and/or `NodeUnstageVolume` being called first. Note that there is no additional code changes required for this step. This happens automatically after the `Proposed change` in the previous step to force detach right away.
 
 1. When the `external-attacher` detects the `volumeAttachment` object is being deleted, it calls CSI driver's `ControllerUnpublishVolume`.
+
+Note: [Existing] If the `out-of-service:NoExecute` taint is applied to a node that is healthy and running, the Taint Manager will try to delete the pods without the matching toleration. Pods will be deleted by Kubelet because the node is healthy and running. New pods will be created on a different running node and application will continue to run.
 
 ### Handle the Return of Shutdown Node
 
