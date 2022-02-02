@@ -165,13 +165,13 @@ The following table is indicating what conditions are currently available (`X`) 
 | CronJob                            | -       | -       | -           | -         | -               | -         | -      | -        |
 
 #### Progressing
-Kubernetes marks a DaemonSet or Stateful as `progressing` when:
+Individual workload controllers mark a DaemonSet or Stateful as `progressing` when:
 - The DaemonSet or StatefulSet is created
 - The DaemonSet or StatefulSet is scaling up or scaling down
 - New DaemonSet or StatefulSet pods become Ready or available
 
 #### Complete
-Kubernetes marks a DaemonSet, ReplicaSet or Stateful as `complete` when it has the following characteristics:
+Individual workload controllers mark a DaemonSet, ReplicaSet or Stateful as `complete` when it has the following characteristics:
 
 - All of the replicas/pods associated with the DaemonSet or StatefulSet have been updated to the latest version you've specified, meaning any updates you've requested have been completed.
 - All of the replicas/pods associated with the DaemonSet, ReplicaSet or StatefulSet are available.
@@ -192,11 +192,11 @@ Because of the number of changes that are involved as part of this effort, we ar
 This also needs some code refactoring of existing conditions for Deployment controller.
 
 #### Available
-Kubernetes marks a ReplicaSet, StatefulSet as `available` when number of available replicas reaches number of replicas.
+Individual workload controllers mark a ReplicaSet or StatefulSet as `available` when number of available replicas reaches number of replicas.
 - This could be confusing in ReplicaSets a bit since Deployment could get available sooner than its ReplicaSet due `maxUnavailable`.
 - Available replicas is alpha feature guarded by StatefulSetMinReadySeconds gate in StatefulSets, but the value defaults to ReadyReplicas when the feature gate is disabled so using it shouldn't be an issue.
 
-Kubernetes marks DaemonSet as `available` when `numberUnavailable` or `desiredNumberScheduled - numberAvailable` is zero.
+DaemonSet controller marks DaemonSet as `available` when `numberUnavailable` or `desiredNumberScheduled - numberAvailable` is zero.
 
 #### Batch Workloads Conditions: Waiting & Running
 
@@ -206,11 +206,11 @@ Batch workloads behaviour does not properly map to the other workloads that are 
   It also resets on suspension, so its behaviour is a bit different.
 
 
-Kubernetes marks a Job as `waiting` if one of the following conditions is true:
+Job controller marks a Job as `waiting` if one of the following conditions is true:
 
 - There are no Pods with phase `Running` and there is at least one Pod with phase `Pending`.
 
-Kubernetes marks a Job as `running` if there is at least one Pod with phase `Running`.
+Job controller marks a Job as `running` if there is at least one Pod with phase `Running`.
 
 This KEP does not introduce CronJob conditions as it is difficult to define conditions that would describe CronJob behaviour in useful manner.
 In case the user is interested if there are any running Jobs, `.status.active` field should be sufficient.
@@ -263,11 +263,15 @@ API validation, behavioral change of controllers with feature gate enabled and d
  we will set new conditions on the mentioned workloads.
 - Downgrades
  When downgrading from a release with this feature, to a release without, 
- we will remove the extra conditions from workload objects.
+ we expect controllers not to remove stale conditions.
 
 ### Version Skew Strategy
 
-None identified yet.
+The update of extended conditions is always dependent on a `ExtendedWorkloadConditions` feature gate and not on the version as such.
+If the feature gate is enabled, the workload controllers will update the extended conditions to reflect the current state.
+In case feature gate is disabled, the workload controllers will remove the stale conditions.
+In case the feature is missing in the workload controllers the conditions will not be removed and become stale.
+This feature has no node runtime implications.
 
 ## Production Readiness Review Questionnaire
 
@@ -288,7 +292,9 @@ No. The default behavior won't change. Only new conditions will be added with no
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The controllers start updating the new workload conditions again.
+When we disable a feature gate the extended conditions are not expected to be present in the statuses of workload objects,
+and thus should be removed by each responsible controller.
+Once we reenable the feature gate, the controllers should create and start updating the new workload conditions again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -326,9 +332,9 @@ Yes, unit, integration and e2e tests for feature enabled, disabled
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
-Yes
-  - Update of DaemonSet, Job, ReplicaSet, ReplicationController, StatefulSet status
-  - Controllers could potentially make additional update calls when syncing the resources
+No, the number of API calls will stay the same as we will reuse already existing status update calls. 
+This is because other fields in the status influence the conditions.
+But the size of the patches in these calls will increase.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -341,11 +347,11 @@ No.
 Yes.
 API type(s): DaemonSet, Deployment, Job, ReplicaSet, ReplicationController, StatefulSet
   - Estimated increase in size:
-    - Add new conditions in Deployment, DaemonSet, Job, ReplicaSet, ReplicationController, StatefulSet status
+    - On average, we are going to add 1 condition per workload, approximately 100 bytes for each condition.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No.
+No. We will be adding new statuses but this should not affect existing SLIs/SLOs as the logic should be part of the already existing flow of updating other status fields.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
