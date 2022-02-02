@@ -481,9 +481,9 @@ introduced one Kubernetes release prior to when it may be included in create/upd
 The mechanism for this will be:
 
 - All new functions, macros, or overloads of existing functions, will be added to a separate "kubernetes-future-compatibility" CEL extension library. (Better naming suggestions welcome).
-- For create requests, and for any CEL expression that are changed as part of an update, the CEL expression will be 
+- For create requests, and for any CEL expressions that are changed as part of an update, the CEL expression will be 
   compiled **without** the "kubernetes-future-compatibility" CEL extension.
-- For CEL expressions not change in an update, the CEL expression will be compiled **with** the
+- For CEL expressions not changed in an update, the CEL expression will be compiled **with** the
   "kubernetes-future-compatibility" CEL extension. This ensures that persisted fields that already use the change continue
   to compile.
 - The "kubernetes-future-compatibility" CEL extension will always be included when CEL expressions are evaluated.
