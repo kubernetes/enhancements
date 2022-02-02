@@ -351,12 +351,15 @@ const (
 
 Here, `StorageMedium` can have infinite number of possible values, which disqualify it as an enum type.
 
-The Go parser has a limitation on type alias, for example,
+The Go parser has a limitation on parsing type aliases. The parser cannot distinguish 
+between the original definition and its aliases. For example,
 ```go
 type Foo string
 type FooAlias = Foo
 ```
-would result in the parser to treat FooAlias as a duplicated type. A workaround will be implemented during alpha-to-beta graduation.
+would result in the parser to treat FooAlias and Foo as the same type. 
+As a result, `gengo` produce either `Foo` or `FooAlias` but not both.
+As a workaround, during beta graduation, the enum parser will be updated to accept any name of the type.
 
 ### Risks and Mitigations
 
