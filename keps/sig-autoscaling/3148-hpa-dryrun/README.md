@@ -232,18 +232,18 @@ metadata:
   name: php-apache
 spec:
   scaleTargetRef:
-	apiVersion: apps/v1
-	kind: Deployment
-	name: php-apache
+    apiVersion: apps/v1
+    kind: Deployment
+    name: php-apache
   minReplicas: 1
   maxReplicas: 10
   metrics:
   - type: Resource
-	resource:
-	  name: cpu
-	  target:
-		type: Utilization
-		averageUtilization: 50
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
 ```
 
 With the addition of `updatePolicy` field, user should be able to enable HPA dryRun mode.
@@ -255,20 +255,20 @@ metadata:
   name: php-apache
 spec:
   scaleTargetRef:
-	apiVersion: apps/v1
-	kind: Deployment
-	name: php-apache
+    apiVersion: apps/v1
+    kind: Deployment
+    name: php-apache
   updatePolicy:
-	updateMode: "Off"
+    updateMode: "Off"
   minReplicas: 1
   maxReplicas: 10
   metrics:
   - type: Resource
-	resource:
-	  name: cpu
-	  target:
-		type: Utilization
-		averageUtilization: 50
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
 ```
 
 
@@ -336,7 +336,7 @@ const (
 	// The HorizontalPodAutoscalerStatus.DesiredReplicas field is still populated.
 	// This can be used for a "dry run"
 	UpdateModeOff UpdateMode = "Off"
-	// UpdateModeAuto means that autoscaler creates/deletes pods based on the sclaing decision
+	// UpdateModeAuto means that autoscaler creates/deletes pods based on the scaling decision
 	UpdateModeAuto UpdateMode = "Auto"
 )
 ```
@@ -363,7 +363,7 @@ bogged down.
 -->
 
 #### Story 1
-When running HPA with `UpdatePolicy.UpdateMode` flag set to `Off` users can evaluate the scaling decision based on various custom metrics before doing an uctual scaling of the cluster. Enabling dryrun helps to understand the consequences of scaling based on certain metrics. The users will be able to see the desired number of replicas.
+When running HPA with `UpdatePolicy.UpdateMode` flag set to `Off` users can evaluate the scaling decision based on various custom metrics before doing an actual scaling of the cluster. Enabling dryrun helps to understand the consequences of scaling based on certain metrics. The users will be able to see the desired number of replicas.
 
 
 #### Story 2
