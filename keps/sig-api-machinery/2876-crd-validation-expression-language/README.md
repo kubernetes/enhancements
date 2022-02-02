@@ -361,9 +361,10 @@ Proposal:
 - Keep all the CEL standard functions and macros as well as the extended string library.
 - Introduce a new "kubernetes" CEL extension library.
   - Add `isSorted` for lists with comparable elements. This is useful for ensuring that a list is kept in-order.
-  - Add `sum`, `min` and `max` functions for lists of summable/comparable elements. This is the
-    core set of aggregate functions for lists, with CEL they can also be used on scalars by using defining list literals
-    inline , e.g. `[self.val1, self.val2].max()`
+  - Add `sum` for lists of {int, uint, double, duration, string, bytes} (consistent with the [CEL _+_ operation](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions) )
+    and add `min`, `max` for lists of {bool, int, uint, double, string, bytes, duration, timestamp} (consistent with the [CEL comparison operations](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions)).
+    These operations can also be used in CEL on scalars by defining list literals
+    inline , e.g. `[self.val1, self.val2].max()`. Overflow will raise the same error raised by arithmetic operation [overflow](https://github.com/google/cel-spec/blob/master/doc/langdef.md#overflow).
   - Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
     validating partial order (i.e. the tasks of a workflow)
 
@@ -393,7 +394,7 @@ CEL standard [macros](https://github.com/google/cel-spec/blob/master/doc/langdef
 - `filter`
 
 CEL [extended string function library](https://github.com/google/cel-go/blob/master/ext/strings.go) includes:
-- 
+
 - `charAt`
 - `indexOf`, `lastIndexOf`
 - `upperAscii`, `lowerAscii`
@@ -468,6 +469,8 @@ of any future work done involving CEL and mutating admission control:
 Any changes to the CEL function library will make it possible for CRD authors to create CRDs that are incompatible with
 all previous Kubernetes releases that supported CEL. Because of this incompatibility, changing the function library
 will need to carefully considered and kept to a minimum. All changes will need to be limited to function additions.
+We will not add functions to do things that can already be accomplished with existing functions. Improving ease-of-use
+at the cost of fragmentation / incompatibility with older servers is not a good trade-off.
 
 Any function library change must follow the [API Changes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
 guidelines. Since a change to the function library is a change to the `x-kubernetes-validations.rule` field, it must be
@@ -480,15 +483,16 @@ introduced one Kubernetes release prior to when it may be included in create/upd
 
 The mechanism for this will be:
 
-- All new functions, macros, or overloads of existing functions, will be added to a separate "kubernetes-future-compatibility" CEL extension library. (Better naming suggestions welcome).
+- All new functions, macros, or overloads of existing functions, will be added to a separate "future compatibility" CEL 
+  extension library (which extension library a function is in is an internal detail that is not visible to users).
 - For create requests, and for any CEL expressions that are changed as part of an update, the CEL expression will be 
-  compiled **without** the "kubernetes-future-compatibility" CEL extension.
+  compiled **without** the "future compatibility" CEL extension library.
 - For CEL expressions not changed in an update, the CEL expression will be compiled **with** the
   "kubernetes-future-compatibility" CEL extension. This ensures that persisted fields that already use the change continue
   to compile.
-- The "kubernetes-future-compatibility" CEL extension will always be included when CEL expressions are evaluated.
-- When the next version of Kubernetes is release, the library functions are be moved from "kubernetes-future-compatibility"
-- to the "kubernetes" library.
+- The "future compatibility" CEL extension library will always be included when CEL expressions are evaluated.
+- When the next version of Kubernetes is release, the library functions will be moved from "future compatibility"
+- to the main CEL extension library we use to extend CEL for Kubernetes.
 
 Alternatives considered:
 
