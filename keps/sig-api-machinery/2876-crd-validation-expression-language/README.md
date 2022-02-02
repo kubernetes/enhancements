@@ -465,7 +465,11 @@ of any future work done involving CEL and mutating admission control:
 
 ##### Function Library Updates
 
-Any function library changes must follow the [API Changes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
+Any changes to the CEL function library will make it possible for CRD authors to create CRDs that are incompatible with
+all previous Kubernetes releases that supported CEL. Because of this incompatibility, changing the function library
+will need to carefully considered and kept to a minimum. All changes will need to be limited to function additions.
+
+Any function library change must follow the [API Changes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
 guidelines. Since a change to the function library is a change to the `x-kubernetes-validations.rule` field, it must be
 introduced one Kubernetes release prior to when it may be included in create/update requests to CRDs. Specifically:
 
