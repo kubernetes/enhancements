@@ -26,21 +26,28 @@
 - [Alternatives](#alternatives)
   - [Introduce pod level resource requirements](#introduce-pod-level-resource-requirements)
   - [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
   - [Version 1.16](#version-116)
   - [Version 1.18](#version-118)
+  - [Version 1.24](#version-124)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [X] KEP approvers have set the KEP status to `implementable`
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 **Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those
 approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
@@ -311,12 +318,140 @@ Cons:
  * Not user perceptible from a workload perspective.
  * very complicated if the runtimeClass policy changes after workloads are running
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+<!--
+This section must be completed when targeting alpha to a release.
+-->
+
+Skipping this section as the feature was already rolled out to all supported k8s versions.
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+Using metrics mentioned in documentation https://kubernetes.io/docs/concepts/scheduling-eviction/pod-overhead/#observability:
+
+- `kube_pod_overhead_cpu_cores`
+- `kube_pod_overhead_memory_bytes`
+
+###### How can someone using this feature know that it is working for their instance?
+
+Using metrics mentioned in documentation https://kubernetes.io/docs/concepts/scheduling-eviction/pod-overhead/#observability:
+
+- `kube_pod_overhead_cpu_cores`
+- `kube_pod_overhead_memory_bytes`
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+The ultimate SLO is that Pod will not be evicted when it does not exceed set
+limits because of the overhead introduced by the runtime. Due to the complex
+nature of estimating resources Pod and runtime use, this is hard to measure.
+
+Closest approximation to the intended SLO is that Pod's `Overhead` will be
+updated on admission and cgroups will be adjusted as needed.
+
+Since RuntimeClass Admission controller logic is straightforward and does not
+introduce any new API calls, just one value assignment, Pod scheduling
+latency is not affected by this feature.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+Excessive Pod evictions on specific runtime that specifies an Overhead, may
+indicate that feature is not working. However this is a proxy indication that
+is very unreliable - there is a big chance that evictions are caused by Pod or
+Runtime behavior.
+
+Checking Pod object and cgroup settings as described in [Usage Example](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-overhead/#usage-example)
+section of the documentation may be used as a good proxy to check that the
+feature is functional.
+
+Finally, increased pod scheduling latency may indicate an issue with the
+RuntimeClass admission controller.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No
+
+### Dependencies
+
+No
+
+###### Does this feature depend on any specific services running in the cluster?
+
+The feature depends on RuntimeClass admission controller presence.
+
+### Scalability
+
+
+###### Will enabling / using this feature result in any new API calls?
+
+No, RuntimeClass is already being checked for every pod in RuntimeClass
+Admission Controller and PodOverhead assignment doesn't introduce any new API
+calls. Same for the Kubelet.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+Every Pod that is scheduled for the RuntimeClass with the Overhead specified
+will carry two additional values for the `Overhead` structure.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+N/A.
+
+Note, specifying PodOverhead will increase the allocated resources for pods by design.
+
+### Troubleshooting
+
+Documentation has troubleshooting steps: https://kubernetes.io/docs/concepts/scheduling-eviction/pod-overhead/
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+No dependency on etcd availability.
+
+###### What are other known failure modes?
+
+No
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Validate the RuntimeClass Admission controller is functional
+- Validate that Pod objects are updated correctly
+- Validate that cgroups are updated correctly
+
 ## Implementation History
 
-2019-04-04: Initial KEP published.
+- 2019-04-04: Initial KEP published.
 
 ### Version 1.16
+
 - Implemented as Alpha.
 
 ### Version 1.18
+
 - Promoted to Beta.
+
+### Version 1.24
+
+1. Production usage: https://github.com/openshift/sandboxed-containers-operator/blob/0edbfbf353945dec4066a6d127bf9d88fbbc80a7/controllers/openshift_controller.go#L342
+2. Documentation is in place: https://kubernetes.io/docs/concepts/scheduling-eviction/pod-overhead/
+
+- Promoted to stable
