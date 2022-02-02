@@ -585,7 +585,8 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 If the API-server has multiple replicas, with some instances not yet enabling this feature,
-whether the returned OpenAPI Spec contains enum types will depend on which instance holds the leader lock. 
+whether the returned OpenAPI Spec contains enum types will depend on which instance handle the request
+which could result in inconsistent responses for the same request.
 
 ###### What specific metrics should inform a rollback?
 
