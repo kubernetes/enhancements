@@ -220,7 +220,7 @@ Following table captures interaction between actual filesystems on a volume and 
 | NFS1 CSI        | true                            | `-o context=XYZ` |               | 4) |
 | NFS2 CSI        | unset or false                  |                  |               | 5) |
 
-1) Kubelet knows that the in-tree AWS CSI plugin supports mounting with `-o context`. The mount option is then used (if pod context is known) and the container runtime does not relabel the volume.
+1) Kubelet knows that the in-tree AWS EBS plugin supports mounting with `-o context`. The mount option is then used (if pod context is known) and the container runtime does not relabel the volume.
 2) AWS EBS CSI driver ships CSIDriver instance with `SELinuxMountSupported: true`. The behavior is the same as for in-tree volume plugin.
 3) Here we show behavior of "old" CSI drivers, that ship their `CSIDriver` with `SELinuxMountSupported` unset (or `false`). Kubelet mounts the volume without any `-o context` option and detects that the volume supports SELinux (by inspecting mount options - it can find `seclabel` there). Therefore, it passes `:Z` to the container runtime to recursively relabel files on the volume. 
 
@@ -332,9 +332,11 @@ Apart from the obvious API change and behavior described above, kubelet + volume
 * Volume plugins will get SELinux context as a new parameter of `MountDevice` and `SetUp`/`SetupAt` calls (resp. as a new field in `DeviceMounterArgs` / `MounterArgs`).
   * Each volume plugin can choose to use the mount option `-o context=` (e.g. when `CSIDriver.SELinuxRelabelPolicy` is `true`) or ignore it (e.g. in-tree volume plugins for shared filesystems or when `CSIDriver.SELinuxRelabelPolicy` is `false` or `nil`).
   * Each volume plugin then returns `SupportsSELinux` from `GetAttributes()` call, depending on if it wants the container runtime to relabel the volume (`true`) or not (`false`; the volume was already mounted with the right label or it does not support SELinux at all).
+    It will report error when the context in `/proc/mounts` does not match the expected value.
 * When a CSI driver announces `SELinuxMountSupported: true`, kubelet will check that `-o context=X` was correctly applied after `NodePublish()`.
-  It will report error when the context in `/proc/mounts` does not match the expected value.
   It is a failure on CSI driver side, that it announces something that it is not able to fulfill.
+  All pods that use such a volume will be ContainerCreating until the CSI driver fixes the mount (i.e., probably forever), with a message that it's CSI driver fault.
+  This error is already part of generic `storage_operation_duration_seconds` metric (with a label for failures).
   * Note that kubelet can't check mount options after `NodeStage`, because a CSI driver does not need to mount during NodeStage or it may choose to mount to another directory than the staging one.
 
 ### Implementation phases
@@ -374,7 +376,7 @@ Even that will help users to avoid recursive relabeling of volumes if their appl
 * Alpha of Phase 1:
   * Provided all tests defined above are passing and gated by the feature gate `SELinuxMountReadWriteOncePod` and set to a default of `false`.
   * Documentation exists.
-* Beta of Phase 1: 
+* Beta of Phase 1:
   * The feature gate is `true` by default.
 * Evaluation:
   * During the next release after Phase 1 is beta (= the feature is enabled by default), collect reports from users about possible breakage.
