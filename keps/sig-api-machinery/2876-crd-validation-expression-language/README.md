@@ -452,7 +452,6 @@ Some considerations when selecting which of the above we should include in CEL e
 - None of the other policy libraries provide extended math/trig support and I asked Tristan (maintainer of CEL) if
   they are requested and he said "almost never", which he clarified to mean it has been requested exactly one time.
 - Average and quantile (median, 99th percentile, ...) and stddev are, however, often requested by other CEL users
-- `hasPrefix` / `hasSuffix` is useful but can be performed trivially using regex matching
 
 Future work:
 
