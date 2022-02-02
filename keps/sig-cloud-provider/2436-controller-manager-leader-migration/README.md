@@ -162,8 +162,9 @@ type LeaderMigrationConfiguration struct {
 	LeaderName string `json:"leaderName"`
 
 	// ResourceLock indicates the resource object type that will be used to lock
-	// Must be either "leases" or "endpoints", defaults to 'leases'
-	// No other types (e.g. "endpointsleases" or "configmapsleases") are allowed
+	// Must be "leases", default to "leases". This field is retained only for
+	// compatibility with previous releases.
+	// This field will be removed in stable (v1) API.
 	ResourceLock string
 
 	// ControllerLeaders contains a list of migrating leader lock configurations
