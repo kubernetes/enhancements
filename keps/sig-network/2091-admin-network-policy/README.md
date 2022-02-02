@@ -180,7 +180,7 @@ be read as-is, i.e. there will not be any implicit isolation effects for the Pod
 selected by the AdminNetworkPolicy, as opposed to what NetworkPolicy rules imply.
 
 - Pass: Traffic that matches a `Pass` rule will skip all further rules from all
-  positive priority numbered ANPs and instead be enforced by the K8s NetworkPolicies.
+  positive priority (non-zero) numbered ANPs and instead be enforced by the K8s NetworkPolicies.
   If there is no K8s NetworkPolicy rule match, and no ANP priority "0" rule
   match (more on this in the [priority section](#priority)), traffic will be governed
   by the implementation. For most implementations, this means "allow", but there
@@ -213,22 +213,32 @@ is "1", which corresponds to the highest precedence. Larger numbers have lower p
 For alpha, this API defines "1000" as the maximum numeric value for priority, but
 this may be revisited as the proposal advances. For future-safety, clients may assume
 that higher values will eventually be allowed, and simply treat it as an int32.
-Any positive priority numbered policy will have higher precedence over the namespaced
+Any positive priority (non-zero) numbered policy will have higher precedence over the namespaced
 NetworkPolicy instances in the cluster, unless the traffic matches a higher-precedence
 `Pass` rule that allows it to bypass any lower-precedence ANP rules.
 
+```
+<<[UNRESOLVED ANP rules with Priority="0"]>>
 Additionally, the special priority "0" can be used in the priority field to indicate
 that the rules in that policy instance shall be created at a precedence lower than
 the Namespaced NetworkPolicies. Note that the `Pass` action does not skip ANPs created
 at priority "0". In other words, if some traffic hits a `Pass` rule and no K8s
 NetworkPolicy applies, the "0" priority ANPs will still be evaluated.
+<<[/UNRESOLVED]>>
+```
 
 The relative precedence of the rules within a single ANP object (all of which
 share a priority) will be determined by the order in which the rule is written.
 Thus, a rule that appears at the top of the ingress/egress rules would take the
-highest precedence. The maximum number of rules, which will be calculated as the
+highest precedence. 
+
+```
+<<[UNRESOLVED How to calculate maximum rules in a single AdminNetworkPolicy]>>
+The maximum number of rules, which will be calculated as the
 total summation of the AdminNetworkPolicyIngressRules and AdminNetworkPolicyEgressRules
 in a single ANP instance, will be 100.
+<<[/UNRESOLVED]>>
+```
 
 Conflict resolution: Two policies are considered to be conflicting if they are assigned
 the same `priority` and apply to the same resources or a union of resources. In order
@@ -243,10 +253,8 @@ In order to help future proof the ANP api, a built in mechanism to identify each
 allow/deny/pass rule is required. Such a mechanism will help administrators organize
 and identify individual rules within an AdminNetworkPolicy resource.
 We propose to introduce a new string field, called `name`, in each `AdminNetworkPolicy`
-ingress/egress rule. Currently the `name` of a rule is optional and does not need to
-be unique, due to the fact that there's no easy way to validate this in-tree. It
-is suggested that implementations provide a mechanism to validate any name
-duplications within a single AdminNetworkPolicy. The max length for the rule name
+ingress/egress rule. Currently the `name` of a rule is optional and is most useful
+if it is unique within an ANP instance. The max length for the rule name
 string is restricted to 100 characters, which provides flexibility for long generated
 names.
 
@@ -364,7 +372,7 @@ no other CRDs in the cluster tries to alter traffic behavior). With the introduc
 of AdminNetworkPolicy this is no longer the case, and users could face difficulty
 in determining why NetworkPolicies did not take effect.
 
-For example, in the case where a positive priority AdminNetworkPolicy rule,
+For example, in the case where a positive priority (non-zero) AdminNetworkPolicy rule,
 NetworkPolicy rule and "0" priority AdminNetworkPolicy rule apply to an overlapping
 set of Pods, users will need to refer to the priority associated with the
 rule to determine which rule would take effect. Figuring out how stacked policies
@@ -480,8 +488,8 @@ type AdminNetworkPolicyIngressRule struct {
   // Action specifies whether this rule must pass, allow or deny traffic.
   // Allow: allows the selected traffic
   // Deny: denies the selected traffic
-  // Pass: allows the selected traffic to skip and remaining positive priority ANP rules
-  // and be delegated by K8's Network Policy.
+  // Pass: allows the selected traffic to skip and remaining positive priority (non-zero) 
+  // ANP rules and be delegated by K8's Network Policy.
   Action       AdminNetPolRuleAction
 
   // Ports allows for matching on traffic based on port and protocols.
@@ -507,8 +515,8 @@ type AdminNetworkPolicyEgressRule struct {
   // Action specifies whether this rule must pass, allow or deny traffic.
   // Allow: allows the selected traffic
   // Deny: denies the selected traffic
-  // Pass: allows the selected traffic to skip and remaining positive priority AMP rules
-  // and be delegated by K8's Network Policy.
+  // Pass: allows the selected traffic to skip and remaining positive priority (non-zero)
+  // ANP rules and be delegated by K8's Network Policy.
   Action       AdminNetPolRuleAction
 
   // Ports allows for matching on traffic based on port and protocols.
@@ -909,7 +917,7 @@ spec:
   - Test cases for fields which are shared with NetworkPolicy, like `endPort` etc.
 - Ensure that only administrators or assigned roles can create/update/delete cluster-scoped policy resources.
 - Ensure smooth integration with existing Kubernetes NetworkPolicy.
-  - Ensure all positive priority ANP rules are evaluated before any NetworkPolicy rules.
+  - Ensure all positive priority (non-zero) ANP rules are evaluated before any NetworkPolicy rules.
   - Ensure ANP rules with priority="0" are evaluated after any NetworkPolicy rules.
 
 ### Graduation Criteria
@@ -1149,8 +1157,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-If an AdminNetworkPolicy is applied the policy rules should be applied and enforced
-as fast as possible to ensure the cluster is always in a secure state. 
+Specific SLOs will be determined by the implementations.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
