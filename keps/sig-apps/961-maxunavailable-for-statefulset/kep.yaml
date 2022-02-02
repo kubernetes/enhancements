@@ -13,7 +13,7 @@ approvers:
   - "@kow3ns"
 editor: TBD
 creation-date: 2018-12-29
-last-updated: 2021-08-22
+last-updated: 2022-01-01
 status: implementable
 see-also:
   - n/a
@@ -24,8 +24,8 @@ superseded-by:
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.23"
-  beta: "v1.24"
-  stable: "v1.25"
-latest-milestone: "v1.23"
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.26"
+latest-milestone: "v1.24"
 stage: "alpha"
