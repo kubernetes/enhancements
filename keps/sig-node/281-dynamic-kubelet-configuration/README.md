@@ -32,10 +32,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -55,6 +55,8 @@ As per the [Avoiding Permanent Beta](https://kubernetes.io/blog/2020/08/21/movin
 policy this feature is marked for deprecation as there were no interest expressed to
 promote the feature to stable. Removal of Dynamic Kubelet Configuration logic will
 simplify code and improve code reliability.
+
+The functionality was removed from kubelet in 1.24 and will be removed from API server in 1.26.
 
 ### Risks and Mitigations
 
@@ -119,31 +121,26 @@ find an owner committed to it.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
-N/A
-
-TODO: Section is to be updated once feature is scheduled for removal.
+N/A, feature is removed from kubelet.
 
 * **Are there any tests for feature enablement/disablement?**
 
 There will be no tests for the deprecation warnings.
 
-TODO: Section is to be updated once feature is scheduled for removal.
-
 ### Rollout, Upgrade, and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
 
-No, feature deprecation will not impact any workload. 
-
-TODO: Section is to be updated once feature is scheduled for removal.
+No, feature deprecation will not impact any workload. On removal of the
+feature, new kubelet versions will not apply any dynamic configuration.
 
 * **What specific metrics should inform a rollback?**
 
-TODO: Section is to be updated once feature is scheduled for removal.
+N/A, feature is removed
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-TODO: Section is to be updated once feature is scheduled for removal.
+N/A, feature is removed
 
 ### Monitoring Requirements
 
@@ -158,15 +155,15 @@ effort needs to be scheduled.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
 
-TODO: Section is to be updated once feature is scheduled for removal.
+N/A
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-TODO: Section is to be updated once feature is scheduled for removal.
+N/A
 
 * **Are there any missing metrics that would be useful to have to improve observability of this feature?**
 
-TODO: Section is to be updated once feature is scheduled for removal.
+N/A
 
 ### Dependencies
 
@@ -183,8 +180,6 @@ No
 * **Will enabling / using this feature result in introducing new API types?**
 
 No
-
-TODO: Section is to be updated once feature is scheduled for removal.
 
 * **Will enabling / using this feature result in any new calls to the cloud provider?**
 
@@ -222,6 +217,7 @@ N/A
 - 1.9 Incremental improvements working towards 1.10 goals
 - 1.11 Beta release
 - 1.21 Feature is marked for deprecation
+- 1.24 Featuer is removed from kubelet. It will be removed from control plane in 1.26 to support version skew.
 
 ## Drawbacks
 
