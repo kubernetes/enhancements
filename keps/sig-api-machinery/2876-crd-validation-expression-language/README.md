@@ -31,6 +31,11 @@
   - [Type Checking](#type-checking)
   - [Type System Integration](#type-system-integration)
     - [Why not represent associative lists as maps in CEL?](#why-not-represent-associative-lists-as-maps-in-cel)
+  - [Resource constraints](#resource-constraints)
+    - [Estimated Cost Limits](#estimated-cost-limits)
+    - [Runtime Cost Budget](#runtime-cost-budget)
+  - [Request lifetime Bound](#request-lifetime-bound)
+  - [Bounds](#bounds)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -852,6 +857,153 @@ associativeList.all(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
 // To check some condition on all entries of an "associative list":
 associativeList.all(e, e.val == 100)
 ```
+
+### Resource constraints
+
+CEL expressions have the potential to consume unacceptable amounts of API server resources. We intend to 
+constrain the resource utilization in a few ways:
+
+- Validation of CEL expression's "cost" when a CEL expression is written to a field in a CRD (at CRD creation/update time)
+- Use a runtime cost budget during CEL evaluation that is integrated with API Priority and Fairness to determine the budget
+- Use go context cancelation to bound CEL expression evaluation to the request lifetime
+
+Combined, these limits protect against both accidental and malicious misuse and also work in concert with API Priority and Fairness to ensure the
+API server as a whole makes good use of the available resources.
+
+#### Estimated Cost Limits
+
+Validation of CEL expression's "cost" is primarily intended to provide authors of CEL expressions with 
+actionable feedback on the expected runtime costs of their expressions and prevent them from authoring 
+expressions that have poor worst case running times.
+
+We will use CEL's [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) to provide our proactive limits. If an
+expression is analyzed and has a cost greater than a predefined limit, it will not be allowed. If an
+expression is rejected for this reason, the error message will include how much the limit was exceeded.
+
+A major problem with the cost system is assigning the cost of list iteration. The cost of a CEL expression is 
+computed statically without any knowledge about the data that will be validated. Only the CEL expression is 
+available when computing cost. This means that the sizes of variable length data types (lists, maps, sets, 
+strings, byte arrays) are entirely unknown. This limits our options for computing the cost of CEL expressions 
+that iterate across these list types. Setting high costs for iteration is a major problem because, in 
+practice, lists are short. For example, a pod has a list of containers, but the list is usually quite short.
+
+There are a couple ways to address this problem:
+
+- We require CRD authors to provide `maxLength` on all variable length data types that they iterate across in CEL expressions so we know exactly how to compute cost
+- We do not attempt to statically compute a cost and instead rely entirely on time based limits
+- We prove that, in practice, the cost limits can be found that are operationally safe while still not being overly restrictive
+
+We have explored the cost system and realized (thanks @liggitt!) that O(n) iteration is bounded by custom 
+resource size limits (specifically the 3MB request limit) and we can use this to establish more manageable 
+worst case sizes.
+
+If a list contains small elements (e.g. a `0` stored in JSON) then the worst case list size can be
+3MB/2bytes=~1572k elements, but as the element size grows, the worst case list size quickly becomes 
+manageable. We ran a [series of experiments](https://docs.google.com/document/d/1yR746Rf-rw-_zoq36Ypzu8LTqOa-LaCk1pv3e0kjF3A/edit?usp=sharing) to test the resource utilization of CEL expressions that iterate across lists. We found that (with a safety factor of 5x):
+
+- O(n) iteration of a worst case list (list length == 1572k) is < 2000ms (400ms x5)
+- O(n) iteration of 10 byte data elements (list length == 300k) is < 350ms (70ms x5)
+- O(n) iteration of 100 byte data elements (list length == 30k) is < 35ms (7ms x5)
+
+Consider an example:
+
+```
+list.all(element, element.startsWith("prefix:"))
+```
+
+The cost of this expression is:
+
+```
+cost('startsWith()' function) * worst_case_length(list)
+```
+
+If the `worst_case_length()` is 30k for the list (e.g. the list elements are objects where the minimum size of 
+each object can be computed statically to be 100 bytes) and the cost of `statsWith()` is, say, 3, we know that 
+this is < 21ms to evaluate.
+
+Note that we could also have a much lower `worst_case_length()` if the CRD author provided a `maxLength` limit on their list size.
+
+This implies that we can use cost to:
+
+- Set limits that ensure CEL expressions evaluate within known time bounds
+- Allow O(n) operations so long as the per-element cost is moderate (e.g. 100 cost)
+  - And again, allow more expensive per-element cost when `maxLength` is set
+- Allow many (100s) CEL expressions in a CRD that are within these complexity bounds
+- Disallow O(n<sup>2</sup>) or worse operations based purely on their cost
+  - But still allow O(n<sup>2</sup>) or worse so long as the CRD author adds a `maxLength` limit to the lists and the resulting cost is within cost bounds (e.g. O(n<sup>3</sup>) is still fine for a list size of 3).
+
+Also, not requiring `maxLength` on most O(n) CEL expressions keeps the cost system low friction; the majority 
+of CEL expressions can be written and used without bumping into cost limits or needing to set `maxLength`.
+
+For the cases where a `maxLength` is needed to ensure cost is acceptable, encouraging CRD authors to include 
+`maxLength` on variable length data elements is generally considered good hygiene anyway, so having a cost 
+system that incentivizes developers to set this field, has other benefits.
+
+We will use the minimum possible size of list elements to estimate the size (e.g. objects with many fields 
+will have much larger minimum sizes). This helps us pick smaller worst case list sizes that we might pick if we had to assume all lists contain 1 byte elements.
+
+For example, the list element size `x` in this schema:
+
+```
+spec:
+  type: object
+  properties:
+    x:
+      x-kubernetes-validation:
+      - rule: "self.all(element, element.y.startsWith('prefix:'))"
+      type: array
+      items:
+        type: object
+        properties:
+          name: y
+          type: string
+          name: z
+          type: string
+```
+
+The worst case list size of `x` would be based on the size of an object with two strings (`y` and `z`).
+
+We will also account for where in a schema CEL expression is placed when calculating its cost. For example:
+
+```
+spec:
+  type: object
+  properties:
+    x:
+      type: array
+      items:
+        type: object
+        properties:
+          name: y
+          type: string
+          x-kubernetes-validation:
+          - rule: "self.startsWith('prefix:')"
+```
+
+In this example the validation rule is contained within a list, so its expression cost would be `cost(startsWith) * worst_case_length(x)`. Note that this means some of the cost calculation will
+happen outside of the CEL cost function (which would only calculate the `startsWith` cost).
+
+During CRD validation, when an expression exceeds the cost limit, the error message will include both the limit and the cost of the expression to facilitate debugging. The cost calculation rules will be documented.
+
+#### Runtime Cost Budget
+
+We will instrument CEL to increment a "cost" counter during CEL expression evaluation. The costs for 
+operations will be the same as used to compute Estimated Costs. The main difference is that the cost of list 
+iteration and branch operations (ternary, short circuited ORs) will be measured during evaluation and won't 
+need to be based on worst case estimates. If the cost exceeds a provided cost limit, CEL evaluation will be halted.
+
+We will integrate with the API Priority and Fairness system, providing it with information needs to be 
+informed about CEL resource utilization.
+
+### Request lifetime Bound
+
+We will wire in the request context into CEL so that CEL will halt expression evaluation if the context is 
+canceled.
+
+### Bounds
+
+We will set cost bounds in the future on both a per-request and per-expression basis as we perform further
+testing and benchmarking. 
 
 ### Test Plan
 
