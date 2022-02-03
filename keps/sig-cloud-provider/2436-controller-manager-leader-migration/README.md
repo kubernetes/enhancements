@@ -48,7 +48,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -162,8 +162,9 @@ type LeaderMigrationConfiguration struct {
 	LeaderName string `json:"leaderName"`
 
 	// ResourceLock indicates the resource object type that will be used to lock
-	// Must be either "leases" or "endpoints", defaults to 'leases'
-	// No other types (e.g. "endpointsleases" or "configmapsleases") are allowed
+	// Must be "leases", default to "leases". This field is retained only for
+	// compatibility with previous releases.
+	// This field will be removed in stable (v1) API.
 	ResourceLock string
 
 	// ControllerLeaders contains a list of migrating leader lock configurations
@@ -235,7 +236,7 @@ The default LeaderMigrationConfiguration can be represented as follows:
 
 ```yaml
 kind: LeaderMigrationConfiguration
-apiVersion: controllermanager.config.k8s.io/v1alpha1
+apiVersion: controllermanager.config.k8s.io/v1
 leaderName: cloud-provider-extraction-migration
 resourceLock: leases
 controllerLeaders:
@@ -292,9 +293,10 @@ unsetting the `--enable-leader-migration` flag.
   - test resource registration, parsing, and validation against the Schema APIs
   - test interactions with the leader election APIs
 - E2E Testing
-  - In a single-node control plane with leader election setting, test control plane upgrade, assert controller managers
+  - In a replicated control plane, test control plane upgrade, assert controller managers
     become health and ready after upgrade
-  - In a multi-node control plane setting, test control plane upgrade, assert availability throughout the upgrade
+  - In a replicated control plane, test control plane upgrade, assert no controllers
+    become active in both controller managers.
 
 ### Graduation Criteria
 
@@ -305,7 +307,10 @@ The default migration configuration is implemented and tested.
 
 ##### Beta -> GA Graduation
 
-Leader migration configuration works on all in-tree cloud providers.
+- Leader Migration works on all in-tree cloud providers that require migration.
+- Leader Migration has an automated upgrade test on a replicated control plane, with Leader Migration enabled, of the following cases
+  - Upgrade from KCM only to KCM + CCM
+  - Rollback from KCM + CCM to KCM only
 
 ### Upgrade / Downgrade Strategy
 
@@ -350,7 +355,8 @@ disabled.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The rollout may fail if the configuration file does not represent correct controller-to-manager.
+The rollout may fail if the configuration file does not represent correct controller-to-manager assignment
+or configurations mismatch between controller managers.
 This can cause controllers referred in the configuration file to either be unavailable or run in multiple instances.
 
 The rollback may fail if the leader election of the controller manager is not properly configured.
@@ -383,6 +389,8 @@ N/A. This feature is never used by any user workloads.
   - The `Lease` resource used in the migration can be watched for transition of leadership and timing information. 
   - logs and metrics can directly indicate the status of migration.
 
+Note that this feature is intended for cluster administrators, who should have access to metrics during the upgrade.
+
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 Leader Migration is designed to ensure availability of controller managers during upgrade,
@@ -391,13 +399,10 @@ and this feature will not affect SLOs of controller managers.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - leader_active
-  - other per-controller availability metrics.
+  - per-controller health checks in both controller managers.
+  - Components exposing the metric: kube-controller-manager, cloud-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-
-It would help if every controller that the controller manager hosts expose metrics about their availability.
-However, per-controller metrics are out of scope of this KEP.
 
 Status of the migration lease, provided by the API server, can help observe the transition of holders
 if exposed as resource metrics.
@@ -422,7 +427,7 @@ If the service accounts are not granted access to the lease resources, the RBAC 
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Type: `controllermanager.config.k8s.io/v1alpha1.LeaderMigrationConfiguration`
+Type: `controllermanager.config.k8s.io/v1.LeaderMigrationConfiguration`
 This resource is only for configuration file parsing. The resource should never reach the API server.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
@@ -466,7 +471,9 @@ N/A.
 - 12-28-2020 Parsing and validation merged as #96226
 - 03-10-2021 Implementation for alpha state completed, released in 1.21.
 - 03-30-2021 User guide published as kubernetes/website#26970
-- 05-11-2021 KEP updated to target beta. 
+- 05-11-2021 KEP updated to target beta.
+- 01-21-2022 KEP updated to target GA.
+- 01-25-2022 Testing and monitoring revised for GA.
 
 ## Drawbacks
 
