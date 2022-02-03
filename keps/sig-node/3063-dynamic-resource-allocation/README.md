@@ -628,7 +628,7 @@ proposal will be implemented, this is the place to discuss them.
 
 Several components must be implemented or modified in Kubernetes:
 - The new API must be added to kube-apiserver.
-- A new controller in kube-controller-manager which generates
+- A new controller in kube-controller-manager which creates 
   ResourceClaims from Pod ResourceClaimTemplates, similar to
   https://github.com/kubernetes/kubernetes/tree/master/pkg/controller/volume/ephemeral
 - A kube-scheduler plugin must detect Pods which reference a
