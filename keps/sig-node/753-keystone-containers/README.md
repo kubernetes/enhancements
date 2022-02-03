@@ -88,6 +88,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [API Changes:](#api-changes)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [alpha:](#alpha)
@@ -203,7 +204,7 @@ know that this has succeeded?
 
 ### Non-Goals
 - Handling Container startup/shutdown ordering for application and sidecar containers.
-- Pod termination by kubelet if sidecar containers have exited (crash).
+- Pod termination by kubelet if sidecar containers have exited (crash).  There will be no change in pod lifecycle if sidecar container exited.
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
@@ -284,9 +285,11 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-If the user identifies several (or all) containers as keystones, current logic doesn't determine the correct behavior which is whether to terminate the pod or keep it running. We mitigate this risk by allowing only 1 keystone container per pod for the moment to safely gather user feedback. A validation will be added to ensure no pod can be created with more than 1 keystone.
+If the user identifies several (or all) containers as keystones, current logic doesn't determine the correct behavior which is whether to terminate the pod or keep it running. We mitigate this risk by allowing only 1 keystone container per pod for the moment to safely gather user feedback.
+ 
+To mitigate this risk validation at the api level will be added to ensure no pod can be created with more than 1 keystone.
 
-If the user forgets to identify any keystone container in the pod, kubelet will treat all containers as same as before.
+If the user has not specified any keystone container in the pod, kubelet will treat all containers as same as before.
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -302,7 +305,7 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-We will add the logic to terminate pod on the basis of application container status, restart policy and exit code of application containers in `computePodActions` of kuberuntime manager. `computePodAction` is called by pod worker during pod sync. 
+We will add the logic to terminate pod on the basis of keystone container status, restart policy and exit code of keystone container in `computePodActions` of kuberuntime manager. `computePodAction` is called by pod worker during pod sync.
 
 
 ```
@@ -312,18 +315,18 @@ func (...) computePodActions(...){
 ....
 ....
     if featureflag keystoneContainersEnabled 
-        keyContainers := getKeyContainersList()
-        keyContainersStatus := getKeyContainersStatus(keyContainers)
+        keyContainer := getKeyContainer()
+        keyContainersStatus := getKeyContainerStatus(keyContainer)
 
         if keyContainerStatus==Completed && restartPolicy != always
         // kill other containers
        
-        if keyContainersStatus==Failed && restartPolicy == never
+        if keyContainerStatus==Failed && restartPolicy == never
         // kill other containers
 		
 } 
 
-func getKeyContainersStatus() {
+func getKeyContainerStatus() {
 
     // Check status and exit code for all key containers 
     // if all are exited with exit code 0 return "Completed"
@@ -334,11 +337,38 @@ func getKeyContainersStatus() {
 
 pkg/kubelet/kuberuntime/helpers.go
 
-func getKeyContainersList() {
-    // list keystone containers using API field
+func getKeyContainerList() {
+    // get keystone container from pod containers list,
+    // lifecycle type "keystone" is specified for keystone container
 }
 
 ```
+
+### API Changes:
+
+New field `Type` will be added to the lifecycle struct:
+
+```go
+type Lifecycle struct {
+  // Type specifies the container type.
+  // It can be keystone or, if not present, default behavior is used
+  // +optional
+  Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
+}
+```
+New type `LifecycleType` will be added with one constant:
+```go
+// LifecycleType describes the lifecycle behaviour of the container
+type LifecycleType string
+
+const (
+  // LifecycleTypeKeystone means that this is the primary important
+  // container of the pod, and pod termination is intiated on successful
+  // completion of keystone container.
+  LifecycleTypeKeystone LifecycleType = "Keystone"
+)
+```
+Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
 
 <!--
 This section should contain enough information that the specifics of your
@@ -455,7 +485,13 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-Enabling or disabling the new feature will be done using the feature flag. Please refer to the version skew strategy for upgrade/downgrade paths which will in all case result in the default Pod lifecycle being applied.
+Enabling or disabling the new feature will be done using the feature flag.
+
+The api field `PodSpec.Containers[i].Lifecycle.Type` will be optional thus during upgrade there won't be any effect on previously created pods and kubelet will treat all containers as same as before.
+
+During downgrade pod yamls specifying `PodSpec.Containers[i].Lifecycle.Type` needs to remove it otherwise api validation will fail.
+
+Please refer to the version skew strategy for upgrade/downgrade paths which will in all case result in the default Pod lifecycle being applied.
 
 ### Version Skew Strategy
 
@@ -472,9 +508,22 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-If the API server is updated before the kubelet, or if the feature isn't enabled in the latter, the kubelet won't handle the API field and default Pod lifecycle will be applied.
+- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
+    - If the API server is on new version and Kubelet is on the older version then pods specifying `Lifecycle.Type` field would be treated as same as before by kubelet i.e kubelet won't handle the API field and default Pod lifecycle will be applied.
+    - If the kubelet is updated before the API server, or if the feature isn't enabled in the latter, no API field will be present in the Pod and default Pod lifecycle will be applied.
+   - feature gate enabled/disabled
+        - apiserver enabled, kubelet enabled
+            - feature will work as expected
+        - apiserver disabled, kubelet disabled
+            - feature won't work as disabled
+        - apiserver enabled, kubelet disabled
+            - kubelet will ignore, Lifecycle.Type field containers field and treats all containers as same as before.
+        - apiserver disabled, kubelet enabled
+            - api validation would fail if Lifecycle.Type is specified in containers.
 
-If the kubelet is updated before the API server, or if the feature isn't enabled in the latter, no API field will be present in the Pod and default Pod lifecycle will be applied.
+
+- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+    - There won't be any effect on components like CSI, CSI or CNI
 
 ## Production Readiness Review Questionnaire
 
@@ -558,7 +607,7 @@ with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
 
-No, but could be added before moving to beta.
+Unit and e2e tests will be added to verify the feature is working as expected and have not introduced any regression. e2e tests can be run as a part of node alpha features CI job.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -705,7 +754,6 @@ previous answers based on experience in the field.
 -->
 
 ###### Will enabling / using this feature result in any new API calls?
-
 <!--
 Describe them, providing:
   - API call type (e.g. PATCH pods)
@@ -718,18 +766,17 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
-
+No
 ###### Will enabling / using this feature result in introducing new API types?
-
 <!--
 Describe them, providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
-
+No
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
-
+No
 <!--
 Describe them, providing:
   - Which API(s):
@@ -744,6 +791,10 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+  - API type(s): podspec.Containers[i].Lifecycle.Type
+  - Estimated increase in size:
+    The new field Lifecycle.Type will be of type `type LifecycleType string` with current valid value as "keystone", It will increase the size of object by 8 bytes.
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
