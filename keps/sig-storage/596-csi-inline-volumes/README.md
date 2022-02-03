@@ -1,58 +1,111 @@
-# Ephemeral Inline CSI volumes
+# KEP-596: Ephemeral Inline CSI volumes
 
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-goals](#non-goals)
-- [User stories](#user-stories)
-  - [Examples](#examples)
-- [Ephemeral inline volume proposal](#ephemeral-inline-volume-proposal)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Examples](#examples)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Security Considerations](#security-considerations)
+- [Design Details](#design-details)
   - [VolumeHandle generation](#volumehandle-generation)
   - [API updates](#api-updates)
   - [Support for inline CSI volumes](#support-for-inline-csi-volumes)
   - [Secret reference](#secret-reference)
-  - [Specifying allowed inline drivers with <code>PodSecurityPolicy</code>](#specifying-allowed-inline-drivers-with-)
   - [Ephemeral inline volume operations](#ephemeral-inline-volume-operations)
-- [Test plans](#test-plans)
-  - [All unit tests](#all-unit-tests)
-  - [Ephemeral inline volumes unit tests](#ephemeral-inline-volumes-unit-tests)
-  - [E2E tests](#e2e-tests)
+  - [Read-only volumes](#read-only-volumes)
+  - [Test Plan](#test-plan)
+    - [All unit tests](#all-unit-tests)
+    - [Ephemeral inline volumes unit tests](#ephemeral-inline-volumes-unit-tests)
+    - [E2E tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Alternatives](#alternatives)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
+## Release Signoff Checklist
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
+
+
 ## Summary
+
 Currently, volumes that are backed by CSI drivers can only be used with the `PersistentVolume` and `PersistentVolumeClaim` objects. This proposal is to implement support for the ability to nest CSI volume declarations within pod specs for ephemeral-style drivers.
 
 This KEP started life as [feature #2273](https://github.com/kubernetes/community/pull/2273).  Please follow that link for historical context.
 
-
 ## Motivation
+
 Implementing support for embedding volumes directly in pod specs would allow driver developers to create new types of CSI drivers such as ephemeral volume drivers.  They can be used to inject arbitrary states, such as configuration, secrets, identity, variables or similar information, directly inside pods using a mounted volume. 
 
-
 ### Goals 
+
 * Provide a high level design for ephemeral inline CSI volumes support
 * Define API changes needed to support this feature
 * Outlines how ephemeral inline CSI volumes would work 
-* Ensure that inline CSI volumes usage is secure
 
 ### Non-goals
+
 The followings will not be addressed by this KEP:
-* Introduce new CSI spec changes to support this feature
 * Introduce required changes to existing CSI drivers for this feature
 * Support for topology or pod placement scheme for ephemeral inline volumes
 * Support for PV/PVC related features such as topology, raw block, mount options, and resizing
 * Support for inline pod specs backed by a persistent volumes
 
-## User stories
+## Proposal
+
+A CSI driver may be able to support either PV/PVC-originated or pod spec originated volumes. When a volume definition is embedded inside a pod spec, it is considered to be an `ephemeral inline` volume request and can only participate in *mount/unmount* volume operation calls.  Ephemeral inline volume requests have the following characteristics: 
+* The inline volume spec will not contain nor require a `volumeHandle`.
+* The CSI Kubelet plugin will internally generate a `volumeHandle` which is passed to the driver.
+* Using existing strategy, the volumeHandle will be cached for future volume operations (i.e. unmount).
+* The Kubelet will send mount related calls to CSI drivers:
+  * Kubelet will have access to both podUID and pod namespace during mount/Setup operations.
+  * Secrets references can be fully realized during mount/Setup phase and sent to driver.
+* The Kubelet will send unmount related calls to CSI drivers:
+  * The cached volumeHandle will be sent to the driver during unmount/Teardown phase.
+
+### User Stories
+
 * As a storage provider, I want to use the CSI API to develop drivers that can mount ephemeral volumes that follow the lifecycles of pods where they are embedded.   This feature would allow me to create drivers that work similarly to how the in-tree Secrets or ConfigMaps driver works.  My ephemeral CSI driver should allow me to inject arbitrary data into a pod using a volume mount point inside the pod. 
 * As a user I want to be able to define pod specs with embedded ephemeral CSI volumes that are created/mounted when the pod is deployed and are deleted when the pod goes away.
 
-### Examples
+#### Examples
 
 A pod spec with an ephemeral inline CSI volume.  Note that because the volume is expected to be ephemeral, the `volumeHandle` is not provided.  Instead a CSI-generated ID will be submitted to the driver.
 
@@ -74,18 +127,24 @@ spec:
               foo: bar
 ```
 
-## Ephemeral inline volume proposal
-A CSI driver may be able to support either PV/PVC-originated or pod spec originated volumes. When a volume definition is embedded inside a pod spec, it is considered to be an `ephemeral inline` volume request and can only participate in *mount/unmount* volume operation calls.  Ephemeral inline volume requests have the following characteristics: 
-* The inline volume spec will not contain nor require a `volumeHandle`.
-* The CSI Kubelet plugin will internally generate a `volumeHandle` which is passed to the driver.
-* Using existing strategy, the volumeHandle will be cached for future volume operations (i.e. unmount).
-* The Kubelet will send mount related calls to CSI drivers:
-  * Kubelet will have access to both podUID and pod namespace during mount/Setup operations.
-  * Secrets references can be fully realized during mount/Setup phase and sent to driver.
-* The Kubelet will send unmount related calls to CSI drivers:
-  * The cached volumeHandle will be sent to the driver during unmount/Teardown phase.
+### Risks and Mitigations
+
+#### Security Considerations
+
+CSI driver vendors that support inline volumes will be responsible for secure handling of volumes.
+
+For example, `csi-driver-nfs` allows anybody who can create a pod to mount any NFS volume into that pod, when the cluster admin deploys the driver with csi driver instance allowing ephemeral use. This option is not on by default, but may be surprising to some admins that this allows mounting of any NFS volume and could be unsafe without additional authorization checks.
+
+Downstream distributions and cluster admins that wish to exercise fine-grained control over which CSI drivers are allowed to use ephemeral inline volumes within a pod spec should do so with a 3rd party pod admission plugin or webhook (not part of this KEP).
+
+We will update the documentation to include the security aspects of inline CSI volumes and recommend CSI driver vendors not implement inline volumes for persistent storage unless they also provide a 3rd party pod admission plugin.
+
+This is consistent with the proposal by sig-auth in [KEP-2579](https://github.com/kubernetes/enhancements/blob/787515fbfa386bed95ff4d21e472474f61d1c536/keps/sig-auth/2579-psp-replacement/README.md?plain=1#L512-L519) regarding how inline CSI volumes should be handled.
+
+## Design Details
 
 ### VolumeHandle generation
+
 During mount operation, the Kubelet (internal CSI code) will employ a naming strategy to generate the value for the `volumeHandle`.  The generated value will be a combination of `podUID` and `pod.spec.Volume[x].name` to guarantee uniqueness.  The generated value will be stable and the Kubelet will be able to regenerate the value, if needed, during different phases of storage operations.
 
 This approach provides several advantages:
@@ -177,34 +236,13 @@ also set an entry with this key in the `NodePublishRequest.volume_context`:
 * `csi.storage.k8s.io/ephemeral`: `true` for ephemeral inline volumes, `false` otherwise
 
 ### Secret reference
+
 The secret reference declared in an ephemeral inline volume can only be used with namespaces from pods where it is referenced.  The `NodePublishSecretRef` is stored in a `LocalObjectReference` value:
 * `LocalObjectReference` do not include a namespace reference.  This is to prevent reference to arbitrary namespace values.
-* The namespace needed will be extracted from the the pod spec by the Kubelet code during mount.
-
-### Specifying allowed inline drivers with `PodSecurityPolicy`
-To control which CSI driver is allowed to be use ephemeral inline volumes within a pod spec, a new `PodSecurityPolicy` called `AllowedCSIDrivers` is introduced as shown below:
-
-```go
-  type PodSecurityPolicySpec struct {
-	// <snip>
-
-	// AllowedCSIDrivers is a whitelist of allowed CSI drivers used inline in a pod spec.  Empty or nil indicates that no
-	// CSI drivers may be used in this way. This parameter is effective only when the usage of the CSI plugin
-	// is allowed in the "Volumes" field.
-	// +optional
-	AllowedCSIDrivers []AllowedCSIDriver
-  }
-
-  // AllowedCSIDriver represents a single CSI driver that is allowed to be used.
-  type AllowedCSIDriver struct {
-	// Name of the CSI driver
-	Name string
-  }  
-```
-
-Value `PodSecurityPolicy.AllowedCSIDrivers` must be explicitly set with the names of CSI drivers that are allowed to be embedded within a pod spec.  An empty value means no CSI drivers are allowed to be specified inline inside a pod spec.
+* The namespace needed will be extracted from the pod spec by the Kubelet code during mount.
 
 ### Ephemeral inline volume operations
+
 Inline volume requests can only participate in mount/unmount volume operations. This phase is handled by the Kubelet which is responsible for mounting/unmounting device and/or filesystem mount points inside a pod. At mount time, the internal API will pass the volume information via parameter of `volume.Spec` which will contain a value of either type `v1.CSIVolumeSource` (for volume originated from pod specs) or `v1.CSIPersistentVolume` for volume originating from PV/PVC.  The code will check for the presence of a `v1.CSIVolumeSource` or `v1.CSIPersistentVolume` value.  If a `v1.CSIPersistentVolume` is found, the operation is considered non-ephemeral and follows regular PV/PVC execution flow.  If, however, the internal volume API passes a `v1.CSIVolumeSource`:
 * The Kubelet will create necessary mount point paths
 * Kubelet will auto-generate a volumeHandle based on `podUID` and `pod.spec.volume[x].name` (see above for detail).
@@ -212,32 +250,295 @@ Inline volume requests can only participate in mount/unmount volume operations. 
 
 Since ephemeral volume requests will participate in only the mount/unmount volume operation phase, CSI drivers are responsible for implementing all necessary operations during that phase (i.e. create, mount, unmount, delete, etc).  For instance, a driver would be responsible for provisioning any new volume resource during `NodePublish` and for tearing down these resources during the `NodeUnpublish` calls.
 
+### Read-only volumes
 
-## Test plans
+It is possible for a CSI driver to provide its volumes to Pods as read-only, while keeping them read-write to the driver and to kubelet / the container runtime. This allows the CSI driver to dynamically update content of their Secrets-like volumes and at the same time users can't expose issues like [CVE-2017-1002102](https://github.com/kubernetes/kubernetes/issues/60814), because the volume is read-only to them. In addition, it allows kubelet to apply `fsGroup` to the volume and the container runtime to change SELinux context of files on the volume, so the Pod gets the volume with expected owner and SELinux label.
 
-### All unit tests
+To benefit from this behavior, the following should be implemented in the CSI driver:
+
+* The driver should provide an admission plugin that sets `ReadOnly: true` to all volumeMounts of such volumes.
+  * We can't trust users to do that correctly in all their pods.
+  * Presence of `ReadOnly: true` tells kubelet to mount the volume as read-only to the Pod.
+* The driver should check in all NodePublish requests that readonly flag is set.
+  * We can't trust cluster admins that they deploy the admission webhook mentioned above.
+* When both conditions above are satisfied, the driver MAY ignore the `readonly` flag in [NodePublish](https://github.com/container-storage-interface/spec/blob/5b0d4540158a260cb3347ef1c87ede8600afb9bf/csi.proto#L1375) and set up the volume as read-write. Kubelet then can apply fsGoup if needed. Seeing `ReadOnly: true` in the Pod spec, kubelet then tells CRI to bind-mount the volume to the container as read-only, while it's read-write on the host / in the CSI driver. This behavior is already implemented in Kubelet for all projected volumes (Secrets, ConfigMap, Projected and DownwardAPI), we're allowing ephemeral CSI driver to reuse it for their Secrets-like volumes.
+
+This behavior will be documented in [github.com/kubernetes-csi/docs](http://github.com/kubernetes-csi/docs). Ignoring the `readonly` flag in [NodePublish](https://github.com/container-storage-interface/spec/blob/5b0d4540158a260cb3347ef1c87ede8600afb9bf/csi.proto#L1375) of in-line CSI volumes will be supported as a valid CSI driver behavior.
+
+Examples where this is used by the Secrets Store CSI driver:
+- [NodePublish ReadOnly check](https://github.com/kubernetes-sigs/secrets-store-csi-driver/blob/d32ca72038650c79561092dab26bf6d5a9c9e40a/pkg/secrets-store/nodeserver.go#L174-L177)
+- [Ignoring readonly and providing read-write volume](https://github.com/kubernetes-sigs/secrets-store-csi-driver/blob/d32ca72038650c79561092dab26bf6d5a9c9e40a/pkg/secrets-store/nodeserver.go#L202)
+
+
+### Test Plan
+
+#### All unit tests
+
 * Volume operation that use CSIVolumeSource can only work with proper feature gate enabled
 
-### Ephemeral inline volumes unit tests
+#### Ephemeral inline volumes unit tests
+
 * Ensure required fields are provided: csi.storage.k8s.io/ephemeral (https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/pkg/volume/csi/csi_mounter_test.go#L140-L146)
 * Mount/Unmount should be triggered with CSIVolumeSource: https://github.com/kubernetes/kubernetes/blob/10005d2e1e1425904f8c7bf5615e730fb0fea7c9/pkg/volume/csi/csi_mounter_test.go#L386
 * Expected generated volumeHandle is created properly: https://github.com/kubernetes/kubernetes/blob/10005d2e1e1425904f8c7bf5615e730fb0fea7c9/pkg/volume/csi/csi_plugin_test.go#L177
-* Ensure that CSIDriver.Spec.Mode field is validated properly: https://github.com/kubernetes/kubernetes/pull/80568
+* Ensure that CSIDriver.VolumeLifecycleModes field is validated properly: https://github.com/kubernetes/kubernetes/pull/80568
 * Ensure volumeHandle conforms to resource naming format: TODO
 * CSIVolumeSource info persists in CSI json file during mount/unmount: TODO
-* Ensure Kubelet skips attach/detach when `CSIDriver.Mode = ephemeral`: TODO
-* Ensure Kubelet skips inline logic when `CSIDriver.Mode = persistent` or `CSIDriver.Mode is empty`: covered by existing tests
+* Ensure Kubelet skips attach/detach when `CSIDriver.VolumeLifecycleModes = Ephemeral`: TODO
+* Ensure Kubelet skips inline logic when `CSIDriver.VolumeLifecycleModes = Persistent` or `CSIDriver.VolumeLifecycleModes is empty`: covered by existing tests
+* Add unit tests for feature gate enablement / disablement, similar to this [network policy strategy test](https://github.com/kubernetes/kubernetes/blob/b7c82bb83c1b3933b99fbc5fdcffa59fd6441617/pkg/registry/networking/networkpolicy/strategy_test.go#L246-L281): TODO
 
-### E2E tests
+#### E2E tests
+
 * Pod spec with an ephemeral inline volume request can be mounted/unmounted: https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/test/e2e/storage/csi_mock_volume.go#L356-L371, https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/test/e2e/storage/testsuites/ephemeral.go#L110-L115
 * Two pods accessing an ephemeral inline volume which has the same attributes in both pods: "should support two pods which share the same data" in `ephemeral.go` (upcoming PR)
 * Single pod referencing two distinct inline volume request from the same driver: "should support multiple inline ephemeral volumes" in `ephemeral.go` (upcoming PR)
 * CSI Kubelet code invokes driver operations during mount for ephemeral volumes: `checkPodLogs` in `csi_mock_volume.go` (upcoming PR)
 * CSI Kubelet code invokes driver operation during unmount of ephemeral volumes: `checkPodLogs` in `csi_mock_volume.go` (upcoming PR)
 * CSI Kubelet cleans up ephemeral volume paths once pod goes away: TODO
-* Apply PodSecurity settings for allowed CSI drivers: TODO
 * Enable testing of an external ephemeral CSI driver: https://github.com/kubernetes/kubernetes/pull/79983/files#diff-e5fc8d9911130b421b74b1ebc273f458
 * Enable testing of the csi-host-path-driver in ephemeral mode in Kubernetes-CSI Prow jobs and Kubernetes itself: TODO
+
+
+### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented behind `CSIInlineVolume` feature flag
+- Initial unit tests and e2e tests implemented
+
+#### Beta
+
+- Feature flag enabled by default
+- CSI drivers can support both ephemeral inline volumes and persistent volumes
+
+#### GA
+
+- Remove dependency on deprecated `PodSecurityPolicy` and document new strategy
+- Upgrade / downgrade manual testing, document results in PRR questionnaire.
+- Conformance tests implemented / promoted
+- Updated documentation as described in [Security Considerations](#security-considerations) and [Read-only volumes](#read-only-volumes)
+- Fix for [#79980 - CSI volume reconstruction](https://github.com/kubernetes/kubernetes/issues/79980)
+- Ensure our sponsored [NFS](https://github.com/kubernetes-csi/csi-driver-nfs) and [SMB](https://github.com/kubernetes-csi/csi-driver-smb) CSI drivers align with the new guidance in [Security Considerations](#security-considerations)
+
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: CSIInlineVolume
+  - Components depending on the feature gate:
+    - kubelet
+    - kube-apiserver
+
+###### Does enabling the feature change any default behavior?
+
+  Enabling the feature gate will **not** change the default behavior.
+  Each CSI driver must opt-in to support ephemeral inline volumes, and this
+  feature needs to be explicitly requested in the PodSpec (see [Examples](#examples)).
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+  Yes. Disabling the feature gate will disable support for inline CSI volumes.
+  It can also be disabled on a specific CSI driver by removing the "Ephemeral"
+  VolumeLifecycleMode from `CSIDriver.VolumeLifecycleModes`.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+  Reenabling the feature will again allow CSI drivers that opt-in to be used
+  as ephemeral inline volumes in the pod spec.
+
+###### Are there any tests for feature enablement/disablement?
+
+  Yes, the unit tests will test with the feature gate enabled and disabled.
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+  A rollout should not impact running workloads. For pods that are already running,
+  there should be no effect. Any workloads that need to make use of this feature
+  would require pod spec updates, along with a CSI driver that supports it.
+
+  A rollback (or disabling the feature flag) will not impact already running
+  workloads, however starting new workloads using this feature (as well as
+  potentially restarting ones that failed for some reason) would fail.
+  Additionally, kubelet may fail to fully cleanup after pods that were
+  running and taking advantage of inline volumes.
+
+  *It is highly recommended to delete any pods using this feature before disabling it*.
+
+###### What specific metrics should inform a rollback?
+
+  An increased failure rate of volume mount operations can be used as an indication
+  of a problem. In particular, the following metrics:
+
+  - Metric name: storage_operation_duration_seconds
+    - [Optional] Aggregation method: filter by `operation_name='volume_mount',status='fail-unknown'`
+      - Components exposing the metric: kubelet
+      - Shows failure rate of volume mount operations
+
+  - Metric name: csi_operations_seconds
+    - [Optional] Aggregation method: filter by `method_name='NodePublishVolume',grpc_status_code!='0'`
+      - Components exposing the metric: kubelet
+      - May also filter by `driver_name` to narrow down to a specific driver
+      - Shows failure rate of CSI NodePublishVolume requests
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+  To be documented as part of manual GA testing.
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+  No, this feature does not deprecate any existing functionality.
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+  Check if any CSIDriver specs have `VolumeLifecycleModes` including an
+  "Ephemeral" `VolumeLifecycleMode` and if any pod specs are using this driver inline.
+
+###### How can someone using this feature know that it is working for their instance?
+
+For individual pods using an inline CSI driver (as in [Examples](#examples)),
+review the status of the pod:
+
+- [x] API Pod.status
+  - Condition name: Ready
+  - Other field: Pod.status.phase = Running
+
+For an aggregated view at the cluster level, check the failure rate of
+CSI NodePublishVolume requests:
+
+- [x] Metric: csi_operations_seconds
+  - Aggregation method: filter by `method_name='NodePublishVolume',grpc_status_code!='0'`
+    - Components exposing the metric: kubelet
+    - May also filter by `driver_name` to narrow down to a specific driver
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+- No increased failure rates during mount operations.
+- Mount times should be expected to be less than or equal to the default behavior.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [x] Metrics
+  - Metric name: storage_operation_duration_seconds
+    - [Optional] Aggregation method: filter by `operation_name='volume_mount',status='fail-unknown'`
+      - Components exposing the metric: kubelet
+      - Shows failure rate of volume mount operations
+  - Metric name: storage_operation_duration_seconds
+    - [Optional] Aggregation method: filter by `operation_name='volume_mount'`
+      - Components exposing the metric: kubelet
+      - Shows time taken by volume mount operations
+  - Metric name: csi_operations_seconds
+    - [Optional] Aggregation method: filter by `method_name='NodePublishVolume',grpc_status_code!='0'`
+      - Components exposing the metric: kubelet
+      - May also filter by `driver_name` to narrow down to a specific driver
+      - Shows failure rate of CSI NodePublishVolume requests
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+  No additional metrics needed.
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+  - [CSI Drivers]
+    - Usage description: In order for this feature to be used by a pod, there
+      must be a CSI Driver deployed that supports ephemeral inline volumes.
+      - Impact of its outage on the feature:
+        If the CSI Driver is unavailable, pods attempting to mount a volume with
+        that driver will be unable to start.
+      - Impact of its degraded performance or high-error rates on the feature:
+        Degraded performance or high-error rates of the CSI Driver will delay
+        or prevent pods using that driver from starting.
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+  There will be no new API calls.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+  The only new API type is the `VolumeLifecycleMode` string that is used
+  to specify supported modes in the CSIDriver spec.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+  No, ephemeral inline volumes can only participate in mount/unmount volume operation
+  calls to the CSI driver.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+  There is a new `VolumeLifecycleModes` field in CSIDriverSpec that may slightly increase
+  the size by adding 2 new strings (`Persistent` and `Ephemeral`).
+
+  There is also `pod.spec.volumes` that can contain `csi` items now. Its size is comparable
+  to the size of Secrets/ConfigMap volumes inline in Pods. The CSI volume definitions will
+  be bigger, as they contain a generic map of `volumeAttributes`, which contains opaque
+  parameters for the CSI driver.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+  Compared to CSI persistent volumes, there should be no increase in the amount of time
+  taken to mount / unmount, as there will be fewer CSI calls required for inline volumes.
+  Compared to Secrets and ConfigMaps, inline CSI volumes will be slower mount / unmount,
+  since an external CSI driver is responsible for providing the actual volume.
+  Note that mount time is in the critical path for [pod startup latency](https://github.com/kubernetes/community/blob/1181fb0266a01d1dfd170ff437817eb7de24b624/sig-scalability/slos/pod_startup_latency.md) and the choice to use CSI inline volumes may affect the SLI/SLO, since this is still a type of volume that needs to be mounted.
+
+  TODO: Provide a measurements showing the time it takes to start a pod with 5 secrets,
+  compared to mounting those secrets via a CSI inline volume. This will be driver
+  dependent, but it would be useful to set some baseline expectations.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+  Kubernetes itself should not see any noticeable increase in resource consumption,
+  but CSI driver pods will need to be deployed on all the nodes in order to make
+  use of this feature.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+  Pods will not start and volumes for them will not get provisioned.
+
+###### What are other known failure modes?
+
+  If the storage system fails to provision inline volumes, there will
+  be an event in the affected pod indicating what went wrong when
+  mounting the CSI volume.
+
+  Failure modes related to individual CSI drivers may require examining
+  the CSI driver logs.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+  The kubelet and CSI driver logs should be inspected to look for errors mounting / unmounting the volume, or to help explain why operations are taking longer than expected. Pay special attention to `mounter.SetUpAt` and `NodePublishVolume` messages.
+
+  Example kubelet log messages:
+  - `mounter.SetUpAt failed to get CSI client`
+  - `mounter.SetupAt failed to get CSI persistent source`
+  - `CSIInlineVolume feature required`
+  - `unexpected volume mode`
+
+  CSI driver log messages will vary between drivers, but some common failure scenarios are:
+  - `Volume capability missing in request`
+  - `Target path missing in request`
+  - `Failed to create target path`
+  - `Failed to mount ...`
 
 ## Alternatives
 
@@ -254,7 +555,7 @@ implementation more complex.
 
 1.15:
 - Alpha status
-- `CSIDriver.Mode` not added yet
+- `CSIDriver.VolumeLifecycleModes` not added yet
 - a CSI driver deployment can only be used for ephemeral inline
   volumes or persistent volumes, but not both, because the driver
   cannot determine the mode in its `NodePublishVolume` implementation
@@ -265,6 +566,10 @@ implementation more complex.
   the pod info feature and checking the value of
   `csi.storage.k8s.io/ephemeral`
   (https://github.com/kubernetes/kubernetes/pull/79983, merged)
-- `CSIDriver.VolumeLifecycleMode` added and checked before calling a CSI driver for
+- `CSIDriver.VolumeLifecycleModes` added and checked before calling a CSI driver for
   an ephemeral inline volume
   (https://github.com/kubernetes/kubernetes/pull/80568, merged)
+
+1.24:
+- GA status
+
