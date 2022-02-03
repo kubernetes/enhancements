@@ -867,7 +867,9 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
-The kubelet lifecycle code is very intricate and any change to it usually results in several regressions.
+The kubelet lifecycle code is very intricate and past attempts to enhance it resulted in several regressions that were difficult to spot and resolve (for example all [PLEG related bugs](https://github.com/kubernetes/kubernetes/issues?q=is%3Aissue+is%3Aclosed+pleg+label%3Akind%2Fbug)).
+Fortunately documentation and test coverage has improved a lot since and regressions should be less likely.
+We also take a baby step approach by focusing on only one use case of the initial [sidecar KEP](https://github.com/kubernetes/enhancements/blob/0e4d5df19d396511fe41ed0860b0ab9b96f46a2d/keps/sig-node/753-sidecar-containers/README.md) to gather early feedback and limit code changes.
 
 ## Alternatives
 
