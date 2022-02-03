@@ -366,6 +366,11 @@ Proposal:
     inline , e.g. `[self.val1, self.val2].max()`. Overflow will raise the same error raised by arithmetic operation [overflow](https://github.com/google/cel-spec/blob/master/doc/langdef.md#overflow).
   - Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
     validating partial order (i.e. the tasks of a workflow)
+  - Add URL parsing: `url(string) URL`, `string(URL) string` (conversion), `getScheme(URL) string`, `getUserInfo(URL) string`,
+    `getHost(URL) string`, `getPort(URL) string`, `getPath(URL) string`, `getQuery(URL) string`, `getFragment(URL) string`. This is
+    useful for validating URLs. The go URL parser implements all the functionality.
+  - Add regex `find(string) string` and `findAll(string) []string`. This makes it possible to parse out parts of string
+    formats (we only provide timestamp, duration and url support directly).
 
 The function libraries we need can be added using [extension
 functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
@@ -432,6 +437,9 @@ Numbers:
 Formats:
 
 - semver: compare (xref [Kyverno function library](https://github.com/kyverno/kyverno/blob/main/pkg/engine/jmespath/functions.go))
+- urls: parsing out {scheme, userInfo, host, port, path, query, fragment}. This is [hard](https://community.helpsystems.com/forums/intermapper/miscellaneous-topics/5acc4fcf-fa83-e511-80cf-0050568460e4?_ga=2.113564423.1432958022.1523882681-2146416484.1523557976)
+  to get right with regex, particularly with ipv6.
+- images: parsing out {name, tag, digest} as well as {host, port} from name and algorithm, hex} from digest. (xref: [grammar](https://github.com/distribution/distribution/blob/v2.7.1/reference/reference.go#L4-L24)).
 
 Maps:
 
@@ -468,7 +476,7 @@ of any future work done involving CEL and mutating admission control:
 Any changes to the CEL function library will make it possible for CRD authors to create CRDs that are incompatible with
 all previous Kubernetes releases that supported CEL. Because of this incompatibility, changing the function library
 will need to carefully considered and kept to a minimum. All changes will need to be limited to function additions.
-We will not add functions to do things that can already be accomplished with existing functions. Improving ease-of-use
+We will not add functions to do things that can already be reasonably accomplished with existing functions Improving ease-of-use
 at the cost of fragmentation / incompatibility with older servers is not a good trade-off.
 
 Any function library change must follow the [API Changes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
