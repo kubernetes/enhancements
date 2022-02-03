@@ -738,20 +738,8 @@ canceled.
 
 ### Bounds
 
-Based on our current data we believe the limits should be:
-
-- per-expression cost: 8,000,000
-- per-request cost: 800,000,000
-- per-expression budget: Selected by API Priority and Fairness
-- per-request timeout limit: tied to request lifetime via the request context
-
-The 8,000,000 figure is based around a worst case scenario of a list of 2,000,000 elements iterated through
-in O(n) fashion with a loop body with a cost of 4 (enough for a basic regex). Since basic CEL expressions have 
-a cost of 1, this should be plenty in most cases, but `maxLength` can be set on any lists where more
-computation needs to be done. This figure will also prevent things such as expressions from accidentally
-being O(n<sup>2</sup>) or worse; the cost for iterating in O(n<sup>2</sup>) fashion over a list of only
-30,000 elements with a loop body of cost 1 is about 36,000,000.
-
+We will set cost bounds in the future on both a per-request and per-expression basis as we perform further
+testing and benchmarking. 
 
 ### Test Plan
 
