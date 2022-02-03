@@ -594,21 +594,25 @@ associativeList.all(e, e.val == 100)
 
 ### Resource constraints
 
-CEL expressions have the potential to consume unacceptable amounts of API server resources. We intend to constrain the resource utilization in two ways:
+CEL expressions have the potential to consume unacceptable amounts of API server resources. We intend to 
+constrain the resource utilization in a few ways:
 
-- Proactively by static analysis of the CEL expressions to compute a "cost", and limiting that cost
-- Reactively by enforcing CEL expression evaluation time limits using go context cancelation
+- Validation of CEL expression's "cost" when a CEL expression is written to a field in a CRD (at CRD creation/update time)
+- Use a runtime cost budget during CEL evaluation that is integrated with API Priority and Fairness to determine the budget
+- Use go context cancelation to bound CEL expression evaluation to the request lifetime
 
-We intend to enforce the limits both on a per-expression and per-request basis.
+Combined, these limits protect against both accidental and malicious misuse and also work in concert with API Priority and Fairness to ensure the
+API server as a whole makes good use of the available resources.
 
-Per-expression limits are primarily targeted at CEL expression authors and are intended to provide actionable feedback about expression cost. They are insufficient for ensuring that requests will be processed in a bounded amount of time. For example, a validation rule for a field within a list of objects, might be well within bounds each time it is evaluated, but the sum of the costs across the list of objects may be unacceptable. This is why we also have a per-request limit.
+#### Estimated Cost Limits
 
-#### Cost limits
+Validation of CEL expression's "cost" is primarily intended to provide authors of CEL expressions with 
+actionable feedback on the expected runtime costs of their expressions and prevent them from authoring 
+expressions that have poor worst case running times.
 
-We will use CEL's [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) to provide our proactive limits. This is protects against both
-accidental and malicious misuse. If an expression is analyzed and has a cost greater than
-a predefined limit, it will not be allowed. If an expression is rejected for this reason, the error
-message will include how much the limit was exceeded.
+We will use CEL's [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) to provide our proactive limits. If an
+expression is analyzed and has a cost greater than a predefined limit, it will not be allowed. If an
+expression is rejected for this reason, the error message will include how much the limit was exceeded.
 
 A major problem with the cost system is assigning the cost of list iteration. The cost of a CEL expression is 
 computed statically without any knowledge about the data that will be validated. Only the CEL expression is 
@@ -715,34 +719,36 @@ happen outside of the CEL cost function (which would only calculate the `startsW
 
 During CRD validation, when an expression exceeds the cost limit, the error message will include both the limit and the cost of the expression to facilitate debugging. The cost calculation rules will be documented.
 
-#### Time limits
+#### Runtime Cost Budget
 
-We believe CEL cost will be sufficient to bound the resource utilization of the vast majority of CEL
-expressions. As a backstop we will use a timeout. We will set this timeout high enough that they are
-not disruptive to all but the most extremely resource starved api-servers. We don't believe this will
-cause problems in practice because there are other timeouts that will trigger under those conditions.
+We will instrument CEL to increment a "cost" counter during CEL expression evaluation. The costs for 
+operations will be the same as used to compute Estimated Costs. The main difference is that the cost of list 
+iteration and branch operations (ternary, short circuited ORs) will be measured during evaluation and won't 
+need to be based on worst case estimates. If the cost exceeds a provided cost limit, CEL evaluation will be halted.
 
-Per-request execution time will be constrained via go cancellation and a context-passed timeout. If the 
-per-request timeout is exceeded, the error message will instead include how long every expression took to execute up to and including the one where the timeout was exceeded.
+We will integrate with the API Priority and Fairness system, providing with information it needs to be 
+informed about CEL resource utilization and using the information it provides back to set runtime cost limits.
 
-We will continue to refine and improve this cost data based on:
+### Request lifetime Bound
 
-- feedback from API Priority and Fairness
-- benchmarks of the cost system/the relationship between cost units and CPU utilization
-- optimizations on code that integrates CEL with Kubernetes (where we believe it is adding significant latency)
+We will wire in the request context into CEL so that CEL will halt expression evaluation if the context is 
+canceled.
+
+### Bounds
 
 Based on our current data we believe the limits should be:
 
 - per-expression cost: 8,000,000
 - per-request cost: 800,000,000
+- per-expression budget: Selected by API Priority and Fairness
 - per-request timeout limit: tied to request lifetime via the request context
 
 The 8,000,000 figure is based around a worst case scenario of a list of 2,000,000 elements iterated through
 in O(n) fashion with a loop body with a cost of 4 (enough for a basic regex). Since basic CEL expressions have 
-a cost of 1, this should be plenty in most cases, but `maxLength` can be set on any lists where more c
-omputation needs to be done. This figure will also prevent things such as expressions from accidentally
-being O(n<sup>2</sup>) or worse; the cost for iterating in O(n<sup>2</sup>) fashion
-over a list of only 30,000 elements with a loop body of cost 1 is about 36,000,000.
+a cost of 1, this should be plenty in most cases, but `maxLength` can be set on any lists where more
+computation needs to be done. This figure will also prevent things such as expressions from accidentally
+being O(n<sup>2</sup>) or worse; the cost for iterating in O(n<sup>2</sup>) fashion over a list of only
+30,000 elements with a loop body of cost 1 is about 36,000,000.
 
 
 ### Test Plan
