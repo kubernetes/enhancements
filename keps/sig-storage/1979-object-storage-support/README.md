@@ -18,9 +18,10 @@
   - [COSI API](#cosi-api)
   - [Bucket Creation](#bucket-creation)
   - [Generating Access Credentials for Buckets](#generating-access-credentials-for-buckets)
-  - [Attaching Buckets](#attaching-buckets)
+  - [Attaching Bucket Information to Pods](#attaching-bucket-information-to-pods)
   - [Sharing Buckets](#sharing-buckets)
   - [Accessing existing Buckets](#accessing-existing-buckets)
+  - [Bucket deletion](#bucket-deletion)
 - [Usability](#usability)
   - [Self Service](#self-service)
   - [Mutating Buckets](#mutating-buckets)
@@ -188,11 +189,12 @@ The BucketClaim is a claim to create a new Bucket. This resource can be used to 
     |------------------------------|                      |--------------------------------|
     | metadata:                    |                      | deletionPolicy: delete         |
     |   namespace: ns1             |                      | provisioner: s3.amazonaws.com  |
-    | spec:                        |                      | protocol: s3                   |
-    |   bucketClassName: bc1       |                      | parameters:                    |
-    |                              |                      |   key: value                   |
-    |------------------------------|                      |--------------------------------|
-```
+    | spec:                        |                      | protocols:                     |
+    |   bucketClassName: bc1       |                      | - s3                           |
+    |                              |                      | parameters:                    |
+    |------------------------------|                      |   key: value                   |
+                                                          |--------------------------------|
+``` 
 
 ###### 2. COSI creates an intermediate Bucket object
 
@@ -206,7 +208,8 @@ More information about Bucket is [here](#bucket)
     | name: bcl-$uuid                      |
     | spec:                                |
     |   bucketClassName: bc1               |
-    |   protocol: s3                       |
+    |   protocols:                         |
+	|   - s3                               |
     |   parameters:                        |
     |     key: value                       |
     |   provisioner: s3.amazonaws.com      |
@@ -228,7 +231,7 @@ More information about COSI gRPC API is [here](#cosi-grpc-api)
     |------------------------------------------|
     | grpc ProvisionerCreateBucket({           |
     |      "name": "bcl-$uuid",                |
-    |      "protocol": "s3",                   |
+    |      "protocols": ["s3"],                |
     |      "parameters": {                     |
     |         "key": "value"                   |
     |      }                                   |
@@ -272,6 +275,7 @@ The KEY based mechanism is where access and secret keys are generated to be prov
     |   bucketAccessClassName: bac1         |                 | authenticationType: KEY          |
     |   bucketClaimName: bcl1               |                 |----------------------------------|
     |   credentialsSecretName: bucketcreds1 |
+	|   protocol: s3                        |
     | status:                               |
     |   conditions:                         |
     |   - name: AccessGranted               |
@@ -293,6 +297,7 @@ In case of IAM style authentication, along with the `credentialsSecretName`, `se
     |   bucketClaimName: bcl1               |                 |----------------------------------|
     |   credentialsSecretName: bucketcreds1 |
     |   serviceAccountName: svacc1          |
+    |   protocol: s3                        |
     | status:                               |
     |   conditions:                         |
     |   - name: AccessGranted               |
@@ -345,14 +350,21 @@ The secret mentioned in the `credentialsSecretName` field of the BucketAccess sh
     | spec:                                           |
     |   containers:                                   |
     |   - volumeMounts:                               |
-    |       name: cosi-bucket                         |
-    |       mountPath: /cosi/bucket1                  |
+    |     -  name: cosi-bucket1                       |
+    |        mountPath: /cosi/bucket1                 |
+    |     -  name: cosi-bucket1                       |
+    |        mountPath: /cosi/bucket1                 |
     | volumes:                                        |
-    | - name: cosi-bucket                             |
+    | - name: cosi-bucket1                            |
     |   projected:                                    |
     |     sources:                                    |
     |     - secret:                                   |
     |       name: bucketcreds1                        |
+    | - name: cosi-bucket2                            |
+    |   projected:                                    |
+    |     sources:                                    |
+    |     - secret:                                   |
+    |       name: bucketcreds2                        |
     |-------------------------------------------------|
 ```
 
@@ -380,6 +392,8 @@ The volume `mountPath` will be the directory where bucket credentials and other 
 
 NOTE: the contents of the files served in mountPath will be a COSI generated file containing credentials and other information required for accessing the bucket. **This is NOT intended to specify a mountpoint to expose the bucket as a filesystem.**
 
+NOTE: the secret containing bucketInfo can be provided to the pod using any other secret -> pod provisioning mechanism, including environment variables. In case of environment variables, the secrets will be exposed to other processes in the same host as environment variables are not inherently secure.
+
 ###### 2. The secret containing BucketInfo is mounted in the specified directory
 
 The above volume definition will prompt kubernetes to retrieve the secret and place it in the volumeMount path defined above. The contents of the secret will be of the format shown below:
@@ -400,7 +414,9 @@ The above volume definition will prompt kubernetes to retrieve the secret and pl
     |       accessKeyID: "AKIAIOSFODNN7EXAMPLE",    |
     |       accessSecretKey: "wJalrXUtnFEMI/K...",  |
     |       region: "us-west-1",                    |
-    |       protocol: "s3"                          |
+    |       protocols: [                            |
+    |         "s3"                                  |
+    |       ]                                       |
     |   }                                           |
     | }                                             |
     |-----------------------------------------------|
@@ -423,7 +439,9 @@ In case IAM style authentication was specified, then metadataURL and serviceAcco
     |       authenticationType: "IAM",                |
     |       endpoint: "https://s3.amazonaws.com",     |
     |       region: "us-west-1",                      |
-    |       protocol: "s3"                            |
+    |       protocols: [                              |
+    |         "s3"                                    |
+    |       ]                                         |
     |   }                                             |
     | }                                               |
     |-------------------------------------------------|
@@ -450,22 +468,36 @@ When a Bucket object is manually created, and has its `bucketID` set, then COSI 
     | name: bucketName123                             |
     | spec:                                           |
     |   bucketID: bucketname123                       |
-    |   protocol: s3                                  |
+    |   protocols:                                    |
+    |   - s3                                          |
     |   parameters:                                   |
     |     key: value                                  |
     |   provisioner: s3.amazonaws.com                 |
     |-------------------------------------------------|
 ```
 
-###### 2. User creates BucketAccess to generate credentials for that bucket
+###### 2. User creates BucketClaim referring to the bucket
 
-Unlike the BucketAccess for COSI created bucket, this BucketAccess should directly reference the Bucket instead of a BucketClaim.
+```
+    BucketClaim - bucketClaim123
+    |------------------------------------------|
+    | name: bucketClaim123                     |
+    | spec:                                    |
+    |   existingBucketName: bucketName123      |
+    |                                          |
+    |------------------------------------------|
+
+```
+
+###### 3. User creates BucketAccess to generate credentials for that bucket
+
+Similar to the BucketAccess for COSI created bucket, this BucketAccess should reference the BucketClaim that refers to this bucket.
 
 ```
     BucketAccess - bac2
     |-------------------------------|
     | spec:                         |
-    |   bucketName: bucketName123   |
+    |   bucketClaim: bucketClaim123 |
     |                               |
     |-------------------------------|
 ```
@@ -565,12 +597,12 @@ Bucket {
     // +optional
     BucketClaim corev1.ObjectReference
 
-    // Protocol is the data API this bucket is expected to adhere to.
+    // Protocols are the set of data APIs this bucket is expected to support.
     // The possible values for protocol are:
     // -  S3: Indicates Amazon S3 protocol
     // -  Azure: Indicates Microsoft Azure BlobStore protocol
     // -  GCS: Indicates Google Cloud Storage protocol
-    Protocol Protocol
+    Protocols []Protocol
 
     // Parameters is an opaque map for passing in configuration to a driver
     // for creating the bucket
@@ -609,6 +641,11 @@ BucketClaim {
   Spec BucketClaimSpec {
     // Name of the BucketClass
     BucketClassName string
+	
+	// Name of a bucket object that was manually 
+	// created to import a bucket created outside of COSI
+	// +optional
+	ExistingBucketName string
   }
 
   Status BucketClaimStatus {
@@ -634,12 +671,12 @@ BucketClass {
   // Provisioner is the name of driver associated with this bucket
   Provisioner string
 
-  // Protocol is the data API this bucket is expected to adhere to.
+  // Protocols are the set of data API this bucket is expected to support.
   // The possible values for protocol are:
   // -  S3: Indicates Amazon S3 protocol
   // -  Azure: Indicates Microsoft Azure BlobStore protocol
   // -  GCS: Indicates Google Cloud Storage protocol
-  Protocol Protocol
+  Protocols []Protocol
 
   // DeletionPolicy is used to specify how COSI should handle deletion of this
   // bucket. There are 3 possible values:
@@ -670,11 +707,13 @@ BucketAccess {
     // +optional
     BucketClaimName string
 
-    // BucketName is the name of the Bucket for which
-    // credentials need to be generated
-    // Exactly one of BucketClaimName or BucketName must be set.
-    // +optional
-    BucketName string
+    // Protcol is the name of the Protocol 
+    // that this access credential is supposed to support
+	// If left empty, it will choose the protocol supported
+	// by the bucket. If the bucket supports multiple protocols,
+	// the end protocol is determined by the driver. 
+	// +optional
+    Protocol Protocol
 
     // BucketAccessClassName is the name of the BucketAccessClass
     BucketAccessClassName string
@@ -746,12 +785,12 @@ BucketInfo {
     // Region is the vendor-defined region where the bucket "resides"
     Region string
     
-    // Protocol is the data API this bucket is expected to adhere to.
+    // Protocols are the set of data APIs this bucket is expected to support.
     // The possible values for protocol are:
     // -  S3: Indicates Amazon S3 protocol
     // -  Azure: Indicates Microsoft Azure BlobStore protocol
     // -  GCS: Indicates Google Cloud Storage protocol
-    Protocol Protocol
+    Protocols []Protocol
   }
 }
 ```
