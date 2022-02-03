@@ -358,7 +358,9 @@ Example: https://github.com/kubernetes/kubernetes/pull/106300
 However, as of 1.23, the enum marker is the only marker to be added to a type declaration, and would be the first marker to be affected.
 Until there is a fix to `gengo`, the enum generator has the following limitations:
 - the enum marker must not be added to aliases
-- an aliased enum type or value SHOULD NOT have comments. Otherwise, the comments will be squashed with these of the original with undefined ordering. 
+- an aliased enum type or value SHOULD NOT have comments. Otherwise, the comments will be squashed with these of the original with undefined ordering.
+
+If the fix to `gengo` does not arrive in this release cycle, detection and enforcement the rules above will be added to the `verify-*.sh` scripts.
 
 ### Risks and Mitigations
 
