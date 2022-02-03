@@ -351,15 +351,14 @@ const (
 
 Here, `StorageMedium` can have infinite number of possible values, which disqualify it as an enum type.
 
-The Go parser has a limitation on parsing type aliases. The parser cannot distinguish 
-between the original definition and its aliases. For example,
-```go
-type Foo string
-type FooAlias = Foo
-```
-would result in the parser to treat FooAlias and Foo as the same type. 
-As a result, `gengo` produce either `Foo` or `FooAlias` but not both.
-As a workaround, during beta graduation, the enum parser will be updated to accept any name of the type.
+The parser of Go compiler and, as a result, `gengo`, does not support type aliases. See https://github.com/kubernetes/gengo/issues/224 for details.
+As of Kubernetes 1.23, we do not have any type aliases in kubernetes/kubernetes repo. Any attempt to add aliases would break the code generation.
+Example: https://github.com/kubernetes/kubernetes/pull/106300
+
+However, as of 1.23, the enum marker is the only marker to be added to a type declaration, and would be the first marker to be affected.
+Until there is a fix to `gengo`, the enum generator has the following limitations:
+- the enum marker must not be added to aliases
+- an aliased enum type or value SHOULD NOT have comments. Otherwise, the comments will be squashed with these of the original with undefined ordering. 
 
 ### Risks and Mitigations
 
