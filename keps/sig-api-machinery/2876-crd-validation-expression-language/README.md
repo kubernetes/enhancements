@@ -718,13 +718,12 @@ During CRD validation, when an expression exceeds the cost limit, the error mess
 #### Time limits
 
 We believe CEL cost will be sufficient to bound the resource utilization of the vast majority of CEL
-expressions. As a backstop we will use timeouts. We will set these timeouts high enough that they are
+expressions. As a backstop we will use a timeout. We will set this timeout high enough that they are
 not disruptive to all but the most extremely resource starved api-servers. We don't believe this will
 cause problems in practice because there are other timeouts that will trigger under those conditions.
 
-Per-request and per-expression execution time will be constrained via go cancellation and a context-passed timeout.
-
-If the per-expression timeout is exceeded, the error message will include how long the expression in question took to execute. If the per-request timeout is exceeded, the error message will instead include how long every expression took to execute up to and including the one where the timeout was exceeded.
+Per-request execution time will be constrained via go cancellation and a context-passed timeout. If the 
+per-request timeout is exceeded, the error message will instead include how long every expression took to execute up to and including the one where the timeout was exceeded.
 
 We will continue to refine and improve this cost data based on:
 
@@ -736,8 +735,7 @@ Based on our current data we believe the limits should be:
 
 - per-expression cost: 8,000,000
 - per-request cost: 800,000,000
-- per-expression timeout limit: 100 milliseconds
-- per-request timeout limit: 1 second
+- per-request timeout limit: tied to request lifetime via the request context
 
 The 8,000,000 figure is based around a worst case scenario of a list of 2,000,000 elements iterated through
 in O(n) fashion with a loop body with a cost of 4 (enough for a basic regex). Since basic CEL expressions have 
