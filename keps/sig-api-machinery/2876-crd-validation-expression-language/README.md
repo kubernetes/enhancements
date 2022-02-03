@@ -17,6 +17,7 @@
       - [Alternatives Evaluated](#alternatives-evaluated)
     - [Expression lifecycle](#expression-lifecycle)
     - [Function library](#function-library)
+      - [Function Library Updates](#function-library-updates)
   - [User Stories](#user-stories)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -458,25 +459,176 @@ to fail with a descriptive error.
 
 #### Function library
 
-The function library available to expressions can be augmented using [extension
-functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions).
+The functions will become VERY difficult to change as this feature matures.
+There are two types of risks here:
 
-List of functions to include for the initial release:
-- Equality and Ordering (customized to do Kuberenetes semantic equality that handles "associative lists")
-- Regular Expressions
-- Some Standard Definitions
+- We add a function and later need to change it.
+- We don't add a function that is essential for use cases and later need to add it.
 
-Considerations:
-- The functions will become VERY difficult to change as this feature matures. We
-  should limit ourselves initially to functions that we have a high level of
-  confidence will not need to be changed or rethought.
+Proposal:
 
-- Support kubernetes specific concepts, like accessing associative lists by key may be needed, but
-  we need to review more use cases to determine if this is needed.
-  
-- The Kubernetes associated list equality uses map semantic equality which is different from CEL. 
-  We would consider overwriting in CEL or adding a workaround utility function.
+- Keep all the CEL standard functions and macros as well as the extended string library.
+- Introduce a new "kubernetes" CEL extension library.
+  - Add `isSorted` for lists with comparable elements. This is useful for ensuring that a list is kept in-order.
+  - Add `sum` for lists of {int, uint, double, duration, string, bytes} (consistent with the [CEL _+_ operation](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions) )
+    and add `min`, `max` for lists of {bool, int, uint, double, string, bytes, duration, timestamp} (consistent with the [CEL comparison operations](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions)).
+    These operations can also be used in CEL on scalars by defining list literals
+    inline , e.g. `[self.val1, self.val2].max()`. Overflow will raise the same error raised by arithmetic operation [overflow](https://github.com/google/cel-spec/blob/master/doc/langdef.md#overflow).
+  - Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
+    validating partial order (i.e. the tasks of a workflow)
+  - Add URL parsing: `url(string) URL`, `string(URL) string` (conversion), `getScheme(URL) string`, `getUserInfo(URL) string`,
+    `getHost(URL) string`, `getPort(URL) string`, `getPath(URL) string`, `getQuery(URL) string`, `getFragment(URL) string`. This is
+    useful for validating URLs. The go URL parser implements all the functionality.
+  - Add regex `find(string) string` and `findAll(string) []string`. This makes it possible to parse out parts of string
+    formats (we only provide timestamp, duration and url support directly).
 
+The function libraries we need can be added using [extension
+functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
+or directly to the Kubernetes codebase.
+
+How we selected this function library:
+
+First let's look at what CEL provides, and then look at what some of the core libraries of major programming
+languages provide, and see what notable absences there are.
+
+CEL standard functions, defined in the [list of standard definitions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions) include:
+
+- `size` (or string, lists, maps, ...)
+- String inspection: `startsWith`, `endsWith`, `contains`
+- Regex: `matches`
+- Date/time accessors: `getDate`, `getDayOfMonth`, `getDayOfWeek`, `getDayOfYear`, `getFullYear`, `getHours`, `getMilliseconds`, `getMinutes`, `getMonth`, `getSeconds`
+
+CEL standard [macros](https://github.com/google/cel-spec/blob/master/doc/langdef.md#macros) include:
+
+- `has`
+- `all`
+- `exists`
+- `exists_one`
+- `map`
+- `filter`
+
+CEL [extended string function library](https://github.com/google/cel-go/blob/master/ext/strings.go) includes:
+
+- `charAt`
+- `indexOf`, `lastIndexOf`
+- `upperAscii`, `lowerAscii`
+- `replace` (string literal replacement, not regex)
+- `split`
+- `substring`
+- `trim`
+
+Notable absences from the standard functions, when comparing against the core libraries of Go, Java and Python are:
+
+Strings:
+
+- trim/trimLeft/trimRight (trimming either by whitespace or by provided cutset)
+- trimPrefix/trimSuffix
+- join
+- replace (regex)
+- format (e.g. `fmt.Sprintf()`)
+
+Lists:
+
+- sort
+- indexOf/lastIndexOf
+- replace
+- sublist
+- split
+- reverse
+- sum/min/max (xref: [Rego function library](https://www.openpolicyagent.org/docs/latest/policy-reference/#built-in-functions))
+
+Numbers:
+
+- abs/cel/floor/round
+- exp/log/log10/logN/pow/sqrt
+- max(x, y, ..)/min(x, y, ...)
+- <trig functions>
+
+Formats:
+
+- semver: compare (xref [Kyverno function library](https://github.com/kyverno/kyverno/blob/main/pkg/engine/jmespath/functions.go))
+- urls: parsing out {scheme, userInfo, host, port, path, query, fragment}. This is [hard](https://community.helpsystems.com/forums/intermapper/miscellaneous-topics/5acc4fcf-fa83-e511-80cf-0050568460e4?_ga=2.113564423.1432958022.1523882681-2146416484.1523557976)
+  to get right with regex, particularly with ipv6.
+- images: parsing out {name, tag, digest} as well as {host, port} from name and algorithm, hex} from digest. (xref: [grammar](https://github.com/distribution/distribution/blob/v2.7.1/reference/reference.go#L4-L24)).
+
+Maps:
+
+- <Ability to construct a map using a comprehension>
+
+Some considerations when selecting which of the above we should include in CEL expressions in Kubernetes:
+
+- We should include functions that will be needed for future use cases of CEL in Kubernetes (e.g. general admission) as
+  ones needed for validation.
+- Regex replace is very powerful and useful. It is also potentially dangerous due to its ability to allocate memory.
+- `format`: Since CEL supports string concatenation, the value of having format would only be to do things like format floats.
+  Formatting functions are complex and require extensive documentation to teach.
+- `isSorted` makes it possible to check if a list is sorted without the expense of performing a sort
+- `indexOf` / `lastIndexOf` / `split` / `replace` (the string functions) will be overloaded to provide the equivalent list functions.
+- `reduce` is going to be non-obvious to anyone that doesn't have a functional programming background?
+  - If we provide `reduce` are developers going to also expect to have `fold` or `zip`?
+- "Ability to construct a map using a comprehension": this appears mechanically problematic to support in CEL?
+- None of the other policy libraries provide extended math/trig support and I asked Tristan (maintainer of CEL) if
+  they are requested and he said "almost never", which he clarified to mean it has been requested exactly one time.
+- Average and quantile (median, 99th percentile, ...) and stddev are, however, often requested by other CEL users
+
+Future work:
+
+We've decided NOT to add the following functions. They may be useful for mutation, in which case we will consider adding them as part
+of any future work done involving CEL and mutating admission control:
+
+- Regex replace
+- Add `trimPrefix` / `trimSuffix` for strings
+- Add `trim` / `trimLeft` / `trimRight` (overloaded to take an optional cutset arg) for strings
+- `sublist`, `split`, `replace` and `reverse` for lists (overloading existing string functions where appropriate)
+
+##### Function Library Updates
+
+Any changes to the CEL function library will make it possible for CRD authors to create CRDs that are incompatible with
+all previous Kubernetes releases that supported CEL. Because of this incompatibility, changing the function library
+will need to carefully considered and kept to a minimum. All changes will need to be limited to function additions.
+We will not add functions to do things that can already be reasonably accomplished with existing functions Improving ease-of-use
+at the cost of fragmentation / incompatibility with older servers is not a good trade-off.
+
+Any function library change must follow the [API Changes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
+guidelines. Since a change to the function library is a change to the `x-kubernetes-validations.rule` field, it must be
+introduced one Kubernetes release prior to when it may be included in create/update requests to CRDs. Specifically:
+
+- Kubernetes Version N-1: Entirely unaware of the library update.
+- Kubernetes Version N: Supports CRD that use library updates, but does not allow the library updates to used when
+  setting `x-kubernetes-validations.rule` fields.
+- Kubernetes Version N+1: Library update fully enabled.
+
+The mechanism for this will be:
+
+- All new functions, macros, or overloads of existing functions, will be added to a separate "future compatibility" CEL 
+  extension library (which extension library a function is in is an internal detail that is not visible to users).
+- For create requests, and for any CEL expressions that are changed as part of an update, the CEL expression will be 
+  compiled **without** the "future compatibility" CEL extension library.
+- For CEL expressions not changed in an update, the CEL expression will be compiled **with** the
+  "kubernetes-future-compatibility" CEL extension. This ensures that persisted fields that already use the change continue
+  to compile.
+- The "future compatibility" CEL extension library will always be included when CEL expressions are evaluated.
+- When the next version of Kubernetes is release, the library functions will be moved from "future compatibility"
+- to the main CEL extension library we use to extend CEL for Kubernetes.
+
+Alternatives considered:
+
+Versioning Alternative:
+
+- All changes to CEL (core language and libraries) will be versioned and CEL expressions must specify the version they
+  are compatible with.
+- All versions must be backward compatible (a newer version of CEL is compatible with all older versions of CEL)
+- The API server rejects requests containing CEL versions newer than it supports.
+
+Pros:
+
+- Very clear what CRDs are compatible with what Kubernetes versions.
+
+Cons:
+
+- Validating that a CEL expression is the version it claims to be is difficult for older version of CEL. Either the API
+  server would need to contain multiple versions of the CEL compiler, or it would need a compiler that can be configured to
+  compile a CEL expression according to the language rules of an older version.
 
 ### User Stories
 
@@ -596,6 +748,8 @@ for our use case.
 The good news is that https://github.com/google/cel-policy-templates-go already has
 demonstrated integrating CEL with OpenAPIv3. We plan to leverage this work.
 
+Support for comparing integers and floats is supported in beta and later (in alpha, ints could only be compared to ints and floats to floats).
+
 We will add detailed test coverage for numeric comparisons due to
 [google/cel-spec#54](https://github.com/google/cel-spec/issues/54#issuecomment-491464172) including
 coverage of interactions in these dimensions:
@@ -611,12 +765,12 @@ coverage of interactions in these dimensions:
 Types:
 
 | OpenAPIv3 type                                     | CEL type                                                                                                                     |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
 | 'object' with Properties                           | object / "message type" (`type(<object>)` evaluates to `selfType<uniqueNumber>.path.to.object.from.self`                     |
 | 'object' with AdditionalProperties                 | map                                                                                                                          |
 | 'object' with x-kubernetes-embedded-type           | object / "message type", 'apiVersion', 'kind', 'metadata.name' and 'metadata.generateName' are implicitly included in schema |
 | 'object' with x-kubernetes-preserve-unknown-fields | object / "message type", unknown fields are NOT accessible in CEL expression                                                 |
-| x-kubernetes-int-or-string                         | dynamic object that is either an int or a string, `type(value)` can be used to check the type                                |
+| x-kubernetes-int-or-string                         | union of int or string,  `self.intOrString < 100 \|\| self.intOrString == '50%'` evaluates to true for both `50` and `"50%"`  |
 | 'array                                             | list                                                                                                                         |
 | 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                                         |
 | 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                                       |
@@ -896,7 +1050,7 @@ to minimize negative impact to ecosystem.
 
 See also the future plans section for this. We believe that CEL for General Admission Control is
 valuable and should be implemented. We are implementing CRD validation with CEL first because is is
-a more constrainted problem and is complementary to CEL for general admission (even if we already
+a more constrained problem and is complementary to CEL for general admission (even if we already
 had CEL for general admission implemented, the convenience of inline CEL validation expressions in
 CRDs is sufficiently convenient to justify it being added).
 
