@@ -11,6 +11,10 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+    - [Transition Rules](#transition-rules)
+      - [Use Cases](#use-cases)
+      - [Considerations](#considerations)
+      - [Alternatives Evaluated](#alternatives-evaluated)
     - [Expression lifecycle](#expression-lifecycle)
     - [Function library](#function-library)
   - [User Stories](#user-stories)
@@ -292,18 +296,9 @@ is scoped to.
 or map. These will be accessible to CEL via `self`. The elements of a map or list can be validated using the CEL support for collections
 like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey,
 <predicate>)`.
-  
-- For immutability use case, validator will have access to the existing version of the object. This
-  will be accessible to CEL via the `oldSelf` identifier.
-  - This will only be available on mergable collection types such as objects (unless
-    `x-kubernetes-map-type=atomic`), maps with `x-kubernetes-map-type=granular` and lists
-    with `x-kubernetes-list-type` set to `set` or `map`.  See [Merge
-    Strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) for
-    details.
-  - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
-    `oldObject`.
-  - xref [analysis of possible interactions with immutability and
-    validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
+
+- Rule expressions may reference existing object state using the identifier `oldSelf`. Such
+  "[transition rules](#transition-rules)" apply only under limited circumstances.
 
 - Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible and are escaped
   according to the following rules when accessed in the expression:
@@ -327,16 +322,131 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   all validation mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator
   rules. xref rule 4 in [specifying a structural schema](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema).
 
-- We plan to allow access to the current state of the object to allow validation rules to check the
-  new value against the current value, e.g. for immutability checks (for validation racheting we would
-  prefer an approach like described in https://github.com/kubernetes/kubernetes/issues/94060 be pursued).
-
 - If the CEL evaluation exceeds the bounds we set (details below), the server will return a 408
   (Request Timeout) HTTP status code. The timeout will be a backstop we expect to rarely be used
   since CEL evaluations are multiple orders of magnitude faster that typical webhook invocations,
   and we can use CEL expression complexity estimations
   ([xref](https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265))
   during CRD update to bound complexity.
+
+#### Transition Rules
+
+A rule that contains an expression referencing the identifier `oldSelf` is implicitly considered a
+"transition rule". Transition rules allow schema authors to prevent certain transitions between two
+otherwise valid states. For example:
+
+```yaml
+type: string
+enum: ["low", "medium", "high"]
+x-kubernetes-validations:
+- rule: "!(self == 'high' && oldSelf == 'low') && !(self == 'low' && oldSelf == 'high')"
+  message: cannot transition directly between 'low' and 'high'
+```
+
+Unlike other rules, transition rules apply only to operations meeting the following criteria:
+
+- The operation updates an existing object. Transition rules never apply to create operations.
+
+- Both an old and a new value exist. It remains possible to check if a value has been added or
+  removed by placing a transition rule on the parent node. Transition rules are never applied to
+  custom resource creation. When placed on an optional field, a transition rule will not apply to
+  update operations that set or unset the field.
+
+- The path to the schema node being validated by a transition rule must resolve to a node that is
+  comparable between the old object and the new object. For example, list items and their
+  descendants (`spec.foo[10].bar`) can't necessarily be correlated between an existing object and a
+  later update to the same object.
+
+  - Semantics from [server-side
+    apply](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) will be
+    honored. In particular, updates to descendants of collection types that are mergeable according
+    to server-side apply may be validated by transition rules. This includes the elements of maps
+    marked `x-kubernetes-map-type=granular` and lists marked
+    `x-kubernetes-list-type=map`. Transition rules apply to elements of `map`-type lists only when
+    an element exists in both the old and new object having identical values for all key
+    fields. Elements of lists marked `x-kubernetes-list-type=set` and their descendants do not
+    support transition rules, however, set membership changes are accessible to transition rules
+    defined on the parent (i.e. array) node.
+
+If all of the above criteria are satisfied for a given operation, the transition rule will be
+enforced. The identifier `oldSelf` is guaranteed to be bound to a non-null value during expression
+evaluation.
+
+Errors will be generated on CRD writes if a schema node contains a transition rule that can never be
+applied, e.g. "*path*: update rule *rule* cannot be set on schema because the schema or its parent
+schema is not mergeable".
+
+##### Use Cases
+
+| Use Case                                                          | Rule
+| --------                                                          | --------
+| Immutability                                                      | `self.foo == oldSelf.foo`
+| Prevent modification/removal once assigned                        | `oldSelf != 'bar' \|\| self == 'bar'` or `!has(oldSelf.field) \|\| has(self.field)`
+| Append-only set                                                   | `self.all(element, element in oldSelf)`
+| If previous value was X, new value can only be A or B, not Y or Z | `oldSelf != 'X' \|\| self in ['A', 'B']`
+| Nondecreasing counters                                            | `self >= oldSelf`
+
+##### Considerations
+
+- The use of the prefix "old" in the identifier `oldSelf` is congruent with how `AdmissionReview`
+  identifies the existing object as `oldObject`.
+
+- CEL doesn't support checking if a root variable is bound. The macro `has` can test for the
+  presence of fields, as in `has(self.child)`, but `has(oldSelf)` is not legal.
+
+- It is possible for an attempt to update a custom resource to be rejected solely due to a
+  disallowed transition from existing state. This [complicates declarative reconciliation
+  tools](https://docs.google.com/document/d/1ZpCHE4yrOXoawai8Ldz49A4t9ni-QsHSuoy71VhBTLw/edit) that
+  need to decide whether or not to delete-and-recreate an existing object. This problem exists today
+  with fields that are immutable or immutable-once-assigned. Once a mechanism exists to communicate
+  to clients that an operation was rejected due to transition errors only, that mechanism will be
+  adopted for errors produced by the transition rules described in this document (see
+  https://github.com/kubernetes/kubernetes/issues/107919).
+
+##### Alternatives Evaluated
+
+1. A boolean field is added to the extension indicating when true that the rule applies only to
+   updates. The expression in "rule" may not reference the identifier "oldSelf" unless "updateRule"
+   is present and true. If "oldSelf" is referenced by the expression, and updateRule is absent or
+   false, an error is generated at CRD update time. The additional boolean field serves as an
+   explicit user acknowledgement that the rule should be treated as a transition rule, but doesn't
+   serve a technical purpose.
+
+```yaml
+x-kubernetes-validations:
+  - rule: "oldSelf.xyz"
+    updateRule: true
+```
+
+2. A validation context object (`context`) is exposed to expressions. For comparable update
+   operations, the context object will provide access to the old value via a field. Schema authors
+   take responsibility for avoiding runtime errors in more complex expressions.
+
+```yaml
+x-kubernetes-validations:
+  - rule: "self.size() <= 10 || (has(context.oldSelf) && self.size() <= context.oldSelf.size())"
+```
+
+3. A new string field named "updateRule" permits CEL expressions that reference `oldSelf`. If "rule"
+   and "updateRule" are mutually exclusive, this is effectively equivalent to alternative 1.
+
+```yaml
+x-kubernetes-validations:
+  - updateRule: "oldSelf.xyz"
+```
+
+4. An "updateRule" field is added, as in alternative 3, but it is not mutually exclusive with the
+   "rule" field. The "updateRule" applies when the transition rule criteria are satisfied, otherwise
+   "rule" applies. This alternative allows validations to accept an update while rejecting the
+   creation of an identical new object, but may be in conflict with support for
+   auto-ratcheting. Additionally, requiring two expressions instead of one makes validation rules
+   more difficult for users to understand.
+
+```yaml
+x-kubernetes-validations:
+  - rule: "self in [2, 3]"
+    updateRule: "self in [2, 3] || (self == 1 && self == oldSelf)"
+```
 
 #### Expression lifecycle
 
