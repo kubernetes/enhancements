@@ -213,14 +213,22 @@ GA
     - Components depending on the feature gate: kubelet
   - [X] Other
     - Describe the mechanism: **KubeletConfiguration TracingConfiguration**
-      - To disable tracing entirely, do not enable the feature gate `KubeletTracing` and/or do not provide a TracingConfiguration.
-        Tracing will be disabled unless a TracingConfiguration is provided.
-      - If disabled (no TracingConfiguration is provided), trace contexts will be propagated in passthrough mode. No spans will
-        be generated and no attempt will be made to connect via otlp protocol to export traces. More about passthrough mode in
-        [OpenTelemetry documentation](https://github.com/open-telemetry/opentelemetry-go/tree/main/example/passthrough#passthrough-setup-for-opentelemetry), `the default TracerProvider implementation returns a 'Non-Recording' span that keeps the context of the caller but does not record spans`.
-      - If feature is enabled and TracingConfiguration sampling rate is 0 (the default):
-        - a trace context with sampled=true will still cause traces to be generated.
-        - kubelet will attempt to connect via otlp protocol to export traces.
+      - When the `KubeletTracing` feature gate is disabled, the kubelet will:
+        - Not generate spans
+        - Not initiate an OTLP connection
+        - Not Propagate context
+      - When the feature gate is enabled, but no TracingConfiguration is provided, the kubelet will:
+        - Not generate spans
+        - Not initiate an OTLP connection
+        - Propagate context in (https://github.com/open-telemetry/opentelemetry-go/tree/main/example/passthrough#passthrough-setup-for-opentelemetry)[passthrough] mode
+      - When the feature gate is enabled, and a TracingConfiguration with sampling rate 0 (the default) is provided, the kubelet will:
+        - Initiate an OTLP connection
+        - Generate spans only if the incoming (if applicable) trace context has the sampled flag set
+        - Propagate context normally
+      - When the feature gate is enabled, and a TracingConfiguration with sampling rate > 0 is provided, the kubelet will:
+        - Initiate an OTLP connection
+        - Generate spans at the specified sampling rate, or if the incoming context has the sampled flag set
+        - Propagate context normally
     - Will enabling / disabling the feature require downtime of the control
       plane?  **No. It will require restarting the kubelet service per node.**
     - Will enabling / disabling the feature require downtime or reprovisioning
