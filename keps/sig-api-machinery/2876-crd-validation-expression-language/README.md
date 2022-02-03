@@ -728,8 +728,8 @@ operations will be the same as used to compute Estimated Costs. The main differe
 iteration and branch operations (ternary, short circuited ORs) will be measured during evaluation and won't 
 need to be based on worst case estimates. If the cost exceeds a provided cost limit, CEL evaluation will be halted.
 
-We will integrate with the API Priority and Fairness system, providing with information it needs to be 
-informed about CEL resource utilization and using the information it provides back to set runtime cost limits.
+We will integrate with the API Priority and Fairness system, providing it with information needs to be 
+informed about CEL resource utilization.
 
 ### Request lifetime Bound
 
