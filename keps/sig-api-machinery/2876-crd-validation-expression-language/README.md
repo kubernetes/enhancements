@@ -627,13 +627,13 @@ We have explored the cost system and realized (thanks @liggitt!) that O(n) itera
 resource size limits (specifically the 3MB request limit) and we can use this to establish more manageable 
 worst case sizes.
 
-If a list contains small elements (e.g. an int64) then the worst case list size can be 3MB/4bytes=~786k 
-elements, but as the element size grows, the worst case list size quickly becomes manageable. We ran a [series of experiments](https://docs.google.com/document/d/1yR746Rf-rw-_zoq36Ypzu8LTqOa-LaCk1pv3e0kjF3A/edit?usp=sharing) to test the resource utilization of CEL expressions that iterate across lists.
-We found that:
+If a list contains small elements (e.g. a `0` stored in JSON) then the worst case list size can be
+3MB/2bytes=~1572k elements, but as the element size grows, the worst case list size quickly becomes 
+manageable. We ran a [series of experiments](https://docs.google.com/document/d/1yR746Rf-rw-_zoq36Ypzu8LTqOa-LaCk1pv3e0kjF3A/edit?usp=sharing) to test the resource utilization of CEL expressions that iterate across lists. We found that (with a safety factor of 5x):
 
-- O(n) iteration of a worst case list (list length == 786k) is <150ms
-- O(n) iteration of 10 byte data elements (list length == 300k) is < 70ms
-- O(n) iteration of 100 byte data elements (list length == 30k) is < 7ms
+- O(n) iteration of a worst case list (list length == 1572k) is < 2000ms (400ms x5)
+- O(n) iteration of 10 byte data elements (list length == 300k) is < 350ms (70ms x5)
+- O(n) iteration of 100 byte data elements (list length == 30k) is < 35ms (7ms x5)
 
 Consider an example:
 
@@ -726,16 +726,25 @@ Per-request and per-expression execution time will be constrained via go cancell
 
 If the per-expression timeout is exceeded, the error message will include how long the expression in question took to execute. If the per-request timeout is exceeded, the error message will instead include how long every expression took to execute up to and including the one where the timeout was exceeded.
 
-We will continue to refine and improve this cost data. For example, optimizations to how CEL integrates with Kubernetes data may allow us to increase our cost bounds.
+We will continue to refine and improve this cost data based on:
+
+- feedback from API Priority and Fairness
+- benchmarks of the cost system/the relationship between cost units and CPU utilization
+- optimizations on code that integrates CEL with Kubernetes (where we believe it is adding significant latency)
 
 Based on our current data we believe the limits should be:
 
-- per-expression cost: 120,000
-- per-request cost: 12,000,000
+- per-expression cost: 8,000,000
+- per-request cost: 800,000,000
 - per-expression timeout limit: 100 milliseconds
 - per-request timeout limit: 1 second
 
-This is based on our evaluation of cost. The limits allow O(n) with a loop body with a cost of 4 (enough for a basic regex). Since basic CEL expressions have a cost of 1, this should be plenty in most cases, but `maxLength` can be set on any lists where more computation needs to be done.
+The 8,000,000 figure is based around a worst case scenario of a list of 2,000,000 elements iterated through
+in O(n) fashion with a loop body with a cost of 4 (enough for a basic regex). Since basic CEL expressions have 
+a cost of 1, this should be plenty in most cases, but `maxLength` can be set on any lists where more c
+omputation needs to be done. This figure will also prevent things such as expressions from accidentally
+being O(n<sup>2</sup>) or worse; the cost for iterating in O(n<sup>2</sup>) fashion
+over a list of only 30,000 elements with a loop body of cost 1 is about 36,000,000.
 
 
 ### Test Plan
