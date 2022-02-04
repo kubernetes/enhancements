@@ -57,5 +57,5 @@ Major milestones for AWS EBS in-tree plugin CSI migration:
 - 1.23
   - AWS EBS CSI migration to Beta, on by default.
 
-- 1.24
+- 1.25
   - AWS EBS CSI migration to Stable
