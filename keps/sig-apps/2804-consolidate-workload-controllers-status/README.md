@@ -263,14 +263,13 @@ API validation, behavioral change of controllers with feature gate enabled and d
  we will set new conditions on the mentioned workloads.
 - Downgrades
  When downgrading from a release with this feature, to a release without, 
- we expect controllers not to remove stale conditions.
+ we expect controllers to honor the existing handling behaviour and not to remove the stale conditions.
 
 ### Version Skew Strategy
 
 The update of extended conditions is always dependent on a `ExtendedWorkloadConditions` feature gate and not on the version as such.
 If the feature gate is enabled, the workload controllers will update the extended conditions to reflect the current state.
-In case feature gate is disabled, the workload controllers will remove the stale conditions.
-In case the feature is missing in the workload controllers the conditions will not be removed and become stale.
+In case feature gate is disabled or the feature is missing, the conditions will not be removed and become stale.
 This feature has no node runtime implications.
 
 ## Production Readiness Review Questionnaire
@@ -292,9 +291,8 @@ No. The default behavior won't change. Only new conditions will be added with no
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-When we disable a feature gate the extended conditions are not expected to be present in the statuses of workload objects,
-and thus should be removed by each responsible controller.
-Once we reenable the feature gate, the controllers should create and start updating the new workload conditions again.
+When we disable a feature gate the extended conditions are expected to become stale and still be present in the statuses of workload objects.
+Once we reenable the feature gate, the controllers should start updating the new workload conditions again.
 
 ###### Are there any tests for feature enablement/disablement?
 
