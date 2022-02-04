@@ -9,7 +9,7 @@ authors:
   - "@vbannai"
   - "@gjsj"
 owning-sig: sig-network
-status: provisional
+status: implementable
 creation-date: 2021-02-18
 reviewers:
   - "@thockin"
