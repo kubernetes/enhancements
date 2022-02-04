@@ -6,9 +6,9 @@ authors:
 owning-sig: sig-testing
 participating-sigs:
   - sig-release
-status: implementable
+status: implemented
 creation-date: 2021-02-03
-last-updated: 2021-08-16
+last-updated: 2022-02-03
 reviewers:
   - dims
   - liggitt
