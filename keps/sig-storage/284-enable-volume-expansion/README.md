@@ -28,6 +28,8 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
+- [Graduation Criteria](#graduation-criteria)
+  - [Test Plan](#test-plan)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -576,6 +578,25 @@ Enabling this feature should not result in resource usage by significant margin,
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 If expansion is affecting pod startup time or causing other issues. It can be disabled by editing storageclass and setting `allowVolumeExpansion` to `false`.
+
+## Graduation Criteria
+
+Volume expansion has been in beta for long time and hence already has pretty good mix of unit and e2e tests which
+are being run by a number of CSI and intree drivers. The feature is also actively being used in production clusters.
+
+One of the reasons - we have not been able to move this feature to GA is because of, complexity associated in recovering
+from volume expansion failure. In 1.23 we finally moved `RecoverVolumeExpansionFailure` to alpha and hence unblocking volume
+expansion in general.
+
+* GA in 1.24 - with volume expansion tests.
+
+### Test Plan
+
+A test plan will consist of the following tests
+
+* E2E tests - for CSI drivers and intree drivers (already done!)
+* Unit tests
+
 
 ## Implementation History
 
