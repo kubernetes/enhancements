@@ -277,12 +277,13 @@ when drafting this test plan.
 
 Define graduation milestones.
 
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
+These may be defined in terms of API maturity, [feature gate] graduations, or as
+something else. The KEP should keep this high-level with a focus on what
+signals will be looked at to determine graduation.
 
 Consider the following in developing the graduation criteria for this enhancement:
 - [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
+- [Feature gate][feature gate] lifecycle
 - [Deprecation policy][deprecation-policy]
 
 Clearly define what graduation means by either linking to the [API doc
@@ -292,6 +293,7 @@ or by redefining what graduation means.
 In general we try to use the same stages (alpha, beta, GA), regardless of how the
 functionality is accessed.
 
+[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
 [maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
@@ -395,6 +397,12 @@ This section must be completed when targeting alpha to a release.
 
 <!--
 Pick one of these and delete the rest.
+
+Documentation is available on [feature gate lifecycle] and expectations, as
+well as the [existing list] of feature gates.
+
+[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
@@ -419,6 +427,10 @@ automations, so be extremely careful here.
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
+
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
