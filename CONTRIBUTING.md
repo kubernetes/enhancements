@@ -12,7 +12,7 @@ We have full documentation on how to get started contributing here:
 If your repo has certain guidelines for contribution, put them here ahead of the general k8s resources
 -->
 
-- [Contributor License Agreement](https://git.k8s.io/community/CLA.md) Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests
+- [Contributor License Agreement](https://git.k8s.io/community/CLA.md) Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests.
 - [Kubernetes Contributor Guide](https://git.k8s.io/community/contributors/guide/README.md) - Main contributor documentation, or you can just jump directly to the [contributing section](https://git.k8s.io/community/contributors/guide/README.md#contributing)
 - [Contributor Cheat Sheet](https://git.k8s.io/community/contributors/guide/contributor-cheatsheet/README.md) - Common resources for existing developers
 
@@ -21,7 +21,7 @@ If your repo has certain guidelines for contribution, put them here ahead of the
 - [Mentoring Initiatives](https://git.k8s.io/community/mentoring) - We have a diverse set of mentorship programs available that are always looking for volunteers!
 
 <!---
-Custom Information - if you're copying this template for the first time you can add custom content here, for example:
+Custom Information - If you're copying this template for the first time you can add custom content here, for example:
 
 ## Contact Information
 
