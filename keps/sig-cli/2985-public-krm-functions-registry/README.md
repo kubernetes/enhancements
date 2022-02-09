@@ -559,17 +559,18 @@ using [mdBook](https://github.com/rust-lang/mdBook).
 
 ### Function Metadata
 
-We will use `KRMFunction` kind whose schema is defined in [KEP-2906](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2906-kustomize-function-catalog#function-metadata-schema) to capture the metadata for a single KRM function.
+We will use `KRMFunctionDefinition` kind whose schema is defined in [KEP-2906](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2906-kustomize-function-catalog#function-metadata-schema) to capture the metadata for a single KRM function.
 
 The following is an example function metadata for a container-based KRM
 function. We will support it starting from the alpha phase.
 
 ```yaml
-apiVersion: config.k8s.io/v1alpha1
-kind: KRMFunction
+apiVersion: config.kubernetes.io/v1alpha1
+kind: KRMFunctionDefinition
 spec:
   group: example.com
-  kind: SetNamespace
+  names:
+    kind: SetNamespace
   description: "A short description of the KRM function"
   publisher: example.com
   versions:
@@ -602,11 +603,12 @@ The following is an example for exec-based KRM function. We will support it
 starting from the beta phase.
 
 ```yaml
-apiVersion: config.k8s.io/v1alpha1
-kind: KRMFunction
+apiVersion: config.kubernetes.io/v1alpha1
+kind: KRMFunctionDefinition
 spec:
   group: example.com
-  kind: SetNamespace
+  names:
+    kind: SetNamespace
   description: "A short description of the KRM function"
   publisher: example.com
   versions:
