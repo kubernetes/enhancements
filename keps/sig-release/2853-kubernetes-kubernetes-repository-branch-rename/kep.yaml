@@ -9,13 +9,16 @@ participating-sigs:
   - sig-testing
   - sig-k8s-infra
   - sig-contribex
-status: provisional
+
 creation-date: 2021-11-19
 reviewers:
-  - TBD
+  - "@saschagrunert"
+  - "@justaugustus"
 approvers:
-  - TBD
-# status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
+  - "@saschagrunert"
+  - "@justaugustus"
+
+status: provisional
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
 # You should create your own in keps/prod-readiness
@@ -35,13 +38,11 @@ approvers:
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "v1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-#  alpha: "v1.19"
-#  beta: "v1.20"
-#  stable: "v1.22"
+  stable: "v1.25"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

@@ -83,19 +83,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
     - [Survey Questions](#survey-questions)
-  - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
@@ -238,54 +228,16 @@ References:
 
 - https://github.com/github/renaming
 
-### User Stories (Optional)
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-As a contributor, I have to remember to use `master` when working with repositories that
-haven't yet switched.
-Switching k/k to `main` will reduce the burden slightly.
-
-
-#### Story 1
-
-#### Story 2
-
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
-
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+- **Risk:** The branch rename may break downstream consumers
 
-How will security be reviewed, and by whom?
+  **Mitigations:**
 
-How will UX be reviewed, and by whom?
+  - Send out a survey to collect feedback and desire timeframe for the change
+  - Notify the community (via email k-dev and social media) when we plan the schedule and when it is approaching the change
 
-Consider including folks who also work outside the SIG or subproject.
--->
 
-## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 #### Survey Questions
 
 The survey we will send out to gether information from the downstream consumer will have the following questions:
@@ -293,27 +245,6 @@ The survey we will send out to gether information from the downstream consumer w
 1. On which companies behalf do you submit the response?
 2. Would a kubernetes/kubernetes branch rename affect your downstream workflow? If yes, how?
 3. How much time would you need in advance before the migration happens?
-
-### Test Plan
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-N/A
 
 ### Graduation Criteria
 
@@ -377,81 +308,6 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
-### Upgrade / Downgrade Strategy
-
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-
-### Version Skew Strategy
-
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
-
-## Production Readiness Review Questionnaire
-
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
-### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
-###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-
 ###### Does enabling the feature change any default behavior?
 
 <!--
@@ -485,9 +341,7 @@ conversion tests if API types are being modified.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+As soon we rename the branch we do not have plans to rollback, but instead we will fix any possible issue right away.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -541,55 +395,6 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 N/A
-
-###### How can someone using this feature know that it is working for their instance?
-
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
-
-###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
-
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -739,6 +544,7 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - 2021-11-18 Initial Draft
+- 2022-02-09 Updates based on review/feedback
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
