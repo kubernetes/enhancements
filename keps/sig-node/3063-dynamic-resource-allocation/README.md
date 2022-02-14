@@ -435,9 +435,11 @@ Immediate allocation is useful when allocating a resource is expensive (for
 example, programming an FPGA) and the resource therefore is meant to be used by
 multiple different Pods, either in parallel or one after the other. The
 downside is that Pod resource requirements cannot be considered when choosing
-where to allocate. If a Pod then cannot run on the node (or nodes, for
-network-attached resources) where the resource is available because resources
-like RAM or CPU are exhausted there, then the Pod also cannot run elsewhere.
+where to allocate. If a resource was allocated so that it is only available on
+one node and the Pod cannot run there because other resources like RAM or CPU
+are exhausted on that node, then the Pod cannot run elsewhere. The same applies
+to resources that are available on a certain subset of the nodes and those
+nodes are busy.
 Delayed allocation solves this by integrating allocation with Pod scheduling.
 
 Allocation must be complete before a Pod is allowed to be scheduled onto a
