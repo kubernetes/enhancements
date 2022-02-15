@@ -42,7 +42,7 @@ Benefits to KEP users (in the limit):
 * A clear process with approvers and reviewers for making decisions.
   This will lead to more structured decisions that stick as there is a discoverable record around the decisions.
 
-We are inspired by IETF RFCs, Pyton PEPs and Rust RFCs.
+We are inspired by IETF RFCs, Python PEPs and Rust RFCs.
 See [KEP-0000](sig-architecture/0000-kep-process/README.md) for more details.
 
 ### Do I put my KEP in the root KEP directory or a SIG subdirectory?
