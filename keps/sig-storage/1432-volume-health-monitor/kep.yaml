@@ -20,12 +20,12 @@ approvers:
 see-also:
 replaces:
 
-latest-milestone: "v1.23"
+latest-milestone: "v1.24"
 stage: "alpha"
 milestone:
   alpha: "v1.21"
-  beta: "v1.24"
-  stable: "v1.25"
+  beta: "v1.25"
+  stable: "v1.26"
 
 feature-gates:
 disable-supported: true
