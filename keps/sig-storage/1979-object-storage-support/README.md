@@ -209,7 +209,7 @@ More information about Bucket is [here](#bucket)
     | spec:                                |
     |   bucketClassName: bc1               |
     |   protocols:                         |
-	|   - s3                               |
+    |   - s3                               |
     |   parameters:                        |
     |     key: value                       |
     |   provisioner: s3.amazonaws.com      |
@@ -275,7 +275,7 @@ The KEY based mechanism is where access and secret keys are generated to be prov
     |   bucketAccessClassName: bac1         |                 | authenticationType: KEY          |
     |   bucketClaimName: bcl1               |                 |----------------------------------|
     |   credentialsSecretName: bucketcreds1 |
-	|   protocol: s3                        |
+    |   protocol: s3                        |
     | status:                               |
     |   conditions:                         |
     |   - name: AccessGranted               |
@@ -535,6 +535,7 @@ These properties will be specified in the BucketRequest and follow the same patt
 
 The following resources are managed by admins
 
+- Bucket in case of brownfield buckets 
 - BucketClass
 - BucketAccessClass
 
@@ -641,11 +642,11 @@ BucketClaim {
   Spec BucketClaimSpec {
     // Name of the BucketClass
     BucketClassName string
-	
-	// Name of a bucket object that was manually 
-	// created to import a bucket created outside of COSI
-	// +optional
-	ExistingBucketName string
+    
+    // Name of a bucket object that was manually 
+    // created to import a bucket created outside of COSI
+    // +optional
+    ExistingBucketName string
   }
 
   Status BucketClaimStatus {
@@ -654,7 +655,8 @@ BucketClaim {
     BucketReady bool
 
     // BucketName is the name of the provisioned Bucket in response
-    // to this BucketClaim
+    // to this BucketClaim. It is generated and set by the COSI controller 
+    // before making the creation request to the OSP backend.
     // +optional
     BucketName string
   }
@@ -707,12 +709,12 @@ BucketAccess {
     // +optional
     BucketClaimName string
 
-    // Protcol is the name of the Protocol 
+    // Protocol is the name of the Protocol 
     // that this access credential is supposed to support
-	// If left empty, it will choose the protocol supported
-	// by the bucket. If the bucket supports multiple protocols,
-	// the end protocol is determined by the driver. 
-	// +optional
+    // If left empty, it will choose the protocol supported
+    // by the bucket. If the bucket supports multiple protocols,
+    // the end protocol is determined by the driver. 
+    // +optional
     Protocol Protocol
 
     // BucketAccessClassName is the name of the BucketAccessClass
@@ -732,7 +734,8 @@ BucketAccess {
     // AccessGranted indicates the successful grant of privileges to access the bucket
     AccessGranted bool
     
-    // AccountID is the unique ID for the account in the OSP
+    // AccountID is the unique ID for the account in the OSP. It will be populated
+    // by the COSI sidecar once access has been successfully granted.
     // +optional
     AccountID string
   }
@@ -842,7 +845,7 @@ The returned `bucketID` should be a unique identifier for the bucket in the OSP.
 
 This gRPC call creates a set of access credentials for a bucket. This api must be idempotent. The input to this call is the id of the bucket, a set of opaque parameters and name of the account. This `accountName` field is used to ensure that multiple requests for the same BucketClaim do not result in multiple credentials.
 
-The returned `accountID` should be a unique identifier for the account in the OSP. This value could be the name of the account too. This value will be used by COSI to make all subsequent calls related to this account.
+The returned `accountID` should be a unique identifier for the account in the OSP. This value could be the name of the account too. This value will be included in all subsequent calls to the driver for changes to the BucketAccess.
 
 ```
     ProvisionerGrantBucketAccess
@@ -900,13 +903,16 @@ This gRPC call revokes access granted to a particular account.
 
 ## Alpha
 - API is reviewed and accepted
-- Implement all COSI components to support Greenfield, Green/Brown Field, Brownfield and Static Driverless provisioning
+- Design COSI APIs to support Greenfield, Green/Brown Field, Brownfield and Static Driverless provisioning
+- Design COSI APIs to support authentication using access/secret keys, and IAM.
 - Evaluate gaps, update KEP and conduct reviews for all design changes
 - Develop unit test cases to demonstrate that the above mentioned use cases work correctly
 
 ## Alpha -\> Beta
+- Implement all COSI components to support agreed design.
+- Design and implement support for sharing buckets across namespaces.
 - Basic unit and e2e tests as outlined in the test plan.
-- Metrics in kubernetes/kubernetes for bucket create and delete, and granting and revoking bucket access.
+- Metrics for bucket create and delete, and granting and revoking bucket access.
 - Metrics in provisioner for bucket create and delete, and granting and revoking bucket access.
 
 ## Beta -\> GA
