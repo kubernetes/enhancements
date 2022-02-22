@@ -111,32 +111,7 @@ The Additional section of the response may include the Service `A`/`AAAA` record
 
 #### 2.3.3 - `PTR` Record
 
-Given an exported Service assigned the IPv4 clusterset IP `<a>.<b>.<c>.<d>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record of the following form must exist.
-
-
-*   Record Format:
-    *   `<d>.<c>.<b>.<a>.in-addr.arpa. <ttl> IN PTR <service>.<ns>.svc.<clusterset-zone>.`
-*   Question Example:
-    *   `1.0.3.10.in-addr.arpa. IN PTR`
-*   Answer Example:
-    *   `1.0.3.10.in-addr.arpa. 14 IN PTR kubernetes.test.svc.clusterset.local.`
-
-Given an exported Service assigned the IPv6 clusterset IP represented in hexadecimal format without any simplification `<a1a2a3a4:b1b2b3b4:c1c2c3c4:d1d2d3d4:e1e2e3e4:f1f2f3f4:g1g2g3g4:h1h2h3h4>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record as a sequence of nibbles in reverse order of the following form must exist.
-
-
-
-*   Record Format:
-    *   `h4.h3.h2.h1.g4.g3.g2.g1.f4.f3.f2.f1.e4.e3.e2.e1.d4.d3.d2.d1.c4.c3.c2.c1.b4.b3.b2.b1.a4.a3.a2.a1.ip6.arpa <ttl> IN PTR <service>.<ns>.svc.<clusterset-zone>.`
-*   Question Example:
-    *   `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. IN PTR`
-*   Answer Example:
-    *   `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. 14 IN PTR kubernetes.test.svc.clusterset.local.`
-
-##### Limitations
-
-By definition, only one `PTR` record may exist per IP address. For implementations of Multicluster DNS that use IPs that already have a `PTR` record assigned from the cluster-local DNS specification, no further `PTR` records are required. 
-
-In particular, implementations that create a new "dummy" cluster-local `Service` object for every `ServiceImport` will already have a `PTR` record generated due to the DNS resolution of the "dummy" `Service`.
+`PTR` records are not specified in any way for multicluster DNS and `PTR` records ending with the `<clusterset-zone>` are **NOT** required. (See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#no-ptr-records-necessary-for-multicluster-DNS) for more context.)
 
 #### 2.3.4 - Records that MUST NOT exist for a Service with ClusterSetIP
 
@@ -228,33 +203,7 @@ The Additional section of the response may include the `A`/`AAAA` records referr
 
 #### 2.4.3 - `PTR` Records
 
-Given a _ready_ endpoint with _hostname_ of `<hostname>`, member cluster ID of `<clusterid>`, and IPv4 address `<a>.<b>.<c>.<d>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record of the following form must exist.
-
-
-
-*   Record Format:
-    *    `<d>.<c>.<b>.<a>.in-addr.arpa. <ttl> IN PTR <hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>.`
-*   Question Example:
-    *    `100.0.3.10.in-addr.arpa. IN PTR`
-*   Answer Example:
-    *    `100.0.3.10.in-addr.arpa. 14 IN PTR my-pet.headless.clusterA.test.svc.clusterset.local.`
-
-Given a _ready_ endpoint with _hostname_ of `<hostname>` and IPv6 address in hexadecimal format without any simplification `<a1a2a3a4:b1b2b3b4:c1c2c3c4:d1d2d3d4:e1e2e3e4:f1f2f3f4:g1g2g3g4:h1h2h3h4>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record as a sequence of nibbles in reverse order of the following form must exist.
-
-
-
-*   Record Format:
-    *    `h4.h3.h2.h1.g4.g3.g2.g1.f4.f3.f2.f1.e4.e3.e2.e1.d4.d3.d2.d1.c4.c3.c2.c1.b4.b3.b2.b1.a4.a3.a2.a1.ip6.arpa <ttl> IN PTR <hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>.`
-*   Question Example:
-    *    `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. IN PTR`
-*   Answer Example:
-    *    `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. 14 IN PTR my-pet.clusterA.headless.test.svc.clusterset.local.`
-
-##### Limitations
-
-By definition, only one `PTR` record may exist per IP address. For implementations of Multicluster DNS that use IPs that already have a `PTR` record assigned from the cluster-local DNS specification, no further `PTR` records are required. 
-
-In particular, implementations that create a new "dummy" cluster-local `Service` object for every `ServiceImport` will already have a `PTR` record generated due to the DNS resolution of the "dummy" `Service`.
+`PTR` records are not specified in any way for multicluster DNS and `PTR` records ending with the `<clusterset-zone>` are **NOT** required. (See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#no-ptr-records-necessary-for-multicluster-DNS) for more context.)
 
 #### 2.4.4 - Records that MUST NOT exist for a Multicluster Headless Service
 

@@ -733,7 +733,7 @@ endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
 resolve to the entire set or the subset of ready pod IPs, depending on the implementation
 and endpoint count.
 
-In addition, other resource records are included to conform to in-cluster Service DNS behavior. SRV records are included to support known use cases such as VOIP, Active Directory, and etcd cluster bootstrapping. PTR records are required at the multicluster DNS level only for implementations that do not already have PTR records for clusterset IPs from the in-cluster DNS specification (for example, implementations that utilize a "dummy" in-cluster service to represent the clusterset IP). Pods backing a Headless service may be addressed individually using the
+In addition, other resource records are included to conform to in-cluster Service DNS behavior. SRV records are included to support known use cases such as VOIP, Active Directory, and etcd cluster bootstrapping. Pods backing a Headless service may be addressed individually using the
 `<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format; necessary
 records will be created based on each ready endpoint's hostname and the
 `multicluster.kubernetes.io/source-cluster` label on the `EndpointSlice`. This
@@ -753,6 +753,16 @@ of the `cluster.local` zone.
 _It is expected that the `.clusterset.local` zone is standard and available in
 all implementations, but customization and/or aliasing can be explored if there's
 demand._
+
+##### No PTR records necessary for multicluster DNS
+
+This specification does not require `PTR` records be generated in the course of implementing multicluster DNS. By definition, each IP must only have one `PTR` record, to facilitate reverse DNS lookup. The cluster-local Kubernetes DNS specification already requires a `PTR` record for the ready IPs for ClusterIP and Headless Services. As this specification is currently written, by not requiring any new `PTR` records and leaving the cluster-local `PTR` records as the only ones, `PTR` record existence becomes potentially inconsistent for multicluster DNS, especially between importing and exporting clusters (for example, a Headless pod IP `PTR` record would exist on the exporting cluster, but not necessarily on an importing cluster). On the other hand, some existing MCS API implementations create a new "dummy" cluster-local `Service` object for every `ServiceImport`, and due to the cluster-local DNS specification, they will already have a `PTR` record generated due to the DNS resolution of the "dummy" `Service`.
+
+In cases where `PTR` records are not always set, if the specification did require to backfill in a `clusterset.local` zoned one wherever one is missing (i.e. for importing clusters), the result would be a patchwork of `cluster.local` and `clusterset.local` `PTR` records, depending what cluster in the ClusterSet you are querying from, still resulting in an inconsistent experience.
+
+Alternatively, the multicluster DNS specification could have required `clusterset.local` `PTR` records across the board, making the experience consistent. This would require implementations to overwrite the cluster-local behavior for MCS services since IPs can only have one `PTR` record. However, the MCS API purposefully tries to avoid changing cluster-local behavior as much as possible.
+
+As designed, `PTR` records are used for reverse DNS lookup from an IP to a DNS name. Besides this, some potentially useful information (ex mapping pod IPs, if you happen to have one out of context, to their related Service objects) would be consistently surfaced through reverse DNS lookup if we required `clusterset.local` `PTR` records. However, the k8s API server contains the same metadata and is already potentially accessible to any MCS client since the requests originate in-clusterset. Without a strong use case for requiring them and given the desire to avoid changing cluster-local behavior, `PTR` records are not required for multicluster DNS.
 
 ##### Not allowing cluster-specific targeting via DNS
 
