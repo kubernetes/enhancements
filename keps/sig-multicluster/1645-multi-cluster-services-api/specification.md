@@ -40,7 +40,7 @@ hostname = as already defined in the [cluster-local Kubernetes DNS specification
 
 clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A placeholder name for a group of clusters with a high degree of mutual trust and shared ownership that share services amongst themselves. Membership in a clusterset is symmetric and transitive. The set of member clusters are mutually aware, and agree about their collective association. Within a clusterset, [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) applies and all namespaces with a given name are considered to be the same namespace.”
 
-`<clustersetzone>` = domain for multi-cluster services in the clusterset, which must be `clusterset.local`; as this may become configurable in the future, this specification refers to it by the placeholder `<clustersetzone>`, but per the MCS API it currently must be defined to be `clusterset.local`. 
+`<clusterset-zone>` = domain for multi-cluster services in the clusterset, which must be `clusterset.local`; as this may become configurable in the future, this specification refers to it by the placeholder `<clusterset-zone>`, but per the MCS API it currently must be defined to be `clusterset.local`. 
 
 ClusterSetIP / `<clusterset-ip>` / clusterset IP = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
 
@@ -49,7 +49,7 @@ Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProp
 
 ### 2.2 - Record for Schema Version
 
-Following the existing specification, clusters implementing multicluster DNS will contain an additional `TXT` record responding with the semantic version of the DNS schema used for the multi cluster DNS `<zone>`, also known in this specification as `<clustersetzone>`.
+Following the existing specification, clusters implementing multicluster DNS will contain an additional `TXT` record responding with the semantic version of the DNS schema used for the multi cluster DNS `<zone>`, also known in this specification as `<clusterset-zone>`.
 
 - Question Example:
   - `dns-version.clusterset.local. IN TXT`
@@ -69,7 +69,7 @@ If the `<clusterset-ip>` is an IPv4 address, an `A` record of the following form
 
 
 *   Record Format:
-    *   `<service>.<ns>.svc.<clustersetzone>. <ttl> IN A <clusterset-ip>`
+    *   `<service>.<ns>.svc.<clusterset-zone>. <ttl> IN A <clusterset-ip>`
 *   Question Example
     *   `myservice.test.svc.clusterset.local. IN A`
 *   Answer Example:
@@ -80,7 +80,7 @@ If the `<clusterset-ip>` is an IPv6 address, an `AAAA` record of the following f
 
 
 *   Record Format:
-    *   `<service>.<ns>.svc.<clustersetzone>. <ttl> IN AAAA <clusterset-ip>`
+    *   `<service>.<ns>.svc.<clusterset-zone>. <ttl> IN AAAA <clusterset-ip>`
 *   Question Example:
     *   `myservice.test.svc.clusterset.local. IN AAAA`
 *   Answer Example:
@@ -94,7 +94,7 @@ For each port in an exported Service with name `<port>` and number `<port-number
 
 
 *   Record Format:
-    *   `_<port>._<proto>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN SRV <weight> <priority> <port-number> <service>.<ns>.svc.<clustersetzone>.`
+    *   `_<port>._<proto>.<service>.<ns>.svc.<clusterset-zone>. <ttl> IN SRV <weight> <priority> <port-number> <service>.<ns>.svc.<clusterset-zone>.`
 
 The priority `<priority>` and weight `<weight>` are numbers as described in [RFC2782](https://tools.ietf.org/html/rfc2782) and whose values are not prescribed by this specification.
 
@@ -115,7 +115,7 @@ Given an exported Service assigned the IPv4 clusterset IP `<a>.<b>.<c>.<d>` **th
 
 
 *   Record Format:
-    *   `<d>.<c>.<b>.<a>.in-addr.arpa. <ttl> IN PTR <service>.<ns>.svc.<clustersetzone>.`
+    *   `<d>.<c>.<b>.<a>.in-addr.arpa. <ttl> IN PTR <service>.<ns>.svc.<clusterset-zone>.`
 *   Question Example:
     *   `1.0.3.10.in-addr.arpa. IN PTR`
 *   Answer Example:
@@ -126,7 +126,7 @@ Given an exported Service assigned the IPv6 clusterset IP represented in hexadec
 
 
 *   Record Format:
-    *   `h4.h3.h2.h1.g4.g3.g2.g1.f4.f3.f2.f1.e4.e3.e2.e1.d4.d3.d2.d1.c4.c3.c2.c1.b4.b3.b2.b1.a4.a3.a2.a1.ip6.arpa <ttl> IN PTR <service>.<ns>.svc.<clustersetzone>.`
+    *   `h4.h3.h2.h1.g4.g3.g2.g1.f4.f3.f2.f1.e4.e3.e2.e1.d4.d3.d2.d1.c4.c3.c2.c1.b4.b3.b2.b1.a4.a3.a2.a1.ip6.arpa <ttl> IN PTR <service>.<ns>.svc.<clusterset-zone>.`
 *   Question Example:
     *   `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. IN PTR`
 *   Answer Example:
@@ -140,7 +140,7 @@ In particular, implementations that create a new "dummy" cluster-local `Service`
 
 #### 2.3.4 - Records that MUST NOT exist for a Service with ClusterSetIP
 
-ClusterSetIP Services **MUST NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`. This form is reserved for possible future use and as updates to the MCS API standard may define its use in a specific way, implementations must not use or depend on DNS records of this form.
+ClusterSetIP Services **MUST NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clusterset-zone>`. This form is reserved for possible future use and as updates to the MCS API standard may define its use in a specific way, implementations must not use or depend on DNS records of this form.
 
 (See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#not-allowing-cluster-specific-targeting-via-dns) for more context.)
 
@@ -155,7 +155,7 @@ Given a headless Service named `<service>` in Namespace `<ns>` that has been exp
 
 
 *   Record Format:
-    *   `<service>.<ns>.svc.<clustersetzone>. IN A <endpoint-ip>`
+    *   `<service>.<ns>.svc.<clusterset-zone>. IN A <endpoint-ip>`
 *   Question Example
     *   `myservice.test.svc.clusterset.local IN A`
 *   Answer Example:
@@ -167,7 +167,7 @@ There must also be an `A` record of the following form for each ready endpoint w
 
 
 *   Record Format:
-    *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN A <endpoint-ip>`
+    *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>. <ttl> IN A <endpoint-ip>`
 *   Question Example:
     *   `my-hostname.clusterA.myservice.test.svc.clusterset.local. IN A`
 *   Answer Example:
@@ -178,7 +178,7 @@ There must be an `AAAA` record for each _ready_ endpoint of the headless Service
 
 
 *   Record Format:
-    *    `<service>.<ns>.svc.<clustersetzone>. <ttl> IN AAAA <endpoint-ip>`
+    *    `<service>.<ns>.svc.<clusterset-zone>. <ttl> IN AAAA <endpoint-ip>`
 *   Question Example:
     *    `headless.test.svc.clusterset.local. IN AAAA`
 *   Answer Example:
@@ -191,7 +191,7 @@ There must also be an `AAAA` record of the following form for each ready endpoin
 
 
 *   Record Format:
-    *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN AAAA <endpoint-ip>`
+    *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>. <ttl> IN AAAA <endpoint-ip>`
 *   Question Example:
     *   `my-hostname.clusterA.test.svc.clusterset.local. IN AAAA`
 *   Answer Example:
@@ -204,7 +204,7 @@ For each combination of _ready_ endpoint with _hostname_ of `<hostname>`, member
 
 
 *   Record Format:
-    *    `_<port>._<proto>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN SRV <weight> <priority> <port-number> <hostname>.<clusterid>.<service>.<ns>.svc.<clustersetzone>.`
+    *    `_<port>._<proto>.<service>.<ns>.svc.<clusterset-zone>. <ttl> IN SRV <weight> <priority> <port-number> <hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>.`
 
 This implies that if there are **N** _ready_ endpoints and the Service defines **M** named ports, there will be **N** X **M**  **`SRV`** RRs for the Service.
 
@@ -233,7 +233,7 @@ Given a _ready_ endpoint with _hostname_ of `<hostname>`, member cluster ID of `
 
 
 *   Record Format:
-    *    `<d>.<c>.<b>.<a>.in-addr.arpa. <ttl> IN PTR <hostname>.<clusterid>.<service>.<ns>.svc.<clustersetzone>.`
+    *    `<d>.<c>.<b>.<a>.in-addr.arpa. <ttl> IN PTR <hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>.`
 *   Question Example:
     *    `100.0.3.10.in-addr.arpa. IN PTR`
 *   Answer Example:
@@ -244,7 +244,7 @@ Given a _ready_ endpoint with _hostname_ of `<hostname>` and IPv6 address in hex
 
 
 *   Record Format:
-    *    `h4.h3.h2.h1.g4.g3.g2.g1.f4.f3.f2.f1.e4.e3.e2.e1.d4.d3.d2.d1.c4.c3.c2.c1.b4.b3.b2.b1.a4.a3.a2.a1.ip6.arpa <ttl> IN PTR <hostname>.<clusterid>.<service>.<ns>.svc.<clustersetzone>.`
+    *    `h4.h3.h2.h1.g4.g3.g2.g1.f4.f3.f2.f1.e4.e3.e2.e1.d4.d3.d2.d1.c4.c3.c2.c1.b4.b3.b2.b1.a4.a3.a2.a1.ip6.arpa <ttl> IN PTR <hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>.`
 *   Question Example:
     *    `1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa. IN PTR`
 *   Answer Example:
@@ -258,6 +258,6 @@ In particular, implementations that create a new "dummy" cluster-local `Service`
 
 #### 2.4.4 - Records that MUST NOT exist for a Multicluster Headless Service
 
-Multicluster Headless Services **MUST NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`. This form is reserved for possible future use and as updates to the MCS API standard may define its use in a specific way, implementations must not use or depend on DNS records of this form.
+Multicluster Headless Services **MUST NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clusterset-zone>`. This form is reserved for possible future use and as updates to the MCS API standard may define its use in a specific way, implementations must not use or depend on DNS records of this form.
 
 (See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#not-allowing-cluster-specific-targeting-via-dns) for more context.)
