@@ -730,7 +730,8 @@ within the underlying `Service`(s) across the clusterset.
   * **Headless services:** Within an importing cluster, the clusterset domain name
 will have multiple `A`/`AAAA` records, each containing the address of a ready
 endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
-resolve to the set of all ready pod IPs for the service.
+resolve to the entire set or the subset of ready pod IPs, depending on the implementation
+and endpoint count.
 
 In addition, other resource records are included to conform to in-cluster Service DNS behavior. SRV records are included to support known use cases such as VOIP, Active Directory, and etcd cluster bootstrapping. PTR records are required at the multicluster DNS level only for implementations that do not already have PTR records for clusterset IPs from the in-cluster DNS specification (for example, implementations that utilize a "dummy" in-cluster service to represent the clusterset IP). Pods backing a Headless service may be addressed individually using the
 `<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format; necessary
