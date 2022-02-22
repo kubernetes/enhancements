@@ -725,8 +725,8 @@ multi-cluster service to become accessible from within the clusterset. The
 domain name will be `<service>.<ns>.svc.clusterset.local`. This domain name operates differently depending on whether the `ServiceExport` refers to a ClusterSetIP or Headless service:
 
   * **ClusterSetIP services:** Requests to this domain name from within an importing
-cluster will resolve to the clusterset IP, which points to endpoints for pods
-within the underlying `Service`(s) across the clusterset.
+cluster will resolve to the clusterset IP. Requests to this IP will be load-balanced
+across all endpoints exported with `ServiceExport`s across the clusterset.
   * **Headless services:** Within an importing cluster, the clusterset domain name
 will have multiple `A`/`AAAA` records, each containing the address of a ready
 endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
