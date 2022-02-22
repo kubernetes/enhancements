@@ -300,9 +300,11 @@ _For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs
 The `ClusterProperty` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterProperty`s, each holding a different identification related value. Each property contains the following information:
 
 *   **Name** - a well known or custom name to identify the property.
-*   **Value** - a property-dependent string, up to 128 KB.
+*   **Value** - a property-dependent string, up 128k Unicode code points (see _Note_).
 
 The schema for `ClusterProperty` is intentionally loose to support multiple forms of information, including arbitrary additional identification related properties described by users (see "Additional Properties", below), but certain well-known properties will add additional schema constraints, such as those described in the next section.
+
+_Note: While prior Kubernetes API constructs containing arbitrary string values, such as annotations, are limited by a byte length, the OpenAPI validation this CRD depends on defines string length as Unicode code points at validation time. The encoded length of the string in bytes as observed on input or output by the user may vary depending on which of the valid JSON encodings are used (UTF-8, UTF-16, or UTF-32). Therefore, the value limit of 128k code points could take up to 512KB using the least space efficient allowable encoding, UTF-32, which uses 4 bytes per code point._
 
 
 ### Well known properties
