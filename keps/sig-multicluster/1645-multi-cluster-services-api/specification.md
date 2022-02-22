@@ -94,7 +94,7 @@ For each port in an exported Service with name `<port>` and number `<port-number
 
 
 *   Record Format:
-    *   `_<port>._<proto>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN SRV <weight> <priority> <port-number> <service>.<ns>.svc.<zone>.`
+    *   `_<port>._<proto>.<service>.<ns>.svc.<clustersetzone>. <ttl> IN SRV <weight> <priority> <port-number> <service>.<ns>.svc.<clustersetzone>.`
 
 The priority `<priority>` and weight `<weight>` are numbers as described in [RFC2782](https://tools.ietf.org/html/rfc2782) and whose values are not prescribed by this specification.
 
