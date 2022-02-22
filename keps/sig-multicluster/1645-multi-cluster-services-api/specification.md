@@ -11,13 +11,13 @@
     - [2.3.2 - <code>SRV</code> Records](#232----records)
     - [2.3.3 - <code>PTR</code> Record](#233----record)
       - [Limitations](#limitations)
-    - [2.3.4 - Records that should NOT exist for a Service with ClusterSetIP](#234---records-that-should-not-exist-for-a-service-with-clustersetip)
+    - [2.3.4 - Records that MUST NOT exist for a Service with ClusterSetIP](#234---records-that-must-not-exist-for-a-service-with-clustersetip)
   - [2.4 - Records for a Multicluster Headless Service](#24---records-for-a-multicluster-headless-service)
     - [2.4.1 - <code>A</code>/<code>AAAA</code> Records](#241----records)
     - [2.4.2 - <code>SRV</code> Records](#242----records)
     - [2.4.3 - <code>PTR</code> Records](#243----records)
       - [Limitations](#limitations-1)
-    - [2.4.4 - Records that should NOT exist for a Multicluster Headless Service](#244---records-that-should-not-exist-for-a-multicluster-headless-service)
+    - [2.4.4 - Records that MUST NOT exist for a Multicluster Headless Service](#244---records-that-must-not-exist-for-a-multicluster-headless-service)
 <!-- /toc -->
 
 ## 0 - About This Document
