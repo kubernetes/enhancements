@@ -756,7 +756,7 @@ demand._
 
 ##### Not allowing cluster-specific targeting via DNS
 
-Both ClusterSetIP Services and Multicluster Headless Services are specified to explicitly disallow DNS records that target single clusters, such as using a formulation like `<clusterid>.<svc>.<ns>.svc.clusterset.local.` to target all 1+N backends in a single cluster.
+While we reserve the form `<clusterid>.<svc>.<ns>.svc.clusterset.local.` for possible future use, both ClusterSetIP Services and Multicluster Headless Services are specified to explicitly disallow DNS records that target all 1+N backends in a single cluster.
 
 For ClusterSetIP services, this rationale is tied to the intent of its underlying ClusterIP Service. In a single-cluster setup, the purpose of a ClusterIP service is to reduce the context needed by the application to target ready backends, especially if those backends disappear or change frequently, and leverages kube-proxy to do this independent of the limitations of DNS. ([ref](https://kubernetes.io/docs/concepts/services-networking/service/#why-not-use-round-robin-dns)) Similarly, users of exported ClusterIP services should depend on the single `<clusterset-ip>` (or the single `A`/`AAAA` record mapped to it), instead of targeting per cluster backends. If a user has a need to target backends in a different way, they should use headless Services.
 

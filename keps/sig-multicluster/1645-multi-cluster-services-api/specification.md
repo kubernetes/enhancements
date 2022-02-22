@@ -140,7 +140,7 @@ In particular, implementations that create a new "dummy" cluster-local `Service`
 
 #### 2.3.4 - Records that should NOT exist for a Service with ClusterSetIP
 
-ClusterSetIP Services should **NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`. 
+ClusterSetIP Services **SHOULD NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`. This form is reserved for possible future use and as updates to the MCS API standard may define its use in a specific way, implementations should not use or depend on DNS records of this form.
 
 (See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#not-allowing-cluster-specific-targeting-via-dns) for more context.)
 
@@ -258,6 +258,6 @@ In particular, implementations that create a new "dummy" cluster-local `Service`
 
 #### 2.4.4 - Records that should NOT exist for a Multicluster Headless Service
 
-Multicluster Headless Services should **NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`.
+Multicluster Headless Services should **NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`. This form is reserved for possible future use and as updates to the MCS API standard may define its use in a specific way, implementations should not use or depend on DNS records of this form.
 
 (See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#not-allowing-cluster-specific-targeting-via-dns) for more context.)
