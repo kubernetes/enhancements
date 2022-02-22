@@ -115,10 +115,11 @@ behavior:
   scaleUp:
     policies:
     - type: Percent
-      value: 900%
+      value: 900
+      periodSeconds: 60
 ```
 
-The `900%` implies that 9 times the current number of pods can be added, effectively making the number
+The `900` implies that 9 times the current number of pods can be added, effectively making the number
 of replicas 10 times the current size. All other parameters are not specified (default values are used)
 
 If the application is started with 1 pod, it will scale up with the following number of pods:
@@ -143,7 +144,8 @@ behavior:
   scaleUp:
     policies:
     - type: Percent
-      value: 900%
+      value: 900
+      periodSeconds: 60
   scaleDown:
     policies:
     - type: Pods
@@ -167,6 +169,7 @@ behavior:
     policies:
     - type: Pods
       value: 1
+      periodSeconds: 300
 ```
 
 If the application is started with 1 pod, it will scale up very gradually:
@@ -204,6 +207,7 @@ behavior:
     policies:
     - type: Pods
       value: 5
+      periodSeconds: 600
 ```
 
 i.e., the algorithm will:
@@ -246,6 +250,7 @@ behavior:
     policies:
     - type: Pods
       value: 20
+      periodSeconds: 60
 ```
 
 i.e., the algorithm will:
