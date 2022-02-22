@@ -378,7 +378,7 @@ Contains an identifier that relates the containing cluster to the ClusterSet in 
 
 ### Additional Properties
 
-Implementers are free to add additional properties as they see fit, so long as they do not conflict with the well known properties and utilize a suffix. "Bare name" properties with no suffix, and properties using the suffixes `*.k8s.io`, `*.kubernetes.io`, and `*.sigs.k8s.io` are reserved for Kubernetes and related projects. For example, an implementation may utilize the `Kind` `ClusterProperty` to store objects with the name `fingerprint.coolmcsimplementation.com` but not `fingerprint.k8s.io` and not simply `fingerprint`.
+Implementers are free to add additional properties as they see fit, so long as they do not conflict with the well known properties _and_ utilize a suffix. The following suffixes are reserved for Kubernetes and related projects: `.k8s.io`, `.kubernetes.io`. For example, an implementation may utilize the `Kind` `ClusterProperty` to store objects with the name `fingerprint.coolmcsimplementation.com` but not `fingerprint.k8s.io` and not simply `fingerprint`.
 
 
 ### Notes/Constraints/Caveats (Optional)
