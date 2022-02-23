@@ -771,60 +771,13 @@ type ResourceClaimStatus struct {
    // a claim.
    DriverName string
 
-   // When allocation is delayed, the scheduler must set
-   // the node for which it wants the resource to be allocated
-   // before the driver proceeds with allocation.
-   //
-   // For immediate allocation, the scheduler will not set
-   // this field. The resource driver controller may
-   // set it to trigger allocation on a specific node if the
-   // resources are local to nodes.
-   SelectedNode string
-
-   // When allocation is delayed, and the scheduler needs to
-   // decide on which node a Pod should run, it will first
-   // ask the driver on which nodes the resource might be
-   // made available. To trigger that check, the scheduler
-   // provides the names of nodes which might be suitable
-   // for the Pod. Will be updated periodically until
-   // the claim is allocated.
-   PotentialNodes []string
-
-   // A change of the PotentialNodes field triggers a check
-   // in the driver on which of those nodes the resource
-   // might be made available. It then excludes nodes
-   // by listing those where that is not the case in
-   // UnsuitableNodes.
-   //
-   // Unsuitable nodes will be ignored by the scheduler
-   // when selecting a node for a Pod. All other nodes are
-   // potential candidates, either because no information
-   // is available yet or because allocation might
-   // succeed.
-   //
-   // This can change, so the driver must refresh
-   // this information periodically and/or after
-   // changing resource allocation for some other
-   // ResourceClaim until a node gets selected by
-   // the scheduler.
-   UnsuitableNodes []string
-
-   // This field will get set by the resource driver to
-   // inform the scheduler where it can schedule Pods
-   // using the ResourceClaim.
-   //
-   // A resource driver may already set this before
-   // the resource is allocated. The scheduler will
-   // then check this field in addition to UnsuitableNodes
-   // to filter out nodes where the resource cannot
-   // be allocated.
-   //
-   // For an allocated resource this field defines
-   // where the resource can be used by Pods.
-   //
-   // Setting this field is optional. If nil, the
-   // resource is available everywhere.
-   AvailableOnNodes *corev1.NodeSelector
+   // Scheduling contains information that is only relevant
+   // while the scheduler and the resource driver are in
+   // the process of selecting a node for a Pod and the
+   // allocation mode is AllocationModeDelayed. The
+   // resource driver should unset this when it has successfully
+   // allocated the resource.
+   Scheduling *SchedulingStatus
 
    // Arbitrary data returned by the driver after a successful allocation.
    // This data is passed to the driver for all operations involving
@@ -878,6 +831,74 @@ const (
     // the ResourceClaimPhase back to "Pending".
     ResourceClaimReallocate ResourceClaimPhase = “Reallocate”
 )
+
+type SchedulingStatus struct {
+    // Scheduler contains information provided by the scheduler.
+    Scheduler SchedulerSchedulingStatus
+
+    // DriverStatus contains information provided by the resource
+    // driver.
+    Driver DriverSchedulingStatus
+}
+
+type SchedulerSchedulingStatus struct {
+   // When allocation is delayed, the scheduler must set
+   // the node for which it wants the resource to be allocated
+   // before the driver proceeds with allocation.
+   //
+   // For immediate allocation, the scheduler will not set
+   // this field. The resource driver controller may
+   // set it to trigger allocation on a specific node if the
+   // resources are local to nodes.
+   SelectedNode string
+
+   // When allocation is delayed, and the scheduler needs to
+   // decide on which node a Pod should run, it will
+   // ask the driver on which nodes the resource might be
+   // made available. To trigger that check, the scheduler
+   // provides the names of nodes which might be suitable
+   // for the Pod. Will be updated periodically until
+   // the claim is allocated.
+   PotentialNodes []string
+}
+
+type DriverSchedulingStatus struct {
+   // A change of the PotentialNodes field triggers a check
+   // in the driver on which of those nodes the resource
+   // might be made available. It then excludes nodes
+   // by listing those where that is not the case in
+   // UnsuitableNodes.
+   //
+   // Unsuitable nodes will be ignored by the scheduler
+   // when selecting a node for a Pod. All other nodes are
+   // potential candidates, either because no information
+   // is available yet or because allocation might
+   // succeed.
+   //
+   // This can change, so the driver must refresh
+   // this information periodically and/or after
+   // changing resource allocation for some other
+   // ResourceClaim until a node gets selected by
+   // the scheduler.
+   UnsuitableNodes []string
+
+   // This field will get set by the resource driver to
+   // inform the scheduler where it can schedule Pods
+   // using the ResourceClaim.
+   //
+   // A resource driver may already set this before
+   // the resource is allocated. The scheduler will
+   // then check this field in addition to UnsuitableNodes
+   // to filter out nodes where the resource cannot
+   // be allocated.
+   //
+   // For an allocated resource this field defines
+   // where the resource can be used by Pods.
+   //
+   // Setting this field is optional. If nil, the
+   // resource is available everywhere.
+   AvailableOnNodes *corev1.NodeSelector
+}
 
 type PodSpec {
    ...
