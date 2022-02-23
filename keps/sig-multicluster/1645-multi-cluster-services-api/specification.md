@@ -123,7 +123,9 @@ ClusterSetIP Services **MUST NOT** have a record disambiguating to a single clus
 
 _Note: This section refers to `A` and `AAAA` record requirements. For Service objects that have dual-stack networking enabled, both `A` and `AAAA` records must be created to cover both IPv4 and IPv6 assigned pod IPs._
 
-Given a headless Service named `<service>` in Namespace `<ns>` that has been exported via a name-mapped ServiceExport with name `<service>`, for each _ready_ endpoint accessible across the cluster set with the IPv4 address `<endpoint-ip>` the following records must exist.
+Given a headless Service named `<service>` in Namespace `<ns>` that has been exported via a name-mapped ServiceExport with name `<service>`, for a subset of  _ready_ endpoint accessible across the cluster set with the IPv4 address `<endpoint-ip>` the following records must exist.
+
+The subset of _ready_ endpoints _may_ be all _ready_ endpoints, but the exact subset is implementation dependent due to performance restrictions and response size limit of the DNS server used, as the number of potential endpoints could be quite high depending on the number of backends exported across the ClusterSet.
 
 
 
@@ -135,7 +137,7 @@ Given a headless Service named `<service>` in Namespace `<ns>` that has been exp
     *   `myservice.test.svc.clusterset.local 4 IN A 10.42.42.42`
     *   `myservice.test.svc.clusterset.local 4 IN A 10.10.10.10`
 
-There must also be an `A` record of the following form for each ready endpoint with hostname of `<hostname>`, member cluster ID of `<clusterid>`, and IPv4 address `<endpoint-ip>`. If there are multiple IPv4 addresses for a given hostname, then there must be one such `A` record returned for each IP.
+There must also be an `A` record of the following form for each _ready_ endpoint in the same subset  with hostname of `<hostname>`, member cluster ID of `<clusterid>`, and IPv4 address `<endpoint-ip>`. If there are multiple IPv4 addresses for a given hostname, then there must be one such `A` record returned for each IP.
 
 
 
@@ -146,7 +148,7 @@ There must also be an `A` record of the following form for each ready endpoint w
 *   Answer Example:
     *   `my-hostname.clusterA.myservice.test.svc.clusterset.local. 4 IN A 10.3.0.100`
 
-There must be an `AAAA` record for each _ready_ endpoint of the headless Service with IPv6 address `<endpoint-ip>` as shown below. If there are no _ready_ endpoints for the headless Service, the answer should be `NXDOMAIN`.
+There must be an `AAAA` record for each _ready_ endpoint in the same subset of the headless Service with IPv6 address `<endpoint-ip>` as shown below. If there are no _ready_ endpoints for the headless Service, the answer should be `NXDOMAIN`.
 
 
 
@@ -159,7 +161,7 @@ There must be an `AAAA` record for each _ready_ endpoint of the headless Service
     *    `headless.test.svc.clusterset.local. 4 IN AAAA 2001:db8::2`
     *    `headless.test.svc.clusterset.local. 4 IN AAAA 2001:db8::3`
 
-There must also be an `AAAA` record of the following form for each ready endpoint with hostname of `<hostname>`, member cluster ID of `<clusterid>`, and IPv6 address `<endpoint-ip>`. If there are multiple IPv6 addresses for a given hostname, then there must be one such `A` record returned for each IP.
+There must also be an `AAAA` record of the following form for each ready endpoint in the same subset with hostname of `<hostname>`, member cluster ID of `<clusterid>`, and IPv6 address `<endpoint-ip>`. If there are multiple IPv6 addresses for a given hostname, then there must be one such `A` record returned for each IP.
 
 
 
