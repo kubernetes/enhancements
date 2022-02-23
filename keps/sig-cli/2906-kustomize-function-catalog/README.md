@@ -243,7 +243,7 @@ A successful implementation of this API should have the following characteristic
 
 ### Non-Goals
 
-1. Support anything other than KRM-style fyunctions that follow the [functions spec](https://github.com/kubernetes-sigs/kustomize/blob/master/cmd/config/docs/api-conventions/functions-spec.md)
+1. Support anything other than KRM-style functions that follow the [functions spec](https://github.com/kubernetes-sigs/kustomize/blob/master/cmd/config/docs/api-conventions/functions-spec.md)
 1. Directly implement capabilities to publish function or other resources to OCI registries 
 
 ## Proposal
@@ -255,15 +255,18 @@ A `Catalog` will contain a collection of one or more functions that can be used 
 A minimal example is shown below:
 
 ```yaml
-apiVersion: kustomize.io/v1
+apiVersion: config.kubernetes.io/v1alpha1
 kind: Catalog
 metadata: 
-  name: "example-co-functionss"
+  name: "example-co-functions"
 spec: 
   krmFunctions: 
-  - apiVersion: example.com/v1
-    kind: JavaApplication
+  - group: example.com
+    names:
+      kind: JavaApplication
     description: "A Kustomize function that represents a Java based app"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image: example/module_providers/java:v1.0.0
@@ -300,15 +303,18 @@ Kustomize can at a later date provide a built in Catalog for supporting official
 In addition to container based functions, the `Catalog` will support discovery of Starlark and Exec based functions, via an HTTP(s), Git, or OCI reference as illustrated below: 
 
 ```yaml
-apiVersion: kustomize.io/v1
+apiVersion: config.kubernetes.io/v1alpha1
 kind: Catalog
 metadata: 
   name: "example-co-functions"
 spec: 
   krmFunctions: 
-  - apiVersion: example.com/v1
-    kind: GroovyApplication
+  - group: example.com
+    names:
+      kind: GroovyApplication
     description: "A Kustomize function that can handle groovy apps"
+    versions:
+    - name: v1
     runtime:  
       starlark: https://example.co/module_providers/starlark-func:v1.0.0
 ```
@@ -328,27 +334,36 @@ To do this, I build a new `Catalog` API resource:
 
 ```yaml
 # catalog.yaml
-apiVersion: kustomize.io/v1
+apiVersion: config.kubernetes.io/v1alpha1
 kind: Catalog
 metadata: 
   name: "example-co-functions"
 spec: 
   krmFunctions: 
-  - apiVersion: example.com/v1
-    kind: JavaApplication
+  - group: example.com
+    names:
+      kind: JavaApplication
     description: "A Kustomize function that can handle Java apps"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image: docker.example.co/functions/java:v1.0.0
-  - apiVersion: example.com/v1
-    kind: Logger
+  - group: example.com
+    names:
+      kind: Logger
     description: "A Kustomize function that adds our bespoke logging"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image: docker.example.co/functions/logger:v1.0.0
-  - apiVersion: example.com/v1
-    kind: SecretSidecar
+  - group: example.com
+    names:
+      kind: SecretSidecar
     description: "A Kustomize function that adds our bespoke secret sidecar"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image: docker.example.co/functions/secrets:v1.0.0
@@ -460,15 +475,18 @@ modules:
 As a Kustomize developer, I want to build an `official` Helm extension module and publish it via the Kustomize official extension catalog. I build and publish the extension to the official Kustomize `gcr.io` project (or alternative, such as Github Package Registry). I then update the official Kustomize extension catalog:
 
 ```yaml
-apiVersion: kustomize.io/v1
+apiVersion: config.kubernetes.io/v1alpha1
 kind: Catalog
 metadata: 
   name: "official-kustomize-functions"
 spec: 
   krmFunctions: 
-  - apiVersion: kustomize.io/v1
-    kind: Helm
+  - group: kustomize.io
+    names:
+      kind: Helm
     description: "A Kustomize function that can handle Helm charts"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image:  k8s.gcr.io/kustomize/helm-function:v1.0.0
@@ -491,21 +509,27 @@ I publish the implementation of my function as a container to a public Docker re
 Once this has been approved and included into the officially published catalog, my function is available for others to discover:
 
 ```yaml
-apiVersion: kustomize.io/v1
+apiVersion: config.kubernetes.io/v1alpha1
 kind: Catalog
 metadata: 
   name: "official-kustomize-functions"
 spec: 
   krmFunctions: 
-  - apiVersion: kustomize.io/v1
-    kind: Helm
+  - group: kustomize.io
+    names:
+      kind: Helm
     description: "A Kustomize function that can handle Helm charts"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image:  k8s.gcr.io/kustomize/helm-function:v1.0.0
-  - apiVersion: example.co/v1
-    kind: McGuffin
+  - group: example.co
+    names:
+      kind: McGuffin
     description: "A KRM function that everyone is searching for"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image:  docker.example.io/krm/mcguffin-function:v1.0.0
@@ -522,27 +546,36 @@ As a platform developer at enterprise company Example Co, I wish to publish a tr
 Using the runtime information and the metadata for each function, I publish a trusted catalog for use at Example Co
 
 ```yaml
-apiVersion: kustomize.io/v1
+apiVersion: config.kubernetes.io/v1alpha1
 kind: Catalog
 metadata: 
   name: "example-co-aggregated-catalog"
 spec: 
   krmFunctions: 
-  - apiVersion: banana.co/v1
-    kind: Split
+  - group: banana.co
+    names:
+      kind: Split
     description: "A KRM function that splits a deployment into multiple deployments"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image:  banana.gcr.io/functions/split-function:v1.0.0
-  - apiVersion: watermelon.co/v1
-    kind: Salt
+  - group: watermelon.co
+    names:
+      kind: Salt
     description: "A KRM function that applies salt"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image:  watermelon.gcr.io/krm-functions/salt-function:v1.0.0
-  - apiVersion: example.com/v1
-    kind: JavaApplication
+  - group: example.com
+    names:
+      kind: JavaApplication
     description: "A Kustomize function that can handle Java apps"
+    versions:
+    - name: v1
     runtime: 
       container: 
         image: example/module_providers/java:v1.0.0
@@ -587,12 +620,12 @@ info:
   title: KRM Function Metadata
   version: v1alpha1
 definitions:
-  FunctionSpec:
+  KRMFunctionDefinitionSpec:
     type: object
     description: spec contains the metadata for a KRM function.
     required:
       - group
-      - kind
+      - names
       - description
       - publisher
       - versions
@@ -600,9 +633,21 @@ definitions:
       group:
         description: group of the functionConfig
         type: string
-      kind:
-        description: kind of the functionConfig
+      description:
+        description: brief description of the KRM function.
         type: string
+      publisher:
+        description: the entity (e.g. organization) that produced and owns this KRM function.
+        type: string
+      names:
+        description: the resource and kind names for the KRM function
+        type: object
+        required:
+        - kind
+        properties:
+          kind:
+            description: the Kind of the functionConfig
+            type: string
       versions:
         description: the versions of the functionConfig
         type: array
@@ -743,12 +788,14 @@ definitions:
         type: array
         items:
           type: string
-  KRMFunction:
+  KRMFunctionDefinition:
     type: object
-    description: KRMFunction is metadata of a KRM function.
+    description: |
+      KRMFunctionDefinition is metadata that defines a KRM function
+      the same way a CustomResourceDefinition defines a custom resource.
     x-kubernetes-group-version-kind:
       - group: config.kubernetes.io
-        kind: KRMFunction
+        kind: KRMFunctionDefinition
         version: v1alpha1
     required:
       - apiVersion
@@ -756,17 +803,17 @@ definitions:
       - spec
     properties:
       apiVersion:
-        description: apiVersion of KRMFunction. i.e. config.kubernetes.io/v1alpha1
+        description: apiVersion of KRMFunctionDefinition. i.e. config.kubernetes.io/v1alpha1
         type: string
         enum:
           - config.kubernetes.io/v1alpha1
       kind:
-        description: kind of the KRMFunction. It must be KRMFunction.
+        description: kind of the KRMFunctionDefinition. It must be KRMFunctionDefinition.
         type: string
         enum:
-          - KRMFunction
+          - KRMFunctionDefinition
       spec:
-        $ref: "#/definitions/FunctionSpec"
+        $ref: "#/definitions/KRMFunctionDefinitionSpec"
   KRMFunctionCatalog:
     type: object
     description: KRMFunctionCatalog is the metadata of a collection of KRM functions.
@@ -799,7 +846,7 @@ definitions:
           krmFunctions:
             type: array
             items:
-              $ref: "#/definitions/FunctionSpec"
+              $ref: "#/definitions/KRMFunctionDefinitionSpec"
 paths: {}
 ```
 </details>
@@ -811,7 +858,7 @@ When using OCI references, either a tag or digest reference can be provided. Exe
 An example representation is shown below:
 
 ```yaml
-apiVersion: kustomize.io/v1
+apiVersion: config.kubernetes.io/v1alpha1
 kind: Catalog
 metadata: 
   name: "example-co-functions"
@@ -820,7 +867,8 @@ metadata:
 spec: 
   krmFunctions: 
   - group: example.com
-    kind: SetNamespace
+    names:
+      kind: SetNamespace
     description: "A short description of the KRM function"
     publisher: example.com
     versions:
