@@ -77,10 +77,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -806,7 +806,7 @@ checks for events that describe the problem.
 - 5 installs
 - More rigorous forms of testing e.g., downgrade tests and scalability tests
 - Allowing time for feedback
-- Integration with [Cluster Autoscaler](https://github.com/kubernetes/autoscaler)
+- Design for support in [Cluster Autoscaler](https://github.com/kubernetes/autoscaler)
 
 ### Upgrade / Downgrade Strategy
 
@@ -842,15 +842,14 @@ enhancement:
 ### Feature enablement and rollback
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [X] Feature gate
-    - Feature gate name: CSIStorageCapacity
-    - Components depending on the feature gate:
-      - apiserver
+  - [X] CSIDriver.StorageCapacity field can be modified
+    - Components depending on the field:
       - kube-scheduler
 
 * **Does enabling the feature change any default behavior?**
 
-  Enabling it only in kube-scheduler and api-server and not any of the
+  Enabling it only in kube-scheduler and api-server by updating
+  to a Kubernetes version where it is enabled and not in any of the
   running CSI drivers causes no changes. Everything continues as
   before because no `CSIStorageCapacity` objects are created and
   kube-scheduler does not wait for any.
@@ -861,12 +860,19 @@ enhancement:
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Yes.
 
-  In Kubernetes 1.19 and 1.20, registration of the
-  `CSIStorageCapacity` type was controlled by the feature gate. In
-  1.21, the type will always be enabled in the v1beta1 API
-  group. Depending on the combination of Kubernetes release and
+  Yes, by disabling it in the CSI driver deployment:
+  `CSIDriver.StorageCapacity=false` causes kube-scheduler to ignore storage
+  capacity for the driver. In addition, external-provisioner can be deployed so
+  that it does not publish capacity information (`--enable-capacity=false`).
+
+  Downgrading to a previous Kubernetes release may also disable the feature or
+  allow disabling it via a feature gate: In Kubernetes 1.19 and 1.20,
+  registration of the `CSIStorageCapacity` type was controlled by the feature
+  gate. In 1.21, the type will always be enabled in the v1beta1 API group. In
+  1.24, the type is always enabled in the v1 API unconditionally.
+
+  Depending on the combination of Kubernetes release and
   feature gate, the type will be disabled. However, any existing
   objects will still remain in the etcd database, they just won't be
   visible.
@@ -934,7 +940,7 @@ consumption, increased latency), specifically
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
 
-Not yet, but will be done manually before transition to beta.
+This was done manually before transition to beta.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
@@ -951,17 +957,15 @@ scheduling workloads onto nodes, but not while those run.
 That a CSI driver provides storage capacity information can seen in the
 following metric data that will be provided by external-provisioner instances:
 - total number of `CSIStorageCapacity` objects that the external-provisioner
-  is currently meant to manage for the driver
+  is currently meant to manage for the driver: `csistoragecapacities_desired_goal`
 - number of such objects that currently exist and can be kept because
-  they have a topology/storage class pair that is still valid
+  they have a topology/storage class pair that is still valid: `csistoragecapacities_desired_current`
 - number of such objects that currently exist and need to be deleted
-  because they have an outdated topology/storage class pair
-- work queue length for creating, updating or deleting objects
+  because they have an outdated topology/storage class pair: `csistoragecapacities_obsolete`
+- work queue length for creating, updating or deleting objects: `csistoragecapacity` work queue
 
 The CSI driver name will be used as label. When using distributed
 provisioning, the node name will be used as additional label.
-
-TODO: mention the exact metrics names once they are implemented.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -1100,6 +1104,7 @@ to `CSIStorageCapacity` objects.
 - Kubernetes 1.19: alpha
 - Kubernetes 1.21: beta
 - Kubernetes 1.23: `CSIDriver.Spec.StorageCapacity` became mutable.
+- Kubernetes 1.24: GA
 
 ## Drawbacks
 
