@@ -735,7 +735,8 @@ next section.
 This is based on fair queuing but is modified to deal with serving
 requests in an apiserver instead of transmitting packets in a router.
 You can find the original fair queuing paper at
-[ACM](https://dl.acm.org/citation.cfm?doid=75247.75248),
+[ACM](https://dl.acm.org/citation.cfm?doid=75247.75248) or
+[MIT](http://people.csail.mit.edu/imcgraw/links/research/pubs/networks/WFQ.pdf),
 and an
 [implementation outline at Wikipedia](https://en.wikipedia.org/wiki/Fair_queuing).
 Our problem differs from the normal fair queuing problem in three
