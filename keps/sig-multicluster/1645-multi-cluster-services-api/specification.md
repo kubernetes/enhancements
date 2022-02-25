@@ -42,7 +42,7 @@ clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): �
 
 ClusterSetIP / `<clusterset-ip>` / clusterset IP = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
 
-Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet identification](../2149-clusterid/README.md). Though this can be any valid DNS label, the recommended value is  a kube-system namespace uid ( such as `721ab723-13bc-11e5-aec2-42010af0021e`). For ease of KEP readability, this document uses human readable names `clusterA` and `clusterB` to represent the cluster IDs of two clusters in a ClusterSet.
+Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet identification](../2149-clusterid/README.md). Though this can be any valid DNS label, the recommended value is  a kube-system namespace uid ( such as `721ab723-13bc-11e5-aec2-42010af0021e`). For ease of KEP readability, this document uses human readable names `cluster-a` and `cluster-b` to represent the cluster IDs of two clusters in a ClusterSet.
 
 
 ### 2.2 - Record for Schema Version
@@ -137,16 +137,16 @@ The subset of _ready_ endpoints _may_ be all _ready_ endpoints, but the exact su
     *   `myservice.test.svc.clusterset.local 4 IN A 10.42.42.42`
     *   `myservice.test.svc.clusterset.local 4 IN A 10.10.10.10`
 
-There must also be an `A` record of the following form for each _ready_ endpoint in the same subset  with hostname of `<hostname>`, member cluster ID of `<clusterid>`, and IPv4 address `<endpoint-ip>`. If there are multiple IPv4 addresses for a given hostname, then there must be one such `A` record returned for each IP.
+There must also be an `A` record of the following form for each _ready_ endpoint in the same subset with hostname of `<hostname>`, member cluster ID of `<clusterid>`, and IPv4 address `<endpoint-ip>`. If there are multiple IPv4 addresses for a given hostname, then there must be one such `A` record returned for each IP.
 
 
 
 *   Record Format:
     *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>. <ttl> IN A <endpoint-ip>`
 *   Question Example:
-    *   `my-hostname.clusterA.myservice.test.svc.clusterset.local. IN A`
+    *   `my-hostname.cluster-a.myservice.test.svc.clusterset.local. IN A`
 *   Answer Example:
-    *   `my-hostname.clusterA.myservice.test.svc.clusterset.local. 4 IN A 10.3.0.100`
+    *   `my-hostname.cluster-a.myservice.test.svc.clusterset.local. 4 IN A 10.3.0.100`
 
 There must be an `AAAA` record for each _ready_ endpoint in the same subset of the headless Service with IPv6 address `<endpoint-ip>` as shown below. If there are no _ready_ endpoints for the headless Service, the answer should be `NXDOMAIN`.
 
@@ -168,9 +168,9 @@ There must also be an `AAAA` record of the following form for each ready endpoin
 *   Record Format:
     *   `<hostname>.<clusterid>.<service>.<ns>.svc.<clusterset-zone>. <ttl> IN AAAA <endpoint-ip>`
 *   Question Example:
-    *   `my-hostname.clusterA.test.svc.clusterset.local. IN AAAA`
+    *   `my-hostname.cluster-a.test.svc.clusterset.local. IN AAAA`
 *   Answer Example:
-    *   `my-hostname.clusterA.test.svc.clusterset.local. 4 IN AAAA 2001:db8::1`
+    *   `my-hostname.cluster-a.test.svc.clusterset.local. 4 IN AAAA 2001:db8::1`
 
 #### 2.4.2 - `SRV` Records
 
@@ -192,12 +192,12 @@ In the following example, the cluster ID for each answer example is in bold to e
 *   Question Example:
     *    `_https._tcp.headless.test.svc.clusterset.local. IN SRV`
 *   Answer Example:
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-1.`**`clusterA`**`.headless.test.svc.clusterset.local.`
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-2.`**`clusterA`**`.headless.test.svc.clusterset.local.`
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-3.`**`clusterA`**`.headless.test.svc.clusterset.local.`
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-1.`**`clusterB`**`.headless.test.svc.clusterset.local.`
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-2.`**`clusterB`**`.headless.test.svc.clusterset.local.`
-    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-3.`**`clusterB`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-1.`**`cluster-a`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-2.`**`cluster-a`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-3.`**`cluster-a`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-1.`**`cluster-b`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-2.`**`cluster-b`**`.headless.test.svc.clusterset.local.`
+    *   `_https._tcp.headless.test.svc.clusterset.local. 4 IN SRV 10 100 443 my-pet-3.`**`cluster-b`**`.headless.test.svc.clusterset.local.`
 
 The Additional section of the response may include the `A`/`AAAA` records referred to in the `SRV` records.
 
