@@ -85,25 +85,20 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
     - [Terminology](#terminology)
   - [User Stories](#user-stories)
-    - [Different Services Each Deployed to Separate
-      Cluster](#different-services-each-deployed-to-separate-cluster)
-    - [Single Service Deployed to Multiple
-      Clusters](#single-service-deployed-to-multiple-clusters)
+    - [Different Services Each Deployed to Separate Cluster](#different-services-each-deployed-to-separate-cluster)
+    - [Single Service Deployed to Multiple Clusters](#single-service-deployed-to-multiple-clusters)
   - [Constraints](#constraints)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Exporting Services](#exporting-services)
     - [Restricting Exports](#restricting-exports)
   - [Importing Services](#importing-services)
-  - [ClusterSet Service Behavior
-    Expectations](#clusterset-service-behavior-expectations)
+  - [ClusterSet Service Behavior Expectations](#clusterset-service-behavior-expectations)
     - [Service Types](#service-types)
     - [ClusterSetIP](#clustersetip)
     - [DNS](#dns)
-      - [No PTR records necessary for multicluster
-        DNS](#no-ptr-records-necessary-for-multicluster-dns)
-      - [Not allowing cluster-specific targeting via
-        DNS](#not-allowing-cluster-specific-targeting-via-dns)
+      - [No PTR records necessary for multicluster DNS](#no-ptr-records-necessary-for-multicluster-dns)
+      - [Not allowing cluster-specific targeting via DNS](#not-allowing-cluster-specific-targeting-via-dns)
     - [EndpointSlice](#endpointslice)
     - [Endpoint TTL](#endpoint-ttl)
 - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
@@ -119,8 +114,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
-  - [<code>ObjectReference</code> in <code>ServiceExport.Spec</code> to directly
-    map to a Service](#-in--to-directly-map-to-a-service)
+  - [<code>ObjectReference</code> in <code>ServiceExport.Spec</code> to directly map to a Service](#-in--to-directly-map-to-a-service)
   - [Export services via label selector](#export-services-via-label-selector)
   - [Export via annotation](#export-via-annotation)
 - [Infrastructure Needed](#infrastructure-needed)
