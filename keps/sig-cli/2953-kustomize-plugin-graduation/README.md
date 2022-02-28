@@ -100,6 +100,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
+    - [Story 5](#story-5)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -272,6 +274,8 @@ If a containerized plugin needs network or disk access, its catalog entry MUST s
 **Plugins from a compiled-in trusted catalog**
 
 Optionally, it should be possible for a user to compile a bespoke distribution of Kustomize that embeds a trusted catalog, such that the plugins it references can be used without any additional flags on the end user's part. The target persona for this scenario is a platform maintainer at a large organization that distributes its own Kustomize internally. This approach could also be used in the future to extract Kustomize built-ins to plugins to reduce compiled in dependencies while minimizing UX impact.
+
+Optionally, it should be possible for this custom-compiled distribution of Kustomize to disable the addition of trusted catalogs at runtime. When this is done, only plugins from the embedded trusted catalog can be used, and attempts to add more via the flag will print an error message. This option is intended for situations where the user crafting the Kustomize invocation and the user controlling the invocation environment are separate, such as a hosted GitOps platform. For example, an ArgoCD instance could include a version of Kustomize that automatically trusts the plugins its operator has pre-installed alongside Kustomize, and those plugins only.
 
 **Plugins NOT in a trusted catalog**
 
@@ -494,6 +498,36 @@ trustedCatalogs:
 - github.com/my-co/krm-functions/catalogs/*
 - https://krm-functions.io/catalogs/kustomize/v20210924.yaml
 - ~/kustomize/my-own-plugins.yaml
+```
+
+
+#### Story 5
+
+As a GitOps platform operator, I want to selectively enable the plugins I've preinstalled, automatically and exclusively. I do not want end user configuration to reference their installed location.
+
+1. Create a Catalog listing the desired set of plugins.
+1. Build a bespoke Kustomize distribution, e.g. `DEFAULT_TRUSTED_CATALOGS=/path/to/plugins.json DISABLE_CATALOG_ADDITION=true make kustomize` (those hypothetical env vars are build-time-only)
+1. Platform users can then craft custom `kustomize build` invocations that use the preinstalled plugins without additional configuration. They cannot run any additional plugins the platform operator did not trust.
+
+```yaml
+# Example end-user Kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- configmap.yaml
+
+generators:
+- |-
+  apiVersion: kustomize.example.co/v1
+  kind: RenderHelmChart
+  helmCharts:
+  - chartArgs:
+      name: hello-world
+      version: 1.0
+    templateOptions:
+      values:
+        valuesFiles: ["values.yaml"]
 ```
 
 
