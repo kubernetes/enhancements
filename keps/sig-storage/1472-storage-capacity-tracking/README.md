@@ -842,6 +842,11 @@ enhancement:
 ### Feature enablement and rollback
 
 * **How can this feature be enabled / disabled in a live cluster?**
+  - [X] Feature gate
+    - Feature gate name: CSIStorageCapacity
+    - Components depending on the feature gate:
+      - apiserver
+      - kube-scheduler
   - [X] CSIDriver.StorageCapacity field can be modified
     - Components depending on the field:
       - kube-scheduler
@@ -940,7 +945,9 @@ consumption, increased latency), specifically
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
 
-This was done manually before transition to beta.
+This was done manually before transition to beta in a kubeadm-based cluster
+running on VMs. The experiment confirmed that rollback and re-enabling works
+as described above, with no unexpected behavior.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
