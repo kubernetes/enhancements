@@ -2,6 +2,7 @@ title: Quotas for Ephemeral Storage
 kep-number: 1029
 authors:
   - "@RobertKrawitz"
+  - "@pacoxu"
 owning-sig: sig-node
 participating-sigs:
   - sig-node
@@ -13,11 +14,11 @@ approvers:
   - "@derekwaynecarr"
 editor: TBD
 creation-date: 2018-09-06
-last-updated: 2021-05-08
-status: implementable
+last-updated: 2022-03-01
+status: implemented
 
-latest-milestone: "1.22"
+latest-milestone: "1.25"
 stage: "alpha"
 milestone:
   alpha: "1.15"
-  beta: "1.22"
+  beta: "1.25"
