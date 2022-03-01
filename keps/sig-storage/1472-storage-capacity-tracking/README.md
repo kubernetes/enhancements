@@ -904,8 +904,10 @@ enhancement:
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling and disabling feature
   gates. However, unit tests in each component dealing with managing data created
-  with and without the feature are necessary and will be added before
-  before the transition to beta.
+  with and without the feature are necessary and were added before
+  before the transition to beta, for example
+  [in the apiserver](https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/apis/storage/validation/validation_test.go#L2091-L2131)
+  and the [volume binder](https://github.com/kubernetes/kubernetes/blob/v1.21.0/test/integration/volumescheduling/volume_binding_test.go#L706-L709).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -992,7 +994,9 @@ calls will be recorded with their non-OK status code as value.
 The goal is to achieve the same provisioning rates with the feature
 enabled as those that currently can be achieved without it.
 
-This will need further discussion before going to GA.
+The SLOs depend on the CSI driver and how they are deployed. Therefore SLOs
+cannot be specified in more detail here. Cloud providers will have to determine
+what reasonable values are and document those.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
