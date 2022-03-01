@@ -28,7 +28,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
   - [Phase 1: Alpha (1.15)](#phase-1-alpha-115)
-  - [Phase 2: Beta (target 1.22)](#phase-2-beta-target-122)
+  - [Phase 2: Beta (target 1.25)](#phase-2-beta-target-125)
   - [Phase 3: GA](#phase-3-ga)
 - [Performance Benchmarks](#performance-benchmarks)
   - [Elapsed Time](#elapsed-time)
@@ -633,7 +633,7 @@ The following criteria applies to
 - Unit test coverage
 - Node e2e test
 
-### Phase 2: Beta (target 1.22)
+### Phase 2: Beta (target 1.25)
 
 - User feedback
 - Benchmarks to determine latency and overhead of using quotas
@@ -734,24 +734,6 @@ and are not reported here.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
 
 ###### How can this feature be enabled / disabled in a live cluster?
@@ -760,65 +742,88 @@ you need any help or guidance.
   - Feature gate name: LocalStorageCapacityIsolationFSQuotaMonitoring
   - Components depending on the feature gate: kubelet
 
+This feature uses project quotas to monitor emptyDir volume storage consumption
+rather than filesystem walk for better performance and accuracy.
+
 ###### Does enabling the feature change any default behavior?
 
-None. Behavior will not change.
-When LocalStorageCapacityIsolation is enabled for local ephemeral storage and the backing filesystem for emptyDir volumes supports project quotas and they are enabled, use project quotas to monitor emptyDir volume storage consumption rather than filesystem walk for better performance and accuracy.
-
+None. Behavior will not change. The change is the way to monitoring the volume
+like ephemeral storage volumes and emptyDirs.
+When LocalStorageCapacityIsolation is enabled for local ephemeral storage and the
+backing filesystem for emptyDir volumes supports project quotas and they are enabled,
+use project quotas to monitor emptyDir volume storage consumption rather than
+filesystem walk for better performance and accuracy.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. If the pod was created with enforcing quota, disable the feature gate will not change the running pod.
-After setting the feature gate to false, the newly created pod will not use the enforcing quota.
+Yes, but only for newly created pods. 
+- Existed Pods: If the pod was created with enforcing quota, disable the feature gate
+  will not change the running pod.
+- Newly Created Pods: After setting the feature gate to false, the newly created pod
+  will not use the enforcing quota.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Performance changes. This feature uses project quotas to monitor emptyDir volume storage consumption rather than filesystem walk for better performance and accuracy.
+Like above, after we reenable the feature, newly created pod will use this feature.
+If a pod was created before rolling back, the pod will benifit from this feature as well.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, test/e2e_node/quota_lsci_test.go
+Yes, in `test/e2e_node/quota_lsci_test.go`
 
 ### Rollout, Upgrade and Rollback Planning
 
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-None. The rollout/rollback will not impact running workloads.
+No. The rollout/rollback will not impact running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-None. To see its status, read kubelet log for eviction related logs or using xfs_quota to check the quota settings.
+`kubelet_volume_metric_collection_duration_seconds` was added since v1.24 for duration in
+seconds to calculate volume stats. This metric can help to compare between fsquota
+monitoring and `du` for disk usage.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Yes.
+Yes. I tested it locally and fixed [a bug after restarting kubelet](https://github.com/kubernetes/kubernetes/pull/107302)
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-LocalStorageCapacityIsolationFSQuotaMonitoring should be turned on only if LocalStorageCapacityIsolation is enabled as well.
+LocalStorageCapacityIsolationFSQuotaMonitoring should be turned on only if LocalStorageCapacityIsolationis enabled as well.
 If LocalStorageCapacityIsolationFSQuotaMonitoring is turned on but LocalStorageCapacityIsolation is false, the check will be skipped.
 
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
+
   - A cluster-admin can set kubelet on each node. If the feature gate is disabled, workloads on that node will not use it.
   For example, run `xfs_quota -x -c 'report -h' /dev/sdc` to check quota settings in the device.
   Check `spec.containers[].resources.limits.ephemeral-storage` of each container.
 
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  - 99.9% of volume stats calculation will cost less than 1s or even 500ms.
+  It can be calculated by `kubelet_volume_metric_collection_duration_seconds` metrics.
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - Set a quota for the specified volume and try to write to the volume to check if there is a limitation.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  - N/A.
+- [x] Metrics
+  - Metric name: `kubelet_volume_metric_collection_duration_seconds`
+  - Aggregation method: histogram
+  - Components exposing the metric: kubelet
 
 * **Are there any missing metrics that would be useful to have to improve observability of this feature? **
-  - Yes, there is a kubelet metrics `kubelet_evictions{eviction_signal="ephemeralpodfs.limit"}`([ALPHA] Cumulative number of pod evictions by eviction signal).
+
+  - Yes, there are no histogram metrics for each volume. The above metric was grouped by volume types because
+    the cost for every volume is too expensive.
 
 ### Dependencies
 * **Does this feature depend on any specific services running in the cluster? **
-  - No.
+
+  -  Yes, the feature depneds on project quotas. Once quotas are enabled, the xfs_quota tool can be used to
+    set limits and report on disk usage.
+
 
 ### Scalability
 * **Will enabling / using this feature result in any new API calls?**
@@ -856,31 +861,32 @@ details). For now, we leave it here.
 
 ###### What are other known failure modes?
 
-If the ephemeral storage limitation is reached, the pod will be evicted by kubelet.
+1. If the ephemeral storage limitation is reached, the pod will be evicted by kubelet.
 
-It should skip when the image is not configured correctly (unsupported FS or quota not enabled).
+2. It should skip when the image is not configured correctly (unsupported FS or quota not enabled).
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+3. For "out of space" failure, kublet eviction should be triggered.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Restart kubelet and wait for 1 minute to make the SLOs clear.(The volume stats checking interval is determined by kubelet flag `volumeStatsAggPeriod`(default 1m).)
 
 
 ## Implementation History
 
 ### Version 1.15
 
-` LocalStorageCapacityIsolationFSMonitoring` implemented at Alpha
+- `LocalStorageCapacityIsolationFSMonitoring` implemented at Alpha
+
+### Version 1.24
+
+- `kubelet_volume_metric_collection_duration_seconds` metrics was added
+- A bug that quota cannot work after kubelet restarted, was fixed
+
+### Version 1.25
+
+- Plan to promote `LocalStorageCapacityIsolationFSMonitoring` to Beta
 
 ## Drawbacks [optional]
 
