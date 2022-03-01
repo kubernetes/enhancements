@@ -43,6 +43,8 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
   - [Version 1.15](#version-115)
+  - [Version 1.24](#version-124)
+  - [Version 1.25](#version-125)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
   - [Alternative quota-based implementation](#alternative-quota-based-implementation)
@@ -652,7 +654,7 @@ files.  The operations performed were as follows, in sequence:
 
 * *Create Files*: Create 4K directories each containing 2K files as
   described, in depth-first order.
-  
+ 
 * *du*: run `du` immediately after creating the files.
 
 * *quota*: where applicable, run `xfs_quota` immediately after `du`.
@@ -663,10 +665,10 @@ files.  The operations performed were as follows, in sequence:
 
 * *du (after remount)*: run `mount -o remount <filesystem>`
   immediately followed by `du`.
-  
+ 
 * *quota (after remount)*: run `mount -o remount <filesystem>`
   immediately followed by `xfs_quota`.
-  
+ 
 * *unmount*: `umount` the filesystem.
 
 * *mount*: `mount` the filesystem.
@@ -676,7 +678,7 @@ files.  The operations performed were as follows, in sequence:
 
 * *du after umount/mount*: run `du` after unmounting and
   mounting the filesystem.
-  
+ 
 * *Remove Files*: remove the test files.
 
 The test was performed on four separate filesystems:
@@ -756,7 +758,7 @@ filesystem walk for better performance and accuracy.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, but only for newly created pods. 
+Yes, but only for newly created pods.
 - Existed Pods: If the pod was created with enforcing quota, disable the feature gate
   will not change the running pod.
 - Newly Created Pods: After setting the feature gate to false, the newly created pod
@@ -765,7 +767,7 @@ Yes, but only for newly created pods.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Like above, after we reenable the feature, newly created pod will use this feature.
-If a pod was created before rolling back, the pod will benifit from this feature as well.
+If a pod was created before rolling back, the pod will benefit from this feature as well.
 
 ###### Are there any tests for feature enablement/disablement?
 
