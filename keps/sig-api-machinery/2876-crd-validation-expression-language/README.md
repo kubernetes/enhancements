@@ -363,16 +363,22 @@ Unlike other rules, transition rules apply only to operations meeting the follow
   descendants (`spec.foo[10].bar`) can't necessarily be correlated between an existing object and a
   later update to the same object.
 
-  - Semantics from [server-side
-    apply](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) will be
-    honored. In particular, updates to descendants of collection types that are mergeable according
-    to server-side apply may be validated by transition rules. This includes the elements of maps
-    marked `x-kubernetes-map-type=granular` and lists marked
-    `x-kubernetes-list-type=map`. Transition rules apply to elements of `map`-type lists only when
-    an element exists in both the old and new object having identical values for all key
-    fields. Elements of lists marked `x-kubernetes-list-type=set` and their descendants do not
-    support transition rules, however, set membership changes are accessible to transition rules
-    defined on the parent (i.e. array) node.
+  - Mergeability semantics from [server-side
+    apply](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) are
+    leveraged when determining whether or not a given schema node and its descendants support
+    transition rules, as follows:
+
+    - Elements of maps marked `x-kubernetes-map-type=granular` or `x-kubernetes-map-type=atomic` are
+      correlated by key.
+
+    - Elements of lists marked `x-kubernetes-list-type=map` are correlated if an element exists in
+      both the old and new object having identical values for all key fields.
+
+    - Elements of lists marked `x-kubernetes-list-type=set`, which must be scalars, do not support
+      transition rules, however, set membership changes are visible to transition rules defined on
+      the parent (i.e. array) node.
+
+    - Elements of lists with type `atomic` do not support transition rules.
 
 If all of the above criteria are satisfied for a given operation, the transition rule will be
 enforced. The identifier `oldSelf` is guaranteed to be bound to a non-null value during expression
