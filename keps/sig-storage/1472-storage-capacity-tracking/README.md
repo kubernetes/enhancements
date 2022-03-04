@@ -1200,7 +1200,7 @@ This problem can be solved by the cluster administrator. They can find out how
 much storage will be made available by new nodes, for example by running
 experiments, and then configure the cluster so that this information is
 available to the autoscaler. This can be done with the existing
-CSIStorageCapacity API as follows:
+CSIStorageCapacity API for node-local storage as follows:
 
 - When creating a fictional Node object from an existing Node in
   a node group, autoscaler must modify the topology labels of the CSI
@@ -1237,6 +1237,14 @@ The approach above preserves the separation between the different
 components. Simpler solutions may be possible by adding support for specific
 CSI drivers into custom autoscaler binaries or into operators that control the
 cluster setup.
+
+Network attached storage doesn't need renaming of labels when cloning an
+existing Node. The information published for that Node is also valid for the
+fictional one. Scale up from zero however is problematic: the CSI specification
+does not support listing topology segments that don't have some actual Nodes
+with a running CSI driver on them. Either a CSI specification change or manual
+configuration of the external-provisioner sidecar will be needed to close this
+gap.
 
 ### Alternative solutions
 
