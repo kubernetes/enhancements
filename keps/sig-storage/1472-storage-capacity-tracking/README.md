@@ -1189,9 +1189,54 @@ based on storage capacity:
   to available storage and thus could run on a new node, the
   simulation may decide otherwise.
 
-It may be possible to solve this by pre-configuring some information
-(local storage capacity of future nodes and their CSI topology). This
-needs to be explored further.
+This gets further complicated by the independent development of CSI drivers,
+autoscaler, and cloud provider: autoscaler and cloud provider don't know which
+kinds of volumes a CSI driver will be able to make available on nodes because
+that logic is implemented inside the CSI driver. The CSI driver doesn't know
+about hardware that hasn't been provisioned yet and doesn't know about
+autoscaling.
+
+This problem can be solved by the cluster administrator. They can find out how
+much storage will be made available by new nodes, for example by running
+experiments, and then configure the cluster so that this information is
+available to the autoscaler. This can be done with the existing
+CSIStorageCapacity API as follows:
+
+- When creating a fictional Node object from an existing Node in
+  a node group, autoscaler must modify the topology labels of the CSI
+  driver(s) in the cluster so that they define a new topology segment.
+  For example, topology.hostpath.csi/node=aks-workerpool.* has to
+  be replaced with topology.hostpath.csi/node=aks-workerpool-template.
+  Because these labels are opaque to the autoscaler, the cluster
+  administrator must configure these transformations, for example
+  via regular expression search/replace.
+- For scale up from zero, a label like
+  topology.hostpath.csi/node=aks-workerpool-template must be added to the
+  configuration of the node pool.
+- For each storage class, the cluster administrator can then create
+  CSIStorageCapacity objects that provide the capacity information for these
+  fictional topology segments.
+- When the volume binder plugin for the scheduler runs inside the autoscaler,
+  it works exactly as in the scheduler and will accept nodes where the manually
+  created CSIStorageCapacity indicate that sufficient storage is (or rather,
+  will be) available.
+- Because the CSI driver will not run immediately on new nodes, autoscaler has
+  to wait for it before considering the node ready. If it doesn't do that, it
+  might incorrectly scale up further because storage capacity checks will fail
+  for a new, unused node until the CSI driver provides CSIStorageCapacity
+  objects for it. This can be implemented in a generic way for all CSI drivers
+  by adding a readiness check to the autoscaler that compares the existing
+  CSIStorageCapacity objects against the expected ones for the fictional node.
+
+A proof-of-concept of this approach is available in
+https://github.com/kubernetes/autoscaler/pull/3887 and has been used
+successfully to scale an Azure cluster up and down with csi-driver-host-path as
+CSI driver.
+
+The approach above preserves the separation between the different
+components. Simpler solutions may be possible by adding support for specific
+CSI drivers into custom autoscaler binaries or into operators that control the
+cluster setup.
 
 ### Alternative solutions
 
