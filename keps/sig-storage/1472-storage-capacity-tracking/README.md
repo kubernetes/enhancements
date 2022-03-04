@@ -281,62 +281,84 @@ still an unsolved problem.
 #### CSIStorageCapacity
 
 ```
-// CSIStorageCapacity stores the result of one CSI GetCapacity call for one
-// driver, one topology segment, and the parameters of one storage class.
+// CSIStorageCapacity stores the result of one CSI GetCapacity call.
+// For a given StorageClass, this describes the available capacity in a
+// particular topology segment.  This can be used when considering where to
+// instantiate new PersistentVolumes.
+//
+// For example this can express things like:
+// - StorageClass "standard" has "1234 GiB" available in "topology.kubernetes.io/zone=us-east1"
+// - StorageClass "localssd" has "10 GiB" available in "kubernetes.io/hostname=knode-abc123"
+//
+// The following three cases all imply that no capacity is available for
+// a certain combination:
+// - no object exists with suitable topology and storage class name
+// - such an object exists, but the capacity is unset
+// - such an object exists, but the capacity is zero
+//
+// The producer of these objects can decide which approach is more suitable.
+//
+// They are consumed by the kube-scheduler if the CSIStorageCapacity beta feature gate
+// is enabled there and a CSI driver opts into capacity-aware scheduling with
+// CSIDriver.StorageCapacity.
 type CSIStorageCapacity struct {
-    metav1.TypeMeta
-    // Standard object's metadata. The name has no particular meaning and just has to
-    // meet the usual requirements (length, characters, unique). To ensure that
-    // there are no conflicts with other CSI drivers on the cluster, the recommendation
-    // is to use csisc-<uuid>.
-    //
-    // Objects are not namespaced.
-    //
-    // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-    // +optional
-    metav1.ObjectMeta
+	metav1.TypeMeta
+	// Standard object's metadata. The name has no particular meaning. It must be
+	// be a DNS subdomain (dots allowed, 253 characters). To ensure that
+	// there are no conflicts with other CSI drivers on the cluster, the recommendation
+	// is to use csisc-<uuid>, a generated name, or a reverse-domain name which ends
+	// with the unique CSI driver name.
+	//
+	// Objects are namespaced.
+	//
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	metav1.ObjectMeta
 
-    // Spec contains the fixed properties of one capacity value.
-    Spec CSIStorageCapacitySpec
+	// NodeTopology defines which nodes have access to the storage
+	// for which capacity was reported. If not set, the storage is
+	// not accessible from any node in the cluster. If empty, the
+	// storage is accessible from all nodes.  This field is
+	// immutable.
+	//
+	// +optional
+	NodeTopology *metav1.LabelSelector
 
-    // Status contains the properties that can change over time.
-    Status CSIStorageCapacityStatus
-}
+	// The name of the StorageClass that the reported capacity applies to.
+	// It must meet the same requirements as the name of a StorageClass
+	// object (non-empty, DNS subdomain). If that object no longer exists,
+	// the CSIStorageCapacity object is obsolete and should be removed by its
+	// creator.
+	// This field is immutable.
+	StorageClassName string
 
-// CSIStorageCapacitySpec contains the fixed properties of one capacity value.
-// one capacity value.
-type CSIStorageCapacitySpec struct {
-    // The CSI driver that provides the storage.
-    // This must be the string returned by the CSI GetPluginName() call.
-    DriverName string
+	// Capacity is the value reported by the CSI driver in its GetCapacityResponse
+	// for a GetCapacityRequest with topology and parameters that match the
+	// previous fields.
+	//
+	// The semantic is currently (CSI spec 1.2) defined as:
+	// The available capacity, in bytes, of the storage that can be used
+	// to provision volumes. If not set, that information is currently
+	// unavailable and treated like zero capacity.
+	//
+	// +optional
+	Capacity *resource.Quantity
 
-    // NodeTopology defines which nodes have access to the storage for which
-    // capacity was reported. If not set, the storage is accessible from all
-    // nodes in the cluster.
-    // +optional
-    NodeTopology *v1.NodeSelector
-
-    // The storage class name of the StorageClass which provided the
-    // additional parameters for the GetCapacity call.
-    StorageClassName string
-}
-
-// CSIStorageCapacityStatus contains the properties that can change over time.
-type CSIStorageCapacityStatus struct {
-    // AvailableCapacity is the value reported by the CSI driver in its GetCapacityResponse
-    // for a GetCapacityRequest with topology and parameters that match the
-    // CSIStorageCapacitySpec.
-    //
-    // The semantic is currently (CSI spec 1.2) defined as:
-    // The available capacity, in bytes, of the storage that can be used
-    // to provision volumes.
-    AvailableCapacity *resource.Quantity
+	// MaximumVolumeSize is the value reported by the CSI driver in its GetCapacityResponse
+	// for a GetCapacityRequest with topology and parameters that match the
+	// previous fields.
+	//
+	// This is defined since CSI spec 1.4.0 as the largest size
+	// that may be used in a
+	// CreateVolumeRequest.capacity_range.required_bytes field to
+	// create a volume with the same parameters as those in
+	// GetCapacityRequest. The corresponding value in the Kubernetes
+	// API is ResourceRequirements.Requests in a volume claim.
+	//
+	// +optional
+	MaximumVolumeSize *resource.Quantity
 }
 ```
-
-`AvailableCapacity` is a pointer because `TotalCapacity` and
-`MaximumVolumeSize` might be added later, in which case `nil` for
-`AvailableCapacity` will become allowed.
 
 Compared to the alternatives with a single object per driver (see
 [`CSIDriver.Status`](#csidriverstatus) below) and one object per
