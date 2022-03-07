@@ -1151,33 +1151,31 @@ such a scenario, the scheduler has to make those decisions based on
 outdated information, in particular when making one scheduling
 decisions affects the next decision.
 
-We need to investigate:
-- Whether this really is a problem in practice, i.e. identify
-  workloads and drivers where this problem occurs.
-- Whether introducing some simple modeling of capacity helps.
-- Whether prioritization of nodes helps.
+[Scale testing](https://github.com/kubernetes-csi/csi-driver-host-path/blob/d6d9639077691986d676984827ea4dd7ee0c5cce/docs/storage-capacity-tracking.md)
+showed that this can occur for a fake workload that generates
+pods with generic ephemeral inline volumes as quickly as possible: publishing
+CSIStorageCapacity objects was sometimes too slow, so scheduling retries were
+needed. However, this was not a problem and the test completed.  The same test
+failed without storage capacity tracking because pod scheduling eventually got
+stuck. Pure chance was not good enough anymore to find nodes that still had
+free storage capacity. No cases have been reported where this was a problem for
+real workloads either.
 
-For a discussion around modeling storage capacity, see the proposal to
-add ["total capacity" to
-CSI](https://github.com/container-storage-interface/spec/issues/301).
+Modeling remaining storage capacity in the scheduler is an approach that the
+storage community is not willing to support and considers likely to fail
+because storage is often not simply a linear amount of bytes that can be split
+up arbitrarily. For some records of that discussion see the proposal to add
+["total capacity" to
+CSI](https://github.com/container-storage-interface/spec/issues/301), the newer
+[" addition of
+`maximum_volume_size`](https://github.com/container-storage-interface/spec/pull/470)
+and the [2021 Feb 03 CSI community
+meeting](https://www.youtube.com/watch?v=ZB0Y05jo7-M).
 
-### "Total available capacity" vs. "maximum volume size"
-
-The CSI spec around `GetCapacityResponse.capacity` [is
-vague](https://github.com/container-storage-interface/spec/issues/432)
-because it ignores fragmentation issues. The current Kubernetes API
-proposal follows the design principle that Kubernetes should deviate
-from the CSI spec as little as possible. It therefore directly copies
-that value and thus has the same issue.
-
-The proposed usage (comparison of volume size against available
-capacity) works either way, but having separate fields for "total
-available capacity" and "maximum volume size" would be more precise
-and enable additional features like even volume spreading by
-prioritizing nodes based on "total available capacity"
-
-The goal is to clarify that first in the CSI spec and then revise the
-Kubernetes API.
+Lack of storage capacity modeling will cause the autoscaler to scale up
+clusters more slowly because it cannot determine in advance that multiple new
+nodes are needed. Scaling up one node at a time is still an improvement over
+not scaling up at all.
 
 ### Prioritization of nodes
 
@@ -1192,6 +1190,11 @@ nodes that have more total available capacity may be better. This can
 be achieved by prioritizing nodes, ideally with information about both
 "maximum volume size" (for filtering) and "total available capacity"
 (for prioritization).
+
+Prioritizing nodes based on storage capacity was [discussed on
+Slack](https://kubernetes.slack.com/archives/C09QZFCE5/p1629251024161700). The
+conclusion was to handle this as a new KEP if there is sufficient demand for
+it, which so far doesn't seem to be the case.
 
 ### Integration with [Cluster Autoscaler](https://github.com/kubernetes/autoscaler)
 
