@@ -47,7 +47,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
   - [No modeling of storage capacity usage](#no-modeling-of-storage-capacity-usage)
-  - [&quot;Total available capacity&quot; vs. &quot;maximum volume size&quot;](#total-available-capacity-vs-maximum-volume-size)
   - [Prioritization of nodes](#prioritization-of-nodes)
   - [Integration with <a href="https://github.com/kubernetes/autoscaler">Cluster Autoscaler</a>](#integration-with-cluster-autoscaler)
   - [Alternative solutions](#alternative-solutions)
