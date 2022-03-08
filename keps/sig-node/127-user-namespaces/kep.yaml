@@ -1,0 +1,21 @@
+title: Support User Namespaces
+kep-number: 127
+authors:
+  - "@rata"
+  - "@giuseppe"
+  - "@mauriciovasquezbernal"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: 2021-11-02
+reviewers:
+  - "@mrunalp"
+  - "@SergeyKanzhelev"
+  - "@thockin"
+approvers:
+  - "@derekwaynecarr"
+feature-gates:
+  - name: UserNamespacesSupport
+    components:
+      - kubelet
+disable-supported: true
