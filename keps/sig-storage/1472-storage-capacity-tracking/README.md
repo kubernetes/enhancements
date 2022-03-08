@@ -298,9 +298,12 @@ still an unsolved problem.
 //
 // The producer of these objects can decide which approach is more suitable.
 //
-// They are consumed by the kube-scheduler if the CSIStorageCapacity beta feature gate
-// is enabled there and a CSI driver opts into capacity-aware scheduling with
-// CSIDriver.StorageCapacity.
+// They are consumed by the kube-scheduler when a CSI driver opts into capacity-aware
+// scheduling with CSIDriverSpec.StorageCapacity. The scheduler compares the
+// MaximumVolumeSize against the requested size of pending volumes to filter
+// out unsuitable nodes. If MaximumVolumeSize is unset, it falls back to
+// a comparison against the less precise Capacity. If that is also unset,
+// the scheduler assumes that capacity is insufficient and tries some other node.
 type CSIStorageCapacity struct {
 	metav1.TypeMeta
 	// Standard object's metadata. The name has no particular meaning. It must be
@@ -339,7 +342,7 @@ type CSIStorageCapacity struct {
 	// The semantic is currently (CSI spec 1.2) defined as:
 	// The available capacity, in bytes, of the storage that can be used
 	// to provision volumes. If not set, that information is currently
-	// unavailable and treated like zero capacity.
+	// unavailable.
 	//
 	// +optional
 	Capacity *resource.Quantity
@@ -354,6 +357,7 @@ type CSIStorageCapacity struct {
 	// create a volume with the same parameters as those in
 	// GetCapacityRequest. The corresponding value in the Kubernetes
 	// API is ResourceRequirements.Requests in a volume claim.
+	// Not all CSI drivers provide this information.
 	//
 	// +optional
 	MaximumVolumeSize *resource.Quantity
@@ -1151,7 +1155,7 @@ such a scenario, the scheduler has to make those decisions based on
 outdated information, in particular when making one scheduling
 decisions affects the next decision.
 
-[Scale testing](https://github.com/kubernetes-csi/csi-driver-host-path/blob/d6d9639077691986d676984827ea4dd7ee0c5cce/docs/storage-capacity-tracking.md)
+[Scale testing](https://github.com/kubernetes-csi/csi-driver-host-path/blob/f053a7b0c4b719a5808fc47fdb3eba9cdade2067/docs/storage-capacity-tracking.md)
 showed that this can occur for a fake workload that generates
 pods with generic ephemeral inline volumes as quickly as possible: publishing
 CSIStorageCapacity objects was sometimes too slow, so scheduling retries were
