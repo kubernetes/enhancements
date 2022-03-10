@@ -1259,8 +1259,13 @@ CSIStorageCapacity API for node-local storage as follows:
 A proof-of-concept of this approach is available in
 https://github.com/kubernetes/autoscaler/pull/3887 and has been used
 successfully to scale an Azure cluster up and down with csi-driver-host-path as
-CSI driver. Because of the lack of storage capacity modeling, scale up happens
-slowly. To address that, the scheduler would have to take volumes that are in
+CSI driver. However, due to the lack of storage capacity modeling, scale up
+happens slowly and configuring the cluster correctly is complex. Whether that
+is good enough or insufficient depends on the use cases for storage in a
+cluster where autoscaling is enabled. The current understanding is that further
+work is needed.
+
+To improve scale up speed, the scheduler would have to take volumes that are in
 the process of being provisioned into account when deciding about other
 suitable nodes. This might not be the right decision for all CSI drivers, so
 further exploration and potentially an extension of the CSI API ("total
