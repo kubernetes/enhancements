@@ -56,8 +56,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Extend Deployments/ReplicaSets with a `downscalePodPicker` field that specifies a user-provided REST API to help decide 
-which Pods are removed when `replicas` is decreased.
+A new `downscalePodPicker` field will be added to `ReplicaSetSpec` and `DeploymentSpec`, this field specifies a user-created 
+Pod-Picker REST API that is queried to determine which Pods are removed when replicas is decreased.
 
 ## Motivation
 
@@ -206,8 +206,7 @@ Solution:
 
 #### K8S API Changes:
 
-A new `downscalePodPicker` field will be added to `ReplicaSetSpec` and `DeploymentSpec`,
-this field specifies a "Pod Picker" REST API that informs which Pods are removed when `replicas` is decreased.
+A new `downscalePodPicker` field will be added to `ReplicaSetSpec` and `DeploymentSpec`.
 
 Here is an example ReplicaSet with thew new `downscalePodPicker` field:
 
@@ -294,7 +293,7 @@ The `secretKeyRef` field has type [`SecretKeySelector`](https://kubernetes.io/do
 | `key`  | string | Specify whether the Secret or its key must be defined.            |
 
 
-#### "Pod Picker" API contract:
+#### Pod-Picker API contract:
 
 The contract for a `downscalePodPicker` API will be as follows:
 
@@ -306,48 +305,51 @@ The contract for a `downscalePodPicker` API will be as follows:
    - `tied_pods` (`list[string]`): list of Pod-names we can't decide between
 - Other requirements:
    - both `chosen_pods` and `tied_pods` can be non-empty
-   - total number of pods returned must be AT LEAST `number_of_pods_requested` (more if there are ties)
+   - total number of pods returned should aim to be AT LEAST `number_of_pods_requested`
    - only Pod-names contained in `candidate_pods` may be returned
-
-The response payload is split into two lists, because when `number_of_pods_requested > 1`, it is possible to have some Pods
-which were definitely chosen, and others which we cannot decide between, but who are definitely the "next best" after the chosen Pods.
-(e.g. if the Pods have the following metrics `[1,2,2,2]` and `number_of_pods_requested = 2`, 
-we might return `chosen_pods = [pod-1]`, `tied_pods = [pod-2, pod-3, pod-4]`)
-
-This contract doesn't require that `downscalePodPicker` APIs make a decision about ALL `candidate_pods`, and allows them
-to be designed such that they exit early from their search if they find enough good candidates before considering all Pods.
-(e.g. if the API is looking for the least-active Pods, it can exit early if enough fully-idle Pods are found to meet `number_of_pods_requested`)
-
-As Unassigned/PodPending/PodUnknown/Unready Pods will always be preferred by the controller for killing, it can be assumed that `candidate_pods` will not
-include Pods in these states (however, the state of any Pod may change in the time it takes for the request to be processed).
+- NOTES:
+  - The response payload is split into two lists, because when `number_of_pods_requested > 1`, 
+    it is possible to have some Pods which were definitely chosen and others which we cannot decide between, 
+     - EX: if the Pods have the following metrics `[1,2,2,2]` and `number_of_pods_requested = 2`, we might return `chosen_pods = [pod-1]`, `tied_pods = [pod-2, pod-3, pod-4]`
+  - This contract doesn't require that `downscalePodPicker` APIs make a decision about ALL `candidate_pods`, and allows them
+    to be designed such that they exit early from their search if they find enough good candidates before considering all Pods.
+     - EX: if the API is looking for the least-active Pods, it can exit early if enough fully-idle Pods are found to meet `number_of_pods_requested`
+     - EX: if the Pod-Picker returns no pods, the downscale will continue as if the Pod-Picker was not defined
+  - The controller will exclude Pods in Unassigned/PodPending/PodUnknown/Unready states from `candidate_pods`.
+     - this is so that the Pod-Picker doesn't have to check pods which will always be killed first, regardless of the Pod-Picker's decision
+  - When implemented as a REST API, the payload would be passed as JSON in a POST request.
+     - in the future, we can allow Pod-Pickers which use other protocols, like gRPC
 
 #### Controller Behaviour Changes:
 
-When a ReplicaSet has a `downscalePodPicker` API specified, the controller will replace its `"Pods on nodes with more
-replicas come before pods on nodes with fewer replicas"` ranking (step 6 below) with a call to the `downscalePodPicker` API.
+On downscale, the `ReplicaSet` controller assigns all Pods a "rank" based on the return lists from Pod-Picker API:
 
-The new priority ordering for choosing which Pods are removed when downscaling a ReplicaSet will be:
+- Returned `chosen_pods` have `rank = 0`
+- Returned `tied_pods` have `rank = 1`
+- All other Pods have `rank = 3`
+
+This "rank" is used in addition to the existing downscale pod-ordering behaviour, for example, 
+`Unassigned`/`PodPending`/`PodUnknown`/`Unready` Pods will always be killed first.
+(NOTE: If there are enough of them to fulfill the downscale, NO calls will be made to the Pod-Picker API)
+
+The new downscale pod-ordering behaviour is:
 
 1. Pods not yet assigned to Node
-2. Pods in "Pending" phase
-3. Pods in "Unknown" phase
-4. Pods without "Ready" condition
+2. Pods in `Pending` phase
+3. Pods in `Unknown` phase
+4. Pods without `Ready` condition
 5. Pods with lower `controller.kubernetes.io/pod-deletion-cost` annotation
-6. Pods with lower "rank":
-    - If `downscalePodPicker` is specified on the ReplicaSet:
-       - Returned `chosen_pods` have `rank = 0`
-       - Returned `tied_pods` have `rank = 1`
-       - All remaining Pods have `rank = 3`
-    - Else:
-       - Pods have `rank` equal to `number of Pods on the same Node in a "Running" phase`
-7. Pods with less time having "Ready" condition:
-    - If "LogarithmicScaleDown" feature gate is enabled:
-       - Times are compared by first applying `Log2` and then rounding
-       - (This has the effect of "bucketing" the time intervals)
-    - Else:
-       - Times are compared directly
-8. Pods with higher restart count
-9. Pods with newer creation time
+6. IF a Pod-Picker is specified on the ReplicaSet:
+    - Pods with lower Pod-Picker "rank" 
+    - `chosen_pods = rank 0`
+    - `tied_pods = rank 1`
+    - `all other pods = rank 3`
+7. ELSE:
+    - Pods with lower number of Pods on the same Node in a `Running` phase
+8. Pods with less time having `Ready` condition:
+    - times are `log2` binned if `LogarithmicScaleDown` feature-gate is enabled
+9. Pods with higher `restart count`
+10. Pods with newer `creation time`
 
 #### Controller Code Changes:
 
@@ -839,13 +841,50 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-- ((TODO))
+### ALTERNATIVE 1: Pod-Deletion-Cost annotation
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+Same as the current [`controller.kubernetes.io/pod-deletion-cost`](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/#pod-deletion-cost) annotation.
+
+__USAGE PATTERN 1 - the annotation kept up-to-date with a controller:__
+
+- PROBLEM 1: every update requires a PATCH call to the kube-apiserver (probably overloading it)
+- PROBLEM 2: this is wasteful for deployments that rarely scale down
+   - calculating and updating the cost could be expensive, and that work is wasted if not actually used to downscale
+
+__USAGE PATTERN 2 - the annotation is updated only when downscaling:__
+
+- PROBLEM 1: existing scaling tools like HorozontalPodAutoscaler can't be used
+   - the annotation/status would need to be updated BEFORE downscaling, and we can't predict when HorozontalPodAutoscaler will downscale
+   - therefore, users must write their own scalers that update the annotation/status before downscaling (making it inaccessible for most users)
+- PROBLEM 2: after each downscale, any annotations added by the scaler will need to be cleared (they will become out of date)
+   - related to this, we must wait to clear them before we can start the next downscale (or the old annotations will impact the new scale)
+- PROBLEM 3: costs may be out-of-date by the time the controller picks which pod to downscale
+   - some apps like airflow/spark may have quite rapidly changing "best" pods to kill
+
+### ALTERNATIVE 2: Pod-Deletion-Cost http/exec probe
+
+A new http/exec probe is created for Pods which returns their current pod-deletion-cost.
+
+__USAGE PATTERN 1 - probes are used every X seconds to update a Pod status field:__
+
+- (Suffers from the same problems as "USAGE PATTERN 1" of "ALTERNATIVE 1")
+
+__USAGE PATTERN 2 - probes are ONLY used when downscaling:__
+
+- PROBLEM 1: the controller cannot make a probe request to Pods (this must be done by the Node's kubelet)
+  - to solve this you would need a complex system that has the controller "mark" the pods for probing by the kubelet
+- PROBLEM 2: to find the "best" Pod to kill, we would need to probe every single Pod, this is not scalable
+  - to solve this, you would need to use a heuristic approach, e.g. only checking a sample of Pods and returning the lowest cost from the sample
+
+### ALTERNATIVE 3: Pod-Deletion-Cost API
+
+A central user-managed API is queried by the controller and returns the pod-deletion-cost of each Pod.
+(Rather than returning a list of `chosen_pods` and `tied_pods` like in this KEP)
+
+- PROBLEM 1: the user-managed API can't exit-early
+  - because a pod-deletion-cost must be returned for each Pod, the API can't have the concept of a "free" Pod, which if found can be immediately returned without checking the other Pods
+- PROBLEM 2: the user-managed API may calculate the pod-deletion-cost of more Pods than necessary
+  - the API is unaware of how many Pods are actually planned to be removed, so will calculate the pod-deletion-cost of more Pods than is necessary
 
 ## Infrastructure Needed (Optional)
 
