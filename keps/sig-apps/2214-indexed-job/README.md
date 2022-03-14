@@ -467,6 +467,15 @@ gate enabled and disabled.
 - Scalability tests for Jobs of varying sizes, up to 500 parallelism, that keep
   track of metric `job_sync_duration_seconds`.
 
+  Using a [clusterloader2 test](https://github.com/kubernetes/perf-tests/pull/1998)
+  that creates 101 jobs of varying sizes (total of 1200 pods) on a 20 nodes cluster, 
+  with 100 QPS for the job controller, I obtained the following completion times (averaged for 5 runs):
+    - NonIndexed jobs: 34.2s
+    - Indexed jobs: 33.4s
+  
+  The slight improvement for Indexed Jobs can be attributed to one less API call
+  necessary to track job status with finalizers.
+
 ### Upgrade / Downgrade Strategy
 
 In the event of a kube-controller-manager upgrade, there should not be any
