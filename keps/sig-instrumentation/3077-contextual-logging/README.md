@@ -17,6 +17,9 @@
     - [Logging during initialization](#logging-during-initialization)
     - [Performance overhead](#performance-overhead)
     - [Transition](#transition)
+      - [no logger set or not set with <code>ContextualLogger(true)</code>](#no-logger-set-or-not-set-with-)
+      - [logger set with <code>ContextualLogger(true)</code>](#logger-set-with-)
+      - [Removing Kubernetes' dependency on legacy klog features](#removing-kubernetes-dependency-on-legacy-klog-features)
     - [Pitfalls during usage](#pitfalls-during-usage)
       - [Logger in context and function not consistent](#logger-in-context-and-function-not-consistent)
       - [Overwriting context not needed initially, forgotten later](#overwriting-context-not-needed-initially-forgotten-later)
@@ -31,14 +34,9 @@
     - [Logging in tests](#logging-in-tests)
   - [<a href="https://github.com/kubernetes/klog/tree/main/hack/tools/logcheck">logcheck</a>](#logcheck)
     - [Code examples](#code-examples)
-      - [klogr replacing klog completely, explicit logger parameter](#klogr-replacing-klog-completely-explicit-logger-parameter)
       - [Unit testing](#unit-testing)
-      - [Injecting common names and values, logger passed through existing ctx parameter](#injecting-common-names-and-values-logger-passed-through-existing-ctx-parameter)
+      - [Injecting common value, logger passed through existing ctx parameter or new parameter](#injecting-common-value-logger-passed-through-existing-ctx-parameter-or-new-parameter)
       - [Resulting output](#resulting-output)
-  - [Transition plan](#transition-plan)
-    - [Initial implementation of k8s.io/klogr done](#initial-implementation-of-k8sioklogr-done)
-    - [API considered stable](#api-considered-stable)
-    - [Transition complete](#transition-complete)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -58,8 +56,8 @@
 - [Alternatives](#alternatives)
   - [Per-component logger](#per-component-logger)
   - [Propagating a logger to init code](#propagating-a-logger-to-init-code)
-  - [Panic when DefaultLogger is called too early](#panic-when-defaultlogger-is-called-too-early)
-- [Infrastructure Needed](#infrastructure-needed)
+  - [Panic when FromContext is called before setting a logger](#panic-when-fromcontext-is-called-before-setting-a-logger)
+  - [Clean separation of contextual logging and traditional klog logging](#clean-separation-of-contextual-logging-and-traditional-klog-logging)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -119,7 +117,8 @@ output is associated with the test case.
 
 ### Goals
 
-- Remove `k8s.io/klog` imports and usage from all packages.
+- Remove direct log calls through the `k8s.io/klog` API and
+  the hard dependency on the klog logging implementation from all packages.
 - Grant the caller of a function control over logging inside that function,
   either by passing a logger into the function or by configuring the object
   that a method belongs to.
@@ -129,6 +128,7 @@ output is associated with the test case.
 ### Non-Goals
 
 - Remove the klog text output format.
+- Deprecate klog.
 
 ## Proposal
 
@@ -163,15 +163,16 @@ designing an API so that such a mistake cannot happen seems safer. The logcheck
 linter will check for this. `nolint:logcheck` comments can be used for
 those functions where passing both is preferred despite the ambiguity.
 
-`klog.KObj` and similar helper functions get moved to `k8s.io/klogr`. That package
-will also provide aliases for functions and types from `go-logr/logr`. That way,
-a single import statement will be enough in most files. It will also implement
-loggers for klog text output and unit testing.
+`k8s.io/klog` gets extended to support contextual logging: the logger that gets
+installed with a new `SetLoggerWithOption(..., ContextualLogger(true))` call can be retrieved and used
+directly.  A new `FromContext` function wraps the corresponding function from
+`go-logr/logr` and if no logger is set for a context, falls back to logging
+through klog with `Logger` as the API that is used by the code which emits
+log entries.
 
-When a function retrieves a logger from a context parameter and no logger has
-been set there, it will fall back transparently to logging through a global
-logger instance tracked in `k8s.io/klogr`, i.e. log calls never need to check
-whether they have a valid logger.
+To simplify that code, aliases for functions and types from `go-logr/logr` get
+added to klog. That way, a single import statement will be enough in most
+files.
 
 A feature gate controls whether contextual logging is used or a global logger
 is accessed directly.
@@ -185,7 +186,7 @@ pod](https://github.com/kubernetes/kubernetes/issues/91633#issuecomment-67507467
 and which operation and scheduler plugin log messages are associated with.
 
 When kube-scheduler starts processing a pod, it creates a new logger with
-`logger.WithValue("pod", klogr.KObj(pod))` and passes that around. While
+`logger.WithValue("pod", klog.KObj(pod))` and passes that around. While
 iterating over plugins in certain operations, another logger gets created with
 `logger.WithName(<operation>).WithName(<plugin name>)` and then is used when
 invoking that plugin. This adds a prefix to each log message which represents
@@ -248,16 +249,6 @@ this needs to be indicated by passing a pointer.
 
 #### Logging during initialization
 
-Another problem is that log messages during program startup need to be handled
-somehow. We then can either:
-- discard the message, which would break the current `klog.Error(...);
-  os.Exit(1)` code pattern when an error occurs during initialization log
-- log with some default configuration (for example, as text)
-
-In both cases we have the problem that a logger retrieved by some init code
-before logging initialization will continue to use that behavior (discard or
-log with default configuration) even after logging gets initialized.
-
 Ideally, no log messages should be emitted before the program is done with
 setting up logging as intended. This is already [problematic
 now](https://github.com/kubernetes/kubernetes/issues/100152) because output may
@@ -267,16 +258,6 @@ and fixed manually, for example by [passing the error back to `main`
 instead](https://github.com/kubernetes/kubernetes/pull/104774), which is part
 of an effort to [remove the dependency on logging before an unexpected program
 exit](https://github.com/kubernetes/kubernetes/issues/102231).
-
-To support identifying log messages that need to be fixed, the default logger
-during program startup will be using the klog text output instead of discarding
-the output and a `INIT-LOG` prefix will be inserted into the log output. When
-`SetFallbackLogger` is set with the actual logger, it will print an error
-message about these early init log calls with the new logger. This has two purposes:
-- It's a reminder for those log consumers who only handle output of that new
-  logger that they missed some log entries.
-- It raises awareness that the program should be updated to initialize logging
-  before emitting log entries.
 
 #### Performance overhead
 
@@ -292,17 +273,42 @@ such additional information only at higher log levels.
 
 #### Transition
 
-Once some components start to rely on `k8s.io/klogr` exclusively instead of
-klog, users of those components must remember to initialize klog *and* the
-default logger in `k8s.io/klogr`. Features provided only by klog like writing
-to files become unavailable.
+Code that uses traditional klog calls and code that use the new contextual
+logging will remain interoperable.
 
-This breaking change can be postponed until after the [deprecation of klog
-features](https://github.com/kubernetes/enhancements/issues/2845) is complete
-by using a logger which passes log messages through to klog. That allows
-converting components already now. Then later, the klog dependency in
-`k8s.io/klogr` can be replaced with a stand-alone logger which produces the same
-text output.
+##### no logger set or not set with `ContextualLogger(true)`
+
+`FromContext` returns a klogr instance that writes through klog. The traditional
+klog configuration is used (output handling, verbosity).
+
+##### logger set with `ContextualLogger(true)`
+
+The traditional klog API calls were already mapped to `Logger.Info` and
+`Logger.Error` for structured logging and the logger handles the output
+formatting, nothing changes there.
+
+`FromContext` returns the logger and log entries are emitted directly, without
+going through klog.
+
+##### Removing Kubernetes' dependency on legacy klog features
+
+A new logger gets added to klog which supports all non-deprecated klog flags
+(i.e. `-v` and `-vmodule`). Once the [deprecation of klog
+flags](https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+is complete, Kubernetes can instantiate that logger in
+`k8s.io/component-base/logs` and install it via `SetLogger`. Then all log
+output from Kubernetes will be handled without going through any of the code in
+`klog.go`.
+
+That file then will still be vendored into `k/k/vendor` because `FromContext`
+may have to fall back to it. It just won't get used anymore by those binaries
+which use `k8s.io/component-base/logs`. This includes all of the Kubernetes
+control plane and kubectl.
+
+If an even cleaner separation is desired, a `k8s.io/klog/v3` could get released
+without the legacy code. It would fall back to the stand-alone text logger
+instead of klogr. However, that then is a breaking change that currently isn't
+planned.
 
 #### Pitfalls during usage
 
@@ -314,8 +320,8 @@ Incorrect:
 
 ```go
 func foo(ctx context.Context) {
-   logger := klogr.FromContext(ctx)
-   ctx = klogr.NewContext(ctx, logger.WithName("foo"))
+   logger := klog.FromContext(ctx)
+   ctx = klog.NewContext(ctx, logger.WithName("foo"))
    doSomething(ctx)
    // BUG: does not include WithName("foo")
    logger.Info("Done")
@@ -326,8 +332,8 @@ Correct:
 
 ```go
 func foo(ctx context.Context) {
-   logger := klogr.FromContext(ctx).WithName("foo")
-   ctx = klogr.NewContext(ctx, logger)
+   logger := klog.FromContext(ctx).WithName("foo")
+   ctx = klog.NewContext(ctx, logger)
    doSomething(ctx)
    logger.Info("Done")
 }
@@ -342,13 +348,13 @@ Initial, correct code with contextual logging:
 
 ```go
 func foo(ctx context.Context) {
-   logger := klogr.FromContext(ctx).WithName("foo")
+   logger := klog.FromContext(ctx).WithName("foo")
    doSomething(logger)
    logger.Info("Done")
 }
 ```
 
-A line with `ctx = klogr.NewContext(ctx, logger)` could be added above (it
+A line with `ctx = klog.NewContext(ctx, logger)` could be added above (it
 compiles), but it causes unnecessary overhead and some linters complain about
 "new value not used".
 
@@ -356,7 +362,7 @@ However, care then must be taken when adding code later which uses `ctx`:
 
 ```go
 func foo(ctx context.Context) {
-   logger := klogr.FromContext(ctx).WithName("foo")
+   logger := klog.FromContext(ctx).WithName("foo")
    doSomething(logger)
    // BUG: ctx does not contain the modified logger
    doSomethingWithContext(ctx)
@@ -396,7 +402,7 @@ variable that isn’t meant to be used will be shadowed. However, care must be
 taken to really create new variables. This is broken:
 
 ```go
-func foo(logger klogr.Logger, objects ...string) {
+func foo(logger klog.Logger, objects ...string) {
     for _, obj := range objects {
         // BUG: logger accumulates different key/value pairs with the same key
         logger = logger.WithValue("obj", obj)
@@ -408,7 +414,7 @@ func foo(logger klogr.Logger, objects ...string) {
 A new variable must be created with `:=` inside the loop:
 
 ```go
-func foo(logger klogr.Logger, objects ...string) {
+func foo(logger klog.Logger, objects ...string) {
     for _, obj := range objects {
         // This logger variable shadows the function parameter.
         logger := logger.WithValue("obj", obj)
@@ -422,7 +428,7 @@ func foo(logger klogr.Logger, objects ...string) {
 This code looks like it adds a name, but isn’t doing it correctly:
 
 ```go
-func foo(logger klogr.Logger, objects ...string) {
+func foo(logger klog.Logger, objects ...string) {
         // BUG: WithName returns a new logger with the name,
         // but that return value is not used.
         logger.WithName("foo")
@@ -440,21 +446,9 @@ sanitization](https://github.com/kubernetes/enhancements/issues/1753), but that
 is a [deprecated](https://github.com/kubernetes/enhancements/pull/3096) alpha
 feature and doesn't need to be supported anymore.
 
-A new package `k8s.io/klogr` will replace both `k8s.io/klog` and
-`k8s.io/klog/klogr`. It has to be a stand-alone repository and not a staging
-repository because third-party components that get vendored into Kubernetes
-might end up using it. If that happens, we wouldn't be able to update a staging
-repo with incompatible API changes anymore (vendored code doesn't compile, but
-also cannot be updated in its original repo because the API change in
-`k8s.io/klogr` cannot be released).
-
-It will have very limited dependencies: initially it will depend on
-`k8s.io/klog` and the standard Go runtime. In the final phase (GA) that
-`klog.io/klog` dependency will get removed.
-
 ### Feature gate
 
-The `k8s.io/klogr` package itself cannot check Kubernetes feature gates because
+The `k8s.io/klog` package itself cannot check Kubernetes feature gates because
 it has to be a stand-alone package with very few dependencies. Therefore it
 will have a global boolean for enabling contextual logging that programs with
 Kubernetes feature gates must set:
@@ -515,59 +509,97 @@ a global search/replace can remove the usage of these wrapper functions again.
 
 ### Text format
 
-The formatting code will be moved into a standalone `go-logr/logr.LogSink` in the
-`k8s.io/klogr/logger` package. The goal is to produce identical output to the current
-format, but with `logr.Logger` as interface and just the klog features that
-weren’t deprecated (i.e. `-v` and `-vmodule`).
+The formatting and verbosity code will be moved into `internal` packages where
+they can be shared between the traditional klog implementation and a new
+`go-logr/logr.LogSink` implementation in a `textinglogger` package. That
+implementation will produce the same output as klog and support `-v` and
+`-vmodule`, the two remaining options from klog that didn't get deprecated.
 
 ### Default logger
 
-This is meant to replace existing solutions like the global [`Log` instance in
-controller-runtime](https://github.com/kubernetes-sigs/controller-runtime/blob/78ce10e2ebad9205eff8429c3f0556788d680c27/pkg/log/log.go#L77-L82). It
-is needed as fallback for functions where a logger:
-- cannot be passed into the function at all or
-- a context was passed without an attached logger.
+Adding a logger to the context or as parameter is not required. klog will
+manage a global logger that code can look up through klog calls.
 
-The goal is to make passing a logger possible everywhere, so the first case
-should not occur anymore at some point. The second case remains valid because
-it is conventiont to just initialize the global logger once and then have all
-code pick it up from there.
-
-The API is:
+The traditional API for setting a logger with `SetLogger` remains unchanged,
+with the same semantic. To enable contextual logging, a new call has to be
+used. This is necessary to avoid breaking code which uses `SetLogger` to
+install a logger that relies on klog for verbosity checks.
 
 ```go
-// SetFallbackLogger may only be called once per program run. Setting it
-// multiple times would not have the intended effect because the new logger
-// would not be used by code which already retrieved the fallback logger
-// earlier.
+var (
+	// contextualLoggingEnabled controls whether contextual logging is
+	// active. Disabling it may have some small performance benefit.
+	contextualLoggingEnabled = true
+
+	// globalLogger is the global Logger chosen by users of klog, nil if
+	// none is available.
+	globalLogger *Logger
+
+	// contextualLogger defines whether globalLogger may get called
+	// directly.
+	contextualLogger bool
+
+	// klogLogger is used as fallback for logging through the normal klog code
+	// when no Logger is set.
+	klogLogger logr.Logger = logr.New(&klogger{})
+)
+
+// SetLogger sets a Logger implementation that will be used as backing
+// implementation of the traditional klog log calls. klog will do its own
+// verbosity checks before calling logger.V().Info. logger.Error is always
+// called, regardless of the klog verbosity settings.
 //
-// Therefore this also should be called before any code starts to use logging.
-// Such code will get a valid logger to avoid crashes, but that logger will add
-// "INIT-LOG" as prefix to all output to indicate that SetFallbackLogger
-// should have been called first.
+// If set, all log lines will be suppressed from the regular Output, and
+// redirected to the logr implementation.
+// Use as:
+//   ...
+//   klog.SetLogger(zapr.NewLogger(zapLog))
 //
-// If log messages were emitted with the initial logger, an error
-// message will be emitted through the logger that gets passed to
-// SetFallbackLogger, using the output format of that logger.
-func SetFallbackLogger(log Logger) {
-    if fallbackLoggerWasSet {
-        panic("the global logger was already set and cannot be changed again")
-    }
-    fallbackLogger = log
-    fallbackLoggerWasSet = true
-    if fallbackLoggerWasUsed {
-       log.Error(nil, "Logging was used before it was fully initialized. Look for INIT-LOG in the stderr output. Ideally the code emitting those log entries should be called after initializing logging.")
-    }
+// To remove a backing logr implemention, use ClearLogger. Setting an
+// empty logger with SetLogger(logr.Logger{}) does not work.
+//
+// Modifying the logger is not thread-safe and should be done while no other
+// goroutines invoke log calls, usually during program initialization.
+func SetLogger(logger logr.Logger) {
+	globalLogger = &logger
+	contextualLogger = false
 }
 
+// SetLoggerWithOptions is a more flexible version of SetLogger. Without
+// additional options, it behaves exactly like SetLogger. By passing
+// ContextualLogger(true) as option, it can be used to set a logger that then
+// will also get called directly by applications which retrieve it via
+// FromContext, Background, or TODO.
+//
+// Supporting direct calls is recommended because it avoids the overhead of
+// routing log entries through klogr into klog and then into the actual Logger
+// backend.
+func SetLoggerWithOptions(logger logr.Logger, opts ...LoggerOption) {
+...
+}
+
+// ContextualLogger determines whether the logger passed to
+// SetLoggerWithOptions may also get called directly. Such a logger cannot rely
+// on verbosity checking in klog.
+func ContextualLogger(enabled bool) LoggerOption {
+...
+}
+
+```
+
+The API for looking up a logger is new:
+
+```go
 // FromContext retrieves a logger set by the caller or, if not set,
 // falls back to the program's fallback logger.
 func FromContext(ctx context.Context) Logger {
-    if logger, err := logr.FromContext(ctx); err == nil {
-        return logger
-    }
+	if contextualLoggingEnabled {
+		if logger, err := logr.FromContext(ctx); err == nil {
+			return logger
+		}
+	}
 
-    return fallbackLogger
+	return Background()
 }
 
 // TODO can be used as a last resort by code that has no means of
@@ -578,7 +610,7 @@ func FromContext(ctx context.Context) Logger {
 // converted to accepting a logger from the caller and direct access to the
 // fallback logger is not needed anymore.
 func TODO() Logger {
-    return fallbackLogger
+	return Background()
 }
 
 // Background retrieves the fallback logger. It should not be called before
@@ -586,32 +618,23 @@ func TODO() Logger {
 // better receive a logger via its parameters. TODO can be used as a temporary
 // solution for such code.
 func Background() Logger {
-    return fallbackLogger
+	if globalLogger != nil && contextualLogger {
+		return *globalLogger
+	}
+
+	return klogLogger
 }
 ```
 
 #### logging helper API
 
-The following helper code will get copied from klog:
-- `ObjectRef`
-- `KMetaData`
-- `KObj`
-- `KRef`
-- `KObjs`
-
 To ensure that a single import is enough in source files, that package will also contain:
 
 ```go
 type Logger = logr.Logger
-var NewContext = logr.NewContext
+var New = logr.New
 // plus more as needed...
 ```
-
-The implementation of `KObj` and `KObjs` will be either a direct copy of the
-code in klog or an improved version [with performance
-enhancements](https://github.com/kubernetes/kubernetes/issues/106945),
-depending [on benchmark](https://github.com/kubernetes/kubernetes/pull/106594)
-results.
 
 #### Logging in tests
 
@@ -629,15 +652,16 @@ not print the output for test cases that succeeded. It will only be shown for
 failed test cases, and for those the additional log messages may be useful to
 understand the failure. Optionally, logging options can be added to the test
 binary to modify this default log level by importing the
-`k8s.io/klogr/testing/init` package:
+`k8s.io/klog/v2/ktesting/init` package:
 
 Example with additional command line options:
 
 ```go
 import (
     "testing"
-    ktesting "k8s.io/klogr/testing"
-    _ "k8s.io/klogr/testing/init"
+
+    "k8s.io/klog/v2/ktesting"
+    _ "k8s.io/klog/v2/ktesting/init"
 )
 
 func TestSomething(t *testing.T) {
@@ -664,88 +688,64 @@ loggers that output via `testing.T.Log`. `WithCallDepth` therefore should only
 be used by code in `test/e2e` where it can be assumed that the logger is not
 using `testing.T`.
 
-
 ### [logcheck](https://github.com/kubernetes/klog/tree/main/hack/tools/logcheck)
 
-That tool is a linter for log calls. It’s used to check that log calls are
-well-formed. Because it is used in core Kubernetes and SIGs (for example,
-[metrics-server](https://github.com/kubernetes-sigs/metrics-server/blob/4b20c2d43e338d5df7fb530dc960e5d0753f7ab1/Makefile#L252-L257),
-it should better be hosted in a repo where "go install" is fast. It only
-depends on the standard Go runtime, therefore it can be moved to
-`k8s.io/klogr/logcheck`. The tool will be updated to:
-- detect usage of klog in code that should have been converted to klogr,
+That tool is a linter for log calls. It will be updated to:
+- detect usage of klog log calls in code that should have been converted to
+  contextual logging
 - check not only klog calls, but also calls through the `logr.Logger` interface,
 - detect direct calls to `WithValue`, `WithName`, and `NewContext` where
-  the `klogr` wrapper functions should be used instead,
+  the `klog` wrapper functions should be used instead,
 - detect function signatures with both `context.Context` and `logr.Logger`.
 
 #### Code examples
 
 See https://github.com/pohly/kubernetes/compare/master-2022-01-12...pohly:log-contextual-2022-01-12
 for the helper code and a tentative conversion of some parts of client-go and
-kube-scheduler. The last commit removes the klog dependency from `k8s.klogr`
-and thus demonstrates that the final goal of this KEP can be achieved.
-
-##### klogr replacing klog completely, explicit logger parameter
-
-```diff
-diff --git a/pkg/scheduler/framework/plugins/volumebinding/binder.go b/pkg/scheduler/framework/plugins/volumebinding/binder.go
-index ee4989be0b7..3ae0d0b4aaa 100644
---- a/pkg/scheduler/framework/plugins/volumebinding/binder.go
-+++ b/pkg/scheduler/framework/plugins/volumebinding/binder.go
-@@ -44,7 +44,7 @@ import (
-        storagehelpers "k8s.io/component-helpers/storage/volume"
-        csitrans "k8s.io/csi-translation-lib"
-        csiplugins "k8s.io/csi-translation-lib/plugins"
--       "k8s.io/klog/v2"
-+       "k8s.io/klogr"
-        v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
-        pvutil "k8s.io/kubernetes/pkg/controller/volume/persistentvolume/util"
-        "k8s.io/kubernetes/pkg/features"
-@@ -151,7 +151,7 @@ type InTreeToCSITranslator interface {
- type SchedulerVolumeBinder interface {
-        // GetPodVolumes returns a pod's PVCs separated into bound, unbound with delayed binding (including provisioning)
-        // and unbound with immediate binding (including prebound)
--       GetPodVolumes(pod *v1.Pod) (boundClaims, unboundClaimsDelayBinding, unboundClaimsImmediate []*v1.PersistentVolumeClaim, err error)
-+       GetPodVolumes(logger klogr.Logger, pod *v1.Pod) (boundClaims, unboundClaimsDelayBinding, unboundClaimsImmediate []*v1.PersistentVolumeClaim, err error)
- 
-        // FindPodVolumes checks if all of a Pod's PVCs can be satisfied by the
-        // node and returns pod's volumes information.
-```
+kube-scheduler.
 
 ##### Unit testing
 
 Each test case gets its own logger instance that adds log messages to the
-output of that test case. The log level can be configured with `-v`.
+output of that test case. The log level can be configured with `-v` and
+`-vmodule`.
 
 ```diff
 diff --git a/pkg/scheduler/framework/plugins/volumebinding/binder_test.go b/pkg/scheduler/framework/plugins/volumebinding/binder_test.go
-index e354f18198c..223a61f4ece 100644
+index 8d45e646112..df6feb561d8 100644
 --- a/pkg/scheduler/framework/plugins/volumebinding/binder_test.go
 +++ b/pkg/scheduler/framework/plugins/volumebinding/binder_test.go
-@@ -43,7 +43,8 @@ import (
-        "k8s.io/client-go/kubernetes/fake"
+@@ -44,6 +44,8 @@ import (
         k8stesting "k8s.io/client-go/testing"
         featuregatetesting "k8s.io/component-base/featuregate/testing"
--       "k8s.io/klog/v2"
-+       "k8s.io/klogr"
-+       ktesting "k8s.io/klogr/testing"
+        "k8s.io/klog/v2"
++       "k8s.io/klog/v2/ktesting"
++       _ "k8s.io/klog/v2/ktesting/init"
         "k8s.io/kubernetes/pkg/controller"
         pvtesting "k8s.io/kubernetes/pkg/controller/volume/persistentvolume/testing"
         pvutil "k8s.io/kubernetes/pkg/controller/volume/persistentvolume/util"
-@@ -124,8 +125,8 @@ var (
+@@ -124,10 +126,6 @@ var (
         zone1Labels = map[string]string{v1.LabelFailureDomainBetaZone: "us-east-1", v1.LabelFailureDomainBetaRegion: "us-east-1a"}
  )
  
 -func init() {
 -       klog.InitFlags(nil)
-+func TestMain(m *testing.M) {
-+       ktesting.TestMainWithLogging(m)
+-}
+-
+ type testEnv struct {
+        client                  clientset.Interface
+        reactor                 *pvtesting.VolumeReactor
+@@ -144,7 +142,8 @@ type testEnv struct {
+        internalCSIStorageCapacityInformer storageinformersv1beta1.CSIStorageCapacityInformer
  }
  
- type testEnv struct {
+-func newTestBinder(t *testing.T, stopCh <-chan struct{}, csiStorageCapacity ...bool) *testEnv {
++func newTestBinder(t *testing.T, ctx context.Context, csiStorageCapacity ...bool) *testEnv {
++       logger := klog.FromContext(ctx)
+        client := &fake.Clientset{}
+        reactor := pvtesting.NewVolumeReactor(client, nil, nil, nil)
 ...
-@@ -972,11 +974,12 @@ func TestFindPodVolumesWithoutProvisioning(t *testing.T) {
+@@ -971,11 +970,12 @@ func TestFindPodVolumesWithoutProvisioning(t *testing.T) {
         }
  
         run := func(t *testing.T, scenario scenarioType, csiStorageCapacity bool, csiDriver *storagev1.CSIDriver) {
@@ -762,8 +762,42 @@ index e354f18198c..223a61f4ece 100644
                         testEnv.addCSIDriver(csiDriver)
 ```
 
+##### Injecting common value, logger passed through existing ctx parameter or new parameter
 
-##### Injecting common names and values, logger passed through existing ctx parameter
+```diff
+diff --git a/pkg/scheduler/generic_scheduler.go b/pkg/scheduler/generic_scheduler.go
+index 8af2f3d160a..57be0f5b705 100644
+@@ -80,19 +79,25 @@ type genericScheduler struct {
+ 
+ // snapshot snapshots scheduler cache and node infos for all fit and priority
+ // functions.
+-func (g *genericScheduler) snapshot() error {
++func (g *genericScheduler) snapshot(logger klog.Logger) error {
+        // Used for all fit and priority funcs.
+-       return g.cache.UpdateSnapshot(g.nodeInfoSnapshot)
++       return g.cache.UpdateSnapshot(logger, g.nodeInfoSnapshot)
+ }
+ 
+ // Schedule tries to schedule the given pod to one of the nodes in the node list.
+ // If it succeeds, it will return the name of the node.
+ // If it fails, it will return a FitError error with reasons.
++//
++// Schedule itself ensures that the pod name is part of all log entries.
+ func (g *genericScheduler) Schedule(ctx context.Context, extenders []framework.Extender, fwk framework.Framework, state *framework.CycleState, pod *v1.Pod) (result ScheduleResult, err error) {
+        trace := utiltrace.New("Scheduling", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
+        defer trace.LogIfLong(100 * time.Millisecond)
+ 
+-       if err := g.snapshot(); err != nil {
++       logger := klog.FromContext(ctx)
++       logger = klog.LoggerWithValues(logger, "pod", klog.KObj(pod))
++       ctx = klog.NewContext(ctx, logger)
++
++       if err := g.snapshot(logger); err != nil {
+                return result, err
+        }
+        trace.Step("Snapshotting scheduler cache and node infos done")
+```
+
 
 ```diff
 @@ -671,7 +692,10 @@ func (f *frameworkImpl) RunFilterPlugins(
@@ -788,6 +822,9 @@ I1026 16:21:00.461394  801139 scheduler.go:436] "Attempting to schedule pod" pod
 I1026 16:21:00.461476  801139 binder.go:730] PreFilter/VolumeBinding: "PVC is not bound" pod="default/my-csi-app-inline-volume" pvc="default/my-csi-app-inline-volume-my-csi-volume"
 ```
 
+Whether the additional `PreFilter/VolumeBinding` prefix is useful enough to
+justify the overhead will be determined during code reviews.
+
 The next line is from a file which has not been converted. It’s not clear in which context that message gets emitted:
 ````
 I1026 16:21:00.461619  801139 csi.go:222] "Persistent volume had no name for claim" PVC="default/my-csi-app-inline-volume-my-csi-volume"
@@ -802,77 +839,10 @@ I1026 16:21:00.461886  801139 scheduler.go:464] "Status after running PostFilter
 I1026 16:21:00.461918  801139 factory.go:209] "Unable to schedule pod; no fit; waiting" pod="default/my-csi-app-inline-volume" err="0/1 nodes are available: 1 node(s) did not have enough free storage."
 ```
 
-### Transition plan
-
-#### Initial implementation of k8s.io/klogr done
-
-This phase starts when this feature reaches its alpha milestone and the
-corresponding Kubernetes release is done. At that point no action is required
-by consumers of klog or Kubernetes code because all logging still goes through
-klog.
-
-Early adopters are welcome to try out the feature and we will address their
-feedback. To meet the beta graduation criteria, we need to collect enough
-feedback to be confident that the proposed API will remain stable.
-
-#### API considered stable
-
-Together with the transition to beta we release a k8s.io/klogr v1.0.0 and
-notify consumers of the Kubernetes code that they need to make changes in their
-code: in addition to initializing klog, they also need to initialize klogr.
-
-A minimal solution is this:
-
-```
-import (
-    "k8s.io/klog/v2"
-    "k8s.io/klog/v2/klogr"
-    "k8s.io/klogr"
-)
-
-func main() {
-   klog.InitFlags(nil)
-   klogr.SetFallbackLogger(klogr.NewWithOptions(klogr.WithFormat(klogr.FormatKlog)))
-   ...
-}
-```
-
-klog and klogr both have the same minimal dependencies, so there is no reason
-why someone should be able to use klog but not klogr. No other dependencies are
-needed.
-
-Logging calls do not need to be changed, neither now nor in later phases: a
-program can continue to initialize as shown above and then do logging through
-klog functions.
-
-The downside is that callbacks provided by the program that are invoked from
-Kubernetes code then will ignore contextual logging, which might make its log
-entries less useful (no additional values, for example).
-
-At that point consumers may also switch to initializing logging with
-`k8s.io/component-base` as in the
-[example](https://github.com/kubernetes/component-base/blob/f57281d7c18ff3a9d1c2404bf97f4ca70bdcb655/logs/example/cmd/logger.go#L26-L52)
-from the current Kubernetes. The dependencies of that package are broader, but
-still relatively small. In particular, zap is not a hard dependency and only
-gets added for JSON output when importing
-`k8s.io/component-base/logs/json/register`.
-
-#### Transition complete
-
-Once we are confident that all projects that expect Kubernetes code to log
-through klog has been updated, the klog dependency in Kubernetes will be
-removed and all logging will be done though the logger defined by klogr. This
-is the GA graduation.
-
-If consumers of Kubernetes code haven't adapted their code when updating their
-Kubernetes dependencies to a release with that change, Kubernetes log output
-will go to stderr with the `INIT-LOG` prefix. The reason for this should be
-easy to find and address.
-
 ### Test Plan
 
 The new code will be covered by unit tests that execute as part of
-`pull-kubernetes-unit`.
+`pull-kubernetes-unit` and by klog GitHub actions.
 
 Converted components will be tested by exercising them with JSON output at high
 log levels to emit as many log messages as possible. Analysis of those logs
@@ -891,7 +861,7 @@ logging.
 #### Alpha
 
 - Common utility code available (logcheck with the additional checks,
-  `k8s.io/klogr` v0.1.0)
+  experimental new APIs in `k8s.io/klog/v2`)
 - Documentation for developers available at https://github.com/kubernetes/community
 - At least kube-scheduler framework and some scheduler plugins (in particular
   volumebinding and nodevolumelimits, the two plugins with the most log calls)
@@ -902,18 +872,12 @@ logging.
 
 - All of kube-scheduler (in-tree) and CSI external-provisioner (out-of-tree) converted
 - Gathered feedback from developers and surveys
-- Users of klog notified through a Kubernetes blog post and an email to
-  dev@kubernetes.io that a logger must be set with k8s.io/klogr.
-- Issues filed against kubernetes-sigs projects with a request to set a logger
-  with k8s.io/klogr. These issues will have a link to the enhancement issue
-  (for cross-referencing) and a link to the developer documentation.
+- New APIs in `k8s.io/klog/v2` no longer marked as experimental
 
 #### GA
 
 - All code in kubernetes/kubernetes converted to contextual logging,
-  no dependency on klog anymore
-- All code under kubernetes-sigs sets a logger with k8s.io/klogr
-  and therefore is ready for the next k/k release.
+  no dependency on traditional klog calls anymore
 - User feedback is addressed
 - Allowing time for feedback
 
@@ -1119,16 +1083,18 @@ test cannot be done this way.
 
 It's better to avoid doing anything with logging entirely in init code.
 
-### Panic when DefaultLogger is called too early
+### Panic when FromContext is called before setting a logger
 
 This would provide an even more obvious hint that the program isn’t working as
 intended. However, the log call which triggers that might not always be
 executed during program startup, which would cause problems when it occurs in
-production. Adding an `INIT-LOG` prefix and emitting an error message seem more
-suitable.
+production. Therefore klog falls back to the traditional klog logging instead.
 
-## Infrastructure Needed
+### Clean separation of contextual logging and traditional klog logging
 
-A new stand-alone repo `k8s.io/klogr` is needed.
-
-The same Prow jobs as for structured logging can be used for testing.
+The initial revision of this KEP described a plan for moving all code for
+contextual logging into a `k8s.io/klogr` repository. Transitioning to that
+would have removed all legacy code from Kubernetes. However, that transition
+would have been complicated and forced all consumers of Kubernetes code to
+adjust their code. Therefore the scope of the KEP was reduced from "remove
+dependency on klog" to "remove dependency on global logger in klog".
