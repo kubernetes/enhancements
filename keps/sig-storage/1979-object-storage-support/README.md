@@ -35,11 +35,11 @@
   - [BucketInfo](#bucketinfo)
 - [COSI Driver](#cosi-driver)
   - [COSI Driver gRPC API](#cosi-driver-grpc-api)
-      - [ProvisionerGetInfo](#provisionergetinfo)
-      - [ProvisionerCreateBucket](#provisionercreatebucket)
-      - [ProvisionerGrantBucketAccess](#provisionergrantbucketaccess)
-      - [ProvisionerDeleteBucket](#provisionerdeletebucket)
-      - [ProvisionerRevokeBucketAccess](#provisionerrevokebucketaccess)
+      - [DriverGetInfo](#drivergetinfo)
+      - [DriverCreateBucket](#drivercreatebucket)
+      - [DriverGrantBucketAccess](#drivergrantbucketaccess)
+      - [DriverDeleteBucket](#driverdeletebucket)
+      - [DriverRevokeBucketAccess](#driverrevokebucketaccess)
 - [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
@@ -188,7 +188,7 @@ The BucketClaim is a claim to create a new Bucket. This resource can be used to 
     BucketClaim - bcl1                                    BucketClass - bc1
     |------------------------------|                      |--------------------------------|
     | metadata:                    |                      | deletionPolicy: delete         |
-    |   namespace: ns1             |                      | provisioner: s3.amazonaws.com  |
+    |   namespace: ns1             |                      | driverName: s3.amazonaws.com   |
     | spec:                        |                      | protocols:                     |
     |   bucketClassName: bc1       |                      | - s3                           |
     |                              |                      | parameters:                    |
@@ -212,7 +212,7 @@ More information about Bucket is [here](#bucket)
     |   - s3                               |
     |   parameters:                        |
     |     key: value                       |
-    |   provisioner: s3.amazonaws.com      |
+    |   driverName: s3.amazonaws.com       |
     | status:                              |
     |   conditions:                        |
     |   - type: BucketReady                |
@@ -222,14 +222,14 @@ More information about Bucket is [here](#bucket)
 
 ###### 3. COSI calls appropriate driver to create Bucket
 
-The COSI sidecar, which runs alongside each of the drivers, listens for Bucket events. All but the sidecar with the specified provisioner will ignore the Bucket object. Only the appropriate sidecar will make a gRPC request to create a Bucket in the OSP.
+The COSI sidecar, which runs alongside each of the drivers, listens for Bucket events. All but the sidecar with the specified driver will ignore the Bucket object. Only the appropriate sidecar will make a gRPC request to create a Bucket in the OSP.
 
 More information about COSI gRPC API is [here](#cosi-grpc-api)
 
 ```
     COSI Driver (s3.amazonaws.com)
     |------------------------------------------|
-    | grpc ProvisionerCreateBucket({           |
+    | grpc DriverCreateBucket({                |
     |      "name": "bcl-$uuid",                |
     |      "protocols": ["s3"],                |
     |      "parameters": {                     |
@@ -269,7 +269,7 @@ The KEY based mechanism is where access and secret keys are generated to be prov
 ```
     BucketAccess - ba1                                        BucketAccessClass - bac1
     |---------------------------------------|                 |----------------------------------|
-    | metadata:                             |                 | provisioner: s3.amazonaws.com    |
+    | metadata:                             |                 | driverName: s3.amazonaws.com     |
     |   namespace: ns1                      |                 | parameters:                      |
     | spec:                                 |                 |   key: value                     |
     |   bucketAccessClassName: bac1         |                 | authenticationType: KEY          |
@@ -290,7 +290,7 @@ In case of IAM style authentication, along with the `credentialsSecretName`, `se
 ```
     BucketAccess - ba1                                        BucketAccessClass - bac2
     |---------------------------------------|                 |----------------------------------|
-    | metadata:                             |                 | provisioner: s3.amazonaws.com    |
+    | metadata:                             |                 | driverName: s3.amazonaws.com     |
     |   namespace: ns1                      |                 | parameters:                      |
     | spec:                                 |                 |   key: value                     |
     |   bucketAccessClassName: bac2         |                 | authenticationType: IAM          |
@@ -307,14 +307,14 @@ In case of IAM style authentication, along with the `credentialsSecretName`, `se
 
 ###### 3. COSI calls driver to generate credentials
 
-All but the sidecar for the specified provisioner will ignore the BucketClaim object. Only the appropriate sidecar will make a gRPC request to its driver to generate credentials/map service accounts.
+All but the sidecar for the specified driver will ignore the BucketClaim object. Only the appropriate sidecar will make a gRPC request to its driver to generate credentials/map service accounts.
 
 This step will only proceed if the Bucket already exist. The Bucket's `BucketReady` condition should be true. Until access been granted, the `AccessGranted` condition in BucketAccess will be false.
 
 ```
     COSI Driver (s3.amazonaws.com)
     |------------------------------------------|
-    | grpc ProvisionerGrantBucketAccess({      |
+    | grpc DriverGrantBucketAccess({           |
     |      "name": "ba-$uuid",                 |
     |      "bucketID": "br-$uuid",             |
     |      "parameters": {                     |
@@ -324,13 +324,14 @@ This step will only proceed if the Bucket already exist. The Bucket's `BucketRea
     |------------------------------------------|
 ```
 
-Each BucketAccess is meant to map to a unique service account in the OSP. Once the requested privileges have been granted, a secret by the name specified in `credentialsSecretName` in the BucketClaim is created. The secret will reside in the namespace of the BucketClaim. The secret will contain either keys or service account mappings based on the chosen authentication type. 
+Each BucketAccess is meant to map to a unique service account in the OSP. Once the requested privileges have been granted, a secret by the name specified in `credentialsSecretName` in the BucketClaim is created. The secret will reside in the namespace of the BucketClaim. The secret will contain either access keys or service account tokens based on the chosen authentication type. The format of this secret can be found [here](#bucketinfo)
 
 If this call returns successfully, the sidecar sets `AccessGranted` condition to `True` in the BucketAccess.
 
 NOTE:
  - The secret will not be created until the credentials are generated/service account mappings are complete.
  - Within a namespace, one BucketAccess and secret pair is generally sufficient, but cases which may want to control this more granularly can use multiple.
+ - The secret will be created with a finalizer that prevents it from being deleted until the associated bucketAccess is deleted.
 
 ## Attaching Bucket Information to Pods
 
@@ -352,8 +353,8 @@ The secret mentioned in the `credentialsSecretName` field of the BucketAccess sh
     |   - volumeMounts:                               |
     |     -  name: cosi-bucket1                       |
     |        mountPath: /cosi/bucket1                 |
-    |     -  name: cosi-bucket1                       |
-    |        mountPath: /cosi/bucket1                 |
+    |     -  name: cosi-bucket2                       |
+    |        mountPath: /cosi/bucket2                 |
     | volumes:                                        |
     | - name: cosi-bucket1                            |
     |   projected:                                    |
@@ -392,7 +393,7 @@ The volume `mountPath` will be the directory where bucket credentials and other 
 
 NOTE: the contents of the files served in mountPath will be a COSI generated file containing credentials and other information required for accessing the bucket. **This is NOT intended to specify a mountpoint to expose the bucket as a filesystem.**
 
-NOTE: the secret containing bucketInfo can be provided to the pod using any other secret -> pod provisioning mechanism, including environment variables. In case of environment variables, the secrets will be exposed to other processes in the same host as environment variables are not inherently secure.
+NOTE: the secret containing bucketInfo can be provided to the pod using any other {secret -> pod} provisioning mechanism, including environment variables. In case of environment variables, the secrets will be exposed to other processes in the same host, as environment variables are not inherently secure.
 
 ###### 2. The secret containing BucketInfo is mounted in the specified directory
 
@@ -423,7 +424,7 @@ The above volume definition will prompt kubernetes to retrieve the secret and pl
 
 ```
 
-In case IAM style authentication was specified, then metadataURL and serviceAccountTokenPath will be provided.
+In case IAM style authentication was specified, then workloadIdentityToken will be provided.
 
 ```
     bucket_info.json
@@ -437,6 +438,7 @@ In case IAM style authentication was specified, then metadataURL and serviceAcco
     |   spec: {                                       |
     |       bucketName: "bc-$uuid",                   |
     |       authenticationType: "IAM",                |
+    |       workloadIdentityToken: "ZXlKaGJHY2...",   |
     |       endpoint: "https://s3.amazonaws.com",     |
     |       region: "us-west-1",                      |
     |       protocols: [                              |
@@ -448,7 +450,7 @@ In case IAM style authentication was specified, then metadataURL and serviceAcco
 
 ```
 
-Workloads are expected to read the definition in this file to access a bucket. The `BucketInfo` API will not be a CRD in the cluster, however, it follows the same conventions as the rest of the COSI APIs. More details can be found [here](#bucketinfo)
+Workloads are expected to read the definitions in this file to access a bucket. The `BucketInfo` API will not be a CRD in the cluster, however, it follows the same conventions as the rest of the COSI APIs. More details can be found [here](#bucketinfo)
 
 ## Sharing Buckets
 
@@ -462,21 +464,29 @@ The benefits of COSI can also be brought to existing buckets/ones created outsid
 
 When a Bucket object is manually created, and has its `bucketID` set, then COSI assumes that this Bucket has already been created. 
 
+The admin must ensure that this bucket binds only to a specific BucketClaim by specifying the BucketClaim.
+
 ```
     Bucket - br-$uuid
     |-------------------------------------------------|
     | name: bucketName123                             |
     | spec:                                           |
     |   bucketID: bucketname123                       |
+	|   bucketClaim:                                  |
+	|       name: bucketClaim123                      |
+	|       namespace: ns1                            |
     |   protocols:                                    |
     |   - s3                                          |
     |   parameters:                                   |
     |     key: value                                  |
-    |   provisioner: s3.amazonaws.com                 |
+    |   driverName: s3.amazonaws.com                  |
     |-------------------------------------------------|
 ```
 
+
 ###### 2. User creates BucketClaim referring to the bucket
+
+Only the specified BucketClaim will be able to bind to the Bucket.
 
 ```
     BucketClaim - bucketClaim123
@@ -507,7 +517,8 @@ Note that, as of the alpha version of COSI, there is no authorization mechanism 
 ## Bucket deletion
 
  - A Bucket created by COSI as a result of a BucketClaim can deleted by deleting the BucketClaim 
- - A Bucket created outside of COSI, once imported, cannot be deleted by users from any particular namespace. Privileged users can however delete a Bucket at their discretion. 
+ - A Bucket created outside of COSI, once bound, can be deleted by deleting the BucketClaim to which it is bound
+ - A Bucket created outside of COSI, unless it is bound to a particular BucketClaim, cannot be deleted by users from any particular namespace. Privileged users can however delete the Bucket object at their discretion. 
  
 Once a delete has been issued to a bucket, no new BucketAccesses can be created for it. Buckets having valid BucketAccesses (Buckets in use) will not be deleted until all the BucketAccesses are cleaned up. 
 
@@ -516,6 +527,14 @@ Buckets can be created with one of two deletion policies:
  - Delete
 
 When the deletion policy is Retain, then the underlying bucket is not cleaned up when the Bucket object is deleted. When the deletion policy is Delete, then the underlying bucket is cleaned up when the Bucket object is deleted.
+
+Only when all accessors (BucketAccesses) of the Bucket are deleted, is the Bucket itself cleaned up. There is a finalizer on the Bucket that prevents it from being deleted until all the accessors are done using it. 
+
+When a user deletes a BucketAccess, the corresponding secret/serviceaccount are also deleted. If a pod has that secret mounted when delete is called, then a finalizer on the secret will prevent it from being deleted. Instead, the deletionTimestamp will be set on the secret. In this way, access to a Bucket is preserved until the application pod dies. 
+
+When an admin deletes any of the class objects, it does not affect existing Buckets as fields from the class objects are copied into the Buckets during creation. 
+
+If a Bucket is manually deleted by an admin, then a finalizer on the Bucket prevents it from being deleted until the binding BucketClaim is deleted. 
 
 # Usability
 
@@ -554,19 +573,6 @@ Notes:
  - There are **NO** cycles in the relationship graph of the above mentioned API objects.
  - Mutations are not supported in the API.
 
-When a user deletes the BucketRequest, then depending on the DeletionPolicy, the following happens:
-
-- If deletionPolicy is Delete, then Bucket deletion is also triggered. 
-- If deletionPolicy is Retain, then Bucket is left as is, but the BucketRequest is deleted.
-
-Only when all accessors (BucketAccesses) of the Bucket are deleted, is the Bucket itself cleaned up. Having orphaned buckets in the cluster is an invalid state, unless the Bucket was imported into the cluster. 
-
-When a user deletes a BucketAccess, the corresponding secret/serviceaccount are also deleted. If a pod has that secret mounted when delete is called, then the secret will not be deleted, but will instead have its deletionTimestamp set. In this way, access to a Bucket is preserved until the application pod dies. 
-
-When an admin deletes any of the class objects, it does not affect existing Buckets as fields from the class objects are copied into the Buckets during creation. 
-
-If a Bucket is manually deleted by an admin, without deleting the corresponding BucketClaim, then the cluster is considered to be in an invalid state. Manual recovery is possible if data is not already lost. 
-
 # COSI API Reference
 
 ## Bucket
@@ -579,8 +585,8 @@ Bucket {
   ObjectMeta
 
   Spec BucketSpec {
-    // Provisioner is the name of driver associated with this bucket
-    Provisioner string
+    // DriverName is the name of driver associated with this bucket
+    DriverName string
 
     // DeletionPolicy is used to specify how COSI should handle deletion of this
     // bucket. There are 3 possible values:
@@ -593,9 +599,9 @@ Bucket {
     // Name of the BucketClass specified in the BucketRequest
     BucketClassName  string
 
-    // Name of the BucketClaim that resulted in the creation of this Bucket
-    // Optional in case Bucket was created without a BucketClaim i.e. Imported 
-    // +optional
+    // Name of the BucketClaim that resulted in the creation of this Bucket 
+    // In case the Bucket object was created manually, then this should refer
+	// to the BucketClaim with which this Bucket should be bound
     BucketClaim corev1.ObjectReference
 
     // Protocols are the set of data APIs this bucket is expected to support.
@@ -645,6 +651,7 @@ BucketClaim {
     
     // Name of a bucket object that was manually 
     // created to import a bucket created outside of COSI
+	// If unspecified, then a new Bucket will be dynamically provisioned
     // +optional
     ExistingBucketName string
   }
@@ -670,10 +677,10 @@ BucketClass {
   TypeMeta
   ObjectMeta
 
-  // Provisioner is the name of driver associated with this bucket
-  Provisioner string
+  // DriverName is the name of driver associated with this bucket
+  DriverName string
 
-  // Protocols are the set of data API this bucket is expected to support.
+  // Protocols are the set of data API this bucket is required to support.
   // The possible values for protocol are:
   // -  S3: Indicates Amazon S3 protocol
   // -  Azure: Indicates Microsoft Azure BlobStore protocol
@@ -706,7 +713,6 @@ BucketAccess {
   Spec BucketAccessSpec {
     // BucketClaimName is the name of the BucketClaim.
     // Exactly one of BucketClaimName or BucketName must be set.
-    // +optional
     BucketClaimName string
 
     // Protocol is the name of the Protocol 
@@ -723,6 +729,7 @@ BucketAccess {
     // CredentialsSecretName is the name of the secret that COSI should populate
     // with the credentials. If a secret by this name already exists, then it is
     // assumed that credentials have already been generated. It is not overridden.
+	// This secret is deleted when the BucketAccess is delted.
     CredentialsSecretName string
     
     // ServiceAccountName is the name of the serviceAccount that COSI will map
@@ -806,29 +813,29 @@ The sidecar uses the unique id to direct requests to the appropriate driver. Mul
 
 ## COSI Driver gRPC API
 
-#### ProvisionerGetInfo
+#### DriverGetInfo
 
-This gRPC call responds with the name of the provisioner. The name is used to identify the appropriate driver for a given BucketRequest or BucketClaim.
+This gRPC call responds with the name of the driver. The name is used to identify the appropriate driver for a given BucketRequest or BucketClaim.
 
 ```
-    ProvisionerGetInfo
+    DriverGetInfo
     |------------------------------------------|       |---------------------------------------|
-    | grpc ProvisionerGetInfoRequest{}         | ===>  | ProvisionerGetInfoResponse{           |
+    | grpc DriverGetInfoRequest{}              | ===>  | DriverGetInfoResponse{                |
     |------------------------------------------|       |   "name": "s3.amazonaws.com"          |
                                                        | }                                     |
                                                        |---------------------------------------|
 ```
 
-#### ProvisionerCreateBucket
+#### DriverCreateBucket
 
 This gRPC call creates a bucket in the OSP, and returns information about the new bucket. This api must be idempotent. The input to this call is the name of the bucket and an opaque parameters field.
 
 The returned `bucketID` should be a unique identifier for the bucket in the OSP. This value could be the name of the bucket too. This value will be used by COSI to make all subsequent calls related to this bucket.
 
 ```
-    ProvisionerCreateBucket
+    DriverCreateBucket
     |------------------------------------------|       |-----------------------------------------------|
-    | grpc ProvisionerCreateBucketRequest{     | ===>  | ProvisionerCreateBucketResponse{              |
+    | grpc DriverCreateBucketRequest{          | ===>  | DriverCreateBucketResponse{                   |
     |     "name": "br-$uuid",                  |       |   "bucketID": "br-$uuid",                     |
     |     "parameters": {                      |       |   "bucketInfo": {                             |
     |        "key": "value"                    |       |      "s3": {                                  |
@@ -841,16 +848,16 @@ The returned `bucketID` should be a unique identifier for the bucket in the OSP.
                                                        |-----------------------------------------------|
 ```
 
-#### ProvisionerGrantBucketAccess
+#### DriverGrantBucketAccess
 
 This gRPC call creates a set of access credentials for a bucket. This api must be idempotent. The input to this call is the id of the bucket, a set of opaque parameters and name of the account. This `accountName` field is used to ensure that multiple requests for the same BucketClaim do not result in multiple credentials.
 
 The returned `accountID` should be a unique identifier for the account in the OSP. This value could be the name of the account too. This value will be included in all subsequent calls to the driver for changes to the BucketAccess.
 
 ```
-    ProvisionerGrantBucketAccess
+    DriverGrantBucketAccess
     |---------------------------------------------|       |-----------------------------------------------|
-    | grpc ProvisionerGrantBucketAccessRequest{   | ===>  | ProvisionerGrantBucketAccessResponse{         |
+    | grpc DriverGrantBucketAccessRequest{        | ===>  | DriverGrantBucketAccessResponse{              |
     |     "bucketID": "br-$uuid",                 |       |   "accountID": "bar-$uuid",                   |
     |     "accountName": "bar-$uuid"              |       |   "credentials": {                            |
     |     "authenticationType": "KEY"             |       |      "s3": {                                  |
@@ -862,27 +869,27 @@ The returned `accountID` should be a unique identifier for the account in the OS
                                                           |-----------------------------------------------|
 ```
 
-#### ProvisionerDeleteBucket
+#### DriverDeleteBucket
 
 This gRPC call deletes a bucket in the OSP.
 
 ```
-    ProvisionerDeleteBucket
+    DriverDeleteBucket
     |---------------------------------------------|       |-----------------------------------------------|
-    | grpc ProvisionerDeleteBucketRequest{        | ===>  | ProvisionerDeleteBucketResponse{}             |
+    | grpc DriverDeleteBucketRequest{             | ===>  | DriverDeleteBucketResponse{}                  |
     |     "bucketID": "br-$uuid"                  |       |-----------------------------------------------|
     | }                                           |
     |---------------------------------------------|
 ```
 
-#### ProvisionerRevokeBucketAccess
+#### DriverRevokeBucketAccess
 
 This gRPC call revokes access granted to a particular account.
 
 ```
-    ProvisionerDeleteBucket
+    DriverDeleteBucket
     |---------------------------------------------|       |-----------------------------------------------|
-    | grpc ProvisionerRevokeBucketAccessRequest{  | ===>  | ProvisionerRevokeBucketAccessResponse{}       |
+    | grpc DriverRevokeBucketAccessRequest{       | ===>  | DriverRevokeBucketAccessResponse{}            |
     |     "bucketID": "br-$uuid",                 |       |-----------------------------------------------|
     |     "accountID": "bar-$uuid"                |
     | }                                           |
@@ -1295,11 +1302,11 @@ We need Linux VMs for e2e testing in CI.
 [31]:   #dynamic-provisioning
 [32]:   #static-provisioning
 [33]:   #grpc-definitions
-[34]:   #provisionergetinfo
-[35]:   #provisonercreatebucket
-[36]:   #provisonerdeletebucket
-[37]:   #provisionergrantbucketaccess
-[38]:   #provisionerrevokebucketaccess
+[34]:   #drivergetinfo
+[35]:   #drivercreatebucket
+[36]:   #driverdeletebucket
+[37]:   #drivergrantbucketaccess
+[38]:   #driverrevokebucketaccess
 [39]:   #test-plan
 [40]:   #graduation-criteria
 [41]:   #alpha
