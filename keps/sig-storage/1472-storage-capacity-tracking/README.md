@@ -372,7 +372,7 @@ not increase with the potentially unbounded number of some other
 objects (like storage classes).
 
 The downsides are:
-- Some attributes (driver name, topology) must be stored multiple times
+- Some attributes (storage class name, topology) must be stored multiple times
   compared to a more complex object, so overall data size in etcd is higher.
 - Higher number of objects which all need to be retrieved by a client
   which does not already know which `CSIStorageCapacity` object it is
@@ -385,35 +385,29 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-ab96d356-0d31-11ea-ade1-8b7e883d1af1
-spec:
-  driverName: hostpath.csi.k8s.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-1
-status:
-  availableCapacity: 256G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-1
+capacity: 256G
 
 apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-c3723f32-0d32-11ea-a14f-fbaf155dff50
-spec:
-  driverName: hostpath.csi.k8s.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-2
-status:
-  availableCapacity: 512G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-2
+capacity: 512G
 ```
 
 ##### Example: affect of storage classes
@@ -423,35 +417,29 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-9c17f6fc-6ada-488f-9d44-c5d63ecdf7a9
-spec:
-  driverName: lvm
-  storageClassName: striped
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-1
-status:
-  availableCapacity: 256G
+storageClassName: striped
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-1
+capacity: 256G
 
 apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-f0e03868-954d-11ea-9d78-9f197c0aea6f
-spec:
-  driverName: lvm
-  storageClassName: mirrored
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-1
-status:
-  availableCapacity: 128G
+storageClassName: mirrored
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-1
+capacity: 128G
 ```
 
 ##### Example: network attached storage
@@ -461,35 +449,29 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-b0963bb5-37cf-415d-9fb1-667499172320
-spec:
-  driverName: pd.csi.storage.gke.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: topology.kubernetes.io/region
-        operator: In
-        values:
-        - us-east-1
-status:
-  availableCapacity: 128G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: topology.kubernetes.io/region
+      operator: In
+      values:
+      - us-east-1
+availableCapacity: 128G
 
 apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-64103396-0d32-11ea-945c-e3ede5f0f3ae
-spec:
-  driverName: pd.csi.storage.gke.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: topology.kubernetes.io/region
-        operator: In
-        values:
-        - us-west-1
-status:
-  availableCapacity: 256G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: topology.kubernetes.io/region
+      operator: In
+      values:
+      - us-west-1
+capacity: 256G
 ```
 
 #### CSIDriver.spec.storageCapacity
