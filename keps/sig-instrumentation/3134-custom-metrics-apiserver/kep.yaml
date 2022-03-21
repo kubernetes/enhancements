@@ -1,0 +1,19 @@
+title: Added show command to improve usability of custom metrics apiserver
+kep-number: 3134
+authors:
+  - "@dgrisonnet"
+  - "@yangjunmyfm192085"
+  - "@249043822"
+  - "@sanwishe"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-instrumentation
+status: implementable
+creation-date: 2022-03-15
+reviewers:
+  - "@dgrisonnet"
+approvers:
+  - "@dgrisonnet"
+prr-approvers:
+  - "@ehashman"
+stage: "alpha"
