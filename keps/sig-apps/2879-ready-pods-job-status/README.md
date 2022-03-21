@@ -96,7 +96,7 @@ field based on the number of Pods that have the `Ready` condition.
 
 - An increase in Job status updates. To mitigate this, the job controller holds
   the Pod updates that happen in X ms before syncing a Job.
-  From experiments using integration tests, X=500ms was found to be a reasonable
+  From experiments using E2E load tests, X=1s was found to be a reasonable
   value.
 
 ## Design Details
@@ -139,9 +139,17 @@ pods that have the `Ready` condition.
 
 - Feature gate enabled by default.
 - Existing [E2E] and [conformance] tests passing.
-- Scalability tests for Jobs of varying sizes, up to 500 parallelism, that keep
-  track of metric `job_sync_duration_seconds`. There should be no significant
-  degradation after enabling the feature gate.
+- Scalability tests for Jobs of varying sizes, up to 500 parallelism. There
+  should be no significant degradation in E2E time after enabling the feature
+  gate.
+
+  Using a [clusterloader test](https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/testing/batch/config.yaml)
+  that creates 338 jobs (total of ~3000 pods) on a 100 nodes cluster, with 100
+  QPS for the job controller, where each pod sleeps for 30s, I obtained the
+  following results (averaged for 3 runs, from the time the first job got created):
+  - Feature disabled, no batching of pod updates : 68s
+  - Feature enabled, batching pod updates for 0.5s: 72s (+5.9%)
+  - Feature enabled, batching pod updates for 1s: 71s (+4.4%)
 
 [E2E]: https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=apps%5C%5D%20Job
 [Conformance]: https://testgrid.k8s.io/conformance-all#Conformance%20-%20GCE%20-%20master&include-filter-by-regex=sig-apps&include-filter-by-regex=Job&exclude-filter-by-regex=CronJob
@@ -149,6 +157,9 @@ pods that have the `Ready` condition.
 #### GA
 
 - Every bug report is fixed.
+- Explore setting different batch periods for regular pod updates versus
+  finished pod updates, so we can do less pod readiness updates without
+  compromising how fast we can declare a job finished.
 - The job controller ignores the feature gate.
 
 #### Deprecation
