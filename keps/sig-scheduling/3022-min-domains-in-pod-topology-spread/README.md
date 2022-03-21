@@ -99,7 +99,7 @@ is equal to the minimum number of matching pods on a domain.
 
 As a result, when the number of domains is less than `minDomains`, scheduler doesn't schedule a matching Pod to Nodes on the domains that have the same or more number of matching Pods as `maxSkew`.
 
-`minDomains` is an optional parameter and the default value is 0.
+`minDomains` is an optional parameter. If `minDomains` is nil, the constraint behaves as if MinDomains is equal to 1.
 
 ### API
 
@@ -108,12 +108,31 @@ New optional parameter called `MinDomains` is introduced to `PodSpec.TopologySpr
 ```go
 type TopologySpreadConstraint struct {
 ......
-  // When the number of domains with matching topology keys is less than `minDomains`,
-  // Pod Topology Spread treats "global minimum" as 0.
-  // As a result, when the number of domains is less than `minDomains`,
-  // scheduler doesn't schedule a matching Pod to Nodes on the domains that have the same or more number of matching Pods as `maxSkew`.
-  // Default value is 0. When value is different than 0, WhenUnsatisfiable must be DoNotSchedule.
-  // +optional
+	// MinDomains indicates a minimum number of eligible domains.
+	// When the number of eligible domains with matching topology keys is less than minDomains,
+	// Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+	// And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+	// this value has no effect on scheduling.
+	// As a result, when the number of eligible domains is less than minDomains,
+	// scheduler won't schedule more than maxSkew Pods to those domains.
+	// If value is nil, the constraint behaves as if MinDomains is equal to 1.
+	// Valid values are integers greater than 0.
+	// When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+	//
+	// For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+	// labelSelector spread as 2/2/2:
+	// +-------+-------+-------+
+	// | zone1 | zone2 | zone3 |
+	// +-------+-------+-------+
+	// |  P P  |  P P  |  P P  |
+	// +-------+-------+-------+
+	// The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+	// In this situation, new pod with the same labelSelector cannot be scheduled,
+	// because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+	// it will violate MaxSkew.
+	//
+	// This is an alpha field and requires enabling MinDomainsInPodTopologySpread feature gate.
+	// +optional
   MinDomains *int32
 }
 ```
@@ -192,9 +211,9 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 #### Alpha (v1.24):
 
-- [ ] Add new parameter `MinDomains` to `TopologySpreadConstraint` and feature gating.
-- [ ] Filter extension point implementation.
-- [ ] Implement all tests mentioned in the [Test Plan](#test-plan).
+- [x] Add new parameter `MinDomains` to `TopologySpreadConstraint` and feature gating.
+- [x] Filter extension point implementation.
+- [x] Implement all tests mentioned in the [Test Plan](#test-plan).
 
 #### Beta (v1.25):
 
