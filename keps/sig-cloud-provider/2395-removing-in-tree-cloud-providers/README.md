@@ -63,7 +63,7 @@ as least disruptive to end users and other Kubernetes developers as possible.
 
 ## Motivation
 
-Motiviation behind this effort is to allow cloud providers to develop and make releases independent from the core
+Motivation behind this effort is to allow cloud providers to develop and make releases independent from the core
 Kubernetes release cycle. The de-coupling of cloud provider code allows for separation of concern between "Kubernetes core"
 and the cloud providers within the ecosystem. In addition, this ensures all cloud providers in the ecosystem are integrating with
 Kubernetes in a consistent and extendable way.
@@ -97,7 +97,7 @@ In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/prov
 * The staged legacy provider repos can be imported from the out-of-tree provider if they choose to opt into the in-tree cloud provider implementation. This allows for a smoother transition between in-tree and out-of-tree providers in cases where there are version incompatibilites between the two.
 * Staging the cloud providers indicates to the community that they are slated for removal in the future.
 
-The biggest challenge of this phase is to remove dependences to `k8s.io/kubernetes` in all the providers. This is a requirement of staging a repository and a best practice for consuming external dependencies. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. The full list of internal dependencies that need to be removed can be found in issue [69585](https://github.com/kubernetes/kubernetes/issues/69585).
+The biggest challenge of this phase is to remove dependencies to `k8s.io/kubernetes` in all the providers. This is a requirement of staging a repository and a best practice for consuming external dependencies. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. The full list of internal dependencies that need to be removed can be found in issue [69585](https://github.com/kubernetes/kubernetes/issues/69585).
 
 #### Phase 2 - Building CCM from Provider Repos
 
