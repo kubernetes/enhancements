@@ -532,6 +532,7 @@ when drafting this test plan.
 
 - Determine if an `id.k8s.io ClusterProperty` be strictly a valid DNS label, or is allowed to be a subdomain.
 - To CRD or not to CRD (see section above)
+- Determine if CRD implementation should use CEL validation to limit byte length instead of code points; this would make it only compatible with 1.23+ where CEL validation is behind a feature gate for alpha.
 
 #### Beta -> GA criteria
 
