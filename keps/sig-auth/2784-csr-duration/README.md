@@ -225,16 +225,25 @@ during version skews (discussed below).
 #### GA
 
 - Confirm with [cert-manager](https://github.com/jetstack/cert-manager/pull/3646) that the new functionality addresses their use case
+  + [cert-manager/cert-manager#4957](https://github.com/cert-manager/cert-manager/pull/4957) successfully added the use of the `spec.expirationSeconds` field
 - Confirm with [pinniped](https://pinniped.dev) that the new functionality addresses their use case
+  + The Pinniped maintainers confirmed via [vmware-tanzu/pinniped#1070](https://github.com/vmware-tanzu/pinniped/pull/1070)
+    that the `spec.expirationSeconds` field was sufficient for their use case
 - Confirm that no other metrics are necessary
+  + No other metrics have been identified by the maintainers or requested by external actors
 - Wait one release after beta to allow bugs to be reported
+  + No bugs were reported over a two release period with multiple external actors consuming the new API field
 - Inform external signer implementations of the `spec.expirationSeconds` field
   + [GCP controller manager](https://github.com/kubernetes/cloud-provider-gcp/blob/ce127135e3b5c71893afc4dbf996bb3144eea81e/cmd/gcp-controller-manager/csr_signer.go)
+    * Jordan Liggitt confirmed that GKE successfully updated their internal webhook based signer to honor the `spec.expirationSeconds` field
   + [open-ness/edgeservices](https://github.com/open-ness/edgeservices/blob/e5f79c877a7fb16ee6078855a4674dcf0a23bf80/pkg/certsigner/certsigner.go)
+    * Opened [smart-edge-open/edgeservices#37](https://github.com/smart-edge-open/edgeservices/issues/37) to inform the maintainers of the `spec.expirationSeconds` field
   + [SUSE/kucero](https://github.com/SUSE/kucero/blob/515e41a7599e518d8f39d79cd072ff443eb0de8f/pkg/pki/signer/signer.go)
+    * [SUSE/kucero#34](https://github.com/SUSE/kucero/pull/34) successfully added the use of the `spec.expirationSeconds` field
 - Update conformance tests for the certificates API (`test/e2e/auth/certificates.go`) to assert that
   the `spec.expirationSeconds` field is persisted.  We will not check if the field is honored as
   this functionality is optional.
+  + Addressed in [kubernetes/kubernetes#108782](https://github.com/kubernetes/kubernetes/pull/108782)
 
 ### Upgrade / Downgrade Strategy
 
@@ -513,6 +522,7 @@ N/A
 - 1.22: 2021-07-02: Implementation [pull request](https://github.com/kubernetes/kubernetes/pull/99494) merged
 - 1.22: 2021-07-12: KEP updated with implementation details
 - 1.24: 2022-01-28: KEP updated with GA milestone details
+- 1.24: 2022-03-21: KEP updated with completed GA items
 
 ## Drawbacks
 
