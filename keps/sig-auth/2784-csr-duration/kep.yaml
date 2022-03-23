@@ -4,7 +4,7 @@ authors:
   - "@enj"
 owning-sig: sig-auth
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: 2021-06-17
 reviewers:
   - "@liggitt"

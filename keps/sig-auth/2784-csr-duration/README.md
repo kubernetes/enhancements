@@ -44,15 +44,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -517,12 +517,16 @@ N/A
 
 ## Implementation History
 
-- 1.22: 2021-06-17: KEP written
+- 1.22: 2021-06-17: [KEP](https://github.com/kubernetes/enhancements/pull/2788) written
 - 1.22: 2021-06-21: KEP review comments addressed
+- 1.22: 2021-06-23: Bug fix [pull request](https://github.com/kubernetes/kubernetes/pull/99412) merged
 - 1.22: 2021-07-02: Implementation [pull request](https://github.com/kubernetes/kubernetes/pull/99494) merged
-- 1.22: 2021-07-12: KEP updated with implementation details
-- 1.24: 2022-01-28: KEP updated with GA milestone details
-- 1.24: 2022-03-21: KEP updated with completed GA items
+- 1.22: 2021-07-12: [KEP](https://github.com/kubernetes/enhancements/pull/2820) updated with implementation details
+- 1.22: 2021-07-22: [Docs](https://github.com/kubernetes/website/pull/28070) updated
+- 1.24: 2022-01-28: [KEP](https://github.com/kubernetes/enhancements/pull/3197) updated with GA milestone details
+- 1.24: 2022-03-21: [KEP](https://github.com/kubernetes/enhancements/pull/3250) updated with completed GA items
+- 1.24: 2022-03-21: Promotion [pull request](https://github.com/kubernetes/kubernetes/pull/108782) merged
+- 1.24: 2022-03-22: Feature gate [docs](https://github.com/kubernetes/website/pull/32405) updated
 
 ## Drawbacks
 
