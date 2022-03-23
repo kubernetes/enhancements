@@ -495,6 +495,9 @@ Even if applying deprecation policies, they may still surprise some users.
 
 <!--
 This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -664,6 +667,9 @@ This through this both in small and large cases, again with respect to the
 
 <!--
 This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
