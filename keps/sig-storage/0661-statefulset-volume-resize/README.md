@@ -193,7 +193,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 Stable persistent volumes can be created by specifying `.spec.volumeClaimTemplates`
 for a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/).
 Currently, StatefulSets do not allow the associated volumes to be resized directly by modifying the
-`volumeClaimTemplates`. Instead users have to modify each PVC one by one to achieve this. In such cases, 
+`.spec.volumeClaimTemplates`. Instead users have to modify each PVC one by one to achieve this. In such cases, 
 when the statefulset scales up, the new PVC(s) will be created with the older size and this again needs 
 manual intervention. The intent of this proposal is to avoid this user overhead and simplify the 
 process of resizing StatefulSet volumes.
@@ -206,7 +206,7 @@ know that this has succeeded?
 -->
 
 Allow users to resize the volumes associated with `StatefulSet` by modifying the size of
-PVC in the `volumeClaimTemplate`.
+PVC in the `.spec.volumeClaimTemplates`.
 
 ### Non-Goals
 
@@ -218,11 +218,10 @@ and make progress.
 This proposal does not try to address the following scenarios but relies on the
 underlying PVC resize logic to take the appropriate action or indicate error as needed.
 - Shrinking of volume is not allowed.
-- Few environments require Pod restarts in order
-to get access to the resized volume.
+- Few environments require Pod restarts in order to get access to the resized volume.
 - Modifying the storage class of the volumeClaimTemplate
 - Resizing a PVC associated with a statefulset directly by modifying the PVC spec will not affect the 
-  Statefulset `volumeClaimTemplates`. 
+  Statefulset `.spec.volumeClaimTemplates`. 
 
 ## Proposal
 
@@ -251,9 +250,10 @@ RBAC permission for StatefulSet.
 The following changes are proposed to achieve the goal:
 1. Make the `volumeClaimTemplates` storage size editable by modification to the api server
    validation. Some validation checks will depend on the design decisions made in [KEP 1790](../1790-recover-resize-failure/README.md) to prevent user from shrinking the volume.
-2. Add reconciliation of the associated PVC's size and the individual `volumeClaimTemplates` size into the 
+2. For each volumeClaimTemplate being expanded, it will be necessary to check if its associated StorageClass has `allowVolumeExpansion` enabled.
+3. Add reconciliation of the associated PVC's size and the individual `volumeClaimTemplates` size into the 
    StatefulSet controller reconciliation.
-3. Add PVC `update` privilege to the StatefulSet controller's clusterrole RBAC.
+4. Add PVC `update` privilege to the StatefulSet controller's clusterrole RBAC.
 
 Once the above changes are made, modification to any of the `volumeClaimTemplates` storage
 size by user will update the underlying PVC via the reconciliation performed by (2) above.
@@ -332,7 +332,7 @@ prevent a user from shrinking the volume.
 The `sync` function in the `StatefulSetController` runs the reconciliation to match the current
 reality and the expected declaration in the `Spec`. An addendum will be made to validate each
 PVC associated with each pod and ensure that their sizes are matching VolumeClaimTemplate specification.
-If not, a call is made to update the PVC object with the size specified in the VolumeClaimTemplate.
+If the PVC's size is less than the size specified in the Statefulset's `.spec.volumeClaimTemplates`, a call will be made to update the PVC object with the size specified in the VolumeClaimTemplate. If the size of the PVC is greater than the value specified in the Statefulset's `.spec.volumeClaimTemplates`, no change will be made to the PVC in order to prevent an attempt to shrink the volume.
 
 ### RBAC changes.
 Now that StatefulSet controller needs to update the PVC, `update` will be added to the `statefulset-controller` role in the buildControllerRoles.
