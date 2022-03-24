@@ -158,7 +158,7 @@ transformers:
 # generate resources for a Java application
 - apiVersion: example.com/v1
   kind: JavaApplication
-  provider: {container: {image: docker.example.co/kustomize_transformers/java:v1.0.0}}
+  runtime: {container: {image: docker.example.co/kustomize_transformers/java:v1.0.0}}
   metadata:
     name: my-app
   spec:
@@ -167,7 +167,7 @@ transformers:
 # transform resources to inject a logger
 - apiVersion: example.com/v1
   kind: Logger
-  provider: {container: {image: docker.example.co/kustomize_transformers/logger:v1.0.3}}
+  runtime: {container: {image: docker.example.co/kustomize_transformers/logger:v1.0.3}}
   metadata:
     name: logger
 ```
@@ -199,7 +199,7 @@ transformers:
 # transform resources from imported transformers to inject metrics
 - apiVersion: example.com/v1
   kind: Prometheus
-  provider: {container: {image: docker.example.co/kustomize_transformers/prometheus:v1.0.2}}
+  runtime: {container: {image: docker.example.co/kustomize_transformers/prometheus:v1.0.2}}
   metadata:
     name: metrics
   spec:
@@ -230,7 +230,7 @@ graduation to beta does not require this. `Composition` support MUST be included
 #### Plugin execution flags
 
 This KEP does not propose any changes to the flags used to gate plugins, or to the parameters
-available to configure container/exec/starlark plugin execution. All plugin execution from either
+available to configure container/exec plugin execution. All plugin execution from either
 Kind will remain gated behind `--enable-alpha-plugins`, as well as existing additional flags for
 particular plugin provider types. Any changes to plugin gating should apply identically to both
 Kinds. This does limit the usefulness of `Composition` within `kubectl -k` for the time being, since
@@ -290,7 +290,7 @@ transformerOverrides:
 transformers:
 - apiVersion: example.com/v1
   kind: Prometheus
-  provider:
+  runtime:
     container:
       image: example/prometheus:v1.0.2
   metadata:
@@ -308,8 +308,7 @@ Notes:
 - One notable difference from `Kustomization` is that in addition to being able to provide a path to
   a file containing the transformer config, you can specify the config itself (not strigified)
   inline.
-- A second difference is the introduction of a top-level reserved `provider` field, replacing the
-  JSON annotation currently used for this information.
+- The examples here use a new a top-level reserved `runtime` field instead of the JSON annotation currently used for this information. This field may be introduced as part of KEP 2953. It does not block this KEP, and usage within Kustomization and Composition will be identical regardless.
 - The `metadata.name` field is defaulted to `Kind` in kebab case. However, `metadata.name` MUST be
 specified when using multiple independent instances of the same GVK within a `Composition` tree.
 
@@ -343,7 +342,7 @@ definitions:
             minLength: 1
             maxLength: 253
             pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
-      provider:
+      runtime:
         type: object
         additionalProperties: false
         properties:
@@ -356,7 +355,7 @@ definitions:
               image:
                 type: string
                 minLength: 1
-          starlark:
+          exec:
             type: object
             required:
             - path
@@ -491,18 +490,16 @@ Testing can be done purely on the client-side without the need for a cluster.
 
 #### Alpha
 
-- `Composition` implemented with an alpha GV and supported by `kustomize build`
-  - Compatibility with existing built-in transformers
-  - `ResourceAccumulator` extracted as a transformer
-  - `transformer`, `transformersFrom` and `transformerOverrides` fields implemented.
-  - reserved `provider` field
+- `Composition` implemented with an alpha GV and supported by `kustomize build`. This includes implementing the `transformer`, `transformersFrom`, `transformerOverrides` and `transformerOrder` fields.
+- `ResourceGenerator` extracted as a transformer
+- Introduce a way to use default `fieldSpecs` when invoking builtin transformers from the transformers field (and generators from the generators field, etc.).
+- Built-in generators updated to work in transformers fields
 - Basic documentation added to the Kustomize website.
 
 #### Beta
 
 - `Composition` beta GV supported by `kustomize build`
   - `Kustomization` transformer implemented
-  - `transformerOrder` field implemented
 - `Composition` supported by the `resources`, `transformers`, `generators` and `validators` fields
   in `Kustomization` and `Component`
 - Thorough documentation and examples published on the Kustomize website.
@@ -657,6 +654,7 @@ N/A -- feature is client-side-only
 
 - April 27, 2021: Provisional KEP merged
 - August 2021: Proposal updated and marked implementable.
+- December 2021: Prototype PR opened at [kustomize/#4323](https://github.com/kubernetes-sigs/kustomize/pull/4323) and KEP updated to reflect additional work discovered.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section. Major milestones might

@@ -6,6 +6,7 @@ owning-sig: sig-storage
 participating-sigs:
 status: implementable
 creation-date: 2021-05-05
+last-updated: 2022-01-24
 reviewers:
   - "@xing-yang"
   - "@jsafrane"
@@ -17,9 +18,9 @@ prr-approvers:
 see-also:
 replaces:
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.23"
+latest-milestone: "v1.24"
 
 milestone:
   alpha: "v1.23"
@@ -27,10 +28,12 @@ milestone:
   stable: "v1.25"
 
 feature-gates:
-  - name: HonorPvReclaim
+  - name: HonorPVReclaimPolicy
     components:
       - kube-controller-manager
       - external-provisioner
 disable-supported: true
 
 metrics:
+  - persistentvolume_delete_duration_seconds
+  - volume_operation_total_seconds

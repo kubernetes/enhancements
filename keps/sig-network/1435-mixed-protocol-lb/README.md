@@ -297,7 +297,7 @@ Our feature does not introduce new values or new fields. It enables the usage of
 - Alibaba: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. If this feature is enabled in an API server and then the API server rollback is executed the CPI can still handle the Services with mixed protocol sets.
 - AWS: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. The situation is the same as with the Alibaba CPI.
 - Azure: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. The situation is the same as with the Alibaba CPI.
-- GCE: currently the GCE CPI assumes that a Service definition contains a single protocol value, as it assumes that the Service Controller already rejected Services with mixed protocols. While the Service Controller really did so a while ago, it does not do this anymore. It means a risk.
+- GCE: currently the GCE CPI assumes that a Service definition contains a single protocol value, as it assumes the apiserver already rejects Services with mixed protocols during validation. While the Service Controller really did so a while ago, it does not do this anymore. It means a risk. However, Google team members stated in the enhancement issue that we could proceed.
 - DigitalOcean: no risk. The current CPI accepts Services with TCP protocol only, i.e. after a K8s upgrade a user still cannot use this feature. Consequently, a rollback in the K8s version does not introduce any issues.
 - IBM Cloud VPC: no risk. The same situation like in the case of AWS.
 - IBM Cloud Classic: no risk. The CPI and NLB already supports TCP and UDP in the same Service definition. The same situation like in the case of Alibaba.
@@ -471,7 +471,7 @@ In the long term:
 
 ### Kube-proxy
 
-The kube-proxy should use the port status information from `Service.status.loadBalancer.ingress` in order not to allow traffic to those ports that could not be opened by the load balancer either. 
+Kube-proxy will not block traffic based on the port status information from `Service.status.loadBalancer.ingress` that a load balancer controller sets. Because multi-protocol is a feature, clusterIP and NodePort traffic will work independent of the load balancer. Because some load balancers use NodePort and some use VIP_like LB traffic, there may exist packets to LBIP:LBPORT/wrong-protocol. Traffic will not be blocked based on variation in this implementation detail.
 
 
 ### Test Plan
@@ -484,9 +484,9 @@ Optionally, if the CPI supports that:
 
 ### Graduation Criteria
 
-From end user's perspective the graduation criteria are the feecback/bug correction and testing based.
+From end user's perspective the graduation criteria are feedback/bug correction and testing based.
 
-From CPI implementation perspective thet feature can be graduated to beta, as the cloud providers with managed K8s products can still decide whether they activate it for their managed clusters or not, depending on the status of their CPI implementation.
+From CPI implementation perspective the feature can be graduated to beta, as the cloud providers with managed K8s products can still decide whether they activate it for their managed clusters or not, depending on the status of their CPI implementation.
 
 Graduating to GA means, that the feature flag checking is removed from the code. It means, that all CPI implementations must be ready to deal with Services with mixed protocol configuration - either rejecting such Services properly or managing the cloud load balancers according to the Service definition.
 
@@ -497,7 +497,6 @@ Graduating to GA means, that the feature flag checking is removed from the code.
 #### Alpha -> Beta Graduation
 
 - All of the major clouds support this or indicate non-support properly
-- Kube-proxy does not proxy on ports that are in an error state
 
 #### Beta -> GA Graduation
 
@@ -531,12 +530,12 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: MixedProtocolLBSVC
+    - Feature gate name: MixedProtocolLBService
     - Components depending on the feature gate: Kubernetes API Server
 
 * **Does enabling the feature change any default behavior?**
 
-  When the feature is enabled the Services with mixed protocols are not rejected anymore by the Kuber API server, and it is up to the CPI to handle those.
+  When the feature is enabled the Services with mixed protocols are not rejected anymore by the Kubernetes API server, and it is up to the CPI to handle those.
   Please see the analysis at `API change and upgrade/downgrade situations`
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
@@ -558,15 +557,16 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
 
-  TBD
+  Enabling this feature gate moves the responsibility for handling mixed protocols from the Kubernetes API server to the specific CPI. See the provider-specific details at [API change and upgrade/downgrade situations](#api-change-and-upgradedowngrade-situations).
 
 * **What specific metrics should inform a rollback?**
 
-  TBD
+  As all providers either already have adjusted their error messages or intend to, enabling this feature gate may lead to a CPI error. If load balancer traffic only works correctly for one protocol and not for the other, that is another reason to roll back. In such cases, remediation would be achieved by disabling the feature gate.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-  TBD
+This feature uses an existing value in existing fields, but with a different logic. If we create a Service with mixed protocol and then we roll back the API server to a version that does not implement this feature, the clients will still get the Service with mixed protocols when using the rolled-back API. If the client (CPI implementation) has been roll backed as well, then the client may encounter a Service setup that it does not support. All clouds either support this or adjusted their errors reported, per the enhancement issue.
+
 
 ### Monitoring Requirements
 
@@ -574,7 +574,12 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  TBD
+After checking to see if a Service of `type:LoadBalancer` that uses two different protocols on the same port was created and validated by the API server, the operator can then check the specifics of the [API change and upgrade/downgrade situations](#api-change-and-upgradedowngrade-situations) for their specific cloud provider; this covers object persistence and availability.
+
+The e2e tests shall check that
+- a multi-protocol Service triggers the creation of a multi-protocol cloud load balancer 
+Optionally, if the CPI supports that:
+- the CPI sets the new Conditions and or Port Status in the Load Balancer Service after creating the cloud load balancer
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
@@ -587,12 +592,13 @@ the health of the service?**
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-  TBD
+Before this KEP, expectations of performance for this specific feature were consistent across providers. In this KEP we loosen validation on the Services API, which allows the creation of Services with two protocols where before the API server only allowed one protocol per Service. Depending on CPI and cloud provider API implementation, setup of additional ports or listeners with different protocols may take more time than was previously required for single-protocol Services.
+
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
 
-  TBD
+  N/A
 
 ### Dependencies
 
@@ -606,7 +612,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Will enabling / using this feature result in any new API calls?**
 
-  If a CPI supports the management of the new Conditions and PortStatus in the LoadBalancer Service the managemenof of those fileds will mean additional traffic on the API
+  If a CPI supports the management of the new Conditions and PortStatus in the LoadBalancer Service the management of those fields will mean additional traffic on the API
 
 * **Will enabling / using this feature result in introducing new API types?**
 
@@ -636,13 +642,17 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+The CPI sets the Conditions and/or PortStatus on the Service.Status object. If the API service is not available, the CPI cannot update the status. If the CPI updates the status and then later the API server becomes unavailable, the Status is stored with the Service object and will be available the next time the API server starts.
+
+It's possible for the CPI to set the new Conditions and/or PortStatus in the Load Balancer Service after creating the cloud load balancer, but this feature will not be triggerable without API server response.
+
 * **What are other known failure modes?**
 
-  TBD
+Cloud providers will need to provide their intended responses; in most cases they intend to initially indicate non-support, then add support later.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-  TBD
+Enabling this feature gate moves the responsibility for handling mixed protocols from the Kubernetes API server to the specific CPI. Depending on CPI and cloud provider API implementation, setup of additional ports or listeners with different protocols may take more time than was previously required for single-protocol Services. Diagnosis for any performance impacts will be specific to the out-of-tree cloud providers.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -650,6 +660,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 ## Implementation History
 
 - the `Proposal` section being merged, signaling agreement on a proposed design: 14th July 2020
+- Move from alpha to beta after agreement from all listed providers, April 2022
 
 ## Drawbacks
 

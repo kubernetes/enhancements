@@ -97,6 +97,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Service Types](#service-types)
     - [ClusterSetIP](#clustersetip)
     - [DNS](#dns)
+      - [No PTR records necessary for multicluster DNS](#no-ptr-records-necessary-for-multicluster-dns)
+      - [Not allowing cluster-specific targeting via DNS](#not-allowing-cluster-specific-targeting-via-dns)
     - [EndpointSlice](#endpointslice)
     - [Endpoint TTL](#endpoint-ttl)
 - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
@@ -134,14 +136,18 @@ Check these off as they are completed for the Release Team to track. These
 checklist items _must_ be updated for the enhancement to be released.
 -->
 
-- [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] Enhancement issue in release milestone, which links to KEP dir in
+  [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] KEP approvers have approved the KEP status as `implementable`
 - [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG
+  Testing input
 - [ ] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] User-facing documentation has been created in [kubernetes/website], for
+  publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to
+  mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -172,7 +178,8 @@ proposes a new API to extend the service concept across multiple clusters. It
 aims for minimal additional configuration, making multi-cluster services as easy
 to use as in-cluster services, and leaves room for multiple implementations.
 
-*Converted from this [original proposal doc](http://bit.ly/k8s-mc-svc-api-proposal).*
+*Converted from this [original proposal
+doc](http://bit.ly/k8s-mc-svc-api-proposal).*
 
 ## Motivation
 
@@ -202,7 +209,8 @@ The Multi-Cluster Services API aims to fix these problems.
 List the specific goals of the KEP.  What is it trying to achieve?  How will we
 know that this has succeeded?
 -->
-- Define a minimal API to support service discovery and consumption across clusters.
+- Define a minimal API to support service discovery and consumption across
+  clusters.
   - Consume a service in another cluster.
   - Consume a service deployed in multiple clusters as a single service.
 - When a service is consumed from another cluster its behavior should be
@@ -235,15 +243,14 @@ nitty-gritty.
 -->
 #### Terminology
 
-- **clusterset** - A placeholder name for a group of clusters with a high
-  degree of mutual trust and shared ownership that share services amongst
-  themselves. Membership in a clusterset is symmetric and transitive. The set
-  of member clusters are mutually aware, and agree about their collective
-  association. Within a clusterset, [namespace sameness] applies and all
-  namespaces with a given name are considered to be the same namespace.
-  Implementations of this API are responsible for defining and tracking
-  membership in a clusterset. The specific mechanism is out of scope of this
-  proposal.
+- **clusterset** - A placeholder name for a group of clusters with a high degree
+  of mutual trust and shared ownership that share services amongst themselves.
+  Membership in a clusterset is symmetric and transitive. The set of member
+  clusters are mutually aware, and agree about their collective association.
+  Within a clusterset, [namespace sameness] applies and all namespaces with a
+  given name are considered to be the same namespace. Implementations of this
+  API are responsible for defining and tracking membership in a clusterset. The
+  specific mechanism is out of scope of this proposal.
 - **mcs-controller** - A controller that syncs services across clusters and
   makes them available for multi-cluster service discovery and connectivity.
   There may be multiple implementations, this doc describes expected common
@@ -258,10 +265,11 @@ nitty-gritty.
   1123](https://tools.ietf.org/html/rfc1123) DNS label.
 
   The cluster name should be consistent for the life of a cluster and its
-  membership in the clusterset. Implementations should treat name mutation as
-  a delete of the membership followed by recreation with the new name.
+  membership in the clusterset. Implementations should treat name mutation as a
+  delete of the membership followed by recreation with the new name.
 
-[namespace sameness]: https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md
+[namespace sameness]:
+    https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md
 
 We propose a new CRD called `ServiceExport`, used to specify which services
 should be exposed across all clusters in the clusterset. `ServiceExports` must
@@ -336,7 +344,8 @@ As the plan for dual stack support is finalized, the Multi-Cluster Services API
 will follow dual stack Service design. Until then, dual stack will not be
 supported.
 
-[Service Topology API]: https://kubernetes.io/docs/concepts/services-networking/service-topology/
+[Service Topology API]:
+    https://kubernetes.io/docs/concepts/services-networking/service-topology/
 
 ### Risks and Mitigations
 
@@ -455,9 +464,9 @@ status:
 To export a service, a `ServiceExport` should be created within the cluster and
 namespace that the service resides in, name-mapped to the service for export -
 that is, they reference the `Service` with the same name as the export. If
-multiple clusters within the clusterset have `ServiceExports` with the same
-name and namespace, these will be considered the same service and will be
-combined at the clusterset level.
+multiple clusters within the clusterset have `ServiceExports` with the same name
+and namespace, these will be considered the same service and will be combined at
+the clusterset level.
 
 _Note: A `Service` without a corresponding `ServiceExport` in its local cluster
 will not be exported even if other clusters are exporting a `Service` with the
@@ -489,13 +498,12 @@ To consume a clusterset service, the domain name associated with the
 multi-cluster service should be used (see [DNS](#dns)). When the mcs-controller
 sees a `ServiceExport`, a `ServiceImport` will be introduced in each importing
 cluster to represent the imported service. Users are primarily expected to
-consume the service via domain name and clusterset VIP, but the
-`ServiceImport` may be used for imported service discovery via the K8s API and
-will be used internally as the source of truth for routing and DNS
-configuration.
+consume the service via domain name and clusterset VIP, but the `ServiceImport`
+may be used for imported service discovery via the K8s API and will be used
+internally as the source of truth for routing and DNS configuration.
 
-A `ServiceImport` is a service that may have endpoints in other clusters.
-This includes 3 scenarios:
+A `ServiceImport` is a service that may have endpoints in other clusters. This
+includes 3 scenarios:
 1. This service is running entirely in different cluster(s).
 2. This service has endpoints in other cluster(s) and in this cluster.
 3. This service is running entirely in this cluster, but is exported to other
@@ -522,8 +530,8 @@ clusters.
 
 Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
 given `EndpointSlice` will reference its `ServiceImport` using the label
-`multicluster.kubernetes.io/service-name` similarly to how an
-`EndpointSlice` is associated with its `Service` in a single cluster.
+`multicluster.kubernetes.io/service-name` similarly to how an `EndpointSlice` is
+associated with its `Service` in a single cluster.
 
 Each imported `EndpointSlice` will also have a
 `multicluster.kubernetes.io/source-cluster` label with the cluster name, a
@@ -682,14 +690,14 @@ this cluster.
   policy](#constraints-and-conflict-resolution).
 
   _Exporting a non-headless service to an otherwise headless service can
-  dynamically change the clusterset service type when an old export is
-  removed, potentially breaking existing consumers. This is likely the result of
-  a deployment error. Conditions and events on the `ServiceExport` will be used
-  to communicate conflicts to the user._
+  dynamically change the clusterset service type when an old export is removed,
+  potentially breaking existing consumers. This is likely the result of a
+  deployment error. Conditions and events on the `ServiceExport` will be used to
+  communicate conflicts to the user._
 - `NodePort` and `LoadBalancer`: These create `ClusterIP` services that would
   sync as expected. For example If you export a `NodePort` service, the
-  resulting cross-cluster service will still be a clusterset IP type. The
-  local service will not be affected. Node ports can still be used to access the
+  resulting cross-cluster service will still be a clusterset IP type. The local
+  service will not be affected. Node ports can still be used to access the
   cluster-local service in the source cluster, and only the clusterset IP will
   route to endpoints in remote clusters.
 - `ExternalName`: It doesn't make sense to export an `ExternalName` service.
@@ -703,8 +711,8 @@ this cluster.
 
 A non-headless `ServiceImport` is expected to have an associated IP address, the
 clusterset IP, which may be accessed from within an importing cluster. This IP
-may be a single IP used clusterset-wide or assigned on a per-cluster basis,
-but is expected to be consistent for the life of a `ServiceImport` from the
+may be a single IP used clusterset-wide or assigned on a per-cluster basis, but
+is expected to be consistent for the life of a `ServiceImport` from the
 perspective of the importing cluster. Requests to this IP from within a cluster
 will route to backends for the aggregated Service.
 
@@ -715,38 +723,42 @@ to describe a selector based policy that applies to a multi-cluster service.
 
 _Optional, but recommended._
 
-MCS aims to align with the existing [service DNS
+The full specification for Multicluster Service DNS is in this KEP's
+[specification.md](specification.md). MCS aims to align with the existing
+[service DNS
 spec](https://github.com/kubernetes/dns/blob/master/docs/specification.md). This
-section assumes familiarity with in-cluster Service DNS behavior.
-```
-<<[UNRESOLVED]>>
-Full DNS spec needed prior to Beta graduation following:
-https://github.com/kubernetes/dns/blob/master/docs/specification.md
-<<[UNRESOLVED]>>
-```
-When a `ServiceExport` is created, this will cause a domain name for the
-multi-cluster service to become accessible from within the clusterset. The
-domain name will be `<service>.<ns>.svc.clusterset.local`. 
+section provides an overview of the multicluster DNS specification and its
+rationale, and assumes familiarity with in-cluster Service DNS behavior.
 
-**ClusterSetIP services:** Requests to this domain name from within an importing
-cluster will resolve to the clusterset IP, which points to endpoints for pods
-within the underlying `Service`(s) across the clusterset.
+In short, when a `ServiceExport` is created, this will cause a domain name for
+the multi-cluster service to become accessible from within the clusterset. The
+domain name will be `<service>.<ns>.svc.clusterset.local`. This domain name
+operates differently depending on whether the `ServiceExport` refers to a
+ClusterSetIP or Headless service:
 
-**Headless services:** Within an importing cluster, the clusterset domain name
-will have multiple `A`/`AAAA` records, each containing the address of a ready
-endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
-resolve to the set of all ready pod IPs for the service.
+  * **ClusterSetIP services:** Requests to this domain name from within an
+importing cluster will resolve to the clusterset IP. Requests to this IP will be
+spread across all endpoints exported with `ServiceExport`s across the
+clusterset.
+  * **Headless services:** Within an importing cluster, the clusterset domain
+name will have multiple `A`/`AAAA` records, each containing the address of a
+ready endpoint of the headless service. `<service>.<ns>.svc.clusterset.local`
+will resolve to the entire set or the subset of ready pod IPs, depending on the
+implementation and endpoint count.
 
-Pods backing a clusterset service may be addressed individually using the
-`<hostname>.<clustername>.<svc>.<ns>.svc.clusterset.local` format. Necessary
+In addition, other resource records are included to conform to in-cluster
+Service DNS behavior. SRV records are included to support known use cases such
+as VOIP, Active Directory, and etcd cluster bootstrapping. Pods backing a
+Headless service may be addressed individually using the
+`<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format; necessary
 records will be created based on each ready endpoint's hostname and the
 `multicluster.kubernetes.io/source-cluster` label on the `EndpointSlice`. This
 allows naming collisions to be avoided for headless services backed by identical
 `StatefulSets` deployed in multiple clusters.
 
 _Note: the total length of a FQDN is limited to 253 characters. Each label is
-independently limited to 63 characters, so users must choose host/cluster/service
-names to avoid hitting this upper bound._
+independently limited to 63 characters, so users must choose
+host/cluster/service names to avoid hitting this upper bound._
 
 All service consumers must use the `*.svc.clusterset.local` name to enable
 clusterset routing, even if there is a matching `Service` with the same
@@ -755,19 +767,111 @@ opt-in to multi-cluster behavior. There will be no change to existing behavior
 of the `cluster.local` zone.
 
 _It is expected that the `.clusterset.local` zone is standard and available in
-all implementations, but customization and/or aliasing can be explored if there's
-demand._
+all implementations, but customization and/or aliasing can be explored if
+there's demand._
+
+##### No PTR records necessary for multicluster DNS
+
+This specification does not require `PTR` records be generated in the course of
+implementing multicluster DNS. By definition, each IP must only have one `PTR`
+record, to facilitate reverse DNS lookup. The cluster-local Kubernetes DNS
+specification already requires a `PTR` record for the ready IPs for ClusterIP
+and Headless Services. As this specification is currently written, by not
+requiring any new `PTR` records and leaving the cluster-local `PTR` records as
+the only ones, `PTR` record existence becomes potentially inconsistent for
+multicluster DNS, especially between importing and exporting clusters (for
+example, a Headless pod IP `PTR` record would exist on the exporting cluster,
+but not necessarily on an importing cluster). On the other hand, some existing
+MCS API implementations create a new "dummy" cluster-local `Service` object for
+every `ServiceImport`, and due to the cluster-local DNS specification, they will
+already have a `PTR` record generated due to the DNS resolution of the "dummy"
+`Service`.
+
+In cases where `PTR` records are not always set, if the specification did
+require to backfill in a `clusterset.local` zoned one wherever one is missing
+(i.e. for importing clusters), the result would be a patchwork of
+`cluster.local` and `clusterset.local` `PTR` records, depending what cluster in
+the ClusterSet you are querying from, still resulting in an inconsistent
+experience.
+
+Alternatively, the multicluster DNS specification could have required
+`clusterset.local` `PTR` records across the board, making the experience
+consistent. This would require implementations to overwrite the cluster-local
+behavior for MCS services since IPs can only have one `PTR` record. However, the
+MCS API purposefully tries to avoid changing cluster-local behavior as much as
+possible.
+
+Fundamentally, `PTR` records are used for reverse DNS lookup from an IP to a DNS
+name. Besides this, some potentially useful information (ex mapping pod IPs, if
+you happen to have one out of context, to their related Service objects) would
+be consistently surfaced through reverse DNS lookup if we required
+`clusterset.local` `PTR` records. However, the k8s API server contains the same
+metadata and is already potentially accessible to any MCS client since the
+requests originate in-clusterset. Without a strong use case for requiring them
+and given the desire to avoid changing cluster-local behavior, `PTR` records are
+not required for multicluster DNS.
+
+##### Not allowing cluster-specific targeting via DNS
+
+While we reserve the form `<clusterid>.<svc>.<ns>.svc.clusterset.local.` for
+possible future use, both ClusterSetIP Services and Multicluster Headless
+Services are specified to explicitly disallow using this form to create DNS
+records that target all 1+N backends in a _specific_ cluster.
+
+For ClusterSetIP services, this rationale is tied to the intent of its
+underlying ClusterIP Service. In a single-cluster setup, the purpose of a
+ClusterIP service is to reduce the context needed by the application to target
+ready backends, especially if those backends disappear or change frequently, and
+leverages kube-proxy to do this independent of the limitations of DNS.
+([ref](https://kubernetes.io/docs/concepts/services-networking/service/#why-not-use-round-robin-dns))
+Similarly, users of exported ClusterIP services should depend on the single
+`<clusterset-ip>` (or the single `A`/`AAAA` record mapped to it), instead of
+targeting per cluster backends. If a user has a need to target backends in a
+different way, they should use headless Services.
+
+For Multicluster Headless Services, the rationale is tied to the intent of its
+underlying Headless Service to provide absolutely no load balancing capabilities
+on any stateful dimension of the backends (such as cluster locality), and
+provide routing to each single backend for the application's purposes.
+
+In both cases, this restriction seeks to preserve the MCS position on [namespace
+sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md).
+Services of the same name/namespace exported in the multicluster environment are
+considered to be the same by definition, and thus their backends are safe to
+'merge' at the clusterset level. If these backends need to be addressed
+differently based on other properties than name and namespace, they lose their
+fungible nature which the MCS API depends on. In these situations, those
+backends should instead be fronted by a Service with a different name and/or
+namespace.
+
+For example, say an application wishes to target the backends for a
+`ClusterSetIP ServiceExport` called `special/prod` in `<clusterid>=cluster-east`
+separately from all backends in `<clusterid>=cluster-west`. Instead of depending
+on the disallowed implementation of cluster-specific addressing, the Services in
+each specific cluster should actually be considered non-fungible and be created
+and exported by `ServiceExport`s with different names that honor the boundaries
+of their sameness, such as `special-east/prod` for all the backends in
+`<clusterid>=cluster-east` and `special-west/prod` for the backends in
+`<clusterid>=cluster-west`. In this situation, the resulting DNS names
+`special-east.prod.svc.clusterset.local` and
+`special-west.prod.svc.clusterset.local` encode the cluster-specific addressing
+required by virtue of being two different `ServiceExport`s.
+
+Note that this puts the burden of enforcing the boundaries of a
+`ServiceExport`'s fungibility on the name/namespace creator.
+
 
 #### EndpointSlice
 
 When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
-the underlying `Service` to be created in each importing cluster within the clusterset,
-associated with the derived `ServiceImport`. One or more `EndpointSlice`
-resources will exist for the exported `Service`, with each `EndpointSlice`
-containing only endpoints from a single source cluster. These `EndpointSlice`
-objects will be marked as managed by the clusterset service controller, so
-that the endpoint slice controller doesn’t delete them. `EndpointSlices` will
-have an owner reference to their associated `ServiceImport`.
+the underlying `Service` to be created in each importing cluster within the
+clusterset, associated with the derived `ServiceImport`. One or more
+`EndpointSlice` resources will exist for the exported `Service`, with each
+`EndpointSlice` containing only endpoints from a single source cluster. These
+`EndpointSlice` objects will be marked as managed by the clusterset service
+controller, so that the endpoint slice controller doesn’t delete them.
+`EndpointSlices` will have an owner reference to their associated
+`ServiceImport`.
 
 ```
 <<[UNRESOLVED]>>
@@ -823,9 +927,9 @@ determine which values are used by the derived service.
 
 #### Headlessness
 
-Headlessness affects a service as a whole for a given consumer. Whether or not
-a derived service is headless will be decided according to the conflict
-resolution policy.
+Headlessness affects a service as a whole for a given consumer. Whether or not a
+derived service is headless will be decided according to the conflict resolution
+policy.
 
 #### Session Affinity
 
@@ -835,10 +939,10 @@ policy.
 
 ### Test Plan
 
-E2E tests can use [kind](https://kind.sigs.k8s.io/) to create multiple
-clusters to test various multi-cluster scenarios. To meet conditions required by
-MCS, cluster networks will be flattened by adding static routes between nodes in
-each cluster.
+E2E tests can use [kind](https://kind.sigs.k8s.io/) to create multiple clusters
+to test various multi-cluster scenarios. To meet conditions required by MCS,
+cluster networks will be flattened by adding static routes between nodes in each
+cluster.
 
 - Test cluster A can contact service imported from cluster B and route to
   expected endpoints.
@@ -961,8 +1065,8 @@ enhancement:
 ### Version Skew Strategy
 
 Kube-proxy and DNS must be upgraded before new MCS API versions may be used.
-Backwards compatibility will be maintained in accordance with the
-[deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+Backwards compatibility will be maintained in accordance with the [deprecation
+policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
 <!--
 If applicable, how will the component handle version skew with other
 components? What are the guarantees? Make sure this is in the test plan.
@@ -982,7 +1086,8 @@ enhancement:
 - 2020-05-10 - Merged as provisional
 - 2020-06-22 - Moved to implementable
 - 2020-08-04 - ClusterSet name finalized
-- 2020-08-10 - Alpha implementation available at [sigs.k8s.io/mcs-api](http://sigs.k8s.io/mcs-api)
+- 2020-08-10 - Alpha implementation available at
+  [sigs.k8s.io/mcs-api](http://sigs.k8s.io/mcs-api)
 <!--
 Major milestones in the life cycle of a KEP should be tracked in this section.
 Major milestones might include
@@ -1013,13 +1118,13 @@ information to express the idea and why it was not acceptable.
 Instead of name mapping, we could use an explicit `ObjectReference` in a
 `ServiceExport.Spec`. This feels familiar and more explicit, but fundamentally
 changes certain characteristics of the API. Name mapping means that the export
-must be in the same namespace as the `Service` it exports, allowing existing RBAC
-rules to restrict export rights to current namespace owners. We are building on
-the concept that a namespace belongs to a single owner, and it should be the
-`Service` owner who controls whether or not a given `Service` is exported. Using
-`ObjectReference` instead would also open the possibility of having multiple
-exports acting on a single service and would require more effort to determine if
-a given service has been exported.
+must be in the same namespace as the `Service` it exports, allowing existing
+RBAC rules to restrict export rights to current namespace owners. We are
+building on the concept that a namespace belongs to a single owner, and it
+should be the `Service` owner who controls whether or not a given `Service` is
+exported. Using `ObjectReference` instead would also open the possibility of
+having multiple exports acting on a single service and would require more effort
+to determine if a given service has been exported.
 
 The above issues could also be solved via controller logic, but we would risk
 differing implementations. Name mapping enforces behavior at the API.

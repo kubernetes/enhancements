@@ -47,7 +47,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
   - [No modeling of storage capacity usage](#no-modeling-of-storage-capacity-usage)
-  - [&quot;Total available capacity&quot; vs. &quot;maximum volume size&quot;](#total-available-capacity-vs-maximum-volume-size)
   - [Prioritization of nodes](#prioritization-of-nodes)
   - [Integration with <a href="https://github.com/kubernetes/autoscaler">Cluster Autoscaler</a>](#integration-with-cluster-autoscaler)
   - [Alternative solutions](#alternative-solutions)
@@ -64,6 +63,7 @@
       - [Example: local storage](#example-local-storage-2)
       - [Example: affect of storage classes](#example-affect-of-storage-classes-2)
       - [Example: network attached storage](#example-network-attached-storage-2)
+  - [Generic autoscaler support](#generic-autoscaler-support)
   - [Prior work](#prior-work)
 <!-- /toc -->
 
@@ -77,10 +77,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -281,62 +281,88 @@ still an unsolved problem.
 #### CSIStorageCapacity
 
 ```
-// CSIStorageCapacity stores the result of one CSI GetCapacity call for one
-// driver, one topology segment, and the parameters of one storage class.
+// CSIStorageCapacity stores the result of one CSI GetCapacity call.
+// For a given StorageClass, this describes the available capacity in a
+// particular topology segment.  This can be used when considering where to
+// instantiate new PersistentVolumes.
+//
+// For example this can express things like:
+// - StorageClass "standard" has "1234 GiB" available in "topology.kubernetes.io/zone=us-east1"
+// - StorageClass "localssd" has "10 GiB" available in "kubernetes.io/hostname=knode-abc123"
+//
+// The following three cases all imply that no capacity is available for
+// a certain combination:
+// - no object exists with suitable topology and storage class name
+// - such an object exists, but the capacity is unset
+// - such an object exists, but the capacity is zero
+//
+// The producer of these objects can decide which approach is more suitable.
+//
+// They are consumed by the kube-scheduler when a CSI driver opts into capacity-aware
+// scheduling with CSIDriverSpec.StorageCapacity. The scheduler compares the
+// MaximumVolumeSize against the requested size of pending volumes to filter
+// out unsuitable nodes. If MaximumVolumeSize is unset, it falls back to
+// a comparison against the less precise Capacity. If that is also unset,
+// the scheduler assumes that capacity is insufficient and tries some other node.
 type CSIStorageCapacity struct {
-    metav1.TypeMeta
-    // Standard object's metadata. The name has no particular meaning and just has to
-    // meet the usual requirements (length, characters, unique). To ensure that
-    // there are no conflicts with other CSI drivers on the cluster, the recommendation
-    // is to use csisc-<uuid>.
-    //
-    // Objects are not namespaced.
-    //
-    // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-    // +optional
-    metav1.ObjectMeta
+	metav1.TypeMeta
+	// Standard object's metadata. The name has no particular meaning. It must be
+	// be a DNS subdomain (dots allowed, 253 characters). To ensure that
+	// there are no conflicts with other CSI drivers on the cluster, the recommendation
+	// is to use csisc-<uuid>, a generated name, or a reverse-domain name which ends
+	// with the unique CSI driver name.
+	//
+	// Objects are namespaced.
+	//
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	metav1.ObjectMeta
 
-    // Spec contains the fixed properties of one capacity value.
-    Spec CSIStorageCapacitySpec
+	// NodeTopology defines which nodes have access to the storage
+	// for which capacity was reported. If not set, the storage is
+	// not accessible from any node in the cluster. If empty, the
+	// storage is accessible from all nodes.  This field is
+	// immutable.
+	//
+	// +optional
+	NodeTopology *metav1.LabelSelector
 
-    // Status contains the properties that can change over time.
-    Status CSIStorageCapacityStatus
-}
+	// The name of the StorageClass that the reported capacity applies to.
+	// It must meet the same requirements as the name of a StorageClass
+	// object (non-empty, DNS subdomain). If that object no longer exists,
+	// the CSIStorageCapacity object is obsolete and should be removed by its
+	// creator.
+	// This field is immutable.
+	StorageClassName string
 
-// CSIStorageCapacitySpec contains the fixed properties of one capacity value.
-// one capacity value.
-type CSIStorageCapacitySpec struct {
-    // The CSI driver that provides the storage.
-    // This must be the string returned by the CSI GetPluginName() call.
-    DriverName string
+	// Capacity is the value reported by the CSI driver in its GetCapacityResponse
+	// for a GetCapacityRequest with topology and parameters that match the
+	// previous fields.
+	//
+	// The semantic is currently (CSI spec 1.2) defined as:
+	// The available capacity, in bytes, of the storage that can be used
+	// to provision volumes. If not set, that information is currently
+	// unavailable.
+	//
+	// +optional
+	Capacity *resource.Quantity
 
-    // NodeTopology defines which nodes have access to the storage for which
-    // capacity was reported. If not set, the storage is accessible from all
-    // nodes in the cluster.
-    // +optional
-    NodeTopology *v1.NodeSelector
-
-    // The storage class name of the StorageClass which provided the
-    // additional parameters for the GetCapacity call.
-    StorageClassName string
-}
-
-// CSIStorageCapacityStatus contains the properties that can change over time.
-type CSIStorageCapacityStatus struct {
-    // AvailableCapacity is the value reported by the CSI driver in its GetCapacityResponse
-    // for a GetCapacityRequest with topology and parameters that match the
-    // CSIStorageCapacitySpec.
-    //
-    // The semantic is currently (CSI spec 1.2) defined as:
-    // The available capacity, in bytes, of the storage that can be used
-    // to provision volumes.
-    AvailableCapacity *resource.Quantity
+	// MaximumVolumeSize is the value reported by the CSI driver in its GetCapacityResponse
+	// for a GetCapacityRequest with topology and parameters that match the
+	// previous fields.
+	//
+	// This is defined since CSI spec 1.4.0 as the largest size
+	// that may be used in a
+	// CreateVolumeRequest.capacity_range.required_bytes field to
+	// create a volume with the same parameters as those in
+	// GetCapacityRequest. The corresponding value in the Kubernetes
+	// API is ResourceRequirements.Requests in a volume claim.
+	// Not all CSI drivers provide this information.
+	//
+	// +optional
+	MaximumVolumeSize *resource.Quantity
 }
 ```
-
-`AvailableCapacity` is a pointer because `TotalCapacity` and
-`MaximumVolumeSize` might be added later, in which case `nil` for
-`AvailableCapacity` will become allowed.
 
 Compared to the alternatives with a single object per driver (see
 [`CSIDriver.Status`](#csidriverstatus) below) and one object per
@@ -346,7 +372,7 @@ not increase with the potentially unbounded number of some other
 objects (like storage classes).
 
 The downsides are:
-- Some attributes (driver name, topology) must be stored multiple times
+- Some attributes (storage class name, topology) must be stored multiple times
   compared to a more complex object, so overall data size in etcd is higher.
 - Higher number of objects which all need to be retrieved by a client
   which does not already know which `CSIStorageCapacity` object it is
@@ -359,35 +385,29 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-ab96d356-0d31-11ea-ade1-8b7e883d1af1
-spec:
-  driverName: hostpath.csi.k8s.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-1
-status:
-  availableCapacity: 256G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-1
+capacity: 256G
 
 apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-c3723f32-0d32-11ea-a14f-fbaf155dff50
-spec:
-  driverName: hostpath.csi.k8s.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-2
-status:
-  availableCapacity: 512G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-2
+capacity: 512G
 ```
 
 ##### Example: affect of storage classes
@@ -397,35 +417,29 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-9c17f6fc-6ada-488f-9d44-c5d63ecdf7a9
-spec:
-  driverName: lvm
-  storageClassName: striped
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-1
-status:
-  availableCapacity: 256G
+storageClassName: striped
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-1
+capacity: 256G
 
 apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-f0e03868-954d-11ea-9d78-9f197c0aea6f
-spec:
-  driverName: lvm
-  storageClassName: mirrored
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: kubernetes.io/hostname
-        operator: In
-        values:
-        - node-1
-status:
-  availableCapacity: 128G
+storageClassName: mirrored
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+      - node-1
+capacity: 128G
 ```
 
 ##### Example: network attached storage
@@ -435,35 +449,29 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-b0963bb5-37cf-415d-9fb1-667499172320
-spec:
-  driverName: pd.csi.storage.gke.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: topology.kubernetes.io/region
-        operator: In
-        values:
-        - us-east-1
-status:
-  availableCapacity: 128G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: topology.kubernetes.io/region
+      operator: In
+      values:
+      - us-east-1
+availableCapacity: 128G
 
 apiVersion: storage.k8s.io/v1alpha1
 kind: CSIStorageCapacity
 metadata:
   name: csisc-64103396-0d32-11ea-945c-e3ede5f0f3ae
-spec:
-  driverName: pd.csi.storage.gke.io
-  storageClassName: some-storage-class
-  nodeTopology:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: topology.kubernetes.io/region
-        operator: In
-        values:
-        - us-west-1
-status:
-  availableCapacity: 256G
+storageClassName: some-storage-class
+nodeTopology:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: topology.kubernetes.io/region
+      operator: In
+      values:
+      - us-west-1
+capacity: 256G
 ```
 
 #### CSIDriver.spec.storageCapacity
@@ -806,7 +814,7 @@ checks for events that describe the problem.
 - 5 installs
 - More rigorous forms of testing e.g., downgrade tests and scalability tests
 - Allowing time for feedback
-- Integration with [Cluster Autoscaler](https://github.com/kubernetes/autoscaler)
+- Design for support in [Cluster Autoscaler](https://github.com/kubernetes/autoscaler)
 
 ### Upgrade / Downgrade Strategy
 
@@ -847,10 +855,14 @@ enhancement:
     - Components depending on the feature gate:
       - apiserver
       - kube-scheduler
+  - [X] CSIDriver.StorageCapacity field can be modified
+    - Components depending on the field:
+      - kube-scheduler
 
 * **Does enabling the feature change any default behavior?**
 
-  Enabling it only in kube-scheduler and api-server and not any of the
+  Enabling it only in kube-scheduler and api-server by updating
+  to a Kubernetes version where it is enabled and not in any of the
   running CSI drivers causes no changes. Everything continues as
   before because no `CSIStorageCapacity` objects are created and
   kube-scheduler does not wait for any.
@@ -861,12 +873,19 @@ enhancement:
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Yes.
 
-  In Kubernetes 1.19 and 1.20, registration of the
-  `CSIStorageCapacity` type was controlled by the feature gate. In
-  1.21, the type will always be enabled in the v1beta1 API
-  group. Depending on the combination of Kubernetes release and
+  Yes, by disabling it in the CSI driver deployment:
+  `CSIDriver.StorageCapacity=false` causes kube-scheduler to ignore storage
+  capacity for the driver. In addition, external-provisioner can be deployed so
+  that it does not publish capacity information (`--enable-capacity=false`).
+
+  Downgrading to a previous Kubernetes release may also disable the feature or
+  allow disabling it via a feature gate: In Kubernetes 1.19 and 1.20,
+  registration of the `CSIStorageCapacity` type was controlled by the feature
+  gate. In 1.21, the type will always be enabled in the v1beta1 API group. In
+  1.24, the type is always enabled in the v1 API unconditionally.
+
+  Depending on the combination of Kubernetes release and
   feature gate, the type will be disabled. However, any existing
   objects will still remain in the etcd database, they just won't be
   visible.
@@ -893,8 +912,10 @@ enhancement:
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling and disabling feature
   gates. However, unit tests in each component dealing with managing data created
-  with and without the feature are necessary and will be added before
-  before the transition to beta.
+  with and without the feature are necessary and were added before
+  before the transition to beta, for example
+  [in the apiserver](https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/apis/storage/validation/validation_test.go#L2091-L2131)
+  and the [volume binder](https://github.com/kubernetes/kubernetes/blob/v1.21.0/test/integration/volumescheduling/volume_binding_test.go#L706-L709).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -934,7 +955,9 @@ consumption, increased latency), specifically
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
 
-Not yet, but will be done manually before transition to beta.
+This was done manually before transition to beta in a kubeadm-based cluster
+running on VMs. The experiment confirmed that rollback and re-enabling works
+as described above, with no unexpected behavior.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
@@ -951,17 +974,15 @@ scheduling workloads onto nodes, but not while those run.
 That a CSI driver provides storage capacity information can seen in the
 following metric data that will be provided by external-provisioner instances:
 - total number of `CSIStorageCapacity` objects that the external-provisioner
-  is currently meant to manage for the driver
+  is currently meant to manage for the driver: `csistoragecapacities_desired_goal`
 - number of such objects that currently exist and can be kept because
-  they have a topology/storage class pair that is still valid
+  they have a topology/storage class pair that is still valid: `csistoragecapacities_desired_current`
 - number of such objects that currently exist and need to be deleted
-  because they have an outdated topology/storage class pair
-- work queue length for creating, updating or deleting objects
+  because they have an outdated topology/storage class pair: `csistoragecapacities_obsolete`
+- work queue length for creating, updating or deleting objects: `csistoragecapacity` work queue
 
 The CSI driver name will be used as label. When using distributed
 provisioning, the node name will be used as additional label.
-
-TODO: mention the exact metrics names once they are implemented.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -981,7 +1002,9 @@ calls will be recorded with their non-OK status code as value.
 The goal is to achieve the same provisioning rates with the feature
 enabled as those that currently can be achieved without it.
 
-This will need further discussion before going to GA.
+The SLOs depend on the CSI driver and how they are deployed. Therefore SLOs
+cannot be specified in more detail here. Cloud providers will have to determine
+what reasonable values are and document those.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
@@ -1100,6 +1123,7 @@ to `CSIStorageCapacity` objects.
 - Kubernetes 1.19: alpha
 - Kubernetes 1.21: beta
 - Kubernetes 1.23: `CSIDriver.Spec.StorageCapacity` became mutable.
+- Kubernetes 1.24: GA
 
 ## Drawbacks
 
@@ -1113,33 +1137,31 @@ such a scenario, the scheduler has to make those decisions based on
 outdated information, in particular when making one scheduling
 decisions affects the next decision.
 
-We need to investigate:
-- Whether this really is a problem in practice, i.e. identify
-  workloads and drivers where this problem occurs.
-- Whether introducing some simple modeling of capacity helps.
-- Whether prioritization of nodes helps.
+[Scale testing](https://github.com/kubernetes-csi/csi-driver-host-path/blob/f053a7b0c4b719a5808fc47fdb3eba9cdade2067/docs/storage-capacity-tracking.md)
+showed that this can occur for a fake workload that generates
+pods with generic ephemeral inline volumes as quickly as possible: publishing
+CSIStorageCapacity objects was sometimes too slow, so scheduling retries were
+needed. However, this was not a problem and the test completed.  The same test
+failed without storage capacity tracking because pod scheduling eventually got
+stuck. Pure chance was not good enough anymore to find nodes that still had
+free storage capacity. No cases have been reported where this was a problem for
+real workloads either.
 
-For a discussion around modeling storage capacity, see the proposal to
-add ["total capacity" to
-CSI](https://github.com/container-storage-interface/spec/issues/301).
+Modeling remaining storage capacity in the scheduler is an approach that the
+storage community is not willing to support and considers likely to fail
+because storage is often not simply a linear amount of bytes that can be split
+up arbitrarily. For some records of that discussion see the proposal to add
+["total capacity" to
+CSI](https://github.com/container-storage-interface/spec/issues/301), the newer
+[" addition of
+`maximum_volume_size`](https://github.com/container-storage-interface/spec/pull/470)
+and the [2021 Feb 03 CSI community
+meeting](https://www.youtube.com/watch?v=ZB0Y05jo7-M).
 
-### "Total available capacity" vs. "maximum volume size"
-
-The CSI spec around `GetCapacityResponse.capacity` [is
-vague](https://github.com/container-storage-interface/spec/issues/432)
-because it ignores fragmentation issues. The current Kubernetes API
-proposal follows the design principle that Kubernetes should deviate
-from the CSI spec as little as possible. It therefore directly copies
-that value and thus has the same issue.
-
-The proposed usage (comparison of volume size against available
-capacity) works either way, but having separate fields for "total
-available capacity" and "maximum volume size" would be more precise
-and enable additional features like even volume spreading by
-prioritizing nodes based on "total available capacity"
-
-The goal is to clarify that first in the CSI spec and then revise the
-Kubernetes API.
+Lack of storage capacity modeling will cause the autoscaler to scale up
+clusters more slowly because it cannot determine in advance that multiple new
+nodes are needed. Scaling up one node at a time is still an improvement over
+not scaling up at all.
 
 ### Prioritization of nodes
 
@@ -1154,6 +1176,11 @@ nodes that have more total available capacity may be better. This can
 be achieved by prioritizing nodes, ideally with information about both
 "maximum volume size" (for filtering) and "total available capacity"
 (for prioritization).
+
+Prioritizing nodes based on storage capacity was [discussed on
+Slack](https://kubernetes.slack.com/archives/C09QZFCE5/p1629251024161700). The
+conclusion was to handle this as a new KEP if there is sufficient demand for
+it, which so far doesn't seem to be the case.
 
 ### Integration with [Cluster Autoscaler](https://github.com/kubernetes/autoscaler)
 
@@ -1173,9 +1200,28 @@ based on storage capacity:
   to available storage and thus could run on a new node, the
   simulation may decide otherwise.
 
-It may be possible to solve this by pre-configuring some information
-(local storage capacity of future nodes and their CSI topology). This
-needs to be explored further.
+This gets further complicated by the independent development of CSI drivers,
+autoscaler, and cloud provider: autoscaler and cloud provider don't know which
+kinds of volumes a CSI driver will be able to make available on nodes because
+that logic is implemented inside the CSI driver. The CSI driver doesn't know
+about hardware that hasn't been provisioned yet and doesn't know about
+autoscaling.
+
+One potential approach gets discussed [below](#generic-autoscaler-support)
+under alternatives. However, it puts a considerable burden on the cluster
+administrator to configure everything correctly and only scales up a cluster
+one node at a time.
+
+To address these two problems, further work is needed to determine:
+- How the CSI driver can provide information to the autoscaler
+  to enable simulated volume provisioning (total capacity
+  of a pristine simulated node, constraints for volume sizes in
+  the storage system).
+- How to use that information to support batch scheduling in the
+  autoscaler.
+
+Depending on whether changes are needed in Kubernetes itself, this could be
+done in a new KEP or in a design document for the autoscaler.
 
 ### Alternative solutions
 
@@ -1640,6 +1686,75 @@ status:
         values:
         - us-west-1
 ```
+
+
+### Generic autoscaler support
+
+The problem of providing information about fictional nodes
+can be solved by the cluster administrator. They can find out how
+much storage will be made available by new nodes, for example by running
+experiments, and then configure the cluster so that this information is
+available to the autoscaler. This can be done with the existing
+CSIStorageCapacity API for node-local storage as follows:
+
+- When creating a fictional Node object from an existing Node in
+  a node group, autoscaler must modify the topology labels of the CSI
+  driver(s) in the cluster so that they define a new topology segment.
+  For example, topology.hostpath.csi/node=aks-workerpool.* has to
+  be replaced with topology.hostpath.csi/node=aks-workerpool-template.
+  Because these labels are opaque to the autoscaler, the cluster
+  administrator must configure these transformations, for example
+  via regular expression search/replace.
+- For scale up from zero, a label like
+  topology.hostpath.csi/node=aks-workerpool-template must be added to the
+  configuration of the node pool.
+- For each storage class, the cluster administrator can then create
+  CSIStorageCapacity objects that provide the capacity information for these
+  fictional topology segments.
+- When the volume binder plugin for the scheduler runs inside the autoscaler,
+  it works exactly as in the scheduler and will accept nodes where the manually
+  created CSIStorageCapacity indicate that sufficient storage is (or rather,
+  will be) available.
+- Because the CSI driver will not run immediately on new nodes, autoscaler has
+  to wait for it before considering the node ready. If it doesn't do that, it
+  might incorrectly scale up further because storage capacity checks will fail
+  for a new, unused node until the CSI driver provides CSIStorageCapacity
+  objects for it. This can be implemented in a generic way for all CSI drivers
+  by adding a readiness check to the autoscaler that compares the existing
+  CSIStorageCapacity objects against the expected ones for the fictional node.
+
+A proof-of-concept of this approach is available in
+https://github.com/kubernetes/autoscaler/pull/3887 and has been used
+successfully to scale an Azure cluster up and down with csi-driver-host-path as
+CSI driver. However, due to the lack of storage capacity modeling, scale up
+happens slowly and configuring the cluster correctly is complex. Whether that
+is good enough or insufficient depends on the use cases for storage in a
+cluster where autoscaling is enabled. The current understanding is that further
+work is needed.
+
+To improve scale up speed, the scheduler would have to take volumes that are in
+the process of being provisioned into account when deciding about other
+suitable nodes. This might not be the right decision for all CSI drivers, so
+further exploration and potentially an extension of the CSI API ("total
+capacity") will be needed.
+
+The approach above preserves the separation between the different
+components. Simpler solutions may be possible by adding support for specific
+CSI drivers into custom autoscaler binaries or into operators that control the
+cluster setup.
+
+Alternatively, additional information provided by the CSI driver might make it
+possible to simplify the cluster configuration, for example by providing
+machine-readable instructions for how labels should be changed.
+
+Network attached storage doesn't need renaming of labels when cloning an
+existing Node. The information published for that Node is also valid for the
+fictional one. Scale up from zero however is problematic: the CSI specification
+does not support listing topology segments that don't have some actual Nodes
+with a running CSI driver on them. Either a CSI specification change or manual
+configuration of the external-provisioner sidecar will be needed to close this
+gap.
+
 
 ### Prior work
 

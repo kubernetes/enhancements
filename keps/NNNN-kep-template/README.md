@@ -277,12 +277,13 @@ when drafting this test plan.
 
 Define graduation milestones.
 
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
+These may be defined in terms of API maturity, [feature gate] graduations, or as
+something else. The KEP should keep this high-level with a focus on what
+signals will be looked at to determine graduation.
 
 Consider the following in developing the graduation criteria for this enhancement:
 - [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
+- [Feature gate][feature gate] lifecycle
 - [Deprecation policy][deprecation-policy]
 
 Clearly define what graduation means by either linking to the [API doc
@@ -292,6 +293,7 @@ or by redefining what graduation means.
 In general we try to use the same stages (alpha, beta, GA), regardless of how the
 functionality is accessed.
 
+[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
 [maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
@@ -395,6 +397,12 @@ This section must be completed when targeting alpha to a release.
 
 <!--
 Pick one of these and delete the rest.
+
+Documentation is available on [feature gate lifecycle] and expectations, as
+well as the [existing list] of feature gates.
+
+[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
@@ -420,6 +428,10 @@ automations, so be extremely careful here.
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
 
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
+
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
@@ -432,6 +444,12 @@ The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
 with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
 ### Rollout, Upgrade and Rollback Planning
@@ -477,6 +495,9 @@ Even if applying deprecation policies, they may still surprise some users.
 
 <!--
 This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -646,6 +667,9 @@ This through this both in small and large cases, again with respect to the
 
 <!--
 This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
 splitting it into a dedicated `Playbook` document (potentially with some monitoring

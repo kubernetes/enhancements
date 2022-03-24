@@ -327,6 +327,7 @@ Alpha:
 
 Beta:
 * integration or e2e tests with at least one working plugin implementation
+* at least 2 working reference implementations
 * unit tests for new concurrency/caching improvements.
 
 ### Graduation Criteria

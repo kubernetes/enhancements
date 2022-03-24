@@ -11,8 +11,13 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+    - [Transition Rules](#transition-rules)
+      - [Use Cases](#use-cases)
+      - [Considerations](#considerations)
+      - [Alternatives Evaluated](#alternatives-evaluated)
     - [Expression lifecycle](#expression-lifecycle)
     - [Function library](#function-library)
+      - [Function Library Updates](#function-library-updates)
   - [User Stories](#user-stories)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -26,6 +31,11 @@
   - [Type Checking](#type-checking)
   - [Type System Integration](#type-system-integration)
     - [Why not represent associative lists as maps in CEL?](#why-not-represent-associative-lists-as-maps-in-cel)
+  - [Resource constraints](#resource-constraints)
+    - [Estimated Cost Limits](#estimated-cost-limits)
+    - [Runtime Cost Budget](#runtime-cost-budget)
+  - [Request lifetime Bound](#request-lifetime-bound)
+  - [Bounds](#bounds)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -292,18 +302,9 @@ is scoped to.
 or map. These will be accessible to CEL via `self`. The elements of a map or list can be validated using the CEL support for collections
 like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey,
 <predicate>)`.
-  
-- For immutability use case, validator will have access to the existing version of the object. This
-  will be accessible to CEL via the `oldSelf` identifier.
-  - This will only be available on mergable collection types such as objects (unless
-    `x-kubernetes-map-type=atomic`), maps with `x-kubernetes-map-type=granular` and lists
-    with `x-kubernetes-list-type` set to `set` or `map`.  See [Merge
-    Strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) for
-    details.
-  - The use of "old" is congruent with how `AdmissionReview` identifies the existing object as
-    `oldObject`.
-  - xref [analysis of possible interactions with immutability and
-    validation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/1101-immutable-fields#openapi-extension-x-kubernetes-immutable).
+
+- Rule expressions may reference existing object state using the identifier `oldSelf`. Such
+  "[transition rules](#transition-rules)" apply only under limited circumstances.
 
 - Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible and are escaped
   according to the following rules when accessed in the expression:
@@ -327,16 +328,137 @@ like the `all` macro, e.g. `self.all(listItem, <predicate>)` or `self.all(mapKey
   all validation mechanisms (e.g. the OpenAPIV3 `maxItems` restriction), not just CEL validator
   rules. xref rule 4 in [specifying a structural schema](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#specifying-a-structural-schema).
 
-- We plan to allow access to the current state of the object to allow validation rules to check the
-  new value against the current value, e.g. for immutability checks (for validation racheting we would
-  prefer an approach like described in https://github.com/kubernetes/kubernetes/issues/94060 be pursued).
-
 - If the CEL evaluation exceeds the bounds we set (details below), the server will return a 408
   (Request Timeout) HTTP status code. The timeout will be a backstop we expect to rarely be used
   since CEL evaluations are multiple orders of magnitude faster that typical webhook invocations,
   and we can use CEL expression complexity estimations
   ([xref](https://github.com/jinmmin/cel-go/blob/a661c99f8e27676c70fc00f4f328476ca4dcdb7f/cel/program.go#L265))
   during CRD update to bound complexity.
+
+#### Transition Rules
+
+A rule that contains an expression referencing the identifier `oldSelf` is implicitly considered a
+"transition rule". Transition rules allow schema authors to prevent certain transitions between two
+otherwise valid states. For example:
+
+```yaml
+type: string
+enum: ["low", "medium", "high"]
+x-kubernetes-validations:
+- rule: "!(self == 'high' && oldSelf == 'low') && !(self == 'low' && oldSelf == 'high')"
+  message: cannot transition directly between 'low' and 'high'
+```
+
+Unlike other rules, transition rules apply only to operations meeting the following criteria:
+
+- The operation updates an existing object. Transition rules never apply to create operations.
+
+- Both an old and a new value exist. It remains possible to check if a value has been added or
+  removed by placing a transition rule on the parent node. Transition rules are never applied to
+  custom resource creation. When placed on an optional field, a transition rule will not apply to
+  update operations that set or unset the field.
+
+- The path to the schema node being validated by a transition rule must resolve to a node that is
+  comparable between the old object and the new object. For example, list items and their
+  descendants (`spec.foo[10].bar`) can't necessarily be correlated between an existing object and a
+  later update to the same object.
+
+  - Mergeability semantics from [server-side
+    apply](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) are
+    leveraged when determining whether or not a given schema node and its descendants support
+    transition rules, as follows:
+
+    - Elements of maps marked `x-kubernetes-map-type=granular` or `x-kubernetes-map-type=atomic` are
+      correlated by key.
+
+    - Elements of lists marked `x-kubernetes-list-type=map` are correlated if an element exists in
+      both the old and new object having identical values for all key fields.
+
+    - Elements of lists marked `x-kubernetes-list-type=set`, which must be scalars, do not support
+      transition rules, however, set membership changes are visible to transition rules defined on
+      the parent (i.e. array) node.
+
+    - Elements of lists with type `atomic` do not support transition rules.
+
+If all of the above criteria are satisfied for a given operation, the transition rule will be
+enforced. The identifier `oldSelf` is guaranteed to be bound to a non-null value during expression
+evaluation.
+
+Errors will be generated on CRD writes if a schema node contains a transition rule that can never be
+applied, e.g. "*path*: update rule *rule* cannot be set on schema because the schema or its parent
+schema is not mergeable".
+
+##### Use Cases
+
+| Use Case                                                          | Rule
+| --------                                                          | --------
+| Immutability                                                      | `self.foo == oldSelf.foo`
+| Prevent modification/removal once assigned                        | `oldSelf != 'bar' \|\| self == 'bar'` or `!has(oldSelf.field) \|\| has(self.field)`
+| Append-only set                                                   | `self.all(element, element in oldSelf)`
+| If previous value was X, new value can only be A or B, not Y or Z | `oldSelf != 'X' \|\| self in ['A', 'B']`
+| Nondecreasing counters                                            | `self >= oldSelf`
+
+##### Considerations
+
+- The use of the prefix "old" in the identifier `oldSelf` is congruent with how `AdmissionReview`
+  identifies the existing object as `oldObject`.
+
+- CEL doesn't support checking if a root variable is bound. The macro `has` can test for the
+  presence of fields, as in `has(self.child)`, but `has(oldSelf)` is not legal.
+
+- It is possible for an attempt to update a custom resource to be rejected solely due to a
+  disallowed transition from existing state. This [complicates declarative reconciliation
+  tools](https://docs.google.com/document/d/1ZpCHE4yrOXoawai8Ldz49A4t9ni-QsHSuoy71VhBTLw/edit) that
+  need to decide whether or not to delete-and-recreate an existing object. This problem exists today
+  with fields that are immutable or immutable-once-assigned. Once a mechanism exists to communicate
+  to clients that an operation was rejected due to transition errors only, that mechanism will be
+  adopted for errors produced by the transition rules described in this document (see
+  https://github.com/kubernetes/kubernetes/issues/107919).
+
+##### Alternatives Evaluated
+
+1. A boolean field is added to the extension indicating when true that the rule applies only to
+   updates. The expression in "rule" may not reference the identifier "oldSelf" unless "updateRule"
+   is present and true. If "oldSelf" is referenced by the expression, and updateRule is absent or
+   false, an error is generated at CRD update time. The additional boolean field serves as an
+   explicit user acknowledgement that the rule should be treated as a transition rule, but doesn't
+   serve a technical purpose.
+
+```yaml
+x-kubernetes-validations:
+  - rule: "oldSelf.xyz"
+    updateRule: true
+```
+
+2. A validation context object (`context`) is exposed to expressions. For comparable update
+   operations, the context object will provide access to the old value via a field. Schema authors
+   take responsibility for avoiding runtime errors in more complex expressions.
+
+```yaml
+x-kubernetes-validations:
+  - rule: "self.size() <= 10 || (has(context.oldSelf) && self.size() <= context.oldSelf.size())"
+```
+
+3. A new string field named "updateRule" permits CEL expressions that reference `oldSelf`. If "rule"
+   and "updateRule" are mutually exclusive, this is effectively equivalent to alternative 1.
+
+```yaml
+x-kubernetes-validations:
+  - updateRule: "oldSelf.xyz"
+```
+
+4. An "updateRule" field is added, as in alternative 3, but it is not mutually exclusive with the
+   "rule" field. The "updateRule" applies when the transition rule criteria are satisfied, otherwise
+   "rule" applies. This alternative allows validations to accept an update while rejecting the
+   creation of an identical new object, but may be in conflict with support for
+   auto-ratcheting. Additionally, requiring two expressions instead of one makes validation rules
+   more difficult for users to understand.
+
+```yaml
+x-kubernetes-validations:
+  - rule: "self in [2, 3]"
+    updateRule: "self in [2, 3] || (self == 1 && self == oldSelf)"
+```
 
 #### Expression lifecycle
 
@@ -348,25 +470,176 @@ to fail with a descriptive error.
 
 #### Function library
 
-The function library available to expressions can be augmented using [extension
-functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions).
+The functions will become VERY difficult to change as this feature matures.
+There are two types of risks here:
 
-List of functions to include for the initial release:
-- Equality and Ordering (customized to do Kuberenetes semantic equality that handles "associative lists")
-- Regular Expressions
-- Some Standard Definitions
+- We add a function and later need to change it.
+- We don't add a function that is essential for use cases and later need to add it.
 
-Considerations:
-- The functions will become VERY difficult to change as this feature matures. We
-  should limit ourselves initially to functions that we have a high level of
-  confidence will not need to be changed or rethought.
+Proposal:
 
-- Support kubernetes specific concepts, like accessing associative lists by key may be needed, but
-  we need to review more use cases to determine if this is needed.
-  
-- The Kubernetes associated list equality uses map semantic equality which is different from CEL. 
-  We would consider overwriting in CEL or adding a workaround utility function.
+- Keep all the CEL standard functions and macros as well as the extended string library.
+- Introduce a new "kubernetes" CEL extension library.
+  - Add `isSorted` for lists with comparable elements. This is useful for ensuring that a list is kept in-order.
+  - Add `sum` for lists of {int, uint, double, duration, string, bytes} (consistent with the [CEL _+_ operation](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions) )
+    and add `min`, `max` for lists of {bool, int, uint, double, string, bytes, duration, timestamp} (consistent with the [CEL comparison operations](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions)).
+    These operations can also be used in CEL on scalars by defining list literals
+    inline , e.g. `[self.val1, self.val2].max()`. Overflow will raise the same error raised by arithmetic operation [overflow](https://github.com/google/cel-spec/blob/master/doc/langdef.md#overflow).
+  - Add `indexOf` / `lastIndexOf` support for lists (overloading the existing string functions), this can be useful for
+    validating partial order (i.e. the tasks of a workflow)
+  - Add URL parsing: `url(string) URL`, `string(URL) string` (conversion), `getScheme(URL) string`, `getUserInfo(URL) string`,
+    `getHost(URL) string`, `getPort(URL) string`, `getPath(URL) string`, `getQuery(URL) string`, `getFragment(URL) string`. This is
+    useful for validating URLs. The go URL parser implements all the functionality.
+  - Add regex `find(string) string` and `findAll(string) []string`. This makes it possible to parse out parts of string
+    formats (we only provide timestamp, duration and url support directly).
 
+The function libraries we need can be added using [extension
+functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#extension-functions) to either cel-go (if they accept our proposals)
+or directly to the Kubernetes codebase.
+
+How we selected this function library:
+
+First let's look at what CEL provides, and then look at what some of the core libraries of major programming
+languages provide, and see what notable absences there are.
+
+CEL standard functions, defined in the [list of standard definitions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions) include:
+
+- `size` (or string, lists, maps, ...)
+- String inspection: `startsWith`, `endsWith`, `contains`
+- Regex: `matches`
+- Date/time accessors: `getDate`, `getDayOfMonth`, `getDayOfWeek`, `getDayOfYear`, `getFullYear`, `getHours`, `getMilliseconds`, `getMinutes`, `getMonth`, `getSeconds`
+
+CEL standard [macros](https://github.com/google/cel-spec/blob/master/doc/langdef.md#macros) include:
+
+- `has`
+- `all`
+- `exists`
+- `exists_one`
+- `map`
+- `filter`
+
+CEL [extended string function library](https://github.com/google/cel-go/blob/master/ext/strings.go) includes:
+
+- `charAt`
+- `indexOf`, `lastIndexOf`
+- `upperAscii`, `lowerAscii`
+- `replace` (string literal replacement, not regex)
+- `split`
+- `substring`
+- `trim`
+
+Notable absences from the standard functions, when comparing against the core libraries of Go, Java and Python are:
+
+Strings:
+
+- trim/trimLeft/trimRight (trimming either by whitespace or by provided cutset)
+- trimPrefix/trimSuffix
+- join
+- replace (regex)
+- format (e.g. `fmt.Sprintf()`)
+
+Lists:
+
+- sort
+- indexOf/lastIndexOf
+- replace
+- sublist
+- split
+- reverse
+- sum/min/max (xref: [Rego function library](https://www.openpolicyagent.org/docs/latest/policy-reference/#built-in-functions))
+
+Numbers:
+
+- abs/cel/floor/round
+- exp/log/log10/logN/pow/sqrt
+- max(x, y, ..)/min(x, y, ...)
+- <trig functions>
+
+Formats:
+
+- semver: compare (xref [Kyverno function library](https://github.com/kyverno/kyverno/blob/main/pkg/engine/jmespath/functions.go))
+- urls: parsing out {scheme, userInfo, host, port, path, query, fragment}. This is [hard](https://community.helpsystems.com/forums/intermapper/miscellaneous-topics/5acc4fcf-fa83-e511-80cf-0050568460e4?_ga=2.113564423.1432958022.1523882681-2146416484.1523557976)
+  to get right with regex, particularly with ipv6.
+- images: parsing out {name, tag, digest} as well as {host, port} from name and algorithm, hex} from digest. (xref: [grammar](https://github.com/distribution/distribution/blob/v2.7.1/reference/reference.go#L4-L24)).
+
+Maps:
+
+- <Ability to construct a map using a comprehension>
+
+Some considerations when selecting which of the above we should include in CEL expressions in Kubernetes:
+
+- We should include functions that will be needed for future use cases of CEL in Kubernetes (e.g. general admission) as
+  ones needed for validation.
+- Regex replace is very powerful and useful. It is also potentially dangerous due to its ability to allocate memory.
+- `format`: Since CEL supports string concatenation, the value of having format would only be to do things like format floats.
+  Formatting functions are complex and require extensive documentation to teach.
+- `isSorted` makes it possible to check if a list is sorted without the expense of performing a sort
+- `indexOf` / `lastIndexOf` / `split` / `replace` (the string functions) will be overloaded to provide the equivalent list functions.
+- `reduce` is going to be non-obvious to anyone that doesn't have a functional programming background?
+  - If we provide `reduce` are developers going to also expect to have `fold` or `zip`?
+- "Ability to construct a map using a comprehension": this appears mechanically problematic to support in CEL?
+- None of the other policy libraries provide extended math/trig support and I asked Tristan (maintainer of CEL) if
+  they are requested and he said "almost never", which he clarified to mean it has been requested exactly one time.
+- Average and quantile (median, 99th percentile, ...) and stddev are, however, often requested by other CEL users
+
+Future work:
+
+We've decided NOT to add the following functions. They may be useful for mutation, in which case we will consider adding them as part
+of any future work done involving CEL and mutating admission control:
+
+- Regex replace
+- Add `trimPrefix` / `trimSuffix` for strings
+- Add `trim` / `trimLeft` / `trimRight` (overloaded to take an optional cutset arg) for strings
+- `sublist`, `split`, `replace` and `reverse` for lists (overloading existing string functions where appropriate)
+
+##### Function Library Updates
+
+Any changes to the CEL function library will make it possible for CRD authors to create CRDs that are incompatible with
+all previous Kubernetes releases that supported CEL. Because of this incompatibility, changing the function library
+will need to carefully considered and kept to a minimum. All changes will need to be limited to function additions.
+We will not add functions to do things that can already be reasonably accomplished with existing functions Improving ease-of-use
+at the cost of fragmentation / incompatibility with older servers is not a good trade-off.
+
+Any function library change must follow the [API Changes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
+guidelines. Since a change to the function library is a change to the `x-kubernetes-validations.rule` field, it must be
+introduced one Kubernetes release prior to when it may be included in create/update requests to CRDs. Specifically:
+
+- Kubernetes Version N-1: Entirely unaware of the library update.
+- Kubernetes Version N: Supports CRD that use library updates, but does not allow the library updates to used when
+  setting `x-kubernetes-validations.rule` fields.
+- Kubernetes Version N+1: Library update fully enabled.
+
+The mechanism for this will be:
+
+- All new functions, macros, or overloads of existing functions, will be added to a separate "future compatibility" CEL 
+  extension library (which extension library a function is in is an internal detail that is not visible to users).
+- For create requests, and for any CEL expressions that are changed as part of an update, the CEL expression will be 
+  compiled **without** the "future compatibility" CEL extension library.
+- For CEL expressions not changed in an update, the CEL expression will be compiled **with** the
+  "kubernetes-future-compatibility" CEL extension. This ensures that persisted fields that already use the change continue
+  to compile.
+- The "future compatibility" CEL extension library will always be included when CEL expressions are evaluated.
+- When the next version of Kubernetes is release, the library functions will be moved from "future compatibility"
+- to the main CEL extension library we use to extend CEL for Kubernetes.
+
+Alternatives considered:
+
+Versioning Alternative:
+
+- All changes to CEL (core language and libraries) will be versioned and CEL expressions must specify the version they
+  are compatible with.
+- All versions must be backward compatible (a newer version of CEL is compatible with all older versions of CEL)
+- The API server rejects requests containing CEL versions newer than it supports.
+
+Pros:
+
+- Very clear what CRDs are compatible with what Kubernetes versions.
+
+Cons:
+
+- Validating that a CEL expression is the version it claims to be is difficult for older version of CEL. Either the API
+  server would need to contain multiple versions of the CEL compiler, or it would need a compiler that can be configured to
+  compile a CEL expression according to the language rules of an older version.
 
 ### User Stories
 
@@ -486,6 +759,8 @@ for our use case.
 The good news is that https://github.com/google/cel-policy-templates-go already has
 demonstrated integrating CEL with OpenAPIv3. We plan to leverage this work.
 
+Support for comparing integers and floats is supported in beta and later (in alpha, ints could only be compared to ints and floats to floats).
+
 We will add detailed test coverage for numeric comparisons due to
 [google/cel-spec#54](https://github.com/google/cel-spec/issues/54#issuecomment-491464172) including
 coverage of interactions in these dimensions:
@@ -501,12 +776,12 @@ coverage of interactions in these dimensions:
 Types:
 
 | OpenAPIv3 type                                     | CEL type                                                                                                                     |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
 | 'object' with Properties                           | object / "message type" (`type(<object>)` evaluates to `selfType<uniqueNumber>.path.to.object.from.self`                     |
 | 'object' with AdditionalProperties                 | map                                                                                                                          |
 | 'object' with x-kubernetes-embedded-type           | object / "message type", 'apiVersion', 'kind', 'metadata.name' and 'metadata.generateName' are implicitly included in schema |
 | 'object' with x-kubernetes-preserve-unknown-fields | object / "message type", unknown fields are NOT accessible in CEL expression                                                 |
-| x-kubernetes-int-or-string                         | dynamic object that is either an int or a string, `type(value)` can be used to check the type                                |
+| x-kubernetes-int-or-string                         | union of int or string,  `self.intOrString < 100 \|\| self.intOrString == '50%'` evaluates to true for both `50` and `"50%"`  |
 | 'array                                             | list                                                                                                                         |
 | 'array' with x-kubernetes-list-type=map            | list with map based Equality & unique key guarantees                                                                         |
 | 'array' with x-kubernetes-list-type=set            | list with set based Equality & unique entry guarantees                                                                       |
@@ -588,6 +863,153 @@ associativeList.all(e, e.key1 == 'a' && e.key2 == 'b' && e.val == 100)
 // To check some condition on all entries of an "associative list":
 associativeList.all(e, e.val == 100)
 ```
+
+### Resource constraints
+
+CEL expressions have the potential to consume unacceptable amounts of API server resources. We intend to 
+constrain the resource utilization in a few ways:
+
+- Validation of CEL expression's "cost" when a CEL expression is written to a field in a CRD (at CRD creation/update time)
+- Use a runtime cost budget during CEL evaluation that is integrated with API Priority and Fairness to determine the budget
+- Use go context cancelation to bound CEL expression evaluation to the request lifetime
+
+Combined, these limits protect against both accidental and malicious misuse and also work in concert with API Priority and Fairness to ensure the
+API server as a whole makes good use of the available resources.
+
+#### Estimated Cost Limits
+
+Validation of CEL expression's "cost" is primarily intended to provide authors of CEL expressions with 
+actionable feedback on the expected runtime costs of their expressions and prevent them from authoring 
+expressions that have poor worst case running times.
+
+We will use CEL's [cost subsystem](https://github.com/google/cel-go/blob/dfef54b359b05532fb9695bc88937aa8530ab055/cel/program.go#L309) to provide our proactive limits. If an
+expression is analyzed and has a cost greater than a predefined limit, it will not be allowed. If an
+expression is rejected for this reason, the error message will include how much the limit was exceeded.
+
+A major problem with the cost system is assigning the cost of list iteration. The cost of a CEL expression is 
+computed statically without any knowledge about the data that will be validated. Only the CEL expression is 
+available when computing cost. This means that the sizes of variable length data types (lists, maps, sets, 
+strings, byte arrays) are entirely unknown. This limits our options for computing the cost of CEL expressions 
+that iterate across these list types. Setting high costs for iteration is a major problem because, in 
+practice, lists are short. For example, a pod has a list of containers, but the list is usually quite short.
+
+There are a couple ways to address this problem:
+
+- We require CRD authors to provide `maxLength` on all variable length data types that they iterate across in CEL expressions so we know exactly how to compute cost
+- We do not attempt to statically compute a cost and instead rely entirely on time based limits
+- We prove that, in practice, the cost limits can be found that are operationally safe while still not being overly restrictive
+
+We have explored the cost system and realized (thanks @liggitt!) that O(n) iteration is bounded by custom 
+resource size limits (specifically the 3MB request limit) and we can use this to establish more manageable 
+worst case sizes.
+
+If a list contains small elements (e.g. a `0` stored in JSON) then the worst case list size can be
+3MB/2bytes=~1572k elements, but as the element size grows, the worst case list size quickly becomes 
+manageable. We ran a [series of experiments](https://docs.google.com/document/d/1yR746Rf-rw-_zoq36Ypzu8LTqOa-LaCk1pv3e0kjF3A/edit?usp=sharing) to test the resource utilization of CEL expressions that iterate across lists. We found that (with a safety factor of 5x):
+
+- O(n) iteration of a worst case list (list length == 1572k) is < 2000ms (400ms x5)
+- O(n) iteration of 10 byte data elements (list length == 300k) is < 350ms (70ms x5)
+- O(n) iteration of 100 byte data elements (list length == 30k) is < 35ms (7ms x5)
+
+Consider an example:
+
+```
+list.all(element, element.startsWith("prefix:"))
+```
+
+The cost of this expression is:
+
+```
+cost('startsWith()' function) * worst_case_length(list)
+```
+
+If the `worst_case_length()` is 30k for the list (e.g. the list elements are objects where the minimum size of 
+each object can be computed statically to be 100 bytes) and the cost of `statsWith()` is, say, 3, we know that 
+this is < 21ms to evaluate.
+
+Note that we could also have a much lower `worst_case_length()` if the CRD author provided a `maxLength` limit on their list size.
+
+This implies that we can use cost to:
+
+- Set limits that ensure CEL expressions evaluate within known time bounds
+- Allow O(n) operations so long as the per-element cost is moderate (e.g. 100 cost)
+  - And again, allow more expensive per-element cost when `maxLength` is set
+- Allow many (100s) CEL expressions in a CRD that are within these complexity bounds
+- Disallow O(n<sup>2</sup>) or worse operations based purely on their cost
+  - But still allow O(n<sup>2</sup>) or worse so long as the CRD author adds a `maxLength` limit to the lists and the resulting cost is within cost bounds (e.g. O(n<sup>3</sup>) is still fine for a list size of 3).
+
+Also, not requiring `maxLength` on most O(n) CEL expressions keeps the cost system low friction; the majority 
+of CEL expressions can be written and used without bumping into cost limits or needing to set `maxLength`.
+
+For the cases where a `maxLength` is needed to ensure cost is acceptable, encouraging CRD authors to include 
+`maxLength` on variable length data elements is generally considered good hygiene anyway, so having a cost 
+system that incentivizes developers to set this field, has other benefits.
+
+We will use the minimum possible size of list elements to estimate the size (e.g. objects with many fields 
+will have much larger minimum sizes). This helps us pick smaller worst case list sizes that we might pick if we had to assume all lists contain 1 byte elements.
+
+For example, the list element size `x` in this schema:
+
+```
+spec:
+  type: object
+  properties:
+    x:
+      x-kubernetes-validation:
+      - rule: "self.all(element, element.y.startsWith('prefix:'))"
+      type: array
+      items:
+        type: object
+        properties:
+          name: y
+          type: string
+          name: z
+          type: string
+```
+
+The worst case list size of `x` would be based on the size of an object with two strings (`y` and `z`).
+
+We will also account for where in a schema CEL expression is placed when calculating its cost. For example:
+
+```
+spec:
+  type: object
+  properties:
+    x:
+      type: array
+      items:
+        type: object
+        properties:
+          name: y
+          type: string
+          x-kubernetes-validation:
+          - rule: "self.startsWith('prefix:')"
+```
+
+In this example the validation rule is contained within a list, so its expression cost would be `cost(startsWith) * worst_case_length(x)`. Note that this means some of the cost calculation will
+happen outside of the CEL cost function (which would only calculate the `startsWith` cost).
+
+During CRD validation, when an expression exceeds the cost limit, the error message will include both the limit and the cost of the expression to facilitate debugging. The cost calculation rules will be documented.
+
+#### Runtime Cost Budget
+
+We will instrument CEL to increment a "cost" counter during CEL expression evaluation. The costs for 
+operations will be the same as used to compute Estimated Costs. The main difference is that the cost of list 
+iteration and branch operations (ternary, short circuited ORs) will be measured during evaluation and won't 
+need to be based on worst case estimates. If the cost exceeds a provided cost limit, CEL evaluation will be halted.
+
+We will integrate with the API Priority and Fairness system, providing it with information needs to be 
+informed about CEL resource utilization.
+
+### Request lifetime Bound
+
+We will wire in the request context into CEL so that CEL will halt expression evaluation if the context is 
+canceled.
+
+### Bounds
+
+We will set cost bounds in the future on both a per-request and per-expression basis as we perform further
+testing and benchmarking. 
 
 ### Test Plan
 
@@ -786,7 +1208,7 @@ to minimize negative impact to ecosystem.
 
 See also the future plans section for this. We believe that CEL for General Admission Control is
 valuable and should be implemented. We are implementing CRD validation with CEL first because is is
-a more constrainted problem and is complementary to CEL for general admission (even if we already
+a more constrained problem and is complementary to CEL for general admission (even if we already
 had CEL for general admission implemented, the convenience of inline CEL validation expressions in
 CRDs is sufficiently convenient to justify it being added).
 

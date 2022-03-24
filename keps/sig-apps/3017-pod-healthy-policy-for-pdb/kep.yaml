@@ -1,0 +1,42 @@
+title: Pod Healthy Policy for PDB
+kep-number: 3017
+authors:
+  - "@mortent"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-node
+  - sig-scheduling
+status: implementable
+creation-date: 2021-10-24
+reviewers:
+  - "@liggitt"
+  - "@kow3ns"
+  - "@soltysh"
+  - "@janetkuo"
+  - "@wojtek-t"
+approvers:
+  - "@liggitt"
+  - "@soltysh"
+  - "@wojtek-t"
+
+see-also:
+replaces:
+
+stage: alpha
+
+latest-milestone: "v1.24"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.26"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PodDisruptionBudgetPodHealthyPolicy
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true

@@ -226,8 +226,8 @@ Nevertheless, we define this specification because it is an obvious starting poi
 #### Active Directory
 
 - Ability to run a pod as a GMSA User with only be able to access allowed resources
-- Ability to read and write from local storage using ActiveDirectory credentials
-- Observed lack of Ability to read and write from local storage when ActiveDirectory protected resources credentials are not present
+- Ability to read and write from local and remote storage using ActiveDirectory credentials
+- Observed lack of Ability to read and write from local and remote storage when ActiveDirectory protected resources credentials are not present
 - The behavior of the `RunAsUserName` field for Windows pods should be that it is supported (i.e. pods can use this), but that there are no guarantees around volume permissions and access when using this field.
 
 #### Network Policies
