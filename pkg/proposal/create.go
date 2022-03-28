@@ -47,6 +47,7 @@ type CreateOpts struct {
 	Reviewers         []string
 	Type              string
 	State             string
+	Stage             string
 	ParticipatingSIGs []string
 	PRRApprovers      []string
 }
@@ -162,6 +163,7 @@ func populateProposal(p *api.Proposal, opts *CreateOpts) {
 	p.ParticipatingSIGs = append(opts.ParticipatingSIGs, opts.SIG)
 	p.Filename = opts.Name
 	p.LastUpdated = "v1.19"
+	p.Stage = api.Stage(opts.Stage)
 
 	if len(opts.PRRApprovers) > 0 {
 		p.PRRApprovers = updatePersonReference(opts.PRRApprovers)
