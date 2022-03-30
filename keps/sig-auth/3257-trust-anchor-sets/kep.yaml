@@ -1,0 +1,46 @@
+title: Cluster Trust Bundles
+kep-number: 3257
+authors:
+  - "@ahmedtd"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+status: provisional
+creation-date: 2022-02-16
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+##### WARNING !!! ######
+# prr-approvers has been moved to its own location
+# You should create your own in keps/prod-readiness
+# Please make a copy of keps/prod-readiness/template/nnnn.yaml
+# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
+#prr-approvers:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.26"
+  beta: ""
+  stable: ""
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ClusterTrustBundle
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
