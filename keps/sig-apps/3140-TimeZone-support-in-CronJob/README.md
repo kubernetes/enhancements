@@ -178,7 +178,11 @@ Additionally, all of tests will be performed with feature gate enabled and disab
 
 #### Beta
 
-TBD
+- Solve issue with case insensitive location loading:
+  - Test skipped on MacOS (https://github.com/kubernetes/kubernetes/pull/109218)
+  - Golang issue (https://github.com/golang/go/issues/21512)
+
+More TBD
 
 #### GA
 
