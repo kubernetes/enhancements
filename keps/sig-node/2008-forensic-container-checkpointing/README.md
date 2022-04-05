@@ -8,6 +8,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation](#implementation)
+    - [CRI Updates](#cri-updates)
   - [User Stories](#user-stories)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -65,7 +66,7 @@ will not be aware of any sandboxed analysis.
 
 ### Goals
 
-The goal of this KEP is to introduce *checkpoint* and *restore* to the CRI API.
+The goal of this KEP is to introduce *checkpoint* to the CRI API.
 This includes extending the *kubelet* API to support checkpointing single
 containers with the forensic use case in mind.
 
@@ -106,13 +107,24 @@ For the first implementation we do not want to support restore in the
 outside of Kubernetes. The restore is a container engine only operation
 in this first step.
 
-The forensic use case is targeted to be part of the next (1.24) release.
+#### CRI Updates
 
-Although this KEP only adds checkpointing support to the kubelet the CRI API in
-the corresponding code pull request is extended to support *checkpoint* and
-*restore* in the CRI API. The reason to add *restore* to the CRI API without
-implementing it in the kubelet is to make development and especially testing
-easier on the container engine level.
+The CRI API will be extended to introduce one new RPC:
+```
+    // CheckpointContainer checkpoints a container
+    rpc CheckpointContainer(CheckpointContainerRequest) returns (CheckpointContainerResponse) {}
+```
+with the following parameters:
+```
+message CheckpointContainerRequest {
+    // ID of the container to be checkpointed.
+    string container_id = 1;
+    // Location of the checkpoint archive used for export/import
+    string location = 2;
+}
+
+message CheckpointContainerResponse {}
+```
 
 ### User Stories
 
@@ -268,6 +280,8 @@ does not compress the checkpoint archive on disk.
 * 2021-09-22: Removed everything which is not directly related to the forensic use case
 * 2022-01-06: Reworked based on review
 * 2022-01-20: Reworked based on review and renamed feature gate to `ContainerCheckpoint`
+* 2022-04-05: Added CRI API section and targeted 1.25
+* 2022-05-17: Remove *restore* RPC from the CRI API
 
 ## Drawbacks
 
