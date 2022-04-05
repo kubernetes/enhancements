@@ -1,0 +1,56 @@
+title: Provision volumes from cross-namespace snapshots
+kep-number: 3294
+authors:
+  - "@Elbehery"
+  - "@mkimuram"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-storage
+status: provisional
+creation-date: 2022-04-06
+reviewers:
+  - "@xing-yang"
+  - "@mhenriks"
+  - "@jsafrane"
+  - "@bswartz"
+approvers:
+  - "@xing-yang"
+  - "@jsafrane"
+  - "@saad-ali"
+
+##### WARNING !!! ######
+# prr-approvers has been moved to its own location
+# You should create your own in keps/prod-readiness
+# Please make a copy of keps/prod-readiness/template/nnnn.yaml
+# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
+#prr-approvers:
+
+see-also:
+  - "/keps/sig-storage/1495-volume-populators"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.25"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.25"
+  beta: "v1.26"
+  stable: "v1.28"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+#feature-gates:
+#  - name: MyFeature
+#    components:
+#      - kube-apiserver
+#      - kube-controller-manager
+#disable-supported: true
+
+# The following PRR answers are required at beta release
+#metrics:
+#  - my_feature_metric
