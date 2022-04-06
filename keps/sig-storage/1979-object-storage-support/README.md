@@ -189,11 +189,12 @@ The BucketClaim is a claim to create a new Bucket. This resource can be used to 
     |------------------------------|                      |--------------------------------|
     | metadata:                    |                      | deletionPolicy: delete         |
     |   namespace: ns1             |                      | driverName: s3.amazonaws.com   |
-    | spec:                        |                      | protocols:                     |
-    |   bucketClassName: bc1       |                      | - s3                           |
-    |                              |                      | parameters:                    |
-    |------------------------------|                      |   key: value                   |
-                                                          |--------------------------------|
+    | spec:                        |                      | parameters:                    |
+    |   bucketClassName: bc1       |					  |   key: value                   |
+    |   protocols:                 |					  |--------------------------------|
+    |   - s3                       |
+    |------------------------------|
+                                                          
 ``` 
 
 ###### 2. COSI creates an intermediate Bucket object
@@ -472,9 +473,9 @@ The admin must ensure that this bucket binds only to a specific BucketClaim by s
     | name: bucketName123                             |
     | spec:                                           |
     |   bucketID: bucketname123                       |
-	|   bucketClaim:                                  |
-	|       name: bucketClaim123                      |
-	|       namespace: ns1                            |
+    |   bucketClaim:                                  |
+    |       name: bucketClaim123                      |
+    |       namespace: ns1                            |
     |   protocols:                                    |
     |   - s3                                          |
     |   parameters:                                   |
@@ -601,7 +602,7 @@ Bucket {
 
     // Name of the BucketClaim that resulted in the creation of this Bucket 
     // In case the Bucket object was created manually, then this should refer
-	// to the BucketClaim with which this Bucket should be bound
+    // to the BucketClaim with which this Bucket should be bound
     BucketClaim corev1.ObjectReference
 
     // Protocols are the set of data APIs this bucket is expected to support.
@@ -649,9 +650,16 @@ BucketClaim {
     // Name of the BucketClass
     BucketClassName string
     
+    // Protocols are the set of data API this bucket is required to support.
+    // The possible values for protocol are:
+    // -  S3: Indicates Amazon S3 protocol
+    // -  Azure: Indicates Microsoft Azure BlobStore protocol
+    // -  GCS: Indicates Google Cloud Storage protocol
+    Protocols []Protocol
+
     // Name of a bucket object that was manually 
     // created to import a bucket created outside of COSI
-	// If unspecified, then a new Bucket will be dynamically provisioned
+    // If unspecified, then a new Bucket will be dynamically provisioned
     // +optional
     ExistingBucketName string
   }
@@ -679,13 +687,6 @@ BucketClass {
 
   // DriverName is the name of driver associated with this bucket
   DriverName string
-
-  // Protocols are the set of data API this bucket is required to support.
-  // The possible values for protocol are:
-  // -  S3: Indicates Amazon S3 protocol
-  // -  Azure: Indicates Microsoft Azure BlobStore protocol
-  // -  GCS: Indicates Google Cloud Storage protocol
-  Protocols []Protocol
 
   // DeletionPolicy is used to specify how COSI should handle deletion of this
   // bucket. There are 3 possible values:
@@ -729,7 +730,7 @@ BucketAccess {
     // CredentialsSecretName is the name of the secret that COSI should populate
     // with the credentials. If a secret by this name already exists, then it is
     // assumed that credentials have already been generated. It is not overridden.
-	// This secret is deleted when the BucketAccess is delted.
+    // This secret is deleted when the BucketAccess is delted.
     CredentialsSecretName string
     
     // ServiceAccountName is the name of the serviceAccount that COSI will map
@@ -750,12 +751,16 @@ BucketAccess {
 
 ## BucketAccessClass
 
-Resouce for configuring common properties for multiple BucketClaims. BucketAccessClass is a clustered resource
+Resoruce for configuring common properties for multiple BucketClaims. BucketAccessClass is a clustered resource
 
 ```yaml
 BucketAccessClass {
   TypeMeta
   ObjectMeta
+
+  // DriverName is the name of driver associated with
+  // this BucketAccess
+  DriverName string
 
   // AuthenticationType denotes the style of authentication
   // It can be one of
@@ -918,6 +923,7 @@ This gRPC call revokes access granted to a particular account.
 ## Alpha -\> Beta
 - Implement all COSI components to support agreed design.
 - Design and implement support for sharing buckets across namespaces.
+- Design and implement quotas/restrictions for Buckets and BucketAccess.
 - Basic unit and e2e tests as outlined in the test plan.
 - Metrics for bucket create and delete, and granting and revoking bucket access.
 - Metrics in provisioner for bucket create and delete, and granting and revoking bucket access.
