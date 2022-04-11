@@ -2621,11 +2621,11 @@ Beta:
 
 GA:
 
-- Satisfaction with LIST and WATCH support
-- APF allows us to disable client-side rate limiting (or we know the reason why not)
-- Satisfaction that the API can be extended in a backward-compatible way to support borrowing between priority levels
-- Satisfaction that the API is sufficient to support auto-tuning of capacity and resource costs
-- API annotations properly support strategic merge patch
+- Satisfaction with LIST and WATCH support.
+- API annotations properly support strategic merge patch.
+- APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that there is another level of concern that APF does not attempt to address, which is mismatch between the throughput that various controllers can sustain.
+- Design and implement borrowing between priority levels.
+- Satisfaction that the API is sufficient to support auto-tuning of capacity and resource costs.
 
 ## Production Readiness Review Questionnaire
 
