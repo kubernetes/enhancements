@@ -1,0 +1,18 @@
+title: Raw request and response bodies in audit
+kep-number: 3276
+authors:
+  - "@slaskawi"
+  - "@tallclair"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+status: provisional
+creation-date: 2022-04-11
+reviewers:
+  - TBD
+approvers:
+  - TBD
+stage: alpha
+latest-milestone: "v1.25"
+milestone:
+  alpha: "v1.25"
