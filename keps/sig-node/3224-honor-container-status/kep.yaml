@@ -1,0 +1,23 @@
+title: Honor the current status of containers when kubelet started
+kep-number: 3224
+authors:
+  - "@tossmilestone"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: 2022-04-11
+reviewers:
+  - TBD
+approvers:
+  - TBD
+stage: alpha
+latest-milestone: "v1.25"
+milestone:
+  alpha: "v1.25"
+  beta: "v1.26"
+  stable: "v1.27"
+feature-gates:
+  - name: HonorContainerStatus
+    components:
+      - kubelet
+disable-supported: true
