@@ -297,7 +297,7 @@ type TopologySpreadConstraint struct {
 }
 ```
 
-We will define two NodeInclusionPolicy by default:
+We will define two NodeInclusionPolicy:
 ```golang
 // NodeInclusionPolicy defines the type of node inclusion policy
 type NodeInclusionPolicy string
