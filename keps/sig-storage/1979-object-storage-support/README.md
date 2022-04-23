@@ -141,7 +141,7 @@ Since this is an entirely new feature, it is possible to implement this complete
  - COSI Sidecar
  - COSI Driver
 
-1. The COSI ControllerManager is the central controller that validates, authorizes and binds COSI created buckets to BucketClaims. At least one active instance of ControllerManager should be present.
+1. The COSI ControllerManager is the central controller that validates, authorizes and binds COSI created buckets to BucketClaims. Only one active instance of ControllerManager should be present.
 2. The COSI Sidecar is the point of integration between COSI and drivers. All operations that require communication with the OSP is triggered by the Sidecar using gRPC calls to the driver. One active instance of Sidecar should be present **for each driver**.
 3. The COSI driver communicates with the OSP to conduct Bucket related operations.
 
@@ -190,8 +190,8 @@ The BucketClaim is a claim to create a new Bucket. This resource can be used to 
     | metadata:                    |                      | deletionPolicy: delete         |
     |   namespace: ns1             |                      | driverName: s3.amazonaws.com   |
     | spec:                        |                      | parameters:                    |
-    |   bucketClassName: bc1       |					  |   key: value                   |
-    |   protocols:                 |					  |--------------------------------|
+    |   bucketClassName: bc1       |                      |   key: value                   |
+    |   protocols:                 |                      |--------------------------------|
     |   - s3                       |
     |------------------------------|
                                                           
@@ -513,8 +513,6 @@ Similar to the BucketAccess for COSI created bucket, this BucketAccess should re
     |-------------------------------|
 ```
 
-Note that, as of the alpha version of COSI, there is no authorization mechanism to restrict users who can refer to buckets imported into COSI. In the future, access to imported buckets will also follow the namespace selector approach described [above](#sharing-buckets).
-
 ## Bucket deletion
 
  - A Bucket created by COSI as a result of a BucketClaim can deleted by deleting the BucketClaim 
@@ -543,7 +541,7 @@ If a Bucket is manually deleted by an admin, then a finalizer on the Bucket prev
 
 Self service is easily possible with the current design as both the BucketRequest and BucketClaim resources are namespace scoped, and users need not have admin privileges to create, modify and delete them.
 
-The only admin steps are creation of class objects(BucketClass, BucketAccessClass) and Bucket imports. The creatio of class object is no different from requiring a StorageClass for provisioning PVCs. It is a well-understood pattern among kubernetes users. Importing a Bucket requires special permissions because its lifecycle is not managed by COSI, and special care needs to be taken to prevent clones, accidental deletions and other mishaps (for instance, setting the deletion policy to Delete).
+The only admin steps are creation of class objects(BucketClass, BucketAccessClass) and Bucket imports. The creation of a class object is no different from requiring a StorageClass for provisioning PVCs. It is a well-understood pattern among Kubernetes users. Importing a Bucket requires special permissions because its lifecycle is not managed by COSI, and special care needs to be taken to prevent clones, accidental deletions and other mishaps (for instance, setting the deletion policy to Delete).
 
 ## Mutating Buckets
 
@@ -580,7 +578,7 @@ Notes:
 
 Resource to represent a Bucket in OSP. Buckets are cluster-scoped.
 
-```yaml
+```go
 Bucket {
   TypeMeta
   ObjectMeta
@@ -641,7 +639,7 @@ Bucket {
 
 A claim to create Bucket. BucketClaim is namespace-scoped
 
-```yaml
+```go
 BucketClaim {
   TypeMeta
   ObjectMeta
@@ -680,7 +678,7 @@ BucketClaim {
 
 Resouce for configuring common properties for multiple Buckets. BucketClass is cluster-scoped.
 
-```yaml
+```go
 BucketClass {
   TypeMeta
   ObjectMeta
@@ -706,14 +704,13 @@ BucketClass {
 
 A resource to access a Bucket. BucketAccess is namespace-scoped
 
-```yaml
+```go
 BucketAccess {
   TypeMeta
   ObjectMeta
 
   Spec BucketAccessSpec {
     // BucketClaimName is the name of the BucketClaim.
-    // Exactly one of BucketClaimName or BucketName must be set.
     BucketClaimName string
 
     // Protocol is the name of the Protocol 
@@ -735,7 +732,8 @@ BucketAccess {
     
     // ServiceAccountName is the name of the serviceAccount that COSI will map
     // to the OSP service account when IAM styled authentication is specified
-    ServiceAccountName string
+	// +optional
+	ServiceAccountName string
   }
 
   Status BucketAccessStatus {
@@ -751,9 +749,9 @@ BucketAccess {
 
 ## BucketAccessClass
 
-Resoruce for configuring common properties for multiple BucketClaims. BucketAccessClass is a clustered resource
+Resource for configuring common properties for multiple BucketClaims. BucketAccessClass is a clustered resource
 
-```yaml
+```go
 BucketAccessClass {
   TypeMeta
   ObjectMeta
@@ -779,7 +777,7 @@ BucketAccessClass {
 
 Resource mounted into pods containing information for applications to gain access to buckets.
 
-```yaml
+```go
 BucketInfo {
   TypeMeta
   ObjectMeta
@@ -855,7 +853,7 @@ The returned `bucketID` should be a unique identifier for the bucket in the OSP.
 
 #### DriverGrantBucketAccess
 
-This gRPC call creates a set of access credentials for a bucket. This api must be idempotent. The input to this call is the id of the bucket, a set of opaque parameters and name of the account. This `accountName` field is used to ensure that multiple requests for the same BucketClaim do not result in multiple credentials.
+This gRPC call creates a set of access credentials for a bucket. This api must be idempotent. The input to this call is the id of the bucket, a set of opaque parameters and name of the account. This `accountName` field is the concatenation of the characters ba (short for BucketAccess) and its UID. It is used as the idempotency key for requests to the drivers regarding a particular BA.
 
 The returned `accountID` should be a unique identifier for the account in the OSP. This value could be the name of the account too. This value will be included in all subsequent calls to the driver for changes to the BucketAccess.
 
@@ -921,6 +919,7 @@ This gRPC call revokes access granted to a particular account.
 - Develop unit test cases to demonstrate that the above mentioned use cases work correctly
 
 ## Alpha -\> Beta
+- Consider using a typed configuration for Bucket properties (parameter fields in Bucket, BucketClass, BucketAccess, BucketAccessClass)
 - Implement all COSI components to support agreed design.
 - Design and implement support for sharing buckets across namespaces.
 - Design and implement quotas/restrictions for Buckets and BucketAccess.
@@ -1209,13 +1208,11 @@ Yes, the following cluster scoped resources
 
 - Bucket
 - BucketClass
-- BucketAccess
 - BucketAccessClass
 
 and the following namespaced scoped resources
 
-- BucketRequest
-- BucketAccessRequest
+- BucketAccess
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
