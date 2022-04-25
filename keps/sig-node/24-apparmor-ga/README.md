@@ -89,8 +89,7 @@ The feature has been more or less unchanged ever since. The main motivation
 behind this KEP is to promote the AppArmor feature to GA.
 
 _NOTE: Seccomp was in a very similar state, but with some subtle differences.
-Promoting Seccomp to GA will be covered by a [separate
-KEP](/keps/sig-node/20190717-seccomp-ga.md)._
+Promoting Seccomp to GA was covered in [KEP-135](/keps/sig-node/135-seccomp/README.md)._
 
 ### Goals
 
@@ -180,7 +179,7 @@ profile cannot be set.
 This KEP proposes we GA LocalhostProfile as the only source of user-defined
 profiles at this point. User-defined profiles are essential for users to realize
 the full benefits out of AppArmor, allowing them to decrease their attack
-surface based on their own workloads.
+surface based on their own workloads. 
 
 ###### Updating AppArmor profiles
 
@@ -230,8 +229,6 @@ defined by using the `AppArmorProfileTypeRuntimeDefault`. The reasons being:
   that are different than `runtime/default`.
 - Most runtimes only support the default profile, although the CRI is flexible
   enough to allow the kubelet to send other profile names.
-- Dockershim does not currently provide a way to pass other runtime profile
-  names.
 - Multiple runtime profiles has never been requested as a feature.
 
 If built-in support for multiple runtime profiles is needed in the future, a new
