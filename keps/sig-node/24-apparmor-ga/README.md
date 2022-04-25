@@ -17,7 +17,6 @@
   - [Failure and Fallback Strategy](#failure-and-fallback-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
     - [Pod Creation](#pod-creation)
-    - [PodSecurityPolicy Enforcement](#podsecuritypolicy-enforcement)
     - [Pod Update](#pod-update)
     - [PodTemplates](#podtemplates)
     - [Runtime Profiles](#runtime-profiles)
@@ -34,8 +33,6 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
-  - [Updating PodSecurityPolicy API](#updating-podsecuritypolicy-api)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -126,8 +123,6 @@ as the current error propagation paths.
 The AppArmor API will be functionally equivalent to the current beta API, with
 the enhancement of adding pod level profiles to match the behavior with seccomp.
 This includes the Pod API, which specifies what profile the containers run with.
-There are no changes planned to the current `PodSecurityPolicy` API as part of
-this KEP.
 
 #### Pod API
 
@@ -300,19 +295,6 @@ mechanism will be used to highlight that support will be dropped in v1.24.
 The mechanisms being considered are audit annotations, annotations on the
 object, events, or a warning as described in [KEP
 #1693](/keps/sig-api-machinery/1693-warnings).
-
-#### PodSecurityPolicy Enforcement
-
-The PodSecurityPolicy admission controller must continue to check the PSP object
-for annotations, as well as for fields.
-
-When setting default profiles, PSP only needs to set the field, but should only
-do so if neither the field nor the annotation are set. The API machinery will
-handle setting the annotation as necessary.
-
-When enforcing allowed profiles, the PSP should check BOTH the annotations &
-fields. This is implicitly given because annotations as well as the new field
-will be immutable.
 
 #### Pod Update
 
@@ -615,6 +597,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 - 2020-01-10: Initial KEP
 - 2020-08-24: Major rework and sync with seccomp
+- 2021-04-25: PSP mentions
 
 ## Drawbacks
 
@@ -622,58 +605,3 @@ Promoting AppArmor as-is to GA may be seen as "blessing" the current
 functionality, and make it harder to make some of the enhancements listed under
 [Non-Goals](#non-goals). Since the current behavior is unguarded, I think we
 already need to treat the behavior as GA.
-
-## Alternatives
-
-### Updating PodSecurityPolicy API
-
-PodSecurityPolicy AppArmor fields are mutable. On an update, the same rules are
-applied as for creation, ignoring the old values.
-
-If only AppArmor annotations or fields are specified in the updated PSP, no
-action is necessary, and the specified values are used.
-
-If both AppArmor annotations _and_ fields are specified in the updated PSP, the
-values MUST match.
-
-```go
-type PodSecurityPolicySpec struct {
-    ...
-    // AppArmor is the strategy that will dictate allowable and default AppArmor
-    // profiles for the container.
-    // +optional
-    AppArmor *ApparmorStrategyOptions
-    ...
-}
-
-type AppArmorStrategyOptions struct {
-    // The default profile to set on the pod, if none is specified.
-    // The default MUST be allowed by the allowedProfiles.
-    // +optional
-    DefaultProfile *v1.AppArmorProfile
-
-    // The set of profiles that may be set on the pod or containers.
-    // If unspecified, AppArmor profiles are unrestricted by this policy.
-    // +optional
-    AllowedProfiles *AppArmorProfileSet
-}
-
-// A set of AppArmor profiles. This struct should be a plural of
-// `v1.AppArmorProfile`.
-// All values are optional, and an unspecified field excludes all profiles of
-// that type from the set.
-type AppArmorProfileSet struct {
-    // The allowed AppArmor profile types.
-    // +optional
-    Types []AppArmorProfileType
-
-    // The allowed runtimeProfiles. A value of '*' allows all runtimeProfiles.
-    // +optional
-    RuntimeProfiles []string
-
-    // The allowed localhostProfiles. Values may end in '*' to include all
-    // localhostProfiles with a prefix.
-    // +optional
-    LocalhostProfiles []string
-}
-```
