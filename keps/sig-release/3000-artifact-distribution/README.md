@@ -1,12 +1,17 @@
 # KEP/MST-3000: Image Promotion and Distribution Policy
 
 <!-- toc -->
-
 - [Summary](#summary)
+- [Background (from wiki)](#background-from-wiki)
 - [Motivation](#motivation)
+- [Why a new domain?](#why-a-new-domain)
+- [How can we help?](#how-can-we-help)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
+  - [What is not in scope](#what-is-not-in-scope)
+  - [What are good goals to shoot for](#what-are-good-goals-to-shoot-for)
 - [Proposal](#proposal)
+- [What exactly are you doing?](#what-exactly-are-you-doing)
   - [User Stories](#user-stories)
     - [SIG Release - Image Promotion](#sig-release---image-promotion)
     - [Cloud Customer - Installing K8s via kubeadm](#cloud-customer---installing-k8s-via-kubeadm)
@@ -22,6 +27,7 @@
 - [Alternatives / Background](#alternatives--background)
   - [How much is this going to save us?](#how-much-is-this-going-to-save-us)
 - [Infrastructure Needed](#infrastructure-needed)
+- [Hack this doc](#hack-this-doc)
 <!-- /toc -->
 
 ## Summary
