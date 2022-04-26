@@ -2,6 +2,7 @@ title: Artifact Distribution Policy
 kep-number: 3000
 authors:
   - "@hh"
+  - "@BobyMCbobs"
 owning-sig: sig-release
 participating-sigs:
   - sig-k8s-infra
