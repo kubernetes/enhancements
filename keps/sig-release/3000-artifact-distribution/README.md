@@ -155,6 +155,8 @@ Currently the promotion process is primarily driven by the CIP/[promo-tool#kprom
 
 #### Process
 
+Artifacts will be written to S3 style storage or CDNs provided by cloud providers through a tool in the promo-tools suite.
+
 ## Alternatives / Background
 
 - Original KEP
