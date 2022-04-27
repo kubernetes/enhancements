@@ -1,6 +1,7 @@
 # KEP/MST-3000: Image Promotion and Distribution Policy
 
 <!-- toc -->
+
 - [Summary](#summary)
 - [Background (from wiki)](#background-from-wiki)
 - [Motivation](#motivation)
@@ -94,13 +95,13 @@ Additionally we require a registry and artifact url-redirection solution to the 
 
 - We are setting up an AWS account with an IAM role and s3 buckets in AWS regions where we see a large percentage of source image pull traffic
 - We will iterate on a sandbox url (registry.sandbox.k8s.io) for our experiments and ONLY promote things to (registry.k8s.io) when we have complete confidence
-- both registry and registry.sandbox are serving traffic using oci-proxy on google cloud run
+- both registry and registry-sandbox are serving traffic using oci-proxy on google cloud run
 - oci-proxy will be updated to identify incoming traffic from AWS regions based on IP ranges so we can route traffic to s3 buckets in that region. If a specific AWS region do not currently host s3 buckets, we will redirect to the nearest region which does have s3 buckets (tradeoff between storage and network costs)
 - We will bulk sync existing image layers to these s3 layers as a starting point (from GCS/GCR)
 - We will update image-promoter to push to these s3 buckets as well in addition to the current setup
 - We will set up monitoring/reporting to check on new costs we incur on the AWS infrastructure and update what we do in GCP infrastructure as well to include the new components
 - We will have a plan in place on how we could add additional AWS regions in the future
-- We will have CI jobs that will run against registry.sandbox as well to monitor stability before we promote code to registry
+- We will have CI jobs that will run against registry-sandbox.k8s.io as well to monitor stability before we promote code to registry
 - We will automate the deployment/monitoring and testing of code landing in the oci-proxy repository
 
 ### User Stories
