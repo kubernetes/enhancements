@@ -1,4 +1,4 @@
-# KEP/MST-3000: Image Promotion and Distribution Policy
+# KEP 3000: Image Promotion and Distribution Policy
 
 <!-- toc -->
 
@@ -47,9 +47,9 @@ For a few years now, we have been using k8s.gcr.io in all our repositories as de
 
 The cost of distributing Kubernetes comes at great cost nearing $150kUSD/month (mostly egress) in donations.
 
-Additionally some of our community members are unable to access the official release artifacts due to country level firewalls that do not them connect to Google services.
+Additionally some of our community members are unable to access the official release container images due to country level firewalls that do not them connect to Google services.
 
-Ideally we can dramatically reduce cost and allow everyone in the world to download the artifacts released by our community.
+Ideally we can dramatically reduce cost and allow everyone in the world to download the container iamges released by our community.
 
 We are now used to using the [image promoter process](https://github.com/kubernetes/enhancements/tree/master/keps/sig-release/1734-k8s-image-promoter) to promote images to the official kubernetes container registry using the infrastructure (GCR staging repos etc) provided by [sig-k8s-infra](https://github.com/kubernetes/k8s.io/tree/main/k8s.gcr.io)
 
@@ -57,7 +57,7 @@ We are now used to using the [image promoter process](https://github.com/kuberne
 
 So far we (all kubernetes project) are using GCP as our default infrastructure provider for all things like GCS, GCR, GKE based prow clusters etc. Google has graciously sponsored a lot of our infrastructure costs as well. However for about a year or so we are finding that our costs are sky-rocketing because the community usage of this infrastructure has been from other cloud providers like AWS, Azure etc. So in conjunction with CNCF staff we are trying to put together a plan to host copies of images and binaries nearer to where they are used rather than incur cross-cloud costs.
 
-One part of this plan is to setup a proxy OCI service, that can identify where the traffic is coming from and redirect to the nearest image layer/repository. This is why we are setting up a new service using what we call an [oci-proxy](https://github.com/kubernetes-sigs/oci-proxy) for everyone to use. This proxy will identify traffic coming from, for example, a certain AWS region, then will setup a HTTP redirect to a source in that AWS region. If we get traffic from GKE/GCP or we don't know where the traffic is coming from, it will still redirect to the current infrastructure (k8s.gcr.io).
+One part of this plan is to setup a redirecting web service, that can identify where the traffic is coming from and redirect to the nearest image layer/repository. This is why we are setting up a new service using what we call an [oci-proxy](https://github.com/kubernetes-sigs/oci-proxy) for everyone to use. This redirector will identify traffic coming from, for example, a certain AWS region, then will setup a HTTP redirect to a source in that AWS region. If we get traffic from GKE/GCP or we don't know where the traffic is coming from, it will still redirect to the current infrastructure (k8s.gcr.io).
 
 ## How can we help?
 
@@ -71,7 +71,7 @@ A solution to allow redirection to appropriate mirrors to lower cost and allow a
 
 ### Non-Goals
 
-Anything related to creation of artifacts, bom, digital signatures, staging buckets.
+Anything related to creation of artifacts, bom, staging buckets.
 
 ### What is not in scope
 
@@ -87,14 +87,14 @@ Anything related to creation of artifacts, bom, digital signatures, staging buck
 
 There are two intertwined concepts that are part of this proposal.
 
-First, the policy and procedures to promote/upload our artifacts to multiple providers. Our existing processes upload only to GCS buckets. Ideally we extend the existing software/promotion process to push directly to multiple providers. Alternatively we use a second process to synchronize artifacts from our existing production buckets to similar constructs at other providers.
+First, the policy and procedures to promote/upload our container images to multiple providers. Our existing processes upload only to GCS buckets. Ideally we extend the existing software/promotion process to push directly to multiple providers. Alternatively we use a second process to synchronize container images from our existing production buckets to similar constructs at other providers.
 
 Additionally we require a registry and artifact url-redirection solution to the local cloud provider or country.
 
 ## What exactly are you doing?
 
 - We are setting up an AWS account with an IAM role and s3 buckets in AWS regions where we see a large percentage of source image pull traffic
-- We will iterate on a sandbox url (registry.sandbox.k8s.io) for our experiments and ONLY promote things to (registry.k8s.io) when we have complete confidence
+- We will iterate on a sandbox url (registry-sandbox.k8s.io) for our experiments and ONLY promote things to (registry.k8s.io) when we have complete confidence
 - both registry and registry-sandbox are serving traffic using oci-proxy on google cloud run
 - oci-proxy will be updated to identify incoming traffic from AWS regions based on IP ranges so we can route traffic to s3 buckets in that region. If a specific AWS region do not currently host s3 buckets, we will redirect to the nearest region which does have s3 buckets (tradeoff between storage and network costs)
 - We will bulk sync existing image layers to these s3 layers as a starting point (from GCS/GCR)
@@ -109,8 +109,9 @@ Additionally we require a registry and artifact url-redirection solution to the 
 #### SIG Release - Image Promotion
 
 ```feature
-As a SIG Release volunteer
-I want to promote our binaries/images to multiple clouds
+Scenario: images are promoted
+  As a SIG Release volunteer
+  I want to promote our binaries/images to multiple clouds
 
 Given a promotion / manifest
 When my PR is merged
@@ -120,12 +121,12 @@ Then the promotion process occurs
 #### Cloud Customer - pulling an official container image
 
 ```feature
-As a CLOUD end-user
-I want to install Kubernetes
+Scenario: use Kubernetes container images
+  I want to be able to pull and use Kubernetes container images
 
-Given some compute resources at CLOUD
-When I pull an official Kubernetes container image
-Then I am redirected to a cloud provider backed bucket (set) or CDN otherwise fall back to k8s.gcr.io
+  Given some compute resources at cloud
+  When I pull an official Kubernetes container image from registry.k8s.io
+  Then I am redirected to a close-by cloud provider backed bucket (set) / CDN otherwise fall back to k8s.gcr.io
 ```
 
 ### Notes/Constraints/Caveats
@@ -156,7 +157,7 @@ Currently the promotion process is primarily driven by the CIP/[promo-tool#kprom
 
 #### Process
 
-Artifacts will be written to S3 style storage or CDNs provided by cloud providers through a tool in the promo-tools suite.
+Container images will be written to S3 style storage or CDNs provided by cloud providers through a tool in the promo-tools suite.
 
 ## Alternatives / Background
 
