@@ -117,15 +117,15 @@ When my PR is merged
 Then the promotion process occurs
 ```
 
-#### Cloud Customer - Installing K8s via kubeadm
+#### Cloud Customer - pulling an official container image
 
 ```feature
 As a CLOUD end-user
 I want to install Kubernetes
 
 Given some compute resources at CLOUD
-When I use kubeadm to deploy Kubernetes
-Then I will be redirected to a local CLOUD registry
+When I pull an official Kubernetes container image
+Then I am redirected to a cloud provider backed bucket (set) or CDN otherwise fall back to k8s.gcr.io
 ```
 
 ### Notes/Constraints/Caveats
