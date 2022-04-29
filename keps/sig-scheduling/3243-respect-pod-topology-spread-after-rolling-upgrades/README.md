@@ -175,7 +175,7 @@ This KEP defines a new field `MatchLabelKeys` in `TopologySpreadConstraint`
 for end users to set the key of labels used to group Pods belonging to the 
 same workloads. Scheduler plugin will obtain the value from the pod labels 
 by the key and consider pods with the same key-value as a group . Then the 
-spreading will include pods belonging to the same group. This will allow end 
+spreading will apply to pods belonging to the same group. This will allow end 
 users to set the keys to the labels whose values user doesn't know before 
 creating the pod like `revisions` in rolling upgrades.
 
@@ -196,10 +196,17 @@ procedure of the online service in which the pod spread appears to be out
 of balance ([98215](https://github.com/kubernetes/kubernetes/issues/98215), 
 [105661](https://github.com/kubernetes/kubernetes/issues/105661),
 [k8s-pod-topology spread is not respected after rollout](https://stackoverflow.com/questions/66510883/k8s-pod-topology-spread-is-not-respected-after-rollout)). 
-The root cause is that PodTopologySpread does not know the revision of pods 
-and  treats all pods belonging to the same revision as identical. Currently, 
-users are given two solutions to this problem. The first is to add a 
-revision  label to Deployment and update it manually at each rolling upgrade,
+The root cause is that PodTopologySpread constraints allow defining a key-value 
+label selector, which applies to all pods in a Deployment irrespective of their 
+owning ReplicaSet. As a result, when a new revision is rolled out, spreading will 
+apply across pods from both the old and new ReplicaSets, and so by the time the 
+new ReplicaSet is completely rolled out and the old one is rolled back, the actual 
+spreading we are left with may not match expectations because the deleted pods from 
+the older ReplicaSet will cause skewed distribution for the remaining pods.
+
+Currently, users are given two solutions to this problem. The first is to add a 
+revision  label to Deployment and update it manually at each rolling upgrade(both 
+the label on the podTemplate and the selector in the podTopologySpread constraint),
 while the second is to deploy a descheduler to re-balance the pod 
 distribution. User feedback suggests that the experience isn't very good. 
 In this proposal, we propose a native way to maintain pod balance after a  
@@ -211,8 +218,8 @@ rolling upgrade in PodTopologySpread.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- Make PodTopologySpread aware of pod revisions for respecting 
-  PodTopologySpread after rolling upgrades.
+- Allow users to define PodTopologySpread constraints such that they apply only 
+  within the boundaries of a Deployment revision during rolling upgrades.
 
 ### Non-Goals
 
@@ -220,7 +227,6 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-- Define a specific `LabelKey` for the user to identify which pods should be grouped
 
 ## Proposal
 
@@ -256,11 +262,11 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
-User can use the label `pod-template-hash` added by the Deployment 
-controller to indicate different revisions in a single Deployment. But for 
-more complex scenarios (eg. topology spread associating two deployments at 
-the same time), User need to be responsible for providing MatchedKeys to 
-identify which pods should be grouped. 
+In most scenarios, users can use the label keyed with `pod-template-hash` added 
+automatically by the Deployment controller to distinguish between different 
+revisions in a single Deployment. But for more complex scenarios 
+(eg. topology spread associating two deployments at the same time), users are 
+responsible for providing common labels to identify which pods should be grouped. 
 
 ### Risks and Mitigations
 
@@ -290,11 +296,13 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-`TopologySpreadConstraint` needs an extra field. The user fills in the 
-`MatchLabelKeys` with the key of label. The scheduler plugin will look up 
-the value from the incoming pod labels. Pods with the same key-value pairs 
-will be treated as groups. The pods belonging to the same group will be part 
-of the spreading in PodTopologySpread.
+A new field named `MatchLabelKeys` will be added to `TopologySpreadConstraint`. 
+Currently, when scheduling a pod, the `LabelSelector` defined in the pod is used 
+to identify the group of pods over which spreading will be calculated. 
+`MatchLabelKeys` adds another constraint to how this group of pods is identified: 
+the scheduler will use those keys to look up label values from the incoming pod; 
+and those key-value labels are ANDed with `LabelSelector` to select the group of 
+existing pods over which spreading will be calculated.
 
 A new field named `MatchLabelKeys` will be introduced to`TopologySpreadConstraint`:
 ```go
@@ -304,13 +312,12 @@ type TopologySpreadConstraint struct {
 	WhenUnsatisfiable UnsatisfiableConstraintAction
 	LabelSelector     *metav1.LabelSelector
 
-	// MatchLabelKeys holds keys to labels whose values we did not know
-	// before creating the pod. The scheduler plugin will obtain this
-	// value from the incoming pod labels. Pods with the same key-value
-	// pairs are considered a group. In the PodTopologySpread, the
-	// spreading will include pods belonging to the same group. It is
-	// an array of strings, each element representing a key of the
-	// label. If the key does not exist, the element won't be ignored.
+	// MatchLabelKeys is a set of pod label keys to select the pods over which 
+	// spreading will be calculated. The keys are used to lookup values from the
+	// incoming pod labels, those key-value labels are ANDed with `LabelSelector`
+	// to select the group of existing pods over which spreading will be calculated
+	// for the incoming pod. Keys that don't exist in the incoming pod labels will
+	// be ignored.
 	MatchLabelKeys []string
 }
 ```
@@ -331,6 +338,11 @@ labels by the keys in `matchLabelKeys`. The obtained labels will be merged
 to `labelSelector` of `topologySpreadConstraints` to filter and group pods. 
 The pods belonging to the same group will be part of the spreading in 
 `PodTopologySpread`.
+
+Finally, the feature will be guarded by a new feature flag. If the feature is 
+disabled, the field `matchLabelKeys` is preserved if it was already set in the 
+persisted Pod object, otherwise it is silently dropped; moreover, kube-scheduler 
+will ignore the field and continue to behave as before.
 
 ### Test Plan
 
@@ -450,13 +462,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-- Upgrade
-  - While the feature gate is enabled, `MatchLabelKeys` in 
-    `topologySpreadConstraints` is available to use by end-users. If this 
-    filed isn't set, it will maintain previous behavior.
-  
-- Downgrade
-  - `MatchLabelKeys` in `topologySpreadConstraints` will be ignored.
+In the event of an upgrade, kube-apiserver will start accept and store the field `MatchLabelKeys`.
+
+In the event of a downgrade, kube-scheduler will ignore `MatchLabelKeys` even if it was set.
 
 ### Version Skew Strategy
 
@@ -542,8 +550,9 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 The feature can be disabled in Alpha and Beta versions by restarting 
 kube-apiserver and kube-scheduler with feature-gate off.
-In terms of Stable versions, users can choose to opt-out by not setting the 
-`pod.spec.topologySpreadConstraints.matchLabelKeys` field.
+One caveat is that pods that used the feature will continue to have the 
+MatchLabelKeys field set even after disabling the feature gate, 
+however kube-scheduler will not take the field into account.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 Newly created pods need to follow this policy when scheduling. Old pods will 

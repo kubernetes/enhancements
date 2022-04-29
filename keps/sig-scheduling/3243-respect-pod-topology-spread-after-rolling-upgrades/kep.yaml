@@ -6,9 +6,9 @@ owning-sig: sig-scheduling
 status: provisional
 creation-date: 2022-03-17
 reviewers:
-  - TBD
+  - "@ahg-g"
 approvers:
-  - TBD
+  - "@ahg-g"
 
 see-also:
   - "/keps/sig-scheduling/895-pod-topology-spread"
@@ -35,7 +35,7 @@ latest-milestone: "v1.25"
 milestone:
   alpha: "v1.25"
   beta: "v1.26"
-  stable: "v1.27"
+  stable: "v1.28"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
