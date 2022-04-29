@@ -3,4 +3,4 @@
 # of http://git.k8s.io/enhancements/OWNERS_ALIASES
 kep-number: 3243
 alpha:
-  approver: TBD
+  approver: "@wojtek-t"
