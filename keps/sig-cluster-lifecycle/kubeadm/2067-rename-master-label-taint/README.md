@@ -69,7 +69,7 @@ This taint key should also be renamed to "node-role.kubernetes.io/control-plane"
 ## Motivation
 
 The Kubernetes project is moving away from wording that is considered offensive.
-A new working group [WG Naming](https://git.k8s.io/community/wg-naming) was created
+A new working group [WG Naming](https://git.k8s.io/community/archive/wg-naming) was created
 to track this work, and the word "master" was declared as offensive.
 [A proposal](http://git.k8s.io/community/wg-naming/recommendations/001-master-control-plane.md)
 was formalized for replacing the word "master" with "control plane".
