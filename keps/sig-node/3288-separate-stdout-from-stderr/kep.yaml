@@ -1,0 +1,37 @@
+title: Split Stdout and Stderr Log Stream of Container
+kep-number: 3288
+authors:
+  - "@knight42"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-apimachinery
+  - sig-cli
+status: provisional
+creation-date: 2022-05-01
+reviewers:
+  - "@sig-node-leads"
+approvers:
+  - "@sig-node-leads"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+latest-milestone: "v1.25"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+    alpha: "v1.25"
+    beta: "v1.26"
+    stable: "v1.27"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: "SplitStdoutAndStderr"
+    components:
+      - kubelet
+      - kube-apiserver
+disable-supported: true
+
+metrics: []
