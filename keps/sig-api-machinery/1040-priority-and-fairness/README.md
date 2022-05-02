@@ -283,8 +283,10 @@ In short, this proposal is about generalizing the existing
 max-in-flight request handler in apiservers to add more discriminating
 handling of requests.  The overall approach is that each request is
 categorized to a priority level and a queue within that priority
-level; each priority level dispatches to its own isolated concurrency
-pool; within each priority level queues compete with even fairness.
+level; each priority level dispatches to its own concurrency pool and,
+according to a configured limit, unused concurrency borrrowed from
+lower priority levels; within each priority level queues compete with
+even fairness.
 
 ### Request Categorization
 
@@ -638,24 +640,107 @@ always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
 The concurrency limit of an apiserver is divided among the non-exempt
-priority levels in proportion to their assured concurrency shares.
-This produces the assured concurrency value (ACV) for each non-exempt
-priority level:
+priority levels, and higher ones can do a limited amount of borrowing
+from lower ones.
+
+Non-exempt priority levels are ordered in a total order for the
+purpose of borrowing currently-unused concurrency.  The ordering is
+based (first) on increasing value of a spec field whose name is
+`priority` and whose value is constrained to lie in the range 0
+through 10000 inclusive and (second) on increasing name of the
+PriorityLevelConfiguration object.  Priority levels that appear later
+in the order are considered to have lower priority.
+
+Borrowing is done on the basis of the current situation, with no
+consideration of opportunity cost and no pre-emption when the
+situation changes.
+
+An apiserver assigns three concurrency limits to each non-exempt
+priority level, with a constraint that means there are only two
+degrees of freedom.
+
+- The ***LendableConcurrencyLimit*** is the number of seats that are
+  statically (i.e., before any borrowing takes place) assigned to this
+  level and can be dynamically borrowed by higher levels.
+- The ***NonLendableConcurrencyLimit*** is the number of seats that
+  are statically assigned to this level and can _not_ be borrowed by
+  higher levels.
+- The ***NominalConcurrencyLimit*** is the number of seats statically
+  assigned to this level and is the sum of the
+  LendableConcurrencyLimit and the NonLendableConcurrencyLimit.
+
+Each non-exempt PriorityLevelConfiguration's spec has an
+`assuredConcurrencyShares`, which has existed since APF was introduced
+and may not be zero, and a `lendableConcurrencyShares` field, which is
+being added in the midst of the lifetime of the `v1beta2` version of
+the API and may be any value between zero and
+`assuredConcurrencyShares` inclusive (default is zero).  Each
+apiserver allocates NominalConcurrencyLimits in proportion to
+`assuredConcurrencyShares` and LendableConcurrncyLimit in
+corresponding propotion:
 
 ```
-ACV(l) = ceil( SCL * ACS(l) / ( sum[priority levels k] ACS(k) ) )
+NominalConcurrencyLimit(i)  = ceil( SCL * assuredConcurrencyShares(i)  / sum_assured )
+LendableConcurrencyLimit(i) = ceil( SCL * lendableConcurrencyShares(i) / sum_assured )
+NonLendableConcurrencyLimit(i) = NominalConcurrencyLimit(i) - LendableConcurrencyLimit(i)
+sum_assured  = sum[priority levels k] assuredConcurrencyShares(k)
 ```
 
-where SCL is the apiserver's concurrency limit and ACS(l) is the
-AssuredConcurrencyShares for priority level l.
+where SCL is the apiserver's concurrency limit.
 
-Dispatching is done independently for each priority level.  Whenever
-(1) a non-exempt priority level's number of running requests is zero
-or below the level's assured concurrency value and (2) that priority
-level has a non-empty queue, it is time to dispatch another request
-for service.  The Fair Queuing for Server Requests algorithm below is
-used to pick a non-empty queue at that priority level.  Then the
-request at the head of that queue is dispatched.
+Borrowing is further limited by a practical consideration: we do not
+want a global mutex covering all dispatching.  Aside from borrowing,
+dispatching from one priority level is done independently from
+dispatching at another.  Borrowing is allowed in just one direction
+(higher may borrow from lower, and lower does not actively lend to
+higher) and in a very limited quantity: an attempt to dispatch for one
+priority level will consider borrowing from just one other priority
+level (if there is any lower priority level at all).
+
+A request can be dispatched exactly at a non-exempt priority level
+when either there are no requests executing at that priority level or
+the number of seats needed by that request is no greater than the
+number of unused seats at that priority level.  The number of unused
+seats at a given priority level is that level's
+NominalConcurrencyLimit minus the number of seats used by requests
+executing at that priority level (dispatched from that priority level
+and higher ones).
+
+There are two sorts of times when dispatching to a non-empty priority
+level is considered: when a request arrives, and when a request
+releases the seats it was occupying (which is not the same as when the
+request finishes from the client's point of view, see below about
+WATCH requests).
+
+At each of these sorts of moments, as many requests are dispatched
+exactly at the same priority level as possible.  The next request to
+consider dispatching is chosen by using the Fair Queuing for Server
+Requests algorithm below to choose a queue at that priority level, and
+the request at the head of that queue is considered.  If (a) no
+requests can be dispatched exactly at that priority level at that
+moment, (b) there are non-empty queues at that level, and (c) there
+are lower non-exempt priority levels, then the request at the head of
+the chosen queue is considered for dispatch at one of the lower
+priority levels.  The particular lower priority level considered is
+drawn at random from the lower ones, in proportion to their
+LendableConcurrencyLimit (we use a static value so that the drawing
+can be done without acquiring mutexes).  The request is executed at
+the chosen lower level (occupying some of its seats) if the request
+can be dispatched exactly at that level according to the rule above.
+
+The following table shows the current default non-exempt priority
+levels and a proposal for their new configuration.
+
+| Name | Assured Shares | Proposed Lendable Shares | Proposed Priority |
+| ---- | -------------: | -----------------------: | ----------------: |
+| leader-election |  10 |   0 |   200 |
+| node-high       |  40 |  10 |   400 |
+| system          |  30 |  10 |   600 |
+| workload-high   |  40 |  20 |  1000 |
+| workload-low    | 100 |  90 |  8000 |
+| global-default  |  20 |  10 |  9000 |
+| catch-all       |   5 |   0 | 10000 |
+
 
 ### Fair Queuing for Server Requests
 
