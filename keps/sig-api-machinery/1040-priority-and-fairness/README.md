@@ -283,8 +283,10 @@ In short, this proposal is about generalizing the existing
 max-in-flight request handler in apiservers to add more discriminating
 handling of requests.  The overall approach is that each request is
 categorized to a priority level and a queue within that priority
-level; each priority level dispatches to its own isolated concurrency
-pool; within each priority level queues compete with even fairness.
+level; each priority level dispatches to its own concurrency pool and,
+according to a configured limit, unused concurrency borrrowed from
+lower priority levels; within each priority level queues compete with
+even fairness.
 
 ### Request Categorization
 
@@ -638,24 +640,190 @@ always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
 The concurrency limit of an apiserver is divided among the non-exempt
-priority levels in proportion to their assured concurrency shares.
-This produces the assured concurrency value (ACV) for each non-exempt
-priority level:
+priority levels, and higher ones can do a limited amount of borrowing
+from lower ones.
 
+Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
+midst of the `v1beta2` lifetime, configure the borrowing.  The fields
+are added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).
+The following display shows the two new fields along with the updated
+description for the `AssuredConcurrencyShares` field, in `v1beta2`.
+
+```go
+type LimitedPriorityLevelConfiguration struct {
+  ...
+  // `assuredConcurrencyShares` (ACS) contributes to the computation of the
+  // NominalConcurrencyLimit (NCL) of this level.
+  // This is the number of execution seats available at this priority level.
+  // This is used both for requests dispatched from
+  // this priority level as well as requests dispatched from higher priority
+  // levels borrowing seats from this level.  This does not limit dispatching from
+  // this priority level that borrows seats from lower priority levels (those lower
+  // levels do that).  The server's concurrency limit (SCL) is divided among the
+  // Limited priority levels in proportion to their ACS values:
+  //
+  // NCL(i)  = ceil( SCL * ACS(i) / sum_acs )
+  // sum_acs = sum[limited priority level k] ACS(k)
+  //
+  // Bigger numbers mean a larger nominal concurrency limit, at the expense
+  // of every other Limited priority level.
+  // This field has a default value of 30.
+  // +optional
+  AssuredConcurrencyShares int32
+
+  // `borrowablePercent` prescribes the fraction of the level's NCL that
+  // can be borrowed by higher priority levels.  This value of this
+  // field must be between 0 and 100, inclusive, and it defaults to 0.
+  // The number of seats that higher levels can borrow from this level, known
+  // as this level's BorrowableConcurrencyLimit (BCL), is defined as follows.
+  //
+  // BCL(i) = round( NCL(i) * borrowablePercent(i)/100.0 )
+  //
+  // +optional
+  BorrowablePercent int32
+
+  // `priority` determines where this priority level appears in the total order
+  // of Limited priority levels used to configure borrowing between those levels.
+  // A numerically higher value means a logically lower priority.
+  // Do not create ties; they will be broken arbitrarily.
+  // `priority` MUST BE between 0 and 10000, inclusive, and
+  // SHOULD BE greater than zero.
+  // If it is zero then, for the sake of a smooth transition from the time
+  // before this field existed, this level will be treated as if its `priority`
+  // is the average of the `matchingPrecedence` of the FlowSchema objects
+  // that reference this level.
+  // +optional
+  Priority int32
+}
 ```
-ACV(l) = ceil( SCL * ACS(l) / ( sum[priority levels k] ACS(k) ) )
-```
 
-where SCL is the apiserver's concurrency limit and ACS(l) is the
-AssuredConcurrencyShares for priority level l.
+Prior to the introduction of borrowing, the `assuredConcurrencyShares`
+field had two meanings that amounted to the same thing: the total
+shares of the level, and the non-borrowable shares of the level.
+While it is somewhat unnatural to keep the meaning of "total shares"
+for a field named "assured" shares, rolling out the new behavior into
+existing systems will be more continuous if we keep the meaning of
+"total shares" for the existing field.  In the next version we should
+rename the `AssuredConcurrencyShares` to `NominalConcurrencyShares`.
 
-Dispatching is done independently for each priority level.  Whenever
-(1) a non-exempt priority level's number of running requests is zero
-or below the level's assured concurrency value and (2) that priority
-level has a non-empty queue, it is time to dispatch another request
-for service.  The Fair Queuing for Server Requests algorithm below is
-used to pick a non-empty queue at that priority level.  Then the
-request at the head of that queue is dispatched.
+Consider rolling the borrowing behavior into a pre-existing cluster
+that did not have borrowing.  In particular, suppose that the
+administrators of the cluster have scripts/clients that maintain some
+out-of-tree PriorityLevelConfiguration objects; these, naturally, do
+not specify a value for the `priority` field.  The default behavior
+for `priority` is designed to do something more natural and convenient
+than have them all collide at some fixed number.
+
+The following table shows the current default non-exempt priority
+levels and a proposal for their new configuration.  For the sake of
+continuity with out-of-tree configuration objects, the proposed
+priority values follow the rule given above for the effective value
+when the priority field holds zero.
+
+| Name | Assured Shares | Proposed Borrowable Percent | Proposed Priority |
+| ---- | -------------: | --------------------------: | ----------------: |
+| leader-election |  10 |   0 |   150 |
+| node-high       |  40 |  25 |   400 |
+| system          |  30 |  33 |   500 |
+| workload-high   |  40 |  50 |   833 |
+| workload-low    | 100 |  90 |  9000 |
+| global-default  |  20 |  50 |  9900 |
+| catch-all       |   5 |   0 | 10000 |
+
+
+Borrowing is done on the basis of the current situation, with no
+consideration of opportunity cost, no further rationing according to
+shares (just obeying the concurrency limits as outlined above), and no
+pre-emption when the situation changes.
+
+Whenever a request is dispatched, it takes all its seats from one
+priority level --- either the one referenced by the request's
+FlowSchema or a logically lower priority level.
+
+Note: We *could* take a complementary approach, in which a request can
+borrow from a logically higher priority level.  That would go together
+with a bigger change in the default configuration and greater
+challenges in incremental rollout.  That is not the approach described
+here.
+
+In the implementation, there is an important consideration regarding
+locking.  We do not want one global mutex to be held for any work on
+dispatching; we want to allow concurrent work on dispatching, where
+possible.  Before the introduction of borrowing, the priority levels
+operated completely independently and the only global thing was a
+`sync.RWMutex` that is locked for reading to do dispatching work and
+locked for writing only when digesting changes to the configuration
+API objects.  Each priority level has its own private mutex.
+Borrowing introduces an interaction between priority levels, requiring
+multiple of those private locks to be held at once.  We must avoid
+deadlock.  This is done by insisting that whenever two locks are to be
+held at once, they are acquired in some total order.  In particular,
+the lock of a logically higher priority level is acquired before the
+lock of a logically lower priority level.  The locking order does not
+have to be the same as the priority order, but we make it the same for
+the sake of simplicity.
+
+A request can be dispatched from a queue of priority level X to seats
+at non-exempt priority level Y when either there are no requests
+executing at level Y or the number of seats needed by that request is
+no greater than the number of unused seats at priority level Y.  The
+number of unused seats at a given priority level is that level's
+NominalConcurrencyLimit minus the number of seats used by requests
+executing at that priority level (both requests dispatched from that
+priority level and requests dispatched from higher priority levels
+that are borrowing these lower level seats).
+
+There are two sorts of times when dispatching from/to a non-exempt
+priority level is considered: when a request arrives, and when a
+request releases the seats it was occupying (which is not the same as
+when the request finishes from the client's point of view, due to the
+special considerations for WATCH requests).
+
+At each of these sorts of moments, as many requests as possible are
+dispatched from the priority level involved to the same priority
+level.  The next request to consider in this process is chosen by
+using the Fair Queuing for Server Requests algorithm below to choose
+one of the non-empty queues (if indeed there are any) at that priority
+level.  This was the entirety of the reaction before the introduction
+of borrowing.
+
+Borrowing extends the reaction as follows.  There are two cases.  The
+simpler case is when reacting to a request arrival, let us say at
+priority level X.  In this case, and if the baseline reaction ---
+dispatching as many requests as possible from X to X --- ends with a
+request to dispatch but not enough seats available, then the reaction
+continues with trying to dispatch that request to the logically lower
+priority levels.  With the lock of X still held, the logically lower
+levels Y are enumerated in logically decreasing order and dispatch to
+each one of them is considered.  This consideration starts by
+acquiring Y's lock, then dispatches as many requests from X to Y as
+are allowed by the above rule, and finally releases Y's lock.
+Naturally, if/when X runs out of requests to dispatch, this reaction
+stops.
+
+The more complicated case is reacting to seats being freed up.  Let us
+say this is at priority level X.  As in the other case, the reaction
+starts with the baseline, dispatching as much as possible from X to X.
+If this leaves some seats at X still available, then the reaction
+continues by trying to dispatch from higher priority levels to X.  The
+lock of X is not held over this loop, that would violate locking
+order.  This iteration starts by releasing the lock of X and then
+iterating over the higher priority levels Y (in logically decreasing
+priority order) and considering each one in turn.  That consideration
+starts by acquiring the locks of Y and X (in that order), then does as
+much dispatching from Y to X as is allowed, and finally releases the
+two locks.  Note that dispatching one wide request from Y to X may
+unblock immediate dispatching of additional requests from Y (whether
+to X, Y, or another priority level).  The dispatching of all possible
+from Y to X does not cover all of that.  Thus, the reaction to seats
+being freed up has to include keeping a list of priority levels Y to
+consider general dispatching from.  An element is added to that list
+whenever the dispatching from Y to X concludes in a way that warrants
+more general consideration of Y.  After the primary iteration above is
+done, the reaction to seats being freed continues with iterating over
+this list of Y to reconsider and reacting as for an arrival at Y:
+dispatch as much as possible from Y to Y and logically lower priority
+levels.
 
 ### Fair Queuing for Server Requests
 
