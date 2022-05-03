@@ -1133,7 +1133,7 @@ arrive to that queue and crowd out other queues for an arbitrarily
 long time.  To mitigate this problem, the implementation has a special
 step that effectively prevents `t_dispatch_virtual` of the next
 request to dispatch from dropping below the current time.  But that
-solves only half of the problem.  Other queueus may accumulate a
+solves only half of the problem.  Other queues may accumulate a
 corresponding deficit (inappropriately large values for
 `t_dispatch_virtual` and `t_finish_virtual`).  Such a queue can have
 an arbitrarily long burst of inappropriate lossage to other queues.
@@ -1201,7 +1201,7 @@ of available resources), a single request should consume no more than A
 concurrency units.  Fortunately that all compiles together because the
 `processing latency` of the LIST request is actually proportional to the
 number of processed objects, so the cost of the request (defined above as
-`<width> x <processing latency>` really is proportaional to the number of
+`<width> x <processing latency>` really is proportional to the number of
 processed objects as expected.
 
 For RAM the situation is actually different.  In order to process a LIST
@@ -1220,7 +1220,7 @@ where N is the number of items a given LIST request is processing.
 
 The question is how to combine them to a single number.  While the main goal
 is to stay on the safe side and protect from the overload, we also want to
-maxiumize the utilization of the available concurrency units.
+maximize the utilization of the available concurrency units.
 Fortunately, when we normalize CPU and RAM to percentage of available capacity,
 it appears that almost all requests are much more cpu-intensive.  Assuming
 4GB:1CPU ratio and 10kB average object and the fact that processing larger
@@ -1234,7 +1234,7 @@ independently, which translates to the following function:
 ```
 We're going to better tune the function based on experiments, but based on the
 above back-of-envelope calculations showing that memory should almost never be
-a limiting factor we will apprximate the width simply with:
+a limiting factor we will approximate the width simply with:
 ```
 width_approx(n) = min(A, ceil(N / E)), where E = 1 / B
 ```
@@ -1267,7 +1267,7 @@ the virtual world for `additional latency`.
 Adjusting virtual time of a queue to do that is trivial.  The other thing
 to tweak is to ensure that the concurrency units will not get available
 for other requests for that time (because currently all actions are
-triggerred by starting or finishing some request).  We will maintain that
+triggered by starting or finishing some request).  We will maintain that
 possibility by wrapping the handler into another one that will be sleeping
 for `additional latence` after the request is processed.
 
@@ -1284,7 +1284,7 @@ requests.  Now in order to start processing a request, it has to accumulate
 The important requirement to recast now is fairness.  As soon a single
 request can consume more units of concurrency, the fairness is
 no longer about the number of requests from a given queue, but rather
-about number of consumed concurrency units.  This justifes the above
+about number of consumed concurrency units.  This justifies the above
 definition of adjusting the cost of the request to now be equal to
 `<width> x <processing latency>` (instead of just `<processing latency>`).
 
@@ -1310,7 +1310,7 @@ modification to the current dispatching algorithm:
   semantics of virtual time tracked by the queues to correspond to work,
   instead of just wall time.  That means when we estimate a request's
   virtual duration, we will use `estimated width x estimated latency` instead
-  of just estimated latecy.  And when a request finishes, we will update
+  of just estimated latency.  And when a request finishes, we will update
   the virtual time for it with `seats x actual latency` (note that seats
   will always equal the estimated width, since we have no way to figure out
   if a request used less concurrency than we granted it).
@@ -1348,7 +1348,7 @@ We will solve this problem by also handling watch requests by our priority
 and fairness kube-apiserver filter.  The queueing and admitting of watch
 requests will be happening exactly the same as for all non-longrunning
 requests.  However, as soon as watch is initialized, it will be sending
-an articial `finished` signal to the APF dispatcher - after receiving this
+an artificial `finished` signal to the APF dispatcher - after receiving this
 signal dispatcher will be treating the request as already finished (i.e.
 the concurrency units it was occupying will be released and new requests
 may potentially be immediately admitted), even though the request itself
@@ -1362,7 +1362,7 @@ The first question to answer is how we will know that watch initialization
 has actually been done.  However, the answer for this question is different
 depending on whether the watchcache is on or off.
 
-In watchcache, the initialization phase is clearly separated - we explicily
+In watchcache, the initialization phase is clearly separated - we explicitly
 compute `init events` and process them.  What we don't control at this level
 is the process of serialization and sending out the events.
 In the initial version we will ignore this and simply send the `initialization
@@ -1395,7 +1395,7 @@ LIST requests) adjust the `width` of the request.  However, in the initial
 version, we will just use `width=1` for all watch requests.  In the future,
 we are going to evolve it towards a function that will be better estimating
 the actual cost (potentially somewhat similarly to how LIST requests are done)
-but we first need to a machanism to allow us experiment and tune it better.
+but we first need to a mechanism to allow us experiment and tune it better.
 
 #### Keeping the watch up-to-date
 
@@ -1425,7 +1425,7 @@ Let's start with an assumption that sending every watch event is equally
 expensive.  We will discuss how to generalize it below.
 
 With the above assumption, a cost of a mutating request associated with
-sending watch events triggerred by it is proportional to the number of
+sending watch events triggered by it is proportional to the number of
 watchers that has to process that event.   So let's describe how we can
 estimate this number.
 
@@ -1468,7 +1468,7 @@ structure to avoid loosing too much information.
 If we would have a hashing function that can combine only a similar buckets
 (e.g. it won't combine "all Endpoints" bucket with "pods from node X") then
 we can simply write maximum from all entries that are hashed to the same value.
-This means that some costs may be overestimated, but if we resaonably hash
+This means that some costs may be overestimated, but if we reasonably hash
 requests originating by system components, that seems acceptable.
 The above can be achieved by hashing each resource type to a separate set of
 buckets, and within a resource type hashing (namespace, name) as simple as:
@@ -1489,7 +1489,7 @@ as whenever something quickly grows we report it, but we don't immediately
 downscale which is a way to somehow incorporate a history.
 
 However, we will treat the above as a feasibility proof.  We will just start
-with the simplest apprach of treating each kube-apiserver independently.
+with the simplest approach of treating each kube-apiserver independently.
 We will implement the above (i.e. knowledge sharing between kube-apiserver),
 if the independence assumption will not work good enough.
 The above description shows that it won't result in almost any wasted work
