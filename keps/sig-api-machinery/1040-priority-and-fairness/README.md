@@ -643,59 +643,97 @@ The concurrency limit of an apiserver is divided among the non-exempt
 priority levels, and higher ones can do a limited amount of borrowing
 from lower ones.
 
-Non-exempt priority levels are ordered in a total order for the
-purpose of borrowing currently-unused concurrency.  The ordering is
-based (first) on increasing value of a spec field whose name is
-`priority` and whose value is constrained to lie in the range 0
-through 10000 inclusive and (second) on increasing name of the
-PriorityLevelConfiguration object.  Priority levels that appear later
-in the order are considered to have lower priority.
+Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
+midst of the `v1beta2` lifetime, configure the borrowing.  The following
+display shows the two new fields along with the updated description for
+the `AssuredConcurrencyShares` field.
+
+```go
+type LimitedPriorityLevelConfiguration struct {
+  ...
+  // `assuredConcurrencyShares` (ACS) contributes to the computation of the
+  // NominalConcurrencyLimit (NCL) of this level.
+  // This is the number of execution seats available at this priority level.
+  // This is used both for requests dispatched from
+  // this priority level as well as requests dispatched from higher priority
+  // levels borrowing seats from this level.  This does not limit dispatching from
+  // this priority level that borrows seats from lower priority levels (those lower
+  // levels do that).  The server's concurrency limit (SCL) is divided among the
+  // Limited priority levels in proportion to their ACS values:
+  //
+  // NCL(i)  = ceil( SCL * ACS(i) / sum_acs )
+  // sum_acs = sum[limited priority level k] ACS(k)
+  //
+  // Bigger numbers mean a larger nominal concurrency limit, at the expense
+  // of every other Limited priority level.
+  // This field has a default value of 30.
+  // +optional
+  AssuredConcurrencyShares int32
+
+  // `lendableConcurrencyShares` (LCS) contributes to the computation of the
+  // LendableConcurrencyLimit (LCL) for this level.  This is the number of
+  // execution seats of this level that can be borrowed by higher priority
+  // Limited levels.
+  // This may not be negative, and may not be greater than
+  // `assuredConcurrencyShares`.
+  //
+  // LCL(i) = ceil( SCL * LCS(i) / sum_acs )
+  //
+  // This field has a default value of zero.
+  // +optional
+  LendableConcurrencyShares int32
+
+  // `priority` determines where this priority level appears in the total order
+  // of Limited priority levels used to configure borrowing between those levels.
+  // A numerically higher value means a logically lower priority.
+  // Do not create ties; they will be broken arbitrarily.
+  // `priority` SHOULD be a positive number and MUST NOT be greater than 10000.
+  // If it is zero then, for the sake of a smooth transition from the time
+  // before this field existed, this level will be treated as if its `priority`
+  // is the average of the `matchingPrecedence` of the FlowSchema objects
+  // that reference this level.
+  // +optional
+  Priority int32
+}
+```
+
+This is a somewhat tortured meaning for "assured", but it is the
+meaning we need for introduction of the new field to the existing type
+while having a smooth transition in behavior.  In the next version we
+should rename the `AssuredConcurrencyShares` to
+`NominalConcurrencyShares`.
 
 Borrowing is done on the basis of the current situation, with no
-consideration of opportunity cost and no pre-emption when the
-situation changes.
+consideration of opportunity cost, no further rationing according to
+shares (just obeying the concurrency limits as outlined above), and no
+pre-emption when the situation changes.
 
-An apiserver assigns three concurrency limits to each non-exempt
-priority level, with a constraint that means there are only two
-degrees of freedom.
-
-- The ***LendableConcurrencyLimit*** is the number of seats that are
-  statically (i.e., before any borrowing takes place) assigned to this
-  level and can be dynamically borrowed by higher levels.
-- The ***NonLendableConcurrencyLimit*** is the number of seats that
-  are statically assigned to this level and can _not_ be borrowed by
-  higher levels.
-- The ***NominalConcurrencyLimit*** is the number of seats statically
-  assigned to this level and is the sum of the
-  LendableConcurrencyLimit and the NonLendableConcurrencyLimit.
-
-Each non-exempt PriorityLevelConfiguration's spec has an
-`assuredConcurrencyShares`, which has existed since APF was introduced
-and may not be zero, and a `lendableConcurrencyShares` field, which is
-being added in the midst of the lifetime of the `v1beta2` version of
-the API and may be any value between zero and
-`assuredConcurrencyShares` inclusive (default is zero).  Each
-apiserver allocates NominalConcurrencyLimits in proportion to
-`assuredConcurrencyShares` and LendableConcurrncyLimit in
-corresponding propotion:
-
-```
-NominalConcurrencyLimit(i)  = ceil( SCL * assuredConcurrencyShares(i)  / sum_assured )
-LendableConcurrencyLimit(i) = ceil( SCL * lendableConcurrencyShares(i) / sum_assured )
-NonLendableConcurrencyLimit(i) = NominalConcurrencyLimit(i) - LendableConcurrencyLimit(i)
-sum_assured  = sum[priority levels k] assuredConcurrencyShares(k)
-```
-
-where SCL is the apiserver's concurrency limit.
+Whenever a request is dispatched, it takes all its seats from one
+priority level --- either the one referenced by the request's
+FlowSchema or a lower priority level.
 
 Borrowing is further limited by a practical consideration: we do not
 want a global mutex covering all dispatching.  Aside from borrowing,
 dispatching from one priority level is done independently from
-dispatching at another.  Borrowing is allowed in just one direction
-(higher may borrow from lower, and lower does not actively lend to
-higher) and in a very limited quantity: an attempt to dispatch for one
-priority level will consider borrowing from just one other priority
-level (if there is any lower priority level at all).
+dispatching at another.  There _is_ a global mutex held by the logic
+that digests configuration objects, but it produces an immutable
+object that is passed through `sync/atomic.Store` and `.Load` to the
+logic that does queuing and dispatching.  Borrowing is allowed in just
+one direction: higher may borrow from lower.  A higher priority level
+may actively borrow from a lower one but a lower level does not
+actively lend to a higher one (see below).  In this design, working on
+dispatching one request requires holding at most two priority level
+mutexes at any given moment.  To avoid deadlock, there is a strict
+ordering on acquisition of those mutexes, namely decreasing logical
+priority.
+
+We could take a complementary approach, in which lower actively lends
+to higher but higher does not actively borrow from lower.  The chosen
+direction was chosen based on looking at metrics from scalabiility
+tests showing that the `workload-low` priority level has a
+significantly larger NominalConcurrencyLimit than the other levels and
+is usually very under-utilized (so it would consider lending less
+often than higher levels would consider borrowing).
 
 A request can be dispatched exactly at a non-exempt priority level
 when either there are no requests executing at that priority level or
@@ -706,39 +744,47 @@ NominalConcurrencyLimit minus the number of seats used by requests
 executing at that priority level (dispatched from that priority level
 and higher ones).
 
-There are two sorts of times when dispatching to a non-empty priority
+There are two sorts of times when dispatching to a non-exempt priority
 level is considered: when a request arrives, and when a request
 releases the seats it was occupying (which is not the same as when the
-request finishes from the client's point of view, see below about
-WATCH requests).
+request finishes from the client's point of view, due to the special
+considerations for WATCH requests).
 
 At each of these sorts of moments, as many requests are dispatched
 exactly at the same priority level as possible.  The next request to
-consider dispatching is chosen by using the Fair Queuing for Server
-Requests algorithm below to choose a queue at that priority level, and
-the request at the head of that queue is considered.  If (a) no
-requests can be dispatched exactly at that priority level at that
-moment, (b) there are non-empty queues at that level, and (c) there
-are lower non-exempt priority levels, then the request at the head of
-the chosen queue is considered for dispatch at one of the lower
-priority levels.  The particular lower priority level considered is
-drawn at random from the lower ones, in proportion to their
-LendableConcurrencyLimit (we use a static value so that the drawing
-can be done without acquiring mutexes).  The request is executed at
-the chosen lower level (occupying some of its seats) if the request
-can be dispatched exactly at that level according to the rule above.
+consider in this process is chosen by using the Fair Queuing for
+Server Requests algorithm below to choose one of the non-empty queues
+at that priority level, and if indeed there is a non-empty queue then
+the request at the head of the chosen queue is considered for
+dispatching.  If the level has non-empty queues but the chosen request
+can not be dispatched exactly at this level at the moment then the
+logically lower non-exempt priority levels are considered, one at a
+time, in decreasing logical priority order.  As soon as one is found
+at which the request can be dispatched at the moment according to the
+rule above then the search stops and the request is dispatched to
+execute using some of the lower priority level's seats.  If no
+suitable priority level is found then the request is not dispatched at
+the moment.
+
+As can be seen from this logic, when seats are freed up at a given
+priority level they are _not_ actively lent to logically higher
+priority levels.  We avoid that in order to have a total order in
+which priority level mutexes are acquired.
 
 The following table shows the current default non-exempt priority
-levels and a proposal for their new configuration.
+levels and a proposal for their new configuration.  For the sake of
+continuity with out-of-tree configuration objects, the proposed
+priority values follow the rule given above for the effective value
+when the priority field holds zero.
 
 | Name | Assured Shares | Proposed Lendable Shares | Proposed Priority |
 | ---- | -------------: | -----------------------: | ----------------: |
-| leader-election |  10 |   0 |   200 |
+| leader-election |  10 |   0 |   150 |
 | node-high       |  40 |  10 |   400 |
-| system          |  30 |  10 |   600 |
-| workload-high   |  40 |  20 |  1000 |
-| workload-low    | 100 |  90 |  8000 |
-| global-default  |  20 |  10 |  9000 |
+| system          |  30 |  10 |   500 |
+| workload-high   |  40 |  20 |   833 |
+| workload-low    | 100 |  90 |  9000 |
+| global-default  |  20 |  10 |  9900 |
 | catch-all       |   5 |   0 | 10000 |
 
 
