@@ -170,14 +170,19 @@ updates.
 
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
+The pod topology spread feature allows users to define the group of pods over 
+which spreading is applied using a LabelSelector. This means the user should 
+know the exact label key and value when defining the pod spec.
 
-This KEP defines a new field `MatchLabelKeys` in `TopologySpreadConstraint` 
-for end users to set the key of labels used to group Pods belonging to the 
-same workloads. Scheduler plugin will obtain the value from the pod labels 
-by the key and consider pods with the same key-value as a group . Then the 
-spreading will apply to pods belonging to the same group. This will allow end 
-users to set the keys to the labels whose values user doesn't know before 
-creating the pod like `revisions` in rolling upgrades.
+This KEP proposes a complementary field to LabelSelector named `MatchLabelKeys` in
+`TopologySpreadConstraint` which represent a set of label keys only. The scheduler
+will use those keys to look up label values from the incoming pod; and those key-value 
+labels are ANDed with `LabelSelector` to identify the group of existing pods over 
+which the spreading skew will be calculated.
+
+The main case that this new way for identifying pods will enable is constraining 
+skew spreading calculation to happen at the revision level in Deployments during 
+rolling upgrades.
 
 ## Motivation
 
@@ -190,12 +195,13 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-PodTopologySpread has been widely used in production environments, 
-especially the  online service. There is an issue with the rolling update 
-procedure of the online service in which the pod spread appears to be out  
-of balance ([98215](https://github.com/kubernetes/kubernetes/issues/98215), 
+PodTopologySpread is widely used in production environments, especially in 
+service type workloads which employ Deployments. However, currently it has a 
+limitation that manifests during rolling updates which causes the deployment to 
+end up out of balance ([98215](https://github.com/kubernetes/kubernetes/issues/98215), 
 [105661](https://github.com/kubernetes/kubernetes/issues/105661),
 [k8s-pod-topology spread is not respected after rollout](https://stackoverflow.com/questions/66510883/k8s-pod-topology-spread-is-not-respected-after-rollout)). 
+
 The root cause is that PodTopologySpread constraints allow defining a key-value 
 label selector, which applies to all pods in a Deployment irrespective of their 
 owning ReplicaSet. As a result, when a new revision is rolled out, spreading will 
@@ -205,12 +211,13 @@ spreading we are left with may not match expectations because the deleted pods f
 the older ReplicaSet will cause skewed distribution for the remaining pods.
 
 Currently, users are given two solutions to this problem. The first is to add a 
-revision  label to Deployment and update it manually at each rolling upgrade(both 
+revision label to Deployment and update it manually at each rolling upgrade (both 
 the label on the podTemplate and the selector in the podTopologySpread constraint),
 while the second is to deploy a descheduler to re-balance the pod 
-distribution. User feedback suggests that the experience isn't very good. 
-In this proposal, we propose a native way to maintain pod balance after a  
-rolling upgrade in PodTopologySpread.
+distribution. The former solution isn't user friendly and requires manual tuning,
+which is error prone; while the latter requires installing and maintaining an 
+extra controller. In this proposal, we propose a native way to maintain pod balance 
+after a rolling upgrade in Deployments that use PodTopologySpread.
 
 ### Goals
 
@@ -462,7 +469,7 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-In the event of an upgrade, kube-apiserver will start accept and store the field `MatchLabelKeys`.
+In the event of an upgrade, kube-apiserver will start to accept and store the field `MatchLabelKeys`.
 
 In the event of a downgrade, kube-scheduler will ignore `MatchLabelKeys` even if it was set.
 
