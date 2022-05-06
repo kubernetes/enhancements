@@ -104,6 +104,21 @@ Additionally we require a registry and artifact url-redirection solution to the 
 - We will have CI jobs that will run against registry-sandbox.k8s.io as well to monitor stability before we promote code to registry
 - We will automate the deployment/monitoring and testing of code landing in the oci-proxy repository
 
+### registry.k8s.io request handling
+
+Requests to [registry.k8s.io](https://registry.k8s.io) follows the following flow:
+
+1. If it's a request for `/`: redirect to our wiki page about the project
+2. If it's not a request for `/` and does not start with `/v2/`: 404 error
+3. For registry API requests, all of which start with `/v2/`:
+
+- If it's not a blob request: redirect to _Upstream Registry_
+- If it's not a known AWS IP: redirect to _Upstream Registry_
+- If it's a known AWS IP AND HEAD request for the layer succeeeds in S3: redirect to S3
+- If it's a known AWS IP AND HEAD fails: redirect to _Upstream Registry_
+
+Currently the _Upstream Registry_ is https://k8s.gcr.io.
+
 ### User Stories
 
 #### SIG Release - Image Promotion
