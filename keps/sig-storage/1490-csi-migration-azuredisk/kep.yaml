@@ -14,7 +14,7 @@ editor: "@Jiawei0227"
 creation-date: 2022-01-05
 last-updated: 2022-01-05
 disable-supported: true
-status: implementable
+status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
 prr-approvers:
