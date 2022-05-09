@@ -201,6 +201,8 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 
 #### Beta -> GA Graduation
 - 2 examples of end users using this field
+  - The latest version of OpenShift is using OS field in pod spec to identify pod OS and apply SCCs judiciously
+  - Rancher, CAPZ plan to use this field.
 
 ### Upgrade / Downgrade Strategy
 
@@ -380,6 +382,7 @@ Disabling the `IdentifyPodOS` featuregate will help in determining the problem.
 - 2021-09-08: Initial KEP merged
 - 2021-10-29: Initial implementation PR merged
 - 2022-01-19: Graduate the feature to Beta proposed 
+- 2022-05-09: Graduate the feature to GA proposed
 
 
 ## Drawbacks
