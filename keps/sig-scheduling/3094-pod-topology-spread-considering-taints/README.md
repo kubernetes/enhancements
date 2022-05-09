@@ -198,7 +198,7 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Introduce a new struct to define all node inclusion policies explicitly
+- Introduce two new fields to define all node inclusion policies explicitly
 - Provide an option for end-users to specify whether to respect taints or not
 
 ### Non-Goals
@@ -219,7 +219,7 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-Introduce a new field to `TopologySpreadConstraint` to define all node inclusion
+Introduce two new fields to `TopologySpreadConstraint` to define all node inclusion
 policies including nodeAffinity and nodeTaint.
 
 ### User Stories (Optional)
@@ -271,40 +271,42 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-A new field named `NodeInclusionPolicies` will be introduced to `TopologySpreadConstraint`:
+Two new fields named `NodeAffinityPolicy` and `NodeTaintsPolicy` will be
+introduced to `TopologySpreadConstraint`:
 ```golang
 type TopologySpreadConstraint struct {
-  // NodeInclusionPolicies includes several policies
-  // when calculating pod topology spread skew
-  NodeInclusionPolicies NodeInclusionPolicies
+	// NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+	// when calculating pod topology spread skew. Options are:
+	// - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+	// - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+	//
+	// If this value is nil, the behavior is equivalent to the Honor policy.
+	// This is a alpha-level feature enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
+	// +optional
+	NodeAffinityPolicy *NodeInclusionPolicy
+	// NodeTaintsPolicy indicates how we will treat node taints when calculating
+	// pod topology spread skew. Options are:
+	// - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+	// has a toleration, are included.
+	// - Ignore: node taints are ignored. All nodes are included.
+	//
+	// If this value is nil, the behavior is equivalent to the Ignore policy.
+	// This is a alpha-level feature enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
+	// +optional
+	NodeTaintsPolicy *NodeInclusionPolicy
 }
 ```
 
-There are two policies now regarding to nodeAffinity and nodeTaint:
+We will define two NodeInclusionPolicy:
 ```golang
-type NodeInclusionPolicies struct {
-  // NodeAffinity policy indicates how we will treat nodeAffinity/nodeSelector
-  // when calculating pod topology spread skew. The semantics vary by PolicyName:
-  // - Respect (default): nodes matching nodeAffinity/nodeSelector will be included.
-  // - Ignore: all nodes will be included.
-  NodeAffinity PolicyName
-  // NodeTaint policy indicates how we will treat node taints
-  // when calculating pod topology spread skew. The semantics vary by PolicyName:
-  // - Respect: tainted nodes that tolerate the incoming pod, along with regular nodes, will be included.
-  // - Ignore (default): all nodes will be included.
-  NodeTaint PolicyName
-}
-```
-
-We will define two policyNames by default:
-```golang
-type PolicyName string
+// NodeInclusionPolicy defines the type of node inclusion policy
+type NodeInclusionPolicy string
 
 const (
-  // Ignore means ignore this policy in calculating.
-  Ignore PolicyName  = "Ignore"
-  // Respect means use this policy in calculating.
-  Respect PolicyName  = "Respect"
+	// NodeInclusionPolicyIgnore means ignore this scheduling policy when calculating pod topology spread skew.
+	NodeInclusionPolicyIgnore NodeInclusionPolicy = "Ignore"
+	// NodeInclusionPolicyHonor means use this scheduling policy when calculating pod topology spread skew.
+	NodeInclusionPolicyHonor NodeInclusionPolicy = "Honor"
 )
 ```
 
@@ -334,7 +336,7 @@ when drafting this test plan.
 - Unit and integration tests:
   - Defaulting and validation tests
   - Feature gate enable/disable tests
-  - `NodeInclusionPolicies` works as expected
+  - `NodeAffinityPolicy` and  `NodeTaintsPolicy` work as expected
 - Benchmark tests:
   - Verify the performance of looping all toleration and taints in calculating skew is acceptable
 
@@ -426,8 +428,9 @@ enhancement:
 -->
 
 - Upgrade
-  - While the feature gate is enabled, `NodeInclusionPolicies` is allowed to use by end-users.
-  - While the feature gate is enabled, and we don't set this field, default values
+  - While the feature gate is enabled, `NodeAffinityPolicy` and `NodeTaintsPolicy` are
+  allowed to use by end-users.
+  - While the feature gate is enabled, and we don't set these two fields, default values
   will be configured, which will maintain previous behavior.
 - Downgrade
   - Previously configured values will be ignored.
@@ -485,7 +488,7 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PodTopologySpreadNodePolicies
+  - Feature gate name: NodeInclusionPolicyInPodTopologySpread
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -578,8 +581,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Operator can query `pod.spec.topologySpreadConstraints[].NodeInclusionPolicies` field
-and identify if this is set to non-default values
+Operator can query `pod.spec.topologySpreadConstraints[].NodeAffinityPolicy`
+and `pod.spec.topologySpreadConstraints[].NodeAffinityPolicy` to identify whether
+this is set to non-default values
 
 ###### How can someone using this feature know that it is working for their instance?
 
