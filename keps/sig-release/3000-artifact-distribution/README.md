@@ -49,7 +49,7 @@ The cost of distributing Kubernetes comes at great cost nearing $150kUSD/month (
 
 Additionally some of our community members are unable to access the official release container images due to country level firewalls that do not them connect to Google services.
 
-Ideally we can dramatically reduce cost and allow everyone in the world to download the container iamges released by our community.
+Ideally we can dramatically reduce cost and allow everyone in the world to download the container images released by our community.
 
 We are now used to using the [image promoter process](https://github.com/kubernetes/enhancements/tree/master/keps/sig-release/1734-k8s-image-promoter) to promote images to the official kubernetes container registry using the infrastructure (GCR staging repos etc) provided by [sig-k8s-infra](https://github.com/kubernetes/k8s.io/tree/main/k8s.gcr.io)
 
@@ -65,7 +65,7 @@ When Kubernetes master opens up for v1.25 development, we need to update all def
 
 ### Goals
 
-A policy and procedure for use by SIG Release to promote container images and release binaries to multiple registries and mirrors.
+A policy and procedure for use by SIG Release to promote container images to multiple registries and mirrors.
 
 A solution to allow redirection to appropriate mirrors to lower cost and allow access from any cloud or country globally.
 
@@ -114,7 +114,7 @@ Requests to [registry.k8s.io](https://registry.k8s.io) follows the following flo
 
 - If it's not a blob request: redirect to _Upstream Registry_
 - If it's not a known AWS IP: redirect to _Upstream Registry_
-- If it's a known AWS IP AND HEAD request for the layer succeeeds in S3: redirect to S3
+- If it's a known AWS IP AND HEAD request for the layer succeeds in S3: redirect to S3
 - If it's a known AWS IP AND HEAD fails: redirect to _Upstream Registry_
 
 Currently the _Upstream Registry_ is https://k8s.gcr.io.
@@ -126,11 +126,11 @@ Currently the _Upstream Registry_ is https://k8s.gcr.io.
 ```feature
 Scenario: images are promoted
   As a SIG Release volunteer
-  I want to promote our binaries/images to multiple clouds
+  I want to promote our images to multiple clouds
 
-Given a promotion / manifest
-When my PR is merged
-Then the promotion process occurs
+  Given a promotion / manifest
+  When my PR is merged
+  Then the promotion process occurs
 ```
 
 #### Cloud Customer - pulling an official container image
@@ -183,13 +183,13 @@ Container images will be written to S3 style storage or CDNs provided by cloud p
 - KubeCon Talk
   - https://www.youtube.com/watch?v=F2IFjz7sr9Q
 - Apache has a widespread mirror network
-  - @dims has experince here
+  - @dims has experience here
   - http://ws.apache.org/mirrors.cgi
   - https://infra.apache.org/mirrors.html
 - [Umbrella issue: k8s.gcr.io => registry.k8s.io solution k/k8s.io#1834
   ](https://github.com/kubernetes/k8s.io/issues/1834)
 - [ii/registry.k8s.io Implementation proposals](https://github.com/ii/registry.k8s.io#registryk8sio)
-- [ii.nz/blog :: Building a data pipline for displaying Kubernetes public artifact traffic
+- [ii.nz/blog :: Building a data pipeline for displaying Kubernetes public artifact traffic
   ](https://ii.nz/post/building-a-data-pipline-for-displaying-kubernetes-public-artifact-traffic/)
 
 ### How much is this going to save us?
