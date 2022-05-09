@@ -2,7 +2,7 @@ title: KMS v2 Improvements
 kep-number: 3299
 authors:
   - "@ritazh"
-  - "aramase"
+  - "@aramase"
 owning-sig: sig-auth
 participating-sigs:
   - sig-auth
