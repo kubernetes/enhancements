@@ -24,6 +24,7 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -184,8 +185,6 @@ The `DecryptRequest` passes the same `currentKeyID` and `metadata` returned by t
 
 ```proto
 message DecryptRequest {
-    // Version of the KMS plugin API.
-    string version = 1;
     // The data to be decrypted.
     bytes cipher = 2;
     // UID is a unique identifier for the request.
@@ -207,8 +206,6 @@ message DecryptResponse {
 }
 
 message EncryptRequest {
-    // Version of the KMS plugin API.
-    string version = 1;
     // The data to be encrypted.
     bytes plain = 2;
     // UID is a unique identifier for the request.
@@ -516,3 +513,12 @@ We considered using the `AuditID` from the kube-apiserver request that generated
 1. `AuditID` can be configured by the user with the `Audit-ID` header in the API server request. Multiple requests can be sent to the kube-apiserver with the same `Audit-ID`.
 2. Not all API server requests will generate an envelope operation. The API server caches DEKs and for the DEK that's available in the cache, the kube-apiserver will not generate an envelope operation.
 3. Since not all calls to the KMS correspond to an audit log, using audit ID is not complete for correlating calls from kube-apiserver->kms-plugin->KMS.
+
+## Infrastructure Needed
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
+We need a new git repo for the KMS plugin reference implementation. It will need to be synced from the k/k staging dir.

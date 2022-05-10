@@ -12,6 +12,8 @@ reviewers:
   - "@enj"
 approvers:
   - "@smarterclayton"
+replaces:
+  - "/keps/sig-auth/3130-kms-observability"
 stage: alpha
 latest-milestone: "v1.25"
 # The milestone at which this feature was, or is targeted to be, at each stage.
