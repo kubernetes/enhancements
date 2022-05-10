@@ -15,7 +15,9 @@ reviewers:
   - "@thockin"
 approvers:
   - "@ameukam"
+  - "@dims"
   - "@justaugustus"
+  - "@saschagrunert"
 stage: alpha
 latest-milestone: "v1.24"
 milestone:
