@@ -170,7 +170,7 @@ For the reference KMS plugin, the encrypted local KEK is stored in etcd via the 
 ```proto
 message EncryptResponse {
     // The encrypted data.
-    bytes cipher = 1;
+    bytes ciphertext = 1;
     // The KMS key ID used for encryption operations.
     // This can be used to drive rotation.
     string currentKeyID = 2;
@@ -186,7 +186,7 @@ The `DecryptRequest` passes the same `currentKeyID` and `metadata` returned by t
 ```proto
 message DecryptRequest {
     // The data to be decrypted.
-    bytes cipher = 2;
+    bytes ciphertext = 2;
     // UID is a unique identifier for the request.
     string uid = 3;
     // The keyID that was provided to the apiserver during encryption.
@@ -198,7 +198,7 @@ message DecryptRequest {
 
 message DecryptResponse {
     // The decrypted data.
-    bytes plain = 1;
+    bytes plaintext = 1;
     // The KMS key ID used to decrypt the data.
     string currentKeyID = 2;
     // Additional metadata that was sent by the KMS plugin.
@@ -207,7 +207,7 @@ message DecryptResponse {
 
 message EncryptRequest {
     // The data to be encrypted.
-    bytes plain = 2;
+    bytes plaintext = 2;
     // UID is a unique identifier for the request.
     string uid = 3;
 }
@@ -306,12 +306,12 @@ sequenceDiagram
         kmsplugin->>externalkms: encrypt local KEK with remote KEK
         externalkms->>kmsplugin: encrypted local KEK
         kmsplugin->>kmsplugin: cache encrypted local KEK
-        kmsplugin->>kubeapiserver: return encrypt response <br/> {"cipher": "<encrypted DEK>", currentKeyID: "<remote KEK ID>", <br/> "metadata": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
+        kmsplugin->>kubeapiserver: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", currentKeyID: "<remote KEK ID>", <br/> "metadata": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
     else not using key hierarchy
         %% current behavior
         kmsplugin->>externalkms: encrypt DEK with remote KEK
         externalkms->>kmsplugin: encrypted DEK
-        kmsplugin->>kubeapiserver: return encrypt response <br/> {"cipher": "<encrypted DEK>", currentKeyID: "<remote KEK ID>", "metadata": {}}
+        kmsplugin->>kubeapiserver: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", currentKeyID: "<remote KEK ID>", "metadata": {}}
     end
     kubeapiserver->>etcd: store encrypt response and encrypted DEK
 ```
@@ -325,7 +325,7 @@ sequenceDiagram
     participant externalkms
     %% if local KEK in metadata, then using hierarchy
     alt encrypted local KEK is in metadata
-      kubeapiserver->>kmsplugin: decrypt request <br/> {"cipher": "<encrypted DEK>", observedKeyID: "<currentKeyID gotten as part of EncryptResponse>", <br/> "metadata": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
+      kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", observedKeyID: "<currentKeyID gotten as part of EncryptResponse>", <br/> "metadata": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
         alt encrypted local KEK in cache
             kmsplugin->>kmsplugin: decrypt DEK with local KEK
         else encrypted local KEK not in cache
@@ -334,12 +334,12 @@ sequenceDiagram
             kmsplugin->>kmsplugin: decrypt DEK with local KEK
             kmsplugin->>kmsplugin: cache decrypted local KEK
         end
-        kmsplugin->>kubeapiserver: return decrypt response <br/> {"plain": "<decrypted DEK>", currentKeyID: "<remote KEK ID>", <br/> "metadata": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
+        kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", currentKeyID: "<remote KEK ID>", <br/> "metadata": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
     else encrypted local KEK is not in metadata
-        kubeapiserver->>kmsplugin: decrypt request <br/> {"cipher": "<encrypted DEK>", observedKeyID: "<currentKeyID gotten as part of EncryptResponse>", <br/> "metadata": {}}
+        kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", observedKeyID: "<currentKeyID gotten as part of EncryptResponse>", <br/> "metadata": {}}
         kmsplugin->>externalkms: decrypt DEK with remote KEK (same behavior as today)
         externalkms->>kmsplugin: decrypted DEK
-        kmsplugin->>kubeapiserver: return decrypt response <br/> {"plain": "<decrypted DEK>", currentKeyID: "<remote KEK ID>", <br/> "metadata": {}}
+        kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", currentKeyID: "<remote KEK ID>", <br/> "metadata": {}}
     end
 ```
 
@@ -503,7 +503,7 @@ information to express the idea and why it was not acceptable.
 **Performance and rotation:**
 
 We considered the follow approaches and each has its own drawbacks:
-1. `cacheSize` field in `EncryptionConfiguration`. It is used by the API server to initialize a LRU cache of the given size with the encrypted cipher used as index. Having a higher value for the `cacheSize` will prevent calls to the plugin for decryption operations. However, this does not solve the issue with the number of calls to KMS plugin when encryption traffic is bursty.
+1. `cacheSize` field in `EncryptionConfiguration`. It is used by the API server to initialize a LRU cache of the given size with the encrypted ciphertext used as index. Having a higher value for the `cacheSize` will prevent calls to the plugin for decryption operations. However, this does not solve the issue with the number of calls to KMS plugin when encryption traffic is bursty.
 2. Reduce the number of trips to KMS by caching DEKs by allowing one DEK to be used to encrypt multiple objects within the configured TTL period. One issue with this approach is it will be very hard to inform the API server to rotate the DEKs when a KEK has been rotated. 
 
 **Observability**:
