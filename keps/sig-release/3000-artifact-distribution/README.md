@@ -1,7 +1,6 @@
 # KEP 3000: Image Promotion and Distribution Policy
 
 <!-- toc -->
-
 - [Summary](#summary)
 - [Background (from wiki)](#background-from-wiki)
 - [Motivation](#motivation)
@@ -13,9 +12,10 @@
   - [What are good goals to shoot for](#what-are-good-goals-to-shoot-for)
 - [Proposal](#proposal)
 - [What exactly are you doing?](#what-exactly-are-you-doing)
+  - [registry.k8s.io request handling](#registryk8sio-request-handling)
   - [User Stories](#user-stories)
     - [SIG Release - Image Promotion](#sig-release---image-promotion)
-    - [Cloud Customer - Installing K8s via kubeadm](#cloud-customer---installing-k8s-via-kubeadm)
+    - [Cloud Customer - pulling an official container image](#cloud-customer---pulling-an-official-container-image)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
