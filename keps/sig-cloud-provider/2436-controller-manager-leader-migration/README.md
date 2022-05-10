@@ -474,6 +474,7 @@ N/A.
 - 05-11-2021 KEP updated to target beta.
 - 01-21-2022 KEP updated to target GA.
 - 01-25-2022 Testing and monitoring revised for GA.
+- 03-29-2022 Implementation for GA completed, released in 1.24
 
 ## Drawbacks
 
