@@ -17,9 +17,10 @@ approvers:
 prr-approvers:
   - "@deads2k"
   - "@ehashman"
+  - "@wojtek-t"
 editor: TBD
 creation-date: 2020-03-02
-last-updated: 2020-05-06
+last-updated: 2022-05-10
 status: implementable
 replaces:
 superseded-by:
@@ -34,4 +35,4 @@ latest-milestone: "v1.22"
 milestone:
   alpha: "v1.21"
   beta: "v1.22"
-  stable: "v1.24"
+  stable: "v1.25"
