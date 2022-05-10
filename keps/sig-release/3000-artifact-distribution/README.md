@@ -1,6 +1,7 @@
 # KEP 3000: Image Promotion and Distribution Policy
 
 <!-- toc -->
+
 - [Summary](#summary)
 - [Background (from wiki)](#background-from-wiki)
 - [Motivation](#motivation)
@@ -197,6 +198,8 @@ Container images will be written to S3 style storage or CDNs provided by cloud p
 Cost of K8s Artifact hosting - Data Studio Graphs
 
 ![](https://i.imgur.com/LAn4UIE.png)
+
+Analysis has been done on usage patterns related to providers. AWS participated in this process and have a keen interest to help drive down cost by providing artifacts directly to their clients consuming resources from the public registry.
 
 ## Infrastructure Needed
 
