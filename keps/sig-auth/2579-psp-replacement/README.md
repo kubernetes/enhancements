@@ -735,15 +735,25 @@ We are targeting Beta in v1.23.
 
 #### GA
 
-<<[UNRESOLVED]>>
+Targeting GA in v1.25.
 
-We are targeting GA in v1.24 to allow for migration off PodSecurityPolicy before it is removed in
-v1.25.
+**Conformance:**
+- Enabling the admission controller with the "default-default" enforcing mode of privileged is
+  essentially a no-op without adding namespace labels, so it doesn't have any impact on
+  conformance.
+- E2E framework has been updated to explicitly label test namespaces with the appropriate
+  enforcement level, using the `NamespacePodSecurityEnforceLevel` framework value. For GA,
+  conformance tests should be updated to use the most restrictive level possible.
+- Pod Security Admission is *not* required for conformance.
 
-- Examples of real world usage and positive user feedback.
-- [Conformance test plan](#conformance)
+**User Experience Improvements:**
+- [Warn when labeling exempt namespaces](https://github.com/kubernetes/kubernetes/issues/109549)
+- [Dedupe overlapping forbidden messages](https://github.com/kubernetes/kubernetes/issues/106129)
+- [Aggregate identical warnings for multiple pods in a namespace](https://github.com/kubernetes/kubernetes/issues/103213)
+- [Add context to failure messages](https://github.com/kubernetes/kubernetes/pull/105314)
 
-<<[/UNRESOLVED]>>
+**API Changes:**
+- Add `pod-security.admission.config.k8s.io/v1` with no changes from the `v1beta1` API.
 
 ### Upgrade / Downgrade Strategy
 
@@ -910,6 +920,8 @@ previous answers based on experience in the field._
     There will be a hard cap on the number of pods analyzed, and a timeout for the review of those pods 
     that ensures evaluation does not exceed a percentage of the time allocated to the request.
     See [Namespace policy update warnings](#namespace-policy-update-warnings).
+    - Timeout: minimum of 1 second or (remaining request deadline / 2)
+    - Max pods to check: 3000 ([benchmarks](https://github.com/kubernetes/kubernetes/pull/104588) indicate that 3000 pods should evaluate in under 10ms)
 
 * **Will enabling / using this feature result in introducing new API types?**
   - No.
@@ -1046,13 +1058,10 @@ templated pod resources. This could be useful in CI/CD pipelines and tests.
 
 ### Conformance
 
-As this feature progresses towards GA, we should think more about how it interacts with conformance.
-
-- Enabling the admission controller with the "default-default" enforcing mode of privileged is
-  essentially a no-op without adding namespace labels, so it shouldn't have any impact on
-  conformance.
-- If we want a more restricted version to still be considered conformant, we might need to
-  explicitly label namespaces in the conformance tests with the privilege level the tests require.
+Clusters requiring baseline or restricted Pod Security levels should still be able to pass
+conformance. This might require
+[Conformance Profiles](https://github.com/kubernetes/enhancements/tree/master/keps/sig-architecture/1618-conformance-profiles)
+to be feasible.
 
 ## Implementation History
 
