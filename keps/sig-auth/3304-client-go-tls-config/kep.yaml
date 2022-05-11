@@ -1,0 +1,22 @@
+title: client-go TLS config
+kep-number: 3304
+authors:
+  - "@enj"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-api-machinery
+status: implementable
+creation-date: 2022-05-09
+reviewers:
+  - "@deads2k"
+  - "@liggitt"
+approvers:
+  - "@deads2k"
+  - "@liggitt"
+stage: stable
+latest-milestone: "v1.25"
+milestone:
+  stable: "v1.25"
+metrics:
+  - global_tls_min_version
+  - global_tls_ciphers_supported
