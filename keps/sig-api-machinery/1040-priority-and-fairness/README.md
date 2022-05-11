@@ -644,9 +644,10 @@ priority levels, and higher ones can do a limited amount of borrowing
 from lower ones.
 
 Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
-midst of the `v1beta2` lifetime, configure the borrowing.  The following
-display shows the two new fields along with the updated description for
-the `AssuredConcurrencyShares` field.
+midst of the `v1beta2` lifetime, configure the borrowing.  The fields
+are added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).
+The following display shows the two new fields along with the updated
+description for the `AssuredConcurrencyShares` field, in `v1beta2`.
 
 ```go
 type LimitedPriorityLevelConfiguration struct {
@@ -670,24 +671,23 @@ type LimitedPriorityLevelConfiguration struct {
   // +optional
   AssuredConcurrencyShares int32
 
-  // `lendableConcurrencyShares` (LCS) contributes to the computation of the
-  // LendableConcurrencyLimit (LCL) for this level.  This is the number of
-  // execution seats of this level that can be borrowed by higher priority
-  // Limited levels.
-  // This may not be negative, and may not be greater than
-  // `assuredConcurrencyShares`.
+  // `borrowablePercent` prescribes the fraction of the level's NCL that
+  // can be borrowed by higher priority levels.  This value of this
+  // field must be between 0 and 100, inclusive, and it defaults to 0.
+  // The number of seats that higher levels can borrow from this level, known
+  // as this level's BorrowableConcurrencyLimit (BCL), is defined as follows.
   //
-  // LCL(i) = ceil( SCL * LCS(i) / sum_acs )
+  // BCL(i) = round( NCL(i) * borrowablePercent(i)/100.0 )
   //
-  // This field has a default value of zero.
   // +optional
-  LendableConcurrencyShares int32
+  BorrowablePercent int32
 
   // `priority` determines where this priority level appears in the total order
   // of Limited priority levels used to configure borrowing between those levels.
   // A numerically higher value means a logically lower priority.
   // Do not create ties; they will be broken arbitrarily.
-  // `priority` SHOULD be a positive number and MUST NOT be greater than 10000.
+  // `priority` MUST BE between 0 and 10000, inclusive, and
+  // SHOULD BE greater than zero.
   // If it is zero then, for the sake of a smooth transition from the time
   // before this field existed, this level will be treated as if its `priority`
   // is the average of the `matchingPrecedence` of the FlowSchema objects
@@ -697,11 +697,22 @@ type LimitedPriorityLevelConfiguration struct {
 }
 ```
 
-This is a somewhat tortured meaning for "assured", but it is the
-meaning we need for introduction of the new field to the existing type
-while having a smooth transition in behavior.  In the next version we
-should rename the `AssuredConcurrencyShares` to
-`NominalConcurrencyShares`.
+Prior to the introduction of borrowing, the `assuredConcurrencyShares`
+field had two meanings that amounted to the same thing: the total
+shares of the level, and the non-borrowable shares of the level.
+While it is somewhat unnatural to keep the meaning of "total shares"
+for a field named "assured" shares, rolling out the new behavior into
+existing systems will be more continuous if we keep the meaning of
+"total shares" for the existing field.  In the next version we should
+rename the `AssuredConcurrencyShares` to `NominalConcurrencyShares`.
+
+Consider rolling the borrowing behavior into a pre-existing cluster
+that did not have borrowing.  In particular, suppose that the
+administrators of the cluster have scripts/clients that maintain some
+out-of-tree PriorityLevelConfiguration objects; these, naturally, do
+not specify a value for the `priority` field.  The default behavior
+for `priority` is designed to do something more natural and convenient
+than have them all collide at some fixed number.
 
 Borrowing is done on the basis of the current situation, with no
 consideration of opportunity cost, no further rationing according to
@@ -713,19 +724,19 @@ priority level --- either the one referenced by the request's
 FlowSchema or a lower priority level.
 
 Borrowing is further limited by a practical consideration: we do not
-want a global mutex covering all dispatching.  Aside from borrowing,
-dispatching from one priority level is done independently from
-dispatching at another.  There _is_ a global mutex held by the logic
-that digests configuration objects, but it produces an immutable
-object that is passed through `sync/atomic.Store` and `.Load` to the
-logic that does queuing and dispatching.  Borrowing is allowed in just
-one direction: higher may borrow from lower.  A higher priority level
-may actively borrow from a lower one but a lower level does not
-actively lend to a higher one (see below).  In this design, working on
-dispatching one request requires holding at most two priority level
-mutexes at any given moment.  To avoid deadlock, there is a strict
-ordering on acquisition of those mutexes, namely decreasing logical
-priority.
+want mutual exclusion among all priority levels in the dispatching
+code.  Aside from borrowing, dispatching from one priority level is
+done independently from dispatching at another --- using a distinct
+`sync.Mutex` for each priority level.  There _is_ a global
+`sync.RWMutex`, but queuing and dispatching only requires locking that
+for reading (which is not mutually exclusive); write locking is done
+only while reconfiguring.  Borrowing is allowed in just one direction:
+higher may borrow from lower.  A higher priority level may actively
+borrow from a lower one but a lower level does not actively lend to a
+higher one (see below).  In this design, working on dispatching one
+request requires holding at most two priority level mutexes at any
+given moment.  To avoid deadlock, there is a strict ordering on
+acquisition of those mutexes (namely, decreasing logical priority).
 
 We could take a complementary approach, in which lower actively lends
 to higher but higher does not actively borrow from lower.  The chosen
@@ -741,8 +752,9 @@ the number of seats needed by that request is no greater than the
 number of unused seats at that priority level.  The number of unused
 seats at a given priority level is that level's
 NominalConcurrencyLimit minus the number of seats used by requests
-executing at that priority level (dispatched from that priority level
-and higher ones).
+executing at that priority level (both requests dispatched from that
+priority level and requests dispatched from higher priority levels
+that are borrowing these lower level seats).
 
 There are two sorts of times when dispatching to a non-exempt priority
 level is considered: when a request arrives, and when a request
@@ -769,7 +781,7 @@ the moment.
 As can be seen from this logic, when seats are freed up at a given
 priority level they are _not_ actively lent to logically higher
 priority levels.  We avoid that in order to have a total order in
-which priority level mutexes are acquired.
+which priority level mutexes are acquired (thus avoiding deadlock).
 
 The following table shows the current default non-exempt priority
 levels and a proposal for their new configuration.  For the sake of
@@ -777,14 +789,14 @@ continuity with out-of-tree configuration objects, the proposed
 priority values follow the rule given above for the effective value
 when the priority field holds zero.
 
-| Name | Assured Shares | Proposed Lendable Shares | Proposed Priority |
-| ---- | -------------: | -----------------------: | ----------------: |
+| Name | Assured Shares | Proposed Borrowable Percent | Proposed Priority |
+| ---- | -------------: | --------------------------: | ----------------: |
 | leader-election |  10 |   0 |   150 |
-| node-high       |  40 |  10 |   400 |
-| system          |  30 |  10 |   500 |
-| workload-high   |  40 |  20 |   833 |
+| node-high       |  40 |  25 |   400 |
+| system          |  30 |  33 |   500 |
+| workload-high   |  40 |  50 |   833 |
 | workload-low    | 100 |  90 |  9000 |
-| global-default  |  20 |  10 |  9900 |
+| global-default  |  20 |  50 |  9900 |
 | catch-all       |   5 |   0 | 10000 |
 
 
