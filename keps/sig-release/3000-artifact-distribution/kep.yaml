@@ -1,0 +1,26 @@
+title: Artifact Distribution Policy
+kep-number: 3000
+authors:
+  - "@hh"
+  - "@BobyMCbobs"
+owning-sig: sig-release
+participating-sigs:
+  - sig-k8s-infra
+status: provisional
+creation-date: 2021-11-26
+reviewers:
+  - "@cpanato"
+  - "@puerco"
+  - "@spiffxp"
+  - "@thockin"
+approvers:
+  - "@ameukam"
+  - "@dims"
+  - "@justaugustus"
+  - "@saschagrunert"
+stage: alpha
+latest-milestone: "v1.24"
+milestone:
+  alpha: "v1.25"
+  beta: "v1.26"
+  stable: "v1.27"
