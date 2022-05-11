@@ -34,16 +34,6 @@
 
 ## Summary
 
-The container images and release binaries produced by our community need a clear path to be hosted by multiple service/cloud providers.
-
-The global community should be routed to the appropriate mirror for their country or cloud provider to ensure cost effective worldwide access.
-
-This KEP should cover the policy and distribution mechanisms we will put in place to allow creating a globally distributed, multi-cloud and country solution.
-
-## Background (from wiki)
-
-## Motivation
-
 For a few years now, we have been using k8s.gcr.io in all our repositories as default repository for downloading images from.
 
 The cost of distributing Kubernetes comes at great cost nearing $150kUSD/month (mostly egress) in donations.
@@ -120,31 +110,6 @@ Requests to [registry.k8s.io](https://registry.k8s.io) follows the following flo
 
 Currently the _Upstream Registry_ is https://k8s.gcr.io.
 
-### User Stories
-
-#### SIG Release - Image Promotion
-
-```feature
-Scenario: images are promoted
-  As a SIG Release volunteer
-  I want to promote our images to multiple clouds
-
-  Given a promotion / manifest
-  When my PR is merged
-  Then the promotion process occurs
-```
-
-#### Cloud Customer - pulling an official container image
-
-```feature
-Scenario: use Kubernetes container images
-  I want to be able to pull and use Kubernetes container images
-
-  Given some compute resources at cloud
-  When I pull an official Kubernetes container image from registry.k8s.io
-  Then I am redirected to a close-by cloud provider backed bucket (set) / CDN otherwise fall back to k8s.gcr.io
-```
-
 ### Notes/Constraints/Caveats
 
 The primary purpose of the KEP is getting consensus on the agreed policy and procedure to unblock our community and move forward together.
@@ -154,26 +119,6 @@ There has been a lot of activity around the technology and tooling for both goal
 ### Risks and Mitigations
 
 This is the primary pipeline for delivering Kubernetes worldwide. Ensuring the appropriate SLAs and support as well as artifact integrity is crucial.
-
-## Design Details
-
-### Release Promotion
-
-#### Policy
-
-(more details needed, #sig-release-eng?)
-
-#### Process
-
-Currently the promotion process is primarily driven by the CIP/[promo-tool#kpromo](https://github.com/kubernetes-sigs/promo-tools#kpromo)?
-
-### Artifact Distribution
-
-#### Policy
-
-#### Process
-
-Container images will be written to S3 style storage or CDNs provided by cloud providers through a tool in the promo-tools suite.
 
 ## Alternatives / Background
 
@@ -201,11 +146,3 @@ Cost of K8s Artifact hosting - Data Studio Graphs
 
 Analysis has been done on usage patterns related to providers. AWS participated in this process and have a keen interest to help drive down cost by providing artifacts directly to their clients consuming resources from the public registry.
 
-## Infrastructure Needed
-
-It would be good to request some donations for some larger providers, including one in China, via cncf.io/credits
-
-## Hack this doc
-
-- [![hackmd-github-sync-badge](https://hackmd.io/KjHufZssQR654ShkZFUzyA/badge)](https://hackmd.io/KjHufZssQR654ShkZFUzyA)
-- [kubernetes/enhancements!3079](https://github.com/kubernetes/enhancements/pull/3079)
