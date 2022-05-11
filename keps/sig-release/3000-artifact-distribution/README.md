@@ -1,10 +1,7 @@
 # KEP 3000: Image Promotion and Distribution Policy
 
 <!-- toc -->
-
 - [Summary](#summary)
-- [Background (from wiki)](#background-from-wiki)
-- [Motivation](#motivation)
 - [Why a new domain?](#why-a-new-domain)
 - [How can we help?](#how-can-we-help)
   - [Goals](#goals)
@@ -14,22 +11,10 @@
 - [Proposal](#proposal)
 - [What exactly are you doing?](#what-exactly-are-you-doing)
   - [registry.k8s.io request handling](#registryk8sio-request-handling)
-  - [User Stories](#user-stories)
-    - [SIG Release - Image Promotion](#sig-release---image-promotion)
-    - [Cloud Customer - pulling an official container image](#cloud-customer---pulling-an-official-container-image)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Release Promotion](#release-promotion)
-    - [Policy](#policy)
-    - [Process](#process)
-  - [Artifact Distribution](#artifact-distribution)
-    - [Policy](#policy-1)
-    - [Process](#process-1)
 - [Alternatives / Background](#alternatives--background)
   - [How much is this going to save us?](#how-much-is-this-going-to-save-us)
-- [Infrastructure Needed](#infrastructure-needed)
-- [Hack this doc](#hack-this-doc)
 <!-- /toc -->
 
 ## Summary
