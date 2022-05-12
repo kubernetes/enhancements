@@ -24,6 +24,10 @@
   - [Windows Support](#windows-support)
   - [Flexible Extension Support](#flexible-extension-support)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Monitoring](#monitoring)
   - [Audit Annotations](#audit-annotations)
   - [PodSecurityPolicy Migration](#podsecuritypolicy-migration)
@@ -553,41 +557,43 @@ publish the following tools:
 
 ### Test Plan
 
-The admission controller can safely be enabled as a no-op with the default-defaults, i.e. everything
-is privileged. This will let us run the admission controller in our standard E2E test jobs, by
-relabeling specific test namespaces.
+##### Prerequisite testing updates
 
-**E2E Tests:** The following tests should be added:
+None.
 
-1. Enforce mode tests:
-    - Test all profile levels
-    - Test profile version support
-2. Warning mode tests:
-    - Profile levels & version support
-3. Namespace policy relabeling
-    - Ensure labeling completes even when there are warnings
-    - Test warning on violating pods
-    - Test dry-run mode
+##### Unit tests
 
-Additionally, we should add tests to the upgrade test suite to ensure that version skew is properly
-handled:
+- `k8s.io/pod-security-admission/admission`: `2020-05-12` - `80.7% of statements`
+- `k8s.io/pod-security-admission/admission/api`: `2020-05-12` - `1.4% of statements` (mostly boilerplate & generated code)
+- `k8s.io/pod-security-admission/admission/api/load`: `2020-05-12` - `88.5% of statements`
+- `k8s.io/pod-security-admission/admission/api/scheme`: `2020-05-12` - `100.0% of statements`
+- `k8s.io/pod-security-admission/admission/api/v1alpha1`: `2020-05-12` - `1.7% of statements` (generated API)
+- `k8s.io/pod-security-admission/admission/api/v1beta1`: `2020-05-12` - `1.7% of statements` (generated API)
+- `k8s.io/pod-security-admission/admission/api/validation`: `2020-05-12` - `100.0% of statements`
+- `k8s.io/pod-security-admission/api`: `2020-05-12` - `9.3% of statements` **room for improvement**
+- `k8s.io/pod-security-admission/cmd/webhook`: `2020-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/cmd/webhook/server`: `2020-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/cmd/webhook/server/options`: `2020-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/metrics`: `2020-05-12` - `93.8% of statements`
+- `k8s.io/pod-security-admission/policy`: `2020-05-12` - `88.3% of statements`
+- `k8s.io/pod-security-admission/test`: `2020-05-12` - `73.7% of statements`
 
-- A minimally specified pod (just a container image) should always be allowed by the baseline
-  policy.
-- A privileged pod should never be allowed by baseline or restricted
-- A Fully specified pod within the bounds of baseline should be allowed by baseline, and rejected by
-  restricted.
-- A minimally specified restricted pod should be allowed at a pinned version.
+##### Integration tests
 
-**Integration Tests:** Audit mode tests should be added to integration testing, where we have
-existing audit logging tests.
+`k8s.io/kubernetes/test/integration/auth/podsecurity_test.go`
+https://storage.googleapis.com/k8s-triage/index.html?test=TestPodSecurity
 
-**Manual Testing Resources:** Pod resources will be provided covering all dimensions of the baseline
-& restricted profiles, for validation of 3rd party policy implementations. These have been drafted
-by @JimBugwadia: https://github.com/JimBugwadia/pod-security-tests
+Pod Security admission has very thorough integration test coverage, including:
+- Generated test fixtures for failing & passing pods across every type of check, version and level.
+- Tests with only GA feature gates enabled, and the default set.
+- Tests running as a built-in admission controller & webhook.
+- Tests pods run directly & via a controller
 
-**Unit Tests:** Both the library and admission controller implementations will have thorough
-coverage of unit tests.
+##### e2e tests
+
+There are no Pod Security specific E2E tests (we rely on integration test coverage instead), but the
+Pod Security admission controller is enabled in E2E clusters, and all E2E test namespaces are
+labeled with the enforcement label for Pod Security.
 
 ### Monitoring
 
