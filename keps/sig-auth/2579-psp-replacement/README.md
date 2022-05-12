@@ -759,7 +759,9 @@ Targeting GA in v1.25.
 - [Add context to failure messages](https://github.com/kubernetes/kubernetes/pull/105314)
 
 **API Changes:**
-- Add `pod-security.admission.config.k8s.io/v1` with no changes from the `v1beta1` API.
+- No changes to namespace label schema
+- Add `pod-security.admission.config.k8s.io/v1` (admission configuration, not a REST API) with no
+  changes from the `v1beta1` API.
 
 ### Upgrade / Downgrade Strategy
 
