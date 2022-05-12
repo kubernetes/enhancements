@@ -563,20 +563,20 @@ None.
 
 ##### Unit tests
 
-- `k8s.io/pod-security-admission/admission`: `2020-05-12` - `80.7% of statements`
-- `k8s.io/pod-security-admission/admission/api`: `2020-05-12` - `1.4% of statements` (mostly boilerplate & generated code)
-- `k8s.io/pod-security-admission/admission/api/load`: `2020-05-12` - `88.5% of statements`
-- `k8s.io/pod-security-admission/admission/api/scheme`: `2020-05-12` - `100.0% of statements`
-- `k8s.io/pod-security-admission/admission/api/v1alpha1`: `2020-05-12` - `1.7% of statements` (generated API)
-- `k8s.io/pod-security-admission/admission/api/v1beta1`: `2020-05-12` - `1.7% of statements` (generated API)
-- `k8s.io/pod-security-admission/admission/api/validation`: `2020-05-12` - `100.0% of statements`
-- `k8s.io/pod-security-admission/api`: `2020-05-12` - `9.3% of statements` **room for improvement**
-- `k8s.io/pod-security-admission/cmd/webhook`: `2020-05-12` - `no unit tests` (mostly server setup, covered by integration)
-- `k8s.io/pod-security-admission/cmd/webhook/server`: `2020-05-12` - `no unit tests` (mostly server setup, covered by integration)
-- `k8s.io/pod-security-admission/cmd/webhook/server/options`: `2020-05-12` - `no unit tests` (mostly server setup, covered by integration)
-- `k8s.io/pod-security-admission/metrics`: `2020-05-12` - `93.8% of statements`
-- `k8s.io/pod-security-admission/policy`: `2020-05-12` - `88.3% of statements`
-- `k8s.io/pod-security-admission/test`: `2020-05-12` - `73.7% of statements`
+- `k8s.io/pod-security-admission/admission`: `2022-05-12` - `80.7% of statements`
+- `k8s.io/pod-security-admission/admission/api`: `2022-05-12` - `1.4% of statements` (mostly boilerplate & generated code)
+- `k8s.io/pod-security-admission/admission/api/load`: `2022-05-12` - `88.5% of statements`
+- `k8s.io/pod-security-admission/admission/api/scheme`: `2022-05-12` - `100.0% of statements`
+- `k8s.io/pod-security-admission/admission/api/v1alpha1`: `2022-05-12` - `1.7% of statements` (generated API)
+- `k8s.io/pod-security-admission/admission/api/v1beta1`: `2022-05-12` - `1.7% of statements` (generated API)
+- `k8s.io/pod-security-admission/admission/api/validation`: `2022-05-12` - `100.0% of statements`
+- `k8s.io/pod-security-admission/api`: `2022-05-12` - `9.3% of statements` **room for improvement**
+- `k8s.io/pod-security-admission/cmd/webhook`: `2022-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/cmd/webhook/server`: `2022-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/cmd/webhook/server/options`: `2022-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/metrics`: `2022-05-12` - `93.8% of statements`
+- `k8s.io/pod-security-admission/policy`: `2022-05-12` - `88.3% of statements`
+- `k8s.io/pod-security-admission/test`: `2022-05-12` - `73.7% of statements`
 
 ##### Integration tests
 
