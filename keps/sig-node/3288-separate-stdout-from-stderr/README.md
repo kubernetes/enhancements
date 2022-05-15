@@ -91,6 +91,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Changes of kubelet](#changes-of-kubelet)
   - [Changes of kubectl](#changes-of-kubectl)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -151,7 +155,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This proposal makes it easier for users to view certain log stream of a container,
+Currently, kubelet actually [has the potential](https://github.com/kubernetes/kubernetes/blob/69cabe778bccfc5f4fa9b6788c9def005e7d959d/pkg/kubelet/kuberuntime/logs/logs.go#L281) 
+to return certain log stream of a container, but this ability is not exposed to the user.
+This proposal enables users to view certain log stream of a container,
 and aims to extend kubelet and api-server with the ability to return certain
 container log stream.
 
@@ -165,7 +171,6 @@ retrieve certain log stream of a container, so it is great to implement this lon
 
 ### Goals
 
-- Enable kubelet to filter log stream of a container
 - Enable api-server to return certain log stream of a container
 - Enable users to fetch certain log stream of a container
 
@@ -203,17 +208,6 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
 
 ## Design Details
 
@@ -338,6 +332,62 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `<package>`: `<date>` - `<test coverage>`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- <test>: <link to test coverage>
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- <test>: <link to test coverage>
+
 ### Graduation Criteria
 
 <!--
@@ -416,7 +466,11 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-TBD
+There is no extra work required for users to maintain previous behavior, the changes
+caused by this enhancement are backwards compatible.
+
+To make use of the enhancement, users will need to update the `kube-apiserver` and `kubelet`
+to at least `v1.25` and turn on feature gate `SplitStdoutAndStderr` in both components.
 
 ### Version Skew Strategy
 
@@ -481,7 +535,7 @@ well as the [existing list] of feature gates.
   - Feature gate name: SplitStdoutAndStderr
   - Components depending on the feature gate: kubelet, kube-apiserver
 - [x] Other
-  - Describe the mechanism:
+  - Describe the mechanism: query parameter
   - Will enabling / disabling the feature require downtime of the control
     plane?
     - No.
@@ -491,24 +545,11 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
-No. This change is backward compatible.
+No. If the query parameter `stream` in the url of fetching logs from kube-apiserver is empty or not set,
+combined stdout and stderr is returned.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
 Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -662,6 +703,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No.
 
 ### Scalability
 
@@ -677,44 +719,19 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -726,18 +743,11 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+No.
 
 ### Troubleshooting
 
