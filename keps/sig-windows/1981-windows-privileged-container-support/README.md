@@ -1016,7 +1016,10 @@ _This section must be completed when targeting beta graduation to a release._
 - **2021-12-17:** Initial KEP draft merged - [#2037](https://github.com/kubernetes/enhancements/pull/2037).
 - **2021-02-17:** KEP approved for alpha release - [#2288](https://github.com/kubernetes/enhancements/pull/2288).
 - **2021-05-20:** Alpha implementation PR merged - [kubernetes/kubernetes#99576](https://github.com/kubernetes/kubernetes/pull/99576).
-- **2021-08-05:** K8s 1.22 released with alpha support for `HostProcess` containers.
+- **2021-08-05:** K8s 1.22 released with alpha support for `WindowsHostProcessContainers` feature.
+- **2021-08-21:** HostProcessContainers (via CRI) support added to contianerd - [containerd/contianerd#5131](https://github.com/containerd/containerd/pull/5131).
+- **2021-12-07:** K8s 1.23 released with beta support for `WindowsHostProcessContainers` feature.
+- **2022-02-15:** Containerd 1.6.0 relased with support for HostProcessContianers.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
