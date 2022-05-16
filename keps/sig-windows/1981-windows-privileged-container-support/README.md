@@ -478,7 +478,7 @@ Because Windows privileged containers will work much differently than Linux priv
 #### Resource Limits
 
 - Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
-- Disk resource tracking may work slightly differently for `hostProcess` containers due to how these containers are bootstrapped. Resource usage will be trackable and the differences would be in how resource usage is calculated.
+- Note: HostProcess containers will have access to nodes root filesystem. Disk limits and resource usage will only apply to the scatch volume provisioned for each HostProcess container.
 
 #### Container Lifecycle
 
@@ -486,38 +486,36 @@ Because Windows privileged containers will work much differently than Linux priv
 
 #### Container users
 
-- The `hostProcess` container can run as any user that's available on the host or in the domain of the host machine.
-Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
-More information on Windows resource access can be found at https://docs.microsoft.com/en-us/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions.
-- Note: Support for local accounts with passwords is being investigated. Support for this scenario will most likely involve retrieving credential from the 'Windows Credential Manager' as shown in the following [proposed hcsshim changes](https://github.com/marosset/hcsshim/commit/cf42f301cf507f98d7137c8be008902306df9609). Any changes here will not require any changes to Kubernetes or pod/deployment manifests.
+- By default `hostProcess` containers can run one of the following system accounts:
+  - `NT AUTHORITY\SYSTEM`
+  - `NT AUTHORITY\Local service`
+  - `NT AUTHORITY\NetworkService`
+- Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
+To run a `hostProcess` container as a non SYSTEM/admin account a local users Group must first be created on the host. When a new `hostProcess` contianer is created with the name of a local users Group set as the `runAsUserName` then a temporary user account will be created as a member of the specified group for the container to run as.
+  - More information on Windows resource access can be found at <https://docs.microsoft.com/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions>
+  - Example of configuring non SYSTEM/admin account can be found at <https://github.com/microsoft/hcsshim/pull/1286#issuecomment-1030223306>
 
 #### Container Mounts
 
-- When `hostProcess` containers are started a new Windows volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume.
-Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
-  - Note: there will be no `chroot` equivalent.
-- An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted for `hostProcess` containers.
-  - Note: Syntax for referencing environment variables differs depending on what shell you are using. In cmd.exe env vars are surrounded by %'s (ex: `%CONTAINER_SANDBOX_MOUNT_POINT%`) and in powershell env vars are prefixed with $env: (ex: `$env:CONTAINER_SANDBOX_MOUNT_POINT`).
-  - This environment variable will be set to `c:\c\<containerid>\` (trailing \ included!) for each container.
-  - This environment variable can be used inside the Pod manifest / command line args for containers. See files in this [pull request](https://github.com/kubernetes-sigs/sig-windows-tools/pull/161/files#diff-b8195f7a2ad8f9ae9ebdd1bde8a0f3756c4508c1d9d9dd99f4a3bfa19fc3b828R135) for examples of using `$CONTAINER_SANDBOX_MOUNT_POINT` inside deployment manifests.
-- `$CONTAINER_SANDBOX_MOUNT_POINT` will not be set for non-`hostProcess` containers.
-- Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
-  - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` (trailing \ included) would be the root instead of `c:\c\<container id>\`).
-  This would make it so files from volume mounts would be accessible via relative paths (ex: `/foo.exe` instead of needing to specify `$CONTAINER_SANDBOX_MOUNT_POINT/foo.exe`)
-  HostProcess containers would still have full access to the host file-system and `$CONTAINER_SANDBOX_MOUNT_POINT` would continue to be set so that workloads which already access files from inside volume months using this environment variable would continue to work without modification.
-  https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
-  This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done before this features becomes stable.
+- Window's bind-filter driver will be used to create a view that merges the host's OS filesystem with container-local volumes.
+When `hostProcess` containers are started a new volume will be created which contains the contents of the contaner image.
+This volume will be mounted to `c:\hpc`. The default working directory for `hostProcess` containers will also be set to `c:\hpc`.
+- Volume mounts (includinge service account tokens) will be supported for `hostProcess` containers and can be accessed just the same way as regular Windows Server containers.
+  - Named Pipe mounts will **not** be supported.
+    Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
+    The following error will be returned if `hostProcess` containers attempt to use name pipe mounts -
+    https://github.com/microsoft/hcsshim/blob/358f05d43d423310a265d006700ee81eb85725ed/internal/jobcontainers/mounts.go#L40.
+  - Unix domain sockets mounts also not not be supported for `hostProces` containers.
+    Unix domain sockets can be accessed via their paths on the host like named pipes.
+  - Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers but this is not recommend.
+    Instead workloads should access the host OS's file-system as if it was not being run in a contianer.
+  - All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
+- `HostProcess` Containers will have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container).
+- There will be no `chroot` equivalent.
 
-- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers.
-The decision to update client libraries (or not) will be postponed until the above mentioned merged container/OS filesystem investigations are concluded. Until then various workloads running in `hostProcess` containers need to communicate with the cluster can inject the `$CONTAINER_SANDBOX_MOUNT_POINT` environment variables into a kubeconfig file manually. Here is an example of how to do this today - https://github.com/jsturtevant/sig-windows-tools/blob/c9be1f0a9e95a34fda91bb7e8fc519e3447d8d93/hostprocess/calico/kube-proxy/start.ps1#L44-L52.
-  - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after `hostProcess` containers while this feature is in `alpha`.
-  - [kubernetes/kubernetes#104490](https://github.com/kubernetes/kubernetes/pull/104490) adds support for `HostProcess` containers to the golang client library.
-- Named Pipe mounts will **not** be supported. Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
-  - The following error will be returned if `hostProcess` containers attempt to use name pipe mounts - https://github.com/microsoft/hcsshim/blob/358f05d43d423310a265d006700ee81eb85725ed/internal/jobcontainers/mounts.go#L40.
-- Unix domain sockets mounts support will be added before `HostProcess` containers graduate to `stable`. For `alpha` and `beta` Unix domain sockets can be accessed via their paths on the host like named pipes.
-  - The Windows APIs needed to support mounting unix domain socket mounts in `hostProcess` containers was introduced in Windows Server Ver, 2004. Microsoft is planning on backporting these APIs to Windows Server 2019 (min support Windows Server OS) to provide a consistent user experience.
-- Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers - kubelet will explicitly block this scenario.
-- All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
+- Note: Behavior of volume mounts will differ between the alpha/beta (old) implementation of this feature and the stable (new) implementation.
+Designing/testing/validation of an acceptable solution for handling volume mounts w.r.t. `hostProcess` containers was a primary reason for keeping the featuer in `beta`.
+A recording of the behaviors differces from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309). Also note that behavior will be the same for WS2019 onward.
 
 #### Container Images
 
@@ -718,6 +716,11 @@ Beta
 - Validate behaviors of various volume mount types as described in [Container Mounts](#container-mounts) with e2e tests
 - Add e2e tests to test different ways to construct paths for container command, args, and workingDir fields for both `hostProcess` and non-hostProcess containers. These tests will include constructing paths with and without `$CONTAINER_SANDBOX_MOUNT_POINT` set and with different combinations of forward and backward slashes.
 
+Graduation
+
+- Add e2e tests to validate running `hostProcess` containers as non SYSTEM/admin accounts
+- Update e2e tests for new volume mount behavior as desdribed in [Container Mounts](#container-mounts)
+
 ### Graduation Criteria
 
 <!--
@@ -800,9 +803,9 @@ Graduation to Beta
 
 Graduation to GA:
 
-- Address any issues uncovered in alpha/beta
+- Add documentation for running as a non-SYSTEM/admin account to k8s.io
+- Update documention on how volume mounts are set up for `hostProcess` containers on k8s.io
 - Set `WindowsHostProcessContainers` feature gate to `GA`
-- TBD
 
 ### Upgrade / Downgrade Strategy
 
