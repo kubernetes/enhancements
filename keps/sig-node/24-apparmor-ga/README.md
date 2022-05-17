@@ -304,7 +304,7 @@ ignored. The field/annotation resolution will happen on template instantiation.
 
 To raise awareness of existing controllers using the AppArmor annotations that
 need to be migrated, a warning mechanism will be used to highlight that support
-will be dropped in v1.30.
+will be dropped in v1.29.
 
 The mechanisms being considered are audit annotations, annotations on the
 object, events, or a warning as described in [KEP
@@ -349,7 +349,7 @@ Since
 to 2 minor releases of version skew between the master and node, annotations
 must continue to be supported and backfilled for at least 2 versions passed the
 initial implementation. However, we can decide to extend support farther to
-reduce breakage. If this feature is implemented in v1.26, I propose v1.30 as a
+reduce breakage. If this feature is implemented in v1.25, I propose v1.29 as a
 target for removal of the old behavior.
 
 ### Test Plan
