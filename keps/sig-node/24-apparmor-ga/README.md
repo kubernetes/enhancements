@@ -683,6 +683,8 @@ details). For now, we leave it here.
 
 ## Implementation History
 
+- 2016-07-25: AppArmor design proposal
+- 2016-09-26: AppArmor beta release with v1.4
 - 2020-01-10: Initial KEP
 - 2020-08-24: Major rework and sync with seccomp
 - 2021-04-25: PSP mentions
