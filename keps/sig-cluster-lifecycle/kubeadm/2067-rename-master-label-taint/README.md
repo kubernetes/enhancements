@@ -297,6 +297,7 @@ Not applicable.
 - 2020-10-05 - KEP marked as implementable for 1.20 (stage 1)
 - 2020-11-09 - added link to "master-control-plane.md" ADR
 - 2022-01-10 - KEP marked as implementable for 1.24 (stage 2)
+- 2022-05-17 - KEP marked as implementable for 1.25 (stage 3)
 
 ## Drawbacks
 
