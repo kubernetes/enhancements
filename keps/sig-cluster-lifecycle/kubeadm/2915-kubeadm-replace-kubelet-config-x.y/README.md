@@ -593,6 +593,7 @@ Major milestones might include:
 
 - 2021-08-30: Initial KEP draft for 1.23 (Alpha).
 - 2022-01-10: Update KEP for 1.24 (Beta).
+- 2022-05-18: Update KEP for 1.25 (GA).
 
 ## Drawbacks
 
