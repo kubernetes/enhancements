@@ -279,7 +279,7 @@ index bfa249e135c..e671fe599a9 100644
  type StorageVersionConditionType string
 ```
 
-> NOTE: Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields.  Rotation will not be part of the graduation criteria for this KEP.
+> NOTE: Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields. The rotation feature will first be scoped to a single API server and will not be part of the graduation criteria for this KEP.
 
 To improve observability, this design also generates a new `UID` for each envelope operation similar to `UID` generation in admission review requests here: https://github.com/kubernetes/kubernetes/blob/e9e669aa6037c380469b45200e59cff9b52d6d68/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/request/admissionreview.go#L137.
 
@@ -379,7 +379,7 @@ Integration test covering:
 
 ### Graduation Criteria
 
-Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields.  Rotation will not be part of the graduation criteria for this KEP because the storage version API will take time to mature. However, testing of rotation will be part of the graduation criteria to confirm that the right information is being made available to allow for automated rotation when the storage version API graduates.
+Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields.  The rotation feature will first be scoped to a single API server and will not be part of the graduation criteria for this KEP because the storage version API will take time to mature. However, testing of rotation will be part of the graduation criteria to confirm that the right information is being made available to allow for automated rotation when the storage version API graduates.
 
 #### Alpha
 
