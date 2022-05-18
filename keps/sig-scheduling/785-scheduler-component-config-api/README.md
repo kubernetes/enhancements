@@ -47,7 +47,8 @@
 
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
 for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced
-`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively.
+`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively. We'd like to graduate it
+to GA in `v1.25` and remove the support for `v1beta2` at the same time.
 
 ## Motivation
 
@@ -104,6 +105,9 @@ The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the followi
     - `TaintToleration` to 3 as leveraging node tainting to group nodes in the cluster is becoming a widely-adopted practice
   - Remove `v1beta1`
   - Remove the legacy [policy config API](https://kubernetes.io/docs/reference/scheduling/policies/)
+
+The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
+  - Remove `v1beta2`
 
 The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
 about user preferences, so should have more influence while making scheduling decisions.
@@ -219,6 +223,9 @@ N/A
   - No changes to plugins enabled by default. Only their weights would change.
   - Remove `v1beta1`.
 
+  When `v1` gets introduced:
+  - Remove `v1beta2`.
+
 ### Monitoring requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
@@ -302,3 +309,4 @@ N/A
 - 2021-07-08: Introducing `v1beta2`.
 - 2021-08-06: Introducing `v1beta3`.
 - 2021-09-01: Remove `v1beta1` and the legacy policy config API.
+- 2022-05-18: Introducing `v1` and remove `v1beta2`.
