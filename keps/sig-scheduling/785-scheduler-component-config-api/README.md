@@ -106,12 +106,13 @@ The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the followi
   - Remove `v1beta1`
   - Remove the legacy [policy config API](https://kubernetes.io/docs/reference/scheduling/policies/)
 
-The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
-  - Remove `v1beta2`
-
 The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
 about user preferences, so should have more influence while making scheduling decisions.
 More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).
+
+The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
+  - Remove `v1beta2`
+
 ### Risks and Mitigations
 
 The major risk is around the removal of the `unreserve` extension point.
