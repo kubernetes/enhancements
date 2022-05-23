@@ -938,10 +938,11 @@ _This section must be completed when targeting beta graduation to a release._
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [x] Metrics
-    - Metric name: Add labels to report counts of `HostProcess` containers (host_process_container, host_process_init_container, and host_process_ephemeral_container) to `started_containers_total` and `started_containers_errors_total`
-    TODO: get confirmation from sig-node / ehashman
+    - Metric name: **started_host_process_containers_total** - reports the total number of host-process containers started on a given node
+    - Metric name: **started_host_process_containers_errors_total** - reports the total number of host-process containers that have failed to given node.
     - [Optional] Aggregation method:
     - Components exposing the metric: Kubelet
+    - Notes: Both metrics were added in v1.23 and are validated with [e2e tests](https://github.com/kubernetes/kubernetes/blob/fdb2d544751adc9fd2f6fa5075e9a16df7d352df/test/e2e/windows/host_process.go#L483-L575)
   - [ ] Other (treat as last resort)
     - Details:
 
