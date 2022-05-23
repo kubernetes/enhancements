@@ -491,7 +491,10 @@ Because Windows privileged containers will work much differently than Linux priv
   - `NT AUTHORITY\Local service`
   - `NT AUTHORITY\NetworkService`
 - Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
-To run a `hostProcess` container as a non SYSTEM/admin account a local users Group must first be created on the host. When a new `hostProcess` contianer is created with the name of a local users Group set as the `runAsUserName` then a temporary user account will be created as a member of the specified group for the container to run as.
+- To run a `hostProcess` container as a non SYSTEM/admin account, a local users Group must first be created on the host.
+Permissions to restrict access to system resources can should be configured to allow/deny access for the Group.
+When a new `hostProcess` contianer is created with the name of a local users Group set as the `runAsUserName` then a temporary user account will be created as a member of the specified group for the container to run as.
+
   - More information on Windows resource access can be found at <https://docs.microsoft.com/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions>
   - Example of configuring non SYSTEM/admin account can be found at <https://github.com/microsoft/hcsshim/pull/1286#issuecomment-1030223306>
 
@@ -515,7 +518,8 @@ This volume will be mounted to `c:\hpc`. The default working directory for `host
 
 - Note: Behavior of volume mounts will differ between the alpha/beta (old) implementation of this feature and the stable (new) implementation.
 Designing/testing/validation of an acceptable solution for handling volume mounts w.r.t. `hostProcess` containers was a primary reason for keeping the featuer in `beta`.
-A recording of the behaviors differces from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309). Also note that behavior will be the same for WS2019 onward.
+A recording of the behaviors differces from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309).
+  - Also note -  In the recording it was mentioned that this functionally might not be supported on WS2019. This functionality will be avaible in WS2019 but will require an OS patch (ETA: July 2022).
 
 #### Container Images
 
@@ -806,6 +810,7 @@ Graduation to GA:
 - Add documentation for running as a non-SYSTEM/admin account to k8s.io
 - Update documention on how volume mounts are set up for `hostProcess` containers on k8s.io
 - Set `WindowsHostProcessContainers` feature gate to `GA`
+- Provide reference images/workloads using the `GA` volume mounting behavior in Cluster-API-Provider-azure (which is used to run the majority of Windows e2e test passes)
 
 ### Upgrade / Downgrade Strategy
 
