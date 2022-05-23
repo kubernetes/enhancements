@@ -517,9 +517,10 @@ This volume will be mounted to `c:\hpc`. The default working directory for `host
 - There will be no `chroot` equivalent.
 
 - Note: Behavior of volume mounts will differ between the alpha/beta (old) implementation of this feature and the stable (new) implementation.
-Designing/testing/validation of an acceptable solution for handling volume mounts w.r.t. `hostProcess` containers was a primary reason for keeping the featuer in `beta`.
+Designing/testing/validation of an acceptable solution for handling volume mounts w.r.t. `hostProcess` containers was a primary reason for keeping the featuer in `beta`. (Previous behavior volume mount behavior can be viewed [here](https://github.com/kubernetes/enhancements/blob/cc4052fa88508fcbb20b978b8c181d06acf734b1/keps/sig-windows/1981-windows-privileged-container-support/README.md#container-mounts))
 A recording of the behaviors differces from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309).
   - Also note -  In the recording it was mentioned that this functionally might not be supported on WS2019. This functionality will be avaible in WS2019 but will require an OS patch (ETA: July 2022).
+- Containerd v1.7+ will be required for new volume mount behavior.
 
 #### Container Images
 
@@ -1025,9 +1026,9 @@ _This section must be completed when targeting beta graduation to a release._
 - **2021-02-17:** KEP approved for alpha release - [#2288](https://github.com/kubernetes/enhancements/pull/2288).
 - **2021-05-20:** Alpha implementation PR merged - [kubernetes/kubernetes#99576](https://github.com/kubernetes/kubernetes/pull/99576).
 - **2021-08-05:** K8s 1.22 released with alpha support for `WindowsHostProcessContainers` feature.
-- **2021-08-21:** HostProcessContainers (via CRI) support added to contianerd - [containerd/contianerd#5131](https://github.com/containerd/containerd/pull/5131).
+- **2021-08-21:** HostProcessContainers (via CRI) support added to containerd - [containerd/containerd#5131](https://github.com/containerd/containerd/pull/5131).
 - **2021-12-07:** K8s 1.23 released with beta support for `WindowsHostProcessContainers` feature.
-- **2022-02-15:** Containerd 1.6.0 relased with support for HostProcessContianers.
+- **2022-02-15:** Containerd 1.6.0 relased with support for HostProcessContainers.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
