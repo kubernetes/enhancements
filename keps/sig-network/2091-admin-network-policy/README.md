@@ -746,16 +746,14 @@ metadata:
 spec:
   priority: 10
   subject:
-    namespaceSelector:
+    namespaces:
       matchLabels:
         kubernetes.io/metadata.name: sensitive-ns
   ingress:
-    - action: Deny
-      from:
-      - namespaces:
-         namespaceSelector: {}
-      ports:
-        allPorts: true
+  - action: Deny
+    from:
+    - namespaces:
+        namespaceSelector: {}
 ```
 
 #### Sample spec for Story 2: Allow traffic at a cluster level
@@ -768,31 +766,25 @@ metadata:
 spec:
   priority: 30
   subject:
-    namespaceSelector: {}
+    namespaces: {}
   ingress:
-    - action: Allow
-      from:
-      - namespaces:
-          namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring-ns
-      ports:
-        allPorts: true
+  - action: Allow
+    from:
+    - namespaces:
+        namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring-ns
   egress:
-    - action: Allow
-      to:
-      - namespacedPods:
-          namespaces:
-            namespaceSelector:
-              matchlabels:
-                kubernetes.io/metadata.name: kube-system
-          pods:   
-            podSelector:
-              matchlabels:
-                app: kube-dns
-      ports:
-        allPorts: true
-
+  - action: Allow
+    to:
+    - pods:
+        namespaces: 
+          namespaceSelector:
+            matchlabels:
+              kubernetes.io/metadata.name: kube-system
+        podSelector:   
+          matchlabels:
+            app: kube-dns
 ```
 
 #### Sample spec for Story 3: Explicitly Delegate traffic to existing K8s Network Policy
@@ -805,23 +797,22 @@ metadata:
 spec:
   priority: 20
   subject:
-    namespaceSelector: {}
+    namespaces: {}
   egress:
   - action: Pass
     to:
-    - namespacedPods:
+    - pods:
         namespaces:
           namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: bar-ns-1
-        pods:
-          podSelector:
-            matchLabels:
-              app: svc-pub
+        podSelector:
+          matchLabels:
+            app: svc-pub
     ports:
-      list:
+      port:
        - protocol: TCP
-         port: 8080
+         number: 8080
 ```
 
 #### Sample spec for Story 4: Create and Isolate multiple tenants in a cluster
@@ -834,16 +825,14 @@ metadata:
 spec:
   priority: 50
   subject:
-    namespaceSelector:
+    namespaces:
       matchExpressions: {key: "tenant"; operator: Exists}
   ingress:
-    - action: Deny
-      from:
-      - namespaces:
-          notSameLabels:
+  - action: Deny
+    from:
+    - namespaces:
+        notSameLabels:
           - tenant
-      ports:
-        allPorts: true
 ```
 
 Note: the above AdminNetworkPolicy can also be written in the following fashion:
@@ -855,22 +844,18 @@ metadata:
 spec:
   priority: 50
   subject:
-    namespaceSelector:
+    namespaces:
       matchExpressions: {key: "tenant"; operator: Exists}
   ingress:
-    - action: Pass
-      from:
-      - namespaces:
-          sameLabels:
-          - tenant
-      ports:
-        allPorts: true
-    - action: Deny   # Deny everything else other than same tenant traffic
-      from:
-      - namespaces:
-          namespaceSelector: {}
-      ports:
-        allPorts: true
+  - action: Pass
+    from:
+    - namespaces:
+        sameLabels:
+        - tenant
+  - action: Deny   # Deny everything else other than same tenant traffic
+    from:
+    - namespaces:
+        namespaceSelector: {}
 ```
 The difference is that in the first case, traffic within tenant Namespaces will fall
 through, and be evaluated against lower-priority ClusterNetworkPolicies, and then
@@ -883,20 +868,23 @@ specifies intra-tenant traffic must be delegated to the tenant Namespace owners.
 
 ```yaml
 apiVersion: policy.networking.k8s.io/v1alpha1
-kind: AdminNetworkPolicy
+kind: BaselineAdminNetworkPolicy
 metadata:
   name: baseline-rule-example
 spec:
-  priority: 0
   subject:
-    namespaceSelector: {}
+    namespaces: {}
   ingress:
-    - action: Deny   # zero-trust cluster default security posture
-      from:
-      - namespaces:
-          namespaceSelector: {}
-      ports:
-        allPorts: true
+  - action: Deny   # zero-trust cluster default security posture
+    from:
+    - namespaces:
+        namespaceSelector: {}
+  egress:
+  - action: Deny 
+    to:
+    - namespaces: 
+        namespaceSeletor: {}
+  
 ```
 
 ### Test Plan
