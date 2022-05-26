@@ -98,6 +98,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Apply Patch](#apply-patch)
     - [Kubectl Flag](#kubectl-flag)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -570,17 +573,35 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
-We can unit test and benchmark the performance of each endpoint in
-[apiserver/pkg/endpoints/apiserver_test.go](https://github.com/kubernetes/kubernetes/blob/dadecb2c8932fd28de9dfb94edbc7bdac7d0d28f/staging/src/k8s.io/apiserver/pkg/endpoints/apiserver_test.go). We will need to test that requests
-fail with invalid fields for all types of fields (embedding, free-form fields,
-etc).
+##### Unit tests
+[alpha and beta]
+Logic that is changed in the apiextensions schema package (i.e. objectmeta
+algorithm and pruning algorithm) will be thoroughly unit tested as well as
+changes made to the
+apimachinery runtime converter and json decoding.
 
-Additionally, we can add integration testing for all endpoints in
-[test/integration/apiserver/apiserver_test.go](https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/apiserver_test.go)
+Additional testing has also been added to the
+[apiserver/endpoints/handlers/rest_test.go](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/endpoints/handlers/rest_test.go) to detect unknown and duplicate fields.
 
-We will also have additional testing for changes to the strategic merge patch
-logic in
-[apimachinery/pkg/util/strategicpatch/patch_test.go](https://github.com/kubernetes/kubernetes/blob/dadecb2c8932fd28de9dfb94edbc7bdac7d0d28f/staging/src/k8s.io/apimachinery/pkg/util/strategicpatch/patch_test.go)
+##### Integration tests
+[alpha and beta]
+Primarily, server side validation will be integration tested and benchmarked via a complete test
+suite at
+[test/integration/apiserver/field_validation_test.go](https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/field_validation_test.go)
+
+It tests the cross product of all valid permutations along the dimensions of:
+* request type (Create vs Update vs Patch)
+* data format (json, yaml, json patch, json merge patch, SMP patch, apply
+  (create), apply (update))
+* schema type (typed/builtin, CRD/untyped with schema, CRD/untyped without
+  schema)
+
+
+
+##### e2e tests
+[beta]
+With field validation on by default in beta, we will modify
+[test/e2e/kubectl/kubectl.go](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/kubectl.go) to ensure that kubectl defaults to using server side field validation and detects unknown/duplicate fields as expected.
 
 ### Graduation Criteria
 <!--
@@ -616,12 +637,16 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### Beta
 
-- [ ] kubectl validate flag offers ability to perform server-side validation
-- [ ] endpoints handler unit testing of field validation
-- [ ] customresource handler unit testing of field validation
-- [ ] field validation integration tests check for exact match of strict errors
-- [ ] In tree NestedObjectDecoders no longer short circuit on strict decoding
+- [x] kubectl validate flag offers ability to perform server-side validation
+- [x] endpoints handler unit testing of field validation
+- [x] customresource handler unit testing of field validation
+- [x] field validation integration tests check for exact match of strict errors
+- [x] In tree NestedObjectDecoders no longer short circuit on strict decoding
   errors [#107545](https://github.com/kubernetes/kubernetes/issues/107545)
+- [ ] Unknown/Duplicate fields are properly detected in the metadata at both the
+  root level and within embedded objects
+  [#109215](https://github.com/kubernetes/kubernetes/issues/109215),[#109316](https://github.com/kubernetes/kubernetes/pull/109316), and
+  [#109494](https://github.com/kubernetes/kubernetes/pull/109494)
 
 
 <!--
