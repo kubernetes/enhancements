@@ -493,7 +493,7 @@ Because Windows privileged containers will work much differently than Linux priv
 - Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
 - To run a `hostProcess` container as a non SYSTEM/admin account, a local users Group must first be created on the host.
 Permissions to restrict access to system resources can should be configured to allow/deny access for the Group.
-When a new `hostProcess` contianer is created with the name of a local users Group set as the `runAsUserName` then a temporary user account will be created as a member of the specified group for the container to run as.
+When a new `hostProcess` container is created with the name of a local users Group set as the `runAsUserName` then a temporary user account will be created as a member of the specified group for the container to run as.
 
   - More information on Windows resource access can be found at <https://docs.microsoft.com/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions>
   - Example of configuring non SYSTEM/admin account can be found at <https://github.com/microsoft/hcsshim/pull/1286#issuecomment-1030223306>
@@ -511,7 +511,7 @@ This volume will be mounted to `c:\hpc`. The default working directory for `host
   - Unix domain sockets mounts also not not be supported for `hostProces` containers.
     Unix domain sockets can be accessed via their paths on the host like named pipes.
   - Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers but this is not recommend.
-    Instead workloads should access the host OS's file-system as if it was not being run in a contianer.
+    Instead workloads should access the host OS's file-system as if it was not being run in a container.
   - All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
 - `HostProcess` Containers will have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container).
 - There will be no `chroot` equivalent.
