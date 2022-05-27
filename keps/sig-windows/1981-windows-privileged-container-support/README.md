@@ -107,6 +107,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [CRI Support Only](#cri-support-only)
     - [Feature Gates](#feature-gates)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -145,10 +149,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -691,14 +699,7 @@ https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -706,6 +707,10 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
 Alpha
 
@@ -725,6 +730,78 @@ Graduation
 
 - Add e2e tests to validate running `hostProcess` containers as non SYSTEM/admin accounts
 - Update e2e tests for new volume mount behavior as desdribed in [Container Mounts](#container-mounts)
+
+#### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+No additional tests have been identified that would be required prior to implementing this enhancement.
+
+#### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `<k8s.io/kubernetes/pkg/api/pod>`: `<2022-05-27>` - `<66.7%>`
+- `<k8s.io/kubernetes/pkg/apis/core>`: `<2022-05-27>` - `<78.9%>`
+- `<k8s.io/kubernetes/pkg/kubelet/container>`: `<2022-05-27>` - `<52.1%>`
+- `<k8s.io/kubernetes/pkg/kubelet/kuberuntime>`: `<2022-05-27>` - `<66.7%>`
+- `<k8s.io/kubernetes/pkg/securitycontext>`: `<2022-05-27>` - `<66.8%>`
+- `<k8s.io/cri-api/pkg/apis/runtime/v1>`: `<2022-05-27>` - No unit test coverage - protobuf defination
+- `<k8s.io/test/e2e/windows>`: `<2022-05-27>` - No unit test coverage - this package contains e2e test code
+
+#### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+It is not currently possible to test Windows specific code through existing the integration test frameworks.
+For this enhancement unit and e2e tests will be used for validation.
+
+#### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers should run as a process on the host/node: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L88-L135)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers should support init containers: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L137-L195)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers container command path validation: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L197-L420)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers metrics should report count of started and failed to start HostProcess containers: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L422-L481)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers should support various volume mount types: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L483-L577)
+
+TestGrid job for Kubernetes@master - (https://testgrid.k8s.io/sig-windows-signal#capz-windows-containerd-master&include-filter-by-regex=WindowsHostProcessContainers)
+
+k8s-triage link - (https://storage.googleapis.com/k8s-triage/index.html?job=capz&test=Feature%3AWindowsHostProcessContainers)
 
 ### Graduation Criteria
 
