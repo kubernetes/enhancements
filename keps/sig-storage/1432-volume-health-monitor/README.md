@@ -30,7 +30,9 @@
   - [Alpha -&gt; Beta](#alpha---beta)
   - [Beta -&gt; GA](#beta---ga)
 - [Test Plan](#test-plan)
+  - [Prerequisite testing updates](#prerequisite-testing-updates)
   - [Unit tests](#unit-tests)
+  - [Integration tests](#integration-tests)
   - [E2E tests](#e2e-tests)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
@@ -139,7 +141,7 @@ Two main parts are involved here in the architecture.
   - Note that currently we do not have CSI support for local storage. When the support is available, we will implement relavant CSI monitoring interfaces as well.
   - Expose Volume Health information as Kubelet VolumeStats Metrics.
 
-The volume health monitoring by Kubelet will be controlled by a new feature gate called `VolumeHealth`.
+The volume health monitoring by Kubelet will be controlled by a new feature gate called `CSIVolumeHealth`.
 
 ## Implementation
 
@@ -515,7 +517,7 @@ In addition to volume stats collected already, Kubelet will also check the mount
 If abnormal volume condition is detected from NodeGetVolumeStats, Kubelet will retrieve all the pods used by the particular volume and report events on the pod objects. If multiple pods are using the same volume, events will be reported on all pods. This can be done by adding logic in csi_client after the NodeGetVolumeStats call to send events to pods if volume condition is abnormal.
 https://github.com/kubernetes/kubernetes/blob/v1.21.0-alpha.2/pkg/volume/csi/csi_client.go#L608
 
-This new volume health monitoring by Kubelet will be gated by the `VolumeHealth` feature gate. If enabled, Kubelet will monitor volume health when calling NodeGetVolumeStats CSI function and report events on pods when abnormal volume condition is detected. If not enabled, Kubelet works the same as before and will not check volume health when calling NodeGetVolumeStats CSI function.
+This new volume health monitoring by Kubelet will be gated by the `CSIVolumeHealth` feature gate. If enabled, Kubelet will monitor volume health when calling NodeGetVolumeStats CSI function and report events on pods when abnormal volume condition is detected. If not enabled, Kubelet works the same as before and will not check volume health when calling NodeGetVolumeStats CSI function.
 
 ### Alternatives
 
@@ -709,6 +711,11 @@ The external node agent reports events on the pod object. If multiple pods are u
 * Volume health feature deployed in production and have gone through at least one K8s upgrade.
 
 ## Test Plan
+
+### Prerequisite testing updates
+
+Volume health is added as a metric in Kubelet. There are already e2e tests that grabs all metrics from Kubelet: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/instrumentation/monitoring/metrics_grabber.go
+
 ### Unit tests
 * Unit tests for external controller and Kubelet volume health monitoring. The following failure scenario will be simulated in the unit tests:
   * VolumeNotFound
@@ -716,8 +723,13 @@ The external node agent reports events on the pod object. If multiple pods are u
   * VolumeUnmounted
   * NodeDown
 
+### Integration tests
+
+A test for volume health metric will be added here: https://github.com/kubernetes/kubernetes/blob/master/test/integration/metrics/metrics_test.go
+
 ### E2E tests
-* e2e tests for external controller and Kubelet volume health monitoring. Hostpath CSI driver and GCE PD driver will be used for e2e tests. The following failure scenario will be tested in the e2e tests:
+* There will not be e2e tests for external controller because volume health is reported as events on PVCs and events can disappear so we do not have a reliable way to write a test for that.
+* We need e2e tests for Kubelet volume health monitoring. Volume health is added as a metric in Kubelet. There are already e2e tests that grabs all metrics from Kubelet: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/instrumentation/monitoring/metrics_grabber.go. Hostpath CSI driver will be used for e2e tests. The following failure scenario will be tested in the e2e tests:
   * VolumeNotFound
   * OutOfCapacity
   * VolumeUnmounted
@@ -732,7 +744,7 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Other
     - Describe the mechanism:
-      This feature has a feature gate called `VolumeHealth` for Kubelet.
+      This feature has a feature gate called `CSIVolumeHealth` for Kubelet.
       It is enabled when the feature gate in turned on.
       The health monitoring feature in external controller does not have a
       feature gate because it is out of tree.
@@ -766,7 +778,7 @@ _This section must be completed when targeting alpha to a release._
   detected again and the new metric will be emitted by Kubelet again.
 
 * **Are there any tests for feature enablement/disablement?**
-  There will be unit tests for the feature `VolumeHealth` enablement/disablement.
+  There will be unit tests for the feature `CSIVolumeHealth` enablement/disablement.
   Since there is no feature gate for this feature on the controller side and the only way to
   enable or disable this feature is to install or unistall the sidecar, we cannot write
   tests for feature enablement/disablement on the controller side.
@@ -785,7 +797,7 @@ _This section must be completed when targeting beta graduation to a release._
    the health monitoring controller cannot be deployed, no events on volume
    condition will be reported on PVCs.
 
-   If enabling the `VolumeHealth` feature fails, no event on volume condition will be
+   If enabling the `CSIVolumeHealth` feature fails, no event on volume condition will be
    reported on the pod and the new `volume_stats_health_abnormal` metric won't be emitted.
 
 * **What specific metrics should inform a rollback?**
@@ -802,7 +814,7 @@ _This section must be completed when targeting beta graduation to a release._
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
-  Manual testing will be done to upgrade from 1.22 to 1.23 and downgrade from 1.23 back to 1.22.
+  Manual testing will be done to upgrade from 1.24 to 1.25 and downgrade from 1.25 back to 1.24.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
@@ -826,7 +838,7 @@ _This section must be completed when targeting beta graduation to a release._
   The `csi_sidecar_operations_seconds` metric should be sliced by process after
   they are aggregated to show metrics for different sidecars.
 
-  In Kubelet, an operator can check whether the feature gate `VolumeHealth`
+  In Kubelet, an operator can check whether the feature gate `CSIVolumeHealth`
   is enabled and whether the new metric `volume_stats_health_abnormal` is emitted.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
@@ -883,7 +895,7 @@ _This section must be completed when targeting beta graduation to a release._
     - Usage description:
       - Impact of its outage on the feature: Installation of csi-external-health-monitor-controller sidecar is required for the feature to work from the controller side. If csi-external-health-monitor-controller is not installed, abnormal volume conditions will not be reported as events on PVCs.
         Note that CSI driver needs to be updated to implement volume health RPCs in controller/node plugins. The minimum kubernetes version should be 1.13: https://kubernetes-csi.github.io/docs/introduction.html#kubernetes-releases. K8s v1.13 is the minimum supported version for CSI driver to work, however, different CSI drivers have different requirements on supported k8s versions so users are supposed to check documentation of the CSI drivers. If the CSI node plugin on one node has been upgraded to support volume health while it is not upgraded on 3 other nodes, then we will only expect to see volume health events on pods running on that one upgraded node.
-        In addition, since Kubelet is doing volume health monitoring from the node side, the supported Kubernetes version will have to be the version that supports `VolumeHealth` feature. So the minimum Kubernetes version will be 1.21.
+        In addition, since Kubelet is doing volume health monitoring from the node side, the supported Kubernetes version will have to be the version that supports `CSIVolumeHealth` feature when we moved volume health events report to Kubelet. So the minimum Kubernetes version will be 1.21 for the events to be reported on the pods. In Kubernetes 1.24, we also added volume_stats_health_abnormal to metrics in Kubelet. So 1.24 is the minimum required version for metrics support.
       - Impact of its degraded performance or high-error rates on the feature: If abnormal volume conditions are reported with degraded performance or high-error rates, that would affect how soon or how accurately users could manually react to these conditions.
 
 
@@ -899,15 +911,14 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
-  - API call type (e.g. PATCH pods): Only events will be reported to PVCs or Pods if this feature is enabled.
+  - API call type (e.g. PATCH pods): Events will be reported to PVCs and Pods and metrics will be in Kubelet if this feature is enabled.
   - estimated throughput
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
   focusing mostly on:
   - components listing and/or watching resources they didn't before
     csi-external-health-monitor-controller sidecar.
     There is a monitor interval for the controller to control how often to check the volume health.
-    It is configurable with 1 minute as default. Will consider changing it to 5 minutes by default
-    to avoid overloading the K8s API server.
+    It is configurable with 5 minute as default.
     When scaled out across many nodes, low frequency checks can still produce high volumes of
     events. To control this, we should use options on the eventrecorder to control QPS per key.
     This way we can collapse keys and have a slow update cadence per key.
