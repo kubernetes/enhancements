@@ -14,36 +14,10 @@ reviewers:
 approvers:
   - "@cpanato"
   - "@justaugustus"
-
-##### WARNING !!! ######
-# prr-approvers has been moved to its own location
-# You should create your own in keps/prod-readiness
-# Please make a copy of keps/prod-readiness/template/nnnn.yaml
-# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
-#prr-approvers:
-
-# see-also:
-#   - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-#   - "/keps/sig-bbb/2345-everyone-gets-a-kep"
-# replaces:
-#   - "/keps/sig-ccc/3456-replaced-kep"
-
-# The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
-
-# The most recent milestone for which work toward delivery of this KEP has been
-# done. This can be the current (upcoming) milestone, if it is being actively
-# worked on.
-latest-milestone: "v1.24"
-
-# The milestone at which this feature was, or is targeted to be, at each stage.
+stage: beta
+latest-milestone: "v1.25"
 milestone:
   alpha: "v1.24"
-  # beta: "v1.20"
+  beta: "v1.25"
   # stable: "v1.22"
-
 disable-supported: true
-
-# The following PRR answers are required at beta release
-# metrics:
-#   - my_feature_metric
