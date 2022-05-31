@@ -22,12 +22,14 @@
   - [Flow Control](#flow-control)
     - [Container resource limit update ordering](#container-resource-limit-update-ordering)
     - [Container resource limit update failure handling](#container-resource-limit-update-failure-handling)
+    - [CRI Changes Flow](#cri-changes-flow)
     - [Notes](#notes)
   - [Affected Components](#affected-components)
   - [Future Enhancements](#future-enhancements)
   - [Test Plan](#test-plan)
     - [Unit Tests](#unit-tests)
     - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
+    - [CRI E2E Tests](#cri-e2e-tests)
     - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
     - [Resize Policy Tests](#resize-policy-tests)
     - [Backward Compatibility and Negative Tests](#backward-compatibility-and-negative-tests)
@@ -109,6 +111,13 @@ https://github.com/kubernetes/community/pull/1719
 [Vertical Resources Scaling in Kubernetes]:
 https://docs.google.com/document/d/18K-bl1EVsmJ04xeRq9o_vfY2GDgek6B6wmLjXw-kos4
 
+This proposal also aims to improve the Container Runtime Interface (CRI) APIs for
+managing a Container's CPU and memory resource configurations on the runtime.
+It seeks to extend UpdateContainerResources CRI API such that it works for
+Windows, and other future runtimes besides Linux. It also seeks to extend
+ContainerStatus CRI API to allow Kubelet to discover the current resources
+configured on a Container.
+
 ## Motivation
 
 Resources allocated to a Pod's Container(s) can require a change for various
@@ -130,6 +139,18 @@ resulting in lower availability or higher cost of running.
 Allowing Resources to be changed without recreating the Pod or restarting the
 Containers addresses this issue directly.
 
+Additioally, In-Place Pod Vertical Scaling feature relies on Container Runtime
+Interface (CRI) to update CPU and/or memory requests/limits for a Pod's Container(s).
+
+The current CRI API set has a few drawbacks that need to be addressed:
+1. UpdateContainerResources CRI API takes a parameter that describes Container
+   resources to update for Linux Containers, and this may not work for Windows
+   Containers or other potential non-Linux runtimes in the future.
+1. There is no CRI mechanism that lets Kubelet query and discover the CPU and
+   memory limits configured on a Container from the Container runtime.
+1. The expected behavior from a runtime that handles UpdateContainerResources
+   CRI API is not very well defined or documented.
+
 ### Goals
 
 * Primary: allow to change container resource requests & limits without
@@ -138,6 +159,15 @@ Containers addresses this issue directly.
   how to proceed if in-place resource resize is not possible.
 * Secondary: allow users to specify which Containers can be resized without a
   restart.
+
+Additionally, this proposal has two goals for CRI:
+  - Modify UpdateContainerResources to allow it to work for Windows Containers,
+    as well as Containers managed by other runtimes besides Linux,
+  - Provide CRI API mechanism to query the Container runtime for CPU and memory
+    resource configurations that are currently applied to a Container.
+
+An additional goal of this proposal is to better define and document the
+expected behavior of a Container runtime when handling resource updates.
 
 ### Non-Goals
 
@@ -149,7 +179,14 @@ Other identified non-goals are:
 * allow to change Pod QoS class without a restart,
 * to change resources of Init Containers without a restart,
 * eviction of lower priority Pods to facilitate Pod resize,
-* updating extended resources or any other resource types besides CPU, memory.
+* updating extended resources or any other resource types besides CPU, memory,
+* support for CPU/memory manager policies besides the default 'None' policy.
+
+Definition of expected behavior of a Container runtime when it handles CRI APIs
+related to a Container's resources is intended to be a high level guide.  It is
+a non-goal of this proposal to define a detailed or specific way to implement
+these functions. Implementation specifics are left to the runtime, within the
+bounds of expected behavior.
 
 ## Proposal
 
@@ -245,14 +282,87 @@ means the same as "Deferred".
 Kubelet calls UpdateContainerResources CRI API which currently takes
 *runtimeapi.LinuxContainerResources* parameter that works for Docker and Kata,
 but not for Windows. This parameter changes to *runtimeapi.ContainerResources*,
-that is runtime agnostic, and will contain platform-specific information.
+that is runtime agnostic, and will contain platform-specific information. This
+would make UpdateContainerResources API work for Windows, and any other future
+runtimes, besides Linux by making the resources parameter passed in the API
+specific to the target runtime.
 
 Additionally, ContainerStatus CRI API is extended to hold
 *runtimeapi.ContainerResources* so that it allows Kubelet to query Container's
-CPU and memory limit configurations from runtime.
+CPU and memory limit configurations from runtime. This expects runtime to respond
+with CPU and memory resource values currently applied to the Container.
 
 These CRI changes are a separate effort that does not affect the design
 proposed in this KEP.
+
+To accomplish aforementioned CRI changes:
+
+* A new protobuf message object named *ContainerResources* that encapsulates
+LinuxContainerResources and WindowsContainerResources is introduced as below.
+  - This message can easily be extended for future runtimes by simply adding a
+    new runtime-specific resources struct to the ContainerResources message.
+```
+// ContainerResources holds resource configuration for a container.
+message ContainerResources {
+    // Resource configuration specific to Linux container.
+    LinuxContainerResources linux = 1;
+    // Resource configuration specific to Windows container.
+    WindowsContainerResources windows = 2;
+}
+```
+
+* UpdateContainerResourcesRequest message is extended to carry
+  ContainerResources field as below.
+  - For Linux runtimes, Kubelet fills UpdateContainerResourcesRequest.Linux in
+    additon to UpdateContainerResourcesRequest.Resources.Linux fields.
+    - This keeps backward compatibility by letting runtimes that rely on the
+      current LinuxContainerResources continue to work, while enabling newer
+      runtime versions to use UpdateContainerResourcesRequest.Resources.Linux,
+    - It enables deprecation of UpdateContainerResourcesRequest.Linux field.
+```
+message UpdateContainerResourcesRequest {
+    // ID of the container to update.
+    string container_id = 1;
+    // Resource configuration specific to Linux container.
+    LinuxContainerResources linux = 2;
+    // Resource configuration for the container.
+    ContainerResources resources = 3;
+}
+```
+
+* ContainerStatus message is extended to return ContainerResources as below.
+  - This enables Kubelet to query the runtime and discover resources currently
+    applied to a Container using ContainerStatus CRI API.
+```
+@@ -914,6 +912,8 @@ message ContainerStatus {
+     repeated Mount mounts = 14;
+     // Log path of container.
+     string log_path = 15;
++    // Resource configuration of the container.
++    ContainerResources resources = 16;
+ }
+```
+
+* ContainerManager CRI API service interface is modified as below.
+  - UpdateContainerResources takes ContainerResources parameter instead of
+    LinuxContainerResources.
+```
+--- a/staging/src/k8s.io/cri-api/pkg/apis/services.go
++++ b/staging/src/k8s.io/cri-api/pkg/apis/services.go
+@@ -43,8 +43,10 @@ type ContainerManager interface {
+        ListContainers(filter *runtimeapi.ContainerFilter) ([]*runtimeapi.Container, error)
+        // ContainerStatus returns the status of the container.
+        ContainerStatus(containerID string) (*runtimeapi.ContainerStatus, error)
+-       // UpdateContainerResources updates the cgroup resources for the container.
+-       UpdateContainerResources(containerID string, resources *runtimeapi.LinuxContainerResources) error
++       // UpdateContainerResources updates resource configuration for the container.
++       UpdateContainerResources(containerID string, resources *runtimeapi.ContainerResources) error
+        // ExecSync executes a command in the container, and returns the stdout output.
+        // If command exits with a non-zero exit code, an error is returned.
+        ExecSync(containerID string, cmd []string, timeout time.Duration) (stdout []byte, stderr []byte, err error)
+```
+
+* Kubelet code is modified to leverage these changes.
 
 ### Risks and Mitigations
 
@@ -484,6 +594,54 @@ container limits does not exceed Pod-level cgroup limit at any point. Once all
 the container limits have been successfully updated, Kubelet updates the Pod's
 Status.ContainerStatuses[i].Resources to match the desired limit values.
 
+#### CRI Changes Flow
+
+Below diagram is an overview of Kubelet using UpdateContainerResources and
+ContainerStatus CRI APIs to set new container resource limits, and update the
+Pod Status in response to user changing the desired resources in Pod Spec.
+
+```
+   +-----------+                   +-----------+                  +-----------+
+   |           |                   |           |                  |           |
+   | apiserver |                   |  kubelet  |                  |  runtime  |
+   |           |                   |           |                  |           |
+   +-----+-----+                   +-----+-----+                  +-----+-----+
+         |                               |                              |
+         |       watch (pod update)      |                              |
+         |------------------------------>|                              |
+         |     [Containers.Resources]    |                              |
+         |                               |                              |
+         |                            (admit)                           |
+         |                               |                              |
+         |                               |  UpdateContainerResources()  |
+         |                               |----------------------------->|
+         |                               |                         (set limits)
+         |                               |<- - - - - - - - - - - - - - -|
+         |                               |                              |
+         |                               |      ContainerStatus()       |
+         |                               |----------------------------->|
+         |                               |                              |
+         |                               |     [ContainerResources]     |
+         |                               |<- - - - - - - - - - - - - - -|
+         |                               |                              |
+         |      update (pod status)      |                              |
+         |<------------------------------|                              |
+         | [ContainerStatuses.Resources] |                              |
+         |                               |                              |
+
+```
+
+* Kubelet invokes UpdateContainerResources() CRI API in ContainerManager
+  interface to configure new CPU and memory limits for a Container by
+  specifying those values in ContainerResources parameter to the API. Kubelet
+  sets ContainerResources parameter specific to the target runtime platform
+  when calling this CRI API.
+
+* Kubelet calls ContainerStatus() CRI API in ContainerManager interface to get
+  the CPU and memory limits applied to a Container. It uses the values returned
+  in ContainerStatus.Resources to update ContainerStatuses[i].Resources.Limits
+  for that Container in the Pod's Status.
+
 #### Notes
 
 * If CPU Manager policy for a Node is set to 'static', then only integral
@@ -560,6 +718,9 @@ Other components:
 Unit tests will cover the sanity of code changes that implements the feature,
 and the policy controls that are introduced as part of this feature.
 
+CRI unit tests are updated to reflect use of ContainerResources object in
+UpdateContainerResources and ContainerStatus APIs.
+
 #### Pod Resize E2E Tests
 
 End-to-End tests resize a Pod via PATCH to Pod's Spec.Containers[i].Resources.
@@ -618,6 +779,12 @@ E2E tests for Guaranteed class Pod with three containers (c1, c2, c3):
 1. Increase CPU for c1 & c3, decrease c2 - net CPU increase for Pod.
 1. Increase memory for c1 & c3, decrease c2 - net memory increase for Pod.
 
+#### CRI E2E Tests
+
+1. E2E test is added to verify UpdateContainerResources API with containerd runtime.
+1. E2E test is added to verify ContainerStatus API using containerd runtime.
+1. E2E test is added to verify backward compatibility using containerd runtime.
+
 #### Resource Quota and Limit Ranges
 
 Setup a namespace with ResourceQuota and a single, valid Pod.
@@ -672,6 +839,9 @@ TODO: Identify more cases
 - Resize Policies functionality is implemented,
 - Unit tests and E2E tests covering basic functionality are added,
 - E2E tests covering multiple containers are added.
+- UpdateContainerResources API changes are done and tested with containerd
+  runtime, backward compatibility is maintained.
+- ContainerStatus API changes are done. Tests are ready but not enforced.
 
 #### Beta
 - VPA alpha integration of feature completed and any bugs addressed,
@@ -679,6 +849,8 @@ TODO: Identify more cases
 - Negative tests are identified and added.
 - A "/resize" subresource is defined and implemented.
 - Pod-scoped resources are handled if that KEP is past alpha
+- ContainerStatus API change tests are enforced and containerd runtime must comply.
+- ContainerStatus API change tests are enforced and Windows runtime should comply.
 
 #### Stable
 - VPA integration of feature moved to beta,
@@ -922,13 +1094,16 @@ _This section must be completed when targeting beta graduation to a release._
 - 2019-01-18 - implementation proposal extended
 - 2019-03-07 - changes to flow control, updates per review feedback
 - 2019-08-29 - updated design proposal
+- 2019-10-25 - Initial CRI changes KEP draft created
 - 2019-10-25 - update key open items and move KEP to implementable
 - 2020-01-06 - API review suggested changes incorporated
 - 2020-01-13 - Test plan and graduation criteria added
+- 2020-01-14 - CRI changes test plan and graduation criteria added
 - 2020-01-21 - Graduation criteria updated per review feedback
 - 2020-11-06 - Updated with feedback from reviews
 - 2020-12-09 - Add "Deferred"
 - 2021-02-05 - Final consensus on resourcesAllocated[] and resize[]
+- 2022-05-01 - KEP 2273-kubelet-container-resources-cri-api-changes merged with this KEP
 
 ## Drawbacks
 
