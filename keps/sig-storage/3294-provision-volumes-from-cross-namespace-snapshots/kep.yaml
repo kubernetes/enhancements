@@ -5,8 +5,8 @@ authors:
   - "@mkimuram"
 owning-sig: sig-storage
 participating-sigs:
-  - sig-storage
-status: provisional
+  - sig-network
+status: implementable
 creation-date: 2022-04-06
 reviewers:
   - "@xing-yang"

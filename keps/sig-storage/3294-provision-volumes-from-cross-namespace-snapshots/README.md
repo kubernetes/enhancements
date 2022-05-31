@@ -87,7 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Provisioning PVs from cross-namespace PVs](#provisioning-pvs-from-cross-namespace-pvs)
+    - [Provisioning PVCs from cross-namespace PVCs](#provisioning-pvcs-from-cross-namespace-pvcs)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Secret Handling](#secret-handling)
     - [Security](#security)
@@ -100,6 +100,10 @@ tags, and then generate with `hack/update-toc.sh`.
       - [(1) Populate data from snapshot to provisioned PV](#1-populate-data-from-snapshot-to-provisioned-pv)
       - [(2) Provision PV with data via CSI call](#2-provision-pv-with-data-via-csi-call)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -197,7 +201,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 By using [volume snapshots feature](https://kubernetes.io/docs/concepts/storage/volume-snapshots/), users can provision volumes from snapshots.
 However, it only works for the `VolumeSnapshot` in the same namespace,
-therefore users can't provision a volume in one namespace from a `VolumeSnapshot` in the other namespace.
+therefore users can't provision a persistent volume claim in one namespace from a `VolumeSnapshot` in the other namespace.
 On the other hand, as discussed in other KEP PRs (https://github.com/kubernetes/enhancements/pull/643,
 https://github.com/kubernetes/enhancements/pull/1112, and https://github.com/kubernetes/enhancements/pull/2849), there are use cases that require to share the `VolumeSnapshot` across namespaces.
 For such use cases, this KEP proposes a method for provisioning volumes from cross-namespace snapshots.
@@ -208,7 +212,7 @@ For such use cases, this KEP proposes a method for provisioning volumes from cro
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- Provision of PVs from `VolumeSnapshot`s in other namespaces
+- Provision of PVCs from `VolumeSnapshot`s in other namespaces
 
 ### Non-Goals
 
@@ -216,7 +220,7 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-- Provision of PVs from PVCs in other namespaces (Please also see [Provisioning PVs from cross-namespace PVs](#provisioning-pvs-from-cross-namespace-pvs))
+- Provision of PVCs from PVCs in other namespaces (Please also see [Provisioning PVCs from cross-namespace PVCs](#provisioning-pvcs-from-cross-namespace-pvcs))
 - Copy or move of `VolumeSnapshot`s to other namespaces (Please also see [Alternatives](#alternatives))
 - Clone of `VolumeSnapshotContent`s 
 
@@ -267,10 +271,10 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-#### Provisioning PVs from cross-namespace PVs 
+#### Provisioning PVCs from cross-namespace PVCs
 
-The conclusion of the original discussion ([here](https://docs.google.com/document/d/17H1k4lqdtJwZSjNRaQue-FhMhyk14JA_MoURpoxha5Q/edit#bookmark=id.nj4e1ocn8b23) and [here](https://docs.google.com/document/d/17H1k4lqdtJwZSjNRaQue-FhMhyk14JA_MoURpoxha5Q/edit#bookmark=id.h1eqongxseo)) on transfer feature was that we should avoid implementing transfer of PVCs, because there will be more race conditions for PVs than snapshots.
-However, we might have a room to reconsider if this cross-namespace-provision approach can solve the issue of race for PVCs, although transfer approach can't seems to resolve the issue easily.
+The conclusion of the original discussion ([here](https://docs.google.com/document/d/17H1k4lqdtJwZSjNRaQue-FhMhyk14JA_MoURpoxha5Q/edit#bookmark=id.nj4e1ocn8b23) and [here](https://docs.google.com/document/d/17H1k4lqdtJwZSjNRaQue-FhMhyk14JA_MoURpoxha5Q/edit#bookmark=id.h1eqongxseo)) on transfer feature was that we should avoid implementing transfer of PVCs, because there will be more race conditions for PVCs than snapshots.
+However, we might have a room to reconsider if this cross-namespace-provision approach can solve the issue of race for PVCs, although transfer approach can't seem to resolve the issue easily.
 
 ### Risks and Mitigations
 
@@ -288,13 +292,13 @@ Consider including folks who also work outside the SIG or subproject.
 
 #### Secret Handling
 
-TBD: Unlike transfer feature, this idea doesn't require transfer of secert, but it may need to be discussed
-(We would need to go back to discussion around https://github.com/kubernetes/enhancements/pull/2849#issuecomment-962168202).
+Unlike transfer feature, this idea doesn't need to involve any transfers of Secert, therefore there will be no issue on Secret handling.
+From a populator, Secrets are only referenced through snapshots that exist in the same namespace (As commented [here](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-962168202), depending on the driver implementation, there may be very little chance that some CSI drivers won't work well in a very rare situation. However, such drivers can avoid this issue separately, by turning off this feature, implementing their own populator, and so on).
 
 #### Security
 
-TBD: Use of `ReferencePolicy` should remove the risk, but it may need to be discussed
-(We would need to check again for [the original use case of Gateway APIs](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-919107307), and review if there are any security risks).
+By using [`ReferencePolicy`](https://gateway-api.sigs.k8s.io/concepts/security-model/#2-referencepolicy), only allowed snapshots can be accessed beyond the namespace boundary (Please also see [original  discussion on security](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-919107307)).
+Therefore, no malicious user will be able to access to prohibited snapshots.
 
 ## Design Details
 
@@ -307,9 +311,9 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Example flow of how this proposal works
 
-Let's use [Story 1](#story-1) as an example and let's assume:
+Let's use [Story 1](#story-1) as an example and let's assume the following:
 - There are two namespaces, prod and test,
-- Alice manages the prod namesapce and Bob manages the test namespace,
+- Alice manages the prod namespace and Bob manages the test namespace,
 - Alice would like to allow `VolumeSnapshot` foo-backup in the prod namespace to be consumed in the test namespace for testing,
 - Bob would like to create a PV for PVC foo-testing in the test namespace from the `VolumeSnapshot` foo-backup in the prod namespace.
 
@@ -317,7 +321,7 @@ Once this proposal is implemented, it can be achieved by doing the following ste
 
 1. In the prod namespace, Alice creates a `ReferencePolicy` bar that allows referencing to the `VolumeSnapshot` foo-backup in the prod namespace from any `VolumeSnapshotLinks` in the test namespace,
     ```yaml
-	apiVersion: gateway.networking.k8s.io/v1alpha2
+    apiVersion: gateway.networking.k8s.io/v1alpha2
     kind: ReferencePolicy
     metadata:
       name: bar
@@ -346,7 +350,7 @@ Once this proposal is implemented, it can be achieved by doing the following ste
     ```
 3. In the test namespace, Bob creates a `PersistentVolumeClaim` foo-testing that references the `VolumeSnapshotLink` foo-link as a data source,
     ```yaml
-	apiVersion: v1
+    apiVersion: v1
     kind: PersistentVolumeClaim
     metadata:
       name: foo-testing
@@ -480,14 +484,7 @@ Therefore, the description in this section is just for discussion purpose and wo
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -496,18 +493,62 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-- For Alpha, unit tests and e2e tests for provisioning PV from `VolumeSnapshotLink` are added.
-  - unit tests:
-    - feature enabeld case:
-      - Verify that PV is provisioned from VS in other namsepace if allowed by ReferencePolicy
-      - Verify that PV isn't provisioned from VS in other namsepace if not allowed by ReferencePolicy
-    - feature disabled case:
-      - Verify that provisioning from VolumeSnapshotLink returns error if the feature is disabled
-  - e2e tests:
-    - Verify that PV is provisioned from VS in other namsepace if allowed by ReferencePolicy
-    - Verify that PV isn't provisioned from VS in other namsepace if not allowed by ReferencePolicy
-- For Beta, scalability tests are added to exercise this feature.
-- For GA, the introduced e2e tests will be promoted to conformance.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- external-provisioner/pkg/controller/: 2022/5/31 - 81.1%
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- No integration tests for csi external provisioner.
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- Verify that PV is provisioned from VS in other namsepace if allowed by ReferencePolicy: <link to test coverage>
+- Verify that PV isn't provisioned from VS in other namsepace if not allowed by ReferencePolicy: <link to test coverage>
 
 ### Graduation Criteria
 
@@ -649,7 +690,7 @@ well as the [existing list] of feature gates.
 - [x] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
-    plane? No.
+    plane? No, it won't require downtime of the entire control plane. However, it will require a downtime of each provisioner whose enablement is being changed.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
 
@@ -660,7 +701,7 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Yes, `VolumeSnapshotLink` CRD can be used as a `DataSourceRef` for provisioning PV.
+Yes, `VolumeSnapshotLink` CRD can be used as a `DataSourceRef` for PVC.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -679,7 +720,7 @@ Yes, by specifying `--cross-namespace-snapshot=false` command line flag of CSI e
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-`VolumeSnapshotLink` CRD can be used as a `DataSourceRef` for provisioning PV, again.
+`VolumeSnapshotLink` CRD can be used as a `DataSourceRef` for PVC, again.
 
 ###### Are there any tests for feature enablement/disablement?
 
