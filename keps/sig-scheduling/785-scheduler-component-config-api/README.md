@@ -48,8 +48,8 @@
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
 for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced
 `v1beta2` and `v1beta3` in 1.22 and 1.23 respectively. We'd like to graduate it
-to GA in `v1.25` and mark `v1beta2` as deprecated for not breaking existing users,
-we'll remove the support of `v2beta2` in `v1.26`.
+to GA in 1.25 and mark `v1beta2` as deprecated to avoid breaking existing users,
+we'll remove the support of `v1beta2` in 1.26.
 
 ## Motivation
 
