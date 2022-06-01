@@ -48,7 +48,8 @@
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
 for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced
 `v1beta2` and `v1beta3` in 1.22 and 1.23 respectively. We'd like to graduate it
-to GA in `v1.25` and remove the support for `v1beta2` at the same time.
+to GA in `v1.25` and mark `v1beta2` as deprecated for not breaking existing users,
+we'll remove the support of `v2beta2` in `v1.26`.
 
 ## Motivation
 
@@ -111,7 +112,7 @@ about user preferences, so should have more influence while making scheduling de
 More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).
 
 The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
-  - Remove `v1beta2`
+  - Mark `v1beta2` as deprecated
 
 ### Risks and Mitigations
 
@@ -225,7 +226,7 @@ N/A
   - Remove `v1beta1`.
 
   When `v1` gets introduced:
-  - Remove `v1beta2`.
+  - Mark `v1beta2` as deprecated.
 
 ### Monitoring requirements
 
@@ -310,4 +311,4 @@ N/A
 - 2021-07-08: Introducing `v1beta2`.
 - 2021-08-06: Introducing `v1beta3`.
 - 2021-09-01: Remove `v1beta1` and the legacy policy config API.
-- 2022-05-18: Introducing `v1` and remove `v1beta2`.
+- 2022-05-18: Introducing `v1` and mark `v1beta2` as deprecated.
