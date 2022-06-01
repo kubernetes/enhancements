@@ -171,8 +171,8 @@ retrieve certain log stream of a container, so it is great to implement this lon
 
 ### Goals
 
-- Enable api-server to return certain log stream of a container
-- Enable users to fetch certain log stream of a container
+- Enable api-server to return specific log stream of a container
+- Enable users to fetch specific log stream of a container
 
 ### Non-Goals
 
@@ -216,13 +216,26 @@ This might be a good place to talk about core concepts and how they relate.
 Add a new field `Stream` to `k8s.io/kubernetes/pkg/apis/core.PodLogOptions`:
 
 ```go
+// LogStreamType represents the desired log stream type.
+type LogStreamType string
+
+const (
+	// LogStreamTypeStdout is the stream type for stdout.
+	LogStreamTypeStdout LogStreamType = "stdout"
+	// LogStreamTypeStderr is the stream type for stderr.
+	LogStreamTypeStderr LogStreamType = "stderr"
+	// LogStreamTypeAll represents the combined stdout and stderr.
+	LogStreamTypeAll    LogStreamType = "all"
+)
+
 // PodLogOptions is the query options for a Pod's logs REST call
 type PodLogOptions struct {
-...
-    // If set, return the given log stream of the container.
-	// Otherwise, the combined stdout and stderr from the container is returned.
-	// Available values are: "stdout", "stderr", "" (empty string).
-    Stream string
+	...
+	// If set to "stdout" or "stderr", return the given log stream of the container.
+	// If set to "all" or not set, the combined stdout and stderr from the container is returned.
+	// Available values are: "stdout", "stderr", "all", "" (empty string). 
+	// +optional
+	Stream LogStreamType
 }
 ```
 
@@ -230,7 +243,7 @@ When users want to query certain stream from container, they need to add a new q
 to the URL, i.e. `/api/v1/namespaces/default/pods/foo/log?stream=stderr&container=nginx`.
 Then the kube-apiserver is able to know the desired `stream` and passes it to the kubelet.
 
-To tell kubelet which stream to return, we need to update the `LogLocation` function to make it be aware of
+To tell kubelet which stream to return, we need to update the [`LogLocation`](https://github.com/kubernetes/kubernetes/blob/ba502ee555924a49c1455b0d3fa96ec1e787715d/pkg/registry/core/pod/strategy.go#L398) function to make it be aware of
 the new parameter:
 
 ```go
@@ -243,14 +256,18 @@ func LogLocation(
 	opts *api.PodLogOptions,
 ) (*url.URL, http.RoundTripper, error) {
 	...
-    params := url.Values{}
-    // validate stream
-    switch opts.Stream {
-        case "stdout", "stderr", "":
-        default:
-            return nil, nil, errors.NewBadRequest(fmt.Sprintf("invalid container log stream %s", opts.Stream))
-    }		
-    params.Add("stream", opts.Stream)
+	params := url.Values{}
+	// validate stream
+	switch opts.Stream {
+	case LogStreamTypeStdout, LogStreamTypeStderr, LogStreamTypeAll, "":
+	default:
+		return nil, nil, errors.NewBadRequest(fmt.Sprintf("invalid container log stream %s", opts.Stream))
+	}
+	// keep backwards compatibility
+	if opts.Stream == "" {
+		opts.Stream = LogStreamTypeAll
+	}
+	params.Add("stream", string(opts.Stream))
 	...
 }
 ```
@@ -265,45 +282,46 @@ Add a new field `Stream` to `k8s.io/api/core/v1.PodLogOptions`:
 type LogStreamType string
 
 const (
-    // LogStreamTypeStdout is the stream type for stdout.
-    LogStreamTypeStdout LogStreamType = "stdout"
-    // LogStreamTypeStderr is the stream type for stderr.
+	// LogStreamTypeStdout is the stream type for stdout.
+	LogStreamTypeStdout LogStreamType = "stdout"
+	// LogStreamTypeStderr is the stream type for stderr.
 	LogStreamTypeStderr LogStreamType = "stderr"
-    // LogStreamTypeAll represents the combined stdout and stderr.
-	LogStreamTypeAll    LogStreamType = ""
+	// LogStreamTypeAll represents the combined stdout and stderr.
+	LogStreamTypeAll    LogStreamType = "all"
 )
 // PodLogOptions is the query options for a Pod's logs REST call.
 type PodLogOptions struct {
-...
-    // If set, return the given log stream of the container.
-    // Otherwise, the combined stdout and stderr from the container is returned.
-    // +optional
-    Stream LogStreamType
+	...
+	// If set, return the given log stream of the container.
+	// Otherwise, the combined stdout and stderr from the container is returned.
+	// +optional
+	Stream LogStreamType
 }
+
 ```
 
-In the `getContainerLogs` method of `k8s.io/kubernetes/pkg/kubelet/server.Server`, we examine the `Stream` field
+In the [`getContainerLogs`](https://github.com/kubernetes/kubernetes/blob/ba502ee555924a49c1455b0d3fa96ec1e787715d/pkg/kubelet/server/server.go#L610) method of `k8s.io/kubernetes/pkg/kubelet/server.Server`, we examine the `Stream` field
 of `PodLogOptions` to decide which stream to return:
 
 ```go
 // getContainerLogs handles containerLogs request against the Kubelet
 func (s *Server) getContainerLogs(request *restful.Request, response *restful.Response) {
-...
-    fw := flushwriter.Wrap(response.ResponseWriter)
-    var stdout, stderr io.Writer
+	...
+	fw := flushwriter.Wrap(response.ResponseWriter)
+	var stdout, stderr io.Writer
 	switch logOptions.Stream {
-        case corev1.LogStreamTypeStdout:
-			stdout, stderr = fw, io.Discard
-        case corev1.LogStreamTypeStderr:
-			stdout, stderr = io.Discard, fw
-        case corev1.LogStreamTypeAll:
-			stdout, stderr = fw, fw
-    }
-    response.Header().Set("Transfer-Encoding", "chunked")
-    if err := s.host.GetKubeletContainerLogs(ctx, kubecontainer.GetPodFullName(pod), containerName, logOptions, stdout, stderr); err != nil {
-        response.WriteError(http.StatusBadRequest, err)
-        return
-    }	
+	case corev1.LogStreamTypeStdout:
+		stdout, stderr = fw, io.Discard
+	case corev1.LogStreamTypeStderr:
+		stdout, stderr = io.Discard, fw
+	case corev1.LogStreamTypeAll:
+		stdout, stderr = fw, fw
+	}
+	response.Header().Set("Transfer-Encoding", "chunked")
+	if err := s.host.GetKubeletContainerLogs(ctx, kubecontainer.GetPodFullName(pod), containerName, logOptions, stdout, stderr); err != nil {
+		response.WriteError(http.StatusBadRequest, err)
+		return
+	}
 }
 ```
 
@@ -546,7 +564,7 @@ well as the [existing list] of feature gates.
 ###### Does enabling the feature change any default behavior?
 
 No. If the query parameter `stream` in the url of fetching logs from kube-apiserver is empty or not set,
-combined stdout and stderr is returned.
+combined stdout and stderr is returned, which is the default behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -646,40 +664,15 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+N/A
 
 ### Dependencies
 
@@ -735,14 +728,6 @@ No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
 No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
@@ -807,6 +792,16 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+Instead of filtering log stream on the server side, we could return a stream of CRI-format logs, 
+something like the following:
+```
+2016-10-06T00:17:09.669794202Z stdout P log content 1
+2016-10-06T00:17:09.669794203Z stderr F log content 2
+```
+so that we could demultiplex the log stream on the client side.
+
+The main drawback of this approach is that we change the format of the log stream and break backward compatibility,
+there is extra overhead to demultiplex the stream on the client side.
 
 ## Infrastructure Needed (Optional)
 
