@@ -1,0 +1,20 @@
+name: 3331-structured-config-for-oidc-authentication
+title: Structured config for OIDC authentication
+kep-number: "3331"
+authors: ['@nabokihms']
+owning-sig: sig-auth
+participating-sigs: [sig-auth]
+reviewers: ['@enj', '@TBD']
+approvers: ['@TBD']
+prr-approvers: []
+creation-date: "2022-06-02"
+status: provisional
+stage: alpha
+latest-milestone: ""
+milestone:
+    alpha: "v1.25"
+    beta: "v1.26"
+    stable: "v1.28"
+feature-gates: []
+disable-supported: false
+metrics: []
