@@ -276,11 +276,17 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We extend the CRI protocol and Pod spec to contain information about the
-class-based resource assignment of containers.
+We extend the CRI protocol to contain information about the class-based
+resource assignment of containers.  Currently we identify two types of
+resources (RDT and blockio) but the API changes will be generic so that it that
+will serve other similar resources in the future.
 
-Currently we identify two types of resources (RDT and blockio) but this will be
-a generic mechanism that will serve other similar resources in the future.
+We implement pod annotations the initial mechanism for Kubernetes users to
+control class resource assignment. We define two class resources that can be
+controlled via annotations, i.e. RDT and blockio.
+
+We introduce a feature gate that enables kubelet to interpret pod annotations
+for controlling the RDT and blockio class of containers.
 
 ### User Stories (Optional)
 
@@ -322,8 +328,10 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 This is only the first step in getting class-based resources supported in
-Kubernetes. Important pieces like resource status, resource disovery and
-permission control are [non-goals](#non-goals) not solved here. These aspects
+Kubernetes. Important pieces like resource assignment via pod spec, resource
+status, resource disovery and permission control are [non-goals](#non-goals)
+not solved here.
+These aspects
 are briefly discussed in [future work](#future-work). The risk in this sort of
 piecemeal approach is finding devil in the details, resulting in inconsistent
 and/or crippled and/or cumbersome end result. However, there is a lot of
@@ -434,55 +442,28 @@ runtime implementations:
 +)
 ```
 
-### Pod Spec
+### Pod annotations
 
-Introduce a new field (e.g. class) into ResourceRequirements of Container.
+Use Pod annotation as the initial K8s user interface, similar to e.g. how
+seccomp support was added. This will bridge the gap between enabling
+class-based resources in the CRI protocol and making them available in the Pod
+spec.
 
-```diff
-// ResourceRequirements describes the compute resource requirements.
-type ResourceRequirements struct {
-     // Limits describes the maximum amount of compute resources allowed.
-     Limits ResourceList `json:"limits,omitempty"
-     // Requests describes the minimum amount of compute resources required.
-     Requests ResourceList `json:"requests,omitempty"
-+    // Classes specifies the resource classes that the container should be assigned
-+    Classes map[ClassResourceName]string
-}
+A feature gate ClassResourcePodAnnotations enables kubelet to look for pod
+annotations and set the class resource assignment via CRI protocol accordingly.
 
-+// ClassResourceName is the name of a class-based resource.
-+type ClassResourceName string
-```
+Specifically, kubelet will support annotations for specifying RDT and blockio
+class, the two types of class resources that already have basic support in the
+container runtimes.
 
-Also, we add a `Resources` field to the `PodSpec`. We will re-use the existing
-`ResourceRequirements` type but Limits and Requests must be left empty. Classes
-may be set and they represent the Pod-level assignment of class resources,
-comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
-
-```diff
- type PodSpec struct {
-@@ -224,4 +224,8 @@ type PodSpec struct {
-     // Default to false.
-     // +optional
-     SetHostnameAsFQDN *bool `json:"setHostnameAsFQDN,omitempty" protobuf:"varint,35,opt,name=setHostnameAsFQDN"`
-+    // Pod-level resources. Currently, requests and limits are not allowed
-+    // to be specified for pods.
-+    // +optional
-+    Resources ResourceRequirements
- }
-```
-
-In practice, the class resource information will be directly used in the CRI
-ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
-resource discovery or access control kubelet does not do any validity checking
-of the values. Invalid class assignments will cause an error in the container
-runtime.
-
-Input validation of classes very similar to labels is implemented: keys
-(`ClassResourceName`) and values must be non-empty, less than 64 characters
-long, must start and end with an alphanumeric character and may contain only
-alphanumeric characters, dashes, underscores or dots (`-`, `_` or `.`).
-Similar to labels, a namespace prefix (FQDN subdomain separated with a slash)
-in the key is allowed, similar to labels, e.g. `vendor/resource`.
+- `rdt.resources.beta.kubernetes.io/pod` for setting a Pod-level default RDT
+  class for all containers
+- `rdt.resources.beta.kubernetes.io/container.<container-name>` for
+  container-specific RDT class settings
+- `blockio.resources.beta.kubernetes.io/pod` for setting a Pod-level default
+  blockio class for all containers
+- `blockio.resources.beta.kubernetes.io/container.<container-name>` for
+  container-specific blockio class settings
 
 ### Container runtimes
 
@@ -643,6 +624,59 @@ These topics were stated in [Non-goals](#non-goals) and thus they are strictly
 out of the scope of this KEP. However, the sections below briefly outline some
 possible solutions for those, in order to better evaluate this KEP in a broader
 context.
+
+### Pod Spec
+
+Replace pod annotations with proper user interface via the Pod spec. Below, one
+possible option is presented.
+
+Introduce a new field (e.g. class) into ResourceRequirements of Container.
+
+```diff
+// ResourceRequirements describes the compute resource requirements.
+type ResourceRequirements struct {
+     // Limits describes the maximum amount of compute resources allowed.
+     Limits ResourceList `json:"limits,omitempty"
+     // Requests describes the minimum amount of compute resources required.
+     Requests ResourceList `json:"requests,omitempty"
++    // Classes specifies the resource classes that the container should be assigned
++    Classes map[ClassResourceName]string
+}
+
++// ClassResourceName is the name of a class-based resource.
++type ClassResourceName string
+```
+
+Also, we add a `Resources` field to the `PodSpec`. We will re-use the existing
+`ResourceRequirements` type but Limits and Requests must be left empty. Classes
+may be set and they represent the Pod-level assignment of class resources,
+comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
+
+```diff
+ type PodSpec struct {
+@@ -224,4 +224,8 @@ type PodSpec struct {
+     // Default to false.
+     // +optional
+     SetHostnameAsFQDN *bool `json:"setHostnameAsFQDN,omitempty" protobuf:"varint,35,opt,name=setHostnameAsFQDN"`
++    // Pod-level resources. Currently, requests and limits are not allowed
++    // to be specified for pods.
++    // +optional
++    Resources ResourceRequirements
+ }
+```
+
+In practice, the class resource information will be directly used in the CRI
+ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
+resource discovery or access control kubelet does not do any validity checking
+of the values. Invalid class assignments will cause an error in the container
+runtime.
+
+Input validation of classes very similar to labels is implemented: keys
+(`ClassResourceName`) and values must be non-empty, less than 64 characters
+long, must start and end with an alphanumeric character and may contain only
+alphanumeric characters, dashes, underscores or dots (`-`, `_` or `.`).
+Similar to labels, a namespace prefix (FQDN subdomain separated with a slash)
+in the key is allowed, similar to labels, e.g. `vendor/resource`.
 
 #### Resource status/capacity
 
@@ -1073,32 +1107,12 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Pod annotations instead of Pod spec changes
+### Pod spec
 
-Instead of updating CRI and Pod spec in lock-step, the API change could be
-split into two phases, similar to e.g. how seccomp support was added.  Adding
-support for Pod annotations would provide an initial user interface (behind a
-feature gate) for the feature and enable easier testing/verification.  These
-would bridge the gap between enabling class-based resources in the CRI protocol
-and making them available in the Pod spec.
-
-
-1. In the first phase only update the CRI API use Pod annotations
-as an intermediate solution for specifying class resources
-2. In the second phase deprecate Pod annotations and update the Pod spec
-
-A feature gate ResourceClassPodAnnotations would be added kubelet to look for
-pod annotations and set the RDT and blockio class of containers via CRI
-protocol accordingly:
-
-- `rdt.resources.beta.kubernetes.io/pod` for setting a Pod-level default RDT
-  class for all containers
-- `rdt.resources.beta.kubernetes.io/container.<container-name>` for
-  container-specific RDT class settings
-- `blockio.resources.beta.kubernetes.io/pod` for setting a Pod-level default
-  blockio class for all containers
-- `blockio.resources.beta.kubernetes.io/container.<container-name>` for
-  container-specific blockio class settings
+Instead of introducing Pod annotations as an intermediate solution for
+controlling the class resources, the Pod spec could be updated in lock-step
+with the CRI api. See the section [(Future work) Pod spec](#pod-spec) for more
+details.
 
 ### RDT-only
 
