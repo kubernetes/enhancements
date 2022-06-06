@@ -78,6 +78,20 @@ is created.
 
 ## Motivation
 
+When user needs to provision a storage they create a PVC to request a volume. 
+A control loop looks for any new PVCs and based on current state of the 
+cluster the volume will be provided using one of the following methods:
+
+* Static provisioning - PVC did not specify any storage class and there is
+  already an existing PV that can be bound to it. Alternatively users can set
+  `pvc.spec.storageClassName=""` to disable dynamic provisioning explicitly.
+* Dynamic provisioning - there is no existing PV that could be bound but PVC 
+  did specify a storage class or there is exactly one storage class in the 
+  cluster marked as default.
+
+Considering the "normal" operation described above there are additional
+cases that can be problematic:
+
 1. It’s hard to mark a different SC as the default one. Cluster admin can
    choose between two bad solutions:
 
@@ -86,7 +100,7 @@ is created.
        there are two default SCs in a cluster, the PVC admission plugin refuses to
        accept new PVCs with `pvc.spec.storageClassName = nil`. Hence, cluster users
        may get errors when creating PVCs at the wrong time. They must know it’s a
-       transient error and retry later.
+       transient error and manually retry later.
 
     2. Cluster has no default SC for a short time, i.e. admin marks the old
        default SC as non-default and then marks the new default SC as default.
@@ -133,13 +147,15 @@ to always require a default SC. It would never bind to a PV with
 is created. When a default SC is created, the PVC `pvc.spec.storageClassName`
 will be updated with the new default SC name in the PV controller.
 
+Any PVs with `pv.spec.storageClassName=""` will be able to bind only to a PVC
+with `pvc.spec.storageClassName=""`.
+
 This behavior should be simpler from the user perspective.
 
 We plan to re-use the existing `storageclass.kubernetes.io/is-default-class`
 SC annotation.
 
 ### User Stories (Optional)
-
 
 #### Story 1
 
@@ -166,6 +182,18 @@ a default SC and an application that wants to use it (such as image registry).
    `pvc.spec.storageClassName=nil` to the new default SC.
 4. PV controller uses the new default SC when binding / provisioning the PVC.
 
+
+#### Story 3 (current behavior)
+
+User wants to provision a volume and there is one default storage class set by
+admin.
+
+1. Admin creates a default storage class.
+2. Another user creates PVC requesting a default SC, by leaving
+   `pvc.spec.storageClassName=nil`. Since the default SC already exists
+   the admission plugin changes the `nil` to a name of the default storage 
+   class.
+
 ### Notes/Constraints/Caveats (Optional)
 
 #### Behavior change
@@ -179,7 +207,8 @@ With the new behavior, the PV controller will wait until a default SC exists.
 This may break an existing cluster that depends on the behavior described above.
 We expect that the new behavior is better than the existing one. Users that
 want to bind their PVC to PVs with `pv.spec.storageClassName=""` can create
-PVCs explicitly requesting `pvc.spec.storageClassName=""`.
+PVCs explicitly requesting `pvc.spec.storageClassName=""` to provision those
+PVs statically.
 
 ### Risks and Mitigations
 
