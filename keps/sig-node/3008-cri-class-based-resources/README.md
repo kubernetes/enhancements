@@ -232,11 +232,11 @@ is able to configure blockio controller parameters on per-class basis and the
 classes are then made available for CRI clients.
 
 Currently, there is no mechanism in Kubernetes to use these types of resources
-in Kubernetes. CRI-O and containerd runtimes have support for RDT and blockio
-classes and they provide an bridge-gap user interface through special pod
-annotations. We would like to eventually get these types of resources first
-class citizen and properly supported in Kubernetes, providing visibility, a
-well-defined user interface, and permission controls.
+. CRI-O and containerd runtimes have support for RDT and blockio classes and
+they provide an bridge-gap user interface through special pod annotations. We
+would like to eventually get these types of resources first class citizen and
+properly supported in Kubernetes, providing visibility, a well-defined user
+interface, and permission controls.
 
 ### Goals
 
@@ -370,7 +370,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-Configuration and management of the resource classes is fully handled by the
+Configuration and management of the class resources is fully handled by the
 underlying container runtime and is invisible to kubelet. An error to the CRI
 client is returned if the specified class is not available.
 
@@ -467,7 +467,7 @@ container runtimes.
 
 ### Container runtimes
 
-We have open PRs to implement class-based RDT and blockio support in CRI-O and
+We have implemented class-based RDT and blockio support in CRI-O and
 containerd:
 
 - cri-o:
@@ -475,11 +475,11 @@ containerd:
   - [~~Support for cgroups blockio~~](https://github.com/cri-o/cri-o/pull/4873)
 - containerd:
   - [~~Support Intel RDT~~](https://github.com/containerd/containerd/pull/5439)
-  - [Support for cgroups blockio](https://github.com/containerd/containerd/pull/5490)
+  - [~~Support for cgroups blockio~~](https://github.com/containerd/containerd/pull/5490)
 
 The design paradigm here is that the container runtime configures the resource
 classes according to a given configuration file. Enforcement on containers is
-done via OCI.
+done via OCI. User interface is provided through pod and container annotations.
 
 ### Open Questions
 
@@ -639,7 +639,7 @@ type ResourceRequirements struct {
      Limits ResourceList `json:"limits,omitempty"
      // Requests describes the minimum amount of compute resources required.
      Requests ResourceList `json:"requests,omitempty"
-+    // Classes specifies the resource classes that the container should be assigned
++    // Classes specifies the class resources that the container should be assigned
 +    Classes map[ClassResourceName]string
 }
 
