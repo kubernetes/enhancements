@@ -16,6 +16,9 @@
   - [Alpha -&gt; Beta](#alpha---beta)
   - [Beta -&gt; GA](#beta---ga)
 - [Test Plan](#test-plan)
+  - [Prerequisite testing updates](#prerequisite-testing-updates)
+  - [Unit tests](#unit-tests)
+  - [Integration/e2e tests](#integratione2e-tests)
   - [Per-driver migration testing](#per-driver-migration-testing)
   - [Upgrade/Downgrade/Skew Testing](#upgradedowngradeskew-testing)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -113,6 +116,63 @@ The detailed design was originally implemented as a [design proposal](https://gi
 * All volume operation paths covered by Migration Shim in Beta for >= 1 quarter without significant issues
 
 ## Test Plan
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+### Prerequisite testing updates
+
+To enable CSI Migration, the stability of CSI driver need to be ensured as a pre-requisite.
+Kubernetes sig-storage team created the CSI driver [e2e test suite](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage) framework to
+allow each storage provider to run their driver against these tests to ensure functionality of the driver.
+
+In addition, each storage provider should also have their own testing to ensure feature parity between 
+the in-tree plugin and the corresponding CSI driver. This is done on a per-driver basis.
+
+### Unit tests
+
+- `k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/`:
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/translate_test.go
+- `k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins`:
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/aws_ebs_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/azure_disk_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/azure_file_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/gce_pd_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/in_tree_volume_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/openstack_cinder_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/portworx_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/rbd_test.go
+  - 2022/06/06 - k8s.io/kubernetes/staging/src/k8s.io/csi-translation-lib/plugins/vsphere_volume_test.go
+- `k8s.io/kubernetes/pkg/volume/csimigration/`
+  - 2022/06/06 - k8s.io/kubernetes/pkg/volume/csimigration/plugin_manager_test.go
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodevolumelimits/csi.go`
+  - 2022/06/06 - k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodevolumelimits/csi_test.go
+- `k8s.io/kubernetes/pkg/volume/csi`
+  - 2022/06/06 - k8s.io/kubernetes/pkg/volume/csi/csi_attacher_test.go
+  - 2022/06/06 - k8s.io/kubernetes/pkg/volume/csi/csi_mounter_test.go
+  - 2022/06/06 - k8s.io/kubernetes/pkg/volume/csi/csi_plugin_test.go
+- `pkg/controller/volume/persistentvolume/`
+  - 2022/06/06 - pkg/controller/volume/persistentvolume/framework_test.go
+  - 2022/06/06 - pkg/controller/volume/persistentvolume/provision_test.go
+  - 2022/06/06 - pkg/controller/volume/persistentvolume/pv_controller_test.go
+- `k8s.io/kubernetes/pkg/volume/csi/nodeinfomanager/`
+  - 2022/06/06 - k8s.io/kubernetes/pkg/volume/csi/nodeinfomanager/nodeinfomanager_test.go
+- `k8s.io/kubernetes/pkg/controller/volume/attachdetach/`
+  - 2022/06/06 - k8s.io/kubernetes/pkg/controller/volume/attachdetach/attach_detach_controller_test.go
+- `sigs.k8s.io/sig-storage-lib-external-provisioner/v8/controller`
+  - 2022/06/06 - sigs.k8s.io/sig-storage-lib-external-provisioner/v8/controller/controller_test.go
+- `github.com/kubernetes-csi/external-provisioner/pkg/controller/`
+  - 2022/06/06 - github.com/kubernetes-csi/external-provisioner/pkg/controller/controller_test.go
+
+### Integration/e2e tests
+
+- GCE-PD CSI Driver: [testgrid link](https://testgrid.k8s.io/provider-gcp-compute-persistent-disk-csi-driver#Migration%20Kubernetes%20Master%20Driver%20Latest)
+- AWS EBS CSI Driver: [testgrid link](https://testgrid.k8s.io/provider-aws-ebs-csi-driver#ci-migration-test)
+- AzureDisk CSI Driver: [testgrid link](https://testgrid.k8s.io/provider-azure-azuredisk-csi-driver#pr-azuredisk-csi-driver-e2e-migration)
+- AzureDisk CSI Driver on Windows: [testgrid link](https://testgrid.k8s.io/provider-azure-azuredisk-csi-driver#pr-azuredisk-csi-driver-e2e-migration-windows)
+- AzureFile CSI Driver: [testgrid link](https://testgrid.k8s.io/provider-azure-azurefile-csi-driver#pr-azurefile-csi-driver-e2e-migration)
+- AzureFile CSI Driver on Windows: [testgrid link](https://testgrid.k8s.io/provider-azure-azurefile-csi-driver#pr-azurefile-csi-driver-e2e-migration-windows)
 
 ### Per-driver migration testing
 
