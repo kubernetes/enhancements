@@ -191,10 +191,10 @@ configured. Here are some examples:
 The `/var/log/` endpoint is enabled using the `enableSystemLogHandler` kubelet
 configuration options. To gain access to this new feature this option needs to
 be enabled. In addition when introducing this feature it will be hidden behind a
-`NodeLogs` feature gate in the kubelet that needs to be explicitly enabled. So
+`NodeLogViewer` feature gate in the kubelet that needs to be explicitly enabled. So
 you need to enable both options to get access to this new feature and disabling
 `enableSystemLogHandler` will disable the new feature irrespective of the
-`NodeLogs` feature gate.
+`NodeLogViewer` feature gate.
 
 A reference implementation of this feature without the feature gate is
 available [here](https://github.com/kubernetes/kubernetes/pull/96120).
@@ -260,12 +260,12 @@ have been added. A reference implementation of the tests can be seen
 
 ### Graduation Criteria
 
-The plan is to introduce the feature as alpha in the v1.22 time frame behind the
+The plan is to introduce the feature as alpha in the v1.25 time frame behind the
 `NodeLogs` feature gate.
 
 #### Alpha -> Beta Graduation
 
-The plan is to graduate the feature to beta in the v1.23 time frame. At that
+The plan is to graduate the feature to beta in the v1.26 time frame. At that
 point we would have collected feedback from cluster administrators and
 developers who have enabled the feature. Based on this feedback and issues
 opened we should consider adding a kubelet side throttle for the viewing the
@@ -275,7 +275,7 @@ between file vs journal / WinEvent logs.
 
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.24 time frame at which point
+The plan is to graduate the feature to GA in the v1.27 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 
@@ -293,13 +293,13 @@ viewer, the result should be "feature not supported".
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate
-    - Feature gate name: NodeLogs
+    - Feature gate name: NodeLogViewer
     - Components depending on the feature gate: kubelet
 
 * **Does enabling the feature change any default behavior?** No
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes. It can be disabled by disabling the `NodeLogs` feature
+  the enablement)?** Yes. It can be disabled by disabling the `NodeLogViewer` feature
   gate in the kubelet.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
