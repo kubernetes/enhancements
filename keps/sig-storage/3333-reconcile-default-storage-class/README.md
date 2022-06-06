@@ -10,6 +10,7 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3 (current behavior)](#story-3-current-behavior)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Behavior change](#behavior-change)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -334,7 +335,7 @@ No change in cluster upgrade / downgrade process.
 This feature is implemented only in the API server and KCM and controlled by
 `RetroactiveDefaultStorageClass` feature gate. Following cases may happen:
 
-| API server | KCM | behavior                                                                                                                         |
+| API server | KCM | Behavior                                                                                                                         |
 |------------|-----|----------------------------------------------------------------------------------------------------------------------------------|
 | off | off | Existing Kubernetes behavior.                                                                                                    |
 | on | off| Existing Kubernetes behavior, only users can change `pvc.spec.storageClassName=nil` to a SC name.                                |
@@ -348,48 +349,14 @@ support.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
+- [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: RetroactiveDefaultStorageClass
+    - Components depending on the feature gate: kube-apiserver, 
+      kube-controller-manager
 - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
@@ -399,42 +366,26 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+Yes. See "Behavior change" section above for details.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes. It has to be disabled in a reverse order of enabling the feature - 
+first disable the feature in KCM then in API server. See "Version Skew 
+Strategy" section above for more details.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+No issues are expected. The case is exactly the same as when the feature is 
+enabled for the first time.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Unit tests will cover feature enablement/disablement.
 
 ### Rollout, Upgrade and Rollback Planning
+
+Will be provided when graduating to beta.
 
 <!--
 This section must be completed when targeting beta to a release.
@@ -583,67 +534,37 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Yes.
+
+- API call type: PATCH PVC
+- estimated throughput: low, only once for PVCs that have
+  `pvc.spec.storageClassName=nil`
+- originating component(s): kube-controller-manager
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+For WIP SLI "Startup latency of schedulable stateful pods" there can be one 
+extra API call in case there is no default SC while creating a PVC.
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+With current behavior the PVC state would be stuck in `Pending` state so the 
+pod would not be scheduled at all.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+PV controller already has all the informers it will need for this change to 
+be implemented.
 
 ### Troubleshooting
 
@@ -689,12 +610,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+- 1.25: initial version
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+See "Behavior change" section above.
 
 ## Alternatives
 
@@ -733,8 +653,4 @@ regardless when the SC or PVC is created, is more robust user experience.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+Not needed.

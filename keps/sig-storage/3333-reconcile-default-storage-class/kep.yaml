@@ -8,6 +8,7 @@ status: provisional
 creation-date: 2022-06-03
 reviewers:
   - "@jsafrane"
+  - "@xing-yang"
 approvers:
   - TBD
 
@@ -41,6 +42,7 @@ feature-gates:
   - name: RetroactiveDefaultStorageClass
     components:
       - kube-controller-manager
+      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
