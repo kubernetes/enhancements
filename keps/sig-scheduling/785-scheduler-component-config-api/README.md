@@ -47,7 +47,9 @@
 
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
 for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced
-`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively.
+`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively. We'd like to graduate it
+to GA in 1.25 and mark `v1beta2` as deprecated to avoid breaking existing users,
+we'll remove the support of `v1beta2` in 1.26.
 
 ## Motivation
 
@@ -108,6 +110,10 @@ The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the followi
 The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
 about user preferences, so should have more influence while making scheduling decisions.
 More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).
+
+The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
+  - Mark `v1beta2` as deprecated
+
 ### Risks and Mitigations
 
 The major risk is around the removal of the `unreserve` extension point.
@@ -219,6 +225,9 @@ N/A
   - No changes to plugins enabled by default. Only their weights would change.
   - Remove `v1beta1`.
 
+  When `v1` gets introduced:
+  - Mark `v1beta2` as deprecated.
+
 ### Monitoring requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
@@ -302,3 +311,4 @@ N/A
 - 2021-07-08: Introducing `v1beta2`.
 - 2021-08-06: Introducing `v1beta3`.
 - 2021-09-01: Remove `v1beta1` and the legacy policy config API.
+- 2022-05-18: Introducing `v1` and mark `v1beta2` as deprecated.
