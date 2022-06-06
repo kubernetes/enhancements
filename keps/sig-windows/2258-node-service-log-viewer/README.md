@@ -19,6 +19,10 @@
     - [kubelet](#kubelet)
     - [kubectl](#kubectl)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -261,9 +265,40 @@ does not log to `/var/log`, the same functionality not available message will be
 returned.
 
 ### Test Plan
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
 Add unit tests to kubelet and kubectl that exercise the new arguments that
 have been added. A reference implementation of the tests can be seen
-[here](https://github.com/kubernetes/kubernetes/pull/96120/commits/c606a38ec38ccfe486033495a1dc433279ce71f8#diff-1d703a87c6d6156adf2d0785ec0174bb365855d4883f5758c05fda1fee8f7f1bR1)
+[here](https://github.com/kubernetes/kubernetes/pull/96120/commits/253dbad91a3896680da74da32595f02120f56cfa#diff-1d703a87c6d6156adf2d0785ec0174bb365855d4883f5758c05fda1fee8f7f1b)
+
+Given that a new kubelet package is introduced as part of this feature there is
+no existing test coverage to link to.
+
+##### Integration tests
+
+Given that we need the kubelet running locally to test this feature, integration
+tests will not be possible for this feature.
+
+##### e2e tests
+
+We will add a test that query the kubelet service logs on Windows and Linux nodes.
+On Windows node, the same kubelet service logs will queried by explicitly
+specifying the log file. In Linux the explicit log file query will be tested by
+querying a random file in present in /var/log.
+
+On the Linux side tests will be added to [kubelet node](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/node/kubelet.go)
+e2e tests. For Windows a new set of tests will be added to the existing
+[e2e tests](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows).
+
+- node: https://storage.googleapis.com/k8s-triage/index.html?sig=node
+- windows: https://storage.googleapis.com/k8s-triage/index.html?sig=windows
 
 ### Graduation Criteria
 
