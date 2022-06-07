@@ -95,6 +95,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Container Lifecycle](#container-lifecycle)
     - [Container users](#container-users)
     - [Container Mounts](#container-mounts)
+      - [Compatibility](#compatibility)
     - [Container Images](#container-images)
     - [Container Image Build/Definition](#container-image-builddefinition)
   - [CRI Implementation Details](#cri-implementation-details)
