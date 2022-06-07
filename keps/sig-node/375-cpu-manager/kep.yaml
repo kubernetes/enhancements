@@ -12,7 +12,7 @@ reviewers:
 approvers:
   - "@dawnchen"
   - "@derekwaynecarr"
-editor: Connor Doyle
+editor: Connor Doyle, Francesco Romani (only for the GA graduation)
 creation-date: 2017-05-23
 last-updated: 2017-05-23
 status: implementable
@@ -21,5 +21,28 @@ replaces:
   - " kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
 superseded-by:
 
-latest-milestone: "0.0"
-stage: "alpha"
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.10"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.8"
+  beta: "v1.10"
+  stable: "v1.26"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CPUManager
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - N/A
