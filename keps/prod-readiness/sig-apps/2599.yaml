@@ -2,4 +2,6 @@ kep-number: 2599
 alpha:
   approver: "@ehashman"
 beta:
-  approver: "@ehashman"  
+  approver: "@ehashman"
+stable:
+  approver: "@wojtek-t"
