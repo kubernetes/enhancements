@@ -508,27 +508,64 @@ When a new `hostProcess` container is created with the name of a local users Gro
 
 #### Container Mounts
 
-- Window's bind-filter driver will be used to create a view that merges the host's OS filesystem with container-local volumes.
-When `hostProcess` containers are started a new volume will be created which contains the contents of the contaner image.
-This volume will be mounted to `c:\hpc`. The default working directory for `hostProcess` containers will also be set to `c:\hpc`.
-- Volume mounts (includinge service account tokens) will be supported for `hostProcess` containers and can be accessed just the same way as regular Windows Server containers.
-  - Named Pipe mounts will **not** be supported.
+There will be two different behaviors for how volume mounts are configured in `hostProcess` containers.
+
+- **Bind Mounts**
+  - With the approach Window's bind-filter driver will be used to create a view that merges the host's OS filesystem with container-local volumes.
+  - When `hostProcess` containers are started a new volume will be created which contains the contents of the contaner image.
+    This volume will be mounted to `c:\hpc`.
+  - Additional volume mounts specified for `hostProcess` containers will be mounted at their requested location and can be access the same way as volume mounts in Linx or regular Windows Server contaienrs.
+  - Volume mounts will only be visible to the containers they are mounted into.
+  - The default working directory for `hostProcess` containers will also be set to `c:\hpc`.
+
+- **Symlinks**
+  - With this approach container image contents and volume mounts will be mounted at predicable paths on the host's filesystem.
+  - When `hostProcess` contaienrs are started a new volume will be created which containers the contents of the contaienr image.
+    this volume will be mounted to `c:\C\{container-id}`.
+  - Additional volumes mounts specified for `hostProcess` containers will be mounted to `c:\C\{container-id}\{mount-destination}`
+    - ex: a volume with a mountPath of `/var/run/secrets/token` for a container with id `1234` can be accessed at `c:\C\1235\var\run\secrets\token`
+  - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the path where the container volume is mounted (`c:\c\{container-id}`) to access content.
+    - This environment variable can be used inside the Pod manifest / command line / args for containers.
+
+A recording of the behaviors differces from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309).
+Note -  In the recording it was mentioned that this functionally might not be supported on WS2019.
+    This functionality will be avaible in WS2019 but will require an OS patch (ETA: July 2022).
+
+Additionally the following will be true for either volume mount behavior:
+
+- Named Pipe mounts will **not** be supported.
     Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
     The following error will be returned if `hostProcess` containers attempt to use name pipe mounts -
     https://github.com/microsoft/hcsshim/blob/358f05d43d423310a265d006700ee81eb85725ed/internal/jobcontainers/mounts.go#L40.
-  - Unix domain sockets mounts also not not be supported for `hostProces` containers.
+- Unix domain sockets mounts also not not be supported for `hostProces` containers.
     Unix domain sockets can be accessed via their paths on the host like named pipes.
-  - Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers but this is not recommend.
-    Instead workloads should access the host OS's file-system as if it was not being run in a container.
+- Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers but this is not recommend.
+    Instead workloads should access the host OS's file-system as if not being run in a container.
   - All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
 - `HostProcess` Containers will have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container).
 - There will be no `chroot` equivalent.
 
-- Note: Behavior of volume mounts will differ between the alpha/beta (old) implementation of this feature and the stable (new) implementation.
-Designing/testing/validation of an acceptable solution for handling volume mounts w.r.t. `hostProcess` containers was a primary reason for keeping the featuer in `beta`. (Previous behavior volume mount behavior can be viewed [here](https://github.com/kubernetes/enhancements/blob/cc4052fa88508fcbb20b978b8c181d06acf734b1/keps/sig-windows/1981-windows-privileged-container-support/README.md#container-mounts))
-A recording of the behaviors differces from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309).
-  - Also note -  In the recording it was mentioned that this functionally might not be supported on WS2019. This functionality will be avaible in WS2019 but will require an OS patch (ETA: July 2022).
-- Containerd v1.7+ will be required for new volume mount behavior.
+##### Compatibility
+
+During the alpha/beta implementations of this feature only **Symlink** volume mount behavior was implmented.
+This implemention did unlock a lot of criticle use cases for managing Windows nodes in Kubernets clusters but did have some usability issues
+(such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig not working as expected).
+
+The **bind mount** volume mount behavior gives full access to the host OS's filesystem (an explicit goal of this enhancement) and addreses the usability issues with the initial approach.
+This approach requires the use of Windows OS APIs that were not present in Windows Server 2019 during alpha/beta implmentations of this feature.
+These APIs *will* be available in WS2019 beginning in July 2022 with the monthly OS security patches.
+Containerd v1.7+ will be required for this behavior.
+
+In order to maintain backwards compatility with container images that were built from around the **symlink** volume mount behavior an annotation can be used to specify which volume mounting behavior should be used.
+`microsoft.com/hostprocess-mount-behavior` annotaion can be set for a Pod with values of either `bind` or `symlink`
+
+- On containerd v1.6 **symlink** volume mount behavior will always be used.
+- On containerd v1.7
+  - If `microsoft.com/hostprocess-mount-behavior` is not set and required Windows OS APIs are present then **bind mount** behavior will be used.
+  - If `microsoft.com/hostprocess-mount-behavior` is not set and required Windows OS APIs are not present then **symlink** behavior will be used.
+  - If `microsoft.com/hostprocess-mount-behavior` is set to `bind` then **bind mount** behavior will be used.
+    - Pod sandbox creation will fail if required Windows OS APIs are not present.
+  - If `microsoft.com/hostprocess-mount-behavior` is set to `symlink` then **symlink** behavior will be used.
 
 #### Container Images
 
@@ -766,7 +803,7 @@ extending the production code to implement this enhancement.
 - `<k8s.io/kubernetes/pkg/kubelet/container>`: `<2022-05-27>` - `<52.1%>`
 - `<k8s.io/kubernetes/pkg/kubelet/kuberuntime>`: `<2022-05-27>` - `<66.7%>`
 - `<k8s.io/kubernetes/pkg/securitycontext>`: `<2022-05-27>` - `<66.8%>`
-- `<k8s.io/cri-api/pkg/apis/runtime/v1>`: `<2022-05-27>` - No unit test coverage - protobuf defination
+- `<k8s.io/cri-api/pkg/apis/runtime/v1>`: `<2022-05-27>` - No unit test coverage - protobuf definition
 - `<k8s.io/test/e2e/windows>`: `<2022-05-27>` - No unit test coverage - this package contains e2e test code
 
 #### Integration tests
