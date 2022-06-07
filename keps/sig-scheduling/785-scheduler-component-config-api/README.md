@@ -228,6 +228,12 @@ N/A
   When `v1` gets introduced:
   - Mark `v1beta2` as deprecated.
 
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
+
+  Yes, when `v1` gets introduced, we'll mark `v1beta2` as deprecated, and
+  remove the support of `v1beta2` in 1.26.
+
+
 ### Monitoring requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
@@ -251,6 +257,18 @@ N/A
   observability if this feature?**
 
   N/A.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the enhancement?**
+
+  N/A
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
+
+  N/A
+
+* **Are there any missing metrics that would be useful to have to improve observability of this feature?**
+
+  N/A
 
 ### Dependencies
 
