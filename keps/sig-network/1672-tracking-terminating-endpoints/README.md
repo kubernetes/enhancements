@@ -16,6 +16,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -32,13 +33,13 @@
 ## Release Signoff Checklist
 
 - [X] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] KEP approvers have approved the KEP status as `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] KEP approvers have approved the KEP status as `implementable`
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -164,6 +165,13 @@ E2E tests:
 * `EndpointSliceTerminatingCondition` is enabled by default.
 * Consensus on scalability implications resulting from additional EndpointSlice writes with approval from sig-scalability.
 
+#### GA
+
+* E2E tests validating that terminating pods are properly reflected in EndpointSlice API.
+* Ensure there are no performance/scalability regressions when enabling additional endpointslice writes for terminating endpoints.
+  * This will be validated by running the existing scalability test suites where pods handle SIGTERM from kubelet before terminating.
+* All necessary metrics are in place to provide adequate observability and monitoring for this feature.
+
 ### Upgrade / Downgrade Strategy
 
 Since this is an addition to the EndpointSlice API, the upgrade/downgrade strategy will follow that
@@ -200,6 +208,10 @@ EndpointSlice will continue to have the `terminating` and `serving` condition se
 
 Yes, there will be strategy API unit tests validating if the new API field is allowed based on the feature gate.
 
+These tests can be found here:
+- https://github.com/kubernetes/kubernetes/blob/master/test/integration/endpointslice/endpointsliceterminating_test.go#L44
+- https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/discovery/endpointslice/strategy_test.go#L42-L137
+
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout fail? Can it impact already running workloads?
@@ -209,7 +221,15 @@ It is assumed that almost all consumers of EndpointSlice check the `ready` condi
 
 ###### What specific metrics should inform a rollback?
 
-Application-level traffic indicating packet-loss or error rates.
+EndpointSlice controller supports the following metrics that would be relevant for this feature:
+- endpoint_slice_controller_endpoints_added_per_sync
+- endpoint_slice_controller_endpoints_removed_per_sync
+- endpoint_slice_controller_changes
+- endpoint_slice_controller_endpointslices_changed_per_sync
+- endpoint_slice_controller_syncs
+
+The following metrics can be used to see if the introduction of this change resulted in a significantly
+large number of traffic to the apiserver.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -228,21 +248,29 @@ on how the new conditions are being used.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-Metrics will be added for total endpoints with the `serving` and `terminating` condition set.
+The existing SLI can be used to determine the health of this feature:
+
+```
+Latency of programming in-cluster load balancing mechanism (e.g. iptables), measured from when service spec or list of its Ready pods change to when it is reflected in load balancing mechanism, measured as 99th percentile over last 5 minutes aggregated across all programmers
+```
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
-N/A
+It's hard to gauge an exact number here, because the existing SLI does not have a target SLO yet.
+However, we should assume that the addition of the `serving` and `terminating` conditions do not
+significantly impact the latency of kube-proxy syncing load balancer rules.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N/A
+Adapting the existing endpoint slice controller metrics to also include endpoint conditions
+as a label could be useful since a user can distinguish if the endpoint churn is happening due
+to the addition of terminating endpoints or for another reason.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-N/A
+None aside from the existing core Kubernetes components, specifically kube-apiserver and kube-controller-manager.
 
 ### Scalability
 
