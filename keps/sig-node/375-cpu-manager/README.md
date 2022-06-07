@@ -1,76 +1,93 @@
 # CPU Manager
 
-_Authors:_
-
-* @ConnorDoyle - Connor Doyle &lt;connor.p.doyle@intel.com&gt;
-* @flyingcougar - Szymon Scharmach &lt;szymon.scharmach@intel.com&gt;
-* @sjenning - Seth Jennings &lt;sjenning@redhat.com&gt;
-
-## Table of Contents
-
 <!-- toc -->
-- [Overview](#overview)
-  - [Related issues](#related-issues)
-- [Proposed changes](#proposed-changes)
-  - [CPU Manager component](#cpu-manager-component)
-    - [Discovering CPU topology](#discovering-cpu-topology)
-    - [CPU Manager interfaces (sketch)](#cpu-manager-interfaces-sketch)
-    - [Configuring the CPU Manager](#configuring-the-cpu-manager)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Discovering CPU topology](#discovering-cpu-topology)
+  - [CPU Manager interfaces (sketch)](#cpu-manager-interfaces-sketch)
+  - [Configuring the CPU Manager](#configuring-the-cpu-manager)
     - [Policy 1: &quot;none&quot; cpuset control [default]](#policy-1-none-cpuset-control-default)
     - [Policy 2: &quot;static&quot; cpuset control](#policy-2-static-cpuset-control)
       - [Implementation sketch](#implementation-sketch)
       - [Example pod specs and interpretation](#example-pod-specs-and-interpretation)
       - [Example scenarios and interactions](#example-scenarios-and-interactions)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [Proposed and not implemented items](#proposed-and-not-implemented-items)
     - [Policy 3: &quot;dynamic&quot; cpuset control](#policy-3-dynamic-cpuset-control)
       - [Implementation sketch](#implementation-sketch-1)
-      - [Example pod specs and interpretation](#example-pod-specs-and-interpretation-1)
-- [Operations and observability](#operations-and-observability)
-- [Practical challenges](#practical-challenges)
-- [Implementation roadmap](#implementation-roadmap)
-  - [Phase 1: None policy [TARGET: Kubernetes v1.8]](#phase-1-none-policy-target-kubernetes-v18)
-  - [Phase 2: Static policy [TARGET: Kubernetes v1.8]](#phase-2-static-policy-target-kubernetes-v18)
-  - [Phase 3: Beta support [TARGET: Kubernetes v1.9]](#phase-3-beta-support-target-kubernetes-v19)
-  - [Later phases [TARGET: After Kubernetes v1.9]](#later-phases-target-after-kubernetes-v19)
-- [Appendix A: cpuset pitfalls](#appendix-a-cpuset-pitfalls)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Appendixes](#appendixes)
+  - [related issues](#related-issues)
+  - [Operations and observability](#operations-and-observability)
+  - [Practical challenges](#practical-challenges)
+  - [Original implementation roadmap](#original-implementation-roadmap)
+    - [Phase 1: None policy [TARGET: Kubernetes v1.8]](#phase-1-none-policy-target-kubernetes-v18)
+    - [Phase 2: Static policy [TARGET: Kubernetes v1.8]](#phase-2-static-policy-target-kubernetes-v18)
+    - [Phase 3: Beta support [TARGET: Kubernetes v1.9]](#phase-3-beta-support-target-kubernetes-v19)
+    - [Later phases [TARGET: After Kubernetes v1.9]](#later-phases-target-after-kubernetes-v19)
+  - [cpuset pitfalls](#cpuset-pitfalls)
 <!-- /toc -->
 
+## Release Signoff Checklist
 
-## Overview
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-_Problems to solve:_
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-1. Poor or unpredictable performance observed compared to virtual machine
-   based orchestration systems. Application latency and lower CPU
-   throughput compared to VMs due to cpu quota being fulfilled across all
-   cores, rather than exclusive cores, which results in fewer context
-   switches and higher cache affinity.
-1. Unacceptable latency attributed to the OS process scheduler, especially
-   for “fast” virtual network functions (want to approach line rate on
-   modern server NICs.)
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
 
-_Solution requirements:_
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
-1. Provide an API-driven contract from the system to a user: "if you are a
-   Guaranteed pod with 1 or more cores of cpu, the system will try to make
-   sure that the pod gets its cpu quota primarily from reserved core(s),
-   resulting in fewer context switches and higher cache affinity".
-1. Support the case where in a given pod, one container is latency-critical
-   and another is not (e.g. auxiliary side-car containers responsible for
-   log forwarding, metrics collection and the like.)
-1. Do not cap CPU quota for guaranteed containers that are granted
-   exclusive cores, since that would be antithetical to (1) above.
-1. Take physical processor topology into account in the CPU affinity policy.
-
-### Related issues
-
-* Feature: [Further differentiate performance characteristics associated
-  with pod level QoS](https://github.com/kubernetes/features/issues/276)
-* Feature: [Add CPU Manager for pod cpuset
-  assignment](https://github.com/kubernetes/features/issues/375)
-
-## Proposed changes
-
-### CPU Manager component
+## Summary
 
 The *CPU Manager* is a new software component in Kubelet responsible for
 assigning pod containers to sets of CPUs on the local node. In later
@@ -87,6 +104,37 @@ This new method is invoked from two places in the CPU manager: during each
 call to `AddContainer` and also periodically from a separate
 reconciliation loop.
 
+
+## Motivation
+
+1. Poor or unpredictable performance observed compared to virtual machine
+   based orchestration systems. Application latency and lower CPU
+   throughput compared to VMs due to cpu quota being fulfilled across all
+   cores, rather than exclusive cores, which results in fewer context
+   switches and higher cache affinity.
+2. Unacceptable latency attributed to the OS process scheduler, especially
+   for “fast” virtual network functions (want to approach line rate on
+   modern server NICs.)
+
+### Goals
+
+1. Provide an API-driven contract from the system to a user: "if you are a
+   Guaranteed pod with 1 or more cores of cpu, the system will try to make
+   sure that the pod gets its cpu quota primarily from reserved core(s),
+   resulting in fewer context switches and higher cache affinity".
+2. Support the case where in a given pod, one container is latency-critical
+   and another is not (e.g. auxiliary side-car containers responsible for
+   log forwarding, metrics collection and the like.)
+3. Do not cap CPU quota for guaranteed containers that are granted
+   exclusive cores, since that would be antithetical to (1) above.
+4. Take physical processor topology into account in the CPU affinity policy.
+
+### Non-Goals
+
+TBD
+
+## Proposal
+
 ![cpu-manager-block-diagram](https://user-images.githubusercontent.com/379372/30137651-2352f4f0-9319-11e7-8be7-0aaeb6ce593a.png)
 
 _CPU Manager block diagram. `Policy`, `State`, and `Topology` types are
@@ -95,7 +143,25 @@ to build and test new policies. The shared state abstraction allows
 other Kubelet components to be agnostic of the CPU manager policy for
 observability and checkpointing extensions._
 
-#### Discovering CPU topology
+### User Stories (Optional)
+
+TBD
+
+#### Story 1
+
+#### Story 2
+
+### Notes/Constraints/Caveats (Optional)
+
+TBD
+
+### Risks and Mitigations
+
+TBD
+
+## Design Details
+
+### Discovering CPU topology
 
 The CPU Manager must understand basic topology. First of all, it must
 determine the number of logical CPUs (hardware threads) available for
@@ -125,7 +191,7 @@ Alternate options considered for discovering topology:
 1. Execute a mature external topology program like [`mpi-hwloc`][hwloc] --
    potentially adding support for the hwloc file format to the Kubelet.
 
-#### CPU Manager interfaces (sketch)
+### CPU Manager interfaces (sketch)
 
 ```go
 type State interface {
@@ -156,11 +222,12 @@ type CPUSet map[int]struct{} // set operations and parsing/formatting helpers
 type CPUTopology // convenient type for querying and filtering CPUs
 ```
 
-#### Configuring the CPU Manager
+### Configuring the CPU Manager
 
-Kubernetes will ship with three CPU manager policies. Only one policy is
+Kubernetes will ship with CPU manager policies. Only one policy is
 active at a time on a given node, chosen by the operator via Kubelet
-configuration. The three policies are **none**, **static** and **dynamic**.
+configuration. The policies are **none** and **static**.
+
 
 The active CPU manager policy is set through a new Kubelet
 configuration value `--cpu-manager-policy`. The default value is `none`.
@@ -323,6 +390,212 @@ func (p *staticPolicy) RemoveContainer(s State, containerID string) error {
        `floor(capacity.cpu - allocatable.cpu)` and the shared pool initially
        contains all CPUs in the system.
 
+
+### Test Plan
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+TBD
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager`: `20220606` - `86%`
+
+##### Integration tests
+
+- <test>: <link to test coverage>
+
+##### e2e tests
+
+- <test>: <link to test coverage>
+
+### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+
+#### Deprecation
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+-->
+
+### Upgrade / Downgrade Strategy
+
+No impact. It's always possible to trivially downgrade to the previous kubelet
+
+### Version Skew Strategy
+
+Not relevant
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [ ] Other
+  - Describe the mechanism:
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+###### Does enabling the feature change any default behavior?
+
+TBD
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+TBD
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+###### Are there any tests for feature enablement/disablement?
+
+Yes, covered by e2e tests
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+TBD
+
+###### What specific metrics should inform a rollback?
+
+TBD
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+TBD
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+TBD
+
+### Monitoring Requirements
+
+TBD
+
+###### How can an operator determine if the feature is in use by workloads?
+
+TBD
+
+###### How can someone using this feature know that it is working for their instance?
+
+TBD
+
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+TBD
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+TBD
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+TBD
+
+### Dependencies
+
+None
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+No, the feature is entirely node-local
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No, the feature is entirely node-local
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No, the feature is entirely node-local
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No, the feature is entirely node-local
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No, the feature is entirely node-local
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+No
+
+###### What are other known failure modes?
+
+TBD
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+## Implementation History
+
+- **2020-12-30:** kep translated to the most recent template available at time
+- **2022-06-06:** kep translated to the most recent template available at time; proposed to GA; added PRR info.
+
+## Drawbacks
+
+N/A
+
+## Alternatives
+
+### Proposed and not implemented items
+
 #### Policy 3: "dynamic" cpuset control
 
 _TODO: Describe the policy._
@@ -335,6 +608,7 @@ necessary, we discussed providing a signal in the following way. We could
 project (a subset of) the CPU manager state into a volume visible to selected
 containers. User workloads could subscribe to update events in a normal Linux
 manner (e.g. inotify.)
+
 
 ##### Implementation sketch
 
@@ -352,14 +626,22 @@ func (p *dynamicPolicy) RemoveContainer(s State, containerID string) error {
 }
 ```
 
-##### Example pod specs and interpretation
+## Infrastructure Needed (Optional)
 
-| Pod                                        | Interpretation                 |
-| ------------------------------------------ | ------------------------------ |
-|                                            |                                |
-|                                            |                                |
+N/A
 
-## Operations and observability
+## Appendixes
+
+Record of information of the original KEP without a clear fit in the latest template
+
+### related issues
+
+* feature: [further differentiate performance characteristics associated
+  with pod level qos](https://github.com/kubernetes/features/issues/276)
+* feature: [add cpu manager for pod cpuset
+  assignment](https://github.com/kubernetes/features/issues/375)
+
+### Operations and observability
 
 * Checkpointing assignments
   * The CPU Manager must be able to pick up where it left off in case the
@@ -367,7 +649,7 @@ func (p *dynamicPolicy) RemoveContainer(s State, containerID string) error {
 * Read effective CPU assignments at runtime for alerting. This could be
   satisfied by the checkpointing requirement.
 
-## Practical challenges
+### Practical challenges
 
 1. Synchronizing CPU Manager state with the container runtime via the
    CRI. Runc/libcontainer allows container cgroup settings to be updated
@@ -381,9 +663,9 @@ func (p *dynamicPolicy) RemoveContainer(s State, containerID string) error {
     1. Mitigation: defer supporting this until a new policy tailored for
        use with `isolcpus` can be added.
 
-## Implementation roadmap
+### Original implementation roadmap
 
-### Phase 1: None policy [TARGET: Kubernetes v1.8]
+#### Phase 1: None policy [TARGET: Kubernetes v1.8]
 
 * Internal API exists to allocate CPUs to containers
   ([PR 46105](https://github.com/kubernetes/kubernetes/pull/46105))
@@ -392,7 +674,7 @@ func (p *dynamicPolicy) RemoveContainer(s State, containerID string) error {
 * All existing unit and e2e tests pass.
 * Initial unit tests pass.
 
-### Phase 2: Static policy [TARGET: Kubernetes v1.8]
+#### Phase 2: Static policy [TARGET: Kubernetes v1.8]
 
 * Kubelet can discover "basic" CPU topology (HT-to-physical-core map)
 * Static policy is implemented.
@@ -401,12 +683,12 @@ func (p *dynamicPolicy) RemoveContainer(s State, containerID string) error {
 * Performance metrics for one or more plausible synthetic workloads show
   benefit over none policy.
 
-### Phase 3: Beta support [TARGET: Kubernetes v1.9]
+#### Phase 3: Beta support [TARGET: Kubernetes v1.9]
 
 * Container CPU assignments are durable across Kubelet restarts.
 * Expanded user and operator docs and tutorials.
 
-### Later phases [TARGET: After Kubernetes v1.9]
+#### Later phases [TARGET: After Kubernetes v1.9]
 
 * Static policy also manages [cache allocation][cat] on supported platforms.
 * Dynamic policy is implemented.
@@ -418,7 +700,7 @@ func (p *dynamicPolicy) RemoveContainer(s State, containerID string) error {
 * Node-level coordination for NUMA-dependent resource allocations, for example
   devices, CPUs, memory-backed volumes including hugepages.
 
-## Appendix A: cpuset pitfalls
+### cpuset pitfalls
 
 1. [`cpuset.sched_relax_domain_level`][cpuset-files]. "controls the width of
    the range of CPUs over  which  the kernel scheduler performs immediate
