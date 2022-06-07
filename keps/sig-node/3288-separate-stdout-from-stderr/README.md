@@ -96,6 +96,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -325,9 +327,13 @@ func (s *Server) getContainerLogs(request *restful.Request, response *restful.Re
 }
 ```
 
+We also need to modify the [ReadLogs](https://github.com/kubernetes/kubernetes/blob/198dd7668a19c8749fe45d521d748ef3c653aa73/pkg/kubelet/kuberuntime/logs/logs.go#L281)
+function to make it be able to filter out the unwanted stream.
+
+
 ### Changes of kubectl
 
-Add a new flag `--stream`, whose value defaults to empty, to `kubectl logs`, hence users are able to specify the 
+Add a new flag `--stream`, whose value defaults to "all", to `kubectl logs`, hence users are able to specify the 
 log stream to return.
 
 ### Test Plan
@@ -381,7 +387,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/registry/core/pod/strategy.go`: `2022-06-07` - `59.5%`
+- `k8s.io/kubernetes/pkg/kubelet/server/server.go`: `2022-06-07` - `67.8%`
+- `k8s.io/kubernetes/pkg/kubelet/kuberuntime/logs/logs.go`: `2022-06-07` - `71%`
 
 ##### Integration tests
 
@@ -392,7 +400,11 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+Add unit tests to `pkg/kubelet/...` and `pkg/registry/core/pod/...` to make sure kubelet
+and kube-apiserver is behaving as expected.
+
+Specifically, when `TailLines` and `Stream` are specified in `PodLogOptions`, we need to ensure that
+the counting of TailLines happens properly and only logs from a specified stream were counted.
 
 ##### e2e tests
 
@@ -404,7 +416,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+Add test case and conformance test to `test/e2e/common/node/` and `test/e2e/kubectl/`
 
 ### Graduation Criteria
 
@@ -434,17 +446,19 @@ functionality is accessed.
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+-->
 
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Add unit and e2e tests for the feature.
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- Solicit feedback from the Alpha.
+- Ensure tests are stable and passing.
+
+<!--
 
 #### GA
 
