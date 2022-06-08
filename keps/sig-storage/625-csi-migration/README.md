@@ -540,9 +540,10 @@ Major milestones in the life cycle of a KEP should be tracked in `Implementation
 Major milestones for each in-tree plugin CSI migration:
 
 - 1.25
+  - Core CSI migration to GA
   - GCE PD CSI migration to GA
-- 1.24
   - AWS EBS CSI migration to GA
+- 1.24
   - Azuredisk CSI migration to GA
   - OpenStack Cinder CSI migration to GA
   - Azurefile CSI migration to Beta, on by default
