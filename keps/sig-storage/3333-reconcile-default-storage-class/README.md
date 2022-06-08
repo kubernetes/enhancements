@@ -151,7 +151,8 @@ will be updated with the new default SC name in the PV controller.
 Any PVs with `pv.spec.storageClassName=""` will be able to bind only to a PVC
 with `pvc.spec.storageClassName=""`.
 
-This behavior should be simpler from the user perspective.
+This behavior should be simpler from the user perspective, without the need to
+change PV admission plugin.
 
 We plan to re-use the existing `storageclass.kubernetes.io/is-default-class`
 SC annotation.
@@ -291,9 +292,10 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-There are no tests that would check how the default SC, because it would need to
-create/delete default SCs, which could affect other tests running in parallel
-that may expect that a default SC exists (typically StatefulSet e2e tests).
+There are no tests that would check how the default SC works, because it would
+need to create/delete default SCs, which could affect other tests running in
+parallel that may expect that a default SC exists (typically StatefulSet e2e
+tests).
 
 We plan to add a few `[Disruptive]` `[Serial]` tests with the new behavior as
 "smoke" tests of the new behavior, still, most of the tests will be integration
@@ -309,14 +311,15 @@ ones.
 #### Beta
 
 - Implement and enable e2e tests, visible in Testgrid and linked in KEP.
+- Scalability tests with existing framework ([perf-tests](https://github.com/kubernetes/perf-tests/tree/81c96c34e3c1f11c5fe91744ef7ce7bf44c2fe5c/clusterloader2/testing/experimental/storage/pod-startup/volume-types/persistentvolume)).
+- Allowing time for feedback (at least 2 releases between beta and GA).
+- No conformance tests, since we don't test StorageClasses there.
+- Manually test version skew between the API server and KCM. See the expected
+  behavior below in Version Skew Strategy.
 
 #### GA
 
 - No users complaining about the new behavior.
-- Scalability tests with existing framework (Kubemark?, TBD).
-- Allowing time for feedback (at least 2 releases between beta and GA).
-- No conformance tests, since we don't test StorageClasses there.
-- Manually test version skew between the API server and KCM. See the expected behavior below in Version Skew Strategy.
 
 #### Deprecation
 
@@ -555,8 +558,9 @@ No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-For WIP SLI "Startup latency of schedulable stateful pods" there can be one 
-extra API call in case there is no default SC while creating a PVC.
+For WIP SLI ["Startup latency of schedulable stateful pods"](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md#definition)
+there can be one extra API call in case there is no default SC while creating a
+PVC.
 
 With current behavior the PVC state would be stuck in `Pending` state so the 
 pod would not be scheduled at all.
