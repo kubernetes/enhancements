@@ -23,12 +23,12 @@ see-also:
 replaces:
 superseded-by:
 
-latest-milestone: "v1.24"
+latest-milestone: "v1.25"
 stage: "beta"
 
 milestone:
   alpha: "v1.23"
-  beta: "v1.24"
+  beta: "v1.25"
 
 
 feature-gates:

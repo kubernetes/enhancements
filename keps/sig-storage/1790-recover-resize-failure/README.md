@@ -228,7 +228,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 ## Graduation Criteria
 
 * *Alpha* in 1.23 behind `RecoverExpansionFailure` feature gate with set to a default of `false`.
-* *Beta* in 1.24: Since this feature is part of general `ExpandPersistentVolumes` feature which is in beta, we are going to move this to beta with enhanced e2e and more stability improvements.
+* *Beta* in 1.25: Since this feature is part of general `ExpandPersistentVolumes` feature which is in beta, we are going to move this to beta with enhanced e2e and more stability improvements.
 * *GA* in 1.26 along with `ExpandPersistentvolumes` feature. The list of issues for volume expansion going GA can be found at - https://github.com/orgs/kubernetes-csi/projects/12.
 
 ### Test Plan
