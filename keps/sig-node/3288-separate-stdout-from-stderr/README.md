@@ -131,20 +131,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -157,7 +157,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently, kubelet actually [has the potential](https://github.com/kubernetes/kubernetes/blob/69cabe778bccfc5f4fa9b6788c9def005e7d959d/pkg/kubelet/kuberuntime/logs/logs.go#L281) 
+Currently, kubelet actually [has the potential](https://github.com/kubernetes/kubernetes/blob/69cabe778bccfc5f4fa9b6788c9def005e7d959d/pkg/kubelet/kuberuntime/logs/logs.go#L281)
 to return certain log stream of a container, but this ability is not exposed to the user.
 This proposal enables users to view certain log stream of a container,
 and aims to extend kubelet and api-server with the ability to return certain
@@ -167,8 +167,8 @@ container log stream.
 
 Users could fetch logs of the container, but now kubelet always returns
 combined stdout and stderr logs, which is not convenient for users who only want to
-view certain log stream. 
-Meanwhile, [many users](https://github.com/kubernetes/kubernetes/issues/28167) have been interested in the ability to 
+view certain log stream.
+Meanwhile, [many users](https://github.com/kubernetes/kubernetes/issues/28167) have been interested in the ability to
 retrieve certain log stream of a container, so it is great to implement this long-wanted feature.
 
 ### Goals
@@ -235,7 +235,7 @@ type PodLogOptions struct {
 	...
 	// If set to "stdout" or "stderr", return the given log stream of the container.
 	// If set to "all" or not set, the combined stdout and stderr from the container is returned.
-	// Available values are: "stdout", "stderr", "all", "" (empty string). 
+	// Available values are: "stdout", "stderr", "all", "" (empty string).
 	// +optional
 	Stream LogStreamType
 }
@@ -333,7 +333,7 @@ function to make it be able to filter out the unwanted stream.
 
 ### Changes of kubectl
 
-Add a new flag `--stream`, whose value defaults to "all", to `kubectl logs`, hence users are able to specify the 
+Add a new flag `--stream`, whose value defaults to "all", to `kubectl logs`, hence users are able to specify the
 log stream to return.
 
 ### Test Plan
@@ -669,10 +669,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -792,6 +792,9 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+2022-05-01: KEP opened
+
+2022-06-08: KEP marked implementable
 
 ## Drawbacks
 
@@ -806,7 +809,7 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
-Instead of filtering log stream on the server side, we could return a stream of CRI-format logs, 
+Instead of filtering log stream on the server side, we could return a stream of CRI-format logs,
 something like the following:
 ```
 2016-10-06T00:17:09.669794202Z stdout P log content 1
