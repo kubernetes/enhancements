@@ -720,7 +720,7 @@ Some possible alternatives.
    be) aware of all resource types and the classes within. It could advertise
    the resources e.g. via either:
 
-   1. A separate gRPC endpoint or update `StatusResponse
+   1. A separate gRPC endpoint or update `StatusResponse`
    1. OR Populate a (json) file in a known location
 
    As a reference, the API currently allows listing of some objects/resources
