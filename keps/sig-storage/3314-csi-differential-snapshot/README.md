@@ -186,7 +186,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 Efficient and reliable backup of data is intrinsic to production-grade backup
 systems. Since majority of the data in a volume does not change in between
-backups, being able to idenfity and back up only what has changed can
+backups, being able to identify and back up only what has changed can
 drastically improve backup bottlenecks and streamline the user's data protection
 workflows.
 
