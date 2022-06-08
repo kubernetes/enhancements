@@ -1,20 +1,20 @@
 title: KEP Template
 kep-number: 3314
 authors:
-  - @phuongatemc
-  - @ihcsim
+  - "@phuongatemc"
+  - "@ihcsim"
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
 status: provisional
 creation-date: 2022-06-07
 reviewers:
-  - @xing-yang
-  - @bswartz
+  - "@xing-yang"
+  - "@bswartz"
 approvers:
-  - @xing-yang
-  - @msau42
-  - @thockin
+  - "@xing-yang"
+  - "@msau42"
+  - "@thockin"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
