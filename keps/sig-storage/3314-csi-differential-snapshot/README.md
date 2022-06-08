@@ -298,13 +298,13 @@ To mitigate this issue, this KEP proposes a 2-hops request mechanism where
 instead of handling the requests directly, the `DifferentialSnapshot` controller
 returns a callback URL to the user so that HTTP requests can be directed to this
 "out-of-band" endpoint to fetch the changed block metadata. This mechanism
-allows the response payload to be returned directly to the user, without the
-needs to persist them in etcd.
+allows the response payloads to be returned directly to the user, without
+persisting them in etcd.
 
 #### Securing The HTTP Listener
 
 The `DifferentialSnapshot` listener that exposes the callback endpoint will be
-be secured by delegating the request authorisation to the Kubernetes API server
+secured by delegating the request authorisation to the Kubernetes API server
 using the `SubjectAccessReview` API.
 
 ## Design Details
@@ -329,8 +329,8 @@ created in the same namespace as the base and target CSI `VolumeSnapshot`s.
 ### CBT Datapath Worklow
 
 A Kubernetes user initiates the datapath workflow by creating a new
-`DifferentialSnapshot` custom resource. The `DifferentialSnapshot`, deployed as
-a CSI sidecar in the storage provider's CSI driver, watches for new
+`DifferentialSnapshot` custom resource. The `DifferentialSnapshot` controller,
+deployed as a CSI sidecar in the storage provider's CSI driver, watches for new
 `DifferentialSnapshot` resources:
 
 ![CBT Step 1](./img/cbt-step-01.png)
@@ -349,6 +349,11 @@ essentially looks like:
 https://<csi-driver-svc-dns>:<listener-port>/<resource-namespace>/<resource-name>
 ```
 
+The `DifferentialSnapshot` listener delegates the authorisation of the request
+to the Kubernetes API server via the `SubjectAccessReview` API. The user must
+include the `Authorization` header, using an authorised service account's secret
+token set as the bearer token of the request.
+
 The `DifferentialSnapshot` listener then issues a GRPC call to the
 `GetDifferentialSnapshot` service on the storage provider's CSI plugin sidecar:
 
@@ -362,9 +367,9 @@ It is the storage provider's CSI plugin responsibility to call the provider's
 CBT endpoint and manage the in-between authentication and authorisation
 protocols.
 
-The changed block metadata responses are then returned to the user directly by
-the `DifferentialSnapshot` listener. This synchronous request/response
-mechanism removes the needs to persist the response payload in etcd.
+The response payloads are then directly returned to the user from the
+`DifferentialSnapshot` listener. This synchronous request/response
+mechanism removes the needs to persist the response payloads in etcd.
 
 Pagination parameters from the storage provider will be included in the
 listener's response to the user. The user will be responsible for coordinating
@@ -412,9 +417,9 @@ type DifferentialSnapshotSpec struct {
 
 // DifferentialSnapshotStatus is the status for a DifferentialSnapshot resource
 type DifferentialSnapshotStatus struct {
-  Error    string `json:"error,omitempty"`
-  State    string `json:"state"`
-  URL      string `json:"url"`
+  Error        string `json:"error,omitempty"`
+  State        string `json:"state"`
+  CallbackURL  string `json:"callbackUrl"`
 }
 
 // DifferentialSnapshotList is a list of DifferentialSnapshot resources
@@ -706,8 +711,8 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, the storage provider's CSI driver can remove the `DifferentialSnapshot`
-sidecar container from their deployments in order to disable the CBT feature.
+Yes, the storage provider can remove the `DifferentialSnapshot` sidecar
+container from their CSI drivers in order to disable the CSI CBT feature.
 All new `DifferentialSnapshot` resources will be ignored. Subsequent HTTP
 requests to an existing callback URL will fail with HTTP 404.
 
@@ -897,7 +902,7 @@ Focusing mostly on:
 -->
 
 The `DifferentialSnapshot` controller will be interacting with the APIs
-associated with these GVRs:
+associated with these CSI GVRs:
 
 ```yaml
 - apiGroups: ["snapshot.storage.k8s.io"]
@@ -908,7 +913,7 @@ associated with these GVRs:
   verbs: ["get", "list", "watch"]
 ```
 
-It will also utilizes the `SubjectAccessReview` API to delegate request
+It will also utilize the `SubjectAccessReview` API to delegate request
 authorisation to the Kubernetes API server.
 
 Users can utilize Kubernetes clients like `kubectl` or `client-go` to create and
@@ -934,9 +939,9 @@ Describe them, providing:
   - Estimated increase:
 -->
 
-The `DifferentialSnapshot` controller will not issue direct calls to the cloud
+The `DifferentialSnapshot` component will not issue direct calls to the cloud
 providers. The provider-specific CSI driver plugin which the
-`DifferentialSnapshot` controller depends on will be responsible for interacting
+`DifferentialSnapshot` component depends on will be responsible for interacting
 with their 3rd party APIs.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
@@ -961,9 +966,9 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-Since the response payload are returned to the user over "out-of-band" HTTP
-calls that don't involve the Kubernetes API server nor etcd, we don't foresee
-any negative impact on existing API latency SLIs/SLOs.
+Since the response payloads are returned to the user over "out-of-band" HTTP
+endpoints that don't involve the Kubernetes API server nor etcd, we don't
+foresee any negative impact on existing API latency SLIs/SLOs.
 
 The `DifferentialSnapshot` sidecar uses a simple startup process to initialize a
 Go process with 2 long-running goroutines, serving as the controller and the
