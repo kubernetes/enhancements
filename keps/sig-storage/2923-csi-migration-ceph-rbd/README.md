@@ -5,6 +5,12 @@
 <!-- toc -->
 - [Summary](#summary)
   - [New Feature Gates](#new-feature-gates)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -35,6 +41,35 @@ used as described in its parent KEP. For all other contents, please refer to the
   on kubelet and treat Ceph RBD CSI migration as already complete. And directly redirect traffic to CSI 
   driver for all rbd related operations.
 
+## Design Details
+
+### Test Plan
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+No additional tests are needed, rather the issue is orchestrating CSI driver
+deployment for prow jobs. This means that it is not possible to run any test for
+RBD in k/k repository.
+
+##### Unit tests
+
+The unit tests for RBD translation lib available [here](https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/rbd_test.go)
+will be validated.
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
+
+Support for tests after RBD migration will be covered by the subjected
+RBD CSI driver which is available [here](https://github.com/ceph/ceph-csi/blob/devel/e2e/rbd.go#L426).
+Addition to above, in-tree RBD driver tests available [here](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/drivers/in_tree.go#L488)
+also cover the e2e part of this feature.
 
 ## Production Readiness Review Questionnaire
 
@@ -50,6 +85,6 @@ Major milestones for Ceph RBD in-tree plugin CSI migration:
 
 - 1.23
   - Ceph RBD CSI migration to Alpha
-- 1.24
+- 1.25
   - Ceph RBD CSI migration to Beta, off by default
 
