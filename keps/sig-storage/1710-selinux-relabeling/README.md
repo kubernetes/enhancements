@@ -27,6 +27,10 @@
     - [Phase 1](#phase-1)
     - [Phase 2](#phase-2)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -50,11 +54,15 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -362,13 +370,28 @@ Even that will help users to avoid recursive relabeling of volumes if their appl
 
 ### Test Plan
 
-* Unit tests:
-   * Passing mount options from kubelet to volume plugins.
-* E2e tests:
-   * Check no recursive `chcon` is done on a volume when not needed.
-   * Check recursive `chcon` is done on a volume when needed.
-   * Check that proper metric + alert is emitted when kubelet can't start two pods with different SELinux contexts using the same volume on the same node.
-   * These tests might use only CSI volumes, GCE PD in-tree volume plugin that we use for e2e tests might be already migrated to CSI by that time. 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+The main part will be implemented in:
+
+* k8s.io/kubernetes/pkg/kubelet/volumemanager: 2022-06-07 - 53%
+
+##### Integration tests
+
+No existing / new tests for volume mounting there.
+
+##### e2e tests
+
+* Check no recursive `chcon` is done on a volume when not needed.
+* Check recursive `chcon` is done on a volume when needed.
+* Check that proper metric + alert is emitted when kubelet can't start two pods with different SELinux contexts using the same volume on the same node._
+  * These tests might use only CSI volumes, GCE PD in-tree volume plugin that we use for e2e tests might be already migrated to CSI by that time.
 * Prepare e2e job that runs with SELinux in Enforcing mode!
 
 ### Graduation Criteria
@@ -383,7 +406,7 @@ Even that will help users to avoid recursive relabeling of volumes if their appl
   * KEP author has access to usage data from OpenShift, a Kubernetes distro that runs with SELinux in enforcing mode.
 * Alpha of Phase 2:
   * Only if nr. of broken apps is low!
-    * To be discussed in sig-storage and sig-arch?. 
+    * To be discussed in sig-storage and sig-arch?.
   * Publish deprecation note about changed behavior.
   * Implement Phase 2 **with a separate alpha feature gate `SELinuxMount`**.
 * GA: all known issues fixed + deprecation period is over. Otherwise, we will GA Phase 1 only.
@@ -391,11 +414,11 @@ Even that will help users to avoid recursive relabeling of volumes if their appl
 ### Upgrade / Downgrade Strategy
 
 N/A. This feature affects only mounts. It does not depend on version of Kubernetes on other nodes or in the control plane.
-New / old kubelet will still be able to unmount volumes mounted by old / new kubelet as usual. 
+New / old kubelet will still be able to unmount volumes mounted by old / new kubelet as usual.
 
 ### Version Skew Strategy
 
-N/A. This feature affects only mounts. It does not depend on version of Kubernetes on other nodes or in the control plane. 
+N/A. This feature affects only mounts. It does not depend on version of Kubernetes on other nodes or in the control plane.
 
 ## Production Readiness Review Questionnaire
 
@@ -630,7 +653,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-* 1.24: Alpha
+* 1.25: Alpha
 
 ## Drawbacks [optional]
 
