@@ -1,0 +1,29 @@
+title: Multiple Authorization Webhooks
+kep-number: 3221
+authors:
+  - "@100mik"
+  - "@palnabarun"
+owning-sig: sig-auth
+participating-sigs:
+  - TBD
+status: provisional
+creation-date: yyyy-mm-dd
+reviewers:
+  - "@deads2k"
+  - "@enj"
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - https://github.com/kubernetes/kubernetes/issues/101762
+stage: alpha
+latest-milestone: "v1.25"
+milestone:
+  alpha: "v1.25"
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: AuthorizationConfigFromFile
+    components:
+      - kube-apiserver
+disable-supported: true
