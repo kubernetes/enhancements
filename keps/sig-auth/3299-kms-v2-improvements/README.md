@@ -126,27 +126,9 @@ proposal will be implemented, this is the place to discuss them.
 index d7d68d2584d..84c1fa6546f 100644
 --- a/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go
 +++ b/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go
-@@ -51,7 +51,8 @@ type ProviderConfiguration struct {
-	 // identity is the (empty) configuration for the identity transformer.
-	 Identity *IdentityConfiguration `json:"identity,omitempty"`
-	 // kms contains the name, cache size and path to configuration file for a KMS based envelope transformer.
--    KMS *KMSConfiguration `json:"kms,omitempty"`
-+    KMS   *KMSConfiguration   `json:"kms,omitempty"`
-+    KMSv2 *KMSv2Configuration `json:"kmsv2,omitempty"`
- }
- 
- // AESConfiguration contains the API configuration for an AES transformer.
 @@ -98,3 +99,10 @@ type KMSConfiguration struct {
-	 // +optional
-	 Timeout *metav1.Duration `json:"timeout,omitempty"`
- }
-+
-+type KMSv2Configuration struct {
-+    // name is the name of the KMSv2 plugin to be used.
-+    Name string `json:"name"`
-+    // endpoint is the gRPC server listening address, for example "unix:///var/run/kmsv2-provider.sock".
-+    Endpoint string `json:"endpoint"`
-+}
++    // apiversion of KeyManagementService
++    APIVersion string `json:"apiversion"`
 ```
 
 Support key hierarchy in KMS plugin that generates local KEK and add v2alpha1 `KeyManagementService` proto service contract in Kubernetes to include `key_id`, `annotations`, and `status`. 
@@ -225,7 +207,7 @@ The last byte represents the encoding style, with 0 meaning that the rest of the
 type EncryptedObject struct {
     TypeMeta `json:",inline" protobuf:"bytes,1,opt,name=typeMeta"`
 
-    EncryptResponse EncryptResponse `protobuf:"bytes,2,opt,name=encryptResponse"`
+    KeyId string `protobuf:"bytes,2,opt,name=keyId"`
 
     PluginName string `protobuf:"bytes,3,opt,name=pluginName"`
 
