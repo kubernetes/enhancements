@@ -69,13 +69,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 We intend to change behaviour of default storage class assignment to be
-retroactive for existing persistent volume claims without any storage class
-assigned. This changes the existing Kubernetes behaviour slightly, which is
-further described in sections below.
+retroactive for existing *unbound* persistent volume claims without any storage
+class assigned. This changes the existing Kubernetes behaviour slightly, which
+is further described in sections below.
 
 A PVC with `pvc.spec.storageClassName=nil` will **always** get a default storage
-class, regardless if the storage class is created before or after the PVC
-is created.
+class, regardless if the storage class is created before or after the PVC is
+created.
 
 ## Motivation
 
@@ -209,8 +209,8 @@ With the new behavior, the PV controller will wait until a default SC exists.
 This may break an existing cluster that depends on the behavior described above.
 We expect that the new behavior is better than the existing one. Users that
 want to bind their PVC to PVs with `pv.spec.storageClassName=""` can create
-PVCs explicitly requesting `pvc.spec.storageClassName=""` to provision those
-PVs statically.
+PVCs explicitly requesting `pvc.spec.storageClassName=""` to bind the PVC to a
+statically provisioned PV.
 
 ### Risks and Mitigations
 
@@ -239,6 +239,8 @@ This KEP requires changes in:
     * PVC update from  `pvc.spec.storageClassName=nil` to
       `pvc.spec.storageClassName=<storage class name>` is now forbidden, and it
       must be allowed for this KEP to work.
+      * Validation will still reject changing `pvc.spec.storageClassName` from any
+        other value than `nil`.
 
 ### Test Plan
 
@@ -332,6 +334,10 @@ ones.
 ### Upgrade / Downgrade Strategy
 
 No change in cluster upgrade / downgrade process.
+
+But all PVCs with `pvc.spec.storageClassName=nil` that exist in a cluster prior
+to update and are not bound will be updated with default storage class name if
+there is one.
 
 ### Version Skew Strategy
 
@@ -640,8 +646,8 @@ than users that want to keep the existing behavior.
 Today, if there is no default SC, a PVC with `pvc.spec.storageClassName=nil`
 will be bound to PV with `pv.spec.storageClassName=""`.
 To keep at least part of this behavior, PV controller could try to bind such
-PVCs to PV at least once and only after that change
-`pvc.spec.storageClassName` to a newly created SC.
+PVCs to PV at least once and only after there are no such PVs left the
+`pvc.spec.storageClassName` would change to a newly created SC.
 
 We find this behavior to be too complicated for users - a PVC with
 `pvc.spec.storageClassName=nil`:
