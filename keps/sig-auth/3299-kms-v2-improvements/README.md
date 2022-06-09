@@ -128,7 +128,7 @@ index d7d68d2584d..84c1fa6546f 100644
 +++ b/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go
 @@ -98,3 +99,10 @@ type KMSConfiguration struct {
 +    // apiversion of KeyManagementService
-+    APIVersion string `json:"apiversion"`
++    APIVersion string `json:"apiVersion"`
 ```
 
 Support key hierarchy in KMS plugin that generates local KEK and add v2alpha1 `KeyManagementService` proto service contract in Kubernetes to include `key_id`, `annotations`, and `status`. 
@@ -207,7 +207,7 @@ The last byte represents the encoding style, with 0 meaning that the rest of the
 type EncryptedObject struct {
     TypeMeta `json:",inline" protobuf:"bytes,1,opt,name=typeMeta"`
 
-    KeyId string `protobuf:"bytes,2,opt,name=keyId"`
+    KeyID string `protobuf:"bytes,2,opt,name=keyID"`
 
     PluginName string `protobuf:"bytes,3,opt,name=pluginName"`
 
