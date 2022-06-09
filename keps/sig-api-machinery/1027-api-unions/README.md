@@ -125,12 +125,14 @@ become possible.
 ### Goals
 
 The goal is to enable a union or "oneof" semantics in Kubernetes types, both for
-in-tree types and for CRDs.
+in-tree types and for CRDs. Validation of these unions should be centralized
+rather than being written on a per resource basis in validation functions.
 
 ### Non-Goals
 
-We're not planning to use this KEP to release the feature, but mostly as a way
-to document what we're doing.
+A priority will be minimum disruption to existing types rather than ensuring all
+existing types conform to a single union paradigm (i.e. unions without a
+discriminator should continue to not need a discriminator)
 
 ## Proposal
 
@@ -147,15 +149,27 @@ Detail the things that people will be able to do if this KEP is implemented.
 Include as much detail as possible so that people can understand the "how" of
 the system. The goal here is to make this feel real for users without getting
 bogged down.
+
+TODO: ask antoine if these stories are complete/sufficient
 -->
+
 
 #### Story 1
 
+As a CRD owner, I should be able to author my CRD such that the openapi schema
+indicates which fields are members of this oneOf, so that when users crate
+custom resources, the oneOf fields will be automatically validated, without me
+having to write custom validation logic.
+
 #### Story 2
+
+As a maintainer of existing builtin APIs, I should be able to add new fields to
+a union and have it behave as expected.
 
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
+TODO: ? 
 What are the caveats to the proposal?
 What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
@@ -163,6 +177,12 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 ### Risks and Mitigations
+- We need to ensure we do not break existing union types. This can be done by
+  not forcing existing unions to conform to the newly proposed union semantics.
+  Integration testing with older types should give us the confidence to be sure
+  we have done so.
+- There is a lot of risk for errors when there exists skew between clients and
+  server. In the section on normalization, we discuss mitigating these risks.
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -183,21 +203,16 @@ Consider including folks who also work outside the SIG or subproject.
 We're proposing a new type of tags for go types (in-tree types, and also
 kubebuilder types):
 
-- `// +union` before a structure means that the structure is a union. All the
-  fields must be optional (beside the discriminator) and will be included as
-  members of the union. That structure CAN be embedded in another structure.
-- `// +unionDeprecated` before a field means that it is part of the
-  union. Multiple fields can have this prefix. These fields MUST BE optional,
-  omitempty and pointers. The field is named deprecated because we don't want
-  people to embed their unions directly in structures, and only exist because of
-  some existing core types (e.g. `Value` and `ValueFrom` in
-  [EnvVar](https://github.com/kubernetes/kubernetes/blob/3ebb8ddd8a21b/staging/src/k8s.io/api/core/v1/types.go#L1817-L1836)).
 - `// +unionDiscriminator` before a field means that this field is the
-  discriminator for the union. Only one field per structure can have this
-  prefix. This field HAS TO be a string, and CAN be optional.
+  discriminator for the union. This field MUST be a string. Can be optional or
+  required. If required, the union must have exactly one member set, if
+  optional, the union may have at most one member set.
+- `// +unionMember=<discriminatorName>` before a field means that this
+  field is a member of a union. The `<discriminatorName>` is optional if there
+  is only union in a struct and required if there are multiple unions per
+  struct. 
 
-Multiple unions can exist per structure, but unions can't span across multiple
-go structures (all the fields that are part of a union has to be together in the
+Note unions can't span across multiple go structures (all the fields that are part of a union has to be together in the
 same structure), examples of what is allowed:
 
 ```
@@ -209,27 +224,28 @@ type TopLevelUnion struct {
 }
 
 // This will generate one union, with two fields and a discriminator.
-// +union
 type Union struct {
 	// +unionDiscriminator
 	// +optional
 	UnionType string `json:"unionType"`
 
 	// +optional
+        // +unionMember
 	FieldA int `json:"fieldA"`
-    // +optional
+        // +optional
 	FieldB int `json:"fieldB"`
 }
 
-// This also generates one union, with two fields and on discriminator.
+// This generates two unions, each with two fields and a discriminator. The 
 type Union2 struct {
 	// +unionDiscriminator
+        // +required
 	Type string `json:"type"`
-	// +unionDeprecated
-    // +optional
+	// +unionMember=type
+        // +optional
 	Alpha int `json:"alpha"`
-	// +unionDeprecated
-    // +optional
+	// +unionMember=type
+        // +optional
 	Beta int `json:"beta"`
 }
 
@@ -238,14 +254,19 @@ type Union2 struct {
 type InlinedUnion struct {
 	Name string `json:"name"`
 
-	// +unionDeprecated
+        // +unionDiscriminator
+        // +optional
+        FieldType string `json:"fieldType"`
+	// +unionMember=fieldType
 	// +optional
 	Field1 *int `json:"field1,omitempty"`
-	// +unionDeprecated
+	// +unionMember=fieldType
 	// +optional
 	Field2 *int `json:"field2,omitempty"`
 
-	Union  `json:",inline"`
+        // Union does not label its members, so it
+        cannot be inlined
+	union Union  `json:"union"`
 	Union2 `json:",inline"`
 }
 ```
@@ -271,6 +292,7 @@ Conversion between OpenAPI v2 and OpenAPI v3 will preserve these fields.
 
 ### Discriminator
 
+// TODO: ask Antoine
 For backward compatibility reasons, discriminators should be added to existing
 union structures as an optional string. This has a nice property that it's going
 to allow conflict detection when the selected union field is changed.
@@ -287,63 +309,51 @@ When the value of the discriminator is explicitly changed by the client, it
 will be interpreted as an intention to clear all the other fields. See section
 below.
 
-### Normalizing on updates
-
-A "normalization process" will run automatically for all creations and
-modifications (either with update or patch). It will happen automatically in order
-to clear fields and update discriminators. This process will run for both
-core-types and CRDs. It will take place before validation. The sent object
-doesn't have to be valid, but fields will be cleared in order to make it valid.
-This process will also happen before fields tracking (server-side apply), so
-changes in discriminator, even if implicit, will be owned by the client making
-the update (and may result in conflicts).
-
-This process works as follows:
-- If there is a discriminator, and its value has changed, clear all fields but
-  the one specified by the discriminator,
-- If there is no discriminator, or if its value hasn't changed,
-  - if there is exactly one field, set the discriminator when there is one
-    to that value. Otherwise,
-  - compare the fields set before and after. If there is exactly one field
-    added, set the discriminator (if present) to that value, and remove all
-    other fields. if more than one field has been added, leave the process so
-    that validation will fail.
-
 #### "At most one" versus "exactly one"
 
-The goal of this proposal is not to change the validation, but to help clients
-to clear other fields in the union. Validation should be implemented for in-tree
-types as it is today, or through "oneOf" properties in CRDs.
+// TODO: check this
+We propose supporting both "at most one" and "exactly one" semantics. 
 
-In other word, this is proposing to implement "at most one", and the exactly one
-should be provided through another layer of validation (separated).
+To distinguish between the two, API authors should tag the discriminator as
+"optional" or "required" based on the desired behavior. We the discriminator is
+set to an empty string (or missing from the object), this will indicate to the
+server to clear all fields of the union (or fail the request if the
+discriminator is required).
 
-#### Clearing all the fields
+### Normalization and Validation
 
-Since the system is trying to do the right thing, it can be hard to "clear
-everything". In that case, each API could decide to have their own "Nothing"
-value in the discriminator, which will automatically trigger a clearing of all
-fields beside "Nothing".
+Normalization refers to the process by which the API server attempts to understand
+and correct clients which may provide the server with conflicting or incomplete
+information about a union.
 
-### Backward compatibilities properties
+Issues primarily arise here because of version skew between a client and server,
+such as when a client is unaware of new fields added to a union and thus doesn't
+know how to clear these new fields when trying to set a different.
 
-This normalization process has a few nice properties, especially for dumb
-clients, when it comes to backward compatibility:
-- A dumb client that doesn't know which fields belong to the union can just set
-  a new field and get all the others cleared automatically
-- A dumb client that doesn't know about the discriminator is going to change a
-  field, leave the discriminator as it is, and should still expect the fields to
-  be cleared accordingly
-- A dumb client that knows about the discriminator can change the discriminator
-  without knowing which fields to clear, they will get cleared automatically
+For unions with a discriminator (all newly created unions and some existing
+unions), normalization is simple: the server should always respect the
+discriminator.
 
+This means two things:
+1. when the server receives a request with a discriminator set to a
+given field, it should clear out any other fields that are set.
+2. when the server receives a request with a discriminator set to a given field,
+   but that given field is empty, it should maintain the value of the field that
+   currently exists.
 
-### Validation
+For union types without a discriminator (only existing unions), normalization is a little more
+complicated and incomplete. If multiple union fields are set:
+1. If greater than two of the set union fields were not previously set, error
+2. If one of the set union fields was previously set, and one is newly set,
+   respect the newly set field and clear the other.
 
-Objects have to be validated AFTER the normalization process, which is going to
-leave multiple fields of the union if it can't normalize. As discussed in
-drawbacks below, it can also be useful to validate apply requests before
-applying them.
+For situations where a typed client is unaware of a new field (that is currently
+set) and drops the set field such that no fields are now set, the server will
+clear all the fields of the union. This is unavoidable for unions without a
+discriminator and a major reason why we recommend all new unions have a
+discriminator.
+
+Objects must be validated AFTER the normalization process.
 
 ### Test Plan
 
@@ -382,21 +392,46 @@ https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
 
 This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
--->
 
 - `<package>`: `<date>` - `<test coverage>`
 
+-->
+Core functionality will be extensively unit tested in the SMD typed package
+(union_test.go). 
+
+Parts of the kubernetes endpoints handlers package that are modified to call
+into the SMD code will also be unit tested as appropriate.
+
+
+
+
+
 ##### Integration tests
 
+We will have extensive integration testing of the union code in the
+`test/integration/apiserver` package.
+
+We will be testing along the dimensions of:
+* Which fields of the union get modified (none, existing fields, newly updated
+  fields)
+* Type of union (discriminated vs non-discriminated)
+* Whether the client is aware of all the fields
+* Whether the server is aware of all fields
+* Whether the union is optional or required
+
+A fully documented test matrix exists in a [google
+spreadsheet](https://docs.google.com/spreadsheets/d/1dIOOqgrgvMI9b2412eVuRSydEaOxhYOoqk6bUjZOY9c/edit?resourcekey=0-wlOfJTC_EX-qpU680STHMA#gid=3601413) along with a
+[guide
+doc](https://docs.google.com/document/d/1Wruosjo0ELLl1yxauzpsUjgH2fK9KdgXDmOdJ5sG7Kg/edit?resourcekey=0-8Pwzx6EvsFR7VQoXzCTY4Q) on how to read and understand the test matrix.
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
--->
 
 - <test>: <link to test coverage>
+-->
 
 ##### e2e tests
 
@@ -408,21 +443,21 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
 
 - <test>: <link to test coverage>
+-->
+ We are considering adding kubectl e2e tests to mimic kubectl users performing
+ various operations on objects with union fields.
 
 ### Graduation Criteria
 
-Since this project is a sub-project of Server-side apply, it will be introduced
-directly as Beta, and will graduate to GA in a later release, according to the
-criteria below.
+#### Alpha Graduation
 
-#### Beta -> GA Graduation
-
-- CRD support has been proven successful
-- Core-types all implement the semantics properly
-- Stable and bug-free for two releases
+- CRDs can be created with union fields and are properly validated when
+  created/updated.
+- Existing unions that have discriminators, are properly tagged and validated via
+  union validation
+- Existing unions that don't have discriminators do not break when upgraded.
 
 ### Upgrade / Downgrade Strategy
 
@@ -785,42 +820,30 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-## Future Work
-
-Since the proposal only normalizes the object after the patch has been applied,
-it is hard to fail if the patch is invalid. There are scenarios where the patch
-is invalid but it results in an unpredictable object. For example, if a patch
-sends both a discriminator and a field that is not the discriminated field, it
-will either clear the value sent if the discriminator changes, or it will change
-the value of the sent discriminator.
-
-Validating patches is not a problem that we want to tackle now, but we can
-validate "Apply" objects to make sure that they do not define such broken
-semantics.
-
 ## Implementation History
-
-Here are the major milestones for this KEP:
-- Initial discussion happened a year before the creation of this kep:
-  https://docs.google.com/document/d/1lrV-P25ZTWukixE9ZWyvchfFR0NE2eCHlObiCUgNQGQ/edit#heading=h.w5eqnf1f76x5
-- Points made in the initial document have been improved and put into this kep,
-  which has approved by sig-api-machinery tech-leads
-- KEP has been implemented:
-  - logic mostly lives in sigs.k8s.io/structured-merge-diff
-  - conversion between schema and openapi definition are in k8s.io/kube-openapi
-  - core types have been modified in k8s.io/kubernetes
-- Feature is ready to be released in Beta in kubernetes 1.15
+- Unions implemented, but disabled in SMD.
 
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
-* Stutter with discriminator
-* Inconsistent for existing types here
+An issue that one might have with requiring a discriminator is that it might
+seem redundant to have to set a field _and_ set another field indicating to the
+server to use the set field. The reasons for doing so are discussed above in the
+normalization section.
+
+One other drawback is that our approach does not standardize all existing unions
+into a single format. We don't see a way to do so without drastically changing
+existing APIs and breaking backwards compatibility
 
 ## Alternatives
 * Non-Discrminated
+The primary alternative discussed is to not have a discriminator for new union
+types. As discussed in the normalization section, requiring a discriminator
+allows the server to better understand the intentions of clients that do not
+have knowledge of all the fields in a union if newer verisons of the server add
+new fields to the union.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
