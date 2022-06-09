@@ -89,12 +89,17 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [User workflow](#user-workflow)
+  - [Implementation](#implementation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -427,7 +432,7 @@ type SubsetStatus struct {
 }
 ```
 
-### User workflow: 
+### User workflow
 1. The user creates a PodGroup object.
 2. The user creates a workload (Deployment, Job, etc.) and associates .spec.podGroup to the previously created PodGroup name.
 3. The user watched the status of PodGroup. Pods associated with this PodGroup are expected to be co-scheduled if resources are adequate.
