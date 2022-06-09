@@ -1077,7 +1077,7 @@ _This section must be completed when targeting beta graduation to a release._
   - [ContainerD]
     - Usage description:
       - `HostProcess` containers support will not be added to dockershim.
-      - Containerd v1.5.6+ is required.
+      - Containerd v1.6+ is required.
       - Impact of its outage on the feature: Containers will fail to start.
       - Impact of its degraded performance or high-error rates on the feature: Containers may behave expectantly and node may go into the NotReady state.
 
@@ -1126,7 +1126,66 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
-  N/A
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+    - [InClusterConfig() fails inside HostProcessContainers]
+      - Causes: 
+        - Due to how volume mounts are configured in containerd v1.6+ service account tokens in the container are
+          present at the location expected by the golang API rest client.
+      - Mitigations: 
+        - If containers are using `symlink` mount behavior as described at [Compatibility](#compatibility) you can construct a kubeconfig
+          file with the containers assigned service account token and use that to authenticate.
+          Example: https://github.com/kubernetes-sigs/sig-windows-tools/blob/fbe00b42e2a5cca06bc182e1b6ee579bd65ed1b5/hostprocess/calico/install/calico-install.ps1#L8-L11
+        - Switch to container runtime/version that supports `bind` mount behavior as as described at [Compatibility](#compatibility)
+      - Diagnostics:
+        - Calls to rest.InClusterConfig will fail in workloads.
+      - Testing:
+        - No - known limitation
+
+    - [Containers running as non-HostProcessContainers]
+      - Causes:
+        - Container runtime does not support HostProcessContainers
+        - Bug in kubelet in some v1.23/v1.24 patch versions [#110140](https://github.com/kubernetes/kubernetes/pull/110140)
+      - Detection:
+        - Varries based on cause
+        - Likely result will be ContainerCreate failures of some kind
+      - Mitigations: 
+        - If error is caused by [#110140](https://github.com/kubernetes/kubernetes/pull/110140) then either 
+          specify `PodSecurityContext.WindowsSecurityContextOptions.HostProcesst=true` (instead of setting HostProcess=true on container[*].SecurityContext.WindowsSecurityContextOptions.HostProcess=true) or upgrade kubelet to a version fix for issue.
+        - Provision nodes with a containerd v1.6+
+      - Diagnostics: 
+        - Exec into a container and run `whoami` and ensure running user is as expected (ex: not ContainerUser or ContainerAdministrator for HostProcessContainers)
+        - Run `kubectl get nodes -o wide` to check the container runtime and version for nodes
+        - On the node run `crictl inspectp [podid]` and ensure pod has "microsoft.com/hostprocess-container": "true" in annotation list (to detect [#110140](https://github.com/kubernetes/kubernetes/pull/110140))
+        - Inspect container `trace` log messages and ensure `hostProcess=true` is set for `RunPodSandbox` calls. 
+      - Testing: 
+        - Yes - tests have been added to [#110140](https://github.com/kubernetes/kubernetes/pull/110140) to catch issues
+
+    - [HostProcess containers fail to start with `failed to create user process token: failed to logon user: Access is denied.: unknown`]
+      - Causes: 
+        - Containerd is running as a user account.
+          On Windows user accounts (even Administrator accounts) cannot create logon tokens for system (which can be used by HostProcessContainers).
+      - Detection:
+        - Metrics: **started_host_process_containers_errors_total** count increasing
+        - Events: ContainerCreate failure events with reason of `failed to create user process token: failed to logon user: Access is denied.: unknown`
+      - Mitigations: 
+        - Run containerd as `LocalSystem` (default) or `LocalService` service accounts
+      - Diagnostics: 
+        - On the node run `Get-Process containerd -IncludeUserName` to see which account containerd is running as.
+      - Testing: 
+        - No - It is not feasible to restart the container runtime as a different user during tests passes.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
