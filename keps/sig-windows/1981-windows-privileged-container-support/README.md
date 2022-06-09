@@ -549,7 +549,7 @@ Additionally the following will be true for either volume mount behavior:
 ##### Compatibility
 
 During the alpha/beta implementations of this feature only **Symlink** volume mount behavior was implmented.
-This implemention did unlock a lot of criticle use cases for managing Windows nodes in Kubernets clusters but did have some usability issues
+This implemention did unlock a lot of critical use cases for managing Windows nodes in Kubernets clusters but did have some usability issues
 (such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig not working as expected).
 
 The **bind mount** volume mount behavior gives full access to the host OS's filesystem (an explicit goal of this enhancement) and addreses the usability issues with the initial approach.
