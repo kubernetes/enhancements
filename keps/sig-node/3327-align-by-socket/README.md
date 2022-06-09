@@ -32,10 +32,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -49,27 +49,38 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Starting with Kubernetes 1.22, a new CPUManager flag has facilitated the use of CPUManager Policy options(#2625) which enable users to customize their behavior based on workload requirements without having to introduce an entirely new policy. These policy options work together to ensure an optimized cpu set is allocated for workloads running on cluster. The two policy options that already exist are full-pcpus-only(#2625) and distribute-cpus-across-numa (#2902).  With this KEP, new CPUManager policy option is introduced which ensures that all CPUs on a socket are considered to be aligned. Thus CPUManager will send a broader set of hints to TopologyManger, enabling the increased likelihood of the best hint to be  socket aligned with respect to CPU and other devices managed by DeviceManager
+Starting with Kubernetes 1.22, a new `CPUManager` flag has facilitated the use of `CPUManager` Policy options(#2625) which enable users to customize their behavior based on workload requirements without having to introduce an entirely new policy.
+These policy options work together to ensure an optimized cpu set is allocated for workloads running on a cluster.
+The two policy options that already exist are `full-pcpus-only`(#2625) and `distribute-cpus-across-numa` (#2902).
+With this KEP, a new `CPUManager` policy option is introduced which ensures that all CPUs on a socket are considered to be aligned.
+Thus, the `CPUManager` will send a broader set of hints to `TopologyManager`, enabling the increased likelihood of the best hint to be socket aligned with respect to CPU and other devices managed by `DeviceManager`.
 
 
 ## Motivation
 
-With the evolution of CPU architectures, the number of NUMA nodes per socket has increased. The devices managed by DeviceManager may not be uniformly distributed across all NUMA  nodes. Thus there can be scenarios where perfect alignment between devices and CPU may not be possible. Latency sensitive applications desire resources to be aligned at least within the same socket if NUMA alignment is not possible for optimal performance. By default, CPUManager prefers CPU allocation which requires a minimum number of NUMA nodes. However if NUMA nodes selected for allocation are spread across sockets, it results in degraded performance. By ensuring the selected NUMA nodes to be socket aligned, predictable performance can be achieved. The best possible alignment of CPUs with other resources(viz. Which are managed by device Manager) is crucial to guarantee predictable performance for latency sensitive applications.
+With the evolution of CPU architectures, the number of NUMA nodes per socket has increased.
+The devices managed by `DeviceManager` may not be uniformly distributed across all NUMA nodes.
+Thus there can be scenarios where perfect alignment between devices and CPU may not be possible.
+Latency sensitive applications desire resources to be aligned at least within the same socket if NUMA alignment is not possible for optimal performance.
+By default, the `CPUManager` prefers CPU allocations which require a minimum number of NUMA nodes.
+However, if the NUMA nodes selected for allocation are spread across sockets, it results in degraded performance.
+By ensuring the selected NUMA nodes are socket aligned, predictable performance can be achieved.
+The best possible alignment of CPUs with other resources(viz. Which are managed by `DeviceManager`) is crucial to guarantee predictable performance for latency sensitive applications.
 
 ### Goals
- * Ensure  CPUs are aligned  at socket boundary which will result in latency sensitive applications and parallel algorithms to run more efficiently in predictable fashion by increasing the probability of hint selection in which NUMA nodes are socket aligned.
+ * Ensure  CPUs are aligned  at socket boundary rather than NUMA node boundary.
 
 ### Non-Goals
   * Guarantee optimal NUMA allocation for cpu distribution.
 
 ## Proposal
 
-We propose to add a new CPUManager policy option called align-by-socket to the static CPUManager policy. With this policy, the CPUManager will prefer those hints which are within the same socket (as opposed to just within the same NUMA node) if it is possible to have all CPUs allocated from the same socket.
+We propose to add a new `CPUManager` policy option called align-by-socket to the static `CPUManager` policy. With this policy, the `CPUManager` will prefer those hints which are within the same socket (as opposed to just within the same NUMA node) if it is possible to have all CPUs allocated from the same socket.
 
 ### Risks and Mitigations
 
 The risks of adding this new feature are quite low.
-It is isolated to a specific policy option within the `CPUManager`, and is protected both by the option itself, as well as the `CPUManagerPolicyOptions` feature gate (which is disabled by default).
+It is isolated to a specific policy option within the `CPUManager`, and is protected both by the option itself, as well as the `CPUManagerPolicyAlphaOptions` feature gate (which is disabled by default).
 
 | Risk                                             | Impact | Mitigation |
 | -------------------------------------------------| -------| ---------- |
@@ -77,9 +88,9 @@ It is isolated to a specific policy option within the `CPUManager`, and is prote
 
 ## Design Details
 
-### Proposed Change 
+### Proposed Change
 
-When align-by-socket is enabled as a policy option,  the CPUManager’s GetTopologyHints() function will generate hints based on the sockets that a group of CPUs  belong to, rather than the NUMA nodes they belong to.
+When `align-by-socket` is enabled as a policy option,  the `CPUManager`’s GetTopologyHints() function will generate hints based on the sockets that a group of CPUs  belong to, rather than the NUMA nodes they belong to.
 
 To achieve this, the following updates are needed to the GetTopologyHints() function:
 ```
@@ -106,9 +117,16 @@ func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reu
 ```
 At the end, we will have a list of desired hints. These hints will then be passed to the topology manager whose job it is to select the best hint (with an increased likelihood of selecting a hint that has CPUs which are aligned by socket now).
 
-In case TopologyManager “single-numa-node” policy is enabled, the policy option of “align-by-socket” is redundant since allocation guarantees within the same numa are by definition socket aligned. Hence, we will error out in case the policy option of “align-by-socket” is enabled in conjunction with TopologyManager single-numa-node policy.
+During CPU allocation, in function `allocatedCPUs()`, `alignedCPUs` will consist of CPUs which are socket aligned instead of all CPUs from NUMA nodes in `numaAffinity` hint when `align-by-socket` policy option is enabled.
+This will ensure that best effort to align CPUs by socket is made for alloction.
 
-The policyOption align-by-socket can work in conjunction with TopologyManager “best-effort” and “restricted” policy without any conflict.
+In case `TopologyManager` `single-numa-node` policy is enabled, the policy option of `align-by-socket` is redundant since allocation guarantees within the same numa are by definition socket aligned. Hence, we will error out in case the policy option of `align-by-socket` is enabled in conjunction with `TopologyManager` `single-numa-node` policy.
+
+The policyOption `align-by-socket` can work in conjunction with `TopologyManager` `best-effort` and `restricted` policy without any conflict.
+Above policy options will work well for general case where number of NUMA nodes per socket are one or more.
+In rare cases like `DualNumaMultiSocketPerNumaHT` where one NUMA can span multiple socket, above option is not applicable.
+We will error out in cases when `align-by-socket` is enabled when underlying topology consist of multiple socket per NUMA.
+We may address such scenarios in future if there is a usecase for it in real world.
 
 ### Test Plan
 
@@ -159,14 +177,14 @@ No changes needed
 ###### Does enabling the feature change any default behavior?
 
 No. In order to trigger any of the new logic, three things have to be true:
-1. The `CPUManagerPolicyOptions` feature gate must be enabled
+1. The `CPUManagerPolicyAlphaOptions` feature gate must be enabled
 1. The `static` `CPUManager` policy must be selected
 1. The new `align-by-socket` policy option must be selected
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, the feature can be disabled by either:
-1. Disabling the `CPUManagerPolicyOptions` feature gate
+1. Disabling the `CPUManagerPolicyAlphaOptions` feature gate
 1. Switching the `CPUManager` policy to `none`
 1. Removing `align-by-socket` from the list of `CPUManager` policy options
 
@@ -250,3 +268,4 @@ No, the algorithm will run on a single `goroutine` with minimal memory requireme
 ## Implementation History
 
 - 2022-06-02: Initial KEP created
+- 2022-06-08: Addressed review comments on KEP
