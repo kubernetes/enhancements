@@ -516,6 +516,7 @@ There will be two different behaviors for how volume mounts are configured in `h
   - When `hostProcess` containers are started a new volume will be created which contains the contents of the contaner image.
     This volume will be mounted to `c:\hpc`.
   - Additional volume mounts specified for `hostProcess` containers will be mounted at their requested location and can be access the same way as volume mounts in Linx or regular Windows Server contaienrs.
+    - ex: a volume with a mountPath of `/var/run/secrets/token` for containers will be mounted at `c:\var\run\secrets\token` for containers.
   - Volume mounts will only be visible to the containers they are mounted into.
   - The default working directory for `hostProcess` containers will also be set to `c:\hpc`.
 
@@ -557,16 +558,11 @@ This approach requires the use of Windows OS APIs that were not present in Windo
 These APIs *will* be available in WS2019 beginning in July 2022 with the monthly OS security patches.
 Containerd v1.7+ will be required for this behavior.
 
-In order to maintain backwards compatility with container images that were built from around the **symlink** volume mount behavior an annotation can be used to specify which volume mounting behavior should be used.
-`microsoft.com/hostprocess-mount-behavior` annotaion can be set for a Pod with values of either `bind` or `symlink`
-
 - On containerd v1.6 **symlink** volume mount behavior will always be used.
-- On containerd v1.7
-  - If `microsoft.com/hostprocess-mount-behavior` is not set and required Windows OS APIs are present then **bind mount** behavior will be used.
-  - If `microsoft.com/hostprocess-mount-behavior` is not set and required Windows OS APIs are not present then **symlink** behavior will be used.
-  - If `microsoft.com/hostprocess-mount-behavior` is set to `bind` then **bind mount** behavior will be used.
-    - Pod sandbox creation will fail if required Windows OS APIs are not present.
-  - If `microsoft.com/hostprocess-mount-behavior` is set to `symlink` then **symlink** behavior will be used.
+- On containerd v1.7 **bind** volume mount behavior will always be used.
+  - If users are running nodes with Windows Server 2019 with security patches older than July 2022 the volume mounts for HostProcessContainers will fail.
+
+Users who have workloads that depend on the **symlink** mount behavior (ex: are expecting to find mounted volumes under `$CONTAINER_SANDBOX_MOUNT_POINT`) will need to stay on containerd v1.6 releases until their workloads are updated to be compatible with **bind** mount behavior.
 
 #### Container Images
 
