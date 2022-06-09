@@ -446,6 +446,8 @@ Once populator is implemented inside the existing CSI external-provisioner, the 
 To enable this feature in CSI external provisioner, `--cross-namespace-snapshot=true`
 command line flag needs to be passed to the provisioner for each CSI plugin.
 
+The [initial PoC implementation](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-958208039) uses this approach, but it doesn't implements the command line flag to enable/disable this feature.
+
 #### (b) as a separate populator
 
 There will be two approaches to implement as a separate populator:
@@ -472,6 +474,8 @@ On the other hand, althoguh it completely depends on the implementation, this ap
 There will be no generic way to implement by using this approach, because the implementations rely too much on backup tools or CSI drivers.
 Therefore no community implementation of this approach will be provided.
 
+Note that a PoC implementation for this approach can be found [here](https://github.com/kubernetes-csi/lib-volume-populator/pull/31). It works only for csi-hostpath driver and is intended to be just for discussion purpose.
+
 ##### (2) Provision PV with data via CSI call
 
 Current CSI external provisioners provision volume regardless of the data source, therefore populators need to populate data to already provisioned PVs.
@@ -492,6 +496,12 @@ The implementation of provisioner and populator of this approach will be as foll
 
 The above implementation is just separating the logics in approach (a) to two components, and it won't help improve efficiency nor simplify implementations.
 Therefore, the description in this section is just for discussion purpose and won't be implemented.
+
+A PoC implementation for this approach, forking exisiting provisioner and modify it to only handle `VolumeSnapshotLink`, can be found [here](https://github.com/mkimuram/external-provisioner/commits/separate-controller).
+Note that just to separate the containers for normal provision and provision from `VolumeSnapshotLink`, we don't need to fork the codes, instead we can use a command line option.
+Fork is only needed if we need to keep the existing CSI external provisioner codes separated from this feature.
+
+In addition, there may be an alternative way to populate to an already provisioned volume via CSI call from populator, if CSI spec is modified to allow populating an already provisioned volume.
 
 ### Test Plan
 
