@@ -2,6 +2,7 @@ title: Union types
 kep-number: 1027
 authors:
   - "@apelisse"
+  - "@kevindelgado"
 owning-sig: sig-api-machinery
 participating-sigs:
 reviewers:
@@ -13,7 +14,7 @@ approvers:
   - "@lavalamp"
 editor: TBD
 creation-date: 2019-03-25
-last-updated: 2019-03-25
+last-updated: 2022-06-09
 status: implementable
 see-also:
   - "/keps/sig-api-machinery/0006-apply.md"
@@ -21,5 +22,5 @@ replaces:
   - "https://docs.google.com/document/d/1lrV-P25ZTWukixE9ZWyvchfFR0NE2eCHlObiCUgNQGQ"
 superseded-by:
 
-latest-milestone: "1.15"
+latest-milestone: "1.25"
 stage: "alpha"
