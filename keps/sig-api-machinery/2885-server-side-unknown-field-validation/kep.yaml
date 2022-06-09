@@ -12,6 +12,7 @@ reviewers:
   - "@smarterclayton"
 approvers:
   - "@deads2k"
+  - "@liggitt"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
@@ -29,13 +30,13 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.24"
+latest-milestone: "v1.25"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.23"
-  beta: "v1.24"
-  stable: "v1.25"
+  beta: "v1.25"
+  stable: "v1.26"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
