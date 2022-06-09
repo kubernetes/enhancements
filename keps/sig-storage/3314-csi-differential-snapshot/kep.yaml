@@ -40,7 +40,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-- name:
+- name: not needed because it's an out-of-tree CSI component
   components:
 disable-supported: true
 
