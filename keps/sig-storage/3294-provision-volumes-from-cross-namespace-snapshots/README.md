@@ -239,7 +239,7 @@ Define an API to specify a cross-namespace `VolumeSnapshot` as a `DataSourceRef`
 
 - To specify a non-standard API as a `DataSourceRef` of a PVC, [AnyVolumeDataSource feature](https://kubernetes.io/blog/2021/08/30/volume-populators-redesigned/) is used,
 - To specify a cross-namespace `VolumeSnapshot`, a new `VolumeSnapshotLink` CRD is introduced (Please also see [API](#api)),
-- To restrict only allowed `VolumeSnapshot` to be consumed from other namespaces, [`ReferencePolicy` CRD](https://gateway-api.sigs.k8s.io/v1alpha2/references/spec/#gateway.networking.k8s.io/v1alpha2.ReferencePolicy) is used,
+- To restrict only allowed `VolumeSnapshot` to be consumed from other namespaces, [`ReferenceGrant` CRD (formerly `ReferenceGrant`)](https://gateway-api.sigs.k8s.io/v1alpha2/references/spec/#gateway.networking.k8s.io%2fv1alpha2.ReferenceGrant) is used,
 - To actually populate a PV from a `VolumeSnapshot` referenced from `VolumeSnapshotLink` CRD, a populator for each CSI driver is used,
 - As a reference populator implementation, [CSI external provisioner](https://github.com/kubernetes-csi/external-provisioner) is extended to handle the `VolumeSnapshotLink` CRD (Please also see [Populator implementation](#populator-implementation)).
 
@@ -297,8 +297,18 @@ From a populator, Secrets are only referenced through snapshots that exist in th
 
 #### Security
 
-By using [`ReferencePolicy`](https://gateway-api.sigs.k8s.io/concepts/security-model/#2-referencepolicy), only allowed snapshots can be accessed beyond the namespace boundary (Please also see [original  discussion on security](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-919107307)).
+By using [`ReferenceGrant`](https://gateway-api.sigs.k8s.io/concepts/security-model/#2-referencegrant), only allowed snapshots can be accessed beyond the namespace boundary (Please also see [original  discussion on security](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-919107307)).
 Therefore, no malicious user will be able to access to prohibited snapshots.
+
+In addition, there will be cases that `ReferenceGrant` may be created/deleted/re-created while `VolumeSnapshotLink` is being handled, however, no inconsistent behavior will be expected, as described below.
+
+1. No `ReferenceGrant` for a `VolumeSnapshotLink` exists when the `VolumeSnapshotLink` is handled, and the `ReferenceGrant` is created later
+    A controller won't use the `VolumeSnapshot` until the `ReferenceGrant` that allows the access is created.
+
+2. `ReferenceGrant` for a `VolumeSnapshotLink` exists when the `VolumeSnapshotLink` is handled, and the `ReferenceGrant` is deleted later
+    A controller will use the `VolumeSnapshot` if the `ReferenceGrant` that allows the access exists when it checks.
+    If all the processes succeed without any error, it succeeds even the `ReferenceGrant` is deleted in the middle of the processes.
+    If any errors happened in the processes and the controller retries, it may detect that there is no `ReferenceGrant` . Then, it won't use the `VolumeSnapshot` until the `ReferenceGrant` that allows the access is re-created.
 
 ## Design Details
 
@@ -319,10 +329,10 @@ Let's use [Story 1](#story-1) as an example and let's assume the following:
 
 Once this proposal is implemented, it can be achieved by doing the following steps:
 
-1. In the prod namespace, Alice creates a `ReferencePolicy` bar that allows referencing to the `VolumeSnapshot` foo-backup in the prod namespace from any `VolumeSnapshotLinks` in the test namespace,
+1. In the prod namespace, Alice creates a `ReferenceGrant` bar that allows referencing to the `VolumeSnapshot` foo-backup in the prod namespace from any `VolumeSnapshotLinks` in the test namespace,
     ```yaml
     apiVersion: gateway.networking.k8s.io/v1alpha2
-    kind: ReferencePolicy
+    kind: ReferenceGrant
     metadata:
       name: bar
       namespace: prod
@@ -367,7 +377,8 @@ Once this proposal is implemented, it can be achieved by doing the following ste
         name: foo-link
       volumeMode: Filesystem
     ```
-4. Once the populator finds a `VolumeSnapshotLink` is specified as `dataSourceRef`, it checks all `ReferencePolicys` in `VolumeSnapshotLink.spec.source.namespace` to see if populating the `VolumeSnapshotLink.spec.source` is allowed. If it is allowed, the populator populates the volume.
+4. Once the populator finds a `VolumeSnapshotLink` is specified as `dataSourceRef`, it checks all `ReferenceGrants` in `VolumeSnapshotLink.spec.source.namespace` to see if populating the `VolumeSnapshotLink.spec.source` is allowed. If it is allowed, the populator populates the volume.
+    Note that how `ReferenceGrant` is checked depends on the implementation, however controllers that are trying to use the `VolumeSnapshot` in another namespace must check `ReferenceGrant` if the access is allowed, before it actually starts exposing the data and metadata from the `VolumeSnapshot` to the `VolumeSnapshotLink`'s namespace.
 
 ### API
 
@@ -403,6 +414,8 @@ type VolumeSnapshotLinkSource struct {
 }
 ```
 
+Note that when a `VolumeSnapshotLink.spec.source.namespace` is specified, a `ReferenceGrant` object is required in the referent namespace to allow that namespace’s owner to accept the reference. See the `ReferenceGrant` documentation for details.
+
 ### Populator implementation
 
 The populator logic can be implemented either [(a) inside the existing CSI external-provisioner](#a-inside-the-existing-csi-external-provisioner) or [(b) as a separate populator](#b-as-a-separate-populator).
@@ -410,7 +423,7 @@ Cluster admins can choose which implementation to be used per CSI driver basis.
 As a reference implementation, only (a) will be implemented in the community.
 
 Regardless of the implementation,
-- `VolumeSnapshotLink` CRD and `ReferencePolicy` CRD must exist in the cluster before the populator is deployed.
+- `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD must exist in the cluster before the populator is deployed.
 - `VolumePopulator` CRD to allow popluating from `VolumeSnapshotLink` CRD needs to be created to enable this feature, as AnyVolumeDataSource feature defines. The `VolumePopulator` CRD needed for this feature will be as follows:
 ```yaml
 kind: VolumePopulator
@@ -425,9 +438,9 @@ sourceKind:
 #### (a) inside the existing CSI external-provisioner
 
 Once populator is implemented inside the existing CSI external-provisioner, the CSI external provisioner:
-- Handles `VolumeSnapshotLink` CRD and `ReferencePolicy` CRD,
+- Handles `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD,
 - Checks if `VolumeSnapshotLink` is specified as `DataSourceRef`:
-  - If specified, check if the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferencePolicy`s:
+  - If specified, check if the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferenceGrant`s:
     - If allowed, use the `VolumeSnapshot` as a SnapshotSource to pass to the CSI driver for provision.
 
 To enable this feature in CSI external provisioner, `--cross-namespace-snapshot=true`
@@ -472,9 +485,9 @@ The implementation of provisioner and populator of this approach will be as foll
     - If specified, skip provisioning  the volume
 
 - Populator:
-  - Handles `VolumeSnapshotLink` CRD and `ReferencePolicy` CRD,
+  - Handles `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD,
   - Checks if `VolumeSnapshotLink` is specified as `DataSourceRef`:
-    - If specified, check if the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferencePolicy`s:
+    - If specified, check if the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferenceGrant`s:
       - If allowed, use the `VolumeSnapshot` as a SnapshotSource to pass to the CSI driver for provision.
 
 The above implementation is just separating the logics in approach (a) to two components, and it won't help improve efficiency nor simplify implementations.
@@ -547,8 +560,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- Verify that PV is provisioned from VS in other namsepace if allowed by ReferencePolicy: <link to test coverage>
-- Verify that PV isn't provisioned from VS in other namsepace if not allowed by ReferencePolicy: <link to test coverage>
+- Verify that PV is provisioned from VS in other namsepace if allowed by ReferenceGrant: <link to test coverage>
+- Verify that PV isn't provisioned from VS in other namsepace if not allowed by ReferenceGrant: <link to test coverage>
 
 ### Graduation Criteria
 
@@ -918,7 +931,7 @@ Focusing mostly on:
 - GET `VolumeSnapshotLink` API call:
   - originating component(s): CSI external-provisioner
   - this API call is triggered once in each [`Provision` call](https://github.com/kubernetes-csi/external-provisioner/blob/master/pkg/controller/controller.go#L719) in CSI external-provisioner when `VolumeSnapshotLink` is referenced from PVC.
-- GET(LIST) `ReferencePolicy` API call:
+- GET(LIST) `ReferenceGrant` API call:
   - originating component(s): CSI external-provisioner
   - this API call is triggered once in each [`Provision` call](https://github.com/kubernetes-csi/external-provisioner/blob/master/pkg/controller/controller.go#L719) in CSI external-provisioner when `VolumeSnapshotLink` is referenced from PVC.
 
