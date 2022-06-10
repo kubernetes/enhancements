@@ -96,14 +96,14 @@ cases that can be problematic:
 1. It’s hard to mark a different SC as the default one. Cluster admin can
    choose between two bad solutions:
 
-    1. Cluster has two default SCs for a short time, i.e. admin marks the new
+    1. Option 1: Cluster has two default SCs for a short time, i.e. admin marks the new
        default SC as default and then marks the old default SC as non-default. When
        there are two default SCs in a cluster, the PVC admission plugin refuses to
        accept new PVCs with `pvc.spec.storageClassName = nil`. Hence, cluster users
        may get errors when creating PVCs at the wrong time. They must know it’s a
        transient error and manually retry later.
 
-    2. Cluster has no default SC for a short time, i.e. admin marks the old
+    2. Option 2: Cluster has no default SC for a short time, i.e. admin marks the old
        default SC as non-default and then marks the new default SC as default.
        Since there is no default SC for some time, PVCs with
        `pvc.spec.storageClassName = nil` created during this time will not get any
@@ -111,8 +111,12 @@ cases that can be problematic:
        re-create it.
 
 2. When users want to change the default SC parameters, they must delete the SC
-   and re-create it, Kubernetes API does not allow change in the SC. So there is no
-   default SC for some time and second case above applies here too.
+   and re-create it, Kubernetes API does not allow change in the SC. So there is
+   no default SC for some time and second case above applies here too.
+   Re-creating the storage class to change parameters can be useful in cases
+   there is a quota set for the SC, and since the quota is coupled with SC name
+   users can not use Option 1 because second SC would have a different name
+   and so the existing quota would not apply to it.
 
 3. Defined ordering during cluster installation. Kubernetes cluster installation
    tools must be currently smart enough to create a default SC before starting
