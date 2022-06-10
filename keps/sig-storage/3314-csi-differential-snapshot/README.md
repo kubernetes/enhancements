@@ -305,9 +305,9 @@ persisting them in etcd.
 
 The `DifferentialSnapshot` listener that exposes the callback endpoint will be
 secured by delegating the request authorisation to the Kubernetes API server
-using the [`SubjectAccessReview`] API.
-
-[`SubjectAcccessReview`]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#subjectaccessreview-v1-authorization-k8s-io
+using the
+[`SubjectAccessReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#subjectaccessreview-v1-authorization-k8s-io)
+API.
 
 ## Design Details
 
