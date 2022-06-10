@@ -19,7 +19,7 @@ To get started with this template:
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -122,7 +122,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -206,7 +206,7 @@ know that this has succeeded?
 two arbitrary pairs of CSI volume snapshots of the same volume.
 * The API can efficiently and reliably relay large amount of changed block data
 from the storage provider back to the user, without exhausting cluster resources,
-nor introducing flakey resource spikes and leaks.
+nor introducing flaky resource spikes and leaks.
 * The blast radius of API failure should be sufficiently isolated from the rest
 of the CSI architecture with no knock-on effects on other CSI components.
 * Storage providers can opt in to expose their CBT functionality to Kubernetes
@@ -305,7 +305,9 @@ persisting them in etcd.
 
 The `DifferentialSnapshot` listener that exposes the callback endpoint will be
 secured by delegating the request authorisation to the Kubernetes API server
-using the `SubjectAccessReview` API.
+using the [`SubjectAccessReview`] API.
+
+[`SubjectAcccessReview`]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#subjectaccessreview-v1-authorization-k8s-io
 
 ## Design Details
 
@@ -341,7 +343,8 @@ the callback URL to fetch the list of changed block metadata:
 
 ![CBT Step 2](./img/cbt-step-02.png)
 
-The callback URL points to the `DifferentialSnapshot` listener. The CSI driver
+The callback URL points to the `DifferentialSnapshot` listener, which runs in
+the same container as the `DifferentialSnapshot` controller. The CSI driver
 `Service` resource's FQDN will be used as the hostname of the callback URL, which
 essentially looks like:
 
@@ -419,7 +422,7 @@ type DifferentialSnapshotSpec struct {
 type DifferentialSnapshotStatus struct {
   Error        string `json:"error,omitempty"`
   State        string `json:"state"`
-  CallbackURL  string `json:"callbackUrl"`
+  CallbackURL  string `json:"callbackURL"`
 }
 
 // DifferentialSnapshotList is a list of DifferentialSnapshot resources
@@ -906,7 +909,7 @@ associated with these CSI GVRs:
 
 ```yaml
 - apiGroups: ["snapshot.storage.k8s.io"]
-  resources: ["volumesnapshotclasses", "volumesnapshotcontents", "volumesnapshots"]
+  resources: ["volumesnapshotcontents", "volumesnapshots"]
   verbs: ["get", "list"]
 - apiGroups: ["snapshot.storage.k8s.io"]
   resources: ["differentialsnapshots"]
