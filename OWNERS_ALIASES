@@ -188,8 +188,8 @@ aliases:
     - johnbelamaric
     - deads2k
     - wojtek-t
-# prod-readiness-approvers-emeritus:
-#    - ehashman
+  prod-readiness-approvers-emeritus:
+    - ehashman
   provider-aws:
     - justinsb
     - nckturner
