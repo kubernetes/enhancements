@@ -212,6 +212,8 @@ type EncryptedObject struct {
     PluginName string `protobuf:"bytes,3,opt,name=pluginName"`
 
     Ciphertext []byte `protobuf:"bytes,4,opt,name=ciphertext"`
+
+    Annotations map<string, bytes> `protobuf:"bytes,5,opt,name=annotations`
 }
 ```
 
