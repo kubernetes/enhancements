@@ -91,6 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Secret Handling](#secret-handling)
     - [Security](#security)
+    - [Conflict on installing <code>VolumePopulator</code> CR for <code>VolumeSnapshotLink</code> across CSI drivers](#conflict-on-installing--cr-for--across-csi-drivers)
 - [Design Details](#design-details)
   - [Example flow of how this proposal works](#example-flow-of-how-this-proposal-works)
   - [API](#api)
@@ -239,7 +240,7 @@ Define an API to specify a cross-namespace `VolumeSnapshot` as a `DataSourceRef`
 
 - To specify a non-standard API as a `DataSourceRef` of a PVC, [AnyVolumeDataSource feature](https://kubernetes.io/blog/2021/08/30/volume-populators-redesigned/) is used,
 - To specify a cross-namespace `VolumeSnapshot`, a new `VolumeSnapshotLink` CRD is introduced (Please also see [API](#api)),
-- To restrict only allowed `VolumeSnapshot` to be consumed from other namespaces, [`ReferenceGrant` CRD (formerly `ReferenceGrant`)](https://gateway-api.sigs.k8s.io/v1alpha2/references/spec/#gateway.networking.k8s.io%2fv1alpha2.ReferenceGrant) is used,
+- To restrict only allowed `VolumeSnapshot` to be consumed from other namespaces, [`ReferenceGrant` CRD (formerly `ReferencePolicy`)](https://gateway-api.sigs.k8s.io/v1alpha2/references/spec/#gateway.networking.k8s.io%2fv1alpha2.ReferenceGrant) is used,
 - To actually populate a PV from a `VolumeSnapshot` referenced from `VolumeSnapshotLink` CRD, a populator for each CSI driver is used,
 - As a reference populator implementation, [CSI external provisioner](https://github.com/kubernetes-csi/external-provisioner) is extended to handle the `VolumeSnapshotLink` CRD (Please also see [Populator implementation](#populator-implementation)).
 
@@ -309,6 +310,15 @@ In addition, there will be cases that `ReferenceGrant` may be created/deleted/re
     A controller will use the `VolumeSnapshot` if the `ReferenceGrant` that allows the access exists when it checks.
     If all the processes succeed without any error, it succeeds even the `ReferenceGrant` is deleted in the middle of the processes.
     If any errors happened in the processes and the controller retries, it may detect that there is no `ReferenceGrant` . Then, it won't use the `VolumeSnapshot` until the `ReferenceGrant` that allows the access is re-created.
+
+#### Conflict on installing `VolumePopulator` CR for `VolumeSnapshotLink` across CSI drivers
+
+This feature requires installing VolumePopulator` CR for `VolumeSnapshotLink` and is enabled per CSI driver basis.
+Therefore, on enabling this feature for each CSI driver, it is expected that `VolumePopulator` CR for `VolumeSnapshotLink` is created before each CSI driver installation.
+As a result, there may be a conflict in creating it for each driver, if there are any differences in their definitions, like alpha API and beta API.
+
+To avoid this issue, it should be avoided to manage VolumePopulator` CR for `VolumeSnapshotLink` in each CSI driver's repository.
+It should be managed in another single repository and the same CR should be used per cluster basis.
 
 ## Design Details
 
@@ -424,7 +434,7 @@ As a reference implementation, only (a) will be implemented in the community.
 
 Regardless of the implementation,
 - `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD must exist in the cluster before the populator is deployed.
-- `VolumePopulator` CRD to allow popluating from `VolumeSnapshotLink` CRD needs to be created to enable this feature, as AnyVolumeDataSource feature defines. The `VolumePopulator` CRD needed for this feature will be as follows:
+- `VolumePopulator` CR to allow popluating from `VolumeSnapshotLink` CRD needs to be created to enable this feature, as AnyVolumeDataSource feature defines. The `VolumePopulator` CR needed for this feature will be as follows:
 ```yaml
 kind: VolumePopulator
 apiVersion: populator.storage.k8s.io/v1beta1
