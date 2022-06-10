@@ -519,6 +519,8 @@ There will be two different behaviors for how volume mounts are configured in `h
     - ex: a volume with a mountPath of `/var/run/secrets/token` for containers will be mounted at `c:\var\run\secrets\token` for containers.
   - Volume mounts will only be visible to the containers they are mounted into.
   - The default working directory for `hostProcess` containers will also be set to `c:\hpc`.
+  - If a volume is mounted over a path that already exists on the host then the contents of the directory of the host, only the contents of the mounted volume will be visiable to the `hostProcess` container. This is the same behavior as regular Windows server behaviors.
+    - A `warn` message will be written to the containerd logs if a volume is being mounted at a location that already exists on the host.
 
 - **Symlinks**
   - With this approach container image contents and volume mounts will be mounted at predicable paths on the host's filesystem.
