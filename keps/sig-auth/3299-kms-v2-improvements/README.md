@@ -213,7 +213,7 @@ type EncryptedObject struct {
 
     Ciphertext []byte `protobuf:"bytes,4,opt,name=ciphertext"`
 
-    Annotations map<string, bytes> `protobuf:"bytes,5,opt,name=annotations`
+    Annotations map[string][]byte `protobuf:"bytes,5,opt,name=annotations"`
 }
 ```
 
@@ -329,37 +329,23 @@ sequenceDiagram
 
 ### Test Plan
 
+[ ] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
+
+##### Prerequisite testing updates
+
 This section is incomplete and will be updated before the beta milestone.
 
-Performance:
+##### Unit tests
 
-Unit tests covering:
+This section is incomplete and will be updated before the beta milestone.
 
-…
+##### Integration tests
 
-Integration test covering:
+This section is incomplete and will be updated before the beta milestone.
 
-…
+##### e2e tests
 
-Rotation:
-
-Unit tests covering:
-
-…
-
-Integration test covering:
-
-…
-
-Observability:
-
-Unit tests covering:
-
-…
-
-Integration test covering:
-
-…
+This section is incomplete and will be updated before the beta milestone.
 
 ### Graduation Criteria
 
