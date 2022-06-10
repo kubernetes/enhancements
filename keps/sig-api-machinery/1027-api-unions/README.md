@@ -124,9 +124,14 @@ become possible.
 
 ### Goals
 
-The goal is to enable a union or "oneof" semantics in Kubernetes types, both for
-in-tree types and for CRDs. Validation of these unions should be centralized
-rather than being written on a per resource basis in validation functions.
+Provide a simple mechanism for API authors to label fields of a resource as
+members of a oneOf, in order to receive standardized:
+
+* Validation - ensuring only one member field is set (or at most one if
+  desired).
+* Normalization - ensuring the API server can modify the fields of the oneOf to
+  best match the intent of the client, despite the client potentially having
+  incomplete information
 
 ### Non-Goals
 
@@ -150,18 +155,22 @@ Include as much detail as possible so that people can understand the "how" of
 the system. The goal here is to make this feel real for users without getting
 bogged down.
 
-TODO: ask antoine if these stories are complete/sufficient
 -->
 
 
 #### Story 1
 
-As a CRD owner, I should be able to author my CRD such that the openapi schema
-indicates which fields are members of this oneOf, so that when users crate
-custom resources, the oneOf fields will be automatically validated, without me
-having to write custom validation logic.
+As a CRD owner, I can use simple semantics (such as go tags), to express the
+desired validation of a oneOf (at most one or exactly one field may be set), and
+the API server will perform this validation automatically.
 
 #### Story 2
+
+As a client, I can read, modify, and update the union fields of an object, even
+if I am not aware of all of the possible fields, and the server will properly
+interpret my intent.
+
+#### Story 3
 
 As a maintainer of existing builtin APIs, I should be able to add new fields to
 a union and have it behave as expected.
@@ -169,7 +178,6 @@ a union and have it behave as expected.
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
-TODO: ? 
 What are the caveats to the proposal?
 What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
@@ -203,14 +211,19 @@ Consider including folks who also work outside the SIG or subproject.
 We're proposing a new type of tags for go types (in-tree types, and also
 kubebuilder types):
 
+
 - `// +unionDiscriminator` before a field means that this field is the
-  discriminator for the union. This field MUST be a string. Can be optional or
-  required. If required, the union must have exactly one member set, if
-  optional, the union may have at most one member set.
+  discriminator for the union. This field MUST be a string. This field MUST be
+  required.
+- `// +unionAllowEmpty` before a discriminator field means that by setting the
+  discriminator to an empty string, none of the union fields are persisted
+  (meaning at most one member of the union must be set). If not present on the
+  discriminator, exactly one of the union members must be set in order to be
+  valid.
 - `// +unionMember=<discriminatorName>` before a field means that this
   field is a member of a union. The `<discriminatorName>` is optional if there
   is only union in a struct and required if there are multiple unions per
-  struct. 
+  struct.
 
 Note unions can't span across multiple go structures (all the fields that are part of a union has to be together in the
 same structure), examples of what is allowed:
@@ -226,12 +239,14 @@ type TopLevelUnion struct {
 // This will generate one union, with two fields and a discriminator.
 type Union struct {
 	// +unionDiscriminator
-	// +optional
+        // +unionAllowEmpty
+        // +required
 	UnionType string `json:"unionType"`
 
-	// +optional
         // +unionMember
+	// +optional
 	FieldA int `json:"fieldA"`
+        // +unionMember
         // +optional
 	FieldB int `json:"fieldB"`
 }
@@ -255,7 +270,8 @@ type InlinedUnion struct {
 	Name string `json:"name"`
 
         // +unionDiscriminator
-        // +optional
+        // +unionAllowEmpty
+        // +required
         FieldType string `json:"fieldType"`
 	// +unionMember=fieldType
 	// +optional
@@ -290,45 +306,15 @@ each list item is made of:
 
 Conversion between OpenAPI v2 and OpenAPI v3 will preserve these fields.
 
-### Discriminator
-
-// TODO: ask Antoine
-For backward compatibility reasons, discriminators should be added to existing
-union structures as an optional string. This has a nice property that it's going
-to allow conflict detection when the selected union field is changed.
-
-We also do strongly recommend new APIs to be written with a discriminator, and
-tools (kube-builder) should probably enforce the presence of a discriminator in
-CRDs.
-
-The value of the discriminator is going to be set automatically by the apiserver
-when a new field is changed in the union. It will be set to the value of the
-`fields-to-discriminateBy` for that specific field.
-
-When the value of the discriminator is explicitly changed by the client, it
-will be interpreted as an intention to clear all the other fields. See section
-below.
-
-#### "At most one" versus "exactly one"
-
-// TODO: check this
-We propose supporting both "at most one" and "exactly one" semantics. 
-
-To distinguish between the two, API authors should tag the discriminator as
-"optional" or "required" based on the desired behavior. We the discriminator is
-set to an empty string (or missing from the object), this will indicate to the
-server to clear all fields of the union (or fail the request if the
-discriminator is required).
-
 ### Normalization and Validation
 
 Normalization refers to the process by which the API server attempts to understand
 and correct clients which may provide the server with conflicting or incomplete
 information about a union.
 
-Issues primarily arise here because of version skew between a client and server,
+Issues primarily arise here because of version skew between a client and a server,
 such as when a client is unaware of new fields added to a union and thus doesn't
-know how to clear these new fields when trying to set a different.
+know how to clear these new fields when trying to set a different field.
 
 For unions with a discriminator (all newly created unions and some existing
 unions), normalization is simple: the server should always respect the
@@ -341,17 +327,15 @@ given field, it should clear out any other fields that are set.
    but that given field is empty, it should maintain the value of the field that
    currently exists.
 
-For union types without a discriminator (only existing unions), normalization is a little more
-complicated and incomplete. If multiple union fields are set:
-1. If greater than two of the set union fields were not previously set, error
-2. If one of the set union fields was previously set, and one is newly set,
-   respect the newly set field and clear the other.
-
 For situations where a typed client is unaware of a new field (that is currently
 set) and drops the set field such that no fields are now set, the server will
 clear all the fields of the union. This is unavoidable for unions without a
 discriminator and a major reason why we recommend all new unions have a
 discriminator.
+
+Union types without a discriminator must continue to perform normalization and
+validation manually (i.e. per resource in the validation functions), as is
+currently done for existing union types.
 
 Objects must be validated AFTER the normalization process.
 
