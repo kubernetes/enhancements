@@ -161,10 +161,6 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 	result = append(result, config.Data[f.PRRApproversAlias]...)
 	// TODO: Figre out if we want to treat emeritus approvers differently.
 	result = append(result, config.Data[f.PRRApproversEmeritusAlias]...)
-	// TODO(wojtekt): This is temporarily hack to ensure we can merge the PR,
-	//   because our testing is fetching approvers from head.
-	//   Get rid of it as soon as it merges :)
-	result = append(result, "ehashman")
 
 	if len(result) == 0 {
 		return nil, errors.New("retrieved zero PRR approvers, which is unexpected")
