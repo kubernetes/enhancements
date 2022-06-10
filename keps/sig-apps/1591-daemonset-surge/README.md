@@ -18,6 +18,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Alpha -&gt; Beta](#alpha---beta)
+    - [Beta -&gt; GA](#beta---ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -172,6 +175,18 @@ An e2e test which exercises maxSurge when `RollingUpdate` is used as update stra
 ### Graduation Criteria
 
 This will be added as a alpha field enhancement to DaemonSets with a backward compatible default. After sufficient exposure this field would be promoted to beta, and then to GA in successive releases. The feature gate for this field will be `DaemonSetUpdateSurge`.
+
+#### Alpha
+  - Complete feature behind a featuregate
+  - Have proper unit and e2e tests
+
+#### Alpha -> Beta
+  - Gather feedback from the community
+
+#### Beta -> GA
+   Atleast one of example of user benefitting from this feature:
+   - OpenShift has few critical [DS](https://github.com/openshift/cluster-dns-operator/blob/d87dd223e67c476220451d254d878209c50324a7/pkg/operator/controller/controller_dns_node_resolver_daemonset.go#L80) where maxSurge is beneficial
+
 
 ## Production Readiness Review Questionnaire
 
