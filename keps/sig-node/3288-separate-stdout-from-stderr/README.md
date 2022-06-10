@@ -553,27 +553,9 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: SplitStdoutAndStderr
   - Components depending on the feature gate: kubelet, kube-apiserver
-- [x] Other
-  - Describe the mechanism: query parameter
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-    - No.
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-    - No.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -586,20 +568,13 @@ Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+No harm, It becomes enabled again after the `kubelet` and `kube-apiserver` restart.
+The log files do not change when the feature is on compared to when it is off.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Yes, unit tests for the feature when enabled and disabled will be
+implemented in both kubelet and api server.
 
 ### Rollout, Upgrade and Rollback Planning
 
