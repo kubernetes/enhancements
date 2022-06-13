@@ -12,24 +12,22 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Discriminator Field](#discriminator-field)
   - [Go tags](#go-tags)
   - [OpenAPI](#openapi)
-  - [Discriminator](#discriminator)
-  - [Normalizing on updates](#normalizing-on-updates)
-    - [&quot;At most one&quot; versus &quot;exactly one&quot;](#at-most-one-versus-exactly-one)
-    - [Clearing all the fields](#clearing-all-the-fields)
-  - [Backward compatibilities properties](#backward-compatibilities-properties)
-  - [Validation](#validation)
+  - [Normalization and Validation](#normalization-and-validation)
+  - [Open Questions](#open-questions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Alpha Graduation](#alpha-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -39,7 +37,6 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
-- [Future Work](#future-work)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -144,8 +141,6 @@ discriminator should continue to not need a discriminator)
 In order to support unions in a backward compatible way in kubernetes, we're
 proposing the following changes.
 
-Note that this proposes unions to be "at most one of". Whether exactly one is
-supported or not should be implemented by the validation logic.
 
 ### User Stories (Optional)
 
@@ -205,6 +200,41 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 ## Design Details
+
+### Discriminator Field
+
+We propose that all new unions maintain a "discriminator". This is a field that
+points to which of the other "union member" fields is to be respected as the
+truly desired union field in the case that there are any conflicts.
+
+In order to demonstrate the need for the discriminator, we developed an
+extensive [test matrix](https://docs.google.com/spreadsheets/d/1dIOOqgrgvMI9b2412eVuRSydEaOxhYOoqk6bUjZOY9c/edit?resourcekey=0-wlOfJTC_EX-qpU680STHMA#gid=3601413) that looks at various configurations of the performing
+REST operations on a union where the client or server is unaware of a newly
+added field to the union (due to version skew).
+
+We present a [guide doc](https://docs.google.com/document/d/1Wruosjo0ELLl1yxauzpsUjgH2fK9KdgXDmOdJ5sG7Kg/edit?resourcekey=0-8Pwzx6EvsFR7VQoXzCTY4Q) on how to interpret the test matrix, but the major
+conclusions are as follows (along with the test case number from the test matrix):
+
+* (Case #22 and #27) If an unstructured client is unaware of field on the union, but wants to clear
+  the union entirely (assuming the union is optional), it will have no way of doing
+  so without a discriminator. With a discriminator, the client can express its
+  intention by setting the discriminator to the empty value and the server can
+  respects it intentions and clear any fields the client is unaware of.
+* (Case #12 and #16) If a structured client is unaware of a field in the union that is set and it
+  just wants to echo back the union it received in a get request (such as when
+  updating other parts of the object), a client without a discriminator will
+  silently drop the currently set field, while a client with the discriminator
+  will not change the discriminator value, indicating to the client that no
+  changes are desired in the union.
+* (Case #34 and #39) If a client sets a union field that the server is not aware of, the server
+  will silently drop it and attempt to clear the object of the union field. With
+  a discriminator, the server will see the unrecognized discriminator value and
+  can fail loudly.
+* (Case #23 and #28) When a client goes to set a field it knows of, but a separate field it doesn't
+  know about is currently set, the server can simply know to always respect the
+  discriminator. Without a discriminator, the server will have to do convoluted
+  logic to detect that the previously set field has not been modified and that
+  only one of the other union fields has been.
 
 ### Go tags
 
@@ -339,14 +369,24 @@ currently done for existing union types.
 
 Objects must be validated AFTER the normalization process.
 
+### Open Questions
+
+A few open questions exist with the design that need to be resolved with SIG API
+Machinery before moving forward.
+
+1. When a server receives an update request with empty data in the member fields
+   but a validly set discriminator pointing to the object's union member field
+   that was previously set, should the server error and inform the client that
+   the field pointed to by the discriminator is currently empty, or should the
+   server retain the previous value it knows was set to the field being pointed
+   to by the discriminator?
+2. What should the value of the discriminator be when no field in the union is
+   to be set. A couple options inclued an empty string, an field common to all
+   union (e.g. "NONE"), or a field specified on a per union basis.
+
 ### Test Plan
 
-There are mostly 3 aspects to this plan:
-- [x] Core functionality, isolated from all other components: https://github.com/kubernetes-sigs/structured-merge-diff/blob/master/typed/union_test.go
-- [x] Functionality as part of server-side apply: How human and robot interactions work: https://github.com/kubernetes-sigs/structured-merge-diff/blob/master/typed/union_test.go
-- [x] Integration in kubernetes: https://github.com/kubernetes/kubernetes/pull/77370/files#diff-4ac5831d494b1b52c7c7be81e552a458
-
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -457,6 +497,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+At first, Only new union types will follow the prescribed guinance, so no upgrades/downgrades are possible for types
+that don't exist yet.
+
 ### Version Skew Strategy
 
 <!--
@@ -471,6 +514,10 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+See test matrix and commentary about discriminators. It clearly documents how
+the server will use the discriminator to understand the client's intention even
+if the client is not aware of all union fields because of version skew.
 
 ## Production Readiness Review Questionnaire
 
