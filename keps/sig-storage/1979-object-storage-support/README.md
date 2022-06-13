@@ -1071,6 +1071,8 @@ are missing a bunch of machinery and tooling and can't do that now.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
+No
+
 ### Monitoring Requirements
 
 <!--
@@ -1085,6 +1087,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The operator can query Bucket* objects to find if their workloads are associated with them.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1097,9 +1101,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason:
+  - Event Reason: `Bucket provisioning 'bucket-name' failed`
 - [ ] API .status
-  - Condition name:
+  - Condition `PodReady=False "Error: secrets 'bucket-secret' not found"`) 
   - Other field:
 - [ ] Other (treat as last resort)
   - Details:
@@ -1193,7 +1197,9 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-Existing components will not make any new API calls.
+Existing components will not make any new API calls. 
+
+The API load of COSI components will be a factor of the number of buckets being managed and the number of bucket-accessors for these buckets. Essentially O(num-buckets * num-bucket-access). There is no per-node or per-namespace load by COSI. 
 
 ###### Will enabling / using this feature result in introducing new API types?
 
