@@ -9,7 +9,12 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Proposed Change](#proposed-change)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -18,9 +23,14 @@
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -53,8 +63,7 @@ Starting with Kubernetes 1.22, a new `CPUManager` flag has facilitated the use o
 These policy options work together to ensure an optimized cpu set is allocated for workloads running on a cluster.
 The two policy options that already exist are `full-pcpus-only`(#2625) and `distribute-cpus-across-numa` (#2902).
 With this KEP, a new `CPUManager` policy option is introduced which ensures that all CPUs on a socket are considered to be aligned.
-Thus, the `CPUManager` will send a broader set of hints to `TopologyManager`, enabling the increased likelihood of the best hint to be socket aligned with respect to CPU and other devices managed by `DeviceManager`.
-
+Thus, the `CPUManager` will send a broader set of preferred hints to `TopologyManager`, enabling the increased likelihood of the best hint to be socket aligned with respect to CPU and other devices managed by `DeviceManager`.
 
 ## Motivation
 
@@ -75,7 +84,8 @@ The best possible alignment of CPUs with other resources(viz. Which are managed 
 
 ## Proposal
 
-We propose to add a new `CPUManager` policy option called align-by-socket to the static `CPUManager` policy. With this policy, the `CPUManager` will prefer those hints which are within the same socket (as opposed to just within the same NUMA node) if it is possible to have all CPUs allocated from the same socket.
+We propose to add a new `CPUManager` policy option called `align-by-socket` to the  `static` policy of `CPUManager`.
+With this policy option, the `CPUManager` will prefer those hints in which all CPUs are within same socket in addition to exisiting hints which require minimum NUMA nodes. With this policy option CPUs will be considered aligned at socket boundary instead of NUMA boundary during allocation. Thus if best hint consist of NUMA nodes within one socket, `CPUManager` may try to assign available CPUs from all NUMA nodes of socket.
 
 ### Risks and Mitigations
 
@@ -90,47 +100,148 @@ It is isolated to a specific policy option within the `CPUManager`, and is prote
 
 ### Proposed Change
 
-When `align-by-socket` is enabled as a policy option,  the `CPUManager`’s GetTopologyHints() function will generate hints based on the sockets that a group of CPUs  belong to, rather than the NUMA nodes they belong to.
+When `align-by-socket` is enabled as a policy option,  the `CPUManager`’s function `GetTopologyHints` will prefer hints which are socket aligned in addition to hints which require minimum number of NUMA nodes.
 
-To achieve this, the following updates are needed to the GetTopologyHints() function:
-```
+To achieve this, the following updates are needed to the `generateCPUTopologyHints` function of `static` policy of `CPUManager`:
+
+```go
 func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reusableCPUs cpuset.CPUSet, request int) []topologymanager.TopologyHint {
 	...
 
-	// Loop back through all hints and update the 'Preferred' field based on
-	// counting the number of bits sets in the affinity mask and comparing it
-	// to the minAffinitySize. Only those with an equal number of bits set (and
-	// with a minimal set of numa nodes) will be considered preferred.
-	for i := range hints {
-		if p.options.AlignBySocket && isSocketAligned(hints[i].NUMANodeAffinity) {
-			hints[i].Preferred = true
-			continue
-		}
-		if hints[i].NUMANodeAffinity.Count() == minAffinitySize {
-			hints[i].Preferred = true
-		}
-	}
+    // Loop back through all hints and update the 'Preferred' field based on
+    // counting the number of bits sets in the affinity mask and comparing it
+    // to the minAffinitySize. Those with an equal number of bits set (and
+    // with a minimal set of numa nodes) will be considered preferred.
+    // If align-by-socket policy option is enabled, socket aligned hints are
+    // also considered preferred.
+    for i := range hints {
+      if p.options.AlignBySocket && isSocketAligned(hints[i].NUMANodeAffinity) {
+        hints[i].Preferred = true
+        continue
+      }
+      if hints[i].NUMANodeAffinity.Count() == minAffinitySize {
+        hints[i].Preferred = true
+      }
+    }
 
 	return hints
 }
-
 ```
+
 At the end, we will have a list of desired hints. These hints will then be passed to the topology manager whose job it is to select the best hint (with an increased likelihood of selecting a hint that has CPUs which are aligned by socket now).
 
-During CPU allocation, in function `allocatedCPUs()`, `alignedCPUs` will consist of CPUs which are socket aligned instead of all CPUs from NUMA nodes in `numaAffinity` hint when `align-by-socket` policy option is enabled.
-This will ensure that best effort to align CPUs by socket is made for alloction.
+During CPU allocation, in function `allocatedCPUs()`, `alignedCPUs` will consist of CPUs which are socket aligned instead of CPUs from NUMA nodes in `numaAffinity` hint when `align-by-socket` policy option is enabled.
 
-In case `TopologyManager` `single-numa-node` policy is enabled, the policy option of `align-by-socket` is redundant since allocation guarantees within the same numa are by definition socket aligned. Hence, we will error out in case the policy option of `align-by-socket` is enabled in conjunction with `TopologyManager` `single-numa-node` policy.
+```go
+ func (p *staticPolicy) allocateCPUs(s state.State, numCPUs int, numaAffinity bitmask.BitMask, reusableCPUs cpuset.CPUSet) (cpuset.CPUSet, error) {
+	...
+     if numaAffinity != nil {
+         alignedCPUs := cpuset.NewCPUSet()
+
+         bits := numaAffinity.GetBits()
+         // If align-by-socket policy option is enabled, NUMA based hint is expanded to
+         // socket aligned hint. It will ensure that first socket aligned available CPUs are
+         // allocated before we try to find CPUs across socket to satify allocation request.
+         if p.PolicyOptions.AlignBySocket {
+           bits = p.topology.ExpandToFullSocketBits(bits)
+         }
+         for _, numaNodeID := range bits {
+           alignedCPUs = alignedCPUs.Union(assignableCPUs.Intersection(p.topology.CPUDetails.CPUsInNUMANodes(numaNodeID)))
+         }
+
+	 ...
+}
+```
+This will ensure that for purpose of allocation, CPUs are considered aligned at socket boundary rather than NUMA boundary
+
+`align-by-socket` policy options will work well for general case where number of NUMA nodes per socket are one or more.
+In rare cases like `DualNumaMultiSocketPerNumaHT` where one NUMA can span multiple socket, above option is not applicable.
+We will error out in cases when `align-by-socket` is enabled and underlying topology consist of multiple socket per NUMA.
+We may address such scenarios in future if there is a usecase for it in real world.
+
+In cases where number of NUMA nodes per socket is one or more as well as `TopologyManager` `single-numa-node` policy is enabled, the policy option of `align-by-socket` is redundant since allocation guarantees within the same NUMA are by definition socket aligned.
+Hence, we will error out in case the policy option of `align-by-socket` is enabled along with `TopologyManager` `single-numa-node` policy.
 
 The policyOption `align-by-socket` can work in conjunction with `TopologyManager` `best-effort` and `restricted` policy without any conflict.
-Above policy options will work well for general case where number of NUMA nodes per socket are one or more.
-In rare cases like `DualNumaMultiSocketPerNumaHT` where one NUMA can span multiple socket, above option is not applicable.
-We will error out in cases when `align-by-socket` is enabled when underlying topology consist of multiple socket per NUMA.
-We may address such scenarios in future if there is a usecase for it in real world.
 
 ### Test Plan
 
-We will extend both the unit test suite and the E2E test suite to cover the new policy option described in this KEP.
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/policy_static.go`: `06-13-2022` - `91.1`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- These cases will be added in the existing integration tests:
+  - Feature gate enable/disable tests
+  - `align-by-socket` policy option works as expected. When policy option is enabled
+     - `generateCPUTopologyHints` prefers socket aligned hints in conjunction with hints with minimum NUMA nodes.
+	 - `allocateCPUs` allocated CPU at socket boundary.
+  - Verify no significant performance degradation
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+- These cases will be added in the existing e2e tests:
+  - Feature gate enable/disable tests
+  - `align-by-socket` policy option works as expected.
 
 ### Graduation Criteria
 
@@ -198,6 +309,45 @@ No changes. Existing container will not see their allocation changed. New contai
 
 - A specific e2e test will demonstrate that the default behaviour is preserved when the feature gate is disabled, or when the feature is not used (2 separate tests)
 
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
+
+###### What specific metrics should inform a rollback?
+
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+<!--
+Even if applying deprecation policies, they may still surprise some users.
+-->
+
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -235,6 +385,29 @@ None
 This feature is `linux` specific, and requires a version of CRI that includes the `LinuxContainerResources.CpusetCpus` field.
 This has been available since `v1alpha2`.
 
+### Dependencies
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### Does this feature depend on any specific services running in the cluster?
+
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
+
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
@@ -265,7 +438,56 @@ This delay should be minimal.
 
 No, the algorithm will run on a single `goroutine` with minimal memory requirements.
 
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
 ## Implementation History
 
 - 2022-06-02: Initial KEP created
 - 2022-06-08: Addressed review comments on KEP
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+`align-by-socket` policy option when enabled, it might result CPU allocation which may not be perfectly aligned by NUMA with other resources managed by `DeviceManager`.
+
+## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
+`align-by-socket` can alternatively be introduced as policy of `TopologyManager` which can choose hints from hint provider which are socket aligned.
+However, it is concluded that fuction of `TopologyManager` is to act as arbitrator for hints provider and should make decisions based on hints provided rather than influencing the `BestHint` based on its own policy.

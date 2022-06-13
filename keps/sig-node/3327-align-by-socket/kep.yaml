@@ -9,6 +9,8 @@ participating-sigs: []
 status: implementable
 creation-date: "2022-06-02"
 reviewers:
+  - "@swatisehgal"
+  - "@fromanirh"
 approvers:
   - "@sig-node-leads"
 see-also:
