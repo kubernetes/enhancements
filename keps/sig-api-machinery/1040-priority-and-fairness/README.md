@@ -643,10 +643,10 @@ The concurrency limit of an apiserver is divided among the non-exempt
 priority levels, and higher ones can do a limited amount of borrowing
 from lower ones.
 
-Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
-midst of the `v1beta2` lifetime, configure the borrowing.  The fields
-are added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).
-The following display shows the two new fields along with the updated
+One field of `LimitedPriorityLevelConfiguration`, introduced in the
+midst of the `v1beta2` lifetime, limits the borrowing.  This field
+is added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).
+The following display shows the new field along with the updated
 description for the `AssuredConcurrencyShares` field, in `v1beta2`.
 
 ```go
@@ -681,19 +681,6 @@ type LimitedPriorityLevelConfiguration struct {
   //
   // +optional
   BorrowablePercent int32
-
-  // `priority` determines where this priority level appears in the total order
-  // of Limited priority levels used to configure borrowing between those levels.
-  // A numerically higher value means a logically lower priority.
-  // Do not create ties; they will be broken arbitrarily.
-  // `priority` MUST BE between 0 and 10000, inclusive, and
-  // SHOULD BE greater than zero.
-  // If it is zero then, for the sake of a smooth transition from the time
-  // before this field existed, this level will be treated as if its `priority`
-  // is the average of the `matchingPrecedence` of the FlowSchema objects
-  // that reference this level.
-  // +optional
-  Priority int32
 }
 ```
 
@@ -706,29 +693,18 @@ existing systems will be more continuous if we keep the meaning of
 "total shares" for the existing field.  In the next version we should
 rename the `AssuredConcurrencyShares` to `NominalConcurrencyShares`.
 
-Consider rolling the borrowing behavior into a pre-existing cluster
-that did not have borrowing.  In particular, suppose that the
-administrators of the cluster have scripts/clients that maintain some
-out-of-tree PriorityLevelConfiguration objects; these, naturally, do
-not specify a value for the `priority` field.  The default behavior
-for `priority` is designed to do something more natural and convenient
-than have them all collide at some fixed number.
-
 The following table shows the current default non-exempt priority
-levels and a proposal for their new configuration.  For the sake of
-continuity with out-of-tree configuration objects, the proposed
-priority values follow the rule given above for the effective value
-when the priority field holds zero.
+levels and a proposal for their new configuration.
 
-| Name | Assured Shares | Proposed Borrowable Percent | Proposed Priority |
-| ---- | -------------: | --------------------------: | ----------------: |
-| leader-election |  10 |   0 |   150 |
-| node-high       |  40 |  25 |   400 |
-| system          |  30 |  33 |   500 |
-| workload-high   |  40 |  50 |   833 |
-| workload-low    | 100 |  90 |  9000 |
-| global-default  |  20 |  50 |  9900 |
-| catch-all       |   5 |   0 | 10000 |
+| Name | Assured Shares | Proposed Borrowable Percent |
+| ---- | -------------: | --------------------------: |
+| leader-election |  10 |   0 |
+| node-high       |  40 |  25 |
+| system          |  30 |  33 |
+| workload-high   |  40 |  50 |
+| workload-low    | 100 |  90 |
+| global-default  |  20 |  50 |
+| catch-all       |   5 |   0 |
 
 
 Borrowing is done on the basis of the current situation, with no
@@ -738,13 +714,7 @@ pre-emption when the situation changes.
 
 Whenever a request is dispatched, it takes all its seats from one
 priority level --- either the one referenced by the request's
-FlowSchema or a logically lower priority level.
-
-Note: We *could* take a complementary approach, in which a request can
-borrow from a logically higher priority level.  That would go together
-with a bigger change in the default configuration and greater
-challenges in incremental rollout.  That is not the approach described
-here.
+FlowSchema or another one.
 
 In the implementation, there is an important consideration regarding
 locking.  We do not want one global mutex to be held for any work on
@@ -757,11 +727,8 @@ API objects.  Each priority level has its own private mutex.
 Borrowing introduces an interaction between priority levels, requiring
 multiple of those private locks to be held at once.  We must avoid
 deadlock.  This is done by insisting that whenever two locks are to be
-held at once, they are acquired in some total order.  In particular,
-the lock of a logically higher priority level is acquired before the
-lock of a logically lower priority level.  The locking order does not
-have to be the same as the priority order, but we make it the same for
-the sake of simplicity.
+held at once, they are acquired in some total order.  The
+implementation chooses and uses this order.
 
 A request can be dispatched from a queue of priority level X to seats
 at non-exempt priority level Y when either there are no requests
@@ -770,8 +737,7 @@ no greater than the number of unused seats at priority level Y.  The
 number of unused seats at a given priority level is that level's
 NominalConcurrencyLimit minus the number of seats used by requests
 executing at that priority level (both requests dispatched from that
-priority level and requests dispatched from higher priority levels
-that are borrowing these lower level seats).
+priority level and requests dispatched from other priority levels).
 
 There are two sorts of times when dispatching from/to a non-exempt
 priority level is considered: when a request arrives, and when a
@@ -792,38 +758,50 @@ simpler case is when reacting to a request arrival, let us say at
 priority level X.  In this case, and if the baseline reaction ---
 dispatching as many requests as possible from X to X --- ends with a
 request to dispatch but not enough seats available, then the reaction
-continues with trying to dispatch that request to the logically lower
-priority levels.  With the lock of X still held, the logically lower
-levels Y are enumerated in logically decreasing order and dispatch to
-each one of them is considered.  This consideration starts by
+continues with trying to dispatch requests to other priority levels.
+This is done with two iterations in series, one over priority levels
+that come later in the locking order and one over priority levels that
+come earlier in the locking order.  The iteration over later priority
+levels happens first, and the lock of priority level X is held
+throughout.  The later priority levels Y are enumerated and dispatch
+to each one of them is considered.  This consideration starts by
 acquiring Y's lock, then dispatches as many requests from X to Y as
-are allowed by the above rule, and finally releases Y's lock.
-Naturally, if/when X runs out of requests to dispatch, this reaction
-stops.
+are allowed by the above rule, and finally releases Y's lock.  Once
+this iteration is done, the lock of level X is released and the
+iteration over earlier priority levels commences.  For each earlier
+priority level Y: the locks for Y and X are acquired (in that order),
+as much dispatching as possible is done from X to Y, and finally the
+two locks are released.  Naturally, if/when X runs out of requests to
+dispatch, this reaction stops.
 
 The more complicated case is reacting to seats being freed up.  Let us
 say this is at priority level X.  As in the other case, the reaction
 starts with the baseline, dispatching as much as possible from X to X.
 If this leaves some seats at X still available, then the reaction
-continues by trying to dispatch from higher priority levels to X.  The
-lock of X is not held over this loop, that would violate locking
-order.  This iteration starts by releasing the lock of X and then
-iterating over the higher priority levels Y (in logically decreasing
-priority order) and considering each one in turn.  That consideration
-starts by acquiring the locks of Y and X (in that order), then does as
-much dispatching from Y to X as is allowed, and finally releases the
-two locks.  Note that dispatching one wide request from Y to X may
-unblock immediate dispatching of additional requests from Y (whether
-to X, Y, or another priority level).  The dispatching of all possible
-from Y to X does not cover all of that.  Thus, the reaction to seats
-being freed up has to include keeping a list of priority levels Y to
-consider general dispatching from.  An element is added to that list
-whenever the dispatching from Y to X concludes in a way that warrants
-more general consideration of Y.  After the primary iteration above is
-done, the reaction to seats being freed continues with iterating over
-this list of Y to reconsider and reacting as for an arrival at Y:
-dispatch as much as possible from Y to Y and logically lower priority
-levels.
+continues by trying to dispatch from other priority levels to X.  As
+in the other case, this is done in a series of two iterations over
+other priority levels.  First, while the lock of X is still held, the
+priority levels that come later in the locking order are enumerated
+and considered.  For each such priority level Y: Y's lock is acquired,
+as many requests as are allowed are dispatched from Y to X, and
+finally Y's lock is released.  Once the later levels have been
+considered, the lock of X is released and the earlier levels are
+considered.  For each earlier priority level Y: the locks of Y and X
+are acquired (in that order), as many requests as are allowed are
+dispatched from Y to X, and finally the two locks are released.
+Naturally, if/when priority level X runs out of available seats, this
+whole process stops.  However, there is still more to do.  Note that
+dispatching one wide request from Y to X may unblock immediate
+dispatching of additional requests from Y (whether to X, Y, or another
+priority level).  The dispatching of all possible from Y to X does not
+cover all of that.  Thus, the reaction to seats being freed up has to
+include keeping a list of priority levels Y to consider general
+dispatching from.  An element is added to that list whenever the
+dispatching from Y to X concludes in a way that warrants more general
+consideration of Y.  After the primary iterations above are done, the
+reaction to seats being freed continues with iterating over this list
+of Y to reconsider and reacting as for an arrival at Y: dispatch as
+much as possible from Y to Y and other priority levels.
 
 ### Fair Queuing for Server Requests
 
