@@ -730,100 +730,59 @@ when the priority field holds zero.
 | global-default  |  20 |  50 |  9900 |
 | catch-all       |   5 |   0 | 10000 |
 
+Each priority level has two concurrency limits: its
+NominalConcurrencyLimit (NCL) as defined above by configuration, and a
+CurrentConcurrencyLimit (CCL) that is used in dispatching requests.
+The CCLs are adjusted periodically, based on configuration, the
+current situation at adjustment time, and recent observations.  The
+"borrowing" resides in the differences between CCL and NCL.  A
+priority level's CCL can go as low as NCL-BCL; the upper limit is
+imposed only by how many seats are available for borrowing from other
+priority levels.  The sum of the CCLs, like the sum of the NCLs, is
+always equal to the server's concurrency limit (SCL).  These CCLs are
+floating-point values, because the adjustment logic below is
+incremental.  The actual limits used in dispatching are the result of
+rounding these floating-point numbers to their nearest integer.
 
-Borrowing is done on the basis of the current situation, with no
-consideration of opportunity cost, no further rationing according to
-shares (just obeying the concurrency limits as outlined above), and no
-pre-emption when the situation changes.
+Dispatching is done independently for each priority level.  Whenever
+(1) a non-exempt priority level's number of occupied seats is zero or
+below the level's rounded CCL and (2) that priority level has a
+non-empty queue, it is time to dispatch another request for service.
+The Fair Queuing for Server Requests algorithm below is used to pick a
+non-empty queue at that priority level.  Then the request at the head
+of that queue is dispatched if possible.
 
-Whenever a request is dispatched, it takes all its seats from one
-priority level --- either the one referenced by the request's
-FlowSchema or a logically lower priority level.
+Every 10 seconds, all the CCLs are adjusted.  The adjustments take
+into account high watermarks of seat demand.  A priority level's seat
+demand is the sum of its occupied seats and the number of seats in the
+queued requests.  Each priority level has two high watermarks: a
+short-term one M1 and a long-term one M2.  During an adjustment
+period, M1 is updated to track the maximum seat demand seen during
+that adjustment period.  At the end of every adjustment period, M2 is
+set to `max(M1, A*M2 + (1-A)*M1)` and M1 is set to the current seat
+demand.  That is, M2 jumps up to M1 if that is higher (so a spike in
+demand gets an immediate response at adjustment time), otherwise
+exponentially drifts down toward M1 with a parameter A; 0.9 might be a
+good value for A.
 
-Note: We *could* take a complementary approach, in which a request can
-borrow from a logically higher priority level.  That would go together
-with a bigger change in the default configuration and greater
-challenges in incremental rollout.  That is not the approach described
-here.
+The adjustment logic takes the M2 values as desired targets to aim
+toward and adjusts the CCL values in two steps.  The first step aims
+to equalize the "pressure" on the priority levels.  Define each
+priority level's pressure `P = max(NCL-BCL, M2) - CCL`.  Let `PAvg` be
+the result of averaging P over the priority levels.  The first step
+adjusts each CCL by adding `B * (P - PAvg)`.  We use a coefficient B
+--- for which 0.25 might be a good value --- so that this step goes
+only part way toward its target.  Such damping is commonly done in
+controllers.
 
-In the implementation, there is an important consideration regarding
-locking.  We do not want one global mutex to be held for any work on
-dispatching; we want to allow concurrent work on dispatching, where
-possible.  Before the introduction of borrowing, the priority levels
-operated completely independently and the only global thing was a
-`sync.RWMutex` that is locked for reading to do dispatching work and
-locked for writing only when digesting changes to the configuration
-API objects.  Each priority level has its own private mutex.
-Borrowing introduces an interaction between priority levels, requiring
-multiple of those private locks to be held at once.  We must avoid
-deadlock.  This is done by insisting that whenever two locks are to be
-held at once, they are acquired in some total order.  In particular,
-the lock of a logically higher priority level is acquired before the
-lock of a logically lower priority level.  The locking order does not
-have to be the same as the priority order, but we make it the same for
-the sake of simplicity.
-
-A request can be dispatched from a queue of priority level X to seats
-at non-exempt priority level Y when either there are no requests
-executing at level Y or the number of seats needed by that request is
-no greater than the number of unused seats at priority level Y.  The
-number of unused seats at a given priority level is that level's
-NominalConcurrencyLimit minus the number of seats used by requests
-executing at that priority level (both requests dispatched from that
-priority level and requests dispatched from higher priority levels
-that are borrowing these lower level seats).
-
-There are two sorts of times when dispatching from/to a non-exempt
-priority level is considered: when a request arrives, and when a
-request releases the seats it was occupying (which is not the same as
-when the request finishes from the client's point of view, due to the
-special considerations for WATCH requests).
-
-At each of these sorts of moments, as many requests as possible are
-dispatched from the priority level involved to the same priority
-level.  The next request to consider in this process is chosen by
-using the Fair Queuing for Server Requests algorithm below to choose
-one of the non-empty queues (if indeed there are any) at that priority
-level.  This was the entirety of the reaction before the introduction
-of borrowing.
-
-Borrowing extends the reaction as follows.  There are two cases.  The
-simpler case is when reacting to a request arrival, let us say at
-priority level X.  In this case, and if the baseline reaction ---
-dispatching as many requests as possible from X to X --- ends with a
-request to dispatch but not enough seats available, then the reaction
-continues with trying to dispatch that request to the logically lower
-priority levels.  With the lock of X still held, the logically lower
-levels Y are enumerated in logically decreasing order and dispatch to
-each one of them is considered.  This consideration starts by
-acquiring Y's lock, then dispatches as many requests from X to Y as
-are allowed by the above rule, and finally releases Y's lock.
-Naturally, if/when X runs out of requests to dispatch, this reaction
-stops.
-
-The more complicated case is reacting to seats being freed up.  Let us
-say this is at priority level X.  As in the other case, the reaction
-starts with the baseline, dispatching as much as possible from X to X.
-If this leaves some seats at X still available, then the reaction
-continues by trying to dispatch from higher priority levels to X.  The
-lock of X is not held over this loop, that would violate locking
-order.  This iteration starts by releasing the lock of X and then
-iterating over the higher priority levels Y (in logically decreasing
-priority order) and considering each one in turn.  That consideration
-starts by acquiring the locks of Y and X (in that order), then does as
-much dispatching from Y to X as is allowed, and finally releases the
-two locks.  Note that dispatching one wide request from Y to X may
-unblock immediate dispatching of additional requests from Y (whether
-to X, Y, or another priority level).  The dispatching of all possible
-from Y to X does not cover all of that.  Thus, the reaction to seats
-being freed up has to include keeping a list of priority levels Y to
-consider general dispatching from.  An element is added to that list
-whenever the dispatching from Y to X concludes in a way that warrants
-more general consideration of Y.  After the primary iteration above is
-done, the reaction to seats being freed continues with iterating over
-this list of Y to reconsider and reacting as for an arrival at Y:
-dispatch as much as possible from Y to Y and logically lower priority
-levels.
+The second step corrects for any lower bounds violations.  There are
+two lower bounds: one imposed by the limit on borrowable seats (BCL),
+and one imposed by priority levels that wish to reclaim borrowed seats
+due to recent load.  For every priority level where `CCL <
+max(NCL-BCL, min(NCL, M2))`, CCL gets increased to that lower bound.
+Whenever there are such increases, there must also be priority levels
+for which `CCL - NCL > 0`.  The seats for the former are taken from
+the latter, in proportion to the latter difference.
 
 ### Fair Queuing for Server Requests
 
