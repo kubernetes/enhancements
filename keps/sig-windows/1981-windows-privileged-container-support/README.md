@@ -1052,7 +1052,7 @@ _This section must be completed when targeting beta graduation to a release._
 the health of the service?**
   - [x] Metrics
     - Metric name: **started_host_process_containers_total** - reports the total number of host-process containers started on a given node
-    - Metric name: **started_host_process_containers_errors_total** - reports the total number of host-process containers that have failed to given node.
+    - Metric name: **started_host_process_containers_errors_total** - reports the total number of host-process containers that have failed to start given node.
     - [Optional] Aggregation method:
     - Components exposing the metric: Kubelet
     - Notes: Both metrics were added in v1.23 and are validated with [e2e tests](https://github.com/kubernetes/kubernetes/blob/fdb2d544751adc9fd2f6fa5075e9a16df7d352df/test/e2e/windows/host_process.go#L483-L575)
@@ -1140,8 +1140,7 @@ For each of them, fill in the following information by copying the below templat
 
     - [InClusterConfig() fails inside HostProcessContainers]
       - Causes: 
-        - Due to how volume mounts are configured in containerd v1.6+ service account tokens in the container are
-          present at the location expected by the golang API rest client.
+        - Due to how volume mounts for HostProcess containers are configured in containerd v1.6.X, service account tokens in the container are not present at the location expected by the golang API rest client.
       - Mitigations: 
         - If containers are using `symlink` mount behavior as described at [Compatibility](#compatibility) you can construct a kubeconfig
           file with the containers assigned service account token and use that to authenticate.
@@ -1157,19 +1156,20 @@ For each of them, fill in the following information by copying the below templat
         - Container runtime does not support HostProcessContainers
         - Bug in kubelet in some v1.23/v1.24 patch versions [#110140](https://github.com/kubernetes/kubernetes/pull/110140)
       - Detection:
-        - Varries based on cause
-        - Likely result will be ContainerCreate failures of some kind
+        - Varies based on cause
+        - Likely result will be an error in the app/workload running running inside containers
       - Mitigations: 
         - If error is caused by [#110140](https://github.com/kubernetes/kubernetes/pull/110140) then either 
-          specify `PodSecurityContext.WindowsSecurityContextOptions.HostProcesst=true` (instead of setting HostProcess=true on container[*].SecurityContext.WindowsSecurityContextOptions.HostProcess=true) or upgrade kubelet to a version fix for issue.
+          specify `PodSecurityContext.WindowsSecurityContextOptions.HostProcess=true` (instead of setting HostProcess=true on container[*].SecurityContext.WindowsSecurityContextOptions.HostProcess=true) or upgrade kubelet to a version fix for issue.
         - Provision nodes with a containerd v1.6+
-      - Diagnostics: 
+      - Diagnostics:
         - Exec into a container and run `whoami` and ensure running user is as expected (ex: not ContainerUser or ContainerAdministrator for HostProcessContainers)
         - Run `kubectl get nodes -o wide` to check the container runtime and version for nodes
+        - Examine container logs
         - On the node run `crictl inspectp [podid]` and ensure pod has "microsoft.com/hostprocess-container": "true" in annotation list (to detect [#110140](https://github.com/kubernetes/kubernetes/pull/110140))
         - Inspect container `trace` log messages and ensure `hostProcess=true` is set for `RunPodSandbox` calls. 
       - Testing: 
-        - Yes - tests have been added to [#110140](https://github.com/kubernetes/kubernetes/pull/110140) to catch issues
+        - Yes - tests have been added to [#110140](https://github.com/kubernetes/kubernetes/pull/110140) to catch issues caused by this bug.
 
     - [HostProcess containers fail to start with `failed to create user process token: failed to logon user: Access is denied.: unknown`]
       - Causes: 
