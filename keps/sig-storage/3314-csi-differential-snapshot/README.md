@@ -1017,6 +1017,12 @@ associated with these CSI GVRs:
 - apiGroups: ["snapshot.storage.k8s.io"]
   resources: ["differentialsnapshots"]
   verbs: ["get", "list", "watch"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
 ```
 
 It will also utilize the `SubjectAccessReview` API to delegate request
