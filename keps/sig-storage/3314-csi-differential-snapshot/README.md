@@ -87,6 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -354,8 +355,8 @@ https://<csi-driver-svc-dns>:<listener-port>/<resource-namespace>/<resource-name
 
 The `DifferentialSnapshot` listener delegates the authorisation of the request
 to the Kubernetes API server via the `SubjectAccessReview` API. The user must
-include the `Authorization` header, using an authorised service account's secret
-token set as the bearer token of the request.
+include the `Authorization` header in the request, using an authorised service
+account's secret token as the bearer token.
 
 The `DifferentialSnapshot` listener then issues a GRPC call to the
 `GetDifferentialSnapshot` service on the storage provider's CSI plugin sidecar:
@@ -364,7 +365,7 @@ The `DifferentialSnapshot` listener then issues a GRPC call to the
 
 The original `DifferentialSnapshot` resource can be retrieved by using the
 identifier (namespace and name) embedded in the URL path, in case there are
-user-provided input parameters to be included in the GRPC request.
+user-provided input parameters which need to be included in the GRPC request.
 
 It is the storage provider's CSI plugin responsibility to call the provider's
 CBT endpoint and manage the in-between authentication and authorisation
@@ -374,7 +375,7 @@ The response payloads are then directly returned to the user from the
 `DifferentialSnapshot` listener. This synchronous request/response
 mechanism removes the needs to persist the response payloads in etcd.
 
-Pagination parameters from the storage provider will be included in the
+Pagination parameters from the storage provider will also be included in the
 listener's response to the user. The user will be responsible for coordinating
 subsequent paginated requests.
 
@@ -485,7 +486,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -517,7 +518,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+All unit tests will be included in the out-of-tree CSI repositories, with no
+impact on the test coverage of the core packages.
 
 ##### Integration tests
 
@@ -529,7 +531,60 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+Prerequisites:
+
+* Install `etcd` per instructions in sig-testing
+[integration tests documentation]
+* Create two CSI `VolumeSnapshot`s backed by the CSI [host path driver].
+* Inject a mock handler in the `DifferentialSnapshot` listener
+
+[integration tests documentation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/integration-tests.md#install-etcd-dependency
+[host path driver]: https://github.com/kubernetes-csi/csi-driver-host-path
+
+###### Test Suite 1 - Custom Resource Management
+
+Test case 1: Create `DifferentialSnapshot` custom resource referencing the two
+base and target `VolumeSnapshot`s in the fixture.
+Expected result: Custom resource created successfully with its `status`
+subresource updated to include callback URL and `url-ready` state.
+
+Test case 2: Create `DifferentialSnapshot` custom resource referencing the
+target `VolumeSnapshot`, with the base `VolumeSnapshot` left empty.
+Expected result: Custom resource created successfully with its `status`
+subresource updated to include callback URL and `url-ready` state.
+Requirement: The base `VolumeSnapshot` is an optional field.
+
+Test case 3: Create `DifferentialSnapshot` custom resource referencing the
+base `VolumeSnapshot`, with the target `VolumeSnapshot` left empty.
+Expected result: Custom resource failed to be created. Its `status` subresource
+should not have the callback URL. Its state should be set to `failed` with a
+`NotFound` error message in the `error` field.
+Requirement: The target `VolumeSnapshot` is a required field.
+
+Test case 4: Create `DifferentialSnapshot` custom resource referencing
+non-existing base and target `VolumeSnapshot`s.
+Expected result: Custom resource failed to be created. Its `status` subresource
+should not have the callback URL. Its state should be set to `failed` with a
+`NotFound` error message in the `error` field.
+Requirement: The target `VolumeSnapshot` is a required field.
+
+Test case 5: Update an existing `DifferentialSnapshot` custom resource to
+reference a different target `VolumeSnapshot`.
+Expected result: Custom resource is updated successfully. Its `status`
+subresource is updated to include callback URL and `url-ready` state.
+
+Test case 6: Delete an existing `DifferentialSnapshot` custom resource.
+Expected result: Custom resource is deleted successfully.
+
+###### Test Suite 2 - HTTP Listener
+
+Test case 1: Send a HTTP request with a fake `Authorisation` bearer token to the
+`DifferentialSnapshot` listener's fake handler.
+Expected result: The listener should return a HTTP 200 `OK` status code.
+
+Test case 2: Send a HTTP request without an  `Authorisation` bearer token to the
+`DifferentialSnapshot` listener's fake handler.
+Expected result: The listener should return a HTTP 403 `Forbidden` status code.
 
 ##### e2e tests
 
@@ -543,7 +598,40 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+Prerequisites:
+
+* Use `kubetest` to build Kubernetes and run the tests per sig-testing
+[e2e tests documentation].
+* Create two CSI `VolumeSnapshot`s backed by the CSI [host path driver].
+* Deploy a sample client to initiate the CBT datapath API and send CBT requests
+to the `DifferentialSnapshot` listener.
+* Deploy a mock CSI driver plugin to handle CBT requests from the mock client.
+
+[e2e tests documentation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#building-kubernetes-and-running-the-tests
+
+For alpha release, the initial e2e test flow is defined as follows:
+
+* When the test is started, the sample client creates a `DifferentialSnapshot`
+custom resource referencing the two base and target `VolumeSnapshot`s in the
+fixture.
+* The `DifferentialSnapshot` controller update its `status` subresource to
+include a callback URL and set its state to `url-ready`.
+* The sample client extracts the callback URL from the `status` subresource,
+and sends its CBT requests to the `DifferentialSnapshot` listener at the
+callback URL.
+* The listener authorises the CBT requests by delegating the authorisation
+protocol to the Kubernetes API server via the `SubjectAccessReview` API.
+* Once the request is authorised, the listener uses the identifier
+(resource's name and namespace) embedded in the callback URL to retrieve the
+original `DifferentialSnapshot` custom resource, to retrieve the user-provided
+input parameters. These parameters will be included in the subsequent GRPC
+request to the mock CSI driver plugin.
+* The listener sends the GRPC request to the mock CSI driver plugin.
+* The mock plugin responds with a list of sample CBT data to the listener and some
+sample pagination parameters used for requesting a "second page" response.
+* The listener forwards the response payloads back to the sample client.
+* The sample client uses the pagination parameters to fetch the second page of
+CBT data.
 
 ### Graduation Criteria
 
@@ -608,6 +696,21 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 -->
+
+#### Alpha
+
+- Completed functionalities include:
+  - Approved specification of the `DifferentialSnapshot` CRD and CSI GRPC
+services
+  - Ability to create, update, delete and retrieve `DifferentialSnapshot` custom
+resources.
+  - Validator to enforce validation criteria like missing required fields.
+  - Authorisation delegation to the Kubernetes API server via the
+`SubjectAccessReview` API.
+  - Implementation of the CSI GRPC client-side logic on the
+`DifferentialSnapshot` listener.
+- Initial e2e tests completed and enabled.
+- Since this is an out-of-tree CSI component, no feature flag is required.
 
 ### Upgrade / Downgrade Strategy
 
