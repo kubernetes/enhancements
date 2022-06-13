@@ -38,7 +38,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [New annotation](#new-annotation)
-  - [Bind to <code>&quot;&quot;</code> PVs at least once](#bind-to--pvs-at-least-once)
+  - [Bind PVCs with <code>nil</code> will wait for default SC](#bind-pvcs-with--will-wait-for-default-sc)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -73,10 +73,6 @@ retroactive for existing *unbound* persistent volume claims without any storage
 class assigned. This changes the existing Kubernetes behaviour slightly, which
 is further described in sections below.
 
-A PVC with `pvc.spec.storageClassName=nil` will **always** get a default storage
-class, regardless if the storage class is created before or after the PVC is
-created.
-
 ## Motivation
 
 When user needs to provision a storage they create a PVC to request a volume. 
@@ -84,8 +80,7 @@ A control loop looks for any new PVCs and based on current state of the
 cluster the volume will be provided using one of the following methods:
 
 * Static provisioning - PVC did not specify any storage class and there is
-  already an existing PV that can be bound to it. Alternatively users can set
-  `pvc.spec.storageClassName=""` to disable dynamic provisioning explicitly.
+  already an existing PV that can be bound to it.
 * Dynamic provisioning - there is no existing PV that could be bound but PVC 
   did specify a storage class or there is exactly one storage class in the 
   cluster marked as default.
@@ -124,16 +119,9 @@ cases that can be problematic:
    cloud providers, storage backends and addons that require storage (such an image
    registry), it may be quite complicated to do the ordering right.
 
-4. If a default storage class does not exist, PVCs with
-   `pvc.spec.storageClassName=nil` are bound to PVs with
-   `pv.spec.storageClassName=""`. This can be confusing to users, the PVC is bound
-   to different PVs or dynamically provisioned, depending on if the default SC
-   exists or not at the time when the PVC is created.
-
 ### Goals
 
 * Loosen ordering requirements between PVCs and default SC creation.
-* Improve user experience with `pvc.spec.storageClassName=nil`.
 
 ### Non-Goals
 
@@ -141,25 +129,9 @@ cases that can be problematic:
 
 ## Proposal
 
-Right now, the default SC is applied to PVCs in an admission plugin, i.e. only
-during PVC creation. Later on, PV controller will bind PVCs with
-`pvc.spec.storageClassName=nil` to PVs with `pv.spec.storageClassName=""`,
-if such a PV exists.
-
-We want to change the existing `pvc.spec.storageClassName=nil` behavior
-to always require a default SC. It would never bind to a PV with
-`pv.spec.storageClassName=""` and it would be `Pending` until a default SC
-is created. When a default SC is created, the PVC `pvc.spec.storageClassName`
-will be updated with the new default SC name in the PV controller.
-
-Any PVs with `pv.spec.storageClassName=""` will be able to bind only to a PVC
-with `pvc.spec.storageClassName=""`.
-
-This behavior should be simpler from the user perspective, without the need to
-change PV admission plugin.
-
-We plan to re-use the existing `storageclass.kubernetes.io/is-default-class`
-SC annotation.
+Change PV controller behavior so it will assign a default SC to unbound PVCs
+with `pvc.spec.storageClassName=nil` after any storage class is marked as
+default.
 
 ### User Stories (Optional)
 
@@ -209,16 +181,13 @@ requesting a default SC (`pvc.spec.storageClassName=nil`) will keep
 `pvc.spec.storageClassName=nil` forever. Such PVC can be bound only to PV with
 `pvc.spec.storageClassName=""`.
 
-With the new behavior, the PV controller will wait until a default SC exists.
-This may break an existing cluster that depends on the behavior described above.
-We expect that the new behavior is better than the existing one. Users that
-want to bind their PVC to PVs with `pv.spec.storageClassName=""` can create
-PVCs explicitly requesting `pvc.spec.storageClassName=""` to bind the PVC to a
-statically provisioned PV.
+With the new behavior, the PV controller will keep binding PVCs with
+`pvc.spec.storageClassName=nil` to PVs with `pv.spec.storageClassName=""` until
+a default SC exists. After admin creates default storage class, the `nil` value
+of the PVC will change to this SC name and the PVC will no longer bind to PVs
+with `pv.spec.storageClassName=""`.
 
 ### Risks and Mitigations
-
-This KEP changes current Kubernetes behavior as discussed above.
 
 Risk: Users depend on existing Kubernetes behavior.
 
@@ -226,16 +195,14 @@ Mitigation:
 
 * Document the behavior change with a release note.
 
-* Suggest users that expect to bind to PVs with `storageClassName=""` to create
-  PVCs with `storageClassName=""` and not `storageClassName=nil` in Kubernetes
-  docs.
+* Suggest users that the only guaranteed way to bind PVs with 
+  `storageClassName=""` is to create PVCs with `storageClassName=""` and not
+  `storageClassName=nil`.
 
 ## Design Details
 
 This KEP requires changes in:
 * kube-controller-manager / its PV controller:
-    * Binding of PVCs with `pvc.spec.storageClassName=nil` must be changed to
-      ignore PVs with `pv.spec.storageClassName=""`.
     * `pvc.spec.storageClassName=nil` in PVC must be reconciled to a current
       default SC, if it exists, or after it's created.
 
@@ -645,25 +612,19 @@ complexity on user side - they need to use two annotations instead of one.
 We assume that more users will want the new behavior introduced in this KEP
 than users that want to keep the existing behavior.
 
-### Bind to `""` PVs at least once
+### Bind PVCs with `nil` will wait for default SC
 
 Today, if there is no default SC, a PVC with `pvc.spec.storageClassName=nil`
 will be bound to PV with `pv.spec.storageClassName=""`.
-To keep at least part of this behavior, PV controller could try to bind such
-PVCs to PV at least once and only after there are no such PVs left the
-`pvc.spec.storageClassName` would change to a newly created SC.
 
-We find this behavior to be too complicated for users - a PVC with
-`pvc.spec.storageClassName=nil`:
-* Would be dynamically provisioned by a default
-  SC, if the SC exists at the point when PVC is created.
-* Or, when the default SC does not exist at the time of PVC creation, then
-  it would be bound to existing PV with `pv.spec.storageClassName=""`.
-* Or, when such PV does not exist, then provisioned by a newly created default
-  SC.
+We could simplify this by changing the behavior so that PVCs with
+`pvc.spec.storageClassName=nil` would always bind to default SC or would get SC
+assigned retroactively, and still keep part of the existing behavior by binding
+PVs with `pv.spec.storageClassName=""` only to PVCs
+with `pvc.spec.storageClassName=""`.
 
-We think that using `pvc.spec.storageClassName=nil` *only* for a default SC,
-regardless when the SC or PVC is created, is more robust user experience.
+This change would affect small group of users but might be still too breaking
+for users who rely on these semantics.
 
 ## Infrastructure Needed (Optional)
 
