@@ -27,6 +27,7 @@
   - [Affected Components](#affected-components)
   - [Future Enhancements](#future-enhancements)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit Tests](#unit-tests)
     - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
     - [CRI E2E Tests](#cri-e2e-tests)
@@ -712,6 +713,28 @@ Other components:
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
 
 ### Test Plan
+
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
 
 #### Unit Tests
 
