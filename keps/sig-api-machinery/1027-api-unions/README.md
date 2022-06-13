@@ -12,7 +12,6 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -132,15 +131,12 @@ members of a oneOf, in order to receive standardized:
 
 ### Non-Goals
 
-A priority will be minimum disruption to existing types rather than ensuring all
-existing types conform to a single union paradigm (i.e. unions without a
-discriminator should continue to not need a discriminator)
+The focus of this KEP is on providing unified validation and normalization of
+new union types. Migrating existing unions away from their bespoke validation
+logic (e.g validation functions), is an explicit non-goal and will be pursued in
+a separate KEP or later release.
 
 ## Proposal
-
-In order to support unions in a backward compatible way in kubernetes, we're
-proposing the following changes.
-
 
 ### User Stories (Optional)
 
@@ -164,11 +160,6 @@ the API server will perform this validation automatically.
 As a client, I can read, modify, and update the union fields of an object, even
 if I am not aware of all of the possible fields, and the server will properly
 interpret my intent.
-
-#### Story 3
-
-As a maintainer of existing builtin APIs, I should be able to add new fields to
-a union and have it behave as expected.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -383,6 +374,10 @@ Machinery before moving forward.
 2. What should the value of the discriminator be when no field in the union is
    to be set. A couple options inclued an empty string, an field common to all
    union (e.g. "NONE"), or a field specified on a per union basis.
+3. How should a server behave when it receives a union with multiple fields set
+   and the discriminator pointing to one of them? Reject the request, accept the
+   request but don't clear the fields, or automatically clear the fields not
+   specified by the discriminator.
 
 ### Test Plan
 
@@ -561,17 +556,18 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: APIUnions
+  - Components depending on the feature gate: kube-apiserver
+  
+Request handlers in the api server will call into union validation and
+normalization function from the structured-merge-diff repo when feature is
+enabled.
+
 
 ###### Does enabling the feature change any default behavior?
+
+No
 
 <!--
 Any change of default behavior may be surprising to users or break existing
@@ -591,7 +587,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, requests will simply skip union validation and normalization.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Requests will resume perform union validation and normalization
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -616,6 +616,8 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+N/A
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -628,6 +630,7 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
+N/A
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
@@ -635,6 +638,7 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+N/A
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
@@ -643,6 +647,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
+N/A
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
@@ -658,6 +663,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
+Simply creating and updating objects with union fields.
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -666,6 +672,10 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
+1. Create a new CRD with a union field
+2. Apply the CRD
+3. Create a CR with an invalid union (multiple fields set, no discriminator
+   set), see if the CR is rejected via union validation
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
 for each individual pod.
@@ -673,7 +683,6 @@ Pick one more of these and delete the rest.
 Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
--->
 
 - [ ] Events
   - Event Reason: 
@@ -682,8 +691,11 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
+-->
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+N/A
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -702,9 +714,9 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+N/A
 <!--
 Pick one more of these and delete the rest.
--->
 
 - [ ] Metrics
   - Metric name:
@@ -712,9 +724,11 @@ Pick one more of these and delete the rest.
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
+-->
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
+N/A
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
@@ -722,12 +736,14 @@ implementation difficulties, etc.).
 
 ### Dependencies
 
+
 <!--
 This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
 
+N/A
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
 as node-level agents (e.g. specific version of CRI). Focus on external or
@@ -745,6 +761,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
+N/A
 <!--
 For alpha, this section is encouraged: reviewers should consider these questions
 and attempt to answer them.
@@ -756,6 +773,8 @@ previous answers based on experience in the field.
 -->
 
 ###### Will enabling / using this feature result in any new API calls?
+
+No
 
 <!--
 Describe them, providing:
@@ -772,6 +791,8 @@ Focusing mostly on:
 
 ###### Will enabling / using this feature result in introducing new API types?
 
+No
+
 <!--
 Describe them, providing:
   - API type
@@ -781,6 +802,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
+No
 <!--
 Describe them, providing:
   - Which API(s):
@@ -789,6 +811,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No
 <!--
 Describe them, providing:
   - API type(s):
@@ -798,6 +821,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
+No
 <!--
 Look at the [existing SLIs/SLOs].
 
@@ -809,6 +833,7 @@ Think about adding additional work or introducing new steps in between
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+No
 <!--
 Things to keep in mind include: additional in-memory state, additional
 non-trivial computations, excessive access to disks (including increased log
@@ -833,6 +858,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+N/A objects are not reachable
 
 ###### What are other known failure modes?
 
@@ -869,11 +896,13 @@ into a single format. We don't see a way to do so without drastically changing
 existing APIs and breaking backwards compatibility
 
 ## Alternatives
-* Non-Discrminated
+
+###### Non-Discrminated
+
 The primary alternative discussed is to not have a discriminator for new union
 types. As discussed in the normalization section, requiring a discriminator
 allows the server to better understand the intentions of clients that do not
-have knowledge of all the fields in a union if newer verisons of the server add
+have knowledge of all the fields in a union if newer versions of the server add
 new fields to the union.
 
 <!--
