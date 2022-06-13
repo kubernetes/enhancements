@@ -207,7 +207,7 @@ Inspect the kubelet configuration of a node -- check for the presence of the fea
 ###### How can someone using this feature know that it is working for their instance?
 
 In order to verify this feature is working, one should:
-Pick a node with at least 2 Sockets and 8 NUMA nodes
+Pick a node with at least 2 Sockets and multiple NUMA nodes per socket
 Ensure no other pods with exclusive CPUs are running on that node
 Launch a 2 pods with a nodeSelector to that node that has a single container in it
 Run a `sleep infinity` command and request exclusive CPUs for the container in the amount of (4*NUM_CPUS_PER_NUMA_NODE - 8)
