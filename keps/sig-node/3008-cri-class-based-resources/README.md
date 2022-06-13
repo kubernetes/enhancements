@@ -456,7 +456,7 @@ seccomp support was added. This will bridge the gap between enabling
 class-based resources in the CRI protocol and making them available in the Pod
 spec.
 
-A feature gate ClassResourcePodAnnotations enables kubelet to look for pod
+A feature gate ClassResources enables kubelet to look for pod
 annotations and set the class resource assignment via CRI protocol accordingly.
 
 Specifically, kubelet will support annotations for specifying RDT and blockio
