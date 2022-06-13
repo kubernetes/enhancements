@@ -714,75 +714,6 @@ not specify a value for the `priority` field.  The default behavior
 for `priority` is designed to do something more natural and convenient
 than have them all collide at some fixed number.
 
-Borrowing is done on the basis of the current situation, with no
-consideration of opportunity cost, no further rationing according to
-shares (just obeying the concurrency limits as outlined above), and no
-pre-emption when the situation changes.
-
-Whenever a request is dispatched, it takes all its seats from one
-priority level --- either the one referenced by the request's
-FlowSchema or a lower priority level.
-
-Borrowing is further limited by a practical consideration: we do not
-want mutual exclusion among all priority levels in the dispatching
-code.  Aside from borrowing, dispatching from one priority level is
-done independently from dispatching at another --- using a distinct
-`sync.Mutex` for each priority level.  There _is_ a global
-`sync.RWMutex`, but queuing and dispatching only requires locking that
-for reading (which is not mutually exclusive); write locking is done
-only while reconfiguring.  Borrowing is allowed in just one direction:
-higher may borrow from lower.  A higher priority level may actively
-borrow from a lower one but a lower level does not actively lend to a
-higher one (see below).  In this design, working on dispatching one
-request requires holding at most two priority level mutexes at any
-given moment.  To avoid deadlock, there is a strict ordering on
-acquisition of those mutexes (namely, decreasing logical priority).
-
-We could take a complementary approach, in which lower actively lends
-to higher but higher does not actively borrow from lower.  The chosen
-direction was chosen based on looking at metrics from scalabiility
-tests showing that the `workload-low` priority level has a
-significantly larger NominalConcurrencyLimit than the other levels and
-is usually very under-utilized (so it would consider lending less
-often than higher levels would consider borrowing).
-
-A request can be dispatched exactly at a non-exempt priority level
-when either there are no requests executing at that priority level or
-the number of seats needed by that request is no greater than the
-number of unused seats at that priority level.  The number of unused
-seats at a given priority level is that level's
-NominalConcurrencyLimit minus the number of seats used by requests
-executing at that priority level (both requests dispatched from that
-priority level and requests dispatched from higher priority levels
-that are borrowing these lower level seats).
-
-There are two sorts of times when dispatching to a non-exempt priority
-level is considered: when a request arrives, and when a request
-releases the seats it was occupying (which is not the same as when the
-request finishes from the client's point of view, due to the special
-considerations for WATCH requests).
-
-At each of these sorts of moments, as many requests are dispatched
-exactly at the same priority level as possible.  The next request to
-consider in this process is chosen by using the Fair Queuing for
-Server Requests algorithm below to choose one of the non-empty queues
-at that priority level, and if indeed there is a non-empty queue then
-the request at the head of the chosen queue is considered for
-dispatching.  If the level has non-empty queues but the chosen request
-can not be dispatched exactly at this level at the moment then the
-logically lower non-exempt priority levels are considered, one at a
-time, in decreasing logical priority order.  As soon as one is found
-at which the request can be dispatched at the moment according to the
-rule above then the search stops and the request is dispatched to
-execute using some of the lower priority level's seats.  If no
-suitable priority level is found then the request is not dispatched at
-the moment.
-
-As can be seen from this logic, when seats are freed up at a given
-priority level they are _not_ actively lent to logically higher
-priority levels.  We avoid that in order to have a total order in
-which priority level mutexes are acquired (thus avoiding deadlock).
-
 The following table shows the current default non-exempt priority
 levels and a proposal for their new configuration.  For the sake of
 continuity with out-of-tree configuration objects, the proposed
@@ -799,6 +730,100 @@ when the priority field holds zero.
 | global-default  |  20 |  50 |  9900 |
 | catch-all       |   5 |   0 | 10000 |
 
+
+Borrowing is done on the basis of the current situation, with no
+consideration of opportunity cost, no further rationing according to
+shares (just obeying the concurrency limits as outlined above), and no
+pre-emption when the situation changes.
+
+Whenever a request is dispatched, it takes all its seats from one
+priority level --- either the one referenced by the request's
+FlowSchema or a logically lower priority level.
+
+Note: We *could* take a complementary approach, in which a request can
+borrow from a logically higher priority level.  That would go together
+with a bigger change in the default configuration and greater
+challenges in incremental rollout.  That is not the approach described
+here.
+
+In the implementation, there is an important consideration regarding
+locking.  We do not want one global mutex to be held for any work on
+dispatching; we want to allow concurrent work on dispatching, where
+possible.  Before the introduction of borrowing, the priority levels
+operated completely independently and the only global thing was a
+`sync.RWMutex` that is locked for reading to do dispatching work and
+locked for writing only when digesting changes to the configuration
+API objects.  Each priority level has its own private mutex.
+Borrowing introduces an interaction between priority levels, requiring
+multiple of those private locks to be held at once.  We must avoid
+deadlock.  This is done by insisting that whenever two locks are to be
+held at once, they are acquired in some total order.  In particular,
+the lock of a logically higher priority level is acquired before the
+lock of a logically lower priority level.  The locking order does not
+have to be the same as the priority order, but we make it the same for
+the sake of simplicity.
+
+A request can be dispatched from a queue of priority level X to seats
+at non-exempt priority level Y when either there are no requests
+executing at level Y or the number of seats needed by that request is
+no greater than the number of unused seats at priority level Y.  The
+number of unused seats at a given priority level is that level's
+NominalConcurrencyLimit minus the number of seats used by requests
+executing at that priority level (both requests dispatched from that
+priority level and requests dispatched from higher priority levels
+that are borrowing these lower level seats).
+
+There are two sorts of times when dispatching from/to a non-exempt
+priority level is considered: when a request arrives, and when a
+request releases the seats it was occupying (which is not the same as
+when the request finishes from the client's point of view, due to the
+special considerations for WATCH requests).
+
+At each of these sorts of moments, as many requests as possible are
+dispatched from the priority level involved to the same priority
+level.  The next request to consider in this process is chosen by
+using the Fair Queuing for Server Requests algorithm below to choose
+one of the non-empty queues (if indeed there are any) at that priority
+level.  This was the entirety of the reaction before the introduction
+of borrowing.
+
+Borrowing extends the reaction as follows.  There are two cases.  The
+simpler case is when reacting to a request arrival, let us say at
+priority level X.  In this case, and if the baseline reaction ---
+dispatching as many requests as possible from X to X --- ends with a
+request to dispatch but not enough seats available, then the reaction
+continues with trying to dispatch that request to the logically lower
+priority levels.  With the lock of X still held, the logically lower
+levels Y are enumerated in logically decreasing order and dispatch to
+each one of them is considered.  This consideration starts by
+acquiring Y's lock, then dispatches as many requests from X to Y as
+are allowed by the above rule, and finally releases Y's lock.
+Naturally, if/when X runs out of requests to dispatch, this reaction
+stops.
+
+The more complicated case is reacting to seats being freed up.  Let us
+say this is at priority level X.  As in the other case, the reaction
+starts with the baseline, dispatching as much as possible from X to X.
+If this leaves some seats at X still available, then the reaction
+continues by trying to dispatch from higher priority levels to X.  The
+lock of X is not held over this loop, that would violate locking
+order.  This iteration starts by releasing the lock of X and then
+iterating over the higher priority levels Y (in logically decreasing
+priority order) and considering each one in turn.  That consideration
+starts by acquiring the locks of Y and X (in that order), then does as
+much dispatching from Y to X as is allowed, and finally releases the
+two locks.  Note that dispatching one wide request from Y to X may
+unblock immediate dispatching of additional requests from Y (whether
+to X, Y, or another priority level).  The dispatching of all possible
+from Y to X does not cover all of that.  Thus, the reaction to seats
+being freed up has to include keeping a list of priority levels Y to
+consider general dispatching from.  An element is added to that list
+whenever the dispatching from Y to X concludes in a way that warrants
+more general consideration of Y.  After the primary iteration above is
+done, the reaction to seats being freed continues with iterating over
+this list of Y to reconsider and reacting as for an arrival at Y:
+dispatch as much as possible from Y to Y and logically lower priority
+levels.
 
 ### Fair Queuing for Server Requests
 
