@@ -98,6 +98,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Pod QoS class](#pod-qos-class)
   - [Default class](#default-class)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -512,14 +516,7 @@ this be specified in the CRI protocol/`cri-api` and Pod spec?
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -528,6 +525,66 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+[ ] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `<package>`: `<date>` - `<test coverage>`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- <test>: <link to test coverage>
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- <test>: <link to test coverage>
+
 ### Graduation Criteria
 
 <!--
@@ -535,12 +592,13 @@ when drafting this test plan.
 
 Define graduation milestones.
 
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
+These may be defined in terms of API maturity, [feature gate] graduations, or as
+something else. The KEP should keep this high-level with a focus on what
+signals will be looked at to determine graduation.
 
 Consider the following in developing the graduation criteria for this enhancement:
 - [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
+- [Feature gate][feature gate] lifecycle
 - [Deprecation policy][deprecation-policy]
 
 Clearly define what graduation means by either linking to the [API doc
@@ -550,6 +608,7 @@ or by redefining what graduation means.
 In general we try to use the same stages (alpha, beta, GA), regardless of how the
 functionality is accessed.
 
+[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
 [maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
@@ -792,6 +851,12 @@ This section must be completed when targeting alpha to a release.
 
 <!--
 Pick one of these and delete the rest.
+
+Documentation is available on [feature gate lifecycle] and expectations, as
+well as the [existing list] of feature gates.
+
+[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
@@ -817,6 +882,10 @@ automations, so be extremely careful here.
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
 
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
+
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
@@ -829,6 +898,12 @@ The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
 with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
 ### Rollout, Upgrade and Rollback Planning
@@ -874,6 +949,9 @@ Even if applying deprecation policies, they may still surprise some users.
 
 <!--
 This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -1056,6 +1134,9 @@ This through this both in small and large cases, again with respect to the
 
 <!--
 This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
