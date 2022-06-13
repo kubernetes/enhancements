@@ -7,18 +7,16 @@ participating-sigs:
   - sig-auth
 status: implementable
 creation-date: 2021-06-25
-last-updated: 2022-01-26
 reviewers:
   - "@liggitt"
   - "@mikedanese"
 approvers:
   - "@liggitt"
-prr-approvers:
-  - TBD
-stage: alpha
-latest-milestone: "v1.24"
+stage: beta
+latest-milestone: "v1.25"
 milestone:
   alpha: "v1.24"
+  beta: "v1.25"
 feature-gates:
   - name: LegacyServiceAccountTokenNoAutoGeneration
     components:
@@ -31,4 +29,4 @@ feature-gates:
       - kube-controller-manager
 disable-supported: true
 metrics:
-  - TBD
+  - serviceaccount_legacy_tokens_total
