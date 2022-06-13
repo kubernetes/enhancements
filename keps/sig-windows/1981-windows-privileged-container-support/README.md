@@ -513,9 +513,9 @@ There will be two different behaviors for how volume mounts are configured in `h
 
 - **Bind Mounts**
   - With the approach Window's bind-filter driver will be used to create a view that merges the host's OS filesystem with container-local volumes.
-  - When `hostProcess` containers are started a new volume will be created which contains the contents of the contaner image.
+  - When `hostProcess` containers are started a new volume will be created which contains the contents of the container image.
     This volume will be mounted to `c:\hpc`.
-  - Additional volume mounts specified for `hostProcess` containers will be mounted at their requested location and can be access the same way as volume mounts in Linx or regular Windows Server contaienrs.
+  - Additional volume mounts specified for `hostProcess` containers will be mounted at their requested location and can be access the same way as volume mounts in Linux or regular Windows Server containers.
     - ex: a volume with a mountPath of `/var/run/secrets/token` for containers will be mounted at `c:\var\run\secrets\token` for containers.
   - Volume mounts will only be visible to the containers they are mounted into.
   - The default working directory for `hostProcess` containers will also be set to `c:\hpc`.
@@ -524,16 +524,16 @@ There will be two different behaviors for how volume mounts are configured in `h
 
 - **Symlinks**
   - With this approach container image contents and volume mounts will be mounted at predicable paths on the host's filesystem.
-  - When `hostProcess` contaienrs are started a new volume will be created which containers the contents of the contaienr image.
+  - When `hostProcess` containers are started a new volume will be created which containers the contents of the container image.
     this volume will be mounted to `c:\C\{container-id}`.
   - Additional volumes mounts specified for `hostProcess` containers will be mounted to `c:\C\{container-id}\{mount-destination}`
     - ex: a volume with a mountPath of `/var/run/secrets/token` for a container with id `1234` can be accessed at `c:\C\1235\var\run\secrets\token`
   - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the path where the container volume is mounted (`c:\c\{container-id}`) to access content.
     - This environment variable can be used inside the Pod manifest / command line / args for containers.
 
-A recording of the behaviors differces from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309).
-Note -  In the recording it was mentioned that this functionally might not be supported on WS2019.
-    This functionality will be avaible in WS2019 but will require an OS patch (ETA: July 2022).
+A recording of the behavior differences from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309).
+Note -  In the recording it was mentioned that this functionality might not be supported on WS2019.
+    This functionality will be available in WS2019 but will require an OS patch (ETA: July 2022).
 
 Additionally the following will be true for either volume mount behavior:
 
@@ -551,7 +551,7 @@ Additionally the following will be true for either volume mount behavior:
 
 ##### Compatibility
 
-During the alpha/beta implementations of this feature only **Symlink** volume mount behavior was implmented.
+During the alpha/beta implementations of this feature only **Symlink** volume mount behavior was implemented.
 This implemention did unlock a lot of critical use cases for managing Windows nodes in Kubernets clusters but did have some usability issues
 (such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig not working as expected).
 
