@@ -103,6 +103,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
   - [Future work](#future-work)
@@ -648,6 +650,23 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 -->
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- In addition to the simple change in CRI API, implement the following
+  - Pod spec update
+  - Resource discovery
+  - Resource status/capacity (with scheduling)
+  - Parmission control
+- Well-defined behavior with [In-place pod vertical scaling](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources)
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
 
 ### Upgrade / Downgrade Strategy
 
