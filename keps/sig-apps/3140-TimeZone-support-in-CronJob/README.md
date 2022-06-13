@@ -328,7 +328,7 @@ ensuring the job creation skew is not increasing.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-99th percentile of cron_job_creation_skew <= 5 seconds per cluster-day.
+99th percentile over day for cron_job_creation_skew is <= 15s
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -347,7 +347,25 @@ No.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-None.
+CronJob's TimeZone support relies on external TimeZone package, if one is missing
+golang's internal package will be used, instead.
+
+- kube-controller-manager and kube-apiserver
+  - Usage description:
+    Both kube-controller-manager and kube-apiserver need to have `CronJobTimeZone`
+    feature gate turned for this feature to fully work.
+    - Impact of its outage on the feature:
+      CronJob's TimeZone functionality will not work.
+    - Impact of its degraded performance or high-error rates on the feature:
+      Delays in creating new Jobs.
+
+- TimeZone package
+  - Usage description: CronJob's TimeZone support relies on external TimeZone package,
+    if one is missing golang's internal package will be used, instead.
+    - Impact of its outage on the feature:
+      TimeZone functionality will not work.
+    - Impact of its degraded performance or high-error rates on the feature:
+      Delays in creating new Jobs.
 
 ### Scalability
 
@@ -386,14 +404,20 @@ We're not using it, yet.
 
 ###### What are other known failure modes?
 
-- [Incorrect TimeZone]
+- Incorrect TimeZone
   - Detection: `UnknownTimeZone` events being reported for a CronJob.
   - Mitigations: Fix the TimeZone or suspend a CronJob.
   - Diagnostics: Logs containing `TimeZone` phrase.
   - Testing: A set of unit tests is ensuring that invalid TimeZone is properly
     handled both in the apiserver and in the controller itself, reporting to
     user the problem.
-
+- Job creation problems
+  - Detection: `cron_job_creation_skew` metric is exceeding expected 15s per day.
+  - Mitigations: Disable `CronJobTimeZone` feature gate.
+  - Diagnostics: Check logs from CronJob controller.
+  - Testing: A set of unit tests is ensuring that invalid TimeZone is properly
+    handled both in the apiserver and in the controller itself, reporting to
+    user the problem.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
