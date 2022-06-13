@@ -527,7 +527,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -559,7 +559,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2022-06-13` - `66.8%`
+- `k8s.io/kubernetes/pkg/apis/core/validation/validation.go`: `2022-06-13` - `82.1%`
 
 ##### Integration tests
 
@@ -570,6 +571,11 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
+
+Alpha: no specific integration tests are planned for Alpha.
+
+Beta: Existing integration tests for affected components (e.g. scheduler, node
+status, quota) are extended to cover class resources.
 
 - <test>: <link to test coverage>
 
@@ -585,7 +591,10 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+Alpha: no specific e2e-tests are planned.
+
+In order to be able to run e2e tests, a cluster with nodes having runtime
+support for class resources is required.
 
 ### Graduation Criteria
 
