@@ -306,7 +306,8 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-A spike on metric `schedule_attempts_total{result="error|unschedulable"}` when pods using this feature are added.
+- A spike on metric `schedule_attempts_total{result="error|unschedulable"}` when pods using this feature are added.
+- A spike on metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` or `scheduling_algorithm_duration_seconds` when pods using this feature are added. 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
