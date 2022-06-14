@@ -98,6 +98,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Apply Patch](#apply-patch)
     - [Kubectl Flag](#kubectl-flag)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
@@ -556,6 +557,14 @@ validation is supported by the apiserver kubectl is connected to.
 
 ### Test Plan
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+N/A
+
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -574,6 +583,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 ##### Unit tests
+
 [alpha and beta]
 Logic that is changed in the apiextensions schema package (i.e. objectmeta
 algorithm and pruning algorithm) will be thoroughly unit tested as well as
@@ -584,6 +594,7 @@ Additional testing has also been added to the
 [apiserver/endpoints/handlers/rest_test.go](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/endpoints/handlers/rest_test.go) to detect unknown and duplicate fields.
 
 ##### Integration tests
+
 [alpha and beta]
 Primarily, server side validation will be integration tested and benchmarked via a complete test
 suite at
@@ -599,6 +610,7 @@ It tests the cross product of all valid permutations along the dimensions of:
 
 
 ##### e2e tests
+
 [beta]
 With field validation on by default in beta, we will modify
 [test/e2e/kubectl/kubectl.go](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/kubectl.go) to ensure that kubectl defaults to using server side field validation and detects unknown/duplicate fields as expected.
