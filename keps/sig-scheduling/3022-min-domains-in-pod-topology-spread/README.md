@@ -523,7 +523,10 @@ For each of them, fill in the following information by copying the below templat
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 - Check `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` to see if latency increased. 
+  - In this case, the metrics showes literally the feature is slow.
+  - You should stop using `MinDomains` in your Pods and may need to disable `MinDomains` feature by feature flag `MinDomainsInPodTopologySpread`.
 - Check `schedule_attempts_total{result="error|unschedulable"}` to see if the number of attempts increased.
+  - In this case, your use of `MinDomains` may be incorrect or not appropriate for your cluster.
 
 ## Implementation History
 
