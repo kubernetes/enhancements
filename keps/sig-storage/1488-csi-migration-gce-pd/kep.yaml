@@ -18,8 +18,6 @@ disable-supported: true
 status: implementable
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
-prr-approvers:
-  - "@wojtek-t"
 replaces:
 
 # The target maturity stage in the current dev cycle for this KEP.
