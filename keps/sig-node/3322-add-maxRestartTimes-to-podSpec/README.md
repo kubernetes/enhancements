@@ -85,7 +85,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -95,6 +94,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -173,7 +175,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 This KEP aims to add a new field named `maxRestartTimes`(TBD) to podSpec which helps controlling
-the restart times of a container when pod's `restartPolicy` is set to `OnFailure`.
+the restart times of a Pod when Pod's `restartPolicy` is set to `OnFailure`.
 
 ## Motivation
 
@@ -220,8 +222,8 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 Add a new field `maxRestartTimes` to the spec of pod. `maxRestartTimes` only applies
-when `restartPolicy` is set to `OnFailure`. As a result, every container of
-the pod has the limit restart times defined by `maxRestartTimes`.
+when `restartPolicy` is set to `OnFailure`. As a result, the restart times of a Pod
+will be controlled by `maxRestartTimes`.
 
 
 ### User Stories (Optional)
@@ -278,11 +280,11 @@ proposal will be implemented, this is the place to discuss them.
 If Pod's `RestartPolicy` is `Always` or `Never`, `MaxRestartTimes` is default to -1, and will not apply.
 
 If Pod's `RestartPolicy` is `OnFailure`, `MaxRestartTimes` is also default to -1, which means infinite
-restart times for backwards compatibility. In runtime, we'll check the `RestartCount` of
-container [`Status`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/runtime.go#L306-L335)
-in function [`ShouldContainerBeRestarted`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/helpers.go#L63-L96).
-If restart count is greater than the `MaxRestartTimes`, return false indicating the container should not
-restart again. We'll add a new error named `ExceedMaxRestartTimes` as the reason of Pod's failure state.
+restart times for backwards compatibility. In runtime, we'll check the sum of `RestartCount` of
+all containers [`Status`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/runtime.go#L306-L335)
+packaged by Pod in function [`ShouldContainerBeRestarted`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/helpers.go#L63-L96).
+If the value is greater than the `MaxRestartTimes`, return false indicating the Pod should not restart again.
+We'll add a new error named `ExceedMaxRestartTimes` as the reason of Pod's failure state.
 
 
 ### Test Plan
