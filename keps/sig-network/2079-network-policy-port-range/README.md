@@ -16,6 +16,9 @@
 - [Design Details](#design-details)
   - [Validations](#validations)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -181,6 +184,12 @@ The `NetworkPolicyPort` will need to be validated, with the following scenarios:
 
 ### Test Plan
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
 Unit tests:
 * test API validation logic
 * test API strategy to ensure disabled fields
@@ -188,6 +197,15 @@ Unit tests:
 E2E tests:
 * Add e2e tests exercising only the API operations for port ranges. Data-path 
 validation should be done by CNIs.
+
+##### Unit tests
+
+- `pkg/apis/networking/validation/validation`: `14/Jun/2022` - `92.5%`
+- `pkg/registry/networking/networkpolicy/strategy`: `14/Jun/2022` - `75.9%`
+
+##### e2e tests
+
+- test/e2e/network/netpol/network_policy_api.go: Test is optional as per the whole Network Policy suite
 
 
 ### Graduation Criteria
@@ -257,7 +275,6 @@ start working incorrectly. This is a fail-closed failure, so it is acceptable.
 
  ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
   Not probably, but still there's the risk of some bug that fails validation, 
   or conversion function crashes.
@@ -276,13 +293,17 @@ _This section must be completed when targeting beta graduation to a release._
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
 ###### How can an operator determine if the feature is in use by workloads?
 
   
   Operators can determine if NetworkPolicies are making use of EndPort creating
   an object specifying the range and validating if the traffic is allowed within 
-  the specified range
+  the specified range.
+
+  Also Network Policy object now supports (as alpha) status/condition fields, so 
+  Network Policy providers can add a feedback to the user whether the policy was processed
+  correctly or not. Providing this feedback is optional and depends on implementation
+  by each NPP.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -293,8 +314,11 @@ _This section must be completed when targeting beta graduation to a release._
       look into CNI metrics to check if the rules are being applied correctly, like Calico 
       that provides metrics like `felix_iptables_restore_errors` that can be used to 
       verify if the amount of restoring errors raised after the feature being applied.
-      We might need in a future to add some Status field that allows CNI providers to provide
-      feedback about the functionality
+      For NetworkPolicy Providers that doesn't support this feature, a new status field was added
+      in Network Policy object allowing the providers to give feedback to users using conditions. 
+      Any NPP that does not support this feature should add a condition on the Network Policy 
+      object.
+ 
  
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -362,7 +386,7 @@ of this feature?**
   lead to undesired Network Policy, blocking previously working rules. 
 
 ## Implementation History
-- 2022-01-31 Propose GA graduation
+- 2022-06-14 Propose GA graduation
 - 2021-05-11 Propose Beta graduation and add more Performance Review data
 - 2020-10-08 Initial [KEP PR](https://github.com/kubernetes/enhancements/pull/2079)
 
