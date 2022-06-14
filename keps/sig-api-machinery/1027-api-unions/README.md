@@ -19,6 +19,7 @@
   - [Go Markers](#go-markers)
   - [OpenAPI](#openapi)
   - [Normalization and Validation](#normalization-and-validation)
+    - [Migrating existing unions](#migrating-existing-unions)
   - [Open Questions](#open-questions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -133,7 +134,8 @@ functions (e.g. `pkg/apis/<group>/validation/validation.go`).
   incomplete information
 
 Another goal is to migrate at least one existing union to the new semantics in
-order to verify that migration is possible.
+order to verify that migration is possible. Ideally migrate one of each type of
+existing union (discriminated and non-discriminated).
 
 ### Non-Goals
 
@@ -374,6 +376,22 @@ currently done for existing union types.
 
 Objects must be validated AFTER the normalization process.
 
+#### Migrating existing unions
+
+As mentioned, one of the goals is to migrate at least one existing union to
+using the new marker based union validation and normalization. While open
+questions remain around the priority and urgency of migrating existing unions,
+nonetheless we should be able to come to a consensus on which types to migrate
+first.
+
+For discriminated unions, a couple relatively straightforward discriminated types are
+`MetricSpec` and `MetricStatus`. These have clearly defined discriminator values
+that map one-to-one to a member field, which make them good candidates for
+initial migration.
+
+For non-discriminated unions, there are a few relatively straightforward types
+that make good candidates for initial migration, such as `ContainerState`
+
 ### Open Questions
 
 A few open questions exist with the design that need to be resolved with SIG API
@@ -402,7 +420,8 @@ Machinery before moving forward.
 4. Given that we want to migrate at least one existing union to use the new
    semantics, which union should we do? Must we upgrade both a discriminated and
    non-discriminated union for alpha or is only upgrading an existing
-   discriminated union sufficient?
+   discriminated union sufficient? Thoughts on my proposed types of
+   `MetricStatus` (discriminated) and `ContainerState` (non-discriminated).
 5. What should we default the discriminator value of a member field to if not
    specified in the go markers?
    a. the json representation of the field name
