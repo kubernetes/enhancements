@@ -210,13 +210,13 @@ The last byte represents the encoding style, with 0 meaning that the rest of the
 ```go
 type EncryptedObject struct {
     TypeMeta `json:",inline" protobuf:"bytes,1,opt,name=typeMeta"`
-
+    // KeyID is the KMS key ID used for encryption operations.
     KeyID string `protobuf:"bytes,2,opt,name=keyID"`
-
+    // PluginName is the name of the KMS plugin used for encryption.
     PluginName string `protobuf:"bytes,3,opt,name=pluginName"`
-
+    // Ciphertext is the encrypted DEK.
     Ciphertext []byte `protobuf:"bytes,4,opt,name=ciphertext"`
-
+    // Annotations is additional metadata that was provided by the KMS plugin.
     Annotations map[string][]byte `protobuf:"bytes,5,opt,name=annotations"`
 }
 ```
