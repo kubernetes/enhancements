@@ -318,6 +318,20 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 Yes. The behavior is changed as expected.
 
+Test scenario:
+1. start kube-apiserver that `MinDomains` feature is enabled. 
+2. create three nodes and pods spread across nodes as 2/2/1
+3. create new Pod that has a TopologySpreadConstraints: maxSkew is 1, topologyKey is `kubernetes.io/hostname`, and minDomains is 4 (larger than the number of domains (= 3)).
+4. the Pod created in (3) isn't scheduled because of `MinDomain`.
+5. delete the Pod created in (3).
+6. recraete kube-apiserver that `MinDomains` feature is disabled.
+7. create the same Pod as (3).
+8. the Pod created in (7) is scheduled because `MinDomain` is disabled.
+9. delete the Pod created in (7).
+10. recreate kube-apiserver that `MinDomains` feature is enabled.
+11. create the same Pod as (3).
+12. the Pod created in (11) isn't scheduled because of `MinDomain`.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
