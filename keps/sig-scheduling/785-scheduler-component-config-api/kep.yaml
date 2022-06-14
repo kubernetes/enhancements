@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-architecture
-status: implemented
+status: implementable
 creation-date: 2020-05-08
 reviewers:
   - "@Huang-Wei"
