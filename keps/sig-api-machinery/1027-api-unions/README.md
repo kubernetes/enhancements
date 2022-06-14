@@ -121,7 +121,10 @@ become possible.
 ### Goals
 
 Provide a simple mechanism for API authors to label fields of a resource as
-members of a oneOf, in order to receive standardized:
+members of a oneOf, in order to receive standardized validation and
+normalization, rather than having to author it themeselves per
+resource as currently done as a workaround in various validation
+functions (e.g. `pkg/apis/<group>/validation/validation.go`).
 
 * Validation - ensuring only one member field is set (or at most one if
   desired).
@@ -151,7 +154,7 @@ bogged down.
 
 #### Story 1
 
-As a CRD owner, I can use simple semantics (such as go tags), to express the
+As a CRD owner, I can use simple semantics (such as openapi tags/go markers), to express the
 desired validation of a oneOf (at most one or exactly one field may be set), and
 the API server will perform this validation automatically.
 
@@ -206,16 +209,17 @@ added field to the union (due to version skew).
 We present a [guide doc](https://docs.google.com/document/d/1Wruosjo0ELLl1yxauzpsUjgH2fK9KdgXDmOdJ5sG7Kg/edit?resourcekey=0-8Pwzx6EvsFR7VQoXzCTY4Q) on how to interpret the test matrix, but the major
 conclusions are as follows (along with the test case number from the test matrix):
 
-* (Case #22 and #27) If an unstructured client is unaware of field on the union, but wants to clear
+* (Case #22 and #27) If an unstructured client (i.e. a client that represents data as raw json maps with no knowledge of the schema)
+  is unaware of field on the union, but wants to clear
   the union entirely (assuming the union is optional), it will have no way of doing
   so without a discriminator. With a discriminator, the client can express its
   intention by setting the discriminator to the empty value and the server can
-  respects it intentions and clear any fields the client is unaware of.
+  respect its intentions and clear any fields the client is unaware of.
 * (Case #12 and #16) If a structured client is unaware of a field in the union that is set and it
   just wants to echo back the union it received in a get request (such as when
   updating other parts of the object), a client without a discriminator will
   silently drop the currently set field, while a client with the discriminator
-  will not change the discriminator value, indicating to the client that no
+  will not change the discriminator value, indicating to the server that no
   changes are desired in the union.
 * (Case #34 and #39) If a client sets a union field that the server is not aware of, the server
   will silently drop it and attempt to clear the object of the union field. With
@@ -227,7 +231,7 @@ conclusions are as follows (along with the test case number from the test matrix
   logic to detect that the previously set field has not been modified and that
   only one of the other union fields has been.
 
-### Go tags
+### Go Markers
 
 We're proposing a new type of tags for go types (in-tree types, and also
 kubebuilder types):
@@ -236,15 +240,16 @@ kubebuilder types):
 - `// +unionDiscriminator` before a field means that this field is the
   discriminator for the union. This field MUST be a string. This field MUST be
   required.
-- `// +unionAllowEmpty` before a discriminator field means that by setting the
+- `// +unionOptional` before a discriminator field means that by setting the
   discriminator to an empty string, none of the union fields are persisted
   (meaning at most one member of the union must be set). If not present on the
   discriminator, exactly one of the union members must be set in order to be
   valid.
-- `// +unionMember=<discriminatorName>` before a field means that this
-  field is a member of a union. The `<discriminatorName>` is optional if there
+- `// +unionMember=<memberName>,discriminatedBy=<discriminatorName>` before a field means that this
+  field is a member of a union. The `<memberName>` is the name of the field that must be set as the discriminator value. It defaults to the json representation of the field name if not specified. The `<discriminatorName>` is optional if there
   is only union in a struct and required if there are multiple unions per
-  struct.
+  struct. It should be the json representation of the field tagged with
+  `unionDiscriminator`.
 
 Note unions can't span across multiple go structures (all the fields that are part of a union has to be together in the
 same structure), examples of what is allowed:
@@ -272,15 +277,17 @@ type Union struct {
 	FieldB int `json:"fieldB"`
 }
 
-// This generates two unions, each with two fields and a discriminator. The 
+// This will generate one union that can be embedded because the members explicitly define their discriminator.
+// Also, the unionMember markers here demonstrate how to customize the names used for
+each field in the discriminator.
 type Union2 struct {
 	// +unionDiscriminator
         // +required
 	Type string `json:"type"`
-	// +unionMember=type
+	// +unionMember=ALPHA,discriminatedBy=type
         // +optional
 	Alpha int `json:"alpha"`
-	// +unionMember=type
+	// +unionMember=BETA,discriminatedBy=type
         // +optional
 	Beta int `json:"beta"`
 }
@@ -294,10 +301,10 @@ type InlinedUnion struct {
         // +unionAllowEmpty
         // +required
         FieldType string `json:"fieldType"`
-	// +unionMember=fieldType
+	// +unionMember,discriminatedBy=fieldType
 	// +optional
 	Field1 *int `json:"field1,omitempty"`
-	// +unionMember=fieldType
+	// +unionMember,discriminatedBy=fieldType
 	// +optional
 	Field2 *int `json:"field2,omitempty"`
 
@@ -337,16 +344,15 @@ Issues primarily arise here because of version skew between a client and a serve
 such as when a client is unaware of new fields added to a union and thus doesn't
 know how to clear these new fields when trying to set a different field.
 
-For unions with a discriminator (all newly created unions and some existing
-unions), normalization is simple: the server should always respect the
+For unions with a discriminator, normalization is simple: the server should always respect the
 discriminator.
 
 This means two things:
 1. when the server receives a request with a discriminator set to a
 given field, it should clear out any other fields that are set.
 2. when the server receives a request with a discriminator set to a given field,
-   but that given field is empty, it should maintain the value of the field that
-   currently exists.
+   but that given field is empty, the server should fail with a clear error
+   message.
 
 For situations where a typed client is unaware of a new field (that is currently
 set) and drops the set field such that no fields are now set, the server will
