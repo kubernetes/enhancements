@@ -413,7 +413,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-No.
+Yes. It would be useful if we could see more details related to scheduler's decisions in metrics.
 
 ### Dependencies
 
