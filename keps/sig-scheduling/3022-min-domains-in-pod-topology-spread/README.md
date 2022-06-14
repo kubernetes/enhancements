@@ -393,8 +393,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-- 99% of `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` are within x milliseconds.
-- x% of `schedule_attempts_total` are successful.
+- Metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` <= 100ms on 90-percentile.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
