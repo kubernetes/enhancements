@@ -640,8 +640,10 @@ always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
 The concurrency limit of an apiserver is divided among the non-exempt
-priority levels, and higher ones can do a limited amount of borrowing
-from lower ones.
+priority levels, and logically lower ones can do a limited amount of
+borrowing from logically higher ones.  The idea is that the logically
+high priority levels are provisioned generously, so they usually have
+spare seats to lend.
 
 Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
 midst of the `v1beta2` lifetime, configure the borrowing.  The fields
@@ -715,20 +717,23 @@ for `priority` is designed to do something more natural and convenient
 than have them all collide at some fixed number.
 
 The following table shows the current default non-exempt priority
-levels and a proposal for their new configuration.  For the sake of
-continuity with out-of-tree configuration objects, the proposed
-priority values follow the rule given above for the effective value
-when the priority field holds zero.
+levels and a proposal for their new configuration.  Here "Old Assured
+Shares" is the defaut "AssuredConcurrencyShares" value in effect
+before the introduction of borrowing, and "New Assured Shares" is the
+proposed revised value.  For the sake of continuity with out-of-tree
+configuration objects, the proposed priority values follow the rule
+given above for the effective value when the priority field holds
+zero.
 
-| Name | Assured Shares | Proposed Borrowable Percent | Proposed Priority |
-| ---- | -------------: | --------------------------: | ----------------: |
-| leader-election |  10 |   0 |   150 |
-| node-high       |  40 |  25 |   400 |
-| system          |  30 |  33 |   500 |
-| workload-high   |  40 |  50 |   833 |
-| workload-low    | 100 |  90 |  9000 |
-| global-default  |  20 |  50 |  9900 |
-| catch-all       |   5 |   0 | 10000 |
+| Name | Old Assured Shares | New Assured Shares | Proposed Borrowable Percent | Proposed Priority |
+| ---- | -----------------: | -----------------: | --------------------------: | ----------------: |
+| leader-election |  10 | 100 |  90 |   150 |
+| node-high       |  40 |  40 |  80 |   400 |
+| system          |  30 |  40 |  70 |   500 |
+| workload-high   |  40 |  30 |  60 |   833 |
+| workload-low    | 100 |  10 |  50 |  9000 |
+| global-default  |  20 |  15 |  40 |  9900 |
+| catch-all       |   5 |   5 |   0 | 10000 |
 
 
 Borrowing is done on the basis of the current situation, with no
@@ -738,13 +743,9 @@ pre-emption when the situation changes.
 
 Whenever a request is dispatched, it takes all its seats from one
 priority level --- either the one referenced by the request's
-FlowSchema or a logically lower priority level.
+FlowSchema or a logically higher priority level.
 
-Note: We *could* take a complementary approach, in which a request can
-borrow from a logically higher priority level.  That would go together
-with a bigger change in the default configuration and greater
-challenges in incremental rollout.  That is not the approach described
-here.
+TODO: get good behavior in a mixed-release environment.
 
 In the implementation, there is an important consideration regarding
 locking.  We do not want one global mutex to be held for any work on
@@ -758,10 +759,10 @@ Borrowing introduces an interaction between priority levels, requiring
 multiple of those private locks to be held at once.  We must avoid
 deadlock.  This is done by insisting that whenever two locks are to be
 held at once, they are acquired in some total order.  In particular,
-the lock of a logically higher priority level is acquired before the
-lock of a logically lower priority level.  The locking order does not
-have to be the same as the priority order, but we make it the same for
-the sake of simplicity.
+the lock of a logically lower priority level is acquired before the
+lock of a logically higher priority level.  The locking order does not
+have bear any relation to the priority order, but we make the locking
+order the same as the borrowing order for simplicity.
 
 A request can be dispatched from a queue of priority level X to seats
 at non-exempt priority level Y when either there are no requests
@@ -792,9 +793,9 @@ simpler case is when reacting to a request arrival, let us say at
 priority level X.  In this case, and if the baseline reaction ---
 dispatching as many requests as possible from X to X --- ends with a
 request to dispatch but not enough seats available, then the reaction
-continues with trying to dispatch that request to the logically lower
-priority levels.  With the lock of X still held, the logically lower
-levels Y are enumerated in logically decreasing order and dispatch to
+continues with trying to dispatch that request to the logically higher
+priority levels.  With the lock of X still held, the logically higher
+levels Y are enumerated in logically increasing order and dispatch to
 each one of them is considered.  This consideration starts by
 acquiring Y's lock, then dispatches as many requests from X to Y as
 are allowed by the above rule, and finally releases Y's lock.
@@ -805,10 +806,10 @@ The more complicated case is reacting to seats being freed up.  Let us
 say this is at priority level X.  As in the other case, the reaction
 starts with the baseline, dispatching as much as possible from X to X.
 If this leaves some seats at X still available, then the reaction
-continues by trying to dispatch from higher priority levels to X.  The
+continues by trying to dispatch from lower priority levels to X.  The
 lock of X is not held over this loop, that would violate locking
 order.  This iteration starts by releasing the lock of X and then
-iterating over the higher priority levels Y (in logically decreasing
+iterating over the lower priority levels Y (in logically decreasing
 priority order) and considering each one in turn.  That consideration
 starts by acquiring the locks of Y and X (in that order), then does as
 much dispatching from Y to X as is allowed, and finally releases the
@@ -822,7 +823,7 @@ whenever the dispatching from Y to X concludes in a way that warrants
 more general consideration of Y.  After the primary iteration above is
 done, the reaction to seats being freed continues with iterating over
 this list of Y to reconsider and reacting as for an arrival at Y:
-dispatch as much as possible from Y to Y and logically lower priority
+dispatch as much as possible from Y to Y and logically higher priority
 levels.
 
 ### Fair Queuing for Server Requests
