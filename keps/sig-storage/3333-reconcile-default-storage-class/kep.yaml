@@ -4,7 +4,7 @@ authors:
   - "@RomanBednar"
 owning-sig: sig-storage
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2022-06-03
 reviewers:
   - "@jsafrane"
