@@ -500,7 +500,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The feature doesn't affected because Pod Topology Spread plugin doesn't communicate with kube-apiserver or etcd
+The feature isn't affected because Pod Topology Spread plugin doesn't communicate with kube-apiserver or etcd
 during Filter phase.
 
 ###### What are other known failure modes?
