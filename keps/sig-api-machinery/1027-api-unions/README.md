@@ -16,7 +16,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Discriminator Field](#discriminator-field)
-  - [Go tags](#go-tags)
+  - [Go Markers](#go-markers)
   - [OpenAPI](#openapi)
   - [Normalization and Validation](#normalization-and-validation)
   - [Open Questions](#open-questions)
@@ -132,10 +132,12 @@ functions (e.g. `pkg/apis/<group>/validation/validation.go`).
   best match the intent of the client, despite the client potentially having
   incomplete information
 
+Another goal is to migrate at least one existing union to the new semantics in
+order to verify that migration is possible.
+
 ### Non-Goals
 
-The focus of this KEP is on providing unified validation and normalization of
-new union types. Migrating existing unions away from their bespoke validation
+Migrating all existing unions away from their bespoke validation
 logic (e.g validation functions), is an explicit non-goal and will be pursued in
 a separate KEP or later release.
 
@@ -248,7 +250,7 @@ kubebuilder types):
 - `// +unionMember=<memberName>,discriminatedBy=<discriminatorName>` before a field means that this
   field is a member of a union. The `<memberName>` is the name of the field that must be set as the discriminator value. It defaults to the json representation of the field name if not specified. The `<discriminatorName>` is optional if there
   is only union in a struct and required if there are multiple unions per
-  struct. It should be the json representation of the field tagged with
+  struct. It should be the go representation of the field tagged with
   `unionDiscriminator`.
 
 Note unions can't span across multiple go structures (all the fields that are part of a union has to be together in the
@@ -349,7 +351,13 @@ discriminator.
 
 This means two things:
 1. when the server receives a request with a discriminator set to a
-given field, it should clear out any other fields that are set.
+given field, and multiple member fields are set it should:
+  a. If the discriminator has been modified from the one set in the old object,
+  the server should clear all fields except the one pointed to by the discriminator.
+  b. If the discriminator is unchanged but a new member field has been set (in
+  addition to the existing one that has not been cleared), it should error
+  loudly that the client must change the discriminator if it changes any union
+  member fields.
 2. when the server receives a request with a discriminator set to a given field,
    but that given field is empty, the server should fail with a clear error
    message.
@@ -371,19 +379,36 @@ Objects must be validated AFTER the normalization process.
 A few open questions exist with the design that need to be resolved with SIG API
 Machinery before moving forward.
 
-1. When a server receives an update request with empty data in the member fields
-   but a validly set discriminator pointing to the object's union member field
-   that was previously set, should the server error and inform the client that
-   the field pointed to by the discriminator is currently empty, or should the
-   server retain the previous value it knows was set to the field being pointed
-   to by the discriminator?
+1. What do we do when the discriminator is set (to the previously set value),
+   but all union member fields are null? This likely implies that the client cleared
+   the union member unintentionally, given that the discriminator value remains.
+   Should the server:
+   a. Error loudly and inform the client that the field pointed to by the
+   discriminator is null?
+   b. Retain the previously set member field, present on the old object, absent
+   from the new object, but pointed to by the discriminator?
 2. What should the value of the discriminator be when no field in the union is
-   to be set. A couple options inclued an empty string, an field common to all
-   union (e.g. "NONE"), or a field specified on a per union basis.
+   to be set (i.e for optional unions).
+   a. mandate that the discriminator is the empty string for all optional unions?
+   b. make the field specified on a per union basis (defined in the go markers)?
+   c. mandate that the discriminator be unset (thus make the discriminator an
+   optional field for optional unios)?
 3. How should a server behave when it receives a union with multiple fields set
-   and the discriminator pointing to one of them? Reject the request, accept the
-   request but don't clear the fields, or automatically clear the fields not
-   specified by the discriminator.
+   and the discriminator modified to point to the newly set member field?
+   a. reject the request,
+   b. accept the request but don't clear any fields
+   c. accept the request and clear all the fields except the one chosen by the
+   discriminator
+4. Given that we want to migrate at least one existing union to use the new
+   semantics, which union should we do? Must we upgrade both a discriminated and
+   non-discriminated union for alpha or is only upgrading an existing
+   discriminated union sufficient?
+5. What should we default the discriminator value of a member field to if not
+   specified in the go markers?
+   a. the json representation of the field name
+   b. the go representation of the field name
+   Should we even give users the ability to define it or just stick to whatever
+   we decide the default is?
 
 ### Test Plan
 
@@ -480,7 +505,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - CRDs can be created with union fields and are properly validated when
   created/updated.
-- Existing unions that have discriminators, are properly tagged and validated via
+- At least one existing unions that has discriminators, is properly tagged and validated via
   union validation
 - Existing unions that don't have discriminators do not break when upgraded.
 
@@ -498,8 +523,11 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-At first, Only new union types will follow the prescribed guinance, so no upgrades/downgrades are possible for types
-that don't exist yet.
+Turning the flag on for alpha just enables different runtime codepaths (i.e.
+performing the unified union validation and normalization)
+
+Any schema markers (added by CRD authors or propagated from tags on built-in
+types) will appear in the schema, but not do anything if the flag is off.
 
 ### Version Skew Strategy
 
@@ -519,6 +547,13 @@ enhancement:
 See test matrix and commentary about discriminators. It clearly documents how
 the server will use the discriminator to understand the client's intention even
 if the client is not aware of all union fields because of version skew.
+
+Skew with alpha flag on/off shouldn't make much of a difference.
+* Objects created with the union semantics, but applied to a cluster with the
+  alpha flag off will simply not perform union validation and normalization.
+* Objects created without union semantics will simply not trigger union
+  validation and normalization (regardless of whether the server has the alpha
+  enabled or disabled).
 
 ## Production Readiness Review Questionnaire
 
@@ -565,7 +600,7 @@ well as the [existing list] of feature gates.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: APIUnions
   - Components depending on the feature gate: kube-apiserver
-  
+
 Request handlers in the api server will call into union validation and
 normalization function from the structured-merge-diff repo when feature is
 enabled.
@@ -573,7 +608,7 @@ enabled.
 
 ###### Does enabling the feature change any default behavior?
 
-No
+No, since all built in unions are currently validated in other ways.
 
 <!--
 Any change of default behavior may be surprising to users or break existing
@@ -597,7 +632,8 @@ Yes, requests will simply skip union validation and normalization.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Requests will resume perform union validation and normalization
+Requests will resume performing union validation and normalization; there is no
+persistent state behind this feature.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -669,7 +705,13 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Simply creating and updating objects with union fields.
+For builtins in alpha, it won't be possible to break clients since turning on vs
+off will validate the same thing via different code paths.
+
+For CRDs, you can see if they have the new union markers. If the CRD has no
+other validation mechanism, turning off the flag may result in CRs accepting
+invalid input.
+
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -678,10 +720,13 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-1. Create a new CRD with a union field
+1. Create a new CRD with a union field (and no other validation mechanism)
 2. Apply the CRD
 3. Create a CR with an invalid union (multiple fields set, no discriminator
    set), see if the CR is rejected via union validation
+
+When we write the e2e test, a standard union CRD and test CR will be obtainable
+for users to test on their instance.
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
 for each individual pod.
@@ -827,7 +872,9 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No
+In GA (maybe beta), we might expect resource reduction/reliability improvement,
+since this removes a need for webhooks.
+
 <!--
 Look at the [existing SLIs/SLOs].
 
@@ -839,7 +886,11 @@ Think about adding additional work or introducing new steps in between
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No
+New validation and normalization logic should be negligible given that the
+functions will be in the same SMD path currently used by SSA code.
+
+We will have benchmarking to validate this assumption.
+
 <!--
 Things to keep in mind include: additional in-memory state, additional
 non-trivial computations, excessive access to disks (including increased log
