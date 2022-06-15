@@ -640,8 +640,8 @@ always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
 The concurrency limit of an apiserver is divided among the non-exempt
-priority levels, and higher ones can do a limited amount of borrowing
-from lower ones.
+priority levels, and they can do a limited amount of borrowing from
+each other.
 
 Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
 midst of the `v1beta2` lifetime, configure the borrowing.  The fields
@@ -649,20 +649,24 @@ are added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).
 The following display shows the two new fields along with the updated
 description for the `AssuredConcurrencyShares` field, in `v1beta2`.
 
+**Note**: currently this design does not use the `Priority` field for
+anything.  We should either use it for something or take it out of the
+design.
+
 ```go
 type LimitedPriorityLevelConfiguration struct {
   ...
   // `assuredConcurrencyShares` (ACS) contributes to the computation of the
-  // NominalConcurrencyLimit (NCL) of this level.
+  // NominalConcurrencyLimit (NominalCL) of this level.
   // This is the number of execution seats available at this priority level.
   // This is used both for requests dispatched from
   // this priority level as well as requests dispatched from higher priority
   // levels borrowing seats from this level.  This does not limit dispatching from
   // this priority level that borrows seats from lower priority levels (those lower
-  // levels do that).  The server's concurrency limit (SCL) is divided among the
+  // levels do that).  The server's concurrency limit (ServerCL) is divided among the
   // Limited priority levels in proportion to their ACS values:
   //
-  // NCL(i)  = ceil( SCL * ACS(i) / sum_acs )
+  // NominalCL(i)  = ceil( ServerCL * ACS(i) / sum_acs )
   // sum_acs = sum[limited priority level k] ACS(k)
   //
   // Bigger numbers mean a larger nominal concurrency limit, at the expense
@@ -671,13 +675,13 @@ type LimitedPriorityLevelConfiguration struct {
   // +optional
   AssuredConcurrencyShares int32
 
-  // `borrowablePercent` prescribes the fraction of the level's NCL that
+  // `borrowablePercent` prescribes the fraction of the level's NominalCL that
   // can be borrowed by higher priority levels.  This value of this
   // field must be between 0 and 100, inclusive, and it defaults to 0.
   // The number of seats that higher levels can borrow from this level, known
-  // as this level's BorrowableConcurrencyLimit (BCL), is defined as follows.
+  // as this level's BorrowableConcurrencyLimit (BorrowableCL), is defined as follows.
   //
-  // BCL(i) = round( NCL(i) * borrowablePercent(i)/100.0 )
+  // BorrowableCL(i) = round( NominalCL(i) * borrowablePercent(i)/100.0 )
   //
   // +optional
   BorrowablePercent int32
@@ -730,59 +734,91 @@ when the priority field holds zero.
 | global-default  |  20 |  50 |  9900 |
 | catch-all       |   5 |   0 | 10000 |
 
-Each priority level has two concurrency limits: its
-NominalConcurrencyLimit (NCL) as defined above by configuration, and a
-CurrentConcurrencyLimit (CCL) that is used in dispatching requests.
-The CCLs are adjusted periodically, based on configuration, the
-current situation at adjustment time, and recent observations.  The
-"borrowing" resides in the differences between CCL and NCL.  A
-priority level's CCL can go as low as NCL-BCL; the upper limit is
-imposed only by how many seats are available for borrowing from other
-priority levels.  The sum of the CCLs, like the sum of the NCLs, is
-always equal to the server's concurrency limit (SCL).  These CCLs are
-floating-point values, because the adjustment logic below is
-incremental.  The actual limits used in dispatching are the result of
-rounding these floating-point numbers to their nearest integer.
+Each non-exempt priority level `i` has two concurrency limits: its
+NominalConcurrencyLimit (`NominalCL(i)`) as defined above by
+configuration, and a CurrentConcurrencyLimit (`CurrentCL(i)`) that is
+used in dispatching requests.  The CurrentCLs are adjusted
+periodically, based on configuration, the current situation at
+adjustment time, and recent observations.  The "borrowing" resides in
+the differences between CurrentCL and NominalCL.  There is a lower
+bound on each non-exempt priority level's CurrentCL: `MinCL(i) =
+NominalCL(i) - BorrowableCL(i)`; the upper limit is imposed only by
+how many seats are available for borrowing from other priority levels.
+The sum of the CurrentCLs is always equal to the server's concurrency
+limit (ServerCL) plus or minus a little for rounding in the adjustment
+algorithm below.
 
 Dispatching is done independently for each priority level.  Whenever
 (1) a non-exempt priority level's number of occupied seats is zero or
-below the level's rounded CCL and (2) that priority level has a
-non-empty queue, it is time to dispatch another request for service.
-The Fair Queuing for Server Requests algorithm below is used to pick a
-non-empty queue at that priority level.  Then the request at the head
-of that queue is dispatched if possible.
+below the level's CurrentCL and (2) that priority level has a
+non-empty queue, it is time to consider dispatching another request
+for service.  The Fair Queuing for Server Requests algorithm below is
+used to pick a non-empty queue at that priority level.  Then the
+request at the head of that queue is dispatched if possible.
 
-Every 10 seconds, all the CCLs are adjusted.  The adjustments take
-into account high watermarks of seat demand.  A priority level's seat
-demand is the sum of its occupied seats and the number of seats in the
-queued requests.  Each priority level has two high watermarks: a
-short-term one M1 and a long-term one M2.  During an adjustment
-period, M1 is updated to track the maximum seat demand seen during
-that adjustment period.  At the end of every adjustment period, M2 is
-set to `max(M1, A*M2 + (1-A)*M1)` and M1 is set to the current seat
-demand.  That is, M2 jumps up to M1 if that is higher (so a spike in
-demand gets an immediate response at adjustment time), otherwise
-exponentially drifts down toward M1 with a parameter A; 0.9 might be a
-good value for A.
+Every 10 seconds, all the CurrentCLs are adjusted.  We do smoothing on
+the inputs to the adjustment logic in order to dampen control
+gyrations, in a way that lets a priority level reclaim lent seats at
+the nearest adjustment time.  The adjustments take into account the
+high watermark `HighSD(i)`, time-weighted average `AvgSD(i)`, and
+time-weighted population standard deviation `StDevSD(i)` of each
+priority level `i`'s seat demand over the just-concluded adjustment
+period.  A priority level's seat demand at any given moment is the sum
+of its occupied seats and the number of seats in the queued requests.
+We also define `EnvelopeSD(i) = AvgSD(i) + StDevSD(i)`.  The
+adjustment logic is driven by a quantity called smoothed seat demand
+(`SmoothSD(i)`), which does an exponential averaging of EnvelopeSD
+values using a coeficient A in the range (0,1) and immediately tracks
+EnvelopeSD when it exceeds SmoothSD.  The rule for updating priority
+level `i`'s SmoothSD at the end of an adjustment period is
+`SmoothSD(i) := max( EnvelopeSD(i), A*SmoothSD(i) + (1-A)*Envelope(i)
+)`.  The command line flag `--seat-demand-history-fraction` with a
+default value of 0.9 configures A.
 
-The adjustment logic takes the M2 values as desired targets to aim
-toward and adjusts the CCL values in two steps.  The first step aims
-to equalize the "pressure" on the priority levels.  Define each
-priority level's pressure `P = max(NCL-BCL, M2) - CCL`.  Let `PAvg` be
-the result of averaging P over the priority levels.  The first step
-adjusts each CCL by adding `B * (P - PAvg)`.  We use a coefficient B
---- for which 0.25 might be a good value --- so that this step goes
-only part way toward its target.  Such damping is commonly done in
-controllers.
+Adjustment is also done on configuration change, when a priority level
+is introduced or removed or its NominalCL or BorrowableCL changes.  At
+such a time, the current adjustment period comes to an early end and
+the regular adjustment logic runs; the adjustment timer is reset to
+next fire 10 seconds later.  For a newly introduced priority level, we
+set HighSD, AvgSD, and SmoothSD to NominalCL-BorrowableSD/2 and
+StDevSD to zero.
 
-The second step corrects for any lower bounds violations.  There are
-two lower bounds: one imposed by the limit on borrowable seats (BCL),
-and one imposed by priority levels that wish to reclaim borrowed seats
-due to recent load.  For every priority level where `CCL <
-max(NCL-BCL, min(NCL, M2))`, CCL gets increased to that lower bound.
-Whenever there are such increases, there must also be priority levels
-for which `CCL - NCL > 0`.  The seats for the former are taken from
-the latter, in proportion to the latter difference.
+For adjusting the CurrentCL values, each non-exempt priority level `i`
+has a lower bound (`MinCurrentCL(i)`) for the new value.  It is simply
+HighSD clipped by the configured concurrency limits: `MinCurrentCL(i)
+= max( MinCL(i), min( NominalCL(i), HighSD(i) ) )`.
+
+If MinCurrentCL(i) = NominalCL(i) for every non-exempt priority level
+i then there is no wiggle room.  No priority level is willing to lend
+any seats.  The new CurrentCL values must equal the NominalCL values.
+Otherwise there is wiggle room and the adjustment proceeds as follows.
+
+The priority levels would all be fairly happy if we set CurrentCL =
+SmoothSD for each.  We clip that by the lower bound just shown, taking
+`Target(i) = max(SmoothSD(i), MinCurrentCL(i))` as a first-order
+target for each non-exempt priority level `i`.
+
+Sadly, the sum of the Target values --- let's name that TargetSum ---
+is not necessarily equal to ServerCL and the individual Target values
+do not necessarily respect the corresponding MinCurrentCL bound.  If
+we had only the first of those two problems then we could set each
+CurrentCL(i) to FairFrac * Target(i) where FairFrac = ServerCL /
+TargetSum.  This would share the gain or pain in equal proportion
+among the priority levels.  Taking the lower bounds into account means
+finding the one FairFrac value that solves the following conditions,
+for all the non-exempt priority levels `i`, and also makes the
+CurrentCL values sum to ServerCL.  For this step we let the CurrentCL
+values be floating-point numbers, not necessarily integers.
+
+```
+CurrentCL(i) = FairFrac * Target(i)  if FairFrac * Target(i) >= MinCurrentCL(i)
+CurrentCL(i) = MinCurrentCL(i)       if FairFrac * Target(i) <= MinCurrentCL(i)
+```
+
+This is the mirror image of the max-min fairness problem and can be
+solved with the same sort of algorithm, taking O(N log N) time and
+O(N) space.  After finding the floating point CurrentCL solutions,
+each one is rounded to the nearest integer to use in dispatching.
 
 ### Fair Queuing for Server Requests
 
@@ -1917,7 +1953,7 @@ others, at any given time this may compute for some priority level(s)
 an assured concurrency value that is lower than the number currently
 executing.  In these situations the total number allowed to execute
 will temporarily exceed the apiserver's configured concurrency limit
-(`SCL`) and will settle down to the configured limit as requests
+(`ServerCL`) and will settle down to the configured limit as requests
 complete their service.
 
 ### Default Behavior
@@ -1991,6 +2027,17 @@ This KEP adds the following metrics.
 - apiserver_dispatched_requests (count, broken down by priority, FlowSchema)
 - apiserver_wait_duration (histogram, broken down by priority, FlowSchema)
 - apiserver_service_duration (histogram, broken down by priority, FlowSchema)
+- `apiserver_flowcontrol_request_concurrency_limit` (gauge of NominalCL, broken down by priority)
+- `apiserver_flowcontrol_request_min_concurrency_limit` (gauge of MinCL, broken down by priority)
+- `apiserver_flowcontrol_request_current_concurrency_limit` (gauge of CurrentCL, broken down by priority)
+- `apiserver_flowcontrol_demand_seats` (timing ratio histogram of seat demand / NominalCL, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_high_water_mark` (gauge of HighSD, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_average` (gauge of AvgSD, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_stdev` (gauge of StDevSD, broken down by priority)
+- `apiserver_flowcontrol_envelope_seats` (gauge of EnvelopeSD, broken down by priority)
+- `apiserver_flowcontrol_smoothed_demand_seats` (gauge of SmoothSD, broken down by priority)
+- `apiserver_flowcontrol_target_seats` (gauge of Target, brokwn down by priority)
+- `apiserver_flowcontrol_seat_fair_frac` (gauge of FairFrac)
 
 ### Testing
 
