@@ -242,26 +242,24 @@ type ClusterCIDRConfigSpec struct {
     // +optional
     NodeSelector *v1.NodeSelector
 
-    // This defines the IPv4 CIDR assignable to nodes selected by this config.
+    // PerNodeHostBits defines the number of host bits to be configured per node.
+    // A subnet mask determines how much of the address is used for network bits
+    // and host bits. For example an IPv4 address of 192.168.0.0/24, splits the
+    // address into 24 bits for the network portion and 8 bits for the host portion.
+    // For a /24 mask for IPv4 or a /120 for IPv6, configure PerNodeHostBits=8
+    // This field is immutable.
     // +optional
-    IPv4 *ClusterCIDRSpec
+    PerNodeHostBits int32
 
-    // This defines the IPv6 CIDR assignable to nodes selected by this config.
+    // IPv4CIDR defines an IPv4 IP block in CIDR notation(e.g. "10.0.0.0/8").
+    // This field is immutable.
     // +optional
-    IPv6 *ClusterCIDRSpec
-}
+    IPv4CIDR string
 
-type ClusterCIDRSpec struct {
-    // An IP block in CIDR notation ("10.0.0.0/8", "fd12:3456:789a:1::/64")
-    // +required
-    CIDR string
-
-    // Netmask size (e.g. 25 -> "/25") to allocate to a node.
-    // Users would have to ensure that the kubelet doesn't try to schedule more
-    // pods than are supported by the node's netmask (i.e. the kubelet's
-    // --max-pods flag)
-    // +required
-    PerNodeMaskSize int
+    // IPv6CIDR defines an IPv6 IP block in CIDR notation(e.g. "fd12:3456:789a:1::/64").
+    // This field is immutable.
+    // +optional
+    IPv6CIDR string
 }
 
 type ClusterCIDRConfigStatus struct {
@@ -270,34 +268,30 @@ type ClusterCIDRConfigStatus struct {
 
 #### Expected Behavior
 
--   `NodeSelector`, `IPv4`, and `IPv6` are immutable after creation.
+- `NodeSelector`, `PerNodeHostBits`, `IPv4CIDR`, and `IPv6CIDR` are immutable after creation.
 
--   `IPv4.PerNodeMaskSize` and `IPv6.PerNodeMaskSize` must specify the same
-    number of IP addresses:
+- `PerNodeHostBits` is used to calculate the mask size PerNode for the specified CIDRs:
 
-    ```32 - IPv4.PerNodeMaskSize == 128 - IPv6.PerNodeMaskSize```
+    ```IPv4CIDR.PerNodeMaskSize = 32 - PerNodeHostBits```
 
--   Each node will be assigned all Pod CIDRs from a matching config. That is to
-    say, you cannot assing only IPv4 addresses from a `ClusterCIDRConfig` which
+    ```IPv6CIDR.PerNodeMaskSize = 128 - PerNodeHostBits```
+
+- Each node will be assigned all Pod CIDRs from a matching config. That is to
+    say, you cannot assign only IPv4 addresses from a `ClusterCIDRConfig` which
     specifies both IPv4 and IPv6. Consider the following example:
 
     ```go
     {
-        IPv4: {
-            CIDR:            "10.0.0.0/20",
-            PerNodeMaskSize: "22",
-        },
-        IPv6: {
-            CIDR:            "fd12:3456:789a:1::/64"
-            PerNodeMaskSize: "118",
-        },
+        PerNodeHostBits:     10,
+        IPv4CIDR:            "10.0.0.0/20",	
+        IPv6CIDR:            "fd12:3456:789a:1::/64",
     }
     ```
     Only 4  nodes may be allocated from this `ClusterCIDRConfig` as only 4 IPv4
     Pod CIDRs can be partitioned from the IPv4 CIDR. The remaining IPv6 Pod
     CIDRs may be used if referenced in another `ClusterCIDRConfig`.
 
--   When there are multiple `ClusterCIDRConfig` resources in the cluster, first
+- When there are multiple `ClusterCIDRConfig` resources in the cluster, first
     collect the list of applicable `ClusterCIDRConfig`. A `ClusterCIDRConfig` is
     applicable if its `NodeSelector` matches the `Node` being allocated, and if
     it has free CIDRs to allocate.
@@ -307,21 +301,21 @@ type ClusterCIDRConfigStatus struct {
     If there are multiple default ranges, ties are broken using the scheme
     outlined below.
 
-    In ths case of multiple matching ranges, attempt to break ties with the
+    In the case of multiple matching ranges, attempt to break ties with the
     following rules:
     1.  Pick the `ClusterCIDRConfig` whose `NodeSelector` matches the most
         labels/fields on the `Node`. For example,
         `{'node.kubernetes.io/instance-type': 'medium', 'rack': 'rack1'}` before
         `{'node.kubernetes.io/instance-type': 'medium'}`.
     1.  Pick the `ClusterCIDRConfig` with the fewest Pod CIDRs allocatable. For
-        example, `{CIDR: "10.0.0.0/16", PerNodeMaskSize: "16"}` (1 possible Pod
-        CIDR) is picked before `{CIDR: "192.168.0.0/20", PerNodeMaskSize: "22"}`
+        example, `{CIDR: "10.0.0.0/16", PerNodeHostBits: "16"}` (1 possible Pod
+        CIDR) is picked before `{CIDR: "192.168.0.0/20", PerNodeHostBits: "10"}`
         (4 possible Pod CIDRs)
-    1.  Pick the `ClusterCIDRConfig` whose `PerNodeMaskSize` is the fewest IPs.
-        For example, `27` (32 IPs) picked before `25` (128 IPs).
+    1.  Pick the `ClusterCIDRConfig` whose `PerNodeHostBits` is the fewest IPs.
+        For example, `5` (32 IPs) picked before `7` (128 IPs).
     1.  Break ties arbitrarily.
 
--   When breaking ties between matching `ClusterCIDRConfig`, if the most
+- When breaking ties between matching `ClusterCIDRConfig`, if the most
     applicable (as defined by the tie-break rules) has no more free allocations,
     attempt to allocate from the next highest matching `ClusterCIDRConfig`. For
     example consider a node with the labels:
@@ -337,39 +331,32 @@ type ClusterCIDRConfigStatus struct {
     to the tie-break rules.
     ```go
     {
-        NodeSelector: { MatchExpressions: { "node": "n1", "rack": "rack1" } },
-        IPv4: {
-            CIDR:            "10.5.0.0/16",
-            PerNodeMaskSize: 26,
-        }
+        NodeSelector:        { MatchExpressions: { "node": "n1", "rack": "rack1" } },
+        PerNodeHostBits:     6,
+        IPv4CIDR:            "10.5.0.0/16",
+				
     },
     {
         NodeSelector: { MatchExpressions: { "node": "n1" } },
-        IPv4: {
-            CIDR:            "192.168.128.0/17",
-            PerNodeMaskSize: 28,
-        }
+        PerNodeHostBits:      4,
+        IPv4CIDR:            "192.168.128.0/17",
     },
     {
         NodeSelector: { MatchExpressions: { "node": "n1" } },
-        IPv4: {
-            CIDR:            "192.168.64.0/20",
-            PerNodeMaskSize: 28,
-        }
+        PerNodeHostBits:      4,
+        IPv4CIDR:            "192.168.64.0/20",
     },
     {
         NodeSelector: nil,
-        IPv4: {
-            CIDR:            "10.0.0.0/8",
-            PerNodeMaskSize: 26,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "10.0.0.0/8",
     }
     ```
 
--   The controller will add a finalizer to the `ClusterCIDRConfig` object
+- The controller will add a finalizer to the `ClusterCIDRConfig` object
     when it is created.
 
--   On deletion of the `ClusterCIDRConfig`, the controller checks to see if any
+- On deletion of the `ClusterCIDRConfig`, the controller checks to see if any
     Nodes are using `PodCIDRs` from this range -- if so it keeps the finalizer
     in place and waits for the Nodes to be deleted. When all Nodes using this
     `ClusterCIDRConfig` are deleted, the finalizer is removed.
@@ -381,45 +368,31 @@ type ClusterCIDRConfigStatus struct {
     {
         // Default for nodes not matching any other rule
         NodeSelector: nil,
-        IPv4: {
-            // For existing clusters this is the same as ClusterCIDR
-            CIDR:            "10.0.0.0/8",
-            // For existing API this is the same as NodeCIDRMaskSize
-            PerNodeMaskSize: 24,
-        }
+        PerNodeHostBits:      8,
+        // For existing clusters this is the same as ClusterCIDR
+        IPv4CIDR:            "10.0.0.0/8",
     },
     {
         // Another range, also allocate-able to any node
-        NodeSelector: nil,
-        IPv4: {
-            CIDR:            "172.16.0.0/14",
-            PerNodeMaskSize: 24,
-        }
+        NodeSelector: nil, 
+        PerNodeHostBits:      8,
+        IPv4CIDR:            "172.16.0.0/14",
     },
     {
         NodeSelector: { "node": "n1" },
-        IPv4: {
-            CIDR:            "10.0.0.0/8",
-            PerNodeMaskSize: 26,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "10.0.0.0/8",
     },
     {
         NodeSelector: { "node": "n2" },
-        IPv4: {
-            CIDR:            "192.168.0.0/16",
-            PerNodeMaskSize: 26,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "192.168.0.0/16",
     },
     {
         NodeSelector: { "node": "n3" },
-        IPv4: {
-            CIDR:            "5.2.0.0/16",
-            PerNodeMaskSize: 26,
-        }
-        IPv6: {
-            CIDR:            "fd12:3456:789a:1::/64",
-            PerNodeMaskSize: 122,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "5.2.0.0/16",
+        IPv6CIDR:            "fd12:3456:789a:1::/64",
     },
   ...
 ]
