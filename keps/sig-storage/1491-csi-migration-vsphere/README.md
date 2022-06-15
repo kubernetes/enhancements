@@ -56,6 +56,7 @@ Unit tests for vSphere CSI Migration is added in the csi-translation-lib reposit
  - No Integration tests required for this feature
 
 ### e2e tests
+ - [e2e storage test suite](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage/testsuites) should pass before and after migration.
  - Existing e2e tests developed for in-tree vSphere volume plugin executed - https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage/vsphere
  - Additional tests added in the [vSphere CSI Driver repository](https://github.com/kubernetes-sigs/vsphere-csi-driver) to ensure vSphere CSI Migration is production ready.
    - https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/master/tests/e2e/vcp_to_csi_create_delete.go
