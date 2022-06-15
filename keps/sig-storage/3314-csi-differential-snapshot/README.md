@@ -543,47 +543,66 @@ Prerequisites:
 
 ###### Test Suite 1 - Custom Resource Management
 
-Test case 1: Create `DifferentialSnapshot` custom resource referencing the two
+Test case 1:
+Create `DifferentialSnapshot` custom resource referencing the two
 base and target `VolumeSnapshot`s in the fixture.
+
 Expected result: Custom resource created successfully with its `status`
 subresource updated to include callback URL and `url-ready` state.
 
-Test case 2: Create `DifferentialSnapshot` custom resource referencing the
+Test case 2:
+Create `DifferentialSnapshot` custom resource referencing the
 target `VolumeSnapshot`, with the base `VolumeSnapshot` left empty.
+
 Expected result: Custom resource created successfully with its `status`
 subresource updated to include callback URL and `url-ready` state.
+
 Requirement: The base `VolumeSnapshot` is an optional field.
 
-Test case 3: Create `DifferentialSnapshot` custom resource referencing the
+Test case 3:
+Create `DifferentialSnapshot` custom resource referencing the
 base `VolumeSnapshot`, with the target `VolumeSnapshot` left empty.
+
 Expected result: Custom resource failed to be created. Its `status` subresource
 should not have the callback URL. Its state should be set to `failed` with a
 `NotFound` error message in the `error` field.
+
 Requirement: The target `VolumeSnapshot` is a required field.
 
-Test case 4: Create `DifferentialSnapshot` custom resource referencing
+Test case 4:
+Create `DifferentialSnapshot` custom resource referencing
 non-existing base and target `VolumeSnapshot`s.
+
 Expected result: Custom resource failed to be created. Its `status` subresource
 should not have the callback URL. Its state should be set to `failed` with a
 `NotFound` error message in the `error` field.
+
 Requirement: The target `VolumeSnapshot` is a required field.
 
-Test case 5: Update an existing `DifferentialSnapshot` custom resource to
+Test case 5:
+Update an existing `DifferentialSnapshot` custom resource to
 reference a different target `VolumeSnapshot`.
+
 Expected result: Custom resource is updated successfully. Its `status`
 subresource is updated to include callback URL and `url-ready` state.
 
-Test case 6: Delete an existing `DifferentialSnapshot` custom resource.
+Test case 6:
+Delete an existing `DifferentialSnapshot` custom resource.
+
 Expected result: Custom resource is deleted successfully.
 
 ###### Test Suite 2 - HTTP Listener
 
-Test case 1: Send a HTTP request with a fake `Authorisation` bearer token to the
+Test case 1:
+Send a HTTP request with a fake `Authorisation` bearer token to the
 `DifferentialSnapshot` listener's fake handler.
+
 Expected result: The listener should return a HTTP 200 `OK` status code.
 
-Test case 2: Send a HTTP request without an  `Authorisation` bearer token to the
+Test case 2:
+Send a HTTP request without an  `Authorisation` bearer token to the
 `DifferentialSnapshot` listener's fake handler.
+
 Expected result: The listener should return a HTTP 403 `Forbidden` status code.
 
 ##### e2e tests
