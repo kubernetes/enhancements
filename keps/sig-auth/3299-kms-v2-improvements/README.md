@@ -399,7 +399,14 @@ No. The v2 API is new in the v1.25 release.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, via the `KMSv2` feature gate. Disabling this gate without first doing a storage migration to use a different encryption at rest mechanism will result in data loss.
+Yes, To disable encryption at rest using the v2 API:
+1. Disable encryption at rest with KMS provider by running through these [steps](https://kubernetes.io/docs/tasks/administer-cluster/kms-provider/#disabling-encryption-at-rest)
+   1. At the end of this step, all the data in etcd will be unencrypted.
+2. Disable the `KMSv2` feature gate.
+
+Disabling this gate without first doing a storage migration to use a different encryption at rest mechanism will result in data loss.
+
+Once the feature gate is disabled, if the plan is to use a different encryption at rest mechanism instead of KMS, then unset the `--encryption-provider-config` flag on the kube-apiserver.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -422,7 +429,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-N/A. When the feature is disabled, data stored in etcd will no longer be encrypted using the external kms provider with v2 API
+- When the feature is disabled, data stored in etcd will no longer be encrypted using the external kms provider with v2 API.
+- If the feature is disabled incorrectly (i.e without performing a storage migration), existing data that is encrypted with the external kms provider will be unable to be decrypted. This will cause list and get operations to fail for the resources that were encrypted.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -534,6 +542,7 @@ No.
 - This feature is part of API server. The feature is unavailable if API server is unavailable.
 - ETCD data encryption with external kms-plugin is unavailable
 - If the API server is unavailable, clients will be unable to create/get data that's stored in etcd. There will be no requests from the API server to the kms-plugin.
+- If the `EncryptionConfiguration` configured in the API server is not valid and the API server is restarted, it'll fail health check (same behavior as today).
 
 ## Implementation History
 
