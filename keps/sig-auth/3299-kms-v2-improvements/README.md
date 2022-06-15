@@ -22,6 +22,7 @@
     - [GA](#ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
@@ -394,18 +395,94 @@ FeatureSpec{
 
 ###### Does enabling the feature change any default behavior?
 
-No.  The v2 API is new in the v1.25 release.
+No. The v2 API is new in the v1.25 release.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, via the `KMSv2` feature gate. Disabling this gate without first doing a storage migration to use a different encryption at rest mechanism will result in data loss.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+After the feature is reenabled, if a v2 KMS provider is still configured in the `EncryptionConfiguration`
+- All new data will be encrypted with the external kms provider.
+- Existing data can be decrypted if the key used for encryption before feature rollback still exists.
+
+###### Are there any tests for feature enablement/disablement?
+
+<!--
+The e2e framework does not currently support enabling or disabling feature
+gates. However, unit tests in each component dealing with managing data, created
+with and without the feature, are necessary. At the very least, think about
+conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
+-->
+
+N/A. When the feature is disabled, data stored in etcd will no longer be encrypted using the external kms provider with v2 API
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+This section is incomplete and will be updated before the beta milestone.
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
+
+- If a rollback of the feature is done without first doing a storage migration to use a different encryption at rest mechanism will result in data loss.
+  - Workloads relying on existing data in etcd will no longer be able to access it.
+  - The data can be retrieved by reenabling the feature gate or deleting and recreating the data.
+
+###### What specific metrics should inform a rollback?
+
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
+
+This section is incomplete and will be updated before the beta milestone.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
+
+This section is incomplete and will be updated before the beta milestone.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+<!--
+Even if applying deprecation policies, they may still surprise some users.
+-->
+
+N/A
 
 ### Monitoring Requirements
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Other (treat as last resort)
-  - Details: Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `observed_key_id`, `annotations`, and `UID`.
+  - Details:
+    - Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `observed_key_id`, `annotations`, and `UID`.
+    - count of encryption/decryption requests by resource and version
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -414,7 +491,9 @@ There should be no impact on the SLO with this change.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Other (treat as last resort)
-  - Details: Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `observed_key_id`, `annotations`, and `UID`.
+  - Details:
+    - Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `observed_key_id`, `annotations`, and `UID`.
+    - Metrics for latency of encryption/decryption requests.
 
 ### Dependencies
 
@@ -452,7 +531,9 @@ No.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+- This feature is part of API server. The feature is unavailable if API server is unavailable.
 - ETCD data encryption with external kms-plugin is unavailable
+- If the API server is unavailable, clients will be unable to create/get data that's stored in etcd. There will be no requests from the API server to the kms-plugin.
 
 ## Implementation History
 
