@@ -28,6 +28,10 @@
       - [CRI implementations](#cri-implementations)
       - [cAdvisor](#cadvisor-1)
     - [Test Plan](#test-plan)
+        - [Prerequisite testing updates](#prerequisite-testing-updates)
+        - [Unit tests](#unit-tests)
+        - [Integration tests](#integration-tests)
+        - [e2e tests](#e2e-tests)
     - [Graduation Criteria](#graduation-criteria)
       - [Alpha implementation](#alpha-implementation)
       - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -529,9 +533,73 @@ As a requirement for the Beta stage, cAdvisor must support optionally collecting
 
 ### Test Plan
 
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `pkg/kubelet/server/stats`: 06-15-2022 - 74.9
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
 - Internally in the Kubelet, there should be integration tests verifying that information gotten from the two sources is not too different.
 - Each CRI implementation should do regression testing on performance to make sure the gathering of these stats is reasonably efficient.
 - Any identified external user of either of these endpoints (prometheus, metrics-server) should be tested to make sure they're not broken by API changes.
+
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- A test using the CRI stats feature gate with enabled CRI implementations should be used with cri_stats_provider to ensure the stats reported are conformant.
 
 ### Graduation Criteria
 #### Alpha implementation
