@@ -401,33 +401,43 @@ Machinery before moving forward.
    but all union member fields are null? This likely implies that the client cleared
    the union member unintentionally, given that the discriminator value remains.
    Should the server:
+   
    a. Error loudly and inform the client that the field pointed to by the
    discriminator is null?
+   
    b. Retain the previously set member field, present on the old object, absent
    from the new object, but pointed to by the discriminator?
-2. What should the value of the discriminator be when no field in the union is
-   to be set (i.e for optional unions).
-   a. mandate that the discriminator is the empty string for all optional unions?
-   b. make the field specified on a per union basis (defined in the go markers)?
-   c. mandate that the discriminator be unset (thus make the discriminator an
-   optional field for optional unios)?
-3. How should a server behave when it receives a union with multiple fields set
+2. How should a server behave when it receives a union with multiple fields set
    and the discriminator modified to point to the newly set member field?
+   
    a. reject the request,
+   
    b. accept the request but don't clear any fields
+   
    c. accept the request and clear all the fields except the one chosen by the
    discriminator
-4. Given that we want to migrate at least one existing union to use the new
+3. What should the value of the discriminator be when no field in the union is
+   to be set (i.e for optional unions).
+   
+   a. mandate that the discriminator is the empty string for all optional unions?
+   
+   b. make the field specified on a per union basis (defined in the go markers)?
+   
+   c. mandate that the discriminator be unset (thus make the discriminator an
+   optional field for optional unions)?
+4. What should we default the discriminator value of a member field to if not
+   specified in the go markers?
+   
+   a. the json representation of the field name
+   
+   b. the go representation of the field name
+   Should we even give users the ability to define it or just stick to whatever
+   we decide the default is?
+5. Given that we want to migrate at least one existing union to use the new
    semantics, which union should we do? Must we upgrade both a discriminated and
    non-discriminated union for alpha or is only upgrading an existing
    discriminated union sufficient? Thoughts on my proposed types of
    `MetricStatus` (discriminated) and `ContainerState` (non-discriminated).
-5. What should we default the discriminator value of a member field to if not
-   specified in the go markers?
-   a. the json representation of the field name
-   b. the go representation of the field name
-   Should we even give users the ability to define it or just stick to whatever
-   we decide the default is?
 
 ### Test Plan
 
