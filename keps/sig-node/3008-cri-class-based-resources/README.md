@@ -82,6 +82,13 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
+- [Implementation phases](#implementation-phases)
+  - [Phase 1](#phase-1)
+  - [Future work](#future-work)
+    - [Pod Spec](#pod-spec)
+    - [Resource status/capacity](#resource-statuscapacity)
+    - [Resource discovery](#resource-discovery)
+    - [Access control](#access-control)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -97,11 +104,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Open Questions](#open-questions)
     - [Pod QoS class](#pod-qos-class)
     - [Default class](#default-class)
-  - [Future work](#future-work)
-    - [Pod Spec](#pod-spec)
-    - [Resource status/capacity](#resource-statuscapacity)
-    - [Resource discovery](#resource-discovery)
-    - [Access control](#access-control)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -273,6 +275,166 @@ and make progress.
 - Discovery of the class-based resources (will be addressed in a separate KEP)
 - Access control (will be addressed in a separate KEP)
 
+## Implementation phases
+
+We have split the full implementation of class resources into multiple phases,
+building functionality gradually, step-bu-step. The goal is to make the
+discussions more focused and easier. We may also learn on the way, insights
+from earlier phases affecting design choises made in the later phases,
+hopefully resulting in a better overall end result. However, we also outline
+all the future steps to not loose the overall big picture.
+
+### Phase 1
+
+This KEP (the [Proposal](#proposal)) implements the first phase. The goal is to
+enable a bare minimum for users to leverage class resources and start
+experimenting with them in Kubernetes:
+
+- extend the CRI protocol to allow class resource assignment
+- implement pod annotations as an initial user interface
+- introduce a feature gate for enabling class resource support in kubelet
+
+### Future work
+
+This section sheds light on the end goal of this work in order to better
+evaluate this KEP in a broader context. What a fully working solution would
+consists of and what the (next) steps to accomplish that would be. These topics
+are currently out of the scope of this KEP and were listed under
+[Non-goals](#non-goals).
+
+#### Pod Spec
+
+Replace pod annotations with proper user interface via the Pod spec. Below, one
+possible option is presented.
+
+Introduce a new field (e.g. class) into ResourceRequirements of Container.
+
+```diff
+// ResourceRequirements describes the compute resource requirements.
+type ResourceRequirements struct {
+     // Limits describes the maximum amount of compute resources allowed.
+     Limits ResourceList `json:"limits,omitempty"
+     // Requests describes the minimum amount of compute resources required.
+     Requests ResourceList `json:"requests,omitempty"
++    // Classes specifies the class resources that the container should be assigned
++    Classes map[ClassResourceName]string
+}
+
++// ClassResourceName is the name of a class-based resource.
++type ClassResourceName string
+```
+
+Also, we add a `Resources` field to the `PodSpec`. We will re-use the existing
+`ResourceRequirements` type but Limits and Requests must be left empty. Classes
+may be set and they represent the Pod-level assignment of class resources,
+comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
+
+```diff
+ type PodSpec struct {
+@@ -224,4 +224,8 @@ type PodSpec struct {
+     // Default to false.
+     // +optional
+     SetHostnameAsFQDN *bool `json:"setHostnameAsFQDN,omitempty" protobuf:"varint,35,opt,name=setHostnameAsFQDN"`
++    // Pod-level resources. Currently, requests and limits are not allowed
++    // to be specified for pods.
++    // +optional
++    Resources ResourceRequirements
+ }
+```
+
+In practice, the class resource information will be directly used in the CRI
+ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
+resource discovery or access control kubelet does not do any validity checking
+of the values. Invalid class assignments will cause an error in the container
+runtime which causes the corresponding CRI RuntimeService request (e.g.
+RunPodSandbox or CreateContainer) to fail with an error.
+
+Input validation of classes very similar to labels is implemented: keys
+(`ClassResourceName`) and values must be non-empty, less than 64 characters
+long, must start and end with an alphanumeric character and may contain only
+alphanumeric characters, dashes, underscores or dots (`-`, `_` or `.`).
+Similar to labels, a namespace prefix (FQDN subdomain separated with a slash)
+in the key is allowed, similar to labels, e.g. `vendor/resource`.
+
+#### Resource status/capacity
+
+This KEP does not speak out anything about presenting the available resource
+types (or classes within) to the users.
+
+Some alternatives for presenting this information:
+
+1. Supplement `NodeStatus`
+
+   ```diff
+    // NodeStatus is information about the current status of a node.
+    type NodeStatus struct {
+            // Capacity represents the total resources of a node.
+            // More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#capacity
+            // +optional
+            Capacity ResourceList `json:"capacity,omitempty" protobuf:"bytes,1,rep,name=capacity,casttype=ResourceList,castkey=ResourceName"`
+            // Allocatable represents the resources of a node that are available for scheduling.
+            // Defaults to Capacity.
+            // +optional
+            Allocatable ResourceList `json:"allocatable,omitempty" protobuf:"bytes,2,rep,name=allocatable,casttype=ResourceList,castkey=ResourceName"`
+   +        // ResourceClasses lists the available
+   +        ClassResourdes []ClassResourceList
+   +
+   +type ClassResourceList {
+   +        // Name of the resource
+   +        Name ClassResourceName
+   +        // Classes available in the resource
+   +        Classes []string
+   +}
+   ```
+1. Separate API objects (e.g. something like `RuntimeClass`). Doesn't
+   necessarily that neatly align with two level hierarchy (resource name and a
+   set of classes within). Also, only best suited to homogenous clusters.
+
+#### Resource discovery
+
+Some possible alternatives.
+
+1. Reported by the container runtime. Container runtime is (or at least should
+   be) aware of all resource types and the classes within. It could advertise
+   the resources e.g. via either:
+
+   1. A separate gRPC endpoint or update `StatusResponse`
+   1. OR Populate a (json) file in a known location
+
+   As a reference, the API currently allows listing of some objects/resources
+   (Pods, Containers, Images etc) but not some others.
+
+1. Manual configuration. Would be best suited for case where resources and
+   classes would be presented as separate API objects.
+
+#### Access control
+
+If class resources were advertised as API objects the natural access
+control mechanism would be through RBAC.
+
+If class resources were advertised in node status (similar to other resources),
+access control could be achieved e.g. by extending ResourceQuotaSpec which
+would implement restrictions based on the namespace.
+
+```diff
+ // ResourceQuotaSpec defines the desired hard limits to enforce for Quota.
+ type ResourceQuotaSpec struct {
+     // hard is the set of desired hard limits for each named resource.
+     Hard ResourceList
+     // A collection of filters that must match each object tracked by a quota.
+     // If not specified, the quota matches all objects.
+     Scopes []ResourceQuotaScope 
+     // scopeSelector is also a collection of filters like scopes that must match each
+     // object tracked by a quota but expressed using ScopeSelectorOperator in combination
+     // with possible values.
+     ScopeSelector *ScopeSelector
++    // AllowedClasses specifies the list of allowed classes for each class-based resource
++    AllowedClasses map[ClassResourceName]ResourceClassList
+}
+
++// ResourceClassList is a list of classes of a specific type of class-based resource.
++type ResourceClassList []string
+```
 ## Proposal
 
 <!--
@@ -514,147 +676,6 @@ oom priority (low chance of being killed).
 A mechanism for indicating that the (runtime) default class should be used. The
 default class would/should be a node/runtime specific attribute. How should
 this be specified in the CRI protocol/`cri-api` and Pod spec?
-
-### Future work
-
-This section sheds light on the end goal of this work in order to better
-evaluate this KEP in a broader context. What a fully working solution would
-consists of and what the (next) steps to accomplish that would be. These topics
-are currently out of the scope of this KEP and were listed under
-[Non-goals](#non-goals).
-
-#### Pod Spec
-
-Replace pod annotations with proper user interface via the Pod spec. Below, one
-possible option is presented.
-
-Introduce a new field (e.g. class) into ResourceRequirements of Container.
-
-```diff
-// ResourceRequirements describes the compute resource requirements.
-type ResourceRequirements struct {
-     // Limits describes the maximum amount of compute resources allowed.
-     Limits ResourceList `json:"limits,omitempty"
-     // Requests describes the minimum amount of compute resources required.
-     Requests ResourceList `json:"requests,omitempty"
-+    // Classes specifies the class resources that the container should be assigned
-+    Classes map[ClassResourceName]string
-}
-
-+// ClassResourceName is the name of a class-based resource.
-+type ClassResourceName string
-```
-
-Also, we add a `Resources` field to the `PodSpec`. We will re-use the existing
-`ResourceRequirements` type but Limits and Requests must be left empty. Classes
-may be set and they represent the Pod-level assignment of class resources,
-comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
-
-```diff
- type PodSpec struct {
-@@ -224,4 +224,8 @@ type PodSpec struct {
-     // Default to false.
-     // +optional
-     SetHostnameAsFQDN *bool `json:"setHostnameAsFQDN,omitempty" protobuf:"varint,35,opt,name=setHostnameAsFQDN"`
-+    // Pod-level resources. Currently, requests and limits are not allowed
-+    // to be specified for pods.
-+    // +optional
-+    Resources ResourceRequirements
- }
-```
-
-In practice, the class resource information will be directly used in the CRI
-ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
-resource discovery or access control kubelet does not do any validity checking
-of the values. Invalid class assignments will cause an error in the container
-runtime which causes the corresponding CRI RuntimeService request (e.g.
-RunPodSandbox or CreateContainer) to fail with an error.
-
-Input validation of classes very similar to labels is implemented: keys
-(`ClassResourceName`) and values must be non-empty, less than 64 characters
-long, must start and end with an alphanumeric character and may contain only
-alphanumeric characters, dashes, underscores or dots (`-`, `_` or `.`).
-Similar to labels, a namespace prefix (FQDN subdomain separated with a slash)
-in the key is allowed, similar to labels, e.g. `vendor/resource`.
-
-#### Resource status/capacity
-
-This KEP does not speak out anything about presenting the available resource
-types (or classes within) to the users.
-
-Some alternatives for presenting this information:
-
-1. Supplement `NodeStatus`
-
-   ```diff
-    // NodeStatus is information about the current status of a node.
-    type NodeStatus struct {
-            // Capacity represents the total resources of a node.
-            // More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#capacity
-            // +optional
-            Capacity ResourceList `json:"capacity,omitempty" protobuf:"bytes,1,rep,name=capacity,casttype=ResourceList,castkey=ResourceName"`
-            // Allocatable represents the resources of a node that are available for scheduling.
-            // Defaults to Capacity.
-            // +optional
-            Allocatable ResourceList `json:"allocatable,omitempty" protobuf:"bytes,2,rep,name=allocatable,casttype=ResourceList,castkey=ResourceName"`
-   +        // ResourceClasses lists the available
-   +        ClassResourdes []ClassResourceList
-   +
-   +type ClassResourceList {
-   +        // Name of the resource
-   +        Name ClassResourceName
-   +        // Classes available in the resource
-   +        Classes []string
-   +}
-   ```
-1. Separate API objects (e.g. something like `RuntimeClass`). Doesn't
-   necessarily that neatly align with two level hierarchy (resource name and a
-   set of classes within). Also, only best suited to homogenous clusters.
-
-#### Resource discovery
-
-Some possible alternatives.
-
-1. Reported by the container runtime. Container runtime is (or at least should
-   be) aware of all resource types and the classes within. It could advertise
-   the resources e.g. via either:
-
-   1. A separate gRPC endpoint or update `StatusResponse`
-   1. OR Populate a (json) file in a known location
-
-   As a reference, the API currently allows listing of some objects/resources
-   (Pods, Containers, Images etc) but not some others.
-
-1. Manual configuration. Would be best suited for case where resources and
-   classes would be presented as separate API objects.
-
-#### Access control
-
-If class resources were advertised as API objects the natural access
-control mechanism would be through RBAC.
-
-If class resources were advertised in node status (similar to other resources),
-access control could be achieved e.g. by extending ResourceQuotaSpec which would implement restrictions based on the namespace.
-
-```diff
- // ResourceQuotaSpec defines the desired hard limits to enforce for Quota.
- type ResourceQuotaSpec struct {
-     // hard is the set of desired hard limits for each named resource.
-     Hard ResourceList
-     // A collection of filters that must match each object tracked by a quota.
-     // If not specified, the quota matches all objects.
-     Scopes []ResourceQuotaScope 
-     // scopeSelector is also a collection of filters like scopes that must match each
-     // object tracked by a quota but expressed using ScopeSelectorOperator in combination
-     // with possible values.
-     ScopeSelector *ScopeSelector
-+    // AllowedClasses specifies the list of allowed classes for each class-based resource
-+    AllowedClasses map[ClassResourceName]ResourceClassList
-}
-
-+// ResourceClassList is a list of classes of a specific type of class-based resource.
-+type ResourceClassList []string
-```
 
 
 ### Test Plan
