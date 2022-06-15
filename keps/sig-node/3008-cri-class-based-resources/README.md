@@ -266,7 +266,8 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Interface for configuring the class-based resources.
+- Interface or mechanism for configuring the class resources (responsibility of
+  the container runtime).
 - Enumerating possible (class) resource types or their detailed behavior
 - Resource status/capacity (will be addressed in a separate KEP)
 - Discovery of the class-based resources (will be addressed in a separate KEP)
@@ -566,7 +567,8 @@ In practice, the class resource information will be directly used in the CRI
 ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
 resource discovery or access control kubelet does not do any validity checking
 of the values. Invalid class assignments will cause an error in the container
-runtime.
+runtime which causes the corresponding CRI RuntimeService request (e.g.
+RunPodSandbox or CreateContainer) to fail with an error.
 
 Input validation of classes very similar to labels is implemented: keys
 (`ClassResourceName`) and values must be non-empty, less than 64 characters
