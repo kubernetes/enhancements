@@ -24,7 +24,6 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
-    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -280,10 +279,10 @@ ones.
 
 - Feature implemented behind a feature flag.
 - Initial integration tests completed and enabled.
+- Implement and enable e2e tests, visible in Testgrid and linked in KEP.
 
 #### Beta
 
-- Implement and enable e2e tests, visible in Testgrid and linked in KEP.
 - Scalability tests with existing framework ([perf-tests](https://github.com/kubernetes/perf-tests/tree/81c96c34e3c1f11c5fe91744ef7ce7bf44c2fe5c/clusterloader2/testing/experimental/storage/pod-startup/volume-types/persistentvolume)).
 - Allowing time for feedback (at least 2 releases between beta and GA).
 - No conformance tests, since we don't test StorageClasses there.
@@ -293,14 +292,6 @@ ones.
 #### GA
 
 - No users complaining about the new behavior.
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag.
-- Two versions passed since introducing the functionality that deprecates the
-  flag (to address version skew).
-- Address feedback on usage/changed behavior, provided on GitHub issues.
-- Deprecate the flag.
 
 ### Upgrade / Downgrade Strategy
 
