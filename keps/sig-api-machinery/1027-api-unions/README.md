@@ -17,10 +17,12 @@
 - [Design Details](#design-details)
   - [Discriminator Field](#discriminator-field)
   - [Go Markers](#go-markers)
+    - [Discriminator Values](#discriminator-values)
+      - [Empty Union Members](#empty-union-members)
+    - [Examples](#examples)
   - [OpenAPI](#openapi)
   - [Normalization and Validation](#normalization-and-validation)
     - [Migrating existing unions](#migrating-existing-unions)
-  - [Open Questions](#open-questions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -133,10 +135,6 @@ functions (e.g. `pkg/apis/<group>/validation/validation.go`).
   best match the intent of the client, despite the client potentially having
   incomplete information
 
-Another goal is to migrate at least one existing union to the new semantics in
-order to verify that migration is possible. Ideally migrate one of each type of
-existing union (discriminated and non-discriminated).
-
 ### Non-Goals
 
 Migrating all existing unions away from their bespoke validation
@@ -242,18 +240,75 @@ kubebuilder types):
 
 
 - `// +unionDiscriminator` before a field means that this field is the
-  discriminator for the union. This field MUST be a string. This field MUST be
+  discriminator for the union. This field MUST be an enum defined as a string (see section on
+  discriminator values). This field MUST be
   required.
-- `// +unionOptional` before a discriminator field means that by setting the
-  discriminator to an empty string, none of the union fields are persisted
-  (meaning at most one member of the union must be set). If not present on the
-  discriminator, exactly one of the union members must be set in order to be
-  valid.
 - `// +unionMember=<memberName>,discriminatedBy=<discriminatorName>` before a field means that this
-  field is a member of a union. The `<memberName>` is the name of the field that must be set as the discriminator value. It defaults to the json representation of the field name if not specified. The `<discriminatorName>` is optional if there
+  field is a member of a union. The `<memberName>` is the name of the field that will be set as the discriminator value.
+  It MUST correspond to one of the valid enum values of the discriminator's enum
+  type. It defaults to the `CamelCase` representation of the field name if not specified. The `<discriminatorName>` is optional if there
   is only union in a struct and required if there are multiple unions per
-  struct. It should be the go representation of the field tagged with
+  struct. It should be the `CamelCase` representation of the field tagged with
   `unionDiscriminator`.
+
+#### Discriminator Values
+
+Here we present a description of how discriminators and their valid values
+should be defined.
+
+As described above, the discriminator field must be a string and required.
+Because, there are only a few specific values that the discriminator can be, we
+propose that all discriminators should be defined as an enum, and should be
+tagged so via the enum go marker `// +enum`.
+
+Required unions will have the number of valid discriminator values equal to the
+number of member fields (see exception below on empty union members). Optional
+unions will have the number of valid discriminator values equal to the number of
+member fields, plus one additional value for when "no member" is desired. By
+convention, this "no member" discriminator value should be the empty string.
+
+We define optional unions as union where "at most" one member field of the union
+must be non-nil (as opposed to a required union, where "exactly" one member
+field of the union must be non-nil).
+
+##### Empty Union Members
+
+In some cases there are more discriminator values than there are member fields
+defined in the struct when that specific member requires no configuration. An
+example is the `DeploymentStrategy` where it has one member field `rollingUpdate`,
+but two valid discriminator values `RollingUpdate` and `Recreate`. By using an
+enum as the discriminator value we are able to define values beyond the member
+fields in order to accommodate this pattern.
+
+#### Examples
+
+Below is an example of how to define a union based on the above design
+
+```
+// +enum
+type UnionType string
+
+const (
+       FieldA UnionType = "FieldA"
+       FieldB = "FieldC"
+       FieldC = "FieldC"
+       FieldNone = ""
+)
+
+type Union struct {
+	// +unionDiscriminator
+        // +required
+	UnionType UnionType
+
+        // +unionMember
+	// +optional
+	FieldA int
+        // +unionMember
+        // +optional
+	FieldB int
+}
+```
+
 
 Note unions can't span across multiple go structures (all the fields that are part of a union has to be together in the
 same structure), examples of what is allowed:
@@ -392,53 +447,6 @@ initial migration.
 For non-discriminated unions, there are a few relatively straightforward types
 that make good candidates for initial migration, such as `ContainerState`
 
-### Open Questions
-
-A few open questions exist with the design that need to be resolved with SIG API
-Machinery before moving forward.
-
-1. What do we do when the discriminator is set (to the previously set value),
-   but all union member fields are null? This likely implies that the client cleared
-   the union member unintentionally, given that the discriminator value remains.
-   Should the server:
-   
-   a. Error loudly and inform the client that the field pointed to by the
-   discriminator is null?
-   
-   b. Retain the previously set member field, present on the old object, absent
-   from the new object, but pointed to by the discriminator?
-2. How should a server behave when it receives a union with multiple fields set
-   and the discriminator modified to point to the newly set member field?
-   
-   a. reject the request,
-   
-   b. accept the request but don't clear any fields
-   
-   c. accept the request and clear all the fields except the one chosen by the
-   discriminator
-3. What should the value of the discriminator be when no field in the union is
-   to be set (i.e for optional unions).
-   
-   a. mandate that the discriminator is the empty string for all optional unions?
-   
-   b. make the field specified on a per union basis (defined in the go markers)?
-   
-   c. mandate that the discriminator be unset (thus make the discriminator an
-   optional field for optional unions)?
-4. What should we default the discriminator value of a member field to if not
-   specified in the go markers?
-   
-   a. the json representation of the field name
-   
-   b. the go representation of the field name
-   Should we even give users the ability to define it or just stick to whatever
-   we decide the default is?
-5. Given that we want to migrate at least one existing union to use the new
-   semantics, which union should we do? Must we upgrade both a discriminated and
-   non-discriminated union for alpha or is only upgrading an existing
-   discriminated union sufficient? Thoughts on my proposed types of
-   `MetricStatus` (discriminated) and `ContainerState` (non-discriminated).
-
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -502,6 +510,12 @@ A fully documented test matrix exists in a [google
 spreadsheet](https://docs.google.com/spreadsheets/d/1dIOOqgrgvMI9b2412eVuRSydEaOxhYOoqk6bUjZOY9c/edit?resourcekey=0-wlOfJTC_EX-qpU680STHMA#gid=3601413) along with a
 [guide
 doc](https://docs.google.com/document/d/1Wruosjo0ELLl1yxauzpsUjgH2fK9KdgXDmOdJ5sG7Kg/edit?resourcekey=0-8Pwzx6EvsFR7VQoXzCTY4Q) on how to read and understand the test matrix.
+
+As part of implementing the test matrix we will be able to prove the viability
+of upgrading existing unions by writing tests to mimic using the standardized
+union semantics on existing unions (even if actually upgrading these unions is
+outside the scope of alpha graduation)
+
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
@@ -534,8 +548,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - CRDs can be created with union fields and are properly validated when
   created/updated.
-- At least one existing unions that has discriminators, is properly tagged and validated via
-  union validation
+- Prove the viability of upgrading existing unions to the new semantics by
+  mimicking existing unions in e2e tests.
 - Existing unions that don't have discriminators do not break when upgraded.
 
 ### Upgrade / Downgrade Strategy
@@ -990,6 +1004,30 @@ types. As discussed in the normalization section, requiring a discriminator
 allows the server to better understand the intentions of clients that do not
 have knowledge of all the fields in a union if newer versions of the server add
 new fields to the union.
+
+###### "None" Discriminator Values
+
+A number of strategies were discussed around how to represent the "none" value
+of the discriminator (see "Discriminator Values" section above).
+
+* One alternative was to mandate the "none" value always be the empty string.
+  The advantage to this is its simplicity and not creating a situation where
+  different API authors define there "none" value differently, so that anyone
+  could immediately know that a discriminator set to "" (empty string), is not
+  selecting any of the member fields. Also, it would allow us to not have to
+  define the set of enum values for each discriminator (as we could just use the
+  name of the member field). The disadvantage is that by not defining the set of
+  enum values, we make it impossible to support the "empty union members" case.
+* Another alternative was to make the discriminator a pointer to a string and
+  its value nil. The disadvantage here is that this requires more complicated
+  union validation logic (first do a nil check, then check the value) and makes
+  it harder to determine client intent on patches where the discriminator is not
+  set.
+* A third alternative is to require all unions be defined in their own separate
+  struct. This was rejected because there are many existing unions that define
+  random fields that are not members in the union within the same struct as
+  fields that do make up the union and we hope to be able to migrate at least
+  some of the existing unions to the new semantics.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
