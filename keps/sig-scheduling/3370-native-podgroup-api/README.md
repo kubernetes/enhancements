@@ -222,7 +222,8 @@ know that this has succeeded?
 
 - Define PodGroup API in Kubernetes (k/k)
 - Enforce PodGroup as a scheduling primitive
-- Manage the lifecycle of PodGroup 
+- Manage the lifecycle of PodGroup
+- Compatible with autoscaler
 
 ### Non-Goals
 
@@ -254,7 +255,7 @@ bogged down.
 -->
 
 #### Story 1
-As a batch workload user (e.g., MPI/TensorFlow/Spark), I want all tasks of a 
+As a batch workload user (e.g., MPI/TensorFlow/Spark), I want all pods of a 
 Job to be either started altogether; otherwise, don’t start any of them.
 
 #### Story 2
@@ -286,6 +287,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+
 ## Design Details
 
 <!--
@@ -300,7 +302,7 @@ typical Tensorflow job has some parameter servers and workers. Each role
 requires a quorum to be ready to run. With that being considered, the following
 API designs all employ a 2-tier specification (Subsets) inside PodGroup. 
 
-The PodGroup API will be defined as a top-level API (in group scheduling.k8s.io, like PriorityClass) 
+The PodGroup API will be defined in group scheduling.k8s.io, like PriorityClass.
 
 ```go
 // group scheduling.k8s.io
@@ -338,14 +340,16 @@ In order to associate a pod with its target PodGroup, we need to add a field cal
 ```go
 // PodSpec is a description of a pod.
 type PodSpec struct {
-  ....
-  PodGroup PodGroupSpec
-	....
+	...
+	PodGroup PodGroupRef
+	...
 }
 
+// PodGroupRef contains enough information to let you identify an owning
+// pod group.
 // - pod.spec.podGroup.name = foo
 // - pod.spec.podGroup.subset = (bar/baz)
-type PodGroupSpec struct {
+type PodGroupRef struct {
   // Name is the name of PodGroup.
   Name   string
   // Subset is the name of PodGroup.
@@ -421,14 +425,6 @@ type SubsetStatus struct {
 	// Running is the number of pods targeted by this subset
 	// with a Running phase.
 	Running int32
-
-	// Succeeded is the number of pods targeted by this subset
-	// with a Succeeded phase.
-	Succeeded int32
-
-	// Failed is the number of pods targeted by this subset
-	// with a Failed phase.
-	Failed int32
 }
 ```
 
