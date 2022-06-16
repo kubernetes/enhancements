@@ -11,7 +11,9 @@ reviewers:
   - "@ahg-g"
   - "@alculquicondor"
 approvers:
-  - TBD
+  - "@ahg-g"
+  - "@alculquicondor"
+  - "@soltysh"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
@@ -47,4 +49,6 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: []
+metrics:
+  - job_enqueueing_total
+  - job_in_queue_size

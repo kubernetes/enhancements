@@ -174,8 +174,8 @@ updates.
 
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
-This KEP aims to add a new field `queueName` to the spec of Job which helps unifying the
-queue API in Job.
+This KEP aims to add a new field `queueName` to the Job spec that out-of-tree
+queue controllers can use to do job queueing.
 
 ## Motivation
 
@@ -194,7 +194,7 @@ special scheduling policies. But now we lack the native support of binding Jobs 
 in core Kubernetes. We can see similar implementations in other batch systems outside the Kubernetes,
 e.g. in [Kubeflow](https://github.com/kubeflow/kubeflow),
 we can specify the queue name of the distributed training job in [`SchedulingPolicy`](https://github.com/kubeflow/common/blob/21f5ba8833a2e21df17601497a08396c9bae9ab2/pkg/apis/common/v1/types.go#L202-L209)
-We can also found the same implementation in [kubedl](https://github.com/kubedl-io/kubedl),
+We can also find the same implementation in [kubedl](https://github.com/kubedl-io/kubedl),
 another project helps to run deep learning workloads.
 
 [Kueue](https://github.com/kubernetes-sigs/kueue), a Kubernetes native Job queueing management is also
@@ -217,6 +217,7 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+- Reach out for an implementation in Kubernetes that uses the field.
 - How to integrate with non-Kubernetes native Job controllers, e.g. TFJob Operator
 
 ## Proposal
@@ -241,10 +242,17 @@ bogged down.
 -->
 
 #### Story 1
-I'm going to develop a queue controller which helps me to manage the Jobs in resource quota,
-multi-tenant, and execution sequence. The feature supports of current Job API is excellent,
-but I found it's not graceful to bind the Jobs to the queue, the easiest way is via the annotation.
-I hope we have a native way tying them together.
+Currently we have native Job support in Kubernetes, this is quite useful in computations that
+run to complete. But it seems not mature enough in batch scenarios. For example, the capacities of
+resource quota, execution sequence, fair sharing, special scheduling policies support and so on.
+
+In responding to these pain points, there're many batch systems incubated to settle them up. But
+we found a number of existing functionalities re-implemented across these projects. According to all
+these problems, we found the Kueue. However, there's still a gap between Kueue and core Kubernetes,
+we lack the native support to tie them together, currently, we use a annotation, which is function limited.
+
+So we hope there's a native way to support this in Kubernetes, also help to solve the fragmentation
+between queue controllers.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -254,7 +262,10 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
-None
+This feature acts more like a integration support with out-of-tree queue controllers in managing Jobs,
+no feature implementation in core Kubernetes. We have a precedent before with `spec.schedulerName`
+which proved to be a reasonable way to support schedulers other than the default kube-scheduler
+in a non-disruptive way.
 
 ### Risks and Mitigations
 
@@ -281,7 +292,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-Add a new field to `JobSpec` as blow:
+Add a new field to `JobSpec` as below:
 
 ```golang
 type JobSpec struct {
@@ -290,7 +301,7 @@ type JobSpec struct {
   // QueueName specifies the queue that Job will be enqueued to. Defaults to nil.
   // ALPHA: This field is in alpha and must be enabled via the `JobQueueName` feature gate.
   // +optional
-  QueueName *string `json:"queueName,omitempty" protobuf:"bytes,9,opt,name=queueName"`
+  QueueName *string
 }
 ```
 
@@ -560,7 +571,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
-Nothing special, works as expected.
+The Job controller will start populating the field again.
+
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -598,6 +610,8 @@ will rollout across nodes.
 No.
 
 ###### What specific metrics should inform a rollback?
+- `job_enqueueing_total` which tracks the count of Jobs with queueName specified stops increasing.
+- `job_in_queue_size` which tracks the count of enqueueing Jobs in running state is always 0.
 
 <!--
 What signals should users be paying attention to when the feature is young
@@ -637,7 +651,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Operator can query `job.spec.queueName` to verify whether this field exists.
+- Operator can query `job.spec.queueName` to verify whether this field exists.
+- Checking the metrics of `job_enqueueing_total` and `job_in_queue_size` also works,
+one should increasing overtime and another one should be volatility.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -854,7 +870,9 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
-Specifying the queue name via annotation also works but not native.
+Specifying the queue name via annotation also works but we can't validate the
+naming legitimacy. What's more, queue name should be immutable when Job corresponding
+pods get to work, we can't achieve this with annotations.
 
 ## Infrastructure Needed (Optional)
 
