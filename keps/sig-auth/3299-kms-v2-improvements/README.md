@@ -539,10 +539,13 @@ No.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-- This feature is part of API server. The feature is unavailable if API server is unavailable.
-- ETCD data encryption with external kms-plugin is unavailable
+- This feature is part of API server. The feature is unavailable if API server is unavailable. ETCD data encryption with external kms-plugin will be unavailable.
 - If the API server is unavailable, clients will be unable to create/get data that's stored in etcd. There will be no requests from the API server to the kms-plugin.
-- If the `EncryptionConfiguration` configured in the API server is not valid and the API server is restarted, it'll fail health check (same behavior as today).
+- If the `EncryptionConfiguration` file configured in the control plane node is not valid:
+  - API server when restarted will fail at startup as it's unable to load the EncryptionConfig. This behavior is consistent with the KMS v1 API. The encryption configuration needs to be fixed to allow the API server to start properly.
+- If the KMS plugin is unavailable:
+  - API server when restarted will fail health check as it's unable to connect to the KMS plugin. The `/livez` and `/readyz` endpoints will show a `failed` health check for the kms provider. This behavior is consistent with the KMS v1 API. Refer to [docs](https://kubernetes.io/docs/reference/using-api/health-checks/) for the health API endpoints and how to exclude individual endpoints from causing the API server to fail health check.
+  - To resolve the issue, the kms plugin must be fixed to be available. The logs in the kms-plugin should be indicative of the issue.
 
 ## Implementation History
 
