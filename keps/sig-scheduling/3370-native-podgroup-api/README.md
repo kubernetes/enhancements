@@ -290,6 +290,8 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
+### PodGroup API
+
 <!--
 This section should contain enough information that the specifics of your
 change are understandable. This may include API specs (though not always
@@ -434,9 +436,64 @@ type SubsetStatus struct {
 3. The user watched the status of PodGroup. Pods associated with this PodGroup are expected to be co-scheduled if resources are adequate.
 4. The user waits for the PodGroup to be complete and then deletes it.
 
-### Implementation
-The implementation details are intentionally left for different schedulers. 
-In terms of Kubernetes default scheduler, we will reveal the details in ano
+### Scheduler
+#### QueueSort
+In order to maximize the chance that the pods which belong to the same `PodGroup` to be scheduled consecutively, we need to implement a customized `QueueSort` plugin to sort the Pods properly.
+
+```go
+func  Less(podA *PodInfo, podB *PodInfo) bool
+```
+
+Firstly, we will inherit the default in-tree PrioritySort plugin so as to honor .spec.priority to ensure high-priority Pods are always sorted ahead of low-priority ones.
+
+Secondly, if two Pods hold the same priority, the sorting precedence is described as below:
+
+- If they are both regularPods (without pod.spec.podGroup), compare their `InitialAttemptTimestamp` field: the Pod with earlier `InitialAttemptTimestamp` is positioned ahead of the other.
+  
+- If one is regularPod and the other is pgPod (without pod.spec.podGroup), compare regularPod's `InitialAttemptTimestamp` with the `creationtime` of pgPod's PodGroup: the Pod with earlier timestamp is positioned ahead of the other.
+  
+- If they are both pgPods:
+  - Compare their pod group's `CreationTimestamp`: the Pod in pod group which has earlier timestamp is positioned ahead of the other.
+  - If their `CreationTimestamp` is identical, order by their UID of PodGroup: a Pod with lexicographically greater UID is scheduled ahead of the other Pod. (The purpose is to tease different PodGroups with the same `CreationTimestamp` apart, while also keeping Pods belonging to the same PodGroup back-to-back)
+
+#### PreFilter
+In PreFilter phase, we need to check if pod.spec.podGroup is nil firstly. If so, return success. If not, check if the pod group is existed in the scheduler internal cache and pod.spec.podGroup.subset is matched in pod group, if not, reject the pod in PreFilter.
+
+
+#### Permit
+In Permit phase, It is divided into two parts.
+
+- The first part is that we put the pods that doesn't meet MinMember into the WaitingMap and reserve resources until MinMember are met or timeout is triggered.
+
+   - Get the number of Running pods that belong to the same PodGroup
+   - Get the number of WaitingPods (used to record pods in waiting status) that belong to the same PodGroup
+
+  If pods in all the subsets meet `Running + WaitingPods + 1 >= MinMember(1 means the pod itself) `, approve the waiting pods that belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (the timeout comes from the ScheduleTimeoutSeconds in PodGroup.).
+
+- Then second part is in order for pods belonging to the same PodGroup to be scheduled as a whole without being broken up, we will leverage the feature added https://github.com/kubernetes/kubernetes/pull/103383 to move pods of the same PodGroup back to internal scheduling activeQ instantly.
+
+#### UnReserve
+After a pod which belongs to a PodGroup times out in the permit phase. UnReserve Rejects the pods that belong to the same PodGroup to avoid long-term invalid reservation of resources. The rejected pod will have the different failure message in condition with other scheduled failed pods.
+
+```go
+  // These are reasons for a pod's transition to a condition.
+  const (
+    // PodReasonUnschedulable reason in PodScheduled PodCondition means that the scheduler
+    // can't schedule the pod right now, for example due to insufficient resources in the cluster.
+    PodReasonUnschedulable = "Unschedulable"
+
+    // PodReasonCoschedulingNotMeetMinMember reason in PodScheduled PodCondition means 
+    // that the pod can be scheduled successfully, but the scheduling fails because 
+    // minMember cannot be met.
+    PodReasonCoschedulingNotMeetMinMember = "CoschedulingNotMeetMinMember"
+  )
+
+
+  pod.status.conditions[*].reason = PodReasonCoschedulingNotMeetMinMember
+```
+### Cluster Autoscaler
+
+Cluster Autoscaler check the failure reasons in pod.status.condition to decide whether it's possible to resolve the failure by provisioning new machines. If the reason is `CoschedulingNotMeetMinMember`, CA don't need to provision new machines.
 
 ### Test Plan
 
