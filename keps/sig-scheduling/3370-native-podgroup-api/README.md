@@ -446,10 +446,6 @@ type SubsetStatus struct {
 #### QueueSort
 In order to maximize the chance that the pods which belong to the same `PodGroup` to be scheduled consecutively, we need to implement a customized `QueueSort` plugin to sort the Pods properly.
 
-```go
-func  Less(podA *PodInfo, podB *PodInfo) bool
-```
-
 Firstly, we will inherit the default in-tree PrioritySort plugin so as to honor .spec.priority to ensure high-priority Pods are always sorted ahead of low-priority ones.
 
 Secondly, if two Pods hold the same priority, the sorting precedence is described as below:
