@@ -16,6 +16,10 @@
   - [Kubelet Configuration](#kubelet-configuration)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Requirements](#graduation-requirements)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -183,10 +187,77 @@ type TracingConfiguration struct {
 
 ### Test Plan
 
-We will test tracing added by this feature with an integration test.  The
-integration test will verify that spans exported by the kubelet match what is
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+An integration test will verify that spans exported by the kubelet match what is
 expected from the request. We will also add an integration test that verifies
 spans propagated from kubelet to API server match what is expected from the request.
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/component-base/traces`: no test grid results - k8s.io/component-base/traces/config_test.go
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+An integration test will verify that spans exported by the kubelet match what is
+expected from the request. We will also add an integration test that verifies
+spans propagated from kubelet to API server match what is expected from the request.
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- A test with kubelet-tracing & apiserver-tracing enabled to ensure no issues are introduced, regardless
+of whether a tracing backend is configured.
 
 ### Graduation Requirements
 
@@ -366,6 +437,11 @@ _This section must be completed when targeting beta graduation to a release._
     - Testing: To be added.
 
 ## Implementation History
+
+- 2021-07-20: KEP opened
+- 2022-07-22: KEP merged, targeted at Alpha in 1.24
+- 2022-03-29: KEP deemed not ready for Alpha in 1.24
+- 2022-06-09: KEP targeted at Alpha in 1.25
 
 ## Drawbacks
 
