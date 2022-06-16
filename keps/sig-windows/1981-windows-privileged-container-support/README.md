@@ -156,7 +156,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -765,7 +765,7 @@ Beta
 Graduation
 
 - Add e2e tests to validate running `hostProcess` containers as non SYSTEM/admin accounts
-- Update e2e tests for new volume mount behavior as desdribed in [Container Mounts](#container-mounts)
+- Update e2e tests for new volume mount behavior as described in [Container Mounts](#container-mounts)
 
 #### Prerequisite testing updates
 
@@ -924,7 +924,8 @@ Graduation to GA:
 - Add documentation for running as a non-SYSTEM/admin account to k8s.io
 - Update documention on how volume mounts are set up for `hostProcess` containers on k8s.io
 - Set `WindowsHostProcessContainers` feature gate to `GA`
-- Provide reference images/workloads using the `GA` volume mounting behavior in Cluster-API-Provider-azure (which is used to run the majority of Windows e2e test passes)
+- Provide reference images/workloads using the `bind` volume mounting behavior in Cluster-API-Provider-azure (which is used to run the majority of Windows e2e test passes) 
+- Migrate all deployments using `hostProcess` containers under in the [sig-windows-tools repo](https://github.com/kubernetes-sigs/sig-windows-tools/tree/master/hostprocess) to be compatible with `bind` volume behavior.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1075,7 +1076,8 @@ _This section must be completed when targeting beta graduation to a release._
   - [ContainerD]
     - Usage description:
       - `HostProcess` containers support will not be added to dockershim.
-      - Containerd v1.6+ is required.
+      - Containerd v1.6.x is required for `symlink` volume mount behavior
+      - Containerd v1.7+ is required for `bind` volume mount behavior.
       - Impact of its outage on the feature: Containers will fail to start.
       - Impact of its degraded performance or high-error rates on the feature: Containers may behave expectantly and node may go into the NotReady state.
 
