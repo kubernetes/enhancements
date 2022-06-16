@@ -241,15 +241,20 @@ kubebuilder types):
 
 - `// +unionDiscriminator` before a field means that this field is the
   discriminator for the union. This field MUST be an enum defined as a string (see section on
-  discriminator values). This field MUST be
-  required.
-- `// +unionMember=<memberName>,discriminatedBy=<discriminatorName>` before a field means that this
+  discriminator values). This field MUST be required if there is no default
+  option, omitempty if the default option is the empty string, or optional and
+  omitempty if a default value is specified with the `// +default` marker.
+- `// +unionMember=<memberName> before a field means that this
   field is a member of a union. The `<memberName>` is the name of the field that will be set as the discriminator value.
   It MUST correspond to one of the valid enum values of the discriminator's enum
-  type. It defaults to the `CamelCase` representation of the field name if not specified. The `<discriminatorName>` is optional if there
-  is only union in a struct and required if there are multiple unions per
-  struct. It should be the `CamelCase` representation of the field tagged with
-  `unionDiscriminator`.
+  type. It defaults to the go (i.e `CamelCase`) representation of the field name if not specified.
+  `<memberName>` should only be set if authors want to customize how the fields
+  are represented in the discriminator field.
+- `// +unionDiscriminatedBy=<discriminatorName>` before a member field identifies which
+  discriminator (and thus which union) the member field belongs to. Optional
+  unless there are multiple unions/discriminators in a single struct. If used,
+  it must be the go (i.e. `CamelCase`) representation of the field name tagged
+  with `unionDiscriminator`.
 
 #### Discriminator Values
 
@@ -290,8 +295,9 @@ type UnionType string
 
 const (
        FieldA UnionType = "FieldA"
-       FieldB = "FieldC"
+       FieldB = "FieldB"
        FieldC = "FieldC"
+       FieldD = "FieldD"
        FieldNone = ""
 )
 
@@ -321,12 +327,22 @@ type TopLevelUnion struct {
 	Union `json:",inline"`
 }
 
+// +enum
+type UnionType string
+
+const (
+       FieldA UnionType = "FieldA"
+       FieldB = "FieldB"
+       FieldC = "FieldC"
+       FieldD = "FieldD"
+       FieldNone = ""
+)
+
 // This will generate one union, with two fields and a discriminator.
 type Union struct {
 	// +unionDiscriminator
-        // +unionAllowEmpty
         // +required
-	UnionType string `json:"unionType"`
+	UnionType UnionType `json:"unionType"`
 
         // +unionMember
 	// +optional
@@ -336,20 +352,39 @@ type Union struct {
 	FieldB int `json:"fieldB"`
 }
 
+// +enum
+type Union2Type string
+
+const (
+    Alpha Union2Type = "ALPHA"
+    Beta = "BETA"
+)
+
 // This will generate one union that can be embedded because the members explicitly define their discriminator.
 // Also, the unionMember markers here demonstrate how to customize the names used for
 each field in the discriminator.
 type Union2 struct {
 	// +unionDiscriminator
         // +required
-	Type string `json:"type"`
-	// +unionMember=ALPHA,discriminatedBy=type
+	Type2 Union2Type `json:"type"`
+	// +unionMember=ALPHA,
+        // +unionDiscriminatedBy=Type2
         // +optional
 	Alpha int `json:"alpha"`
-	// +unionMember=BETA,discriminatedBy=type
+	// +unionMember=BETA
+        // +unionDiscriminatedBy=Type2
         // +optional
 	Beta int `json:"beta"`
 }
+
+// +enum
+type FieldType string
+
+const (
+    Field1 FieldType = "Field1"
+    Field2 = "Field2"
+    FieldNone = "None"
+)
 
 // This has 3 embedded unions:
 // One for the fields that are directly embedded, one for Union, and one for Union2.
@@ -357,13 +392,14 @@ type InlinedUnion struct {
 	Name string `json:"name"`
 
         // +unionDiscriminator
-        // +unionAllowEmpty
         // +required
-        FieldType string `json:"fieldType"`
-	// +unionMember,discriminatedBy=fieldType
+        FieldType FieldType `json:"fieldType"`
+	// +unionMember
+        // +unionDiscriminatedBy=FieldType
 	// +optional
 	Field1 *int `json:"field1,omitempty"`
-	// +unionMember,discriminatedBy=fieldType
+	// +unionMember
+        // +unionDiscriminatedBy=FieldType
 	// +optional
 	Field2 *int `json:"field2,omitempty"`
 
