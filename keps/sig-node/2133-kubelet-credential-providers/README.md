@@ -351,7 +351,8 @@ can be achieved using the exec plugin.
 
 #### Beta -> GA Graduation
 
-TBD
+* existed in beta for at least 1 minor release
+* e2e test using an external implementation (e.g. [GCR](https://github.com/kubernetes/cloud-provider-gcp/tree/master/cmd/auth-provider-gcp)).
 
 ### Upgrade / Downgrade Strategy
 
@@ -528,6 +529,8 @@ No.
 
 - 2019-10-04: initial KEP introducing this functionality was merged.
 - 2020-11-11: PR introducing this feature at alpha stage was merged https://github.com/kubernetes/kubernetes/pull/94196
+- 2021-07-02: PR improving concurrency and cache for kubelet credential provider was merged https://github.com/kubernetes/kubernetes/pull/102168
+- 2021-09-27: PR adding metrics for kubelet credential provider was merged https://github.com/kubernetes/kubernetes/pull/102802
 
 ## Drawbacks
 
