@@ -131,9 +131,9 @@ functions (e.g. `pkg/apis/<group>/validation/validation.go`).
 
 * Validation - ensuring only one member field is set (or at most one if
   desired).
-* Normalization - ensuring the API server can modify the fields of the oneOf to
-  best match the intent of the client, despite the client potentially having
-  incomplete information
+* Normalization - ensuring the API server can understand the intent of clients
+  that are unable to update/modify fields the clients are unaware of due to
+  version skew.
 
 ### Non-Goals
 
@@ -675,8 +675,9 @@ Yes, requests will simply skip union validation and normalization.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Requests will resume performing union validation and normalization; there is no
-persistent state behind this feature.
+Custom resources that were skipping union validation when when the feature was
+rolled back may have allowed invalid data to persist. These must be updated to
+have valid data.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -692,6 +693,10 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+We will have integration tests demonstrating how CRs with persisted invalid data
+will need to be corrected when the feature is re-enabled (and requires more
+strict union validation).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -715,7 +720,9 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+* `apiserver_request_total` could be watched to see if the number of create and
+  update requests that are failing increase substantially.
+
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
