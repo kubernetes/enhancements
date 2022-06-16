@@ -529,6 +529,9 @@ _This section must be completed when targeting beta graduation to a release._
 - 2021-01-07: Initial draft KEP
 - 2021-03-11: Alpha implementation
   ([kubernetes/kubernetes#99375](https://github.com/kubernetes/kubernetes/pull/99375))
+- 2021-07-13: Beta updates ([k/k#103168](https://github.com/kubernetes/kubernetes/pull/103168))
+- 2021-07-13: Add validation ([k/k#103245](https://github.com/kubernetes/kubernetes/pull/103245))
+- 1.25 cycle: default feature flag to true ([k/k#108541](https://github.com/kubernetes/kubernetes/pull/108541))
 
 ## Drawbacks
 
