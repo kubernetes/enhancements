@@ -564,6 +564,9 @@ Containerd v1.7+ will be required for this behavior.
 - On containerd v1.7 **bind** volume mount behavior will always be used.
   - If users are running nodes with Windows Server 2019 with security patches older than July 2022 the volume mounts for HostProcessContainers will fail.
 
+We are going to use the Kubernetes v1.25 to explore options to make migration from `symlink` volume mount behavior to `bind` volume mount behavior as smooth as possible.
+
+The worst case migration plan is as follows:
 Users who have workloads that depend on the **symlink** mount behavior (ex: are expecting to find mounted volumes under `$CONTAINER_SANDBOX_MOUNT_POINT`) will need to stay on containerd v1.6 releases until their workloads are updated to be compatible with **bind** mount behavior.
 
 #### Container Images
@@ -924,7 +927,7 @@ Graduation to GA:
 - Add documentation for running as a non-SYSTEM/admin account to k8s.io
 - Update documention on how volume mounts are set up for `hostProcess` containers on k8s.io
 - Set `WindowsHostProcessContainers` feature gate to `GA`
-- Provide reference images/workloads using the `bind` volume mounting behavior in Cluster-API-Provider-azure (which is used to run the majority of Windows e2e test passes) 
+- Provide reference images/workloads using the `bind` volume mounting behavior in Cluster-API-Provider-azure (which is used to run the majority of Windows e2e test passes).
 - Migrate all deployments using `hostProcess` containers under in the [sig-windows-tools repo](https://github.com/kubernetes-sigs/sig-windows-tools/tree/master/hostprocess) to be compatible with `bind` volume behavior.
 
 ### Upgrade / Downgrade Strategy
