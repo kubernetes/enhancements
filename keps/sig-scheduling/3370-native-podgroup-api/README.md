@@ -454,16 +454,22 @@ Firstly, we will inherit the default in-tree PrioritySort plugin so as to honor 
 
 Secondly, if two Pods hold the same priority, the sorting precedence is described as below:
 
-- If they are both regularPods (without pod.spec.podGroup), compare their `InitialAttemptTimestamp` field: the Pod with earlier `InitialAttemptTimestamp` is positioned ahead of the other.
+- If they are both regularPods (without pod.spec.podGroup), compare their 
+`InitialAttemptTimestamp` field: the Pod with earlier `InitialAttemptTimestamp` is positioned 
+ahead of the other.
   
-- If one is regularPod and the other is pgPod (without pod.spec.podGroup), compare regularPod's `InitialAttemptTimestamp` with the `creationtime` of pgPod's PodGroup: the Pod with earlier timestamp is positioned ahead of the other.
+- If one is regularPod and the other is pgPod (with pod.spec.podGroup), compare regularPod's
+`InitialAttemptTimestamp` with the `creationtime` of pgPod's PodGroup: the Pod with earlier 
+timestamp is positioned ahead of the other.
   
 - If they are both pgPods:
   - Compare their pod group's `CreationTimestamp`: the Pod in pod group which has earlier timestamp is positioned ahead of the other.
   - If their `CreationTimestamp` is identical, order by their UID of PodGroup: a Pod with lexicographically greater UID is scheduled ahead of the other Pod. (The purpose is to tease different PodGroups with the same `CreationTimestamp` apart, while also keeping Pods belonging to the same PodGroup back-to-back)
 
 #### PreFilter
-In PreFilter phase, we need to check if pod.spec.podGroup is nil firstly. If so, return success. If not, check if the pod group is existed in the scheduler internal cache and pod.spec.podGroup.subset is matched in pod group, if not, reject the pod in PreFilter.
+In PreFilter phase, we need to check if pod.spec.podGroup is nil firstly. If so, return 
+success. If not, check if the pod group exists in the scheduler's internal cache and pod.spec.
+podGroup.subset is matched in pod group, if not, reject the pod in PreFilter.
 
 
 #### Permit
