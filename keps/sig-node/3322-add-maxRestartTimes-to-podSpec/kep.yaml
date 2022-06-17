@@ -41,11 +41,12 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: MaxRestartTimesOnRestartFailure
+  - name: MaxRestartTimesOnFailure
     components:
       - kube-apiserver
       - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: []
+metrics:
+  - pod_exceed_restart_times_size

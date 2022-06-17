@@ -248,7 +248,7 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
-N/A
+
 
 ### Risks and Mitigations
 
@@ -277,9 +277,23 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
-If Pod's `RestartPolicy` is `Always` or `Never`, `MaxRestartTimes` is default to -1, and will not apply.
+Add `maxRestartTimes` to podSpec:
 
-If Pod's `RestartPolicy` is `OnFailure`, `MaxRestartTimes` is also default to -1, which means infinite
+```golang
+type PodSpec struct {
+  // ...
+  RestartPolicy RestartPolicy
+  // MaxRestartTimes indicates the maximum count container can restart. It's the sum of
+  // all containers' restart times and only works when RestartPolicy is set to `OnFailure`.
+  // Default to nil which means will restart infinity.
+  // +optional
+  MaxRestartTimes *int
+}
+```
+
+If Pod's `RestartPolicy` is `Always` or `Never`, `MaxRestartTimes` is default to nil, and will not apply.
+
+If Pod's `RestartPolicy` is `OnFailure`, `MaxRestartTimes` is also default to nil, which means infinite
 restart times for backwards compatibility. In runtime, we'll check the sum of `RestartCount` of
 all containers [`Status`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/runtime.go#L306-L335)
 packaged by Pod in function [`ShouldContainerBeRestarted`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/helpers.go#L63-L96).
@@ -310,7 +324,7 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
-N/A
+No.
 
 ##### Unit tests
 
@@ -526,7 +540,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: MaxRestartTimesOnRestartFailure
+  - Feature gate name: MaxRestartTimesOnFailure
   - Components depending on the feature gate: kubelet, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -550,13 +564,10 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, the feature can be disabled by either:
-1. Disable the `MaxRestartTimesOnRestartFailure` feature gate
-2. Unset the `maxRestartTimes` field, the default value of `maxRestartTimes`
-is unlimited, which is backwards compatible.
+Yes, we can disable the `MaxRestartTimesOnFailure` feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
-Nothing special, `MaxRestartTimes` works as expected.
+Will go back to work as designed.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -572,7 +583,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-Yes, unit tests might be appropriate.
+No, we'll add them during alpha.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -591,8 +602,13 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-It's an opt-in feature for end-users and will maintain current behaviors if not set, so
-it will not impact the running workloads.
+Yes, since this feature should be enabled both by apiserver and kubelet, if we only
+successfully roll back the apiserver, the kubelet will fail to update pod for `maxRestartTime`
+is unknown to apiserver.
+
+Also, in HA clusters, if we only rollback parts of apiservers, pods with `maxRestartTimes` set
+will still be impacted. But finally if the rollback finished, the running workloads will
+recover as expected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -600,7 +616,7 @@ it will not impact the running workloads.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-N/A
+`pod_exceed_restart_times_size` is always zero.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -609,7 +625,7 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-N/A
+No.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -650,8 +666,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [x] Other (treat as last resort)
   - Details:
     - We'll print a log when container restart count meet the `maxRestartTimes` limit.
-    - Pod status will stay in `ExceedMaxRestartTimes` when restart count meet
+    - Pod status will stay in `ExceedMaxRestartTimes` when restart count reach
     the `maxRestartTimes` limit.
+    - Metric `pod_exceed_restart_times_size` will increase over time if reach the max restart times.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -669,14 +686,14 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-N/A
+
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
-N/A
+
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -684,7 +701,7 @@ N/A
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-N/A
+
 
 ### Dependencies
 
@@ -765,7 +782,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-No.
+Yes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -806,7 +823,9 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-N/A
+For new created pods, since API server is down, we'll fail to create pods obviously.
+But for already running pods, since `maxRestartTimes` is only taken into account by
+kubelet, so the feature still works, but we'll failed in updating Pod status.
 
 ###### What are other known failure modes?
 
@@ -822,10 +841,10 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
-N/A
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-N/A
+
 
 ## Implementation History
 
@@ -847,7 +866,7 @@ test plan and graduation criteria.
 <!--
 Why should this KEP _not_ be implemented?
 -->
-N/A
+We have to re-implement this feature in other workloads if we need.
 
 ## Alternatives
 
@@ -858,7 +877,7 @@ information to express the idea and why it was not acceptable.
 -->
 
 - The community has discussed about adding `maxRestartTimes` to annotations, however,
-a field might be a better choice.
+a field might be a better choice for validation.
 
 ## Infrastructure Needed (Optional)
 
@@ -867,4 +886,3 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
-N/A
