@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3008: Class-based resources
+# [KEP-3008](#3008): QoS-class resources
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -193,23 +193,23 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-We would like to add support for class-based resources in Kubernetes.
-Class-based resources can be thought of as non-accountable resources, each of
+We would like to add support for QoS-class resources in Kubernetes.
+QoS-class resources can be thought of as non-accountable resources, each of
 which is presented by a set of classes. Being non-accountable means that
 multiple containers can be assigned to the same class. They are also supposed
 to be opaque to the CRI client in the sense that the container runtime takes
 care of configuration and control of the resources and the classes within.
 
-A prime example of a class-based resource is Intel RDT (Resource Director
+A prime example of a QoS-class resource is Intel RDT (Resource Director
 Technology). RDT is a technology for controlling the cache lines and memory
 bandwidth available to applications. RDT provides a class-based approach for
 QoS control of these shared resources: all processes in the same hardware class
 share a portion of cache lines and memory bandwidth.
 
 We also believe that the Linux Block IO controller (cgroup) should be handled
-as a class-based resource on the level of container orchestration. This enables
+as a QoS-class resource on the level of container orchestration. This enables
 configuring I/O scheduler priority and throttling I/O bandwidth per workload.
-Having the support for class-based resources in place, it will provide a
+Having the support for QoS-class resources in place, it will provide a
 framework for the future, for instance class-based network or memory type
 prioritization.
 
@@ -254,11 +254,11 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Make it possible to request class resources
+- Make it possible to request QoS-class resources
   - Support RDT class assignment of containers. This is already supported by
     the containerd and CRI-O runtime and part of the OCI runtime-spec
   - Support blockio class assignment of containers.
-- Make the extensions flexible, enabling simple addition of other class-based
+- Make the extensions flexible, enabling simple addition of other QoS-class
   resource types in the future.
 
 ### Non-Goals
@@ -268,16 +268,16 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Interface or mechanism for configuring the class resources (responsibility of
+- Interface or mechanism for configuring the QoS-class resources (responsibility of
   the container runtime).
-- Enumerating possible (class) resource types or their detailed behavior
+- Enumerating possible (QoS-class) resource types or their detailed behavior
 - Resource status/capacity (will be addressed in a separate KEP)
-- Discovery of the class-based resources (will be addressed in a separate KEP)
+- Discovery of the QoS-class resources (will be addressed in a separate KEP)
 - Access control (will be addressed in a separate KEP)
 
 ## Implementation phases
 
-We have split the full implementation of class resources into multiple phases,
+We have split the full implementation of QoS-class resources into multiple phases,
 building functionality gradually, step-by-step. The goal is to make the
 discussions more focused and easier. We may also learn on the way, insights
 from earlier phases affecting design choises made in the later phases,
@@ -287,12 +287,12 @@ all the future steps to not lose the overall big picture.
 ### Phase 1
 
 This KEP (the [Proposal](#proposal)) implements the first phase. The goal is to
-enable a bare minimum for users to leverage class resources and start
+enable a bare minimum for users to leverage QoS-class resources and start
 experimenting with them in Kubernetes:
 
-- extend the CRI protocol to allow class resource assignment
+- extend the CRI protocol to allow QoS-class resource assignment
 - implement pod annotations as an initial user interface
-- introduce a feature gate for enabling class resource support in kubelet
+- introduce a feature gate for enabling QoS-class resource support in kubelet
 
 ### Future work
 
@@ -316,17 +316,17 @@ type ResourceRequirements struct {
      Limits ResourceList `json:"limits,omitempty"
      // Requests describes the minimum amount of compute resources required.
      Requests ResourceList `json:"requests,omitempty"
-+    // Classes specifies the class resources that the container should be assigned
++    // Classes specifies the QoS-class resources that the container should be assigned
 +    Classes map[ClassResourceName]string
 }
 
-+// ClassResourceName is the name of a class-based resource.
++// ClassResourceName is the name of a QoS-class resource.
 +type ClassResourceName string
 ```
 
 Also, we add a `Resources` field to the `PodSpec`. We will re-use the existing
 `ResourceRequirements` type but Limits and Requests must be left empty. Classes
-may be set and they represent the Pod-level assignment of class resources,
+may be set and they represent the Pod-level assignment of QoS-class resources,
 comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
 
 ```diff
@@ -342,7 +342,7 @@ comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
  }
 ```
 
-In practice, the class resource information will be directly used in the CRI
+In practice, the QoS-class resource information will be directly used in the CRI
 ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
 resource discovery or access control kubelet does not do any validity checking
 of the values. Invalid class assignments will cause an error in the container
@@ -410,10 +410,10 @@ Some possible alternatives.
 
 #### Access control
 
-If class resources were advertised as API objects the natural access
+If QoS-class resources were advertised as API objects the natural access
 control mechanism would be through RBAC.
 
-If class resources were advertised in node status (similar to other resources),
+If QoS-class resources were advertised in node status (similar to other resources),
 access control could be achieved e.g. by extending ResourceQuotaSpec which
 would implement restrictions based on the namespace.
 
@@ -429,11 +429,11 @@ would implement restrictions based on the namespace.
      // object tracked by a quota but expressed using ScopeSelectorOperator in combination
      // with possible values.
      ScopeSelector *ScopeSelector
-+    // AllowedClasses specifies the list of allowed classes for each class-based resource
++    // AllowedClasses specifies the list of allowed classes for each QoS-class resource
 +    AllowedClasses map[ClassResourceName]ResourceClassList
 }
 
-+// ResourceClassList is a list of classes of a specific type of class-based resource.
++// ResourceClassList is a list of classes of a specific type of QoS-class resource.
 +type ResourceClassList []string
 ```
 ## Proposal
@@ -447,13 +447,13 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We extend the CRI protocol to contain information about the class-based
+We extend the CRI protocol to contain information about the QoS-class
 resource assignment of containers.  Currently we identify two types of
 resources (RDT and blockio) but the API changes will be generic so that it that
 will serve other similar resources in the future.
 
 We implement pod annotations the initial mechanism for Kubernetes users to
-control class resource assignment. We define two class resources that can be
+control QoS-class resource assignment. We define two QoS-class resources that can be
 controlled via annotations, i.e. RDT and blockio.
 
 We introduce a feature gate that enables kubelet to interpret pod annotations
@@ -498,7 +498,7 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-This is only the first step in getting class-based resources supported in
+This is only the first step in getting QoS-class resources supported in
 Kubernetes. Important pieces like resource assignment via pod spec, resource
 status, resource disovery and permission control are [non-goals](#non-goals)
 not solved here.
@@ -541,7 +541,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-Configuration and management of the class resources is fully handled by the
+Configuration and management of the QoS-class resources is fully handled by the
 underlying container runtime and is invisible to kubelet. An error to the CRI
 client is returned if the specified class is not available.
 
@@ -550,7 +550,7 @@ client is returned if the specified class is not available.
 The following additions to the CRI protocol are suggested.
 
 The `ContainerConfig` message will be supplemented with new `class_resources`
-field, providing per-container setting for class resources.
+field, providing per-container setting for QoS-class resources.
 
 
 ```diff
@@ -562,7 +562,7 @@ field, providing per-container setting for class resources.
      // Configuration specific to Windows containers.
      WindowsContainerConfig windows = 16;
 +
-+    // Configuration of class resources.
++    // Configuration of QoS-class resources.
 +    ContainerClassResources class_resources = 17;
  }
 
@@ -587,7 +587,7 @@ runtime.
      LinuxPodSandboxConfig linux = 8;
      // Optional configurations specific to Windows hosts.
      WindowsPodSandboxConfig windows = 9;
-+    // Configuration of class resources.
++    // Configuration of QoS-class resources.
 +    PodClassResources class_resources = 10;
 +
  }
@@ -600,15 +600,15 @@ runtime.
 +}
 ```
 
-Also, define "known" class resource types to more easily align container
+Also, define "known" QoS-class resource types to more easily align container
 runtime implementations:
 
 ```
 +
 +const (
-+       // ClassResourceRdt is the name of the RDT class resource
++       // ClassResourceRdt is the name of the RDT QoS-class resource
 +       ClassResourceRdt = "rdt"
-+       // ClassResourceBlockio is the name of the blockio class resource
++       // ClassResourceBlockio is the name of the blockio QoS-class resource
 +       ClassResourceBlockio = "blockio"
 +)
 ```
@@ -617,14 +617,14 @@ runtime implementations:
 
 Use Pod annotation as the initial K8s user interface, similar to e.g. how
 seccomp support was added. This will bridge the gap between enabling
-class-based resources in the CRI protocol and making them available in the Pod
+QoS-class resources in the CRI protocol and making them available in the Pod
 spec.
 
 A feature gate ClassResources enables kubelet to look for pod
-annotations and set the class resource assignment via CRI protocol accordingly.
+annotations and set the QoS-class resource assignment via CRI protocol accordingly.
 
 Specifically, kubelet will support annotations for specifying RDT and blockio
-class, the two types of class resources that already have basic support in the
+class, the two types of QoS-class resources that already have basic support in the
 container runtimes.
 
 - `rdt.resources.beta.kubernetes.io/pod` for setting a Pod-level default RDT
@@ -638,7 +638,7 @@ container runtimes.
 
 ### Container runtimes
 
-We have implemented class-based RDT and blockio support in CRI-O and
+We have implemented QoS-class RDT and blockio support in CRI-O and
 containerd:
 
 - cri-o:
@@ -648,24 +648,24 @@ containerd:
   - [~~Support Intel RDT~~](https://github.com/containerd/containerd/pull/5439)
   - [~~Support for cgroups blockio~~](https://github.com/containerd/containerd/pull/5490)
 
-The design paradigm here is that the container runtime configures the resource
-classes according to a given configuration file. Enforcement on containers is
+The design paradigm here is that the container runtime configures the QoS-class
+resources according to a given configuration file. Enforcement on containers is
 done via OCI. User interface is provided through pod and container annotations.
 
 ### Open Questions
 
 #### Pod QoS class
 
-The Pod QoS class could be communicated to the container runtime as a class
+The Pod QoS class could be communicated to the container runtime as a QoS-class
 resource, too. This information is currently internal to kubelet. However,
 container runtimes (CRI-O, at least) are already depending on this information
 and currently determining it indirectly by evaluating other CRI parameters. It
-would be better to explicitly state the Pod QoS class and class resources would
+would be better to explicitly state the Pod QoS class and QoS-class resources would
 look like a logical place for that. This also makes it techically possible to
 have container-specific QoS classes (as a possible future enhancement of K8s).
 
-Communicating Pod QoS class via class resources would advocate moving class
-resources up to `ContainerConfig`.
+Communicating Pod QoS class via QoS-class resources would advocate moving
+QoS-class resources up to `ContainerConfig`.
 
 Making this change, it would also be possible to separate `oom_score_adj` from
 the pod qos class in the future.  The runtime could provide a set of OOM
@@ -740,7 +740,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 Alpha: no specific integration tests are planned for Alpha.
 
 Beta: Existing integration tests for affected components (e.g. scheduler, node
-status, quota) are extended to cover class resources.
+status, quota) are extended to cover QoS-class resources.
 
 - <test>: <link to test coverage>
 
@@ -759,7 +759,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 Alpha: no specific e2e-tests are planned.
 
 In order to be able to run e2e tests, a cluster with nodes having runtime
-support for class resources is required.
+support for QoS-class resources is required.
 
 ### Graduation Criteria
 
@@ -1134,7 +1134,7 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-Class resources do extend existing API types but not introduce new types of
+QoS-class resources do extend existing API types but not introduce new types of
 objects. However, future work (KEPs) enabling resource discovery and permission
 control might change this.
 
@@ -1246,7 +1246,7 @@ information to express the idea and why it was not acceptable.
 ### Pod spec
 
 Instead of introducing Pod annotations as an intermediate solution for
-controlling the class resources, the Pod spec could be updated in lock-step
+controlling the QoS-class resources, the Pod spec could be updated in lock-step
 with the CRI api. See the section [(Future work) Pod spec](#pod-spec) for more
 details.
 
