@@ -1,7 +1,6 @@
 # KEP-3022: min domains in Pod Topology Spread
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -14,6 +13,10 @@
   - [Implementation details](#implementation-details)
   - [How user stories are addressed](#how-user-stories-are-addressed)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.24):](#alpha-v124)
     - [Beta (v1.25):](#beta-v125)
