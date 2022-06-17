@@ -760,65 +760,81 @@ Every 10 seconds, all the CurrentCLs are adjusted.  We do smoothing on
 the inputs to the adjustment logic in order to dampen control
 gyrations, in a way that lets a priority level reclaim lent seats at
 the nearest adjustment time.  The adjustments take into account the
-high watermark `HighSD(i)`, time-weighted average `AvgSD(i)`, and
-time-weighted population standard deviation `StDevSD(i)` of each
-priority level `i`'s seat demand over the just-concluded adjustment
-period.  A priority level's seat demand at any given moment is the sum
-of its occupied seats and the number of seats in the queued requests.
-We also define `EnvelopeSD(i) = AvgSD(i) + StDevSD(i)`.  The
-adjustment logic is driven by a quantity called smoothed seat demand
-(`SmoothSD(i)`), which does an exponential averaging of EnvelopeSD
-values using a coeficient A in the range (0,1) and immediately tracks
-EnvelopeSD when it exceeds SmoothSD.  The rule for updating priority
-level `i`'s SmoothSD at the end of an adjustment period is
-`SmoothSD(i) := max( EnvelopeSD(i), A*SmoothSD(i) + (1-A)*Envelope(i)
-)`.  The command line flag `--seat-demand-history-fraction` with a
-default value of 0.9 configures A.
+high watermark `HighSeatDemand(i)`, time-weighted average
+`AvgSeatDemand(i)`, and time-weighted population standard deviation
+`StDevSeatDemand(i)` of each priority level `i`'s seat demand over the
+just-concluded adjustment period.  A priority level's seat demand at
+any given moment is the sum of its occupied seats and the number of
+seats in the queued requests.  We also define `EnvelopeSeatDemand(i) =
+AvgSeatDemand(i) + StDevSeatDemand(i)`.  The adjustment logic is
+driven by a quantity called smoothed seat demand
+(`SmoothSeatDemand(i)`), which does an exponential averaging of
+EnvelopeSeatDemand values using a coeficient A in the range (0,1) and
+immediately tracks EnvelopeSeatDemand when it exceeds
+SmoothSeatDemand.  The rule for updating priority level `i`'s
+SmoothSeatDemand at the end of an adjustment period is
+`SmoothSeatDemand(i) := max( EnvelopeSeatDemand(i),
+A*SmoothSeatDemand(i) + (1-A)*EnvelopeSeatDemand(i) )`.  The command
+line flag `--seat-demand-history-fraction` with a default value of 0.9
+configures A.
 
 Adjustment is also done on configuration change, when a priority level
 is introduced or removed or its NominalCL or BorrowableCL changes.  At
 such a time, the current adjustment period comes to an early end and
 the regular adjustment logic runs; the adjustment timer is reset to
 next fire 10 seconds later.  For a newly introduced priority level, we
-set HighSD, AvgSD, and SmoothSD to NominalCL-BorrowableSD/2 and
-StDevSD to zero.
+set HighSeatDemand, AvgSeatDemand, and SmoothSeatDemand to
+NominalCL-BorrowableSD/2 and StDevSeatDemand to zero.
 
 For adjusting the CurrentCL values, each non-exempt priority level `i`
 has a lower bound (`MinCurrentCL(i)`) for the new value.  It is simply
-HighSD clipped by the configured concurrency limits: `MinCurrentCL(i)
-= max( MinCL(i), min( NominalCL(i), HighSD(i) ) )`.
+HighSeatDemand clipped by the configured concurrency limits:
+`MinCurrentCL(i) = max( MinCL(i), min( NominalCL(i), HighSeatDemand(i)
+) )`.
 
-If MinCurrentCL(i) = NominalCL(i) for every non-exempt priority level
-i then there is no wiggle room.  No priority level is willing to lend
-any seats.  The new CurrentCL values must equal the NominalCL values.
-Otherwise there is wiggle room and the adjustment proceeds as follows.
+If `MinCurrentCL(i) = NominalCL(i)` for every non-exempt priority
+level `i` then there is no wiggle room.  In this situation, no
+priority level is willing to lend any seats.  The new CurrentCL values
+must equal the NominalCL values.  Otherwise there is wiggle room and
+the adjustment proceeds as follows.  For the following logic we let
+the CurrentCL values be floating-point numbers, not necessarily
+integers.
 
 The priority levels would all be fairly happy if we set CurrentCL =
-SmoothSD for each.  We clip that by the lower bound just shown, taking
-`Target(i) = max(SmoothSD(i), MinCurrentCL(i))` as a first-order
-target for each non-exempt priority level `i`.
+SmoothSeatDemand for each.  We clip that by the lower bound just
+shown, taking `Target(i) = max(SmoothSeatDemand(i), MinCurrentCL(i))`
+as a first-order target for each non-exempt priority level `i`.
 
 Sadly, the sum of the Target values --- let's name that TargetSum ---
-is not necessarily equal to ServerCL and the individual Target values
-do not necessarily respect the corresponding MinCurrentCL bound.  If
-we had only the first of those two problems then we could set each
-CurrentCL(i) to FairFrac * Target(i) where FairFrac = ServerCL /
-TargetSum.  This would share the gain or pain in equal proportion
-among the priority levels.  Taking the lower bounds into account means
-finding the one FairFrac value that solves the following conditions,
-for all the non-exempt priority levels `i`, and also makes the
-CurrentCL values sum to ServerCL.  For this step we let the CurrentCL
-values be floating-point numbers, not necessarily integers.
+is not necessarily equal to ServerCL.  However, if `TargetSum <=
+ServerCL` then all the Targets can be scaled up in the same proportion
+`FairProp = ServerCL / TargetSum` to get the new concurrency limits.
+That is, `CurrentCL(i) := FairProp * Target(i)` for each non-exempt
+priority level `i`.  This shares the wealth proportionally among the
+priority levels.  Also note, the following computation produces the
+same result.
+
+If `TargetSum > ServerCL` then we can not necessarily scale all the
+Targets down by the same factor --- because that might violate some
+lower bounds.  The problem is to find a proportion `FairProp`, which
+we know must lie somewhere in the range (0,1) when `TargetSum >
+ServerCL`, that can be shared by all the priority levels except those
+whose lower bound forbids that.  This means to find the one value of
+`FairProp` that solves the following conditions, for all the
+non-exempt priority levels `i`, and also makes the CurrentCL values
+sum to ServerCL.
 
 ```
-CurrentCL(i) = FairFrac * Target(i)  if FairFrac * Target(i) >= MinCurrentCL(i)
-CurrentCL(i) = MinCurrentCL(i)       if FairFrac * Target(i) <= MinCurrentCL(i)
+CurrentCL(i) = FairProp * Target(i)  if FairProp * Target(i) >= MinCurrentCL(i)
+CurrentCL(i) = MinCurrentCL(i)       if FairProp * Target(i) <= MinCurrentCL(i)
 ```
 
 This is the mirror image of the max-min fairness problem and can be
 solved with the same sort of algorithm, taking O(N log N) time and
-O(N) space.  After finding the floating point CurrentCL solutions,
-each one is rounded to the nearest integer to use in dispatching.
+O(N) space.
+
+After finding the floating point CurrentCL solutions, each one is
+rounded to the nearest integer to use in subsequent dispatching.
 
 ### Fair Queuing for Server Requests
 
@@ -2031,13 +2047,13 @@ This KEP adds the following metrics.
 - `apiserver_flowcontrol_request_min_concurrency_limit` (gauge of MinCL, broken down by priority)
 - `apiserver_flowcontrol_request_current_concurrency_limit` (gauge of CurrentCL, broken down by priority)
 - `apiserver_flowcontrol_demand_seats` (timing ratio histogram of seat demand / NominalCL, broken down by priority)
-- `apiserver_flowcontrol_demand_seats_high_water_mark` (gauge of HighSD, broken down by priority)
-- `apiserver_flowcontrol_demand_seats_average` (gauge of AvgSD, broken down by priority)
-- `apiserver_flowcontrol_demand_seats_stdev` (gauge of StDevSD, broken down by priority)
-- `apiserver_flowcontrol_envelope_seats` (gauge of EnvelopeSD, broken down by priority)
-- `apiserver_flowcontrol_smoothed_demand_seats` (gauge of SmoothSD, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_high_water_mark` (gauge of HighSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_average` (gauge of AvgSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_stdev` (gauge of StDevSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_envelope_seats` (gauge of EnvelopeSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_smoothed_demand_seats` (gauge of SmoothSeatDemand, broken down by priority)
 - `apiserver_flowcontrol_target_seats` (gauge of Target, brokwn down by priority)
-- `apiserver_flowcontrol_seat_fair_frac` (gauge of FairFrac)
+- `apiserver_flowcontrol_seat_fair_frac` (gauge of FairProp)
 
 ### Testing
 
