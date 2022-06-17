@@ -237,7 +237,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2020-06-17` - `86%`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2022-06-17` - `86%`
+- `k8s.io/kubernetes/pkg/api/pod`: `2022-06-17` - `66.7%`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2022-06-17` - `82.1%`
 
 ##### Integration tests
 
