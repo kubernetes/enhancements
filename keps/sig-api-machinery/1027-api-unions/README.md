@@ -687,7 +687,13 @@ enabled.
 
 ###### Does enabling the feature change any default behavior?
 
-No, since all built in unions are currently validated in other ways.
+Enabling the feature could cause existing CRs to fail validation if the
+correspond CRD has union fields and the existing CRs have invalid unions that
+were unvalidated when initially created in a cluster that had the unions feature
+disabled.
+
+These CRs will need to be corrected in order to pass validation (or the feature
+disabled).
 
 <!--
 Any change of default behavior may be surprising to users or break existing
