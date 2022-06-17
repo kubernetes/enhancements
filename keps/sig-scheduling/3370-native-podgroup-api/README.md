@@ -524,6 +524,7 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+No.
 
 ##### Unit tests
 
@@ -546,7 +547,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/scheduler/internal/cache/cache.go`: `06-17` - `76.1%`
+- `k8s.io/kubernetes/pkg/scheduler/internal/cache/snapshot.go`: `06-17` - `35.1%`
 
 ##### Integration tests
 
@@ -558,7 +560,14 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- These cases will be added in the existed integration tests:
+  - Feature gate enable/disable tests
+  - gang-scheduling in kube-scheduler works as expected
+  - pod-group-controller is kube-controller-manager works as expected.
+
+- `k8s.io/kubernetes/test/integration/scheduler/filters/filters_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadFilter
+- `k8s.io/kubernetes/test/integration/scheduler/scoring/priorities_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadScoring
+- `k8s.io/kubernetes/test/integration/scheduler_perf/scheduler_perf_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=BenchmarkPerfScheduling
 
 ##### e2e tests
 
@@ -572,7 +581,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- These cases will be added in the existed e2e tests:
+  - Feature gate enable/disable tests
+  - gang-scheduling in kube-scheduler works as expected
+  - pod-group-controller is kube-controller-manager works as expected.
+
+- `k8s.io/kubernetes/test/e2e/scheduling/predicates.go`: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling
+- `k8s.io/kubernetes/test/e2e/scheduling/priorities.go`: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling
 
 ### Graduation Criteria
 
@@ -645,6 +660,7 @@ in back-to-back releases.
 #### Beta
 - Feature is enabled by default.
 - Update documents to reflect the changes.
+- Add official benchmarking of pod group scheduling.
 
 #### GA
 - No negative feedback.
@@ -664,9 +680,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-In the event of an upgrade, kube-controller-manager will start to reconcile and keep the status of PodGroup in date.
+In the event of an upgrade, kube-controller-manager will start to reconcile and keep the status of PodGroup in date. kube-scheduler will start to listAndWatch the object of pod groups and support gang-scheduling.
 
-In the event of a downgrade，kube-controller-manager will stop reconciling and the status of PodGroup will be out of date.
+In the event of a downgrade，kube-controller-manager will stop reconciling and the status of PodGroup will be out of date. kube-scheduler won't listAndWatch the object of pod groups and does't support gang-scheduling.
 
 ### Version Skew Strategy
 
@@ -725,9 +741,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `PodGroup`
+  - Components depending on the feature gate: kube-apiserver, kube-controller-manager, kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -741,6 +757,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -755,7 +772,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+The feature can be disabled in Alpha and Beta versions by restarting 
+kube-apiserver, kube-controller-manager and kube-scheduler with feature-gate off.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+- kube-controller-manager will start to reconcile the pod status in pod-group controller.
+- kube-scheduler will support gang scheduling if you created related pod group for the exist pending pods.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -771,6 +794,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+No, unit and integration tests will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
