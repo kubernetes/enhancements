@@ -141,7 +141,7 @@ and also to the range 49152-65535 without allowing any other ports.
 
 ### Notes/Constraints/Caveats
 
-*  The technology used by the CNI provider might not support port range in a 
+* The technology used by the CNI provider might not support port range in a 
 trivial way as described in [#drawbacks]
 
 ### Risks and Mitigations
@@ -154,25 +154,25 @@ of the new field.
 
 API changes to NetworkPolicy:
 * Add a new field called `EndPort` inside `NetworkPolicyPort` as the following:
-```
+```go
 // NetworkPolicyPort describes a port to allow traffic on
 type NetworkPolicyPort struct {
-	// The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
-	// field defaults to TCP.
-	// +optional
-	Protocol   *v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,1,opt,name=protocol,casttype=k8s.io/api/core/v1.Protocol"`
-
-	// The port on the given protocol. This can either be a numerical or named 
+  // The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
+  // field defaults to TCP.
+  // +optional
+  Protocol   *v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,1,opt,name=protocol,casttype=k8s.io/api/core/v1.Protocol"`
+  
+  // The port on the given protocol. This can either be a numerical or named 
   // port on a pod. If this field is not provided, this matches all port names and
   // numbers, whether an endPort is defined or not.
-	// +optional
-	Port       *intstr.IntOrString `json:"port,omitempty" protobuf:"bytes,2,opt,name=port"`
-
-	// EndPort defines the last port included in the port range.
-	// Example:
-  //    endPort: 12345
-	// +optional
-	EndPort    int32 `json:"port,omitempty" protobuf:"bytes,2,opt,name=endPort"`
+  // +optional
+  Port       *intstr.IntOrString `json:"port,omitempty" protobuf:"bytes,2,opt,name=port"`
+  
+  // EndPort defines the last port included in the port range.
+  // Example:
+  //  endPort: 12345
+  // +optional
+  EndPort    int32 `json:"port,omitempty" protobuf:"bytes,2,opt,name=endPort"`
 }
 ```
 
@@ -205,8 +205,9 @@ validation should be done by CNIs.
 
 ##### e2e tests
 
-- test/e2e/network/netpol/network_policy_api.go: Test is optional as per the whole Network Policy suite
+- Feature:NetworkPolicyEndPort: https://storage.googleapis.com/k8s-triage/index.html?text=EndPort#eaa4b8cdb7b461dccfa9
 
+The flakes shown here are not related to this feature, per the tests logs
 
 ### Graduation Criteria
 
@@ -225,6 +226,12 @@ with generally positive feedback on its usage.
 
 - At least **four** NetworkPolicy providers (or CNI providers) support the `EndPort` field
 - `EndPort` has been enabled by default for at least 1 minor release
+
+The following are the CNIs that implement this feature:
+- Calico
+- Antrea
+- Openshift SDN
+- Kuberouter
 
 ### Upgrade / Downgrade Strategy
 
@@ -249,7 +256,6 @@ start working incorrectly. This is a fail-closed failure, so it is acceptable.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-  
   Yes. One caveat here is that NetworkPolicies created with EndPort field set 
   when the feature was enabled will continue to have that field set when the 
   feature is disabled unless user removes it from the object. 
@@ -340,7 +346,6 @@ of this feature?**
 ###### Does this feature depend on any specific services running in the cluster?
 
   Yes, a CNI supporting the new feature 
-
 
 ### Scalability
 
