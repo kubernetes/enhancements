@@ -89,6 +89,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -318,14 +322,7 @@ not change the default behavior.
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -333,12 +330,73 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
-- Unit and integration tests:
-  - Defaulting and validation tests
-  - Feature gate enable/disable tests
-  - `NodeAffinityPolicy` and  `NodeTaintsPolicy` work as expected
-- Benchmark tests:
-  - Verify the performance of looping all toleration and taints in calculating skew is acceptable
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+No.
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `pkg/api/pod`: `2022-06-17` - `66.7%`
+- `pkg/apis/core/validation`: `2022-06-17` - `82.1%`
+- `pkg/scheduler`: `2022-06-17` - `75%`
+- `pkg/scheduler/framework/plugins/defaultpreemption`: `2022-06-17` - `85.2%`
+- `pkg/scheduler/framework/plugins/podtopologyspread`: `2022-06-17` - `86%`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- [tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go) with policies honored/ignored in filtering
+- [tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/podtopologyspread/scoring_test.go) with policies honored/ignored in scoring
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+None. Considering we didn't introduce any new API endpoints in this KEP and this feature only impacts the kube-scheduler,
+so rely on integration tests to verify the scheduling results is enough.
+
 
 ### Graduation Criteria
 
