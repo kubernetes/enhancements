@@ -265,10 +265,9 @@ As a batch workload user (e.g., MPI/TensorFlow/Spark), I want all pods of a
 Job to be either started altogether; otherwise, don’t start any of them.
 
 #### Story 2
-As a service workload user, I want to use PodGroup along with other scheduling
-directives to compose a customized scheduling requirement - like, I want a
-Deployment to run in the same topology (using PodAffinity) at the same time 
-(using PodGroup); otherwise, don’t start any of them.
+As a service workload user, I want some related deployments to run in the same zone 
+(with other scheduling directives like PodAffinity) at the same time (using PodGroup); 
+otherwise, don’t start any of them.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -293,6 +292,12 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+- incompatibility with CA : The failure reason of some pods in a pod group is not that the
+resources cannot be met, but that the podgroup cannot meet `all-or-nothing` of
+gang-scheduling. But CA will to provision machines for all pods. For this part of pods in pod 
+group, we will add different failure message in condition.reason. Cluster Autoscaler check the
+failure reasons in pod.status.condition to decide whether it's possible to resolve the failure 
+by provisioning new machines. Details are described in the following.
 
 ## Design Details
 
@@ -367,9 +372,8 @@ type PodGroupRef struct {
 
 In this design, a PodGroupStatus is needed to record the latest status. This
 enables users to quickly know what’s going on with this PodGroup; also some
-integrators (like ClusterAutoscaler) can rely on it to make pending PodGroup
-schedulable. For this, we need to add a new PodGroup Controller in
-controller-manager.
+integrators can rely on it to make pending PodGroup schedulable. For this, we 
+need to add a new PodGroup Controller in controller-manager.
 
 ```go
 // PodGroupStatus represents the current state of a pod group.

@@ -40,9 +40,7 @@ milestone:
 feature-gates:
   - name: PodGroup
     components:
+      - kube-apiserver
+      - kube-scheduler
       - kube-controller-manager
 disable-supported: true
-
-# The following PRR answers are required at beta release
-metrics:
-  - my_feature_metric
