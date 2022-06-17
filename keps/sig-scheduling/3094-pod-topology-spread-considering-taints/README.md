@@ -380,8 +380,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- tests with policies honored/ignored in filtering
-- tests with policies honored/ignored in scoring
+- [tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go) with policies honored/ignored in filtering
+- [tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/podtopologyspread/scoring_test.go) with policies honored/ignored in scoring
 
 ##### e2e tests
 
@@ -394,7 +394,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
-None.
+None. Considering we didn't introduce any new API endpoints in this KEP and this feature only impacts the kube-scheduler,
+so rely on integration tests to verify the scheduling results is enough.
 
 
 ### Graduation Criteria
