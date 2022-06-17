@@ -278,11 +278,11 @@ and make progress.
 ## Implementation phases
 
 We have split the full implementation of class resources into multiple phases,
-building functionality gradually, step-bu-step. The goal is to make the
+building functionality gradually, step-by-step. The goal is to make the
 discussions more focused and easier. We may also learn on the way, insights
 from earlier phases affecting design choises made in the later phases,
 hopefully resulting in a better overall end result. However, we also outline
-all the future steps to not loose the overall big picture.
+all the future steps to not lose the overall big picture.
 
 ### Phase 1
 
@@ -401,6 +401,7 @@ Some possible alternatives.
    1. A separate gRPC endpoint or update `StatusResponse`
    1. OR Populate a (json) file in a known location
 
+   Of these, the first option is more idiomatic for how cri behaves today.
    As a reference, the API currently allows listing of some objects/resources
    (Pods, Containers, Images etc) but not some others.
 
