@@ -330,6 +330,9 @@ Beta:
 * at least 2 working reference implementations
 * unit tests for new concurrency/caching improvements.
 
+GA:
+* e2e test with an external implementation (e.g. [GCR](https://github.com/kubernetes/cloud-provider-gcp/tree/master/cmd/auth-provider-gcp)).
+
 ### Graduation Criteria
 
 ### Alpha
