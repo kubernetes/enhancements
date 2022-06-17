@@ -55,7 +55,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3314: Changed Block Tracking With CSI Differential Snapshot
+# KEP-3314: Changed Block Tracking With CSI VolumeSnapshotDelta
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -240,16 +240,8 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-This KEP introduces a new CRD called `DifferentialSnapshot` to the CSI
+This KEP introduces a new CRD called `VolumeSnapshotDelta` to the CSI
 architecture.
-
-```
-<<[UNRESOLVED CRD name ]>>
-The name of the CRD hasn't been finalized. The 'Snapshot' suffix seems to imply
-that the CRD represents a kind of volume snapshot, where it actually represents
-the metadata of the changed blocks between the two snapshots.
-<<[/UNRESOLVED]>>
-```
 
 The CRD abstracts away the details around interacting with the storage
 providers' CBT endpoints. Essentially, the CRD allows a Kubernetes user to say,
@@ -257,17 +249,17 @@ providers' CBT endpoints. Essentially, the CRD allows a Kubernetes user to say,
 > Help me find all the data blocks that have changed between these two
 > snapshots.
 
-The new `DifferentialSnapshot` component must be able to handle large amount of
+The new `VolumeSnapshotDelta` component must be able to handle large amount of
 data returned by the storage providers, without negatively impacting the rest of
 the cluster through resource contention and starvation. Specifically, this KEP
 emphasizes on not putting Kubernetes' etcd in the CBT datapath, to avoid bogging
 it down with heavy IOPS operations.
 
-The `DifferentialSnapshot` component will be implemented as a [CSI sidecar]
+The `VolumeSnapshotDelta` component will be implemented as a [CSI sidecar]
 container, following the existing CSI driver deployment model. The new component
 will have:
 
-* a controller that watches for new `DifferentialSnapshot` resources.
+* a controller that watches for new `VolumeSnapshotDelta` resources.
 * a HTTP listener the provides direct datapaths to handle CBT requests and
 responses.
 
@@ -296,7 +288,7 @@ resource's `status` subresource with the payload may put etcd at risk of
 storage capacity exhaustion as well as regular IOPS spikes.
 
 To mitigate this issue, this KEP proposes a 2-hops request mechanism where
-instead of handling the requests directly, the `DifferentialSnapshot` controller
+instead of handling the requests directly, the `VolumeSnapshotDelta` controller
 returns a callback URL to the user so that HTTP requests can be directed to this
 "out-of-band" endpoint to fetch the changed block metadata. This mechanism
 allows the response payloads to be returned directly to the user, without
@@ -304,7 +296,7 @@ persisting them in etcd.
 
 #### Securing The HTTP Listener
 
-The `DifferentialSnapshot` listener that exposes the callback endpoint will be
+The `VolumeSnapshotDelta` listener that exposes the callback endpoint will be
 secured by delegating the request authorisation to the Kubernetes API server
 using the
 [`SubjectAccessReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#subjectaccessreview-v1-authorization-k8s-io)
@@ -319,22 +311,22 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-The proposed design involves extending CSI with the `DifferentialSnapshot` CRD
-and the `DIFFERENTIAL_SNAPSHOT_SERVICE` capability. A Kubernetes user (human or
-not) would create a `DifferentialSnapshot` resource to initialize the CBT
+The proposed design involves extending CSI with the `VolumeSnapshotDelta` CRD
+and the `VOLUME_SNAPSHOT_DELTA_SERVICE` capability. A Kubernetes user (human or
+not) would create a `VolumeSnapshotDelta` resource to initialize the CBT
 datapath workflow. Storage providers can opt in to support this feature by
-implementing the `DIFFERENTIAL_SNAPSHOT_SERVICE` capability in their CSI
+implementing the `VOLUME_SNAPSHOT_DELTA_SERVICE` capability in their CSI
 drivers.
 
-The `DifferentialSnapshot` resource is a namespace-scoped resource. It must be
+The `VolumeSnapshotDelta` resource is a namespace-scoped resource. It must be
 created in the same namespace as the base and target CSI `VolumeSnapshot`s.
 
 ### CBT Datapath Worklow
 
 A Kubernetes user initiates the datapath workflow by creating a new
-`DifferentialSnapshot` custom resource. The `DifferentialSnapshot` controller,
+`VolumeSnapshotDelta` custom resource. The `VolumeSnapshotDelta` controller,
 deployed as a CSI sidecar in the storage provider's CSI driver, watches for new
-`DifferentialSnapshot` resources:
+`VolumeSnapshotDelta` resources:
 
 ![CBT Step 1](./img/cbt-step-01.png)
 
@@ -344,8 +336,8 @@ the callback URL to fetch the list of changed block metadata:
 
 ![CBT Step 2](./img/cbt-step-02.png)
 
-The callback URL points to the `DifferentialSnapshot` listener, which runs in
-the same container as the `DifferentialSnapshot` controller. The CSI driver
+The callback URL points to the `VolumeSnapshotDelta` listener, which runs in
+the same container as the `VolumeSnapshotDelta` controller. The CSI driver
 `Service` resource's FQDN will be used as the hostname of the callback URL, which
 essentially looks like:
 
@@ -353,17 +345,17 @@ essentially looks like:
 https://<csi-driver-svc-dns>:<listener-port>/<resource-namespace>/<resource-name>
 ```
 
-The `DifferentialSnapshot` listener delegates the authorisation of the request
+The `VolumeSnapshotDelta` listener delegates the authorisation of the request
 to the Kubernetes API server via the `SubjectAccessReview` API. The user must
 include the `Authorization` header in the request, using an authorised service
 account's secret token as the bearer token.
 
-The `DifferentialSnapshot` listener then issues a GRPC call to the
-`GetDifferentialSnapshot` service on the storage provider's CSI plugin sidecar:
+The `VolumeSnapshotDelta` listener then issues a GRPC call to the
+`GetVolumeSnapshotDelta` service on the storage provider's CSI plugin sidecar:
 
 ![CBT Step 3](./img/cbt-step-03.png)
 
-The original `DifferentialSnapshot` resource can be retrieved by using the
+The original `VolumeSnapshotDelta` resource can be retrieved by using the
 identifier (namespace and name) embedded in the URL path, in case there are
 user-provided input parameters which need to be included in the GRPC request.
 
@@ -372,17 +364,21 @@ CBT endpoint and manage the in-between authentication and authorisation
 protocols.
 
 The response payloads are then directly returned to the user from the
-`DifferentialSnapshot` listener. This synchronous request/response
+`VolumeSnapshotDelta` listener. This synchronous request/response
 mechanism removes the needs to persist the response payloads in etcd.
 
 Pagination parameters from the storage provider will also be included in the
 listener's response to the user. The user will be responsible for coordinating
 subsequent paginated requests.
 
+The user can then use these changed block metadata to retrieve the actual data
+blocks. The design and implementation of this segment of the datapath is slated
+for future KEPs.
+
 ### High Availability Mode
 
 In high availability mode where there may be multiple replicas of the
-`DifferentialSnapshot` sidecar, an active/passive leader election process will
+`VolumeSnapshotDelta` sidecar, an active/passive leader election process will
 be used to elect a single leader instance, while idling other non-leader
 instances.
 
@@ -397,21 +393,21 @@ The section describes the specification of proposed API. The Go types of the CRD
 are defined as follows:
 
 ```go
-// DifferentialSnapshot is a specification for a DifferentialSnapshot resource
-type DifferentialSnapshot struct {
+// VolumeSnapshotDelta is a specification for a VolumeSnapshotDelta resource
+type VolumeSnapshotDelta struct {
   metav1.TypeMeta   `json:",inline"`
 
   // +optional
   metav1.ObjectMeta `json:"metadata,omitempty"`
 
-  Spec   DifferentialSnapshotSpec   `json:"spec"`
+  Spec   VolumeSnapshotDeltaSpec   `json:"spec"`
 
   // +optional
-  Status DifferentialSnapshotStatus `json:"status,omitempty"`
+  Status VolumeSnapshotDeltaStatus `json:"status,omitempty"`
 }
 
-// DifferentialSnapshotSpec is the spec for a DifferentialSnapshot resource
-type DifferentialSnapshotSpec struct {
+// VolumeSnapshotDeltaSpec is the spec for a VolumeSnapshotDelta resource
+type VolumeSnapshotDeltaSpec struct {
   BaseVolumeSnapshotName   string `json:"baseVolumeSnapshotName,omitempty"` // name of the base VolumeSnapshot; optional
   TargetVolumeSnapshotName string `json:"targetVolumeSnapshotName"`        // name of the target VolumeSnapshot; required
   Mode                     string `json:"mode,omitempty"`         // default to "block"
@@ -419,15 +415,15 @@ type DifferentialSnapshotSpec struct {
   Parameters               map[string]string `json:"parameters,omitempty"` // vendor specific parameters passed in as opaque key-value pairs; optional
 }
 
-// DifferentialSnapshotStatus is the status for a DifferentialSnapshot resource
-type DifferentialSnapshotStatus struct {
+// VolumeSnapshotDeltaStatus is the status for a VolumeSnapshotDelta resource
+type VolumeSnapshotDeltaStatus struct {
   Error        string `json:"error,omitempty"`
   State        string `json:"state"`
   CallbackURL  string `json:"callbackURL"`
 }
 
-// DifferentialSnapshotList is a list of DifferentialSnapshot resources
-type DifferentialSnapshotList struct {
+// VolumeSnapshotDeltaList is a list of VolumeSnapshotDelta resources
+type VolumeSnapshotDeltaList struct {
   metav1.TypeMeta          `json:",inline"`
   metav1.ListMeta          `json:"metadata"`
   Items []GetChangedBlocks `json:"items"`
@@ -437,12 +433,12 @@ type DifferentialSnapshotList struct {
 The corresponding GRPC service definition is as follows:
 
 ```grpc
-service DifferentialSnapshot {
-  rpc GetDifferentialSnapshot(DifferentialSnapshotRequest)
-    returns (DifferentialSnapshotResponse) {}
+service VolumeSnapshotDelta {
+  rpc GetVolumeSnapshotDelta(VolumeSnapshotDeltaRequest)
+    returns (VolumeSnapshotDeltaResponse) {}
 }
 
-type DifferentialSnapshotRequest struct {
+type VolumeSnapshotDeltaRequest struct {
     // If SnapshotBase is not specified, return all used blocks.
     SnapshotBase       string         // Snapshot handle, optional.
     SnapshotTarget     string         // Snapshot handle, required.
@@ -455,7 +451,7 @@ type DifferentialSnapshotRequest struct {
     Parameters         map[string]string    // Vendor specific parameters passed in as opaque key-value pairs.  Optional.
 }
 
-type DifferentialSnapshotResponse struct {
+type VolumeSnapshotDeltaResponse struct {
     ChangeBlockList   []ChangedBlock  // array of ChangedBlock (for "Block" mode)
     NextOffset        string          // StartOffset of the next “page”.
     VolumeSize        uint64          // size of volume in bytes
@@ -536,74 +532,77 @@ Prerequisites:
 * Install `etcd` per instructions in sig-testing
 [integration tests documentation]
 * Create two CSI `VolumeSnapshot`s backed by the CSI [host path driver].
-* Inject a mock handler in the `DifferentialSnapshot` listener
+* Inject a mock handler in the `VolumeSnapshotDelta` listener
 
 [integration tests documentation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/integration-tests.md#install-etcd-dependency
 [host path driver]: https://github.com/kubernetes-csi/csi-driver-host-path
 
-###### Test Suite 1 - Custom Resource Management
+###### Test Suite 1 - Validate Required Fields
 
 Test case 1:
-Create `DifferentialSnapshot` custom resource referencing the two
-base and target `VolumeSnapshot`s in the fixture.
 
-Expected result: Custom resource created successfully with its `status`
-subresource updated to include callback URL and `url-ready` state.
+* Description: Create a `VolumeSnapshotDelta` custom resource referencing the two
+base and target `VolumeSnapshot`s in the fixture. Then send a HTTP request to
+the callback URL.
+* Expected result: `status` subresource is updated with the new callback URL.
+The HTTP listener returns mock response payloads along with a HTTP 200 status
+code.
 
 Test case 2:
-Create `DifferentialSnapshot` custom resource referencing the
-target `VolumeSnapshot`, with the base `VolumeSnapshot` left empty.
 
-Expected result: Custom resource created successfully with its `status`
-subresource updated to include callback URL and `url-ready` state.
-
-Requirement: The base `VolumeSnapshot` is an optional field.
+* Description: Create `VolumeSnapshotDelta` custom resource referencing the
+target `VolumeSnapshot`, with the base `VolumeSnapshot` left empty. Then send a
+HTTP request to the callback URL.
+* Expected result: `status` subresource is updated with the new callback URL.
+The HTTP listener returns mock response payloads along with a HTTP 200 status
+code.
+* Requirement: The base `VolumeSnapshot` is an optional field.
 
 Test case 3:
-Create `DifferentialSnapshot` custom resource referencing the
-base `VolumeSnapshot`, with the target `VolumeSnapshot` left empty.
 
-Expected result: Custom resource failed to be created. Its `status` subresource
-should not have the callback URL. Its state should be set to `failed` with a
-`NotFound` error message in the `error` field.
-
-Requirement: The target `VolumeSnapshot` is a required field.
+* Description: Create `VolumeSnapshotDelta` custom resource referencing the
+base `VolumeSnapshot`, with the target `VolumeSnapshot` left empty. Then send
+a HTTP request to the callback URL.
+* Expected result: `status` subresource is updated with the new callback URL.
+The HTTP listener returns with a HTTP 400 status code.
+* Requirement: The target `VolumeSnapshot` is a required field.
 
 Test case 4:
-Create `DifferentialSnapshot` custom resource referencing
-non-existing base and target `VolumeSnapshot`s.
 
-Expected result: Custom resource failed to be created. Its `status` subresource
-should not have the callback URL. Its state should be set to `failed` with a
-`NotFound` error message in the `error` field.
+* Description: Create `VolumeSnapshotDelta` custom resource referencing a
+non-existing base and target `VolumeSnapshot`s. Then send a HTTP request to the
+callback URL.
+* Expected result: `status` subresource is updated with the new callback URL.
+The HTTP listener returns with a HTTP 400 status code.
+* Requirement: The target `VolumeSnapshot` is a required field.
 
-Requirement: The target `VolumeSnapshot` is a required field.
-
-Test case 5:
-Update an existing `DifferentialSnapshot` custom resource to
-reference a different target `VolumeSnapshot`.
-
-Expected result: Custom resource is updated successfully. Its `status`
-subresource is updated to include callback URL and `url-ready` state.
-
-Test case 6:
-Delete an existing `DifferentialSnapshot` custom resource.
-
-Expected result: Custom resource is deleted successfully.
-
-###### Test Suite 2 - HTTP Listener
+###### Test Suite 2 - Resource Update And Deletion
 
 Test case 1:
-Send a HTTP request with a fake `Authorisation` bearer token to the
-`DifferentialSnapshot` listener's fake handler.
 
-Expected result: The listener should return a HTTP 200 `OK` status code.
+* Description: Update an existing `VolumeSnapshotDelta` custom resource to
+reference a different target `VolumeSnapshot`.
+* Expected result: Custom resource is updated successfully. Its `status`
+subresource is updated to include callback URL and `url-ready` state.
 
 Test case 2:
-Send a HTTP request without an  `Authorisation` bearer token to the
-`DifferentialSnapshot` listener's fake handler.
 
-Expected result: The listener should return a HTTP 403 `Forbidden` status code.
+* Description: Delete an existing `VolumeSnapshotDelta` custom resource.
+* Expected result: Custom resource is deleted successfully.
+
+###### Test Suite 3 - HTTP Listener
+
+Test case 1:
+
+Send a HTTP request with a fake `Authorisation` bearer token to the
+`VolumeSnapshotDelta` listener's fake handler.
+* Expected result: The listener should return a HTTP 200 `OK` status code.
+
+Test case 2:
+
+* Description: Send a HTTP request without an  `Authorisation` bearer token to the
+`VolumeSnapshotDelta` listener's fake handler.
+* Expected result: The listener should return a HTTP 403 `Forbidden` status code.
 
 ##### e2e tests
 
@@ -623,26 +622,26 @@ Prerequisites:
 [e2e tests documentation].
 * Create two CSI `VolumeSnapshot`s backed by the CSI [host path driver].
 * Deploy a sample client to initiate the CBT datapath API and send CBT requests
-to the `DifferentialSnapshot` listener.
+to the `VolumeSnapshotDelta` listener.
 * Deploy a mock CSI driver plugin to handle CBT requests from the mock client.
 
 [e2e tests documentation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#building-kubernetes-and-running-the-tests
 
 For alpha release, the initial e2e test flow is defined as follows:
 
-* When the test is started, the sample client creates a `DifferentialSnapshot`
+* When the test is started, the sample client creates a `VolumeSnapshotDelta`
 custom resource referencing the two base and target `VolumeSnapshot`s in the
 fixture.
-* The `DifferentialSnapshot` controller update its `status` subresource to
+* The `VolumeSnapshotDelta` controller update its `status` subresource to
 include a callback URL and set its state to `url-ready`.
 * The sample client extracts the callback URL from the `status` subresource,
-and sends its CBT requests to the `DifferentialSnapshot` listener at the
+and sends its CBT requests to the `VolumeSnapshotDelta` listener at the
 callback URL.
 * The listener authorises the CBT requests by delegating the authorisation
 protocol to the Kubernetes API server via the `SubjectAccessReview` API.
 * Once the request is authorised, the listener uses the identifier
 (resource's name and namespace) embedded in the callback URL to retrieve the
-original `DifferentialSnapshot` custom resource, to retrieve the user-provided
+original `VolumeSnapshotDelta` custom resource, to retrieve the user-provided
 input parameters. These parameters will be included in the subsequent GRPC
 request to the mock CSI driver plugin.
 * The listener sends the GRPC request to the mock CSI driver plugin.
@@ -719,15 +718,15 @@ in back-to-back releases.
 #### Alpha
 
 - Completed functionalities include:
-  - Approved specification of the `DifferentialSnapshot` CRD and CSI GRPC
+  - Approved specification of the `VolumeSnapshotDelta` CRD and CSI GRPC
 services
-  - Ability to create, update, delete and retrieve `DifferentialSnapshot` custom
+  - Ability to create, update, delete and retrieve `VolumeSnapshotDelta` custom
 resources.
   - Validator to enforce validation criteria like missing required fields.
   - Authorisation delegation to the Kubernetes API server via the
 `SubjectAccessReview` API.
   - Implementation of the CSI GRPC client-side logic on the
-`DifferentialSnapshot` listener.
+`VolumeSnapshotDelta` listener.
 - Initial e2e tests completed and enabled.
 - Since this is an out-of-tree CSI component, no feature flag is required.
 
@@ -836,18 +835,18 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, the storage provider can remove the `DifferentialSnapshot` sidecar
+Yes, the storage provider can remove the `VolumeSnapshotDelta` sidecar
 container from their CSI drivers in order to disable the CSI CBT feature.
-All new `DifferentialSnapshot` resources will be ignored. Subsequent HTTP
+All new `VolumeSnapshotDelta` resources will be ignored. Subsequent HTTP
 requests to an existing callback URL will fail with HTTP 404.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The `DifferentialSnapshot` controller will re-assess the status of all the
-existing `DifferentialSnapshot` resources and provision callback URLs for those
+The `VolumeSnapshotDelta` controller will re-assess the status of all the
+existing `VolumeSnapshotDelta` resources and provision callback URLs for those
 that are not in the `url-ready` nor `request-started` states. Users will be
 responsible for resuming previously incomplete CBT requests to the
-`DifferentialSnapshot` listener.
+`VolumeSnapshotDelta` listener.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1026,7 +1025,7 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-The `DifferentialSnapshot` controller will be interacting with the APIs
+The `VolumeSnapshotDelta` controller will be interacting with the APIs
 associated with these CSI GVRs:
 
 ```yaml
@@ -1034,7 +1033,7 @@ associated with these CSI GVRs:
   resources: ["volumesnapshotcontents", "volumesnapshots"]
   verbs: ["get", "list"]
 - apiGroups: ["snapshot.storage.k8s.io"]
-  resources: ["differentialsnapshots"]
+  resources: ["volumesnapshotchanges"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["authorization.k8s.io"]
   resources: ["subjectaccessreviews"]
@@ -1048,7 +1047,7 @@ It will also utilize the `SubjectAccessReview` API to delegate request
 authorisation to the Kubernetes API server.
 
 Users can utilize Kubernetes clients like `kubectl` or `client-go` to create and
-manage the `DifferentialSnapshot` custom resources.
+manage the `VolumeSnapshotDelta` custom resources.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1059,7 +1058,7 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-The `DifferentialSnapshot` namespace-scoped CRD will be added to the
+The `VolumeSnapshotDelta` namespace-scoped CRD will be added to the
 `snapshot.storage.k8s.io` group.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
@@ -1070,9 +1069,9 @@ Describe them, providing:
   - Estimated increase:
 -->
 
-The `DifferentialSnapshot` component will not issue direct calls to the cloud
+The `VolumeSnapshotDelta` component will not issue direct calls to the cloud
 providers. The provider-specific CSI driver plugin which the
-`DifferentialSnapshot` component depends on will be responsible for interacting
+`VolumeSnapshotDelta` component depends on will be responsible for interacting
 with their 3rd party APIs.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
@@ -1101,7 +1100,7 @@ Since the response payloads are returned to the user over "out-of-band" HTTP
 endpoints that don't involve the Kubernetes API server nor etcd, we don't
 foresee any negative impact on existing API latency SLIs/SLOs.
 
-The `DifferentialSnapshot` sidecar uses a simple startup process to initialize a
+The `VolumeSnapshotDelta` sidecar uses a simple startup process to initialize a
 Go process with 2 long-running goroutines, serving as the controller and the
 listener. It will have no negative impact on the startup latency SLIs/SLOs.
 
@@ -1117,7 +1116,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-The `DifferentialSnapshot` component is expected to be memory-intensive as it
+The `VolumeSnapshotDelta` component is expected to be memory-intensive as it
 needs to be able to return large, paginated response payloads from the storage
 provider to the user. Hence, its pods must be deployed with sensible memory
 requests and limits specification. In the event of excessive memory usages, it is
