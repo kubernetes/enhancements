@@ -469,7 +469,9 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-Yes. It would be useful if we could see more details related to scheduler's decisions in metrics.
+Yes. It would be useful if we could see which filter plugin affected Pod's scheduling results in metrics.
+
+Issue: https://github.com/kubernetes/kubernetes/issues/110643
 
 ### Dependencies
 
