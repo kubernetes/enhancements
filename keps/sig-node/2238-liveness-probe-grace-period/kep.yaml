@@ -14,8 +14,6 @@ reviewers:
   - "@smarterclayton"
 approvers:
   - "@derekwaynecarr"
-prr-approvers:
-  - "@johnbelamaric"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: beta
@@ -38,3 +36,4 @@ feature-gates:
     components:
       - kube-apiserver
 disable-supported: true
+
