@@ -198,6 +198,13 @@ With the flow, this deployment will be spread over at least 5 Nodes while protec
 
 ### Test Plan
 
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
 To ensure this feature to be rolled out in high quality. Following tests are mandatory:
 
 - **Unit Tests**: All core changes must be covered by unit tests.
@@ -206,6 +213,52 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 - **Benchmark Tests:** We can bear with slight performance overhead if users are
   using this feature, but it shouldn't impose penalty to users who are not using
   this feature. We will verify it by designing some benchmark tests.
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2020-06-17` - `86%`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+test: https://github.com/kubernetes/kubernetes/blob/19c8a2127177b43effb9bfe1de272d6f08ea56e8/test/integration/scheduler/filters/filters_test.go#L1060
+k8s-triage: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestPodTopologySpreadFilter
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+N/A
 
 ### Graduation Criteria
 
@@ -320,16 +373,16 @@ are missing a bunch of machinery and tooling and can't do that now.
 Yes. The behavior is changed as expected.
 
 Test scenario:
-1. start kube-apiserver that `MinDomains` feature is enabled. 
+1. start kube-apiserver where `MinDomains` feature is enabled. 
 2. create three nodes and pods spread across nodes as 2/2/1
 3. create new Pod that has a TopologySpreadConstraints: maxSkew is 1, topologyKey is `kubernetes.io/hostname`, and minDomains is 4 (larger than the number of domains (= 3)).
 4. the Pod created in (3) isn't scheduled because of `MinDomain`.
 5. delete the Pod created in (3).
-6. recraete kube-apiserver that `MinDomains` feature is disabled.
+6. recreate kube-apiserver where `MinDomains` feature is disabled.
 7. create the same Pod as (3).
 8. the Pod created in (7) is scheduled because `MinDomain` is disabled.
 9. delete the Pod created in (7).
-10. recreate kube-apiserver that `MinDomains` feature is enabled.
+10. recreate kube-apiserver where `MinDomains` feature is enabled.
 11. create the same Pod as (3).
 12. the Pod created in (11) isn't scheduled because of `MinDomain`.
 
