@@ -406,7 +406,7 @@ types (or classes within) are no longer availab.e
 The discovery needs to be able to carry the following information:
 
 - Available QoS-class resource types.
-- Available classes withing each resource type.
+- Available classes within each resource type.
 - Whether the resource type is immutable or if it supports in-place updates.
   In-place updates of resoures might not be possible because of runtime
   limitations or the underlying technology, for example.
