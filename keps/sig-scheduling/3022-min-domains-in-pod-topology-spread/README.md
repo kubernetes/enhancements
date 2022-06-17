@@ -263,6 +263,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 N/A
 
+--
+
+This feature doesn't introduce any new API endpoints and doesn't interact with other components. 
+So, E2E tests doesn't add extra value to integration tests.
+
 ### Graduation Criteria
 
 #### Alpha (v1.24):
