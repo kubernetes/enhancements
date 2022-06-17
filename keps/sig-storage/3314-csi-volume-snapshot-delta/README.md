@@ -193,8 +193,8 @@ workflows.
 
 Many storage providers are already utilizing these kind of block-level changes
 for efficient data backup and restoration. This KEP proposes a design to extend
-the Kubernetes CSI architecture to utilize these CBT features in order to bring
-efficient, cloud-native data protection to Kubernetes users.
+the Kubernetes CSI architecture to utilize these CBT features to bring efficient
+, cloud-native data protection to Kubernetes users.
 
 ### Goals
 
@@ -287,20 +287,21 @@ snapshot pair. The usual declarative approach of updating the custom
 resource's `status` subresource with the payload may put etcd at risk of
 storage capacity exhaustion as well as regular IOPS spikes.
 
-To mitigate this issue, this KEP proposes a 2-hops request mechanism where
+To mitigate this issue, this KEP proposes a 2-hop request mechanism where
 instead of handling the requests directly, the `VolumeSnapshotDelta` controller
-returns a callback URL to the user so that HTTP requests can be directed to this
+returns a callback URL to the user so that CBT requests can be directed to this
 "out-of-band" endpoint to fetch the changed block metadata. This mechanism
 allows the response payloads to be returned directly to the user, without
 persisting them in etcd.
 
-#### Securing The HTTP Listener
+#### Securing The CallBack Listener
 
-The `VolumeSnapshotDelta` listener that exposes the callback endpoint will be
-secured by delegating the request authorisation to the Kubernetes API server
-using the
+The `VolumeSnapshotDelta` callback listener will be secured by delegating the
+request authentication and authorisation to the Kubernetes API server using the
+[`TokenReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#tokenreview-v1-authentication-k8s-io)
+and
 [`SubjectAccessReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#subjectaccessreview-v1-authorization-k8s-io)
-API.
+APIs.
 
 ## Design Details
 
@@ -311,22 +312,19 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-The proposed design involves extending CSI with the `VolumeSnapshotDelta` CRD
-and the `VOLUME_SNAPSHOT_DELTA_SERVICE` capability. A Kubernetes user (human or
-not) would create a `VolumeSnapshotDelta` resource to initialize the CBT
-datapath workflow. Storage providers can opt in to support this feature by
-implementing the `VOLUME_SNAPSHOT_DELTA_SERVICE` capability in their CSI
-drivers.
+The proposed design involves extending CSI with the `VolumeSnapshotDelta` CRD.
+Storage providers can opt in to support this feature by implementing the
+`VOLUME_SNAPSHOT_DELTA_SERVICE` capability in their CSI drivers.
 
 The `VolumeSnapshotDelta` resource is a namespace-scoped resource. It must be
 created in the same namespace as the base and target CSI `VolumeSnapshot`s.
 
 ### CBT Datapath Worklow
 
-A Kubernetes user initiates the datapath workflow by creating a new
-`VolumeSnapshotDelta` custom resource. The `VolumeSnapshotDelta` controller,
-deployed as a CSI sidecar in the storage provider's CSI driver, watches for new
-`VolumeSnapshotDelta` resources:
+A Kubernetes user (can be a human or a computer process) initiates the datapath
+workflow by creating a new `VolumeSnapshotDelta` custom resource. The
+`VolumeSnapshotDelta` controller, deployed as a CSI sidecar in the storage
+provider's CSI driver, watches for new `VolumeSnapshotDelta` resources:
 
 ![CBT Step 1](./img/cbt-step-01.png)
 
@@ -342,13 +340,18 @@ the same container as the `VolumeSnapshotDelta` controller. The CSI driver
 essentially looks like:
 
 ```sh
-https://<csi-driver-svc-dns>:<listener-port>/<resource-namespace>/<resource-name>
+https://<csi-driver.ns.svc.cluster.local>:<listener-port>/<resource-namespace>/<resource-name>
 ```
 
-The `VolumeSnapshotDelta` listener delegates the authorisation of the request
-to the Kubernetes API server via the `SubjectAccessReview` API. The user must
-include the `Authorization` header in the request, using an authorised service
-account's secret token as the bearer token.
+The `VolumeSnapshotDelta` listener delegates the authentication and
+authorisation of the request to the Kubernetes API server via the `TokenReview`
+and `SubjectAccessReview` APIs. The user must include the `Authorization` header
+in the request, using an authorised service account's secret token as the bearer
+token.
+
+If the user's service account is deployed with `automountServiceAccountToken`
+set to `false`, they will be responsible for extracting the appropriate token
+from their secret.
 
 The `VolumeSnapshotDelta` listener then issues a GRPC call to the
 `GetVolumeSnapshotDelta` service on the storage provider's CSI plugin sidecar:
@@ -372,8 +375,8 @@ listener's response to the user. The user will be responsible for coordinating
 subsequent paginated requests.
 
 The user can then use these changed block metadata to retrieve the actual data
-blocks. The design and implementation of this segment of the datapath is slated
-for future KEPs.
+blocks. The design and implementation of the block data retrieval segment of the
+datapath is slated for future KEPs.
 
 ### High Availability Mode
 
@@ -590,18 +593,18 @@ Test case 2:
 * Description: Delete an existing `VolumeSnapshotDelta` custom resource.
 * Expected result: Custom resource is deleted successfully.
 
-###### Test Suite 3 - HTTP Listener
+###### Test Suite 3 - Callback Listener
 
 Test case 1:
 
 Send a HTTP request with a fake `Authorisation` bearer token to the
-`VolumeSnapshotDelta` listener's fake handler.
+`VolumeSnapshotDelta` callback listener's fake handler.
 * Expected result: The listener should return a HTTP 200 `OK` status code.
 
 Test case 2:
 
 * Description: Send a HTTP request without an  `Authorisation` bearer token to the
-`VolumeSnapshotDelta` listener's fake handler.
+`VolumeSnapshotDelta` callback listener's fake handler.
 * Expected result: The listener should return a HTTP 403 `Forbidden` status code.
 
 ##### e2e tests
@@ -623,7 +626,7 @@ Prerequisites:
 * Create two CSI `VolumeSnapshot`s backed by the CSI [host path driver].
 * Deploy a sample client to initiate the CBT datapath API and send CBT requests
 to the `VolumeSnapshotDelta` listener.
-* Deploy a mock CSI driver plugin to handle CBT requests from the mock client.
+* Deploy a mock CSI driver plugin to returned fake CBT payloads.
 
 [e2e tests documentation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#building-kubernetes-and-running-the-tests
 
@@ -637,16 +640,17 @@ include a callback URL and set its state to `url-ready`.
 * The sample client extracts the callback URL from the `status` subresource,
 and sends its CBT requests to the `VolumeSnapshotDelta` listener at the
 callback URL.
-* The listener authorises the CBT requests by delegating the authorisation
-protocol to the Kubernetes API server via the `SubjectAccessReview` API.
-* Once the request is authorised, the listener uses the identifier
-(resource's name and namespace) embedded in the callback URL to retrieve the
-original `VolumeSnapshotDelta` custom resource, to retrieve the user-provided
-input parameters. These parameters will be included in the subsequent GRPC
-request to the mock CSI driver plugin.
+* The callback listener authenticates and authorises the CBT requests by
+delegating to the Kubernetes API server via the `TokenReview` and
+`SubjectAccessReview` APIs.
+* Once the request is authenticated and authorised, the listener uses the
+identifier (resource's name and namespace) embedded in the callback URL to
+get the original `VolumeSnapshotDelta` custom resource, in order to retrieve the
+user-provided input parameters. These parameters will be included in the
+next GRPC request to the mock CSI driver plugin.
 * The listener sends the GRPC request to the mock CSI driver plugin.
-* The mock plugin responds with a list of sample CBT data to the listener and some
-sample pagination parameters used for requesting a "second page" response.
+* The mock plugin responds with a list of fake CBT data and pagination
+parameters to the callback listener.
 * The listener forwards the response payloads back to the sample client.
 * The sample client uses the pagination parameters to fetch the second page of
 CBT data.
@@ -720,11 +724,10 @@ in back-to-back releases.
 - Completed functionalities include:
   - Approved specification of the `VolumeSnapshotDelta` CRD and CSI GRPC
 services
-  - Ability to create, update, delete and retrieve `VolumeSnapshotDelta` custom
-resources.
+  - Ability to create, update, delete, retrieve and watch `VolumeSnapshotDelta`
+custom resources.
   - Validator to enforce validation criteria like missing required fields.
-  - Authorisation delegation to the Kubernetes API server via the
-`SubjectAccessReview` API.
+  - Authentication and authorisation delegation to the Kubernetes API server.
   - Implementation of the CSI GRPC client-side logic on the
 `VolumeSnapshotDelta` listener.
 - Initial e2e tests completed and enabled.
@@ -837,16 +840,15 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 Yes, the storage provider can remove the `VolumeSnapshotDelta` sidecar
 container from their CSI drivers in order to disable the CSI CBT feature.
-All new `VolumeSnapshotDelta` resources will be ignored. Subsequent HTTP
-requests to an existing callback URL will fail with HTTP 404.
+All new `VolumeSnapshotDelta` resources will be ignored. Subsequent CBT
+requests to existing callback URLs will fail with HTTP 404.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The `VolumeSnapshotDelta` controller will re-assess the status of all the
 existing `VolumeSnapshotDelta` resources and provision callback URLs for those
-that are not in the `url-ready` nor `request-started` states. Users will be
-responsible for resuming previously incomplete CBT requests to the
-`VolumeSnapshotDelta` listener.
+that are not in the `url-ready` state. Users will be responsible for restarting
+previously incomplete CBT requests to the callback listener.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -862,6 +864,10 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Since this is an out-of-tree CSI component, Kubernetes feature gates are not
+involved. Out-of-tree CSI test suites will be added to install and uninstall the
+`VolumeSnapshotDelta` sidecar.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1026,14 +1032,14 @@ Focusing mostly on:
 -->
 
 The `VolumeSnapshotDelta` controller will be interacting with the APIs
-associated with these CSI GVRs:
+associated with these GVRs:
 
 ```yaml
 - apiGroups: ["snapshot.storage.k8s.io"]
+  resources: ["volumesnapshotdeltas"]
+- apiGroups: ["snapshot.storage.k8s.io"]
   resources: ["volumesnapshotcontents", "volumesnapshots"]
   verbs: ["get", "list"]
-- apiGroups: ["snapshot.storage.k8s.io"]
-  resources: ["volumesnapshotchanges"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["authorization.k8s.io"]
   resources: ["subjectaccessreviews"]
@@ -1042,12 +1048,6 @@ associated with these CSI GVRs:
   resources: ["tokenreviews"]
   verbs: ["create"]
 ```
-
-It will also utilize the `SubjectAccessReview` API to delegate request
-authorisation to the Kubernetes API server.
-
-Users can utilize Kubernetes clients like `kubectl` or `client-go` to create and
-manage the `VolumeSnapshotDelta` custom resources.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1083,7 +1083,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No foreseeable impact on existing API objects.
+No other kinds of existing API objects will be created.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1102,7 +1102,8 @@ foresee any negative impact on existing API latency SLIs/SLOs.
 
 The `VolumeSnapshotDelta` sidecar uses a simple startup process to initialize a
 Go process with 2 long-running goroutines, serving as the controller and the
-listener. It will have no negative impact on the startup latency SLIs/SLOs.
+callback listener. It will have no negative impact on Kubernetes startup latency
+SLIs/SLOs.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
