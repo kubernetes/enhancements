@@ -76,7 +76,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Segmenting Critical Datapath Resource Requirements](#segmenting-critical-datapath-resource-requirements)
-    - [Securing The HTTP Listener](#securing-the-http-listener)
+    - [Securing The CallBack Listener](#securing-the-callback-listener)
 - [Design Details](#design-details)
   - [CBT Datapath Worklow](#cbt-datapath-worklow)
   - [High Availability Mode](#high-availability-mode)
