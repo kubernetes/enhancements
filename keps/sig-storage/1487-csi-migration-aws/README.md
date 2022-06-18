@@ -5,6 +5,12 @@
 <!-- toc -->
 - [Summary](#summary)
   - [New Feature Gates](#new-feature-gates)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -35,6 +41,38 @@ used as as described in its parent KEP. For all other contents, please refer to 
   on kubelet and treat AWS EBS CSI migration as already complete. And directly redirect traffic to CSI 
   driver for all aws ebs related operations.
 
+## Design Details
+
+### Test Plan
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+No prerequisite tests are needed.
+
+##### Unit tests
+
+See https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/aws_ebs_test.go.
+
+- `k8s.io/csi-translation-lib/plugins/aws_ebs.go`: `2022-06-17` - `52.3`
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
+
+The [Kubernetes storage e2e
+tests](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage/external)
+are run by an
+[aws-ebs-csi-driver](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/tree/master/tests/e2e-kubernetes)
+job: https://testgrid.k8s.io/provider-aws-ebs-csi-driver#pull-migration-test.
+The tests create in-tree volume plugin objects like StorageClasses with
+`provisioner: kubernetes.io/aws-ebs` and validate using metrics that all volume
+operations went to the CSI driver.
 
 ## Production Readiness Review Questionnaire
 
