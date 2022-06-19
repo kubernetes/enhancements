@@ -248,15 +248,15 @@ RBAC permission for StatefulSet.
 - The StatefulSet controller also supports revision control.
 
 The following changes are proposed to achieve the goal:
-1. Make the `volumeClaimTemplates` storage size editable by modification to the api server
-   validation. Some validation checks will depend on the design decisions made in [KEP 1790](../1790-recover-resize-failure/README.md) to prevent user from shrinking the volume.
+1. Make the `volumeClaimTemplates` storage size (`.spec.resources.request.storage`) editable by modification to the api server
+   validation. We should allow the user to both increase or decrease the storage size. Allowing the user to decrease the storage size will give them the ability to address failed expansions, as described in [KEP 1790](../1790-recover-resize-failure/README.md).
 2. For each volumeClaimTemplate being expanded, it will be necessary to check if its associated StorageClass has `allowVolumeExpansion` enabled.
 3. Add reconciliation of the associated PVC's size and the individual `volumeClaimTemplates` size into the 
    StatefulSet controller reconciliation.
-4. Add PVC `update` privilege to the StatefulSet controller's clusterrole RBAC.
+4. Add PVC `patch` privilege to the StatefulSet controller's clusterrole RBAC.
 
 Once the above changes are made, modification to any of the `volumeClaimTemplates` storage
-size by user will update the underlying PVC via the reconciliation performed by (2) above.
+size by user will update the underlying PVC via the reconciliation performed by (3) above.
 The existing PVC resize workflow kicks in at this point and attempts to resize the volume.
 
 ### Error indications to user
@@ -325,8 +325,7 @@ proposal will be implemented, this is the place to discuss them.
 
 ### API server validation relaxation
 Modifications would be made to `ValidateStatefulSetUpdate` in order to allow changes in the
-storage size of the volume in the `VolumeClaimTemplates`. The new requested size will be validated to 
-prevent a user from shrinking the volume.
+storage size of the volume in the `VolumeClaimTemplates`.
 
 ### StatefulSet controller changes
 The `sync` function in the `StatefulSetController` runs the reconciliation to match the current
