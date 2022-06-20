@@ -643,15 +643,11 @@ The concurrency limit of an apiserver is divided among the non-exempt
 priority levels, and they can do a limited amount of borrowing from
 each other.
 
-Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
-midst of the `v1beta2` lifetime, configure the borrowing.  The fields
-are added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).
-The following display shows the two new fields along with the updated
+One field of `LimitedPriorityLevelConfiguration`, introduced in the
+midst of the `v1beta2` lifetime, limits the borrowing.  The field is
+added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).  The
+following display shows the new fields along with the updated
 description for the `AssuredConcurrencyShares` field, in `v1beta2`.
-
-**Note**: currently this design does not use the `Priority` field for
-anything.  We should either use it for something or take it out of the
-design.
 
 ```go
 type LimitedPriorityLevelConfiguration struct {
@@ -660,9 +656,9 @@ type LimitedPriorityLevelConfiguration struct {
   // NominalConcurrencyLimit (NominalCL) of this level.
   // This is the number of execution seats available at this priority level.
   // This is used both for requests dispatched from
-  // this priority level as well as requests dispatched from higher priority
+  // this priority level as well as requests dispatched from other priority
   // levels borrowing seats from this level.  This does not limit dispatching from
-  // this priority level that borrows seats from lower priority levels (those lower
+  // this priority level that borrows seats from other priority levels (those other
   // levels do that).  The server's concurrency limit (ServerCL) is divided among the
   // Limited priority levels in proportion to their ACS values:
   //
@@ -676,28 +672,15 @@ type LimitedPriorityLevelConfiguration struct {
   AssuredConcurrencyShares int32
 
   // `borrowablePercent` prescribes the fraction of the level's NominalCL that
-  // can be borrowed by higher priority levels.  This value of this
+  // can be borrowed by other priority levels.  This value of this
   // field must be between 0 and 100, inclusive, and it defaults to 0.
-  // The number of seats that higher levels can borrow from this level, known
+  // The number of seats that other levels can borrow from this level, known
   // as this level's BorrowableConcurrencyLimit (BorrowableCL), is defined as follows.
   //
   // BorrowableCL(i) = round( NominalCL(i) * borrowablePercent(i)/100.0 )
   //
   // +optional
   BorrowablePercent int32
-
-  // `priority` determines where this priority level appears in the total order
-  // of Limited priority levels used to configure borrowing between those levels.
-  // A numerically higher value means a logically lower priority.
-  // Do not create ties; they will be broken arbitrarily.
-  // `priority` MUST BE between 0 and 10000, inclusive, and
-  // SHOULD BE greater than zero.
-  // If it is zero then, for the sake of a smooth transition from the time
-  // before this field existed, this level will be treated as if its `priority`
-  // is the average of the `matchingPrecedence` of the FlowSchema objects
-  // that reference this level.
-  // +optional
-  Priority int32
 }
 ```
 
@@ -710,29 +693,18 @@ existing systems will be more continuous if we keep the meaning of
 "total shares" for the existing field.  In the next version we should
 rename the `AssuredConcurrencyShares` to `NominalConcurrencyShares`.
 
-Consider rolling the borrowing behavior into a pre-existing cluster
-that did not have borrowing.  In particular, suppose that the
-administrators of the cluster have scripts/clients that maintain some
-out-of-tree PriorityLevelConfiguration objects; these, naturally, do
-not specify a value for the `priority` field.  The default behavior
-for `priority` is designed to do something more natural and convenient
-than have them all collide at some fixed number.
-
 The following table shows the current default non-exempt priority
-levels and a proposal for their new configuration.  For the sake of
-continuity with out-of-tree configuration objects, the proposed
-priority values follow the rule given above for the effective value
-when the priority field holds zero.
+levels and a proposal for their new configuration.
 
-| Name | Assured Shares | Proposed Borrowable Percent | Proposed Priority |
-| ---- | -------------: | --------------------------: | ----------------: |
-| leader-election |  10 |   0 |   150 |
-| node-high       |  40 |  25 |   400 |
-| system          |  30 |  33 |   500 |
-| workload-high   |  40 |  50 |   833 |
-| workload-low    | 100 |  90 |  9000 |
-| global-default  |  20 |  50 |  9900 |
-| catch-all       |   5 |   0 | 10000 |
+| Name | Assured Shares | Proposed Borrowable Percent |
+| ---- | -------------: | --------------------------: |
+| leader-election |  10 |   0 |
+| node-high       |  40 |  25 |
+| system          |  30 |  33 |
+| workload-high   |  40 |  50 |
+| workload-low    | 100 |  90 |
+| global-default  |  20 |  50 |
+| catch-all       |   5 |   0 |
 
 Each non-exempt priority level `i` has two concurrency limits: its
 NominalConcurrencyLimit (`NominalCL(i)`) as defined above by
