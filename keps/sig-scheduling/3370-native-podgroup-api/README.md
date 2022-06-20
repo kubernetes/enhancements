@@ -338,7 +338,7 @@ type PodGroupSpec struct {
 	Subsets []Subset
 
 	// ScheduleTimeoutSeconds defines the timeout threshold to abort
-	// an in-progress PodGroup-level scheduling attempt.
+	// an in-progress PodGroup-level scheduling attempt. 
 	ScheduleTimeoutSeconds *int32
 }
 
@@ -355,7 +355,10 @@ type Subset struct {
 }
 ```
 
-In order to associate a pod with its target PodGroup, we need to add a field call `PodGroup` in the podSpec to declare which PodGroup and Subset the pod belongs to.
+We then need to associate a Pod with its target PodGroup. To prevent potential race conditions
+between PodGroup create events and Pod add events, we choose to add a field called `PodGroup`
+to the podSpec instead of `label selector` to declare which PodGroup and Subset the Pod
+belongs to.
 
 ```go
 // PodSpec is a description of a pod.
@@ -376,6 +379,9 @@ type PodGroupRef struct {
   Subset string
 }
 ```
+
+Pods in the same PodGroup with different priorities might lead to unintended behavior, 
+so need to ensure Pods in the same PodGroup with the same priority.
 
 In this design, a PodGroupStatus is needed to record the latest status. This
 enables users to quickly know what’s going on with this PodGroup; also some
