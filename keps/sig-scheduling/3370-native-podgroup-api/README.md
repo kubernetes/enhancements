@@ -292,12 +292,19 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-- incompatibility with CA : The failure reason of some pods in a pod group is not that the
+- Incompatibility with CA : The failure reason of some pods in a pod group is not that the
 resources cannot be met, but that the podgroup cannot meet `all-or-nothing` of
-gang-scheduling. But CA will to provision machines for all pods. For this part of pods in pod 
+gang-scheduling. But CA will provision machines for all pods. For this part of pods in pod 
 group, we will add different failure message in condition.reason. Cluster Autoscaler check the
 failure reasons in pod.status.condition to decide whether it's possible to resolve the failure 
 by provisioning new machines. Details are described in the following.
+
+- Short-time resource deadlock in the memory of kube-scheduler: base on the alpha version 
+implementation of pod group scheduling, it may happen that two pod groups reserve some
+resources at the same time. Neither of them can be successfully scheduled. This is different
+from the kube-scheduler without group scheduling, where the reserved resources are released by
+timeout. And with QueueSort and PodsToActivate mechanism, PodGroup can be scheduled as `units'
+in the kube-scheduler to minimize `Short-time resource deadlock in the memory` occurrence. 
 
 ## Design Details
 
@@ -439,6 +446,13 @@ type SubsetStatus struct {
 	Running int32
 }
 ```
+
+ After the pod group is scheduled for the first time, the condition `PodGroupScheduled` is
+ added by the `pod-group-controller` in kube-controller-manager. Then `pod-group-controller`
+ will reconcile the status of pod group. The workload operator can watch the pod group status,
+ for example, when a pod is deleted and the total running count is less than `MinMember`. The
+ workload operator can determine if it needs to evict the whole group or just create a new pod.
+
 
 ### User workflow
 1. The user creates a PodGroup object.
