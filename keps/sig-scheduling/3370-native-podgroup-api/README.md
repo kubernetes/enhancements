@@ -338,7 +338,10 @@ type PodGroupSpec struct {
 	Subsets []Subset
 
 	// ScheduleTimeoutSeconds defines the timeout threshold to abort
-	// an in-progress PodGroup-level scheduling attempt. 
+	// an in-progress PodGroup-level scheduling attempt.
+	// Duration Time is calculated from the time the first Pod in this
+	// PodGroup gets a resource. If the timeout is reached, the resources
+	// occupied by the PodGroup will be released to avoid long-term resource waste.
 	ScheduleTimeoutSeconds *int32
 }
 
