@@ -365,7 +365,7 @@ type PodSpec struct {
 type PodGroupRef struct {
   // Name is the name of PodGroup.
   Name   string
-  // Subset is the name of PodGroup.
+  // Subset is the name of Subset.
   Subset string
 }
 ```
@@ -430,7 +430,7 @@ type SubsetStatus struct {
 	// successfully, but the scheduling fails because minMember cannot be met.
 	ScheduledAvailable int32
 
-	// ScheduledAvailable is the number of pods in the subset that can't be 
+	// ScheduledUnavailable is the number of pods in the subset that can't be 
 	// scheduled successfully.
 	ScheduledUnavailable int32
 
