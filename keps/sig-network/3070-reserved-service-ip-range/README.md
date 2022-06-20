@@ -15,6 +15,7 @@
   - [Current Services ClusterIPs allocation model](#current-services-clusterips-allocation-model)
   - [Proposed Services ClusterIPs allocation model](#proposed-services-clusterips-allocation-model)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -281,8 +282,17 @@ type randomScanReservedStrategy struct {
 This feature doesn't modify the cluster behavior, only the order on which dynamic IP are assigned to Services,
 there is no need for e2e or integration tests, unit tests are enough.
 
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Unit tests
+
+
 - pkg/registry/core/service/allocator/bitmap_test.go - 84.2
 - pkg/registry/core/service/ipallocator/allocator_test.go - 87
+
 ### Graduation Criteria
 
 #### Alpha
