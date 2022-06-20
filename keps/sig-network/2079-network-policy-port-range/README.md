@@ -291,7 +291,20 @@ start working incorrectly. This is a fail-closed failure, so it is acceptable.
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
   Yes, with unit tests.
-  There's still some need to make manual tests, that will be done in a follow up.
+  Manual tests were also executed as the following:
+  * Created a KinD cluster in v1.24 and Calico as a CNI
+  * Created a Network Policy with `endPort` field to allow a Pod egress to ports from 70 to 90
+  * Did a test against a target in port 80 - Worked
+  * Disabled the Feature Gate
+  * The Network Policy still worked fine
+  * Changed the Network Policy so the range is 70 to 79, and the Network Policy was changed fine
+  * Traffic started to be blocked, but could call port 78 as it is still within range
+  * Removed `endPort` field, and wasn't able to re-add it as Feature gate was disabled
+  * Re-enabled feature gate
+  * Re-added `endPort` field with value of 90
+  * Traffic started to flow/be accepted again
+
+  Per the manual tests, all worked as desired.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
