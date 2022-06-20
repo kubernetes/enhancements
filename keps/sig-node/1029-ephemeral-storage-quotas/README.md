@@ -759,8 +759,8 @@ filesystem walk for better performance and accuracy.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, but only for newly created pods.
-- Existed Pods: If the pod was created with enforcing quota, disable the feature gate
-  will not change the running pod.
+- Existed Pods: If the pod was created with enforcing quota, pod will not use the enforcing
+  quota after the feature gate is disabled.
 - Newly Created Pods: After setting the feature gate to false, the newly created pod
   will not use the enforcing quota.
 
@@ -798,9 +798,10 @@ If LocalStorageCapacityIsolationFSQuotaMonitoring is turned on but LocalStorageC
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  - A cluster-admin can set kubelet on each node. If the feature gate is disabled, workloads on that node will not use it.
-  For example, run `xfs_quota -x -c 'report -h' /dev/sdc` to check quota settings in the device.
-  Check `spec.containers[].resources.limits.ephemeral-storage` of each container.
+  - In kubelet metrics, an operator can check the histgram metric `kubelet_volume_metric_collection_duration_seconds`
+    with metric_source equals "fsquota". If there is no `metric_source=fsquota`, this feature should be disabled.
+  - However, to figure out if a workload is use this feature, there is no direct way now and see more in below 
+    methods of how to check fsquota settings on a node.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
@@ -818,7 +819,12 @@ the health of the service?**
 * **Are there any missing metrics that would be useful to have to improve observability of this feature? **
 
   - Yes, there are no histogram metrics for each volume. The above metric was grouped by volume types because
-    the cost for every volume is too expensive.
+    the cost for every volume is too expensive. As a result, users cannot figure out if the feature is used by
+    a workload directly by the metrics. A cluster-admin can check kubelet configuration on each node. If the
+    feature gate is disabled, workloads on that node will not use it. 
+    For example, run `xfs_quota -x -c 'report -h' /dev/sdc` to check quota settings in the device. 
+    Check `spec.containers[].resources.limits.ephemeral-storage` of each container to compare.
+
 
 ### Dependencies
 * **Does this feature depend on any specific services running in the cluster? **
@@ -872,8 +878,9 @@ details). For now, we leave it here.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-- Restart kubelet and wait for 1 minute to make the SLOs clear.(The volume stats checking interval is determined by kubelet flag `volumeStatsAggPeriod`(default 1m).)
-
+If the metrics shows some problems, we can check the log and quota dir with below commands. 
+- There will be warning logs([after the # is merged](https://github.com/kubernetes/kubernetes/pull/107490)) if volume calculation took too long than 1 second
+- If quota is enabled, you can find the volume information and the process time with `time repquota -P /var/lib/kubelet -s -v`
 
 ## Implementation History
 
