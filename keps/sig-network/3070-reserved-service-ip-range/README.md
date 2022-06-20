@@ -421,33 +421,46 @@ The allocator using this feature will have a `dynamic_range_offset` value differ
 
 ###### Does this feature depend on any specific services running in the cluster?
 
+No
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-
+No
 ###### Will enabling / using this feature result in introducing new API types?
 
+No
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
+No
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+No
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A
 ###### What are other known failure modes?
+
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
+
 ## Drawbacks
 
+- v1.24 - Initial implementation https://github.com/kubernetes/kubernetes/pull/106792
+- v1.25 - Beta
 ## Alternatives
 
 - Replace current allocation implementation based on bitmaps https://github.com/kubernetes/enhancements/pull/1881
