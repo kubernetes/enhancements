@@ -4,16 +4,14 @@ authors:
   - "@100mik"
   - "@palnabarun"
 owning-sig: sig-auth
-participating-sigs:
-  - TBD
-status: provisional
-creation-date: yyyy-mm-dd
+status: implementable
+creation-date: 2022-06-21
 reviewers:
   - "@deads2k"
   - "@enj"
-  - TBD
 approvers:
-  - TBD
+  - "@deads2k"
+  - "@enj"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/101762
 stage: alpha
