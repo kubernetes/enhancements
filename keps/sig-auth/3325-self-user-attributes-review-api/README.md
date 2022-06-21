@@ -80,6 +80,8 @@ The user will hip the endpoint after authentication happens, so all attributes w
 This design is inspired by the `*AccessReview` and `TokenReview` APIs.
 The endpoint has no input parameters or a `spec` field because only the authentication result is required.
 
+### Request
+
 The structure for building a request:
 ```go
 type SelfUserAttributesReview struct {
@@ -92,9 +94,6 @@ type SelfUserAttributesReview struct {
 	Status SelfUserAttributesReviewStatus `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
 }
 ```
-
-On receiving a request, the Kubernetes API server fills the status with the user attributes and returns it to the user.
-
 ```go
 type SelfUserAttributesReviewStatus struct {
 	// User attributes of the current user.
@@ -110,7 +109,65 @@ type UserInfo struct {
 }
 ```
 
+On receiving a request, the Kubernetes API server fills the status with the user attributes and returns it to the user.
+
+Request URL:
+```
+GET /apis/authentication.k8s.io/v1alpha1/selfuserattributesreview
+```
+Response example:
+
+```json
+{
+  "apiVersion": "authentication.k8s.io/v1alpha1",
+  "kind": "SelfUserAttributesReview",
+  "status": {
+    "name": "jane.doe",
+    "uid": "b6c7cfd4-f166-11ec-8ea0-0242ac120002",
+    "groups": ["viewers", "editors"],
+    "extra": {
+      "provider_id": "token.company.dev"
+    }
+  }
+}
+```
+
 User attributes are known at the moment of accessing the rest API endpoint and can be extracted from the request context.
+
+### RBAC
+
+RBAC rules to grant access to this API should be present in the cluster by default.
+It is implied that the `system:basic-user` cluster role will be extended to the following:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    rbac.authorization.kubernetes.io/autoupdate: "true"
+  creationTimestamp: null
+  labels:
+    kubernetes.io/bootstrapping: rbac-defaults
+  name: system:basic-user
+rules:
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - selfsubjectaccessreviews
+  - selfsubjectrulesreviews
+  verbs:
+  - create
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - selfuserattributesreview
+  verbs:
+  - create
+```
+
+This API is enabled by default and can be disabled by the following kube-apiserver flag (along with the TokenReview API).
+```
+--runtime-config=authentication.k8s.io/v1=false
+```
 
 ### Test Plan
 
@@ -141,7 +198,8 @@ Integration test covering:
 
 - Corresponding kubectl command implemented
 
-NOTE: Should not be a part pf [conformance tests](https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md).
+NOTE: Should not be a part of [conformance tests](https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md).
+The fact that a user possesses a token does not necessarily imply the power to know to whom that token belongs.
 
 ## Production Readiness Review Questionnaire
 
@@ -244,7 +302,7 @@ No.
 ###### Will enabling / using this feature result in introducing new API types?
 
 ```
-Group: authentication
+Group: authentication.k8s.io
 Kind: SelfUserAttributesReview
 ```
 
