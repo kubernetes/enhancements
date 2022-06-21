@@ -3,4 +3,4 @@
 # of http://git.k8s.io/enhancements/OWNERS_ALIASES
 kep-number: 3008
 alpha:
-  approver: "@dchen1107"
+  approver: "@johnbelamaric"
