@@ -15,6 +15,7 @@
   - [Current Services ClusterIPs allocation model](#current-services-clusterips-allocation-model)
   - [Proposed Services ClusterIPs allocation model](#proposed-services-clusterips-allocation-model)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -281,6 +282,17 @@ type randomScanReservedStrategy struct {
 This feature doesn't modify the cluster behavior, only the order on which dynamic IP are assigned to Services,
 there is no need for e2e or integration tests, unit tests are enough.
 
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Unit tests
+
+
+- pkg/registry/core/service/allocator/bitmap_test.go - 84.2
+- pkg/registry/core/service/ipallocator/allocator_test.go - 87
+
 ### Graduation Criteria
 
 #### Alpha
@@ -421,33 +433,46 @@ The allocator using this feature will have a `dynamic_range_offset` value differ
 
 ###### Does this feature depend on any specific services running in the cluster?
 
+No
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-
+No
 ###### Will enabling / using this feature result in introducing new API types?
 
+No
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
+No
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+No
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A
 ###### What are other known failure modes?
+
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
+
 ## Drawbacks
 
+- v1.24 - Initial implementation https://github.com/kubernetes/kubernetes/pull/106792
+- v1.25 - Beta
 ## Alternatives
 
 - Replace current allocation implementation based on bitmaps https://github.com/kubernetes/enhancements/pull/1881
