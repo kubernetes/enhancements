@@ -154,12 +154,11 @@ different and collide with other APIs, like Gateway APIs, we are adding the foll
 - there can be overlapping ServiceCIDRConfigs.
 - the apiserver will periodically ensure that a "default" ServiceCIDRConfig exists to cover the service CIDR flags
   and the "kubernetes.default" Service.
-- any IPAddress existing in a cluster has to belong to a ServiceCIDRConfig.
+- any IPAddress existing in a cluster has to belong to a Service CIDR defined by a ServiceCIDRConfig.
 - any Service with a ClusterIP assigned is expected to have always a IPAddress object associated.
 - a ServiceCIDRConfig which is being deleted can not be used to allocate new IPs
 
- This creates a 1-to-1 relation between Service and IPAddress, and a 1-to-N relation between
- ServiceCIDRConfig and IPAddress.
+ This creates a 1-to-1 relation between Service and IPAddress, and a 1-to-N relation between the ServiceCIDRs defined by the ServiceCIDRConfig and IPAddress. It is important to clarify that overlapping ServiceCIDRConfig are merged in memory, an IPAddress doesn't come from a specific ServiceCIDRConfig object, but "any ServiceCIDRConfig that includes that IP"
 
  The new allocator logic can be used by other APIs, like Gateway API.
 
