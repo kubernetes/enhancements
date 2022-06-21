@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-network
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2022-01-23
 reviewers:
   - "@thockin"
