@@ -343,6 +343,9 @@ comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
  }
 ```
 
+There is already an ongoing effort to add [Pod level resource limits](#1592)
+that aims at adding a pod level `Resources` field in a similar fashion.
+
 In practice, the QoS-class resource information will be directly used in the CRI
 ContainerConfig (e.g.  CreateContainerRequest message). At this point, without
 resource discovery or access control kubelet does not do any validity checking
@@ -381,7 +384,7 @@ Some alternatives for presenting this information:
             // +optional
             Allocatable ResourceList `json:"allocatable,omitempty" protobuf:"bytes,2,rep,name=allocatable,casttype=ResourceList,castkey=ResourceName"`
    +        // ResourceClasses lists the available
-   +        ClassResourdes []ClassResourceList
+   +        ClassResources []ClassResourceList
    +
    +type ClassResourceList {
    +        // Name of the resource
@@ -443,7 +446,7 @@ Some possible alternatives.
 
    1. OR Populate a (json) file in a known location
 
-   Of these, the first option is more idiomatic for how cri behaves today.
+   Of these, the first option is more idiomatic for how CRI behaves today.
    As a reference, the API currently allows listing of some objects/resources
    (Pods, Containers, Images etc) but not some others.
 
@@ -491,7 +494,7 @@ nitty-gritty.
 
 We extend the CRI protocol to contain information about the QoS-class
 resource assignment of containers.  Currently we identify two types of
-resources (RDT and blockio) but the API changes will be generic so that it that
+resources (RDT and blockio) but the API changes will be generic so that it
 will serve other similar resources in the future.
 
 We also extend the CRI protocol to support updates of QoS-class resource
@@ -615,10 +618,11 @@ field, providing per-container setting for QoS-class resources.
 +    ContainerClassResources class_resources = 17;
  }
 
-+// ContainerClassResources specifies the configuration of class based
++// ContainerClassResources specifies the configuration of QoS-class resources
 +// resources of a container.
 +message ContainerClassResources {
-+    // Resource classes of the container will be assigned to
++    // QoS-class resource assignment of the container.
++    // Key is the resource type and values is the class name within the resource type.
 +    map<string, string> classes = 1;
 +}
 ```
@@ -660,10 +664,11 @@ runtime.
 +
  }
 
-+// PodClassResources specifies the configuration of class based
++// PodClassResources specifies the configuration of QoS-class resources
 +// resources of a pod.
 +message PodClassResources {
-+    // Resource classes of the pod will be assigned to
++    // QoS-class resource assignment of the pod.
++    // Key is the resource type and values is the class name within the resource type.
 +    map<string, string> class = 1;
 +}
 ```
