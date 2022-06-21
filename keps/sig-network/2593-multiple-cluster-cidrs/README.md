@@ -33,9 +33,10 @@
       - [ClusterCIDRConfig Deleted](#clustercidrconfig-deleted)
   - [kube-controller-manager](#kube-controller-manager)
   - [Test Plan](#test-plan)
-    - [Unit Tests and Benchmarks](#unit-tests-and-benchmarks)
-    - [Integration Tests](#integration-tests)
-    - [End-to-End Tests](#end-to-end-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
     - [Beta to  GA Graduation](#beta-to--ga-graduation)
@@ -578,26 +579,35 @@ The list of current valid types is
 
 ### Test Plan
 
-#### Unit Tests and Benchmarks
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
--   Ensure that the controller scales to ~5,000 nodes -- memory usage and
-    reasonable allocation times
+##### Prerequisite testing updates
 
-#### Integration Tests
+N/A
+
+##### Unit tests
+
+- Ensure that the controller scales to ~5,000 nodes -- memory usage and
+    reasonable allocation times. 
+- k8s.io/kubernetes/pkg/controller/nodeipam: 06/21/2022 - 51.2
+
+##### Integration tests
 
 -   Verify finalizers and statuses are persisted appropriately
 -   Test watchers
 -   Ensure that the controller handles the feature being disabled and re-enabled:
     -   Test with some Nodes already having `PodCIDR` allocations
 
-#### End-to-End Tests
+##### e2e tests
 
 -   Run through some sample workflows. Just a few for example:
     -   Adding a node
     -   Adding a ClusterCIDRConfig
     -   Deleting a ClusterCIDRConfig that is in use
 -   Run through the [user stories](#user-stories):
-    -   Expand the ClusterCIDR (existing nodes without alloations are
+    -   Expand the ClusterCIDR (existing nodes without allocations are
         allocated and new nodes also get ranges.
     -   Use `NodeSelector` to allocate different sized CIDRs to different nodes.
     -   Create and use discontiguous ranges.
