@@ -968,6 +968,10 @@ team. Please reach out on the
 you need any help or guidance.
 -->
 
+In this section we refer to different
+[implementation phases](#implementation-phases). In this KEP we're now
+targeting phase 1.
+
 ### Feature Enablement and Rollback
 
 <!--
@@ -986,9 +990,16 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: ClassResources
   - Components depending on the feature gate:
+    - Implementation Phase 1:
+        - kubelet
+    - Future phases (with updated pod spec and scheduler and quota support):
+        - kubelet
+        - kube-apiserver
+        - kube-scheduler
+        - kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -1003,6 +1014,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+No.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
@@ -1016,7 +1029,30 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes it can.
+
+Implementation Phase 1: In this phase pod annotations are used as the user
+interface for assigning QoS-class resources to workloads. Existing
+running workloads continue to work without any changes as their QoS-class
+resource assigment in the runtime is not changed.
+Restarting or re-deploying a workload causes it to lose its QoS-class resource
+assignment as the annotation parsing in kubelet is disabled. In other words,
+the workload is able to run but the QoS-class resource assignment request from
+the user (via pod annotations) is effectively ignored.
+
+Future implementation phases: running workloads continue to work without any
+changes. Restarting or re-deploying a workload causes it to fail as the
+requested QoS-class resources are not available.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Implementation Phase 1: workloads need to be restarted to re-evaluate the pod
+annotations to correctly communicate QoS-class resource assignments to the
+container runtime.
+
+Future implementation phases: workloads might have failed because of
+unsupported fields in the pod spec reqource requirements and need to be
+restarted.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1032,6 +1068,11 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Implementation phase 1: No.
+
+Future implementation phases: unit tests for handling the changes in pod spec
+are implemented.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1051,12 +1092,24 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Implementation Phase 1: we rely on inspection of pod annotations inside kubelet
+which should make rollout/rollback failure-safe. Already running workloads are
+not affected.
+
+Future implementation phases: TBD.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Implementation Phase 1: watch for non-ready pods with CreateContainerError
+status. The error message will indicate the if the failure is related to
+QoS-class resources.
+
+Future implementation phases: TBD.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1066,11 +1119,19 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+TBD in future implementation phases.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+Implementation Phase 1: No.
+
+Future implementation phases: TBD but should be no. Disabling the feature
+should preserve the data of new fields (e.g. in pod spec) even if they are
+disabled.
 
 ### Monitoring Requirements
 
@@ -1089,6 +1150,10 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Implementation Phase 1: by examining pod annotations.
+
+Future implementation phases: by examining the new fields in pod spec.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1100,13 +1165,18 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
+- [x] Events
+  - Event Reason: Failed (CreateContainerError)
+
+<!--
 - [ ] API .status
   - Condition name: 
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
+-->
+
+To be defined in more detail in future implementation phases and for beta.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1125,18 +1195,25 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+TBD in future implementation phases but basically the existing SLOs for Pods
+should be adequate.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
+<!--
 - [ ] Metrics
   - Metric name:
   - [Optional] Aggregation method:
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
+-->
+
+TBD in future implementation phases and for beta.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1144,6 +1221,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+TBD in future implementation phases.
 
 ### Dependencies
 
@@ -1167,6 +1246,9 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+Implementation Phase 1: A container runtime with support for the new CRI API
+fields is required.
 
 ### Scalability
 
@@ -1207,9 +1289,11 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-QoS-class resources do extend existing API types but not introduce new types of
-objects. However, future work (KEPs) enabling resource discovery and permission
-control might change this.
+Implementation Phase 1: No.
+
+Future implementation phases: QoS-class resources do extend existing API types
+but presumably not introduce new types of objects. However, the design for
+resource discovery and permission control is not ready which might change this.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1231,8 +1315,17 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-A new field in `ResourceRequirements` (of `Container`) will increase the size
-of `Pod` objects by a bytes per class requested.
+Implementation Phase 1: [pod annotations](#pod-annotations) are used as the
+initial user interface so assign QoS-class resources to containers. Exact size
+of each annotation varies (depending on the type of resource and whether it
+is pod-level of container-specific) but the annotation key is expected to be
+few tens of bytes. The value part is the name of the class expected to be a few
+bytes long.
+
+Future implementations: New fields in the pod spec will increase the size of
+`Pod` objects by a few bytes per class requested. New fields will be added to
+NodeStatus which will increase its size. New field will be added to
+ResourceQuotaSpec increasing its size.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1245,6 +1338,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+No, this is not expected.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -1256,6 +1351,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+No, this is not expected.
 
 ### Troubleshooting
 
@@ -1272,6 +1369,10 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Pods cannot be scheduled which makes the feature unavailable for new workloads.
+Existing workloads continue to work without interruption (with respect to this
+feature).
+
 ###### What are other known failure modes?
 
 <!--
@@ -1287,7 +1388,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+TBD.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+TBD.
 
 ## Implementation History
 
