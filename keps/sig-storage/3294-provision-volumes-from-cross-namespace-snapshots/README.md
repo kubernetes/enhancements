@@ -89,7 +89,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Provisioning PVCs from cross-namespace PVCs](#provisioning-pvcs-from-cross-namespace-pvcs)
   - [Risks and Mitigations](#risks-and-mitigations)
-    - [Secret Handling](#secret-handling)
+    - [<code>Secret</code> Handling](#-handling)
     - [Security](#security)
     - [Conflict on installing <code>VolumePopulator</code> CR for <code>VolumeSnapshotLink</code> across CSI drivers](#conflict-on-installing--cr-for--across-csi-drivers)
 - [Design Details](#design-details)
@@ -241,7 +241,7 @@ Define an API to specify a cross-namespace `VolumeSnapshot` as a `DataSourceRef`
 - To specify a non-standard API as a `DataSourceRef` of a PVC, [AnyVolumeDataSource feature](https://kubernetes.io/blog/2021/08/30/volume-populators-redesigned/) is used,
 - To specify a cross-namespace `VolumeSnapshot`, a new `VolumeSnapshotLink` CRD is introduced (Please also see [API](#api)),
 - To restrict only allowed `VolumeSnapshot` to be consumed from other namespaces, [`ReferenceGrant` CRD (formerly `ReferencePolicy`)](https://gateway-api.sigs.k8s.io/v1alpha2/references/spec/#gateway.networking.k8s.io%2fv1alpha2.ReferenceGrant) is used,
-- To actually populate a PV from a `VolumeSnapshot` referenced from `VolumeSnapshotLink` CRD, a populator for each CSI driver is used,
+- To populate a PV from a `VolumeSnapshot` referenced from `VolumeSnapshotLink` CRD, a populator for each CSI driver is used,
 - As a reference populator implementation, [CSI external provisioner](https://github.com/kubernetes-csi/external-provisioner) is extended to handle the `VolumeSnapshotLink` CRD (Please also see [Populator implementation](#populator-implementation)).
 
 An initial discussion of this idea can be found [here](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-949929595) and PoC implementation can be found [here](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-958208039).
@@ -291,10 +291,10 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-#### Secret Handling
+#### `Secret` Handling
 
-Unlike transfer feature, this idea doesn't need to involve any transfers of Secert, therefore there will be no issue on Secret handling.
-From a populator, Secrets are only referenced through snapshots that exist in the same namespace (As commented [here](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-962168202), depending on the driver implementation, there may be very little chance that some CSI drivers won't work well in a very rare situation. However, such drivers can avoid this issue separately, by turning off this feature, implementing their own populator, and so on).
+Unlike transfer feature, this idea doesn't need to involve any transfers of `Secret`, therefore there will be no issue on `Secret` handling.
+From a populator, `Secret`s are only referenced through snapshots that exist in the same namespace (As commented [here](https://github.com/kubernetes/enhancements/pull/2849#issuecomment-962168202), depending on the driver implementation, there may be very little chance that some CSI drivers won't work well in a very rare situation. However, such drivers can avoid this issue separately, by turning off this feature, implementing their own populator, and so on).
 
 #### Security
 
@@ -313,11 +313,11 @@ In addition, there will be cases that `ReferenceGrant` may be created/deleted/re
 
 #### Conflict on installing `VolumePopulator` CR for `VolumeSnapshotLink` across CSI drivers
 
-This feature requires installing VolumePopulator` CR for `VolumeSnapshotLink` and is enabled per CSI driver basis.
+This feature requires installing `VolumePopulator` CR for `VolumeSnapshotLink` and is enabled per CSI driver basis.
 Therefore, on enabling this feature for each CSI driver, it is expected that `VolumePopulator` CR for `VolumeSnapshotLink` is created before each CSI driver installation.
 As a result, there may be a conflict in creating it for each driver, if there are any differences in their definitions, like alpha API and beta API.
 
-To avoid this issue, it should be avoided to manage VolumePopulator` CR for `VolumeSnapshotLink` in each CSI driver's repository.
+To avoid this issue, it should be avoided to manage `VolumePopulator` CR for `VolumeSnapshotLink` in each CSI driver's repository.
 It should be managed in another single repository and the same CR should be used per cluster basis.
 
 ## Design Details
@@ -388,7 +388,7 @@ Once this proposal is implemented, it can be achieved by doing the following ste
       volumeMode: Filesystem
     ```
 4. Once the populator finds a `VolumeSnapshotLink` is specified as `dataSourceRef`, it checks all `ReferenceGrants` in `VolumeSnapshotLink.spec.source.namespace` to see if populating the `VolumeSnapshotLink.spec.source` is allowed. If it is allowed, the populator populates the volume.
-    Note that how `ReferenceGrant` is checked depends on the implementation, however controllers that are trying to use the `VolumeSnapshot` in another namespace must check `ReferenceGrant` if the access is allowed, before it actually starts exposing the data and metadata from the `VolumeSnapshot` to the `VolumeSnapshotLink`'s namespace.
+    Note that how `ReferenceGrant` is checked depends on the implementation, however controllers that are trying to use the `VolumeSnapshot` in another namespace must check `ReferenceGrant` if the access is allowed before it actually starts exposing the data and metadata from the `VolumeSnapshot` to the `VolumeSnapshotLink`'s namespace.
 
 ### API
 
@@ -434,7 +434,7 @@ As a reference implementation, only (a) will be implemented in the community.
 
 Regardless of the implementation,
 - `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD must exist in the cluster before the populator is deployed.
-- `VolumePopulator` CR to allow popluating from `VolumeSnapshotLink` CRD needs to be created to enable this feature, as AnyVolumeDataSource feature defines. The `VolumePopulator` CR needed for this feature will be as follows:
+- `VolumePopulator` CR to allow populating from `VolumeSnapshotLink` CRD needs to be created to enable this feature, as AnyVolumeDataSource feature defines. The `VolumePopulator` CR needed for this feature will be as follows:
 ```yaml
 kind: VolumePopulator
 apiVersion: populator.storage.k8s.io/v1beta1
@@ -468,7 +468,7 @@ There will be two approaches to implement as a separate populator:
 
 This is a straightforward implementation that AnyVolumeDataSource feature defines.
 Developers will be able to utilize lib-volume-populator to implement this way.
-One of the challenges to achieve it will be how to actually copy the data from a snapshot in one namespace to an already provisioned PV that will need to be bound to a PVC in the other namespace.
+One of the challenges to achieve it will be how to copy the data from a snapshot in one namespace to an already provisioned PV that will need to be bound to a PVC in the other namespace.
 
 A naive implementation will be:
 1. Create another PV from the snapshot in the snapshot's namespace,
@@ -479,10 +479,10 @@ A naive implementation will be:
 If the naive implementation is used, unintended transient states, for example a temporary PVC in the snapshot namespace, may be visible to users.
 Also, there may be performance issues depending on where and how data is copied.
 
-On the other hand, althoguh it completely depends on the implementation, this approach can have advantages, like the ability to populate volumes from snapshot across different CSI drivers or the ability to efficiently copy data by using CSI driver specific way.
+On the other hand, although it completely depends on the implementation, this approach can have advantages, like the ability to populate volumes from snapshot across different CSI drivers or the ability to efficiently copy data by using CSI driver specific way.
 
 There will be no generic way to implement by using this approach, because the implementations rely too much on backup tools or CSI drivers.
-Therefore no community implementation of this approach will be provided.
+Therefore, no community implementation of this approach will be provided.
 
 Note that a PoC implementation for this approach can be found [here](https://github.com/kubernetes-csi/lib-volume-populator/pull/31). It works only for csi-hostpath driver and is intended to be just for discussion purpose.
 
@@ -507,7 +507,7 @@ The implementation of provisioner and populator of this approach will be as foll
 The above implementation is just separating the logics in approach (a) to two components, and it won't help improve efficiency nor simplify implementations.
 Therefore, the description in this section is just for discussion purpose and won't be implemented.
 
-A PoC implementation for this approach, forking exisiting provisioner and modify it to only handle `VolumeSnapshotLink`, can be found [here](https://github.com/mkimuram/external-provisioner/commits/separate-controller).
+A PoC implementation for this approach, forking existing provisioner and modify it to only handle `VolumeSnapshotLink`, can be found [here](https://github.com/mkimuram/external-provisioner/commits/separate-controller).
 Note that just to separate the containers for normal provision and provision from `VolumeSnapshotLink`, we don't need to fork the codes, instead we can use a command line option.
 Fork is only needed if we need to keep the existing CSI external provisioner codes separated from this feature.
 
@@ -580,8 +580,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- Verify that PV is provisioned from VS in other namsepace if allowed by ReferenceGrant: <link to test coverage>
-- Verify that PV isn't provisioned from VS in other namsepace if not allowed by ReferenceGrant: <link to test coverage>
+- Verify that PV is provisioned from VS in other namespace and bound to PVC if allowed by ReferenceGrant: <link to test coverage>
+- Verify that PV isn't provisioned from VS in other namespace and isn't bound to PVC if not allowed by ReferenceGrant: <link to test coverage>
 
 ### Graduation Criteria
 
@@ -651,15 +651,15 @@ enhancement:
 -->
 
 - Upgrade:
-  - Method: Do both of the below operations:
+  - Method: Do both of the following operations:
     - Specify `--cross-namespace-snapshot=true` command line flag of CSI external-provisioner
-    - Create `VolumePopulator` CRD to allow popluating from `VolumeSnapshotLink` CRD
+    - Create `VolumePopulator` CRD to allow populating from `VolumeSnapshotLink` CRD
   - Behavior:
     - Provisioning volumes from snapshots in other namespaces is enabled.
 - Downgrade:
-  - Method: Do both of the below operations:
+  - Method: Do both of the following operations:
     - Specify `--cross-namespace-snapshot=false` command line flag of CSI external-provisioner
-    - Delete `VolumePopulator` CRD to deny popluating from `VolumeSnapshotLink` CRD
+    - Delete `VolumePopulator` CRD to deny populating from `VolumeSnapshotLink` CRD
   - Behavior:
     - Provisioning volumes from snapshots in other namespaces is disabled.
 
@@ -749,7 +749,7 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, by specifying `--cross-namespace-snapshot=false` command line flag of CSI external-provisioner, and deleting `VolumePopulator` CRD to deny popluating from `VolumeSnapshotLink` CRD.
+Yes, by specifying `--cross-namespace-snapshot=false` command line flag of CSI external-provisioner and deleting `VolumePopulator` CRD to deny popluating from `VolumeSnapshotLink` CRD.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -845,7 +845,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Condition name: `Bound` for a PV that is provisioned from a PVC referencing `VolumeSnapshotLink`
   - Other field: 
 - [x] Other (treat as last resort)
-  - Details: Check if a `VolumePopulator` CRD to allow popluating from `VolumeSnapshotLink` CRD exists.
+  - Details: Check if a `VolumePopulator` CRD to allow populating from `VolumeSnapshotLink` CRD exists.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
