@@ -22,6 +22,10 @@
     - [GA + 2](#ga--2)
     - [Indeterminate Future](#indeterminate-future)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -399,22 +403,63 @@ Kubelet, but there is no specific plan for this at this time.
 
 ### Test Plan
 
-We discovered a while back that our existing e2e tests do not properly
-test the cases that are expected to result in dropped packets
-([kubernetes #85572]). Attempting to fix this resulted in the
-discovery that [there is not any easy way to test these rules]; in any
-of the scenarios we can easily create in our e2e environment, it is
-either impossible to hit kube-proxy's "drop" rules, or else the
-connection would end up getting dropped for other reasons even if
-kube-proxy failed to drop it.
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-Thus, the new code (like the existing code), will primarily be tested
-by the unit tests in `pkg/proxy/iptables/proxier_test.go`, not by e2e
-tests. We will need to extend those tests to test the functionality
-both with the feature gate disabled and enabled.
+##### Prerequisite testing updates
+
+We discovered a while back that our existing e2e tests do not properly
+test the cases that are expected to result in dropped packets. (The
+tests still pass even when we don't drop the packets: [kubernetes
+#85572]). However, attempting to fix this resulted in the discovery
+that [there is not any easy way to test these rules]. In the
+`LoadBalancerSourceRanges` case, the drop rule will never get hit on
+GCP (unless there is a bug in the GCP CloudProvider or the cloud load
+balancers). (The drop rule _can_ get hit in a bare-metal environment
+when using a third-party load balancer like MetalLB, but we have no
+way of testing this in Kubernetes CI). In the traffic policy case, the
+drop rule is needed during periods when kube-proxy and the cloud load
+balancers are out of sync, but there is no good way to reliably
+trigger this race condition for e2e testing purposes.
+
+However, we can manually test the new rules (eg, by killing kube-proxy
+before updating a service to ensure that kube-proxy and the cloud load
+balancer will remain out of sync), and then once we are satisfied that
+the rules do what we expect them to do, we can use the unit tests to
+ensure that we continue to generate the same (or functionally
+equivalent) rules in the future.
 
 [kubernetes #85572]: https://github.com/kubernetes/kubernetes/issues/85572
 [there is not any easy way to test these rules]: https://github.com/kubernetes/kubernetes/issues/85572#issuecomment-1031733890
+
+##### Unit tests
+
+The unit tests in `pkg/proxy/iptables/proxier_test.go` ensure that we
+are generating the iptables rules that we expect to, and the [new
+tests already added in 1.25] allow us to assert specifically that
+particular packets would behave in particular ways.
+
+Thus, for example, although we can't reproduce the race conditions
+mentioned above in an e2e environment, we can at least confirm that if
+a packet arrived on a node which it shouldn't have because of this
+race condition, that the iptables rules we generate would [route it to
+a `DROP` rule], rather than delivering or rejecting it.
+
+- `pkg/proxy/iptables`: `06-21` - `65.1%`
+
+[new tests already added in 1.25]: https://github.com/kubernetes/kubernetes/pull/107471
+[route it to a `DROP` rule]: https://github.com/kubernetes/kubernetes/blob/v1.25.0-alpha.1/pkg/proxy/iptables/proxier_test.go#L5974
+
+##### Integration tests
+
+There are no existing integration tests of the proxy code and no plans
+to add any.
+
+##### e2e tests
+
+As discussed above, it is not possible to test this functionality via
+e2e tests in our CI environment.
 
 ### Graduation Criteria
 
