@@ -22,6 +22,7 @@
     - [Examples](#examples)
   - [OpenAPI](#openapi)
   - [Normalization and Validation](#normalization-and-validation)
+    - [Ratcheting Validation](#ratcheting-validation)
     - [Migrating existing unions](#migrating-existing-unions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -467,6 +468,29 @@ currently done for existing union types.
 
 Objects must be validated AFTER the normalization process.
 
+#### Ratcheting Validation
+
+When updating CRDs to support union validation, it is possible that existing CRs
+become invalid.
+
+The naive solution is to require existing CRs to be updated to a valid state
+before they can be updated again.
+
+This creates many potential landmines, and so ratcheting validation is proposed
+as an alternative. Ratcheting validation means that objects will ignore stricter
+validation rules if and only if the existing object also fails the stricter
+validation for the same reason.
+
+Ratcheting validation for custom resources is a separate effort proposed
+outside of this unions effort. For the initial alpha graduation of unions, we
+do not propose supporting ratcheting validation. We will require all invalid CRs
+to be made valid before they can be updated (the naive solution).
+
+In order to potentially support ratcheting validation in the future, we will
+ensure that all callers of union validation retain access to both old and new
+objects, so that future ratcheting validation can be implemented within the
+union validation library.
+
 #### Migrating existing unions
 
 As mentioned, one of the goals is to migrate at least one existing union to
@@ -718,8 +742,16 @@ Yes, requests will simply skip union validation and normalization.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Custom resources that were skipping union validation when when the feature was
-rolled back may have allowed invalid data to persist. These must be updated to
-have valid data.
+rolled back may have allowed invalid data to persist.
+
+For alpha, we require that all modifying requests (update/patch) fail unless the
+data passes union validation. Retrieving newly invalid CRs should still always
+succeed.
+
+In the future, we may require looser "ratcheting validation" which would allow
+modifications to ignore union validation if the existing object fails the union
+validation for the same reason as the new object (see section on "Ratcheting
+Validation" above). This is not a priority for alpha.
 
 ###### Are there any tests for feature enablement/disablement?
 
