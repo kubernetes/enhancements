@@ -22,6 +22,8 @@
     - [Examples](#examples)
   - [OpenAPI](#openapi)
   - [Normalization and Validation](#normalization-and-validation)
+    - [Normalization](#normalization)
+    - [Validation](#validation)
     - [Ratcheting Validation](#ratcheting-validation)
     - [Migrating existing unions](#migrating-existing-unions)
   - [Test Plan](#test-plan)
@@ -432,6 +434,8 @@ Conversion between OpenAPI v2 and OpenAPI v3 will preserve these fields.
 
 ### Normalization and Validation
 
+#### Normalization
+
 Normalization refers to the process by which the API server attempts to understand
 and correct clients which may provide the server with conflicting or incomplete
 information about a union.
@@ -466,7 +470,15 @@ Union types without a discriminator must continue to perform normalization and
 validation manually (i.e. per resource in the validation functions), as is
 currently done for existing union types.
 
+#### Validation
+
 Objects must be validated AFTER the normalization process.
+
+For custom resources, union validation will be done at the same point as the
+existing structural schema validation that occurs in the custom resource handler.
+This ensures that any generic validation changes made to all custom resources (such
+as the ratcheting validation discussed below), behaves appropriately with union
+validation.
 
 #### Ratcheting Validation
 
