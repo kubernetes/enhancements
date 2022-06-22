@@ -247,13 +247,19 @@ kubebuilder types):
   discriminator values). This field MUST be required if there is no default
   option, omitempty if the default option is the empty string, or optional and
   omitempty if a default value is specified with the `// +default` marker.
-- `// +unionMember=<memberName> before a field means that this
+- `// +unionMember=<memberName>,<optional> before a field means that this
   field is a member of a union. The `<memberName>` is the name of the field that will be set as the discriminator value.
   It MUST correspond to one of the valid enum values of the discriminator's enum
   type. It defaults to the go (i.e `CamelCase`) representation of the field name if not specified.
   `<memberName>` should only be set if authors want to customize how the fields
   are represented in the discriminator field. `<memberName>` should match the
-  serialized JSON name of the field case-insensitively.
+  serialized JSON name of the field case-insensitively. The comma separated
+  optional value determines whether or not the member field must be set when the
+  discriminator selects it. Meaning, when `optional` is present on a field, the
+  discriminator can select the field even if the field is not set. If optional
+  is not present in the `unionMember` tag, then the object will fail validation
+  if the discriminator selects the field but it is nil. A field can be marked as
+  optional without specifying memberName via `// +unionMember,optional`.
 - `// +unionDiscriminatedBy=<discriminatorName>` before a member field identifies which
   discriminator (and thus which union) the member field belongs to. Optional
   unless there are multiple unions/discriminators in a single struct. If used,
@@ -270,15 +276,10 @@ Because, there are only a few specific values that the discriminator can be, we
 propose that all discriminators should be defined as an enum, and should be
 tagged so via the enum go marker `// +enum`.
 
-Required unions will have the number of valid discriminator values equal to the
-number of member fields (see exception below on empty union members). Optional
-unions will have the number of valid discriminator values equal to the number of
-member fields, plus one additional value for when "no member" is desired. By
-convention, this "no member" discriminator value should be the empty string.
-
-We define optional unions as union where "at most" one member field of the union
-must be non-nil (as opposed to a required union, where "exactly" one member
-field of the union must be non-nil).
+If no option is a valid option for a union, such an option must be defined as a
+member of the discriminator values enum. By convention, this "no member"
+discriminator should be the empty string, but there is nothing stopping API
+authors from defining their own "no option" discriminator value.
 
 ##### Empty Union Members
 
@@ -423,15 +424,112 @@ for validation, but is "on-top" of this proposal.
 A new extension is created in the openapi to describe the behavior:
 `x-kubernetes-unions`.
 
-This is a list of unions that are part of this structure/object. Here is what
-each list item is made of:
-- `discriminator: <discriminator>` is set to the name of the discriminator
-  field, if present,
-- `fields-to-discriminateBy: {"<fieldName>": "<discriminateName>"}` is a map of
-  fields that belong to the union to their discriminated names. The
-  discriminatedValue will typically be set to the name of the Go variable.
+This is a list of unions that are part of this structure/object. Each item in
+the list represents a discriminator for the union, a list of valid discriminator
+unions that do not correspond to member fields, and for each member field,
+the discriminator value of that field and whether or not that field is optional.
 
 Conversion between OpenAPI v2 and OpenAPI v3 will preserve these fields.
+
+The following is an example of what the generated OpenAPI definition will look
+like for a given go type.
+
+```
+const (
+  FieldA Union1Type = "FieldA"
+  FieldB Union1Type = "FieldB"
+  FieldC Union1Type = "FieldC"
+  FieldD Union1Type = "FieldD"
+  FieldNone Union1Type = ""
+)
+const (
+  Alpha Union2Type = "ALPHA"
+  Beta Union2Type = "BETA"
+  Gamma Union2Type = "GAMMA"
+  Null Union2Type = "NULL"
+)
+
+// This will generate one union, with two fields and a discriminator.
+type Union struct {
+  // +unionDiscriminator
+  // +required
+  Union1 Union1Type `json:"union1"`
+
+  // +unionMember
+  // +unionDiscriminatedBy=Union1
+  // +optional
+  FieldA int `json:"fieldA"`
+  // +unionMember,optional
+  // +unionDiscriminatedBy=Union1
+  // +optional
+  FieldB int `json:"fieldB"`
+
+  // +unionDiscriminator
+  // +required
+  Union2 Union2Type `json:"union2"`
+
+  // +unionMember=ALPHA,
+  // +unionDiscriminatedBy=Union2
+  // +optional
+  Alpha int `json:"alpha"`
+  // +unionMember=BETA,optional
+  // +unionDiscriminatedBy=Union2
+  // +optional
+  Beta int `json:"beta"`
+}
+```
+
+turns into:
+```
+OpenAPIDefinition{
+  Schema: spec.Schema{
+    SchemaProps: spec.SchemaProps{
+      ... // schema props omitted
+    },
+    VendorExtensible: spec.VendorExtensible{
+      Extensions: spec.Extensions{
+        "x-kubernetes-unions": []interface{}{
+          map[string]interface{}{
+            "discriminator": "Union1",
+            "emptyMembers":[]string{
+              "FieldC",
+              "FieldD",
+              "",
+            },
+            "fields-to-discriminateBy": map[string]interface{}{
+              "FieldA": map[string]interface{}{
+                "discriminatorValue": "FieldA",
+                "optional": false,
+              }
+              "FieldB": map[string]interface{}{
+                "discriminatorValue": "FieldB",
+                "optional": true,
+              }
+            }
+          },
+          map[string]interface{}{
+            "discriminator": "Union2",
+            "emptyMembers":[]string{
+              "GAMMA",
+              "NULL",
+            },
+            "fields-to-discriminateBy": map[string]interface{}{
+              "Alpha": map[string]interface{}{
+                "discriminatorValue": "ALPHA",
+                "optional": false,
+              }
+              "Beta": map[string]interface{}{
+                "discriminatorValue": "BETA",
+                "optional": true,
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
 
 ### Normalization and Validation
 
@@ -462,11 +560,11 @@ called by the request handlers shortly after mutating admission occurs.
 Objects must be validated AFTER the normalization process.
 
 Some validation situations specific to unions are:
-1. When multiple union fields are set and the discriminator is not set we should
+1. When multiple union fields are set and the discriminator has not been modified we should
    error loudly that the client must change the discriminator if it changes any
    union member fields.
-2. When the server receiveds a request with a discriminator set to a given
-   field, but that given field is empty, the server should fail with a clear
+2. When the server receives a request with a discriminator set to a given
+   field, but that given field is empty and not marked as optional, the server should fail with a clear
    error message. Note this does not apply to discriminator values that do not
    correspond to any field (as in the "empty union members case").
 
