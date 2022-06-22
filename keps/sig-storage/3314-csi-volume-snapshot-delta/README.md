@@ -213,6 +213,8 @@ of the CSI architecture with no knock-on effects on other CSI components.
 * Storage providers can opt in to expose their CBT functionality to Kubernetes
 via this new API. This API remains an optional component of the CSI
 architecture.
+* Enable CBT for raw block volumes as well as file system PV that are backed by
+block volumes.
 * Support provider-specific user input parameters such as block size,
 fixed-sized vs. variable-sized blocks etc., without leaking provider-specific
 implementation into CSI.
@@ -297,11 +299,11 @@ persisting them in etcd.
 #### Securing The CallBack Listener
 
 The `VolumeSnapshotDelta` callback listener will be secured by delegating the
-request authentication and authorisation to the Kubernetes API server using the
+request authentication and authorisation to the Kubernetes API server, using the
 [`TokenReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#tokenreview-v1-authentication-k8s-io)
 and
 [`SubjectAccessReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#subjectaccessreview-v1-authorization-k8s-io)
-APIs.
+APIs to protect both the `nonResourceURL` endpoint as well as the resources.
 
 ## Design Details
 
@@ -345,13 +347,13 @@ https://<csi-driver.ns.svc.cluster.local>:<listener-port>/<resource-namespace>/<
 
 The `VolumeSnapshotDelta` listener delegates the authentication and
 authorisation of the request to the Kubernetes API server via the `TokenReview`
-and `SubjectAccessReview` APIs. The user must include the `Authorization` header
-in the request, using an authorised service account's secret token as the bearer
-token.
+and `SubjectAccessReview` APIs, in order to protect both the `nonResourceURL`
+endpoint as well as access to the `VolumeSnapshotDelta` resources.
 
-If the user's service account is deployed with `automountServiceAccountToken`
-set to `false`, they will be responsible for extracting the appropriate token
-from their secret.
+The user must include the `Authorization` header in the request, using an
+authorised service account's secret token as the bearer token. If the user's
+service account is deployed with `automountServiceAccountToken` set to `false`,
+they will have to extract the appropriate token from their secret.
 
 The `VolumeSnapshotDelta` listener then issues a GRPC call to the
 `GetVolumeSnapshotDelta` service on the storage provider's CSI plugin sidecar:
@@ -414,8 +416,6 @@ type VolumeSnapshotDeltaSpec struct {
   BaseVolumeSnapshotName   string `json:"baseVolumeSnapshotName,omitempty"` // name of the base VolumeSnapshot; optional
   TargetVolumeSnapshotName string `json:"targetVolumeSnapshotName"`        // name of the target VolumeSnapshot; required
   Mode                     string `json:"mode,omitempty"`         // default to "block"
-  StartOffset              string `json:"startOffset,omitempty"`  // logical offset from beginning of disk/volume
-  Parameters               map[string]string `json:"parameters,omitempty"` // vendor specific parameters passed in as opaque key-value pairs; optional
 }
 
 // VolumeSnapshotDeltaStatus is the status for a VolumeSnapshotDelta resource
@@ -429,7 +429,7 @@ type VolumeSnapshotDeltaStatus struct {
 type VolumeSnapshotDeltaList struct {
   metav1.TypeMeta          `json:",inline"`
   metav1.ListMeta          `json:"metadata"`
-  Items []GetChangedBlocks `json:"items"`
+  Items []VolumeSnapshotDelta `json:"items"`
 }
 ```
 
@@ -451,7 +451,6 @@ type VolumeSnapshotDeltaRequest struct {
                                       // the flexibility of implementing it either
                                       // string "token" or a number.
     MaxEntries         uint64         // Maximum number of entries in the response
-    Parameters         map[string]string    // Vendor specific parameters passed in as opaque key-value pairs.  Optional.
 }
 
 type VolumeSnapshotDeltaResponse struct {
@@ -465,10 +464,6 @@ type VolumeSnapshotDeltaResponse struct {
 type ChangedBlock struct {
     Offset            uint64          // logical offset
     Size              uint64          // size of the block data
-    Context           []byte          // additional vendor specific info.  Optional.
-    ZeroOut           bool            // If ZeroOut is true, this block in SnapshotTarget is zero out.
-                                      // This is for optimization to avoid data mover to transfer zero blocks.
-                                      // Not all vendors support this zeroout.
 }
 ```
 
