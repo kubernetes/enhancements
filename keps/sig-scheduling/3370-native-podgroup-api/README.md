@@ -239,6 +239,7 @@ and make progress.
 -->
 
 - Restrict the PodGroup implementation to a specific scheduler
+- Support PodGroup based preemption for alpha implementation.
 
 ## Proposal
 
