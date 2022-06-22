@@ -229,7 +229,7 @@ know that this has succeeded?
 - Define PodGroup API in Kubernetes (k/k)
 - Enforce PodGroup as a scheduling primitive
 - Manage the lifecycle of PodGroup
-- Compatible with autoscaler
+- Compatible with CA (Cluster Autoscaler)
 
 ### Non-Goals
 
@@ -301,10 +301,10 @@ by provisioning new machines. Details are described in the following.
 
 - Short-time resource deadlock in the memory of kube-scheduler: base on the alpha version 
 implementation of pod group scheduling, it may happen that two pod groups reserve some
-resources at the same time. Neither of them can be successfully scheduled. This is different
+resources at the same time, and hence neither of them can be scheduled successfully. This is different
 from the kube-scheduler without group scheduling, where the reserved resources are released by
-timeout. And with QueueSort and PodsToActivate mechanism, PodGroup can be scheduled as `units'
-in the kube-scheduler to minimize `Short-time resource deadlock in the memory` occurrence. 
+timeout. And with QueueSort and PodsToActivate mechanism, the chances would be mitigated significantly 
+(see [data](https://github.com/kubernetes-sigs/scheduler-plugins/pull/299)).
 
 ## Design Details
 
@@ -376,10 +376,10 @@ type PodSpec struct {
 // - pod.spec.podGroup.name = foo
 // - pod.spec.podGroup.subset = (bar/baz)
 type PodGroupRef struct {
-  // Name is the name of PodGroup.
-  Name   string
-  // Subset is the name of Subset.
-  Subset string
+	// Name is the name of PodGroup.
+	Name   string
+	// Subset is the name of Subset.
+	Subset string
 }
 ```
 
@@ -471,13 +471,15 @@ type SubsetStatus struct {
 
 ### Scheduler
 #### QueueSort
-In order to maximize the chance that the pods which belong to the same `PodGroup` to be scheduled consecutively, we need to implement a customized `QueueSort` plugin to sort the Pods properly.
+In order to maximize the chance that the pods which belong to the same `PodGroup` to be scheduled 
+consecutively, we need to implement a customized `QueueSort` plugin to sort the Pods properly.
 
-Firstly, we will inherit the default in-tree PrioritySort plugin so as to honor .spec.priority to ensure high-priority Pods are always sorted ahead of low-priority ones.
+Firstly, we will inherit the default in-tree PrioritySort plugin so as to honor .spec.priority to 
+ensure high-priority Pods are always sorted ahead of low-priority ones.
 
 Secondly, if two Pods hold the same priority, the sorting precedence is described as below:
 
-- If they are both regularPods (without pod.spec.podGroup), compare their 
+- If they are both regular Pods (without pod.spec.podGroup specified), compare their 
 `InitialAttemptTimestamp` field: the Pod with earlier `InitialAttemptTimestamp` is positioned 
 ahead of the other.
   
@@ -490,22 +492,26 @@ timestamp is positioned ahead of the other.
   - If their `CreationTimestamp` is identical, order by their UID of PodGroup: a Pod with lexicographically greater UID is scheduled ahead of the other Pod. (The purpose is to tease different PodGroups with the same `CreationTimestamp` apart, while also keeping Pods belonging to the same PodGroup back-to-back)
 
 #### PreFilter
-In PreFilter phase, we need to check if pod.spec.podGroup is nil firstly. If so, return 
-success. If not, check if the pod group exists in the scheduler's internal cache and pod.spec.
-podGroup.subset is matched in pod group, if not, reject the pod in PreFilter.
+In PreFilter, it does some preliminary checks in the following sequences:
+
+- If the pod doesn't carry .spec.podGroup, returns Success immediately. Optionally, plumb a key-value pair in CycleState so as to be leveraged in Permit phase later.
+- If the pod carries .spec.podGroup, verify if the PodGroup exists or not:
+  - If not, return UnschedulableAndUnresolvable.
+  - If yes, verify if the quorum (MinMember) has been met. If met, return Success; otherwise return UnschedulableAndUnresolvable.
 
 
 #### Permit
-In Permit phase, It is divided into two parts.
+In Permit, it firstly leverages the pre-plumbed CycleState variable to quick return if it's a Pod not associated with any PodGroup.
 
-- The first part is that we put the pods that doesn't meet MinMember into the WaitingMap and reserve resources until MinMember are met or timeout is triggered.
+Next, it counts the number of "cohorted" Pods that belong to the same PodGroup. Under the hood, it reads the scheduler framework's NodeInfos to include internally assumed/reserved Pods. The evalution formula is:
 
-   - Get the number of Running pods that belong to the same PodGroup
-   - Get the number of WaitingPods (used to record pods in waiting status) that belong to the same PodGroup
+```go
+ Running + Assumed Pods + 1 >= MinMember(1 means the pod itself)
+```
 
-  If pods in all the subsets meet `Running + WaitingPods + 1 >= MinMember(1 means the pod itself) `, approve the waiting pods that belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (the timeout comes from the ScheduleTimeoutSeconds in PodGroup.).
+- If the evaluation result is false, return Wait: which will hold the pod in the internal waitingPodsMap, and timed out based on the PodGroup's timeout setting. Meanwhile, proactively move the "cohorted" Pods back to the head of activeQ, so they can be retried immediately. This is a critical optimization to avoid potential deadlocks among PodGroups.
 
-- Then second part is in order for pods belonging to the same PodGroup to be scheduled as a whole without being broken up, we will leverage the feature added https://github.com/kubernetes/kubernetes/pull/103383 to move pods of the same PodGroup back to internal scheduling activeQ instantly.
+- If the evaluation result is true, iterate over its "cohorted" Pods to unhold them (as mentioned above, they where holded in the internal waitingPodsMap), and return Success.
 
 #### UnReserve
 After a pod which belongs to a PodGroup times out in the permit phase. UnReserve Rejects the pods that belong to the same PodGroup to avoid long-term invalid reservation of resources. The rejected pod will have the different failure message in condition with other scheduled failed pods.
