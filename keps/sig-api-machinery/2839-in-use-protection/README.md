@@ -99,7 +99,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes a generic feature to protect objects from deletion while it is marked as in-use.
+This KEP proposes a generic feature to protect objects from deletion while they are marked as in-use.
 
 ## Motivation
 
@@ -109,7 +109,7 @@ These controllers use [Finalizers](https://kubernetes.io/docs/concepts/overview/
 Finalizers block the _completion_ of a delete operation, but they do not prevent the deletion from starting.
 Once started, a delete _will_ complete and can not be aborted.
 
-However, Finalizer may not be appropriate for some resource protection use cases, because it doesn't prevent other controllers from executing their pre-deletion actions.
+Finalizers may not be appropriate for some resource protection use cases, because they don't prevent other controllers from executing their pre-deletion actions.
 The order of execution of pre-deletion actions across finalizers is not defined.
 As a result, other controllers will execute their pre-deletion actions while a finalizer for protection still exists.
 
