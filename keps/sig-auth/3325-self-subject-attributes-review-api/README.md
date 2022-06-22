@@ -1,4 +1,4 @@
-# KEP-3325: Self user attributes review API
+# KEP-3325: Self subject attributes review API
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -65,15 +65,14 @@ The motivation for this KEP is to reduce obscurity and help users with debugging
 ### Goals
 
 - Add the API endpoint to get user attributes
+- Add a corresponding kubectl command - `kubectl auth who-am-i`
 
 ### Non-Goals
 
-- Add a corresponding kubectl command
-
 ## Proposal
 
-Add a new API endpoint to the `authentication` group - `SelfUserAttributesReview`.
-The user will hip the endpoint after authentication happens, so all attributes will be available to return.
+Add a new API endpoint to the `authentication` group - `SelfSubjectAttributesReview`.
+The user will hit the endpoint after authentication happens, so all attributes will be available to return.
 
 ## Design Details
 
@@ -84,18 +83,18 @@ The endpoint has no input parameters or a `spec` field because only the authenti
 
 The structure for building a request:
 ```go
-type SelfUserAttributesReview struct {
+type SelfSubjectAttributesReview struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// Status is filled in by the server with the user attributes.
-	Status SelfUserAttributesReviewStatus `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
+	Status SelfSubjectAttributesReview `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
 }
 ```
 ```go
-type SelfUserAttributesReviewStatus struct {
+type SelfSubjectAttributesReviewStatus struct {
 	// User attributes of the current user.
 	// +optional
 	UserInfo UserInfo `json:"userInfo,omitempty" protobuf:"bytes,1,opt,name=userInfo"`
@@ -104,23 +103,29 @@ type SelfUserAttributesReviewStatus struct {
 type UserInfo struct {
 	Name   string              `json:"name" protobuf:"bytes,1,opt,name=name"`
 	UID    string              `json:"uid" protobuf:"bytes,2,opt,name=uid"`
-	Groups []string            `json:"groups" protobuf:"bytes,1,opt,name=groups"`
-	Extra  map[string][]string `json:"extra" protobuf:"bytes,1,opt,name=extra"`
+	Groups []string            `json:"groups" protobuf:"bytes,3,opt,name=groups"`
+	Extra  map[string][]string `json:"extra" protobuf:"bytes,4,opt,name=extra"`
 }
 ```
 
 On receiving a request, the Kubernetes API server fills the status with the user attributes and returns it to the user.
 
-Request URL:
+Request example (the body would be a `SelfSubjectAttributesReview` object):
 ```
-GET /apis/authentication.k8s.io/v1alpha1/selfuserattributesreview
+POST /apis/authentication.k8s.io/v1alpha1/selfsubjectattributesreview
+```
+```json
+{
+  "apiVersion": "authentication.k8s.io/v1alpha1",
+  "kind": "SelfSubjectAttributesReview"
+}
 ```
 Response example:
 
 ```json
 {
   "apiVersion": "authentication.k8s.io/v1alpha1",
-  "kind": "SelfUserAttributesReview",
+  "kind": "SelfSubjectAttributesReview",
   "status": {
     "name": "jane.doe",
     "uid": "b6c7cfd4-f166-11ec-8ea0-0242ac120002",
@@ -134,6 +139,10 @@ Response example:
 
 User attributes are known at the moment of accessing the rest API endpoint and can be extracted from the request context.
 
+NOTE: There are no audiences in requests and responses since the SelfSubjectAttributesReview API is implied to be simple.
+Unlike the TokenReview API works, kube-apiserver will not do additional internal requests.
+Instead, a user will see the exact result of the authentication, which will be extracted from the request context.
+
 ### RBAC
 
 RBAC rules to grant access to this API should be present in the cluster by default.
@@ -144,7 +153,6 @@ kind: ClusterRole
 metadata:
   annotations:
     rbac.authorization.kubernetes.io/autoupdate: "true"
-  creationTimestamp: null
   labels:
     kubernetes.io/bootstrapping: rbac-defaults
   name: system:basic-user
@@ -159,15 +167,14 @@ rules:
 - apiGroups:
   - authentication.k8s.io
   resources:
-  - selfuserattributesreview
+  - selfsubjectattributesreviews
   verbs:
   - create
 ```
 
-This API is enabled by default and can be disabled by the following kube-apiserver flag (along with the TokenReview API).
-```
---runtime-config=authentication.k8s.io/v1=false
-```
+This API is enabled by default and can be disabled by using one of the following options:
+1. Deploying a validating admission webhook to the cluster to prevent `create` requests to the `authentication.k8s.io/selfsubjectattributesreviews`.
+2. Use the `--runtime-config=authentication.k8s.io/v1=false` kube-apiserver flag to disable the whole API group along with the TokenReview and TokenRequest apis (which does not seem practical).
 
 ### Test Plan
 
@@ -184,6 +191,8 @@ Integration test covering:
 3. Failed authentication
 
 ### Graduation Criteria
+
+`authentication.k8s.io/v1alpha1` and `authentication.k8s.io/v1beta1` apis will be reintroduced to go through the graduation cycle.
 
 #### Alpha
 
@@ -212,7 +221,7 @@ Pick one of these and delete the rest.
 -->
 
 - Feature gate
-  - Feature gate name: `SelfUserAttributesReview`
+  - Feature gate name: `SelfSubjectAttributesReview`
   - Components depending on the feature gate:
     - kube-apiserver
 
@@ -280,7 +289,7 @@ The feature utilizes core mechanisms of the Kubernetes API server, so the maximu
 
 The apiserver_request_* metrics family is helpful to be aware of how many requests to the endpoint are in your cluster and how many of them failed.
 ```
-{__name__=~"apiserver_request_.*", group="authentication.k8s.io", resource="selfuserattributesreviews"}
+{__name__=~"apiserver_request_.*", group="authentication.k8s.io", resource="selfsubjectattributesreview"}
 ```
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -303,7 +312,7 @@ No.
 
 ```
 Group: authentication.k8s.io
-Kind: SelfUserAttributesReview
+Kind: SelfSubjectAttributesReview
 ```
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
