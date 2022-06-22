@@ -252,7 +252,8 @@ kubebuilder types):
   It MUST correspond to one of the valid enum values of the discriminator's enum
   type. It defaults to the go (i.e `CamelCase`) representation of the field name if not specified.
   `<memberName>` should only be set if authors want to customize how the fields
-  are represented in the discriminator field.
+  are represented in the discriminator field. `<memberName>` should match the
+  serialized JSON name of the field case-insensitively.
 - `// +unionDiscriminatedBy=<discriminatorName>` before a member field identifies which
   discriminator (and thus which union) the member field belongs to. Optional
   unless there are multiple unions/discriminators in a single struct. If used,
@@ -297,24 +298,24 @@ Below is an example of how to define a union based on the above design
 type UnionType string
 
 const (
-       FieldA UnionType = "FieldA"
-       FieldB = "FieldB"
-       FieldC = "FieldC"
-       FieldD = "FieldD"
-       FieldNone = ""
+  FieldA UnionType = "FieldA"
+  FieldB UnionType = "FieldB"
+  FieldC UnionType = "FieldC"
+  FieldD UnionType = "FieldD"
+  FieldNone UnionType = ""
 )
 
 type Union struct {
-	// +unionDiscriminator
-        // +required
-	UnionType UnionType
+  // +unionDiscriminator
+  // +required
+  UnionType UnionType
 
-        // +unionMember
-	// +optional
-	FieldA int
-        // +unionMember
-        // +optional
-	FieldB int
+  // +unionMember
+  // +optional
+  FieldA int
+  // +unionMember
+  // +optional
+  FieldB int
 }
 ```
 
@@ -325,91 +326,91 @@ same structure), examples of what is allowed:
 ```
 // This will have one embedded union.
 type TopLevelUnion struct {
-	Name string `json:"name"`
+  Name string `json:"name"`
 
-	Union `json:",inline"`
+  Union `json:",inline"`
 }
 
 // +enum
 type UnionType string
 
 const (
-       FieldA UnionType = "FieldA"
-       FieldB = "FieldB"
-       FieldC = "FieldC"
-       FieldD = "FieldD"
-       FieldNone = ""
+  FieldA UnionType = "FieldA"
+  FieldB UnionType = "FieldB"
+  FieldC UnionType = "FieldC"
+  FieldD UnionType = "FieldD"
+  FieldNone UnionType = ""
 )
 
 // This will generate one union, with two fields and a discriminator.
 type Union struct {
-	// +unionDiscriminator
-        // +required
-	UnionType UnionType `json:"unionType"`
+  // +unionDiscriminator
+  // +required
+  UnionType UnionType `json:"unionType"`
 
-        // +unionMember
-	// +optional
-	FieldA int `json:"fieldA"`
-        // +unionMember
-        // +optional
-	FieldB int `json:"fieldB"`
+  // +unionMember
+  // +optional
+  FieldA int `json:"fieldA"`
+  // +unionMember
+  // +optional
+  FieldB int `json:"fieldB"`
 }
 
 // +enum
 type Union2Type string
 
 const (
-    Alpha Union2Type = "ALPHA"
-    Beta = "BETA"
+  Alpha Union2Type = "ALPHA"
+  Beta = "BETA"
 )
 
 // This will generate one union that can be embedded because the members explicitly define their discriminator.
 // Also, the unionMember markers here demonstrate how to customize the names used for
 each field in the discriminator.
 type Union2 struct {
-	// +unionDiscriminator
-        // +required
-	Type2 Union2Type `json:"type"`
-	// +unionMember=ALPHA,
-        // +unionDiscriminatedBy=Type2
-        // +optional
-	Alpha int `json:"alpha"`
-	// +unionMember=BETA
-        // +unionDiscriminatedBy=Type2
-        // +optional
-	Beta int `json:"beta"`
+  // +unionDiscriminator
+  // +required
+  Type2 Union2Type `json:"type"`
+  // +unionMember=ALPHA,
+  // +unionDiscriminatedBy=Type2
+  // +optional
+  Alpha int `json:"alpha"`
+  // +unionMember=BETA
+  // +unionDiscriminatedBy=Type2
+  // +optional
+  Beta int `json:"beta"`
 }
 
 // +enum
 type FieldType string
 
 const (
-    Field1 FieldType = "Field1"
-    Field2 = "Field2"
-    FieldNone = "None"
+  Field1 FieldType = "Field1"
+  Field2 = "Field2"
+  FieldNone = "None"
 )
 
 // This has 3 embedded unions:
 // One for the fields that are directly embedded, one for Union, and one for Union2.
 type InlinedUnion struct {
-	Name string `json:"name"`
+  Name string `json:"name"`
 
-        // +unionDiscriminator
-        // +required
-        FieldType FieldType `json:"fieldType"`
-	// +unionMember
-        // +unionDiscriminatedBy=FieldType
-	// +optional
-	Field1 *int `json:"field1,omitempty"`
-	// +unionMember
-        // +unionDiscriminatedBy=FieldType
-	// +optional
-	Field2 *int `json:"field2,omitempty"`
+  // +unionDiscriminator
+  // +required
+  FieldType FieldType `json:"fieldType"`
+  // +unionMember
+  // +unionDiscriminatedBy=FieldType
+  // +optional
+  Field1 *int `json:"field1,omitempty"`
+  // +unionMember
+  // +unionDiscriminatedBy=FieldType
+  // +optional
+  Field2 *int `json:"field2,omitempty"`
 
-        // Union does not label its members, so it
-        cannot be inlined
-	union Union  `json:"union"`
-	Union2 `json:",inline"`
+  // Union does not label its members, so it
+  cannot be inlined
+  union Union  `json:"union"`
+  Union2 `json:",inline"`
 }
 ```
 
@@ -438,41 +439,39 @@ Conversion between OpenAPI v2 and OpenAPI v3 will preserve these fields.
 
 Normalization refers to the process by which the API server attempts to understand
 and correct clients which may provide the server with conflicting or incomplete
-information about a union.
+information about a union in update or patch requests.
 
 Issues primarily arise here because of version skew between a client and a server,
 such as when a client is unaware of new fields added to a union and thus doesn't
 know how to clear these new fields when trying to set a different field.
 
-For unions with a discriminator, normalization is simple: the server should always respect the
+For unions that follow this design, normalization is simple: the server should always respect the
 discriminator.
 
-This means two things:
-1. when the server receives a request with a discriminator set to a
-given field, and multiple member fields are set it should:
-  a. If the discriminator has been modified from the one set in the old object,
-  the server should clear all fields except the one pointed to by the discriminator.
-  b. If the discriminator is unchanged but a new member field has been set (in
-  addition to the existing one that has not been cleared), it should error
-  loudly that the client must change the discriminator if it changes any union
-  member fields.
-2. when the server receives a request with a discriminator set to a given field,
-   but that given field is empty, the server should fail with a clear error
-   message.
+This means that when the server receives an update request with a discriminator set to a
+given field, and multiple member fields are set it should clear all fields
+except the one pointed to by the discriminator _if and only if_ the
+discriminator has been modified. Having multiple fields set, and a discriminator
+not modified is invalid and caught later by the validation step (see below).
 
-For situations where a typed client is unaware of a new field (that is currently
-set) and drops the set field such that no fields are now set, the server will
-clear all the fields of the union. This is unavoidable for unions without a
-discriminator and a major reason why we recommend all new unions have a
-discriminator.
-
-Union types without a discriminator must continue to perform normalization and
-validation manually (i.e. per resource in the validation functions), as is
-currently done for existing union types.
+For both custom resources and built-in types, we expect union normalization to be
+called by the request handlers shortly after mutating admission occurs.
 
 #### Validation
 
 Objects must be validated AFTER the normalization process.
+
+Some validation situations specific to unions are:
+1. When multiple union fields are set and the discriminator is not set we should
+   error loudly that the client must change the discriminator if it changes any
+   union member fields.
+2. When the server receiveds a request with a discriminator set to a given
+   field, but that given field is empty, the server should fail with a clear
+   error message. Note this does not apply to discriminator values that do not
+   correspond to any field (as in the "empty union members case").
+
+For both custom resources and built-in types, validation will occur as part of
+the request validation, before validating admission occurs.
 
 For custom resources, union validation will be done at the same point as the
 existing structural schema validation that occurs in the custom resource handler.
@@ -493,7 +492,8 @@ as an alternative. Ratcheting validation means that objects will ignore stricter
 validation rules if and only if the existing object also fails the stricter
 validation for the same reason.
 
-Ratcheting validation for custom resources is a separate effort proposed
+Ratcheting validation for custom resources is a [separate
+effort](https://github.com/kubernetes/kubernetes/issues/94060) proposed
 outside of this unions effort. For the initial alpha graduation of unions, we
 do not propose supporting ratcheting validation. We will require all invalid CRs
 to be made valid before they can be updated (the naive solution).
@@ -518,6 +518,15 @@ initial migration.
 
 For non-discriminated unions, there are a few relatively straightforward types
 that make good candidates for initial migration, such as `ContainerState`
+
+Until migrated, union types without a discriminator (i.e. only existing unions that have not been migrated
+to the current desgin), cannot be tagged with the go markers described above and
+thus will not be treated as "unions" in the sense of this currently proposed
+normalization and validation logic.
+
+These legacy unions must continue to perform normalization and
+validation manually, per resource in the validation functions.
+
 
 ### Test Plan
 
