@@ -1,4 +1,4 @@
-name: 3325-self-user-attributes-review-api
+name: 3325-self-subject-attributes-review-api
 title: Review attibutes of a current user
 kep-number: "3325"
 authors:
@@ -8,7 +8,8 @@ participating-sigs:
 - sig-auth
 reviewers:
 - "@enj"
-- TBD
+- "@deads2k"
+- "@mikedanese"
 approvers:
 - TBD
 prr-approvers: []
@@ -21,8 +22,8 @@ milestone:
   beta: "v1.26"
   stable: "v1.27"
 feature-gates:
-- name: SelfUserAttributesReview
+- name: SelfSubjectAttributesReview
   components:
   - kube-apiserver
-disable-supported: false
+disable-supported: true
 metrics: []
