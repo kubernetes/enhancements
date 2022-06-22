@@ -167,9 +167,10 @@ rules:
   - create
 ```
 
-This API is enabled by default and can be disabled by using one of the following options:
-1. Deploying a validating admission webhook to the cluster to prevent `create` requests to the `authentication.k8s.io/selfsubjectattributesreviews`.
-2. Use the `--runtime-config=authentication.k8s.io/v1=false` kube-apiserver flag to disable the whole API group along with the TokenReview and TokenRequest apis (which does not seem practical).
+This API is enabled by default and can be disabled by using the following kube-apiserver flag:
+```
+--runtime-config=authentication.k8s.io/v1alpha1/selfsubjectattributesreviews=false
+```
 
 ### Test Plan
 
