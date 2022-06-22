@@ -99,14 +99,7 @@ type SelfSubjectAttributesReview struct {
 type SelfSubjectAttributesReviewStatus struct {
 	// User attributes of the current user.
 	// +optional
-	UserInfo UserInfo `json:"userInfo,omitempty" protobuf:"bytes,1,opt,name=userInfo"`
-}
-
-type UserInfo struct {
-	Name   string              `json:"name" protobuf:"bytes,1,opt,name=name"`
-	UID    string              `json:"uid" protobuf:"bytes,2,opt,name=uid"`
-	Groups []string            `json:"groups" protobuf:"bytes,3,opt,name=groups"`
-	Extra  map[string][]string `json:"extra" protobuf:"bytes,4,opt,name=extra"`
+	UserInfo authenticationv1.UserInfo `json:"userInfo,omitempty" protobuf:"bytes,1,opt,name=userInfo"`
 }
 ```
 
