@@ -73,7 +73,7 @@ The motivation for this KEP is to reduce obscurity and help users with debugging
 
 ## Proposal
 
-Add a new API endpoint to the `authentication` group - `SelfSubjectAttributesReview`.
+Add a new API endpoint to the `authentication.k8s.io` group - `SelfSubjectAttributesReview`.
 The user will hit the endpoint after authentication happens, so all attributes will be available to return.
 
 ## Design Details
@@ -92,7 +92,7 @@ type SelfSubjectAttributesReview struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// Status is filled in by the server with the user attributes.
-	Status SelfSubjectAttributesReview `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
+	Status SelfSubjectAttributesReviewStatus `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
 }
 ```
 ```go
