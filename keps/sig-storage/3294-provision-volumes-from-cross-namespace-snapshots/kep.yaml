@@ -49,7 +49,7 @@ milestone:
 #    components:
 #      - kube-apiserver
 #      - kube-controller-manager
-#disable-supported: true
+disable-supported: true
 
 # The following PRR answers are required at beta release
 #metrics:

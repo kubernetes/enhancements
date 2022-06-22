@@ -721,7 +721,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Other
-  - Describe the mechanism:
+  - Describe the mechanism: By specifying `--cross-namespace-snapshot=true` command line flag of CSI external-provisioner and creating `VolumePopulator` CR to allow  populating from `VolumeSnapshotLink` CR.
   - Will enabling / disabling the feature require downtime of the control
     plane? No, it won't require downtime of the entire control plane. However, it will require a downtime of each provisioner whose enablement is being changed.
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -734,7 +734,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Yes, `VolumeSnapshotLink` CRD can be used as a `DataSourceRef` for PVC.
+No. Existing behavior of provisioning volumes from PVC and `VolumeSnapshot` remains unchanged.
+By enabling the feature, `VolumeSnapshotLink` CR can be used as a `DataSourceRef` for PVC, in addition to the existing data sources.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -749,11 +750,17 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, by specifying `--cross-namespace-snapshot=false` command line flag of CSI external-provisioner and deleting `VolumePopulator` CRD to deny popluating from `VolumeSnapshotLink` CRD.
+Yes, by specifying `--cross-namespace-snapshot=false` command line flag of CSI external-provisioner and deleting `VolumePopulator` CR to deny populating from `VolumeSnapshotLink` CR.
+
+- After `--cross-namespace-snapshot=false` command line flag is specified: CSI external-provisioner for the csi driver doesn't provision volume from `VolumeSnapshotLink` CR.
+- After  `VolumePopulator` CR for `VolumeSnapshotLink` CR is deleted: volume-data-source-validator adds an event to PVC that `VolumeSnapshotLink`isn't a valid data source.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-`VolumeSnapshotLink` CRD can be used as a `DataSourceRef` for PVC, again.
+`VolumeSnapshotLink` CR can be used as a `DataSourceRef` for PVC, again.
+
+PVCs with `VolumeSnapshotLink` data source may be created while the feature is disabled (and volumes for the PVCs aren't provisioned).
+After the feature is reenabled, volumes for the PVCs will be provisioned retrospectively.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -770,7 +777,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes, unit tests cover scenarios where the feature is disabled or enabled.
+No. Unit tests that cover scenarios where the feature is disabled or enabled will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
