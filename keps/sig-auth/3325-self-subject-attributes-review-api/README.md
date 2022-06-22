@@ -167,7 +167,8 @@ rules:
   - create
 ```
 
-This API is enabled by default and can be disabled by using the following kube-apiserver flag:
+After reaching GA, the SelfSubjectAttributesReview API will be enabled by default. 
+If necessary, it will be possible to disable this API by using the following kube-apiserver flag:
 ```
 --runtime-config=authentication.k8s.io/v1alpha1/selfsubjectattributesreviews=false
 ```
