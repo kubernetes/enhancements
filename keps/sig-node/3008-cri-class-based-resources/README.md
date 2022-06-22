@@ -1051,7 +1051,7 @@ annotations to correctly communicate QoS-class resource assignments to the
 container runtime.
 
 Future implementation phases: workloads might have failed because of
-unsupported fields in the pod spec reqource requirements and need to be
+unsupported fields in the pod spec resource requirements and need to be
 restarted.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -1069,7 +1069,9 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Implementation phase 1: No.
+Implementation phase 1: Unit test will be added to kubelet to test that
+inspection of [pod annotations](#pod-annotations) is correctly disabled/enabled
+with the feature gate.
 
 Future implementation phases: unit tests for handling the changes in pod spec
 are implemented.
