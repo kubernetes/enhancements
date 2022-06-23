@@ -1,4 +1,4 @@
-title: Multiple Authorization Webhooks
+title: Structured Authorization Configuration
 kep-number: 3221
 authors:
   - "@100mik"
@@ -15,9 +15,9 @@ approvers:
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/101762
 stage: alpha
-latest-milestone: "v1.25"
+latest-milestone: "v1.28"
 milestone:
-  alpha: "v1.25"
+  alpha: "v1.28"
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
