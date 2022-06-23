@@ -250,10 +250,23 @@ limitations of the current approach for the following use cases:
   containers should be able to use other free resources on the same
   device.
 
-  *Limitation*: Current implementation of the device plugin doesn’t
-  allow one to allocate part of the device because parameters are too limited
-  and Kubernetes doesn't have enough information about the extended
-  resources on a node to decide whether they can be shared.
+  *Limitation*: For example, newer generations of NVIDIA GPUs have a mode of
+  operation called MIG, that allow them to be sub-divided into a set of
+  mini-GPUs (called MIG devices) with varying amounts of memory and compute
+  resources provided by each. From a hardware-standpoint, configuring a GPU
+  into a set of MIG devices is highly-dynamic and creating a MIG device
+  tailored to the resource needs of a particular application is well
+  supported. However, with the current device plugin API, the only way to make
+  use of this feature is to pre-partition a GPU into a set of MIG devices and
+  advertise them to the kubelet in the same way a full / static GPU is
+  advertised. The user must then pick from this set of pre-partitioned MIG
+  devices instead of having one created for them on the fly based on their
+  particular resource constraints. Without the ability to create MIG devices
+  dynamically (i.e. at the time they are requested) the set of pre-defined MIG
+  devices must be carefully tuned to ensure that GPU resources do not go unused
+  because some of the pre-partioned devices are in low-demand.  It also puts
+  the burden on the user to pick a particular MIG device type, rather than
+  declaring the resource constraints more abstractly.
 
 - *Optional allocation*: When deploying a workload I’d like to specify
   soft(optional) device requirements. If a device exists and it’s
