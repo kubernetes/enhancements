@@ -316,7 +316,7 @@ proposal will be implemented, this is the place to discuss them.
 
 The proposed design involves extending CSI with the `VolumeSnapshotDelta` CRD.
 Storage providers can opt in to support this feature by implementing the
-`VOLUME_SNAPSHOT_DELTA_SERVICE` capability in their CSI drivers.
+`SNAPSHOT_DELTA` capability in their CSI drivers.
 
 The `VolumeSnapshotDelta` resource is a namespace-scoped resource. It must be
 created in the same namespace as the base and target CSI `VolumeSnapshot`s.
@@ -394,76 +394,193 @@ requests from the same origin are always directed back to the same leader pod.
 
 ### API Specification
 
-The section describes the specification of proposed API. The Go types of the CRD
-are defined as follows:
+The section describes the specification of proposed CRD:
 
 ```go
-// VolumeSnapshotDelta is a specification for a VolumeSnapshotDelta resource
+// VolumeSnapshotDelta represents a VolumeSnapshotDelta resource.
 type VolumeSnapshotDelta struct {
-  metav1.TypeMeta   `json:",inline"`
+  metav1.TypeMeta `json:",inline"`
 
+  // Standard object's metadata.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
   // +optional
   metav1.ObjectMeta `json:"metadata,omitempty"`
 
-  Spec   VolumeSnapshotDeltaSpec   `json:"spec"`
+  // spec defines the desired characteristics of a snapshot delta requested by a user.
+  // More info: https://kubernetes.io/docs/concepts/storage/volume-snapshots#volumesnapshots
+  // Required.
+  Spec VolumeSnapshotDeltaSpec `json:"spec"`
 
+  // status represents the current information of a snapshot delta.
   // +optional
   Status VolumeSnapshotDeltaStatus `json:"status,omitempty"`
 }
 
-// VolumeSnapshotDeltaSpec is the spec for a VolumeSnapshotDelta resource
+// VolumeSnapshotDeltaSpec is the spec of a VolumeSnapshotDelta resource.
 type VolumeSnapshotDeltaSpec struct {
-  BaseVolumeSnapshotName   string `json:"baseVolumeSnapshotName,omitempty"` // name of the base VolumeSnapshot; optional
-  TargetVolumeSnapshotName string `json:"targetVolumeSnapshotName"`        // name of the target VolumeSnapshot; required
-  Mode                     string `json:"mode,omitempty"`         // default to "block"
+  // The name of the base CSI volume snapshot to use for comparison.
+  // If not specified, return all changed  blocks.
+  // +optional
+  BaseVolumeSnapshotName string `json:"baseVolumeSnapshotName,omitempty"`
+
+  // The name of the target CSI volume snapshot to use for comparison.
+  // Required.
+  TargetVolumeSnapshotName string `json:"targetVolumeSnapshotName"`
+
+  // Defines the type of volume. Default to "block".
+  // Required.
+  Mode string `json:"mode,omitempty"`
 }
 
 // VolumeSnapshotDeltaStatus is the status for a VolumeSnapshotDelta resource
 type VolumeSnapshotDeltaStatus struct {
-  Error        string `json:"error,omitempty"`
-  State        string `json:"state"`
-  CallbackURL  string `json:"callbackURL"`
+  // Captures any error encountered.
+  Error string `json:"error,omitempty"`
+
+  // The Callback URL to send the CBT requests to.
+  CallbackURL string `json:"callbackURL"`
+
+  // A very brief description to communicate the current state of the CBT
+  // operation.
+  State VolumeSnapshotDeltaState `json:"state"`
+}
+
+type VolumeSnaphotDeltaState int
+
+const (
+  TransferringData VolumeSnapshotDeltaState = iota
+  Failed
+  Pending
+  URLReady
+)
+
+func (s VolumeSnapshotDeltaState) String() string {
+  switch s {
+  case TransferringData:
+    return "transferring-data"
+  case Failed:
+    return "failed"
+  case URLReady:
+    return "url-ready"
+  case Pending:
+    fallthrough
+  default:
+    return "pending"
+  }
 }
 
 // VolumeSnapshotDeltaList is a list of VolumeSnapshotDelta resources
 type VolumeSnapshotDeltaList struct {
-  metav1.TypeMeta          `json:",inline"`
-  metav1.ListMeta          `json:"metadata"`
+  metav1.TypeMeta `json:",inline"`
+
+  // +optional
+  metav1.ListMeta `json:"metadata"`
+
+  // list of VolumeSnapshotDeltas.
   Items []VolumeSnapshotDelta `json:"items"`
 }
 ```
 
-The corresponding GRPC service definition is as follows:
+The corresponding GRPC service and message definition are as follows:
 
-```grpc
+```proto
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
 service VolumeSnapshotDelta {
-  rpc GetVolumeSnapshotDelta(VolumeSnapshotDeltaRequest)
+  rpc ListVolumeSnapshotDeltas(VolumeSnapshotDeltaRequest)
     returns (VolumeSnapshotDeltaResponse) {}
 }
 
-type VolumeSnapshotDeltaRequest struct {
-    // If SnapshotBase is not specified, return all used blocks.
-    SnapshotBase       string         // Snapshot handle, optional.
-    SnapshotTarget     string         // Snapshot handle, required.
-    Mode               string         // Volume mode, default "Block"
-    StartOffset        string         // Logical offset from beginning of disk/volume.
-                                      // Use string instead of uint64 to give vendor
-                                      // the flexibility of implementing it either
-                                      // string "token" or a number.
-    MaxEntries         uint64         // Maximum number of entries in the response
+message VolumeSnapshotDeltaRequest {
+  // The name of the base snapshot handle to use for comparison.
+  // If not specified, return all changed blocks.
+  // This field is OPTIONAL.
+  string snapshot_base = 1;
+
+  // The name of the target snapshot handle to use for comparison.
+  // If not specified, an error is returned.
+  // This field is REQUIRED.
+  string snapshot_target = 2;
+
+  // Defines the type of volume. Default to "block".
+  // This field is REQUIRED.
+  string mode = 3;
+
+  // A token to specify where to start paginating. Set this field to
+  // `next_token` returned by a previous `ListVolumeSnapshotDeltas` call to get
+  // the next page of entries. An empty string is equal to an unspecified field
+  // value.
+  // This field is OPTIONAL.
+  string starting_token = 4;
+
+  // If specified (non-zero value), the Plugin MUST NOT return more entries than
+  // this number in the response. If the actual number of entries is more than
+  // this number, the Plugin MUST set `next_token` in the response which can be
+  // used to get the next page of entries in the subsequent
+  // `ListVolumeSnapshotDeltas` call. If not specified (zero value), it will be
+  // default to 256 entries. The value of this field MUST NOT be negative.
+  // This field is REQUIRED.
+  int32 max_entries = 5;
 }
 
-type VolumeSnapshotDeltaResponse struct {
-    ChangeBlockList   []ChangedBlock  // array of ChangedBlock (for "Block" mode)
-    NextOffset        string          // StartOffset of the next “page”.
-    VolumeSize        uint64          // size of volume in bytes
-    Timeout           uint64          // Time when the result of this differential snapshot is
-                                      // available in the backend storage.  Seconds since epoch.
- }
+message VolumeSnapshotDeltaResponse {
+  // Snapshot deltas for block volume snapshots. An empty list means there are
+  // no block deltas between the base and target snapshots. If unspecified, it
+  // means the volume isn't of block type.
+  // This field is OPTIONAL.
+  BlockVolumeSnapshotDelta block_delta = 1;
 
-type ChangedBlock struct {
-    Offset            uint64          // logical offset
-    Size              uint64          // size of the block data
+  // The volume size in bytes.
+  // This field is OPTIONAL.
+  uint64 volume_size_bytes = 2;
+
+  // This token allows you to get the next page of entries for
+  // `ListVolumeSnapshotDeltas` request. If the number of entries is larger than
+  // `max_entries`, use the `next_token` as a value for the
+  // `starting_token` field in the next `ListVolumeSnapshotDeltas` request.
+  // An empty string is equal to an unspecified field value.
+  // This field is OPTIONAL.
+  string next_token = 3;
+}
+
+message BlockVolumeSnapshotDelta {
+  // The list of changed blocks deltas. If empty, it means there are no
+  // differences between the base and target snapshots.
+  // This field is OPTIONAL.
+  repeated ChangedBlockDelta changed_block_deltas = 1;
+}
+
+message ChangedBlockDelta {
+  // The block logical offset on the volume.
+  // This field is REQUIRED.
+  uint64 offset = 1;
+
+  // The size of the block in bytes.
+  // This field is REQUIRED.
+  uint64 block_size_bytes = 2;
+
+  // The token and other information needed to retrieve the actual data block
+  // at the given offset. If the provider doesn't support token-based data
+  // blocks retrieval, this should be left unspecified.
+  // This field is OPTIONAL.
+  DataToken data_token = 3;
+}
+
+message DataToken {
+  // The token to use to retrieve the actual data block at the given offset.
+  // This field is REQUIRED.
+  string token = 1;
+
+  // Timestamp when the token is issued.
+  // This field is REQUIRED.
+  .google.protobuf.Timestamp issuance_time = 4;
+
+  // The TTL of the token in seconds. The expiry time is calculated by adding
+  // the time of issuance with this value.
+  .google.protobuf.Duration ttl_seconds = 2;
 }
 ```
 
@@ -1033,7 +1150,7 @@ associated with these GVRs:
 - apiGroups: ["snapshot.storage.k8s.io"]
   resources: ["volumesnapshotdeltas"]
 - apiGroups: ["snapshot.storage.k8s.io"]
-  resources: ["volumesnapshotcontents", "volumesnapshots"]
+  resources: ["volumesnapshotcontents", "volumesnapshots", "volumesnapshotclasses"]
   verbs: ["get", "list"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["authorization.k8s.io"]
