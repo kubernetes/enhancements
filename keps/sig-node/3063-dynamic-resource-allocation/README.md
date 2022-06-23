@@ -84,6 +84,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Feature not used](#feature-not-used)
     - [Compromised node](#compromised-node)
+    - [Compromised resource driver plugin](#compromised-resource-driver-plugin)
     - [User permissions and quotas](#user-permissions-and-quotas)
     - [Usability](#usability)
 - [Design Details](#design-details)
@@ -575,6 +576,31 @@ The security of those custom approaches is the responsibility of the resource
 driver vendor. Solutions like Akri which establish their own control plane and
 then communicate with Kubernetes through the device plugin API already need to
 address this.
+
+#### Compromised resource driver plugin
+
+This is the result of an attack against the resource driver, either from a
+container which uses a resource exposed by the driver, a compromised kubelet
+which interacts with the plugin, or through a successful attack against the
+node which led to root access.
+
+The resource driver plugin only needs read access to objects described in this
+KEP, so compromising it does not interfere with dynamic resource allocation for
+other drivers. It may need write access for [CRDs that communicate or
+coordinate resource
+availability](#implementing-a-plugin-for-node-resources). This could be used to
+attack scheduling involving the driver as outlined in the previous section.
+
+A resource driver may need root access on the node to manage
+hardware. Attacking the driver therefore may lead to root privilege
+escalation. Ideally, driver authors should try to avoid depending on root
+permissions and instead use capabilities or special permissions for the kernel
+APIs that they depend on.
+
+A resource driver may also need privileged access to remote services to manage
+network-attached devices. Resource driver vendors and cluster administrators
+have to consider what the effect of a compromise could be for that and how such
+privileges could get revoked.
 
 #### User permissions and quotas
 
