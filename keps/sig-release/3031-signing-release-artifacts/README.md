@@ -1,7 +1,6 @@
 # KEP-3031: Signing release artifacts
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -13,6 +12,10 @@
   - [User Stories (Optional)](#user-stories-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -138,6 +141,16 @@ different location once we graduate the feature to GA.
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+- None
+
+##### Unit tests
+
 Testing of the lower-level signing implementation will be done by writing unit tests
 as well as integration tests within the
 [release-sdk](https://github.com/kubernetes-sigs/release-sdk) repository. This
@@ -147,6 +160,14 @@ during the release creation process, which is tested separately. The overall
 integration into krel can be tested manually by the Release Managers as well,
 while we use the pre-releases of v1.24 as first instance for full end-to-end
 feedback.
+
+##### Integration tests
+
+See the unit test section.
+
+##### e2e tests
+
+See the unit test section.
 
 ### Graduation Criteria
 
