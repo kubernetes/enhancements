@@ -260,11 +260,6 @@ kubebuilder types):
   is not present in the `unionMember` tag, then the object will fail validation
   if the discriminator selects the field but it is nil. A field can be marked as
   optional without specifying memberName via `// +unionMember,optional`.
-- `// +unionDiscriminatedBy=<discriminatorName>` before a member field identifies which
-  discriminator (and thus which union) the member field belongs to. Optional
-  unless there are multiple unions/discriminators in a single struct. If used,
-  it must be the go (i.e. `CamelCase`) representation of the field name tagged
-  with `unionDiscriminator`.
 
 #### Discriminator Values
 
@@ -352,7 +347,7 @@ type Union struct {
   // +unionMember
   // +optional
   FieldA int `json:"fieldA"`
-  // +unionMember
+  // +unionMember,optional
   // +optional
   FieldB int `json:"fieldB"`
 }
@@ -365,54 +360,20 @@ const (
   Beta = "BETA"
 )
 
-// This will generate one union that can be embedded because the members explicitly define their discriminator.
-// Also, the unionMember markers here demonstrate how to customize the names used for
-each field in the discriminator.
+// This generates a union where the unionMember markers demonstrate how to
+customize the names used for each field in the discriminator.
 type Union2 struct {
   // +unionDiscriminator
   // +required
   Type2 Union2Type `json:"type"`
-  // +unionMember=ALPHA,
-  // +unionDiscriminatedBy=Type2
+  // +unionMember=ALPHA
   // +optional
   Alpha int `json:"alpha"`
-  // +unionMember=BETA
-  // +unionDiscriminatedBy=Type2
+  // +unionMember=BETA,optional
   // +optional
   Beta int `json:"beta"`
 }
 
-// +enum
-type FieldType string
-
-const (
-  Field1 FieldType = "Field1"
-  Field2 = "Field2"
-  FieldNone = "None"
-)
-
-// This has 3 embedded unions:
-// One for the fields that are directly embedded, one for Union, and one for Union2.
-type InlinedUnion struct {
-  Name string `json:"name"`
-
-  // +unionDiscriminator
-  // +required
-  FieldType FieldType `json:"fieldType"`
-  // +unionMember
-  // +unionDiscriminatedBy=FieldType
-  // +optional
-  Field1 *int `json:"field1,omitempty"`
-  // +unionMember
-  // +unionDiscriminatedBy=FieldType
-  // +optional
-  Field2 *int `json:"field2,omitempty"`
-
-  // Union does not label its members, so it
-  cannot be inlined
-  union Union  `json:"union"`
-  Union2 `json:",inline"`
-}
 ```
 
 ### OpenAPI
@@ -441,12 +402,6 @@ const (
   FieldD Union1Type = "FieldD"
   FieldNone Union1Type = ""
 )
-const (
-  Alpha Union2Type = "ALPHA"
-  Beta Union2Type = "BETA"
-  Gamma Union2Type = "GAMMA"
-  Null Union2Type = "NULL"
-)
 
 // This will generate one union, with two fields and a discriminator.
 type Union struct {
@@ -463,18 +418,6 @@ type Union struct {
   // +optional
   FieldB int `json:"fieldB"`
 
-  // +unionDiscriminator
-  // +required
-  Union2 Union2Type `json:"union2"`
-
-  // +unionMember=ALPHA,
-  // +unionDiscriminatedBy=Union2
-  // +optional
-  Alpha int `json:"alpha"`
-  // +unionMember=BETA,optional
-  // +unionDiscriminatedBy=Union2
-  // +optional
-  Beta int `json:"beta"`
 }
 ```
 
