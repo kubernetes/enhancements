@@ -425,8 +425,7 @@ A new extension is created in the openapi to describe the behavior:
 `x-kubernetes-unions`.
 
 This is a list of unions that are part of this structure/object. Each item in
-the list represents a discriminator for the union, a list of valid discriminator
-unions that do not correspond to member fields, and for each member field,
+the list represents a discriminator for the union, and for each member field,
 the discriminator value of that field and whether or not that field is optional.
 
 Conversion between OpenAPI v2 and OpenAPI v3 will preserve these fields.
@@ -491,11 +490,6 @@ OpenAPIDefinition{
         "x-kubernetes-unions": []interface{}{
           map[string]interface{}{
             "discriminator": "Union1",
-            "emptyMembers":[]string{
-              "FieldC",
-              "FieldD",
-              "",
-            },
             "fields-to-discriminateBy": map[string]interface{}{
               "FieldA": map[string]interface{}{
                 "discriminatorValue": "FieldA",
@@ -509,10 +503,6 @@ OpenAPIDefinition{
           },
           map[string]interface{}{
             "discriminator": "Union2",
-            "emptyMembers":[]string{
-              "GAMMA",
-              "NULL",
-            },
             "fields-to-discriminateBy": map[string]interface{}{
               "Alpha": map[string]interface{}{
                 "discriminatorValue": "ALPHA",
