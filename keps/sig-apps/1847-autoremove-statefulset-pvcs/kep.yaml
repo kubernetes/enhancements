@@ -15,19 +15,19 @@ reviewers:
   - "@msau42"
   - "@janetkuo"
 prr-approvers:
-  - "@wojtek-t"
+  - "@johnbelamaric"
 approvers:
   - "@msau42"
   - "@janetkuo"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.23"
+latest-milestone: "v1.25"
 
 milestone:
   alpha: "v1.23"
-  beta: "v1.24"
-  stable: "v1.25"
+  beta: "v1.25"
+  stable: "v1.27"
 
 feature-gates:
   - name: StatefulSetAutoDeletePVC
@@ -36,6 +36,10 @@ feature-gates:
       - kube-apiserver
 disable-supported: true
 
-# The following PRR answers are required at beta release
-# metrics:
-# Currently no metrics is planned for alpha release.
+metrics:
+  - statefulset_reconcile_delay
+  - statefulset_unhealthy_pods
+  - statefulset_pvcs_owned_by_pod
+  - statefulset_pvcs_owned_by_set
+  - statefulset_when_deleted_policy
+  - statefulset_when_scaled_policy
