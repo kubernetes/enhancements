@@ -247,7 +247,7 @@ kubebuilder types):
   discriminator values). This field MUST be required if there is no default
   option, omitempty if the default option is the empty string, or optional and
   omitempty if a default value is specified with the `// +default` marker.
-- `// +unionMember=<memberName>,<optional> before a field means that this
+- `// +unionMember[=<memberName>][,optional] before a field means that this
   field is a member of a union. The `<memberName>` is the name of the field that will be set as the discriminator value.
   It MUST correspond to one of the valid enum values of the discriminator's enum
   type. It defaults to the go (i.e `CamelCase`) representation of the field name if not specified.
@@ -478,90 +478,34 @@ type Union struct {
 }
 ```
 
-turns into:
-```
-OpenAPIDefinition{
-  Schema: spec.Schema{
-    SchemaProps: spec.SchemaProps{
-      ... // schema props omitted
-    },
-    VendorExtensible: spec.VendorExtensible{
-      Extensions: spec.Extensions{
-        "x-kubernetes-unions": []interface{}{
-          map[string]interface{}{
-            "discriminator": "Union1",
-            "fields-to-discriminateBy": map[string]interface{}{
-              "FieldA": map[string]interface{}{
-                "discriminatorValue": "FieldA",
-                "optional": false,
-              }
-              "FieldB": map[string]interface{}{
-                "discriminatorValue": "FieldB",
-                "optional": true,
-              }
-            }
-          },
-          map[string]interface{}{
-            "discriminator": "Union2",
-            "fields-to-discriminateBy": map[string]interface{}{
-              "Alpha": map[string]interface{}{
-                "discriminatorValue": "ALPHA",
-                "optional": false,
-              }
-              "Beta": map[string]interface{}{
-                "discriminatorValue": "BETA",
-                "optional": true,
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-The OpenAPI data will then be deserialized into go structs as follows:
+The OpenAPI x-kubernetes-unions extension will then be attached to the discriminator's property and
+deserialized into go structs as follows:
 ```
 // XKubernetesUnions is the top level extension
-// that lists all the unions in the object.
-// Each union is determined by its identifying
-// discriminator.
 type XKubernetesUnions struct {
-  // Discriminators are the list of unions in an object.
-  // There is a 1:1 mapping between a union and its discriminator
-  // and hence we identify a union by its discriminator.
-  Discriminators []Discriminator
+  // FieldMembers are the mapping of all valid discriminator values in a
+  // union to the corresponding member field.
+  // Discriminator value is the value to which the discriminator is set to
+  // in order to indicate that a given member field is the currently set member
+  // of the union.
+  // MemberField may be nil in the case of empty union members where a valid
+  // discriminator value has no corresponding member field.
+  FieldMembers map[DiscriminatorValue]*MemberField `json:"fieldMembers"`
 }
 
-// Discriminator defines a union. It has
-// a name and a list of member fields
-type Discriminator struct {
-  // Name is the go (CamelCase) representation of the
-  // discriminator field
-  // It is the value that `// +unionDiscriminatedbBy=<discriminatorName>`
-  // should be set to on member fields.
-  Name string
-  // FieldsToDiscriminateBy are all the member fields that
-  // are in a given discriminator's union.
-  FieldsToDiscriminateBy []MemberField
-}
+// DiscriminatorValue is the value that the discriminator is set to 
+// in order to indicate the selection of a union member.
+type DiscriminatorValue string
 
-// MemberField is a member of a union.
-// It has a go representation of the field name
+// MemberField
 type MemberField struct {
-  // The camel case representation of the member field used to identify which
-  // field in the union struct corresponds to the member.
-  GoName string
-  // DiscriminatorName is the value that the discriminator is set to in order
-  // to identify a member field as the currently chosen one.
-  // It will only be different from the GoName if API authors set a member
-  // name value in the union member marker `// +unionMember=<MemberName>`
-  DiscriminatorName string
-  // Optional determines whether the discriminator can be set to a member field
-  // even if the member field is not present (or nil). Default is false, and is
-  // set to true by setting the union member marker as optional, i.e.
-  // `// +unionMember,optional` or `// +unionMember=<MemberName>,optional`
-  Optional bool
+  // Name is the name of the field corresponding to the member.
+  // It will be the json representation of the field marked with the
+  // `// +unionMember` marker in the go type.
+  Name string `json:"name"`
+  // Optional determines whether the discriminator _may_ select this member
+  // even when the member field is empty. Optional defaults to false.
+  Optional bool `json:"optional"`
 }
 ```
 
