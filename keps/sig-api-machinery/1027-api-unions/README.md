@@ -520,6 +520,50 @@ OpenAPIDefinition{
   }
 }
 ```
+The OpenAPI data will then be deserialized into go structs as follows:
+```
+// XKubernetesUnions is the top level extension
+// that lists all the unions in the object.
+// Each union is determined by its identifying
+// discriminator.
+type XKubernetesUnions struct {
+  // Discriminators are the list of unions in an object.
+  // There is a 1:1 mapping between a union and its discriminator
+  // and hence we identify a union by its discriminator.
+  Discriminators []Discriminator
+}
+
+// Discriminator defines a union. It has
+// a name and a list of member fields
+type Discriminator struct {
+  // Name is the go (CamelCase) representation of the
+  // discriminator field
+  // It is the value that `// +unionDiscriminatedbBy=<discriminatorName>`
+  // should be set to on member fields.
+  Name string
+  // FieldsToDiscriminateBy are all the member fields that
+  // are in a given discriminator's union.
+  FieldsToDiscriminateBy []MemberField
+}
+
+// MemberField is a member of a union.
+// It has a go representation of the field name
+type MemberField struct {
+  // The camel case representation of the member field used to identify which
+  // field in the union struct corresponds to the member.
+  GoName string
+  // DiscriminatorName is the value that the discriminator is set to in order
+  // to identify a member field as the currently chosen one.
+  // It will only be different from the GoName if API authors set a member
+  // name value in the union member marker `// +unionMember=<MemberName>`
+  DiscriminatorName string
+  // Optional determines whether the discriminator can be set to a member field
+  // even if the member field is not present (or nil). Default is false, and is
+  // set to true by setting the union member marker as optional, i.e.
+  // `// +unionMember,optional` or `// +unionMember=<MemberName>,optional`
+  Optional bool
+}
+```
 
 ### Normalization and Validation
 
