@@ -1869,7 +1869,13 @@ device ids should be added to the CRI Device structure:
 message Device {
     ...
     string permissions = 3;
-    // Set of fully qualified CDI device names
+    // Set of fully qualified CDI device names in the following
+    // format: <kind>=<name>,
+    //  where
+    //    kind (string) is a device vendor identifier
+    //    name (string) is a device name
+    // for example: vendor.com/gpu=gpudevice1
+    // see more details in the [CDI specification](https://github.com/container-orchestrated-devices/container-device-interface/blob/master/SPEC.md)
     repeated string cdi_device = 4;
 }
 ```
