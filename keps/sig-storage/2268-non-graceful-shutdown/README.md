@@ -146,6 +146,10 @@ To mitigate this we plan to have a high test coverage and to introduce this enha
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 #### Prerequisite testing updates
 
 There are existing tests for Pod GC controller: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/node/pod_gc.go
@@ -154,6 +158,7 @@ There are existing tests for attach detach controller. Creating a pod that uses 
 Deleting a pod will trigger PVC to be detached: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/framework/pod/delete.go
 
 #### Unit tests
+
 * Add unit tests to affected components in kube-controller-manager:
   * Add tests in Pod GC Controller for the new logic to clean up pods and the `out-of-service` taint.
   * Add tests in Attachdetach Controller for the changed logic that allow volumes to be forcefully detached without wait.
@@ -165,6 +170,7 @@ Add a test for forcefully terminating pods in https://github.com/kubernetes/kube
 Add a test for force detach without waiting for 6 minutes in https://github.com/kubernetes/kubernetes/blob/master/test/integration/volume/attach_detach_test.go
 
 #### E2E tests
+
 *   New E2E tests to validate workloads move successfully to another running node when a node is shutdown.
     * Feature gate for `NodeOutOfServiceVolumeDetach` is disabled, feature is not active.
     * Feature gate for `NodeOutOfServiceVolumeDetach` is enabled. Add `out-of-service` taint after node is shutdown:
