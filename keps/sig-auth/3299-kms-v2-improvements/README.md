@@ -150,7 +150,7 @@ Key Hierarchy in KMS plugin (reference implementation):
 
 Since key hierarchy is implemented at the KMS plugin level, it should be seamless for the kube-apiserver. So whether the plugin is using a key hierarchy or not, the kube-apiserver should behave the same.
 
-What is required of the kube-apiserver is to be able to tell the KMS plugin which KEK (local KEK or KMS KEK) it should use to decrypt the incoming DEK. To do so, upon encryption, the KMS plugin could provide the encrypted local KEK as part of the `annotations` field in the `EncryptResponse`. The kube-apiserver would then store it in etcd next to the DEK. Upon decryption, the kube-apiserver provides the encrypted local KEK in `annotations` and `observed_key_id` from the last encryption when calling Decrypt. In case no encrypted local KEK is provided in the `annotations`, then we can assume key hierarchy is not used. The KMS plugin would query the external KMS to use the remote KEK to decrypt the DEK (same behavior as today). No state coordination is required between different instances of the KMS plugin.
+What is required of the kube-apiserver is to be able to tell the KMS plugin which KEK (local KEK or KMS KEK) it should use to decrypt the incoming DEK. To do so, upon encryption, the KMS plugin could provide the encrypted local KEK as part of the `annotations` field in the `EncryptResponse`. The kube-apiserver would then store it in etcd next to the DEK. Upon decryption, the kube-apiserver provides the encrypted local KEK in `annotations` and `key_id` from the last encryption when calling Decrypt. In case no encrypted local KEK is provided in the `annotations`, then we can assume key hierarchy is not used. The KMS plugin would query the external KMS to use the remote KEK to decrypt the DEK (same behavior as today). No state coordination is required between different instances of the KMS plugin.
 
 For the reference KMS plugin, the encrypted local KEK is stored in etcd via the `annotations` field, and once decrypted, it can be stored in memory as part of the KMS plugin cache to be used for encryption and decryption of DEKs. The encrypted local KEK is used as the key and the decrypted local KEK is stored as the value.
 
@@ -158,17 +158,17 @@ For the reference KMS plugin, the encrypted local KEK is stored in etcd via the 
 message EncryptResponse {
     // The encrypted data.
     bytes ciphertext = 1;
-    // The KMS key ID used for encryption operations.
-    // This can be used to drive rotation.
+    // The KMS key ID used to encrypt the data. This must always refer to the KMS KEK and not any local KEKs that may be in use.
+    // This can be used to inform staleness of data updated via value.Transformer.TransformFromStorage.
     string key_id = 2;
     // Additional metadata to be stored with the encrypted data.
-    // The annotations can contain the encrypted local KEK that was used to encrypt the DEK.
-    // Stored unencrypted in etcd.
+    // This metadata can contain the encrypted local KEK that was used to encrypt the DEK.
+    // This data is stored in plaintext in etcd. KMS plugin implementations are responsible for pre-encrypting any sensitive data.
     map<string, bytes> annotations = 3;
 }
 ```
 
-The `DecryptRequest` passes the same `key_id` and `annotations` returned by the previous `EncryptResponse` of this data as its `observed_key_id` and `metadata` for the decryption request.
+The `DecryptRequest` passes the same `key_id` and `annotations` returned by the previous `EncryptResponse` of this data as its `key_id` and `metadata` for the decryption request.
 
 ```proto
 message DecryptRequest {
@@ -178,7 +178,7 @@ message DecryptRequest {
     string uid = 2;
     // The keyID that was provided to the apiserver during encryption.
     // This represents the KMS KEK that was used to encrypt the data.
-    string observed_key_id = 3;
+    string key_id = 3;
     // Additional metadata that was sent by the KMS plugin during encryption.
     map<string, bytes> annotations = 4;
 }
@@ -186,10 +186,6 @@ message DecryptRequest {
 message DecryptResponse {
     // The decrypted data.
     bytes plaintext = 1;
-    // The KMS key ID used to decrypt the data.
-    string key_id = 2;
-    // Additional metadata that was sent by the KMS plugin.
-    map<string, bytes> annotations = 3;
 }
 
 message EncryptRequest {
@@ -230,13 +226,11 @@ To improve health check reliability, the new StatusResponse provides version, he
 message StatusRequest {}
 
 message StatusResponse {
-    // Version of the KMS plugin API.
+    // Version of the KMS plugin API.  Must match the configured .resources[].providers[].kms.apiVersion
     string version = 1;
-
-    // anything other than "ok" is failing healthz
+    // Any value other than "ok" is failing healthz.  On failure, the associated API server healthz endpoint will contain this value as part of the error message.
     string healthz = 2;
-
-    // the current write key, can be used to trigger rotation
+    // the current write key, used to determine staleness of data updated via value.Transformer.TransformFromStorage.
     string key_id = 3;
 }
 ```
@@ -314,7 +308,7 @@ sequenceDiagram
     participant externalkms
     %% if local KEK in annotations, then using hierarchy
     alt encrypted local KEK is in annotations
-      kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", observed_key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
+      kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
         alt encrypted local KEK in cache
             kmsplugin->>kmsplugin: decrypt DEK with local KEK
         else encrypted local KEK not in cache
@@ -325,7 +319,7 @@ sequenceDiagram
         end
         kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
     else encrypted local KEK is not in annotations
-        kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", observed_key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {}}
+        kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {}}
         kmsplugin->>externalkms: decrypt DEK with remote KEK (same behavior as today)
         externalkms->>kmsplugin: decrypted DEK
         kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {}}
@@ -489,7 +483,7 @@ N/A
 
 - [x] Other (treat as last resort)
   - Details:
-    - Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `observed_key_id`, `annotations`, and `UID`.
+    - Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `key_id`, `annotations`, and `UID`.
     - count of encryption/decryption requests by resource and version
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -500,7 +494,7 @@ There should be no impact on the SLO with this change.
 
 - [x] Other (treat as last resort)
   - Details:
-    - Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `observed_key_id`, `annotations`, and `UID`.
+    - Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `key_id`, `annotations`, and `UID`.
     - Metrics for latency of encryption/decryption requests.
 
 ### Dependencies
