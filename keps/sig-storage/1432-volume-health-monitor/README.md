@@ -712,6 +712,10 @@ The external node agent reports events on the pod object. If multiple pods are u
 
 ## Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 ### Prerequisite testing updates
 
 Volume health is added as a metric in Kubelet. There are already e2e tests that grabs all metrics from Kubelet: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/instrumentation/monitoring/metrics_grabber.go
