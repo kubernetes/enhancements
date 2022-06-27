@@ -1295,6 +1295,25 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+A alternate prototype based on [aggregated API server] was rejected because the
+design would essentially put the Kubernetes API server in the CBT
+request/response path. An aggregated API server that performs `GET`/`LIST`
+operations would also be limited in its response payload delivery mechanism, as
+restricted by the normal API machinery, unlike e.g., `CREATE`-only aggregated
+API server like the metrics server.
+
+Hence, the only viable solution would still involve using some form of direct
+"out-of-band" callback endpoints to serve the CBT payload, which can be
+implemented without an aggregated API server.
+
+The second alternative involves direct imperative invocation of the CBT HTTP
+endpoint, without a CRD. This approach was rejected, in preference for the
+structured API and Kubernetes-native security model that CRD provides,
+without needing additional client/server code generation.
+
+[aggregated API server]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/apiserver-aggregation/
+
+
 ## Infrastructure Needed (Optional)
 
 <!--
