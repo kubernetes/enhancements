@@ -57,8 +57,7 @@ cephfs in k/k repository.
 
 ##### Unit tests
 
-The unit tests for CephFS translation lib will be added [here](https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/rbd_test.go)
-and validated.
++- `k8s.io/csi-translation-lib/blob/master/plugins/cephfs_test.go`: `2022-06-27` - `69.7`
 
 ##### Integration tests
 
