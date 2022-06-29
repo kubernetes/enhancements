@@ -164,15 +164,12 @@ As an IT administrator, I want to know whether my current version of Kubernetes 
  
 #### Basic Networking
 
-- Ability to access Linux container IPs *by service IP* from Windows containers
-- Ability to access Windows container IPs *by service IP* from Linux containers
-- Ability to access Linux container IPs *by NodePort IP* from Windows containers
-- Ability to access Windows container IPs *by NodePort IP* from Linux containers
-- Ability to access Linux container IPs *by pod IP* from Windows containers
-- Ability to access Windows container IPs *by pod IP* from Linux containers
+- Ability to access Windows container IP *by pod IP*.
+- Ability to expose windows pods *by creating the service ClusterIP*.
+- Ability to expose windows pods *by creating the service NodePort*.
 - Ability to schedule multiple containers, with distinct IP addresses, on the same node.
 - Ability to delete and recreate services in such a way that load balancing rules for pods are recovered by whatever chosen service proxy is being utilized.
-- Ability to delete and recreate pods for StatefulSets which preserve their ability to serve as routed endpoints for services, while also having unchanging IP addresses.
+- Ability to delete and recreate pods for StatefulSets which preserve their ability to serve as routed endpoints for services.
 - Ability to access internal pods by internal Kubernetes DNS service endpoints.
 - Ability to access external services by Kubernetes DNS services endpoints (for non-airgapped clusters).
 - Ability to access internal pods through custom DNS records, injected by the Kubernetes pod Specification.
