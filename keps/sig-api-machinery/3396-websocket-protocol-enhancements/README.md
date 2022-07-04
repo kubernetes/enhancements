@@ -90,15 +90,14 @@ Deficiencies in the current (v4) WebSocket protocol:
 ### Goals
 
 - Define a new WebSocket protocol version (v5) without the deficiencies described above.
-- Change kubectl to use new WebSocket protocol for `exec`, `cp`, and `attach`. It should fall back to SPDY when
+- Change kubectl to use new WebSocket protocol for `exec`, `cp`, `attach`, and `port-forward`. It should fall back to SPDY when
   new protocol is not supported by the server.
 
 ### Non-Goals
 
 - Removal of SPDY in any part of the system. In particular, API server will still have to support SPDY for some time
   for backwards compatibility with older clients.
-- Moving `port-forward` to WebSocket. It's not clear how `port-forward` via WebSocket should work. This can be done
-  separately later.
+- Change Kubernetes to use some other protocol for those commands. 
 
 ## Proposal
 
@@ -251,6 +250,8 @@ to implement this enhancement.
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+No.
 
 ### Scalability
 
