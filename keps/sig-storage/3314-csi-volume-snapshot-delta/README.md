@@ -498,7 +498,7 @@ message VolumeSnapshotDeltaRequest {
   // The name of the base snapshot handle to use for comparison.
   // If not specified, return all changed blocks.
   // This field is OPTIONAL.
-  string snapshot_base = 1;
+  optional string snapshot_base = 1;
 
   // The name of the target snapshot handle to use for comparison.
   // If not specified, an error is returned.
@@ -514,7 +514,7 @@ message VolumeSnapshotDeltaRequest {
   // the next page of entries. An empty string is equal to an unspecified field
   // value.
   // This field is OPTIONAL.
-  string starting_token = 4;
+  optional string starting_token = 4;
 
   // If specified (non-zero value), the Plugin MUST NOT return more entries than
   // this number in the response. If the actual number of entries is more than
@@ -531,19 +531,19 @@ message VolumeSnapshotDeltaResponse {
   // no block deltas between the base and target snapshots. If unspecified, it
   // means the volume isn't of block type.
   // This field is OPTIONAL.
-  BlockVolumeSnapshotDelta block_delta = 1;
+  optional BlockVolumeSnapshotDelta block_delta = 1;
 
   // The volume size in bytes.
   // This field is OPTIONAL.
-  uint64 volume_size_bytes = 2;
+  optional uint64 volume_size_bytes = 2;
 
-  // This token allows you to get the next page of entries for
+  // This token is used to get the next page of entries for
   // `ListVolumeSnapshotDeltas` request. If the number of entries is larger than
   // `max_entries`, use the `next_token` as a value for the
   // `starting_token` field in the next `ListVolumeSnapshotDeltas` request.
   // An empty string is equal to an unspecified field value.
   // This field is OPTIONAL.
-  string next_token = 3;
+  optional string next_token = 3;
 }
 
 message BlockVolumeSnapshotDelta {
@@ -566,7 +566,7 @@ message ChangedBlockDelta {
   // at the given offset. If the provider doesn't support token-based data
   // blocks retrieval, this should be left unspecified.
   // This field is OPTIONAL.
-  DataToken data_token = 3;
+  optional DataToken data_token = 3;
 }
 
 message DataToken {
@@ -576,11 +576,12 @@ message DataToken {
 
   // Timestamp when the token is issued.
   // This field is REQUIRED.
-  .google.protobuf.Timestamp issuance_time = 4;
+  .google.protobuf.Timestamp issuance_time = 2;
 
   // The TTL of the token in seconds. The expiry time is calculated by adding
   // the time of issuance with this value.
-  .google.protobuf.Duration ttl_seconds = 2;
+  // This field is REQUIRED.
+  .google.protobuf.Duration ttl_seconds = 3;
 }
 ```
 
