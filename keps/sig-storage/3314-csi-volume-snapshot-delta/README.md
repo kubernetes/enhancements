@@ -489,7 +489,7 @@ syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-service VolumeSnapshotDelta {
+service VolumeSnapshotDeltaService {
   rpc ListVolumeSnapshotDeltas(VolumeSnapshotDeltaRequest)
     returns (VolumeSnapshotDeltaResponse) {}
 }
