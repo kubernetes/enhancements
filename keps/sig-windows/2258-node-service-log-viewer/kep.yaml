@@ -12,6 +12,7 @@ status: implementable
 reviewers:
   - "@marosset"
   - "@immuzz"
+  - "@thockin"
 approvers:
   - "@marosset"
 prr-approvers:
@@ -24,18 +25,16 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "v1.25"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.23"
-  beta: "v1.24"
-  stable: "v1.25"
+  alpha: "v1.25"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: NodeLogs
+  - name: NodeLogViewer
     components:
       - kubelet
 disable-supported: true

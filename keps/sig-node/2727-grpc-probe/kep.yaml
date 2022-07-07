@@ -16,9 +16,18 @@ reviewers:
   - "@SergeyKanzhelev"
 approvers:
   - "@thockin"
+  - "@dchen1107"
 see-also:
-replaces:
 prr-approvers:
   - "@johnbelarmic"
-stage: "alpha"
-latest-milestone: "v1.23"
+stage: "beta"
+latest-milestone: "v1.24"
+milestone:
+  alpha: "v1.23"
+  beta: "v1.24"
+feature-gates:
+  - name: GRPCContainerProbe
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true

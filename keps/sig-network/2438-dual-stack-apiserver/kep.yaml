@@ -14,8 +14,6 @@ reviewers:
 approvers:
   - "@thockin"
   - TBD
-prr-approvers:
-  - TBD
 see-also:
   - "/keps/sig-network/563-dual-stack"
 
@@ -25,13 +23,13 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.22"
+latest-milestone: "v1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.22"
-  beta: "v1.23"
-  stable: "v1.24"
+  alpha: "v1.24"
+  beta: "v1.26"
+  stable: "v1.27"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

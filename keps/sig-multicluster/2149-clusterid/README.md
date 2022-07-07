@@ -310,9 +310,11 @@ With in a ClusterSet I have one or more clusters where pods across these cluster
 The `ClusterProperty` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterProperty`s, each holding a different identification related value. Each property contains the following information:
 
 *   **Name** - a well known or custom name to identify the property.
-*   **Value** - a property-dependent string, up to 128 KB.
+*   **Value** - a property-dependent string, up 128k Unicode code points (see _Note_).
 
 The schema for `ClusterProperty` is intentionally loose to support multiple forms of information, including arbitrary additional identification related properties described by users (see "Additional Properties", below), but certain well-known properties will add additional schema constraints, such as those described in the next section.
+
+_Note: While prior Kubernetes API constructs containing arbitrary string values, such as annotations, are limited by a byte length, the OpenAPI validation this CRD depends on defines string length as Unicode code points at validation time. The encoded length of the string in bytes as observed on input or output by the user may vary depending on which of the valid JSON encodings are used (UTF-8, UTF-16, or UTF-32). Therefore, the value limit of 128k code points could take up to 512KB using the least space efficient allowable encoding, UTF-32, which uses 4 bytes per code point._
 
 
 ### Well known properties
@@ -419,7 +421,7 @@ Contains an identifier that relates the containing cluster to the ClusterSet in 
 
 ### Additional Properties
 
-Implementers are free to add additional properties as they see fit, so long as they do not conflict with the well known properties. `*.k8s.io`, `*.kubernetes.io`, and `sigs.k8s.io` properties are reserved for Kubernetes and related projects.
+Implementers are free to add additional properties as they see fit, so long as they do not conflict with the well known properties _and_ utilize a suffix. The following suffixes are reserved for Kubernetes and related projects: `.k8s.io`, `.kubernetes.io`. For example, an implementation may utilize the `Kind` `ClusterProperty` to store objects with the name `fingerprint.coolmcsimplementation.com` but not `fingerprint.k8s.io` and not simply `fingerprint`.
 
 
 ### Notes/Constraints/Caveats (Optional)
@@ -542,7 +544,7 @@ One effect of that decision is related to the upgrade path. Implementing this re
 | Blockers     | Official API review if using *.k8s.io                                                    | Official API review |
 | Conformance testing     | Not possible now, and no easy path forward                                                   | Standard |
 
-**In the end, SIG-Multicluster discussed this with SIG-Architecture and it was decided to stick with the plan to use a CRD.** Notes from this conversation are in the [SIG-Architecture meeting agenda](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/preview) for 3/25/2021.
+**In the end, SIG-Multicluster discussed this with SIG-Architecture and it was decided to stick with the plan to use a CRD.** Notes from this conversation are in the [SIG-Architecture meeting agenda](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/preview) for 3/25/2021. A graduation criteria set for Alpha->Beta stage to fully immortalize this decision is intended to be the last chance to consider including this design in k/k or not.
 
 
 ### Test Plan
@@ -571,6 +573,7 @@ when drafting this test plan.
 
 - Determine if an `id.k8s.io ClusterProperty` be strictly a valid DNS label, or is allowed to be a subdomain.
 - To CRD or not to CRD (see section above)
+- Determine if CRD implementation should use CEL validation to limit byte length instead of code points; this would make it only compatible with 1.23+ where CEL validation is behind a feature gate for alpha.
 
 #### Beta -> GA criteria
 
@@ -662,6 +665,10 @@ enhancement:
 
 ## Production Readiness Review Questionnaire
 
+**NOTE: While this KEP represents only the schema of a CRD that will be implemented
+out-of-tree and maintained separately from core Kubernetes, a best effort on the PRR 
+questionnaire is enclosed below.**
+
 <!--
 
 Production readiness reviews are intended to ensure that features merging into
@@ -693,30 +700,51 @@ _This section must be completed when targeting alpha to a release._
   - [ ] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name:
     - Components depending on the feature gate:
-  - [ ] Other
+  - [x] Other
     - Describe the mechanism:
+      - This feature is independently installed via a CRD hosted on the kubernetes-sigs Github.
     - Will enabling / disabling the feature require downtime of the control
       plane?
+      - No
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      - No
 
 * **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
+  _Any change of default behavior may be surprising to users or break existing
+  automations, so be extremely careful here._
+  - No default Kubernetes behavior is currently planned to be based on this feature; it is 
+  designed to be used by the separately installed, out-of-tree, MCS controller. That being said,
+  we are of the opinion that future features (default or not) may want to use this CRD (as debated
+  in "To CRD or Not to CRD" section, above) but we believe it is in the scope of those future features
+  to assess the impact of requiring CRD bootstrapping has on their feature stability if they do.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+  _Also set `disable-supported` to `true` or `false` in `kep.yaml`.
   Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
+  feature, can it break the existing applications?)._
+    - Yes, as this feature only describes a CRD, it can most directly be disabled by uninstalling the CRD. 
+  However in practice it is expected that the bootstrapping of this CRD and the management of the well known property CRs themselves will be managed 
+  by the mcs-controller, and the recommended way to disable this feature will be to disable the mcs-controller.
+  It is expected the mcs-controller will be responsible for detecting the presence
+  of this CRD to gracefully fail or otherwise raise error messages that can be acted on if the
+  CRD has been disabled by a mechanism other than the mcs-controller's lifecycle management of the CRD.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
+   - Purely from this KEP's standpoint, feature reenablement - namely, reinstallation of the CRD - will
+  do no more than reinstall the CRD schema. In relation to the expected lifecycle manager of this CRD (the mcs-controller), it is expected that on reenablement of the mcs-controller it will reinstall the CRD, will reestablish lifecycle management of the well known properties it is dependent on, including re-creating any relevant CRs.
 
 * **Are there any tests for feature enablement/disablement?**
-  The e2e framework does not currently support enabling or disabling feature
+  _The e2e framework does not currently support enabling or disabling feature
   gates. However, unit tests in each component dealing with managing data, created
   with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+  conversion tests if API types are being modified._
+    - As a dependency only for an out-of-tree component, there will not be e2e tests for feature enablement/disablement of
+   this CRD in core Kubernetes, but e2e tests for this can be implemented in the 
+   [kubernetes-sigs/mcs-api repo](https://github.com/kubernetes-sigs/mcs-api) where a basic mcs-controller 
+   implementation lives. In reality, multiple mcs-controller implementations are expected to be produced outside of core
+   and these production-ready mcs-controllers are responsible for their own e2e testing.
 
 ### Rollout, Upgrade and Rollback Planning
 

@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-scheduling
-status: implementable
+status: implemented
 creation-date: 2019-09-19
 reviewers:
   - "@saad-ali"
@@ -17,21 +17,23 @@ approvers:
   - "@msau42"
 prr-approvers:
   - "@wojtek-t"
-stage: beta
+stage: stable
 see-also:
   - "https://docs.google.com/document/d/1WtX2lRJjZ03RBdzQIZY3IOvmoYiF5JxDX35-SsCIAfg"
-latest-milestone: "v1.21"
+latest-milestone: "v1.24"
 milestone:
   alpha: "v1.19"
   beta: "v1.21"
-  stable: "v1.23"
+  stable: "v1.24"
 feature-gates:
   - name: CSIStorageCapacity
     components:
       - kube-apiserver
       - kube-scheduler
-disable-supported: true
+disable-supported: false
 
-# The following PRR answers are required at beta release
-#metrics:
-#  - my_feature_metric
+metrics:
+  - csistoragecapacities_desired_goal
+  - csistoragecapacities_desired_current
+  - csistoragecapacities_obsolete
+  - csistoragecapacity work queue

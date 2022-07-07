@@ -4,7 +4,7 @@ authors:
   - "@giuseppe"
 owning-sig: sig-node
 participating-sigs:
-      - sig-architecture
+  - sig-architecture
 reviewers:
   - "@yujuhong"
   - "@dchen1107"
@@ -20,6 +20,10 @@ status: implementable
 see-also:
 replaces:
 superseded-by:
-latest-milestone: "v1.22"
-stage: "beta"
+latest-milestone: "v1.25"
+stage: "stable"
+milestone:
+  alpha: "v1.18"
+  beta: "v1.22"
+  stable: "v1.25"
 disable-supported: true

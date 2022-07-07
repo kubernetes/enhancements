@@ -17,4 +17,4 @@ approvers:
 see-also:
 - "/keps/sig-cli/993-kustomize-generators-transformers"
 stage: alpha
-latest-milestone: "v1.23"
+latest-milestone: "v1.24"

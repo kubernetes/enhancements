@@ -71,7 +71,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP is written after the original design doc has been approved and implemented. Design for CSI Volume Snapshot Support in Kubernetes is incorporated as part of the [CSI Volume Snapshot in Kubernetes Design Doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-snapshot.md).
+This KEP is written after the original design doc has been approved and implemented. Design for CSI Volume Snapshot Support in Kubernetes is incorporated as part of the [CSI Volume Snapshot in Kubernetes Design Doc](https://github.com/kubernetes/design-proposals-archive/blob/main/storage/csi-snapshot.md).
 
 The rest of the document includes required information missing from the original design document: test plan, graduation criteria, and production readiness review questionnaire.
 

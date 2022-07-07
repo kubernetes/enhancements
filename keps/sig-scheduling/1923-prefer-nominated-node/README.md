@@ -14,6 +14,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -198,6 +199,12 @@ in back-to-back releases.
 - Gather feedback from developers and surveys.
 - The feature is guarded by a feature flag, and will be enabled by default in beta.
 
+#### GA
+
+- No negative feedback.
+- The feature gate `PreferNominatedNode` will graduate to GA.
+- [Integration test](https://k8s-testgrid.appspot.com/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=TestPreferNominatedNode).
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
@@ -329,3 +336,4 @@ _This section must be completed when targeting beta graduation to a release._
 - 2020-09-29: Initial KEP sent out for review https://github.com/kubernetes/enhancements/pull/2026
 - 2020-12-17: Mark the KEP as implementable
 - 2021-05-21: Graduate the feature to Beta
+- 2021-11-23: Graduate the feature to GA

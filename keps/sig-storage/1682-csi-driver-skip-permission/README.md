@@ -36,7 +36,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -266,3 +266,4 @@ There should be no noticeable increase to resource usage for any components.
 - 2020-05-12 Updated to use new KEP template
 - 2020-09-25 Moved E2E Tests for beta target
 - 2020-11-12 Feature moved to beta
+- 2021-10-27 Feature moved to GA

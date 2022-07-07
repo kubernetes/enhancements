@@ -1,0 +1,55 @@
+title: In-tree Storage Plugin to CSI Migration - AWS
+kep-number: 1487
+authors:
+  - "@wongma7"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-cluster-lifecycle
+reviewers:
+  - "@Jiawei0227"
+  - "@msau42"
+approvers:
+  - "@msau42"
+editor: "@Jiawei0227"
+creation-date: 2022-01-05
+last-updated: 2022-01-05
+disable-supported: true
+status: implementable
+see-also:
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
+prr-approvers:
+  - "@wojtek-t"
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.25"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.14"
+  beta: "v1.17"
+  stable: "v1.25"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CSIMigrationAWS
+    components:
+    - kube-controller-manager
+    - kubelet
+    - kube-scheduler
+  - name: InTreePluginAWSUnregister
+    components:
+    - kube-controller-manager
+    - kubelet
+    - kube-scheduler
+
+# The following PRR answers are required at beta release
+metrics:
+  - csi_sidecar_duration_operation
+  - storage_operation_duration_seconds

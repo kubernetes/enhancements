@@ -18,25 +18,28 @@ reviewers:
   - "@dchen1107"
   - "@ahg-g"
   - "@k82cn"
+  - "@Random-Liu"
+  - "@yujuhong"
+  - "@PatrickLang"
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
   - "@ahg-g"
   - "@mwielgus"
+  - "@thockin"
 prr-approvers:
   - "@ehashman"
 see-also:
-  - "/keps/sig-node/2273-kubelet-container-resources-cri-api-changes"
 replaces:
 
 stage: "alpha"
 
-latest-milestone: "v1.23"
+latest-milestone: "v1.25"
 
 milestone:
-  alpha: "v1.23"
-  beta: "v1.24"
-  stable: "v1.26"
+  alpha: "v1.25"
+  beta: "v1.26"
+  stable: "v1.28"
 
 feature-gates:
   - name: InPlacePodVerticalScaling

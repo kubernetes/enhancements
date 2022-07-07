@@ -1,0 +1,32 @@
+title: Reduction of Secret-based Service Account Tokens
+kep-number: 2799
+authors:
+  - "@zshihang"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+status: implementable
+creation-date: 2021-06-25
+reviewers:
+  - "@liggitt"
+  - "@mikedanese"
+approvers:
+  - "@liggitt"
+stage: beta
+latest-milestone: "v1.25"
+milestone:
+  alpha: "v1.24"
+  beta: "v1.25"
+feature-gates:
+  - name: LegacyServiceAccountTokenNoAutoGeneration
+    components:
+      - kube-controller-manager
+  - name: LegacyServiceAccountTokenTracking
+    components:
+      - kube-apiserver
+  - name: LegacyServiceAccountTokenCleanUp
+    components:
+      - kube-controller-manager
+disable-supported: true
+metrics:
+  - serviceaccount_legacy_tokens_total

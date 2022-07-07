@@ -1,3 +1,7 @@
-kep-number: 2508
+kep-number: 2802
 alpha:
+  approver: "@deads2k"
+beta:
+  approver: "@deads2k"
+stable:
   approver: "@deads2k"

@@ -40,10 +40,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Terms
 
@@ -54,6 +54,8 @@ runtimes, without the need to recompile.
 
 CRI for docker (i.e. dockershim) is currently a built-in container runtime in kubelet code base. This proposal aims 
 at a deprecation and subsequent removal of dockershim from kubelet.
+
+Find more information on dockershim removal: https://k8s.io/dockershim)
 
 ## Motivation
 
@@ -284,6 +286,7 @@ Not applicable
 
 ## Implementation History
 
+- 02/03/2022 (v1.24): Update KEP to reflect latest state.
 - 12/02/2020 (v1.20): [Dockershim Deprecation FAQ](https://kubernetes.io/blog/2020/12/02/dockershim-faq/) published.
 - 12/08/2020 (v1.20): dockershim deprecation [warning added to kubelet](https://kubernetes.io/blog/2020/12/08/kubernetes-1-20-release-announcement/#dockershim-deprecation).
 

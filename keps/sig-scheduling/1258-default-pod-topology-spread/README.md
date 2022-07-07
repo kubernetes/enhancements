@@ -25,6 +25,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.19):](#alpha-v119)
     - [Beta (v1.20):](#beta-v120)
+    - [Stable (v1.24):](#stable-v124)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -276,11 +277,18 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 #### Beta (v1.20):
 
-- [ ] Finalize implementation:
-  - [ ] Map `SelectorSpreadingPriority` to `PodTopologySpread` when using Policy API.
-  - [ ] Provide knob for disabling the k8s default constraints.
-- [ ] Integration tests.
-- [ ] Verify conformance tests passing.
+- [X] Finalize implementation:
+  - [X] Map `SelectorSpreadingPriority` to `PodTopologySpread` when using Policy API.
+  - [X] Provide knob for disabling the k8s default constraints.
+- [X] Integration tests.
+- [X] Verify conformance tests passing.
+
+#### Stable (v1.24):
+
+- [X] No negative feedback.
+  - Issue [#102136](https://github.com/kubernetes/kubernetes/issues/102136) has been fixed and backported.
+- [X] [Integration test](https://k8s-testgrid.appspot.com/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=TestDefaultPodTopologySpread).
+- [X] [E2E test]( https://testgrid.k8s.io/sig-scheduling#sig-scheduling-kind,%20multizone&include-filter-by-regex=Multi-AZ)
 
 ## Production Readiness Review Questionnaire
 
@@ -359,13 +367,23 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
   fields of API types, flags, etc.?**
 
-  TBD for GA.
+  No.
 
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
 
   All Pods are affected, unless they have explicit spreading constraints (.spec.topologySpreadConstraints).
+
+* **How can someone using this feature know that it is working for their instance?**
+
+  - [ ] Events
+    - Event Reason: 
+  - [ ] API .status
+    - Condition name: 
+    - Other field: 
+  - [X] Other (treat as last resort)
+    - Details: observe the scheduled pods and verify the spreading is satisfied.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
   the health of the service?**
@@ -471,6 +489,7 @@ If startup latency is in violation, there is the possibility that it's due to th
 - 2020-01-20: KEP updated to make use of framework's PluginConfig.
 - 2020-05-04: Update completed tasks and target alpha for 1.19.
 - 2020-09-21: Add Beta graduation criteria and PRR.
+- 2022-01-08: Graduate the feature to GA.
 
 ## Alternatives
 

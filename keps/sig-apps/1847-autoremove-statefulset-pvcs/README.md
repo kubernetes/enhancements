@@ -19,12 +19,16 @@
 - [Design Details](#design-details)
   - [Objects Associated with the StatefulSet](#objects-associated-with-the-statefulset)
   - [Volume delete policy for the StatefulSet created PVCs](#volume-delete-policy-for-the-statefulset-created-pvcs)
-    - [<code>OnScaleDown</code> policy of <code>Delete</code>.](#-policy-of-)
-    - [<code>OnSetDeletion</code> policy of <code>Delete</code>.](#-policy-of--1)
+    - [<code>whenScaled</code> policy of <code>Delete</code>.](#-policy-of-)
+    - [<code>whenDeleted</code> policy of <code>Delete</code>.](#-policy-of--1)
     - [Non-Cascading Deletion](#non-cascading-deletion)
-    - [Mutating <code>PersistentVolumeClaimPolicy</code>](#mutating-)
+    - [Mutating <code>PersistentVolumeClaimRetentionPolicy</code>](#mutating-)
   - [Cluster role change for statefulset controller](#cluster-role-change-for-statefulset-controller)
   - [Test Plan](#test-plan)
+    - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [E2E tests](#e2e-tests)
+      - [Upgrade/downgrade &amp; feature enabled/disable tests](#upgradedowngrade--feature-enableddisable-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha release](#alpha-release)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -46,14 +50,14 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
@@ -86,7 +90,7 @@ delete the PVC.
 ### Non-Goals
 
 This proposal does not plan to address how the underlying PVs are treated on PVC deletion. 
-That functionality will continue to be governed by the ReclaimPolicy of the storage class. 
+That functionality will continue to be governed by the reclaim policy of the storage class. 
 
 ## Proposal
 
@@ -102,16 +106,16 @@ delete the PVCs created by the controller from the StatefulSet's VolumeClaimTemp
 
 The following changes are required:
 
-1. Add `PersistentVolumeClaimPolicy` to the StatefulSet spec with the following fields.
-   * `OnSetDeletion` - specifies if the VolumeClaimTemplate PVCs are deleted when
+1. Add `persistentVolumeClaimRetentionPolicy` to the StatefulSet spec with the following fields.
+   * `whenDeleted` - specifies if the VolumeClaimTemplate PVCs are deleted when
      their StatefulSet is deleted.
-   * `OnScaleDown` - specifies if VolumeClaimTemplate PVCs are deleted when
+   * `whenScaled` - specifies if VolumeClaimTemplate PVCs are deleted when
      their corresponding pod is deleted on a StatefulSet scale-down, that is,
      when the number of pods in a StatefulSet is reduced via the Replicas field.
 
    These fields may be set to the following values.
    * `Retain` - the default policy, which is also used when no policy is
-      specified. This specifies the existing behaviour: when a StatefulSet is
+      specified. This specifies the existing behavior: when a StatefulSet is
       deleted or scaled down, no action is taken with respect to the PVCs
       created by the StatefulSet.
    * `Delete` - specifies that the appropriate PVCs as described above will be
@@ -122,7 +126,7 @@ The following changes are required:
 
 #### Story 0
 The user is happy with legacy behavior of a stateful set. They leave all fields
-of `PersistentVolumeClaimPolicy` to `Retain`. Nothing traditional
+of `PersistentVolumeClaimRetentionPolicy` to `Retain`. Nothing traditional
 StatefulSet behavior changes neither on set deletion nor on scale-down.
 
 #### Story 1
@@ -133,7 +137,7 @@ so that scale-up can leverage the existing volumes. When the application is fini
 volumes created by the StatefulSet are no longer needed and can be automatically
 reclaimed.
 
-The user would set `PersistentVolumeClaimPolicy.OnSetDeletion` to `Delete, which
+The user would set `persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete, which
 would ensure that the PVCs created automatically during the StatefulSet
 activation is deleted once the StatefulSet is deleted.
 
@@ -143,8 +147,8 @@ scale-down, because scaling events are rare, and volume data can be
 reconstructed, albeit slowly, during a scale up. However, it is necessary to
 bring down the StatefulSet temporarily by deleting it, and then bring it back up
 by reusing the volumes. This is accomplished by setting
-`PersistentVolumeClaimPolicy.OnScaleDown` to `Delete`, and leaving
-`PersistentVolumeClaimPolicy.OnSetDeletion` at `Retain`.
+`persistentVolumeClaimRetentionPolicy.whenScaled` to `Delete`, and leaving
+`persistentVolumeClaimRetentionPolicy.whenDeleted` at `Retain`.
 
 #### Story 3
 User is very cost conscious, and can sustain slower scale-up speeds even after a
@@ -156,8 +160,8 @@ recreated, like a rolling update or node disruptions, the data on volumes is
 persisted. This is a key property that ephemeral storage, like emptyDir, cannot
 provide.
 
-User would set the `PersistentVolumeClaimPolicy.OnScaleDown` as well as
-`PersistentVolumeClaimPolicy.OnSetDeletion` to `Delete`, ensuring PVCs are
+User would set the `persistentVolumeClaimRetentionPolicy.whenScaled` as well as
+`persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete`, ensuring PVCs are
 deleted when corresponding Pods are deleted. New Pods created during scale-up
 followed by a scale-down will wait for freshly created PVCs. PVCs are deleted as
 well when the set is deleted, reclaiming volumes as quickly as possible and
@@ -175,9 +179,9 @@ VolumeClaimTemplate it will be deleted according to the deletion policy.
 ### Risks and Mitigations
 
 Currently the PVCs created by StatefulSet are not deleted automatically. Using
-`OnScaleDown` or `OnSetDeletion` set to `Delete` would delete the PVCs
+`whenScaled` or `whenDeleted` set to `Delete` would delete the PVCs
 automatically. Since this involves persistent data being deleted, users should
-take appropriate care using this feature. Having the `Retain` behaviour as
+take appropriate care using this feature. Having the `Retain` behavior as
 default will ensure that the PVCs remain intact by default and only a conscious
 choice made by user will involve any persistent data being deleted.
 
@@ -211,13 +215,13 @@ are affected.
 
 ### Volume delete policy for the StatefulSet created PVCs
 
-A new field named `PersistentVolumeClaimPolicy` of the type
-`StatefulSetPersistentVolumeClaimPolicy` will be added to the StatefulSet. This
+A new field named `PersistentVolumeClaimRetentionPolicy` of the type
+`StatefulSetPersistentVolumeClaimRetentionPolicy` will be added to the StatefulSet. This
 will represent the user indication for which circumstances the associated PVCs
 can be automatically deleted or not, as described above. The default policy
 would be to retain PVCs in all cases.
 
-The `PersistentVolumeClaimPolicy` object will be mutable. The deletion
+The `PersistentVolumeClaimRetentionPolicy` object will be mutable. The deletion
 mechanism will be based on reconciliation, so as long as the field is changed
 far from StatefulSet deletion or scale-down, the policy will work as
 expected. Mutability does introduce race conditions if it is changed while a
@@ -230,9 +234,9 @@ manually deleting PVCs. The latter case will result in lost data, but only in
 PVCs that were originally declared to have been deleted. Life does not always
 have an undo button.
 
-#### `OnScaleDown` policy of `Delete`.
+#### `whenScaled` policy of `Delete`.
 
-If `PersistentVolumeClaimPolicy.OnScaleDown` is set to `Delete`, the Pod will be
+If `persistentVolumeClaimRetentionPolicy.whenScaled` is set to `Delete`, the Pod will be
 set as the owner of the PVCs created from the `VolumeClaimTemplates` just before
 the scale-down is performed by the StatefulSet controller.  When a Pod is
 deleted, the PVC owned by the Pod is also deleted.
@@ -247,9 +251,9 @@ the PVC was referred to by the deleted Pod and is in the process of getting
 deleted. The controller will skip the reconcile loop until PVC deletion finishes, avoiding
 a race condition.
 
-#### `OnSetDeletion` policy of `Delete`.
+#### `whenDeleted` policy of `Delete`.
 
-When `PersistentVolumeClaimPolicy.OnSetDeletion` is set to `Delete`, when a
+When `persistentVolumeClaimRetentionPolicy.whenDeleted` is set to `Delete`, when a
 VolumeClaimTemplate PVC is created, an owner reference in PVC will be added to
 point to the StatefulSet. When a scale-up or scale-down occurs, the PVC is
 unchanged.  PVCs previously in use before scale-down will be used again when the
@@ -257,7 +261,7 @@ scale-up occurs.
 
 In the existing StatefulSet reconcile loop, the associated VolumeClaimTemplate
 PVCs will be checked to see if the ownerRef is correct according to the
-`PersistentVolumeClaimPolicy` and updated accordingly. This includes PVCs
+`persistentVolumeClaimRetentionPolicy` and updated accordingly. This includes PVCs
 that have been manually provisioned. It will be most consistent and easy
 to reason about if all VolumeClaimTemplate PVCs are treated uniformly rather
 than trying to guess at their provenance.
@@ -279,7 +283,7 @@ When StatefulSet is deleted without cascading, eg `kubectl delete --cascade=fals
 existing behavior is retained and no PVC will be deleted. Only the StatefulSet resource
 will be affected.
 
-#### Mutating `PersistentVolumeClaimPolicy`
+#### Mutating `PersistentVolumeClaimRetentionPolicy`
 
 Recall that as defined above, the PVCs associated with a StatefulSet are found
 by the StatefulSet volumeClaimTemplate static naming scheme. The Pods associated
@@ -305,38 +309,43 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
 
 ### Test Plan
 
-1. Unit tests
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-1. e2e/integration tests
-    - With `Delete` policies for `OnSetDeletion` and `OnScaleDown`
-      1. Create 2 pod statefulset, scale to 1 pod, confirm PVC deleted
-      1. Create 2 pod statefulset, add data to PVs, scale to 1 pod, scale back to 2, confirm PV empty.
-      1. Create 2 pod statefulset, delete stateful set, confirm PVCs deleted.
-      1. Create 2 pod statefulset, add data to PVs, manually delete one pod, confirm pod comes back and PV still has data (PVC not deleted).
-      1. As above, but manually delete all pods in stateful set.
-      1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, confirm PVC is deleted.
-      1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, scale back to two pods, confirm PV is empty.
-      1. Create 2 pod statefulset, add data to PVs, perform rolling confirm PVC don't get deleted and PV contents remain intact and useful in the updated pods.
-    - With `Delete` policy for `OnSetDeletion` only
-      1. Create 2 pod statefulset, scale to 1 pod, confirm PVC still exists,
-      1. Create 2 pod statefulset, add data to PVs, scale to 1 pod, scale back to 2, confirm PV has data (PVC not deleted).
-      1. Create 2 pod statefulset, delete stateful set, confirm PVCs deleted
-      1. Create 2 pod statefulset, add data to PVs, manually delete one pod, confirm pod comes back and PV has data (PVC not deleted).
-      1. As above, but manually delete all pods in stateful set.
-      1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, confirm PVC exists.
-      1. Create 2 pod statefulset, add data to PVs, manually delete one pod, immediately scale down to one pod, scale back to two pods, confirm PV has data.
-    - Retain: 
-      1. same tests as above, but PVCs not deleted in any case and confirm data intact on the PV.
-    - Pod restart tests:
-      1. Create statefulset, perform rolling update, confirm PVC data still exists.
-    - `--casecade=false` tests.
-1. Upgrade/Downgrade tests
+#### Unit tests
+
+- `k8s.io/kubernetes/pkg/controller/statefulset`: `2022-06-15`: `85.5%`
+- `k8s.io/kubernetes/pkg/registry/apps/statefulset`: `2022-06-15`: `68.4%`
+- `k8s.io/kubernetes/pkg/registry/apps/statefulset/storage`: `2022-06-15`: `64%`
+
+  
+##### Integration tests
+
+- `test/integration/statefulset`: `2022-06-15`: These do not appear to be
+  running in a job visible to the triage dashboard, see for example a search
+  for the previously existing [TestStatefulSetStatusWithPodFail](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStatusWithPodFail).
+
+Added `TestAutodeleteOwnerRefs` to `k8s.io/kubernetes/test/integration/statefulset`.
+
+##### E2E tests
+
+- `ci-kuberentes-e2e-gci-gce-statefulset`: `2022-06-15`: `3/646 Failures`
+  - Note that as this is behind the `StatefulSetAutoDeletePVC` feature gate,
+    tests for this KEP are not being run.
+
+Added `Feature:StatefulSetAutoDeletePVC` tests to `k8s.io/kubernetes/test/e2e/apps/`.
+
+##### Upgrade/downgrade & feature enabled/disable tests
+
+Should be added as an e2e tests, but we have not figured out if there is a
+mechanism to run upgrade/downgrade tests.
+
     1. Create statefulset in previous version and upgrade to the version 
        supporting this feature. The PVCs should remain intact.
     2. Downgrade to earlier version and check the PVCs with Retain
        remain intact and the others with set policies before upgrade 
        gets deleted based on if the references were already set.
-1. Feature disablement/enable test for alpha feature flag `statefulset-autodelete-pvcs`.
 
 
 ### Graduation Criteria
@@ -350,7 +359,7 @@ In order to update the PVC ownerReference, the `buildControllerRoles` will be up
 This features adds a new field to the StatefulSet. The default value for the new field
 maintains the existing behavior of StatefulSets.
 
-On a downgrade, the `PersistentVolumeClaimPolicy` field will be hidden on
+On a downgrade, the `PersistentVolumeClaimRetentionPolicy` field will be hidden on
 any StatefulSets. The behavior in this case will be identical to mutating they
 policy field to `Retain`, as described above, including the edge cases
 introduced if this is done during a scale-down or StatefulSet deletion.
@@ -373,18 +382,17 @@ are not involved so there is no version skew between nodes and the control plane
         resource (eg dropDisabledFields).
   
 * **Does enabling the feature change any default behavior?**
-  No. What happens during StatefulSet deletion differs from current behaviour
+  No. What happens during StatefulSet deletion differs from current behavior
   only when the user explicitly specifies the
   `PersistentVolumeClaimDeletePolicy`.  Hence no change in any user visible
-  behaviour change by default.
+  behavior change by default.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?**
   Yes. Disabling the feature gate will cause the new field to be ignored. If the feature
   gate is re-enabled, the new behavior will start working.
   
-  When the `PersistentVolumeClaimDeletePolicy` is set to
-  `DeleteOnStatefulSetDeletion`, then VolumeClaimTemplate PVCs ownerRefs must be
-  removed.
+  When the `PersistentVolumeClaimRetentionPolicy` has `WhenDeleted` set to
+ `Delete`, then VolumeClaimTemplate PVCs ownerRefs must be removed.
 
   There are new corner cases here. For example, if a StatefulSet deletion is in
   process when the feature is disabled or enabled, the appropriate ownerRefs
@@ -394,8 +402,8 @@ are not involved so there is no version skew between nodes and the control plane
   
 * **What happens if we reenable the feature if it was previously rolled back?**  
   In the simple case of reenabling the feature without concurrent StatefulSet
-  deletion or scale-down, nothing needs to be done when the deletion policy is
-  `DeleteOnScaleDown`. On a policy of `DeleteOnStatefulSetDeletion`, the
+  deletion or scale-down, nothing needs to be done when the deletion policy has
+  `whenScaled` set to `Delete`. When the policy has `whenDeleted` set to `Delete`, the
   VolumeClaimTemplate PVC ownerRefs must be set to the StatefulSet.
   
   As above, if there is a concurrent scale-down or StatefulSet deletion, more
@@ -408,72 +416,71 @@ are not involved so there is no version skew between nodes and the control plane
 
 ### Rollout, Upgrade and Rollback Planning
 
-_TBD upon graduation to beta._
-
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+  If there is a control plane update which disables the feature while a stateful
+  set is in the process of being deleted or scaled down, it is undefined which
+  PVCs will be deleted. Before the update, PVCs will be marked for deletion;
+  until the updated controller has a chance to reconcile some PVCs may be
+  garbage collected before the controller has a chance to remove any owner
+  references. We do not think this is a true failure, as it should be clear to
+  an operator that there is an essential race condition when a cluster update
+  happens during a stateful set scale down or delete.
 
 * **What specific metrics should inform a rollback?**
+  The operator can monitor the `statefulset_pvcs_owned_by_*` metrics to see if
+  there are possible pending deletions. If consistent behavior is required, the
+  operator can wait for those metrics to stablize. For example, 
+  `statefulset_pvcs_owned_by_pod` going to zero indicates all scale down
+  deletions are complete.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  Yes. The race condition wasn't exposed, but we confirmed the PVCs were updated correctly.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  Enabling the feature also enables the `PersistentVolumeClaimRetentionPolicy`
+  api field.
 
 ### Monitoring Requirements
 
-_TBD upon graduation to beta._
-
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+  `statefulset_when_deleted_policy` or `statefulset_when_scaled_policy` will
+  have nonzero counts for the `delete` policy fields.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - Metric name: `statefulset_reconcile_delay`
+    - [Optional] Aggregation method: `quantile`
+    - Components exposing the metric: `pke/controller/statefulset`
+  - Metric name: `statefulset_unhealthy_pods`
+    - [Optional] Aggregation method: `sum`
+    - Components exposing the metric: `pke/controller/statefulset`
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+
+  The reconcile delay (time between statefulset reconcilliation loops) should be
+  low. For example, the 99%ile should be at most minutes.
+  
+  This can be combined with the unhealthy pod count, although as unhealthy pods
+  are usually an application error rather than a problem with the stateful set
+  controller, this will be more a decision for the operator to decide on a
+  per-cluster basis.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  The stateful set controller has not had any metrics in the past despite it
+  being a core Kubernetes feature for some time. Hence which metrics are useful
+  in practice is an open question in spite of the stability of the feature.
 
 ### Dependencies
 
-_TBD upon graduation to beta._
-
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  No, outside of depending on the scheduler, the garbage collector and volume
+  management (provisioning, attaching, etc) as does almost anything in
+  Kubernetes. This feature does not add any new dependencies that did not
+  already exist with the stateful set controller.
 
 
 ### Scalability
@@ -518,27 +525,31 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 ### Troubleshooting
 
-_TBD on beta graduation._
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+PVC deletion will be paused. If the control plane went unavailable in the middle
+of a stateful set being deleted or scaled down, there may be deleted Pods whose
+PVCs have not yet been deleted. Deletion will continue normally after the
+control plane returns.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  - PVCs from a stateful set not being deleted as expected.
+    - Detection: This can be deteted by lower than expected counts of the
+      `statefulset_pvcs_owned_by_*` metrics and by an operator listing and examining PVCs.
+    - Mitigations: We expect this to happen only if there are other,
+      operator-installed, controllers that are also managing owner refs on
+      PVCs. Any such PVCs can be deleted manually. The conflicting controllers
+      will have to be manually discovered.
+    - Diagnostics: Logs from kube-controller-manager and stateful set controller.
+    - Testing: Tests are in place for confirming owner refs are added by the
+      `StatefulSet` controller, but Kubernetes does not test against external
+      custom controller.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+Stateful set SLOs are new with this feature and are in process of being
+evaluated. If they are not being met, the kube-controller-manager (where the
+stateful set controller lives) should be examined and/or restarted.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos

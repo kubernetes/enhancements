@@ -3,6 +3,7 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
   - [Project Quotas](#project-quotas)
 - [Motivation](#motivation)
@@ -23,18 +24,32 @@
       - [Future](#future)
     - [Notes on Implementation](#notes-on-implementation)
     - [Notes on Code Changes](#notes-on-code-changes)
+  - [Test Plan](#test-plan)
     - [Testing Strategy](#testing-strategy)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
   - [Phase 1: Alpha (1.15)](#phase-1-alpha-115)
-  - [Phase 2: Beta (target 1.16)](#phase-2-beta-target-116)
+  - [Phase 2: Beta (target 1.25)](#phase-2-beta-target-125)
   - [Phase 3: GA](#phase-3-ga)
 - [Performance Benchmarks](#performance-benchmarks)
   - [Elapsed Time](#elapsed-time)
   - [User CPU Time](#user-cpu-time)
   - [System CPU Time](#system-cpu-time)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
   - [Version 1.15](#version-115)
+  - [Version 1.24](#version-124)
+  - [Version 1.25](#version-125)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
   - [Alternative quota-based implementation](#alternative-quota-based-implementation)
@@ -48,6 +63,21 @@
 <!-- /toc -->
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+## Release Signoff Checklist
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -544,6 +574,9 @@ required elsewhere:
   future allow adding additional data without having to change code
   other than that which uses the new information.
 
+### Test Plan
+
+
 #### Testing Strategy
 
 The quota code is by an large not very amendable to unit tests.  While
@@ -554,6 +587,40 @@ multiple instances of this code (e. g. in the kubelet and the runtime
 manager, particularly under stress).  It also requires setup in the
 form of a prepared filesystem.  It would be better served by
 appropriate end to end tests.
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+The main unit test is in package under `pkg/volume/util/fsquota/`.
+
+- `pkg/volume/util/fsquota/`: `2022-06-20` - `73%`
+- - project.go 75.7%
+- - quota.go 100%
+- - quota_linux.go 70.6%
+
+See details in https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=fsquota.
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
+
+e2e evolution (LocalStorageCapacityIsolationQuotaMonitoring [Slow] [Serial] [Disruptive] [Feature:LocalStorageCapacityIsolationQuota][NodeFeature:LSCIQuotaMonitoring]) can be found in [`test/e2e_node/quota_lsci_test.go`](https://github.com/kubernetes/kubernetes/blob/8cd689e40d253e520b1698d4bcf33992f0ae1d20/test/e2e_node/quota_lsci_test.go#L93-L103)
+
+The e2e tests are slow and serial and we will not promote them to be conformance test then.
+There is no failure history or flakes in https://storage.googleapis.com/k8s-triage/index.html?test=LocalStorageCapacityIsolationQuotaMonitoring
+
 
 ### Risks and Mitigations
 
@@ -610,7 +677,7 @@ The following criteria applies to
 - Unit test coverage
 - Node e2e test
 
-### Phase 2: Beta (target 1.16)
+### Phase 2: Beta (target 1.25)
 
 - User feedback
 - Benchmarks to determine latency and overhead of using quotas
@@ -629,7 +696,7 @@ files.  The operations performed were as follows, in sequence:
 
 * *Create Files*: Create 4K directories each containing 2K files as
   described, in depth-first order.
-  
+ 
 * *du*: run `du` immediately after creating the files.
 
 * *quota*: where applicable, run `xfs_quota` immediately after `du`.
@@ -640,10 +707,10 @@ files.  The operations performed were as follows, in sequence:
 
 * *du (after remount)*: run `mount -o remount <filesystem>`
   immediately followed by `du`.
-  
+ 
 * *quota (after remount)*: run `mount -o remount <filesystem>`
   immediately followed by `xfs_quota`.
-  
+ 
 * *unmount*: `umount` the filesystem.
 
 * *mount*: `mount` the filesystem.
@@ -653,7 +720,7 @@ files.  The operations performed were as follows, in sequence:
 
 * *du after umount/mount*: run `du` after unmounting and
   mounting the filesystem.
-  
+ 
 * *Remove Files*: remove the test files.
 
 The test was performed on four separate filesystems:
@@ -709,11 +776,168 @@ and are not reported here.
 | du after umount/mount    | 66.0      | 82.4  | 29.2         | 28.1   |
 | Remove Files             | 188.6     | 156.6 | 90.4         | 81.8   |
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: LocalStorageCapacityIsolationFSQuotaMonitoring
+  - Components depending on the feature gate: kubelet
+
+This feature uses project quotas to monitor emptyDir volume storage consumption
+rather than filesystem walk for better performance and accuracy.
+
+###### Does enabling the feature change any default behavior?
+
+None. Behavior will not change. The change is the way to monitoring the volume
+like ephemeral storage volumes and emptyDirs.
+When LocalStorageCapacityIsolation is enabled for local ephemeral storage and the
+backing filesystem for emptyDir volumes supports project quotas and they are enabled,
+use project quotas to monitor emptyDir volume storage consumption rather than
+filesystem walk for better performance and accuracy.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, but only for newly created pods.
+- Existed Pods: If the pod was created with enforcing quota, pod will not use the enforcing
+  quota after the feature gate is disabled.
+- Newly Created Pods: After setting the feature gate to false, the newly created pod
+  will not use the enforcing quota.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Like above, after we reenable the feature, newly created pod will use this feature.
+If a pod was created before rolling back, the pod will benefit from this feature as well.
+
+###### Are there any tests for feature enablement/disablement?
+
+Yes, in `test/e2e_node/quota_lsci_test.go`
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+No. The rollout/rollback will not impact running workloads.
+
+###### What specific metrics should inform a rollback?
+
+`kubelet_volume_metric_collection_duration_seconds` was added since v1.24 for duration in
+seconds to calculate volume stats. This metric can help to compare between fsquota
+monitoring and `du` for disk usage.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Yes. I tested it locally and fixed [a bug after restarting kubelet](https://github.com/kubernetes/kubernetes/pull/107302)
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+LocalStorageCapacityIsolationFSQuotaMonitoring should be turned on only if LocalStorageCapacityIsolationis enabled as well.
+If LocalStorageCapacityIsolationFSQuotaMonitoring is turned on but LocalStorageCapacityIsolation is false, the check will be skipped.
+
+### Monitoring Requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  - In kubelet metrics, an operator can check the histgram metric `kubelet_volume_metric_collection_duration_seconds`
+    with metric_source equals "fsquota". If there is no `metric_source=fsquota`, this feature should be disabled.
+  - However, to figure out if a workload is use this feature, there is no direct way now and see more in below 
+    methods of how to check fsquota settings on a node.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  - 99.9% of volume stats calculation will cost less than 1s or even 500ms.
+  It can be calculated by `kubelet_volume_metric_collection_duration_seconds` metrics.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+
+- [x] Metrics
+  - Metric name: `kubelet_volume_metric_collection_duration_seconds`
+  - Aggregation method: histogram
+  - Components exposing the metric: kubelet
+
+* **Are there any missing metrics that would be useful to have to improve observability of this feature? **
+
+  - Yes, there are no histogram metrics for each volume. The above metric was grouped by volume types because
+    the cost for every volume is too expensive. As a result, users cannot figure out if the feature is used by
+    a workload directly by the metrics. A cluster-admin can check kubelet configuration on each node. If the
+    feature gate is disabled, workloads on that node will not use it. 
+    For example, run `xfs_quota -x -c 'report -h' /dev/sdc` to check quota settings in the device. 
+    Check `spec.containers[].resources.limits.ephemeral-storage` of each container to compare.
+
+
+### Dependencies
+* **Does this feature depend on any specific services running in the cluster? **
+
+  -  Yes, the feature depneds on project quotas. Once quotas are enabled, the xfs_quota tool can be used to
+    set limits and report on disk usage.
+
+
+### Scalability
+* **Will enabling / using this feature result in any new API calls?**
+  - No.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  - No.
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+  - No.
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+  - No.
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+  - No.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  - Yes. It will use less CPU time and IO during ephemeral storage monitoring. `kubelet` now allows use of XFS quotas (on XFS and suitably configured ext4fs filesystems) to monitor storage consumption for ephemeral storage (currently for emptydir volumes only). This method of monitoring consumption is faster and more accurate than the old method of walking the filesystem tree. It does not enforce limits, only monitors consumption.
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+###### What are other known failure modes?
+
+1. If the ephemeral storage limitation is reached, the pod will be evicted by kubelet.
+
+2. It should skip when the image is not configured correctly (unsupported FS or quota not enabled).
+
+3. For "out of space" failure, kublet eviction should be triggered.
+
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+If the metrics shows some problems, we can check the log and quota dir with below commands. 
+- There will be warning logs([after the # is merged](https://github.com/kubernetes/kubernetes/pull/107490)) if volume calculation took too long than 1 second
+- If quota is enabled, you can find the volume information and the process time with `time repquota -P /var/lib/kubelet -s -v`
+
 ## Implementation History
 
 ### Version 1.15
 
-` LocalStorageCapacityIsolationFSMonitoring` implemented at Alpha
+- `LocalStorageCapacityIsolationFSMonitoring` implemented at Alpha
+
+### Version 1.24
+
+- `kubelet_volume_metric_collection_duration_seconds` metrics was added
+- A bug that quota cannot work after kubelet restarted, was fixed
+
+### Version 1.25
+
+- Plan to promote `LocalStorageCapacityIsolationFSMonitoring` to Beta
 
 ## Drawbacks [optional]
 

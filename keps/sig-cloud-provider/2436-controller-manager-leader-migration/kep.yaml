@@ -20,18 +20,18 @@ see-also:
   - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.22"
+latest-milestone: "v1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.21"
   beta: "v1.22"
-  stable: "v1.23"
+  stable: "v1.24"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -44,4 +44,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - leader_active
+  - per controller health checks

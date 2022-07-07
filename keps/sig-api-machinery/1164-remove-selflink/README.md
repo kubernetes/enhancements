@@ -13,6 +13,7 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -176,6 +177,23 @@ require more explanation.
 
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
+#### GA
+
+- Feature remained disabled by default for 4 releases
+- Confirmed that feature gate is disabled by default in cloud-providers:
+  GKE, OpenShift, EKS and AKS
+- Sweep of RemoveSelfLink in [grep app](https://grep.app)
+  - The following issues were opened for repos explicitly setting `RemoveSelfLink=false`:
+    - [ubuntu/microk8s](https://github.com/ubuntu/microk8s/issues/2829)
+    - [giantnetes-kubernetes](https://github.com/giantswarm/giantnetes-terraform/issues/543)
+    - [rancher-ceph](https://github.com/vasyakrg/rancher-ceph/issues/2)
+    - [ansible-role-k8s](https://github.com/PyratLabs/ansible-role-k3s/issues/175)
+  - The following issues were opened for repos that are vendoring old releases of Kubernetes
+    that still has feature-gate set to `false`:
+    - [volano](https://github.com/volcano-sh/volcano/issues/1948)
+    - [service-catalog](https://github.com/kubernetes-sigs/service-catalog/issues/2909)
+    - [kube-batch](https://github.com/kubernetes-sigs/kube-batch/issues/958)
+
 ### Upgrade / Downgrade Strategy
 
 No specific strategy is required.
@@ -309,6 +327,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-2019-07-23: KEP merged.
-2019-07-24: KEP move to implementable.
-v1.16:      Released in Alpha
+- 2019-07-23: KEP merged.
+- 2019-07-24: KEP move to implementable.
+- v1.16:      Released in Alpha
+- v1.20:      Released in Beta, enabled by default
+- 2022-01-10: KEP updated to target GA in v1.24

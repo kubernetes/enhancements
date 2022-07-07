@@ -91,6 +91,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [StatefulSet](#statefulset)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -261,6 +265,38 @@ Unit, integration and E2E tests cover the existing StatefulSet mechanics.
 Additionally, unit and integration tests will be added to cover the
 API validation, behavioral change of StatefulSet with feature gate enabled and disabled.
 
+#### Prerequisite testing updates
+
+[x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
+
+##### Unit tests
+
+```
+`k8s.io/kubernetes/pkg/apis/apps/validation`                       `06/07/2022`:    `90.6% of statements` `The tests added for the current feature in this package touches the statefulSet Spec and Status fields. No new tests are needed for promotion to GA`
+`k8s.io/kubernetes/pkg/apis/apps/validation/validation.go:93`:	   `06/07/2022`:		`93.1% of statements`
+`k8s.io/kubernetes/pkg/apis/apps/validation/validation.go:162`:	   `06/07/2022`:		`100% of statements`
+`k8s.io/kubernetes/pkg/apis/apps/validation/validation.go:169`:	   `06/07/2022`:		`94.1% of statements`
+`k8s.io/kubernetes/pkg/apis/apps/validation/validation.go:199`:	   `06/07/2022`:		`100% of statements`
+`k8s.io/kubernetes/pkg/controller/statefulset`:                    `06/07/2022`:    `85.5% of statements` `The tests added for the current feature in this package touches the statefulSet upgrade strategies. No new tests are needed for promotion to GA`
+`k8s.io/kubernetes/pkg/registry/apps/statefulset`:                 `06/07/2022`:    `76.7% of statements` `The tests added for the current feature in this package makes sure that the kubernetes version upgrades won't have any impact on the new fields to the statefulset api when persisting to etcd. No new tests are needed for promotion to GA`
+`k8s.io/kubernetes/pkg/registry/apps/statefulset/strategy.go:95`:	 `06/07/2022`:	  `100.0% of statements`
+`k8s.io/kubernetes/pkg/registry/apps/statefulset/strategy.go:139`: `06/07/2022`:	  `100.0% of statements`
+`k8s.io/kubernetes/pkg/registry/apps/statefulset/strategy.go:223`: `06/07/2022`:	  `100.0% of statements`
+`k8s.io/kubernetes/pkg/registry/apps/statefulset/strategy.go:118`: `06/07/2022`:	  `100.0% of statements`
+```
+
+##### Integration tests
+
+Added integration tests to test availabile replicas when minReadySeconds is set on the statefulset spec.
+
+k8s.io/kubernetes/test/integration/statefulset.TestStatefulSetAvailable: [test grid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master)
+
+##### e2e tests
+
+Following e2e tests are added to statefulsets.
+- StatefulSet MinReadySeconds should be honored when enabled: [test grid](https://storage.googleapis.com/k8s-triage/index.html?sig=apps&test=statefulset)
+- StatefulSet AvailableReplicas should get updated accordingly when MinReadySeconds is enabled: [test grid](https://storage.googleapis.com/k8s-triage/index.html?sig=apps&test=statefulset)
+
 ### Graduation Criteria
 
 #### Alpha
@@ -273,6 +309,9 @@ API validation, behavioral change of StatefulSet with feature gate enabled and d
 
 #### Beta -> GA Graduation
 - 2 examples of end users using this field
+  - The latest version of [OpenShift](https://github.com/openshift/cluster-monitoring-operator/blob/3ff846fbf36f68ff9aa2145b86ba5fc485398a6b/manifests/0000_50_cluster-monitoring-operator_00_0thanosruler-custom-resource-definition.yaml#L3607) is using this field for cluster monitoring operator
+  - [Prometheus-operator alert manager](https://github.com/prometheus-operator/prometheus-operator/blob/e45574036f4282c519b64f458d296ca82f455a45/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml#L3549) uses this field
+  - Other users requesting for this feature can be found in the [github issue](https://github.com/kubernetes/kubernetes/issues/65098)
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -320,11 +359,12 @@ in back-to-back releases.
 - Downgrades
  When downgrading from a release with this feature, to a release without 
  `minReadySeconds`, there are two cases
-  - If `minReadySeconds` is greater than 0 -- in this case kube-apiserver
-    clears the `minReadySeconds` and the existing StatefulSets wouldn't honor 
-    `minReadySeconds` which is expected. The same is the case with `AvailableReplicas`
-  - If `minReadySeconds` is equal to 0 -- in this case user wont see any 
-    difference in behavior
+  - If `minReadySeconds` is greater than 0 -- the StatefulSet controller wouldn't honor 
+    `minReadySeconds` which is expected. The `AvailableReplicas` will be set to `ReadyReplicas`
+    by StatefulSet controller
+  - If `minReadySeconds` is equal to 0 -- in this case user won't see any 
+    difference in behavior. The `AvailableReplicas` will be set to `ReadyReplicas`
+    by StatefulSet controller
 
 We will ensure that the minReadySeconds field is properly validated
 before persisting. The validation includes checking for positive number
@@ -389,7 +429,7 @@ The StatefulSet controller starts respecting the `minReadySeconds` again
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, unit and integration tests for feature enabled, disabled
+Yes, unit and integration tests for feature on, off. Please look at test plan [section](#test-plan)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -419,7 +459,7 @@ this metric to track the problems. If the value is immediately equal to the valu
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 Manually tested. No issues were found when we enabled the feature gate -> disabled it ->
-re-enabled the feature gate. We still need to test upgrade -> downgrade -> upgrade scenario.
+re-enabled the feature gate. Upgrade -> downgrade -> upgrade scenario has been manually tested.
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we

@@ -19,12 +19,24 @@ see-also:
 replaces:
 superseded-by:
 
-latest-milestone: "v1.19"
-stage: "alpha"
+latest-milestone: "v1.24"
+stage: "stable"
 milestone:
+  alpha: "v1.8"
   beta: "v1.11"
+  stable: "v1.24"
 feature-gates:
   - name: ExpandPersistentVolumes
+    components:
+      - kube-apiserver
+      - kubelet
+      - kube-controller-manager
+  - name: ExpandInUsePersistentVolumes
+    components:
+      - kube-apiserver
+      - kubelet
+      - kube-controller-manager
+  - name: ExpandCSIVolumes
     components:
       - kube-apiserver
       - kubelet

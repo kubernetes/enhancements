@@ -16,8 +16,8 @@ approvers:
 see-also:
   - "/keps/sig-instrumentation/1602-structured-logging"
 replaces: []
-stage: alpha
-latest-milestone: "v1.23"
+stage: beta
+latest-milestone: "v1.24"
 milestone:
   alpha: "v1.23"
   beta: "v1.24"

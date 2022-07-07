@@ -1,0 +1,24 @@
+title: Kubernetes system components logs sanitization
+kep-number: 1753
+authors:
+  - "@44past4"
+  - "@immutableT"
+  - "@PurelyApplied"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-security
+status: implemented (alpha)
+creation-date: 2020-05-07
+stage: alpha (deprecated)
+latest-milestone: "1.24"
+milestone:
+  alpha: "v1.19"
+  deprecated: "v1.24"
+  removed: "v1.24"
+reviewers:
+  - "@ehashman"
+approvers:
+  - "@dashpole"
+prr-approvers:
+  - "@wojtek-t"
+disable-supported: true

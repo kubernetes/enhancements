@@ -370,6 +370,7 @@ one control plane instances, but with a new sub-step to be executed on secondary
 - v1.13 support for local/stacked etcd
 - v1.14 implementation of automatic certificates copy
   (see KEP [Certificates copy for join --control-plane](20190122-Certificates-copy-for-kubeadm-join--control-plane.md)).
+- v1.24 retroactively promoted to GA
 
 ## Drawbacks
 

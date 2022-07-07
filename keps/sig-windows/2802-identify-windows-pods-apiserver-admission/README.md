@@ -20,6 +20,10 @@
   - [Changes to Kubelet](#changes-to-kubelet)
   - [Potential future changes to Scheduler](#potential-future-changes-to-scheduler)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -161,8 +165,10 @@ Additionally, there may be some end-user confusion on the functional consequence
 
 - Pod Security Standards will be reviewed and updated to indicate which Pod OSes they apply to
 - The restricted Pod Security Standard will be reviewed to see if there are OS-specific requirements that should be added
-- The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS.
-- Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field.
+- The PodSecurity admission implementation will be updated to skip checks which do not apply to the Pod's OS
+- Unit and E2e tests which demostrate the PodSecurity admission plugin is behaving correctly with the new OS field
+
+Pod Security Standards are to be changed in 1.25 timeframe to accommodate the supported kubelet and kube-apiserver skew.
 
 
 ### Changes to Kubelet
@@ -184,7 +190,32 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 - Unit tests covering API server defaulting to various fields within pod with and without this feature
 - Unit tests covering admission plugins which validate/mutate pod spec based on this feature
 - Unit and E2E tests for Kubelet changes.
-- Updates to the `sig-windows` tagged tests to utilize to direct windows scheduling for all pods .
+- Updates to the `sig-windows` tagged tests to utilize to direct windows scheduling for all pods.
+
+#### Prerequisite testing updates
+[x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
+
+##### Unit tests
+ 
+`k8s.io/kubernetes/pkg/apis/core/validation`: 	`06/03/2022`	`82.1% of statements`
+`k8s.io/kubernetes/pkg/apis/core/validation/validation.go:2979`:	`06/03/2022`:			`76.2% of statements`
+`k8s.io/kubernetes/pkg/apis/core/validation/validation.go:3488`:	`06/03/2022`:	  	`92.0% of statements`
+`k8s.io/kubernetes/pkg/apis/core/validation/validation.go:3573`:	`06/03/2022`:		  `100.0% of statements`
+`k8s.io/kubernetes/pkg/apis/core/validation/validation.go:3590`:	`06/03/2022`:			`65.3% of statements`
+`k8s.io/kubernetes/pkg/apis/core/validation/validation.go:6360`:	`06/03/2022`:		  `100.0% of statements`
+
+##### Integration tests
+
+The pod security standard integration tests will be updated to include OS specific validations.
+
+
+##### e2e tests
+
+There are e2e tests which 
+- validate that the kubelet rejects the pod which have os field not matching the underlying OS
+- validate that the kubelet reconciles and corrects if the node's OS label is changed
+
+
 ### Graduation Criteria
 
 #### Alpha
@@ -199,6 +230,8 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 
 #### Beta -> GA Graduation
 - 2 examples of end users using this field
+  - The latest version of OpenShift is using OS field in pod spec to identify pod OS and apply SCCs judiciously
+  - Rancher, CAPZ plan to use this field.
 
 ### Upgrade / Downgrade Strategy
 
@@ -211,7 +244,6 @@ express scheduling constraints. During the alpha, we assume there are no schedul
 
 If the feature gate is enabled there are some kubelet implications as the code to strip security constraints based on OS can be removed and we need to add
 admission/denying in the kubelet logic which was mentioned above. Older Kubelets without this change will continue stripping the unnecessary fields in the pod spec which is the current behavior.
-
 
 ## Production Readiness Review Questionnaire
 
@@ -357,16 +389,29 @@ No
 
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-
+The API validation would fail if API server and/or etcd is unavailable. The pod object won't be persisted to etcd.
 
 ###### What are other known failure modes?
-
+- Windows Pod by passing windows specific validation and linux pods by passing linux specific validation even after `IdentifyPodOS` featuregate is enabled.
+  - Detection: Looking at `kube_pod_status_phase` metric
+  - Mitigations: Disable the `IdentifyPodOS` featuregate
+  - Diagnostics: Increasing the log-level of APIServer
+  - Testing: Yes, unit tests are already in place
+- Both windows and linux pods are getting rejected when `IdentifyPodOS` featuregate is enabled.
+  - Detection: Looking at `apiserver_request_total` metric
+  - Mitigations: Disable the `IdentifyPodOS` featuregate
+  - Diagnostics: Increasing the log-level of APIServer
+  - Testing: Yes, unit tests are already in place
 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+Disabling the `IdentifyPodOS` featuregate will help in determining the problem.
 
 ## Implementation History
-
+- 2021-09-08: Initial KEP merged
+- 2021-10-29: Initial implementation PR merged
+- 2022-01-19: Graduate the feature to Beta proposed 
+- 2022-05-09: Graduate the feature to GA proposed
 
 
 ## Drawbacks

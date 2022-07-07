@@ -590,6 +590,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - KEP updated Feb 2021 for v1.21
 - Redesign with new `DataSourceRef` field in May 2021 for v1.22, still alpha
 - Added metrics, troubleshooting, move to beta in Sep 2021 for v1.23.
+- Jan 2021, bump beta release to v1.24.
 
 ## Alternatives
 

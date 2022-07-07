@@ -1,0 +1,32 @@
+title: HTTP3
+kep-number: 3156
+authors:
+  - "@aojea"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-api-machinery
+  - sig-network
+status: deferred
+creation-date: 2022-01-13
+reviewers:
+  - "@lavalamp"
+  - "@MikeSpreitzer"
+approvers:
+  - "@lavalamp"
+
+stage: alpha
+latest-milestone: "v1.24"
+milestone:
+  alpha: "v1.24"
+  beta: TBD
+  stable: TBD
+
+feature-gates:
+  - name: HTTP3
+    components:
+      - kube-apiserver
+      - client-go
+disable-supported: true
+
+metrics:
+  - http3_requests_total

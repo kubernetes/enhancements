@@ -1,0 +1,47 @@
+title: dynamic resource allocation
+kep-number: 3063
+authors:
+  - "@pohly"
+owning-sig: sig-node
+participating-sigs:
+  - sig-scheduling
+  - sig-autoscaling
+status: implementable
+creation-date: 2021-05-17
+reviewers:
+  - "@ahg-g"
+  - "@alculquicondor"
+  - "@klueska"
+approvers:
+  - "@sig-node-leads"
+
+see-also:
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.25"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.25"
+  beta: "v1.28"
+  stable: "v1.30"
+
+feature-gates:
+  - name: DynamicResourceAllocation
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+      - kubelet
+disable-supported: true
+
+metrics:
+  - resource_controller_create_total
+  - resource_controller_create_failures_total
+  - resource controller workqueue with name="resource_claim"

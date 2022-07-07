@@ -4,7 +4,7 @@ authors:
   - "@enj"
 owning-sig: sig-auth
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: 2021-06-17
 reviewers:
   - "@liggitt"
@@ -18,13 +18,13 @@ approvers:
 see-also:
   - "/keps/sig-auth/1513-certificate-signing-request"
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.22"
+latest-milestone: "v1.24"
 
 milestone:
   beta: "v1.22"
-  stable: "v1.23"
+  stable: "v1.24"
 
 
 feature-gates:

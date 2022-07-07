@@ -11,20 +11,22 @@
     - [Story 1 - External Clients](#story-1---external-clients)
     - [Story 2 - APIServer Tooling](#story-2---apiserver-tooling)
     - [Story 3 - Wrong-Single-Stack Internal Clients](#story-3---wrong-single-stack-internal-clients)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [kube-apiserver internals](#kube-apiserver-internals)
   - [kube-apiserver Command-Line Arguments](#kube-apiserver-command-line-arguments)
+    - [Default / automatic behavior](#default--automatic-behavior)
+    - [<code>--bind-address</code>](#)
+    - [<code>--advertise-address</code>](#-1)
   - [Pod environment / client-go](#pod-environment--client-go)
   - [Service and EndpointSlice Reconciling](#service-and-endpointslice-reconciling)
+    - [Current Behavior](#current-behavior)
+    - [New behavior](#new-behavior)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Handling of the &quot;<code>kubernetes</code>&quot; Service](#handling-of-the--service)
-    - [Handling of &quot;<code>kubernetes</code>&quot; Endpoints and EndpointSlices](#handling-of--endpoints-and-endpointslices)
-    - [Service vs EndpointSlice Sync Issues](#service-vs-endpointslice-sync-issues)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -138,15 +140,6 @@ IPv4-only pods.
 
 [it has been seen in the wild]: https://github.com/kubernetes/enhancements/issues/563#issuecomment-814560270
 
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
-
 ### Risks and Mitigations
 
 In theory, an administrator might be running an apiserver on a
@@ -161,34 +154,74 @@ notice that it was not configured how they had wanted.
 
 ## Design Details
 
+### kube-apiserver internals
+
+Go's network-serving methods don't allow a single HTTP server to
+listen on two different addresses. This means that either:
+
+  1. We have to duplicate a bunch of stuff in the apiserver to have
+     two listening sockets and two `HTTPServer`s, etc (and, eg, fix
+     the shutdown-cleanly code to track both servers, etc).
+
+  2. We only support dual-stack apiservers in the case where
+     `BindAddress` is the unspecified address, and you're on Linux
+     (where golang can bind a single unspecified-address socket to
+     accept both IPv4 and IPv6 connections). (So, eg, you couldn't do
+     `--bind-address 127.0.0.1,::1`.)
+
+For alpha, we will implement the second option, and then work with
+sig-apimachinery to decide on the best solution for beta and GA.
+
 ### kube-apiserver Command-Line Arguments
 
-```
-<<[UNRESOLVED apiserver-arguments ]>>
+All of the below assumes that a dual-stack
+`--service-cluster-ip-range` has been provided. (Trying to specify a
+dual-stack `--bind-address` or `--advertise-address` without
+dual-stack `--service-cluster-ip-range` will cause kube-apiserver to
+exit with an error.)
 
-Needs to be figured out, but probably:
+#### Default / automatic behavior
 
-  - If `--bind-address` or `--advertise-address` is specified as a
-    single IP, then the apiserver is single-stack, even if dual
-    `--service-cluster-ip-range`s are specified.
+When neither `--bind-address` nor `--advertise-address` is explicitly
+specified, but there is a dual-stack `--service-cluster-ip-range`, and
+the host has both IPv4 and IPv6 addresses, then kube-apiserver will
+attempt to bind dual-stack (to `0.0.0.0` and `::`). If this succeeds,
+it will create a dual-stack `kubernetes` Service. Otherwise it will
+log a warning and fall back to single-stack behavior.
 
-  - If `--bind-address` or `--advertise-address` is specified as a
-    pair of IPs, and `--service-cluster-ip-range` is specified as a
-    pair of CIDRs, then the apiserver is dual-stack, and should fail
-    if it cannot bind sockets for both address families.
+#### `--bind-address`
 
-  - (Incompatible values for `--bind-address`, `--advertise-address`,
-    and `--service-cluster-ip-range` will result in kube-apiserver
-    exiting with an error.)
+In a dual-stack cluster, `--bind-address` can now be a comma-separated
+pair of IPs rather than only a single IP. (For alpha, the only valid
+dual-stack values would be `0.0.0.0,::` and `::,0.0.0.0`.) When
+dual-stack bind addresses are specified, kube-apiserver will fail if
+it cannot bind both addresses.
 
-  - If neither `--bind-address` nor `--advertise-address` is
-    specified, then if `--service-cluster-ip-range` is dual-stack,
-    then it will try to bind sockets for both address families. If it
-    succeeds, it will proceed as dual-stack; if it fails, it will log
-    a warning and proceed as single-stack.
+If a dual-stack `--advertise-address` is provided but `--bind-address`
+is unspecified, then `--bind-address` will default to either
+`0.0.0.0,::` or `::,0.0.0.0` (depending on the order of the service
+CIDRs) rather than defaulting to only one IP family (and again,
+kube-apiserver will fail if it cannot bind both addresses).
 
-<<[/UNRESOLVED]>>
-```
+(If a dual `--service-cluster-ip-range` is specified, but an explicit
+single-stack `--bind-address` is given, then the apiserver will be
+single-stack.)
+
+#### `--advertise-address`
+
+In a dual-stack cluster, `--advertise-address` can now be a
+comma-separated pair of IPs rather than only a single IP.
+
+If a dual `--advertise-address` is provided but no `--bind-address` is
+provided, then `--bind-address` is defaulted as described above.
+
+If a dual `--bind-address` is provided but `--advertise-address` is
+single-stack, then the apiserver will accept connections on both
+addresses, but the `kubernetes` Service will remain single-stack.
+
+If `--advertise-address` is not specified, but the bind address
+(explicit or defaulted) is dual-stack, then the apiserver will
+auto-detect both IPv4 and IPv6 addresses to advertise.
 
 ### Pod environment / client-go
 
@@ -230,80 +263,110 @@ scenario of wrong-single-stack pods...
 
 ### Service and EndpointSlice Reconciling
 
-If the dual-stack apiserver changes were to take effect in a cluster
-all at once when the feature went to beta, then this could cause
-Service/EndpointSlice flapping in dual-stack clusters during the
-upgrade when the `DualStackAPIServer` feature gate becomes enabled,
-because the older apiservers would be trying to enforce a single-stack
-`kubernetes.default` service, while the newer apiservers would be
-trying to make it be dual-stack.
+#### Current Behavior
 
-(Note that the problem is only with `Service` and `EndpointSlice`, not
-with `Endpoints` because `Endpoints` is inherently single-stack, so
-both old and new apiservers will always agree on which IPs should be
-listed there.)
+Current kube-apiservers attempt to force the `kubernetes` Service
+definition to match its expectations on startup, but do not attempt to
+reconcile it after that point. Current apiservers always expect the
+Service to be single-stack, so any time a current apiserver reconciles
+the `kubernetes` Service, it will set it to be single-stack.
 
-To prevent this, we can make some of the dual-stack apiserver support
-code be active even when the feature gate is disabled; the feature
-gate will control whether an apiserver in a dual-stack cluster tries
-to advertise *itself* as dual-stack, but not whether it allows *other*
-apiservers to advertise themselves as dual-stack. Thus:
+For Endpoints/EndpointSlice, the apiserver can run in two different
+"endpoint reconciler" modes: `master-count` (the old algorithm), and
+`lease` (the current default, and preferred mode).
 
-  - API server does not know about `DualStackAPIServer` (eg,
-    Kubernetes 1.21, regardless of single/dual stack configuration):
+In `master-count` mode, each apiserver periodically checks the
+`kubernetes` `Endpoints` object, and:
 
-      - Advertises its own single-stack endpoint IP to etcd
+  - If its own IP is not listed there, it adds it.
 
-      - Forces the `kubernetes` Service to be single-stack when it
-        starts up.
+  - If the total number of IPs listed there is now greater than the
+    expected number of masters, it removes a randomly-selected IP
+    other than its own.
 
-      - Syncs Endpoints and the primary-IP-family EndpointSlice.
-        Mistakenly ignores the secondary-IP-family EndpointSlice
-        ([kubernetes #101070]) and so could leave behind a stale
-        secondary-IP-family EndpointSlice on downgrade from dual-stack
-        apiserver.
+(The changes to `Endpoints` are likewise synced to `EndpointSlice`.)
 
-  - API server knows about `DualStackAPIServer` but either the feature
-    is not enabled on this apiserver, or else this apiserver has a
-    single-stack configuration:
+This means that when an apiserver is replaced, it may take arbitrarily
+long for the `Endpoints` to settle on the correct values (since none
+of the remaining apiservers knows which IP is the one that needs to be
+removed), but once it reaches the correct values, it will stay correct
+until the set of apiservers changes again.
 
-      - Advertises its own *single-stack* endpoint IP to etcd
+In the `lease` mode, each apiserver periodically writes its IP to a
+non-kubernetes-API object in etcd, along with a timestamp and a lease
+time. Then it reads all of the other IPs there, and updates the
+`Endpoints` and `EndpointSlice` to contain all of the IPs whose leases
+have not expired. So in this mode, a stale IP is guaranteed to be
+removed once its lease expires, and no apiserver will ever remove a
+valid IP from the list.
 
-      - Forces the `kubernetes` Service to single-stack if there are
-        no dual-stack apiservers in etcd. Leaves the Service unchanged
-        if it is currently dual-stack and there are also dual-stack
-        apiservers in etcd.
+Since the `master-count` mode is deprecated, and harder to deal with,
+we will only support dual-stack apiservers with `lease` mode.
 
-      - Syncs Endpoints the primary-IP-family EndpointSlice. If there
-        are no dual-stack apiservers in etcd then it will delete any
-        secondary-IP-family EndpointSlice.
+#### New behavior
 
-  - API server knows about `DualStackAPIServer`, the feature gate is
-    enabled, and the apiserver has a dual-stack
-    `--service-cluster-ip-range`:
+For ease-of-transition purposes, we will adopt the rule that the
+`kubernetes` Service will only be dual-stack when all apiservers
+agree that it should be dual-stack. Thus, during upgrades or
+single-to-dual-stack migration, there would never be any point where
+old and new (or reconfigured and not-yet-reconfigured) apiservers are
+fighting over the correct state of the Service.
 
-      - Advertises its own dual-stack endpoint IPs to etcd
+In the updated `lease` mode, an apiserver that is properly configured
+for dual-stack operation will write out two IPs to etcd rather than
+just one. If it finds that each of the other (live) apiservers has
+also written out two IPs, then it will reconcile the `Service`,
+`Endpoints`, and `EndpointSlice` to be dual-stack. Otherwise it will
+reconcile them to be single-stack (deleting the secondary-IP-family
+`EndpointSlice` if it exists). Thus, the behavior of a dual-stack
+apiserver in a cluster containing at least one "old" apiserver will
+match the behavior of the old apiserver (except that it will do a
+better job of cleaning up stale state than the old apiserver will).
 
-      - Forces the `kubernetes` Service to be dual-stack on startup
+```
+<<[UNRESOLVED endpoints-in-etcd ]>>
 
-      - Syncs Endpoints and dual-stack EndpointSlices
+Need to figure out how dual-stack endpoints will be stored in etcd in
+the `lease` mode, so that old apiservers won't get confused by them
+(and, eg, try to create a single Endpoints object with both sets of
+IPs).
 
-As long as the "`DualStackAPIServer`-aware" code goes in two releases
-before the feature gate is enabled by default, then upgrades and
-downgrades should proceed smoothly. People who enable the feature gate
-manually during the alpha period may encounter problems with
-Service/EndpointSlice flapping during upgrades, and may need to do
-some manual cleanup on downgrade.
+<<[/UNRESOLVED]>>
+```
 
-(Note that the middle case covers both "upgrading from
-`DualStackAPIServer=false` to `DualStackAPIServer=true`" _and_
-"upgrading the cluster from single stack to dual stack (after
-`DualStackAPIServer` goes GA)". In both cases, some apiservers will
-begin advertising dual-stack endpoints before other apiservers are
-aware of the configuration change, but the un-upgraded apiservers will
-allow the upgrade to proceed smoothly.)
+```
+<<[UNRESOLVED you-get-an-endpointslice-YOU-get-an-endpointslice-EVERYONE-GETS-AN-ENDPOINTSLICE ]>>
 
-[kubernetes #101070]: https://github.com/kubernetes/kubernetes/issues/101070
+(I still like this idea but I'm thinking not for alpha1 at least.)
+
+Another possibility is that instead of cooperatively maintaining a
+single EndpointSlice (or pair of EndpointSlices), each apiserver would
+write out its own slice(s) containing only its own IP(s). Clients
+would then have to aggregate all of the slices together to get the
+full list of active IPs.
+
+The "nice" thing about this is that it means every cluster would be
+guaranteed to have at least one multi-slice Service, which means that
+every EndpointSlice client would be forced to deal with that
+correctly, rather than naively assuming that every Service has at most
+one IPv4 and one IPv6 slice.
+
+Assuming we want to do this in single-stack clusters too, it would be
+incompatible with the old/current apiserver code, so it would have to
+be something that was done only when all of the apiservers were
+running the new code. So (combining with the previous UNRESOLVED
+point) this would suggest having new apiservers write out two separate
+objects to etcd: a legacy object containing just the primary-IP-family
+endpoints, and a new object containing all endpoints (even if the
+cluster is single-stack and so "all endpoints" is the same as "the
+primary-IP-family endpoints"). When all of the IPs in the legacy
+object also exist in the new object, then the apiservers would know
+that all of the apiservers were running the new code, so they could
+switch to the new behavior. (And the legacy object could be dropped a
+few releases later.)
+
+<<[/UNRESOLVED]>>
+```
 
 ### Test Plan
 
@@ -337,8 +400,8 @@ allow the upgrade to proceed smoothly.)
   special-casing `kubernetes.default` as being obligatorily
   single-stack).
 
-- We must be alpha for at least 2 releases, to ensure we don't need to
-  support upgrades from pre-Alpha to Beta.
+- (Maybe) We must be alpha for at least 2 releases, if we don't want
+  to have to support downgrades from Beta to pre-Alpha.
 
 #### Beta -> GA Graduation
 
@@ -349,109 +412,32 @@ allow the upgrade to proceed smoothly.)
 
 ### Upgrade / Downgrade Strategy
 
-As discussed under ["Service and EndpointSlice
-Reconciling"](#service-and-endpointslice-reconciling), we will modify
-the apiserver behavior when the feature gate is off to make it
-cooperate better with apiservers where the feature gate is on (while
-still having no change in behavior in a cluster where _all_ apiservers
-have the feature gate off). Assuming that the feature remains alpha /
-disabled-by-default for at least 2 releases, this should ensure that
-all non-early-adopters get smooth upgrades and downgrades.
+Some of the details of upgrades and downgrades are discussed above under
+[Service and EndpointSlice Reconciling](#service-and-endpointslice-reconciling).
 
-For early adopters, or if we want to only have the feature be alpha
-for a single release, and not have completely smooth behavior for
-users with N-2 version skew, there are a few potential problems:
+The current (1.23) apiserver code will not clean up a
+secondary-IP-family `EndpointSlice` if one is left behind ([kubernetes
+#101070]). Thus, someone downgrading from dual-stack apiservers to a
+release with the current code might end up with a stale (but unused)
+secondary-IP-family `EndpointSlice`. (This would only happen if all of
+the apiserver downgrades after the first happened in less time than
+the endpoint reconciling polling interval; if the downgrade took
+longer than that, then one of the still-dual-stack apiservers would
+see that the first apiserver was no longer dual-stack and delete the
+secondary slice.)
 
-#### Handling of the "`kubernetes`" Service
+Since this is both somewhat unlikely and not that problematic (nothing
+should ever look at the secondary EndpointSlice of a single-stack
+Service), we can deal with it just by documenting that the
+administrator may need to delete the secondary slice by hand after
+such a downgrade.
 
-kube-apiserver attempts to force the "`kubernetes`" Service definition
-to match its expectations on startup, but does not attempt to
-reconcile it after that point. Old/current apiservers always expect
-the Service to be single-stack.
+(Alternatively, if the feature remains in alpha for at least 2
+releases, then by the time the feature goes beta, it would no longer
+be possible to downgrade to an apiserver that didn't support the
+feature.)
 
-Thus, during an upgrade in which some (new) apiservers are trying to
-use the `DualStackAPIServer` feature gate, and some (old) apiservers
-predate the new feature, whichever apiserver started last will
-determine whether the Service is currently single or dual stack.
-
-In a simple upgrade or downgrade, this would result in the Service
-definition changing when the first apiserver was upgraded/downgraded,
-and then not changing after that. In a more complicated
-upgrade/downgrade scenario, there might be some flapping; eg, the
-first master upgrades and changes the Service to dual-stack, but then
-the second master reboots before upgrading, causing the old apiserver
-to restart and revert the Service definition back to its single-stack
-form, before then being upgraded and changing it back to dual-stack
-again.
-
-At no point would the Service be advertised as dual-stack when there
-were no dual-stack apiservers, so the Service ought to always be
-usable; it just may sometimes be single-stack when it _could_ have
-been dual-stack.
-
-(The one way that something could go wrong would be if a spurious
-apiserver were to start up after the upgrade/downgrade completed. Eg,
-after upgrading all apiservers to a dual-stack release, if an old
-single-stack-only apiserver were to start up, but then exit, it might
-spuriously change the Service back to single-stack before exiting.
-It's not clear why this would happen, and at any rate, it would be
-fixed as soon as any of the real apiservers restarted again.)
-
-#### Handling of "`kubernetes`" Endpoints and EndpointSlices
-
-For the "`kubernetes`" `Endpoints` (_not_ `EndpointSlice`), there
-should be no flapping; both old and new apiservers will agree at all
-times about what endpoints are available _in the cluster's primary IP
-family_, and thus will always agree on the contents of the
-single-stack `Endpoints` resource.
-
-For `EndpointSlice`, current versions of kube-apiserver create a
-single `EndpointSlice` object named "`kubernetes`", and assume that
-other apiservers will do the same; they don't look at any other
-`EndpointSlice` objects when reconciling. To create dual-stack
-EndpointSlices, a new apiserver would need to create two objects with
-different names. Even if new apiservers use the same name as the old
-apiserver does for the primary-IP-family slice, old apiservers would
-never see the slice it creates for the secondary IP family. This means
-there would be no flapping, but also means that a stale
-secondary-IP-family `EndpointSlice` could be left behind after a
-downgrade if the new apiserver exited uncleanly. (However, in this
-scenario the Service ought to end up as single-stack at the end as
-well, so the secondary-IP-Family `EndpointSlice` ought to be ignored
-anyway.)
-
-#### Service vs EndpointSlice Sync Issues
-
-Given that the Service is updated only on apiserver restart, but the
-EndpointSlice is updated periodically by each apiserver, then whenever
-there is a mix of single-stack and dual-stack apiservers, it is
-possible to see any combination of service and endpoint
-dual-stack-ness:
-
-  - Single-stack Service, single-stack EndpointSlice: in this case,
-    the service will work fine; everyone will just ignore the
-    secondary IP family.
-
-  - Single-stack Service, dual-stack EndpointSlices: kube-proxy will
-    ignore the secondary IP family endpoints, since it has no
-    secondary-family ClusterIP to match them up with. If other clients
-    try to use the secondary-IP-family EndpointSlice values directly,
-    they should succeed, except in the "stale EndpointSlice" case
-    discussed above.
-
-  - Dual-stack Service, single-stack EndpointSlice: kube-proxy will
-    create working mappings for the primary ClusterIP, and a "broken"
-    (ie, `-j REJECT`) mapping for the secondary ClusterIP. Clients
-    explicitly attempting to connect to the secondary ClusterIP will
-    fail, but clients attempting to connect to
-    `kubernetes.default.svc.cluster.local` should succeed, even if
-    they try the secondary ClusterIP first, because they should fall
-    back to the primary ClusterIP after the secondary one fails.
-
-  - Dual-stack Service, dual-stack EndpointSlices: works fine. Any
-    still-single-stack apiservers will not be advertising an IP in the
-    secondary family, so the secondary-family EndpointSlice may only
-    point to a subset of masters.
+[kubernetes #101070]: https://github.com/kubernetes/kubernetes/issues/101070
 
 ### Version Skew Strategy
 
@@ -493,7 +479,9 @@ Yes.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
-Nothing unexpected
+Nothing unexpected. Even if there is a stale secondary EndpointSlice
+lying around, it should be updated at the same time as the Service is
+made dual-stack.
 
 * **Are there any tests for feature enablement/disablement?**
 
@@ -593,4 +581,6 @@ N/A
 
 ## Implementation History
 
-- Initial proposal: 2020-04-13
+- Initial proposal: 2021-04-13
+- Initial proposal merged: 2021-09-06
+- Updates: 2022-01-14

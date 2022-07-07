@@ -267,8 +267,8 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 
 	logrus.Debugf("loading the following local KEPs: %v", files)
 
-	var allKEPs []*api.Proposal
-	for _, kepYamlPath := range files {
+	allKEPs := make([]*api.Proposal, len(files))
+	for i, kepYamlPath := range files {
 		kep, err := r.loadKEPFromYaml(r.BasePath, kepYamlPath)
 		if err != nil {
 			return nil, errors.Wrapf(
@@ -278,7 +278,7 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 			)
 		}
 
-		allKEPs = append(allKEPs, kep)
+		allKEPs[i] = kep
 	}
 
 	logrus.Debugf("returning %d local KEPs", len(allKEPs))

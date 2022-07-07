@@ -3,7 +3,7 @@ kep-number: 2365
 authors:
   - "@robscott"
 owning-sig: sig-network
-status: implementable
+status: implemented
 creation-date: "2021-01-28"
 reviewers:
   - "@danehans"

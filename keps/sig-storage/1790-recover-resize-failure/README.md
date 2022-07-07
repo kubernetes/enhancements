@@ -224,8 +224,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 ### Risks and Mitigations
 
 - Once expansion is initiated, the lowering of requested size is only allowed upto a value *greater* than `pvc.Status`. It is not possible to entirely go back to previously requested size. This should not be a problem however in-practice because user can retry expansion with slightly higher value than `pvc.Status` and still recover from previously failing expansion request.
-
-
+ 
 ## Graduation Criteria
 
 * *Alpha* in 1.23 behind `RecoverExpansionFailure` feature gate with set to a default of `false`.
@@ -258,12 +257,12 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 * **Does enabling the feature change any default behavior?**
-  Allow users to reduce size of pvc in `pvc.spec.resources`. In general this was not permitted before
+  Allow users to reduce size of pvc in `pvc.spec.resources`. In general this was not permitted before,
   so it should not break any of existing automation. This means that if `pvc.Status.AllocatedResources` is available it will be
   used for calculating quota.
 
-  To facilitate older kubelets - external resize controller will set `pvc.Status.ResizeStatus` to "''" after entire expansion process is complete. This will ensure that `ResizeStatus` is updated
-after expansion is complete even with older kubelets. No recovery from expansion failure will be possible in this case and the workaround will be removed once feature goes GA.
+  To facilitate older kubelet - external resize controller will set `pvc.Status.ResizeStatus` to "''" after entire expansion process is complete. This will ensure that `ResizeStatus` is updated
+after expansion is complete even with older kubelet. No recovery from expansion failure will be possible in this case and the workaround will be removed once feature goes GA.
 
   One more thing to keep in mind is - enabling this feature in kubelet while keeping it disabled in external-resizer will cause
   all volume expansions operations to get stuck(similar thing will happen when feature moves to beta and kubelet is newer but external-resizer sidecar is older).
@@ -288,73 +287,70 @@ after expansion is complete even with older kubelets. No recovery from expansion
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can a rollout fail? Can it impact already running workloads?**
   This change should not impact existing workloads and requires user interaction via reducing pvc capacity.
 
 * **What specific metrics should inform a rollback?**
+  No specific metric but if expansion of PVCs are being stuck (can be verified from `pvc.Status.Conditions`)
+  then user should plan a rollback.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and do that now.
+  We have not fully tested upgrade and rollback but as part of beta process we will have it tested.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  This feature deprecates no existing functionality.
 
 ### Monitoring requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metrics. Operations against Kubernetes API (e.g.
-  checking if there are objects with field X set) may be last resort. Avoid
-  logs or events for this purpose.
-
+  Any volume that has been recovered will emit a metric: `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`.
+  
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
   - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - controller expansion operation duration:
+        - Metric name: storage_operation_duration_seconds{operation_name=expand_volume}
+        - [Optional] Aggregation method: percentile
+        - Components exposing the metric: kube-controller-manager
+    - controller expansion operation errors:
+        - Metric name: storage_operation_errors_total{operation_name=expand_volume}
+        - [Optional] Aggregation method: cumulative counter
+        - Components exposing the metric: kube-controller-manager
+    - node expansion operation duration:
+        - Metric name: storage_operation_duration_seconds{operation_name=volume_fs_resize}
+        - [Optional] Aggregation method: percentile
+        - Components exposing the metric: kubelet
+    - node expansion operation errors:
+        - Metric name: storage_operation_errors_total{operation_name=volume_fs_resize}
+        - [Optional] Aggregation method: cumulative counter
+        - Components exposing the metric: kubelet
   - [ ] Other (treat as last resort)
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At the high-level this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide a comprehensive guidance, but at the very
-  high level (they needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  After this feature is rolled out, there should not be any increase in 95-99 percentile of
+  both `expand_volume` and `volume_fs_resize` durations. Also the error rate should not increase for 
+  `storage_operation_errors_total` metric.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
-  Describe the metrics themselves and the reason they weren't added (e.g. cost,
-  implementation difficulties, etc.).
+  We are planning to add new counter metrics that will record success and failure of recovery operations.
+  In cases where recovery fails, the counter will forever be increasing until an admin action resolves the error.
+
+  Tentative name of metric is - `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`
+
+  The reason of using PV name as a label is - we do not expect this feature to be used in a cluster very often
+  and hence it should be okay to use name of PVs that were recovered this way.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of the fill in the following, thinking both about running user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high error rates on the feature:
-
-
+  For CSI volumes this feature requires users to run with latest version of `external-resizer`
+  sidecar which also should have `RecoverExpansionFailure` feature enabled. 
+  
 ### Scalability
 
 _For beta, this section is required: reviewers must answer these questions._
@@ -363,14 +359,19 @@ _For GA, this section is required: approvers should be able to confirms the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  None
+  Potentially yes. If user expands a PVC and expansion fails on the node, then
+  expansion controller in control-plane must intervene and verify if it is safe
+  to retry expansion on the kubelet.This requires round-trips between kubelet
+  and control-plane and hence more API calls.
 
 * **Will enabling / using this feature result in introducing new API types?**
   None
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
-  None
+  Potentially yes. Since expansion operation is idempotent and expansion controller
+  must verify if it is safe to retry expansion with lower values, there could be 
+  additional calls to CSI drivers (and hence cloudproviders).
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
@@ -381,16 +382,12 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+  In some cases if expansion fails on the node, then since it requires now correction
+  from control-plane, it may require longer time for entire expansion.
 
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data send and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits][].
+  It should not result in increase of resource usage.
 
 ### Troubleshooting
 
@@ -401,20 +398,25 @@ details). For now we leave it here though.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  If API server or etcd is not available midway through a request then some of the
+  modifications to API objects can not be saved. But this should be a recoverable state  because
+  expansion operation is idempotent and controller will retry the operation and succeed
+  whenever API server does come back.
 
 * **What are other known failure modes?**
   For each of them fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without loogging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debugging the issue?
-      Not required until feature graduated to Beta.
-    - Testing: Are there any tests for failure mode? If not describe why.
+  - No recovery is possible if volume has been expanded on control-plane and only failing on node.
+    - Detection: Expansion is stuck with `ResizeStatus` - `NodeExpansionPending` or `NodeExpansionFailed`.
+    - Mitigations: This should not affect any of existing PVCs but this was already broken in some sense and if volume has been 
+      expanded in control-plane then we can't allow users to shrink their PVCs because that would violate the quota.
+    - Diagnostics: Expansion is stuck with `ResizeStatus` - `NodeExpansionPending` or `NodeExpansionFailed`.
+    - Testing: There are some unit tests for this failure mode.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+  If admin notices an increase in expansion failure operations via aformentioned metrics or 
+  by observing `pvc.Status.ResizeStatus` then:
+      - Check events on the PVC and observe why is PVC expansion failing.
+      - Gather logs from kubelet and external-resizer and check for problems.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos

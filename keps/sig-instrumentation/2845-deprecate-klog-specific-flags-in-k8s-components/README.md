@@ -124,10 +124,11 @@ best practices.
 
 ## Proposal
 
-I propose to remove klog specific feature flags in Kubernetes core components
-(kube-apiserver, kube-scheduler, kube-controller-manager, kubelet) and leave
-them with defaults. From klog flags we would remove all flags besides "-v"
-and "-vmodule".
+We propose to remove klog specific feature flags in Kubernetes components
+(including, but not limited to, kube-apiserver, kube-scheduler,
+kube-controller-manager, kubelet) and leave them with defaults. From klog flags
+we would remove all flags besides "-v" and "-vmodule". The component-base
+"-log-flush-frequency" flag is also kept.
 
 ### Removed klog flags
 
@@ -269,17 +270,20 @@ all existing klog features.
 
 #### Alpha
 
-- Klog can be configured without registering flags
-- Kubernetes logging configuration drops global state
+- The remaining supported klog options (`-v`, `--vmodule`) and
+  `--log-flush-frequency` can be configured without registering flags.
+- Kubernetes logging configuration is completely stored in one struct
+  (`LoggingConfiguration`) before being applied to the process.
 - Go-runner is feature complementary to klog flags planned for deprecation
 - Projects in Kubernetes Org are migrated to go-runner
 - JSON logs format splits stdout and stderr logs
+- The klog flags which will be removed are marked as deprecated in command line
+  help output and the deprecation is announced in the Kubernetes release notes.
 
 #### Beta
 
 - Go-runner project is well maintained and documented
 - Documentation on migrating off klog flags is publicly available
-- Kubernetes klog flags are marked as deprecated
 
 #### GA
 
@@ -290,6 +294,12 @@ all existing klog features.
 - 20/06/2021 - Original proposal created in https://github.com/kubernetes/kubernetes/issues/99270
 - 30/07/2021 - KEP draft was created
 - 26/08/2021 - Merged in provisional state
+- 09/09/2021 - Merged as implementable
+- Kubernetes 1.23 (tenatative): alpha, [deprecation
+  period](https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli)
+  starts
+- Kubernetes 1.24 (tentative): beta
+- Kubernetes 1.26 (tentative): GA, deprecated flags get removed
 
 ## Drawbacks
 

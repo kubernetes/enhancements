@@ -7,10 +7,10 @@ participating-sigs:
   - sig-cluster-lifecycle
 status: implementable
 creation-date: 2020-10-03
+last-updated: 2022-05-17
 reviewers:
   - "@fabriziopandini"
 approvers:
   - "@fabriziopandini"
-
-latest-milestone: "v1.20"
+latest-milestone: "0.0"
 stage: "alpha"

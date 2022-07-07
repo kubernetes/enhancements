@@ -44,15 +44,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -225,16 +225,25 @@ during version skews (discussed below).
 #### GA
 
 - Confirm with [cert-manager](https://github.com/jetstack/cert-manager/pull/3646) that the new functionality addresses their use case
+  + [cert-manager/cert-manager#4957](https://github.com/cert-manager/cert-manager/pull/4957) successfully added the use of the `spec.expirationSeconds` field
 - Confirm with [pinniped](https://pinniped.dev) that the new functionality addresses their use case
+  + The Pinniped maintainers confirmed via [vmware-tanzu/pinniped#1070](https://github.com/vmware-tanzu/pinniped/pull/1070)
+    that the `spec.expirationSeconds` field was sufficient for their use case
 - Confirm that no other metrics are necessary
+  + No other metrics have been identified by the maintainers or requested by external actors
 - Wait one release after beta to allow bugs to be reported
+  + No bugs were reported over a two release period with multiple external actors consuming the new API field
 - Inform external signer implementations of the `spec.expirationSeconds` field
   + [GCP controller manager](https://github.com/kubernetes/cloud-provider-gcp/blob/ce127135e3b5c71893afc4dbf996bb3144eea81e/cmd/gcp-controller-manager/csr_signer.go)
+    * Jordan Liggitt confirmed that GKE successfully updated their internal webhook based signer to honor the `spec.expirationSeconds` field
   + [open-ness/edgeservices](https://github.com/open-ness/edgeservices/blob/e5f79c877a7fb16ee6078855a4674dcf0a23bf80/pkg/certsigner/certsigner.go)
+    * Opened [smart-edge-open/edgeservices#37](https://github.com/smart-edge-open/edgeservices/issues/37) to inform the maintainers of the `spec.expirationSeconds` field
   + [SUSE/kucero](https://github.com/SUSE/kucero/blob/515e41a7599e518d8f39d79cd072ff443eb0de8f/pkg/pki/signer/signer.go)
+    * [SUSE/kucero#34](https://github.com/SUSE/kucero/pull/34) successfully added the use of the `spec.expirationSeconds` field
 - Update conformance tests for the certificates API (`test/e2e/auth/certificates.go`) to assert that
   the `spec.expirationSeconds` field is persisted.  We will not check if the field is honored as
   this functionality is optional.
+  + Addressed in [kubernetes/kubernetes#108782](https://github.com/kubernetes/kubernetes/pull/108782)
 
 ### Upgrade / Downgrade Strategy
 
@@ -508,10 +517,16 @@ N/A
 
 ## Implementation History
 
-- 1.22: 2021-06-17: KEP written
+- 1.22: 2021-06-17: [KEP](https://github.com/kubernetes/enhancements/pull/2788) written
 - 1.22: 2021-06-21: KEP review comments addressed
+- 1.22: 2021-06-23: Bug fix [pull request](https://github.com/kubernetes/kubernetes/pull/99412) merged
 - 1.22: 2021-07-02: Implementation [pull request](https://github.com/kubernetes/kubernetes/pull/99494) merged
-- 1.22: 2021-07-12: KEP updated with implementation details
+- 1.22: 2021-07-12: [KEP](https://github.com/kubernetes/enhancements/pull/2820) updated with implementation details
+- 1.22: 2021-07-22: [Docs](https://github.com/kubernetes/website/pull/28070) updated
+- 1.24: 2022-01-28: [KEP](https://github.com/kubernetes/enhancements/pull/3197) updated with GA milestone details
+- 1.24: 2022-03-21: [KEP](https://github.com/kubernetes/enhancements/pull/3250) updated with completed GA items
+- 1.24: 2022-03-21: Promotion [pull request](https://github.com/kubernetes/kubernetes/pull/108782) merged
+- 1.24: 2022-03-22: Feature gate [docs](https://github.com/kubernetes/website/pull/32405) updated
 
 ## Drawbacks
 

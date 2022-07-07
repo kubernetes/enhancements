@@ -1,0 +1,23 @@
+title: Signing release artifacts
+kep-number: 3031
+authors:
+  - "@saschagrunert"
+owning-sig: sig-release
+participating-sigs:
+  - sig-security
+status: implementable
+creation-date: 2021-11-02
+reviewers:
+  - "@dlorenc"
+  - "@puerco"
+  - "@sftim"
+approvers:
+  - "@cpanato"
+  - "@justaugustus"
+stage: beta
+latest-milestone: "v1.25"
+milestone:
+  alpha: "v1.24"
+  beta: "v1.25"
+  # stable: "v1.22"
+disable-supported: true

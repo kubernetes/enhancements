@@ -281,7 +281,12 @@ The [implementation PR](https://github.com/kubernetes/kubernetes/pull/101432) wi
 
 In 1.23 release, as we are graduating this feature to Beta meaning `CPUManagerPolicyOptions` is enabled by default allowing the user to configure CPU Manager static policy with the option `full-pcpus-only`.
 NOTE: Even though the feature gate is enabled by default the user still has to explicitly use the Kubelet flag called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` along with a specific policy option to use this feature.
-- In addition to this, in order to not have all alpha-quality experimental options introduced in the future available by default, we are introducing an additional feature gate called `CPUManagerPolicyExperimentalOptions` that controls all the experimental options. The experimental options are hidden by default and only if the feature gate is enabled the user has the ability to use the experimental options. Based on the graduation criteria described below, a policy option can move from being hidden to being non-hidden. Once the feature is non-hidden the user would not need to use `CPUManagerPolicyExperimentalOptions` feature gate in order to use that option.
+- In addition to this, in order to not have all alpha-quality experimental options introduced in the future available by default, we are introducing an additional feature gates called `CPUManagerPolicyAlphaOptions` and `CPUManagerPolicyBetaOptions`.
+  These feature gates control all the non-stable options. We introduce feature gates guarding groups of options to avoid the proliferation of feature gates, and to make the management easier: tracking a feature gate per option would be too cumbersome.
+  The alpha-quality options are hidden by default and only if the `CPUManagerPolicyAlphaOptions` feature gate is enabled the user has the ability to use them.
+  The beta-quality options are visible by default, and the feature gate allows a positive acknowledgement that non stable features are being used, and also allows to optionally turn them off.
+  Based on the graduation criteria described below, a policy option will graduate from a group to the other (alpha to beta).
+  We plan to removete the `CPUManagerPolicyAlphaOptions` and `CPUManagerPolicyBetaOptions` after all options graduated to stable, after a feature cycle passes without new planned options, and not before 1.28, to give ample time to the work in progress option to graduate at least to beta.
 - Since the feature that allows the ability to customize the behaviour of CPUManager static policy as well as the CPUManager Policy option `full-pcpus-only` were both introduced in 1.22 release and meet the above graduation criterion, `full-pcpus-only` would be considered as a non-hidden option i.e. available to be used when explicitly used along with `CPUManagerPolicyOptions` Kubelet flag in the kubelet config or command line argument called `cpumanager-policy-options` .
 -  The introduction of this new feature gate gives us the ability to move the feature to beta and later stable without implying all that the options are beta or stable.
 
@@ -309,15 +314,19 @@ No changes needed
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`).
     - Feature gate name: `CPUManagerPolicyOptions`.
-    - Feature gate name: `CPUManagerPolicyExperimentalOptions`.
+    - Feature gate name: `CPUManagerPolicyBetaOptions`.
+    - Feature gate name: `CPUManagerPolicyAlphaOptions`.
     - Components depending on the feature gate: kubelet
   - [X] Change the kubelet configuration adding the CPUManager policy option to `full-pcpus-only`
 * **Does enabling the feature change any default behavior?**
   - Enabling the `CPUManagerPolicyOptions` makes the behaviour of the CPUManager static policy more restrictive and can lead to pod admission rejection.
-  - Enabling the `CPUManagerPolicyExperimentalOptions` provides the ability to use experimental options which depending on the option can change the behaviour of the CPUManager static policy.
+  - Enabling the `CPUManagerPolicyAlphaOptions` provides the ability to use alpha-quality options which can change the behaviour of the CPUManager static policy.
+  - Enabling the `CPUManagerPolicyBetaOptions` provides the ability to use beta-quality options which can change the behaviour of the CPUManager static policy.
+    This allows a positive acknowledgment from the cluster admin that they are using a non-stable feature; additionally, the feature gate allows to _disable_ a set of options.
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
   - Yes, disabling the `CPUManagerPolicyOptions` feature gate shuts down the feature completely; alternatively through kubelet configuration - switch to a different policy.
-  - Also, disabling `CPUManagerPolicyExperimentalOptions` feature gate disables the use of experimental options and the behavior would depend on how `CPUManagerPolicyOptions` feature gate is configured.
+  - Also, disabling `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` feature gates disables the use of non-stable options, respectively alpha or beta quality,
+    and the behavior would depend on how `CPUManagerPolicyOptions` feature gate is configured.
   - Disabling both the feature gates would allow complete rollback of this enablement. 
 * **What happens if we reenable the feature if it was previously rolled back?** No changes. Existing container will not see their allocation changed. New containers will.
 * **Are there any tests for feature enablement/disablement?**
@@ -375,3 +384,4 @@ No changes needed
 - 2021-05-13: KEP update to postpone the `configurable` alias, per review comments
 - 2021-09-02: KEP update to capture the policy name `full-pcpus-only` based on the implementation merged in 1.22, explain how this feature is being used for introduction of another policy option and updates pertaining to promotion of the feature to Beta.
 - 2021-09-08: KEP update to introduce `CPUManagerPolicyExperimentalOptions` feature gate to prevent alpha-quality options from being non-hidden (available) by default and explain the graduation criteria of the options.
+- 2021-09-27: KEP update to split `CPUManagerPolicyExperimentalOptions` feature gate into `CPUManagerPolicyAlphaOptions` and `CPUManagerPolicyBetaOptions` after discussion on [sig-arch](https://groups.google.com/u/1/g/kubernetes-sig-architecture/c/Nxsc7pfe5rw)

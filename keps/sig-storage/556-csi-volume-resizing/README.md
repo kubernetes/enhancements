@@ -105,7 +105,7 @@ If `NodeExpandVolume` failed:
 
 #### Supporting per-PVC secret refs
 
-To support per-PVC secrets for volume resizing, similar to CSI attach and detach - this proposal expands `CSIPersistentVolumeSource` object to contain `ControllerExpandSecretRef`. This API change will be gated by `ExpandCSIVolumes` feature gate currently in Alpha:
+To support per-PVC secrets for volume resizing, similar to CSI attach and detach - this proposal expands `CSIPersistentVolumeSource` object to contain `ControllerExpandSecretRef` and `NodeExpandSecretRef`. This API change will be gated by `ExpandCSIVolumes` feature gate currently in Beta:
 
 ```
 type CSIPersistentVolumeSource struct {
@@ -117,17 +117,20 @@ type CSIPersistentVolumeSource struct {
     // ControllerExpandSecretRef is a reference to secret object containing sensitive
     // information to pass to the CSI driver to complete CSI controller expansion
     ControllerExpandSecretRef *SecretReference
+
+    // NodeExpandSecretRef is a reference to secret object containing sensitive
+    // information to pass to the CSI driver to complete CSI node expansion
+    NodeExpandSecretRef *SecretReference
 }
 ```
 
-Secrets will be fetched from StorageClass with parameters `csi.storage.k8s.io/controller-expand-secret-name` and `csi.storage.k8s.io/controller-expand-secret-namespace`. Resizing secrets will support same templating rules as attach and detach as documented - https://kubernetes-csi.github.io/docs/secrets-and-credentials.html#controller-publishunpublish-secret .
+Secrets will be fetched from StorageClass with parameters `csi.storage.k8s.io/controller-expand-secret-name` and `csi.storage.k8s.io/controller-expand-secret-namespace`, `csi.storage.k8s.io/node-expand-secret-name` and `csi.storage.k8s.io/node-expand-secret-namespace`. Resizing secrets will support same templating rules as attach and detach as documented - https://kubernetes-csi.github.io/docs/secrets-and-credentials.html#controller-publishunpublish-secret .
 
 Starting from 1.15 it is expected that all CSI volumes that require secrets for expansion will have `ControllerExpandSecretRef` field set. If not set
 `ControllerExpandVolume` CSI RPC call will be made without secret. Existing validation of `PersistentVolume` object will be relaxed to allow
 setting of `ControllerExpandSecretRef` for the first time so as CSI volume expansion can be supported for existing PVs.
 
-A similar field for `NodeExpandVolume` RPC call is not required because CSI `NodeExpandVolume` does not accepts secrets. It is also expected that
-Kubelet will not require access to `ControllerExpandSecretRef` field.
+Starting from 1.23 it is expected that all CSI volumes  that require secrets for online expansion will have `NodeExpandSecretRef` field set. If not set `NodeExpandVolume` CSI RPC call will be made without secret. Existing validation of `PersistentVolume` object will be relaxed to allow setting of `NodeExpandSecretRef` for the first time so as CSI volume expansion can be supported for existing PVs.
 
 ### Risks and Mitigations
 
@@ -164,3 +167,4 @@ Hopefully the content previously contained in [umbrella issues][] will be tracke
 - 1.11 Move in-tree volume expansion to beta.
 - 1.11 Implement online resizing feature for in-tree volume plugins as an alpha feature.
 - 1.8 Implement in-tree volume expansion an an alpha feature.
+- 1.23 Implement online resizing with secret for csi volume plugins as an beta feature.

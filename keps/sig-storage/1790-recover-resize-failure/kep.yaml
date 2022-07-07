@@ -17,17 +17,18 @@ prr-approvers:
   - "@deads2k"
 editor: TBD
 creation-date: 2020-01-27
-last-updated: 2021-09-07
+last-updated: 2022-01-26
 status: implementable
 see-also:
 replaces:
 superseded-by:
 
-latest-milestone: "v1.23"
-stage: "alpha"
+latest-milestone: "v1.24"
+stage: "beta"
 
 milestone:
   alpha: "v1.23"
+  beta: "v1.24"
 
 
 feature-gates:

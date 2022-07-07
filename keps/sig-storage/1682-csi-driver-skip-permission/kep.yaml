@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
-status: implementable
+status: implemented
 creation-date: 2020-04-27
 reviewers:
   - "@gnuified"

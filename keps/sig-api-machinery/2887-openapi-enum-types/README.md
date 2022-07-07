@@ -351,6 +351,17 @@ const (
 
 Here, `StorageMedium` can have infinite number of possible values, which disqualify it as an enum type.
 
+The parser of Go compiler and, as a result, `gengo`, does not support type aliases. See https://github.com/kubernetes/gengo/issues/224 for details.
+As of Kubernetes 1.23, we do not have any type aliases in kubernetes/kubernetes repo. Any attempt to add aliases would break the code generation.
+Example: https://github.com/kubernetes/kubernetes/pull/106300
+
+However, as of 1.23, the enum marker is the only marker to be added to a type declaration, and would be the first marker to be affected.
+Until there is a fix to `gengo`, the enum generator has the following limitations:
+- the enum marker must not be added to aliases
+- an aliased enum type or value SHOULD NOT have comments. Otherwise, the comments will be squashed with these of the original with undefined ordering.
+
+If the fix to `gengo` does not arrive in this release cycle, detection and enforcement the rules above will be added to the `verify-*.sh` scripts.
+
 ### Risks and Mitigations
 
 <!--
@@ -522,12 +533,6 @@ Pick one of these and delete the rest.
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `OpenAPIEnum`
   - Components depending on the feature gate: `kube-apiserver`
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 ###### Does enabling the feature change any default behavior?
 
@@ -580,6 +585,9 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+If the API-server has multiple replicas, with some instances not yet enabling this feature,
+whether the returned OpenAPI Spec contains enum types will depend on which instance handle the request
+which could result in inconsistent responses for the same request.
 
 ###### What specific metrics should inform a rollback?
 
@@ -587,6 +595,8 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+Standard API Server metrics apply to this feature. For example, when
+`apiserver_request_duration_seconds` is too high for `/openapi` endpoints.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -596,11 +606,14 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Enabling, disabling, and re-enabling the feature gate yields expected outcomes.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -615,7 +628,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-
+N/A. Workloads that query the OpenAPI specs automatically use this feature if enabled.
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -627,13 +640,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: the returned OpenAPI Spec contains enum types.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -651,6 +659,7 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+This feature does not affect the SLO of API Server or any other components.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -658,12 +667,9 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: apiserver_request_duration_seconds
+  - Components exposing the metric: kube-api-server
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -695,6 +701,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+- `kube-apiserver`
+  - Usage description:
+    - Impact of its outage on the feature: The `/openapi` endpoint is unavailable
+    - Impact of its degraded performance or high-error rates on the feature: The `/openapi` endpoint is degraded.
+  
 ### Scalability
 
 <!--
@@ -784,6 +795,7 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+This feature is part of API server. The feature is unavailable if API server is unavailable.
 
 ###### What are other known failure modes?
 
@@ -799,8 +811,11 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+N/A. This feature fails if and only if the API Server becomes unavailable.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A. This feature fails if and only if the API Server becomes unavailable.
 
 ## Implementation History
 
@@ -814,6 +829,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 09-09-2021 `Summary` and `Motivation` sections being merged, signaling SIG acceptance
+- 09-09-2021 `Proposal` section being merged, signaling agreement on a proposed design
+- 09-14-2021 Enum type generator merged as `kubernetes/kube-openapi#242`
+- 11-16-2021 Enum type support for OpenAPI v2 merged as #105057
 
 ## Drawbacks
 

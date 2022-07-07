@@ -460,7 +460,6 @@ EndpointSliceSyncs = metrics.NewCounterVec(
 
 **Beta:**
 - Tests expanded to include e2e coverage described above.
-- Interoperability with Internal and External TrafficPolicy fields.
 
 ### Version Skew Strategy
 This KEP requires updates to both the EndpointSlice Controller and kube-proxy.

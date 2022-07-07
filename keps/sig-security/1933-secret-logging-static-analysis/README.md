@@ -173,7 +173,6 @@ It can be use used to harden the boundaries for those data which require special
 
 This Kubernetes Enhancement Proposal (KEP) proposes such analysis to be used
 during testing to prevent various types of sensitive information from leaking via logs.
-For a complimentary efforts at runtime, see [KEP-1753: Kubernetes system components logs sanitization](https://github.com/kubernetes/enhancements/pull/1754).
 
 ## Motivation
 
@@ -251,8 +250,8 @@ Taint propagation analysis gives additional consideration is given to how data
 See the `go-flow-levee` documentation for details.
 
 While configuration of source identification can be done via manually configured regexp,
-this KEP would benefit from a set of standard Kubernetes go lang struct tags indicating which fields are expected to contain secrets,
-as proposed in [KEP-1753](https://github.com/kubernetes/enhancements/pull/1754).
+this KEP benefits from a set of standard Kubernetes go lang struct tags indicating which fields are expected to contain secrets.
+See [KEP-1753](/keps/sig-instrumentation/1753-logs-sanitization/README.md) for more information on data policy tags.
 
 ### Notes/Constraints/Caveats
 
@@ -576,9 +575,7 @@ However, such additional testing has not proven necessary given the rarity of bo
 As this analysis depends on project-specific considerations of what constitutes
 a secret or a sink, periodic review is required to ensure configuration is kept up-to-date.
 This is mitigated somewhat with a consistent use of field tags,
-as proposed in [KEP-1753](https://github.com/kubernetes/enhancements/pull/1754),
-though correct application of field tags would also be subject to periodic review.
-
+as introduced in [KEP-1753](/keps/sig-instrumentation/1753-logs-sanitization/README.md).
 
 ## Alternatives
 

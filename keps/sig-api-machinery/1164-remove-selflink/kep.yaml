@@ -14,22 +14,22 @@ approvers:
 prr-approvers:
   - "@deads2k"
 creation-date: 2019-07-11
-last-updated: 2019-07-24
-status: implementable
+last-updated: 2022-05-09
+status: implemented
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.20"
+latest-milestone: "v1.24"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.16"
   beta: "v1.20"
-  stable: "v1.21"
+  stable: "v1.24"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

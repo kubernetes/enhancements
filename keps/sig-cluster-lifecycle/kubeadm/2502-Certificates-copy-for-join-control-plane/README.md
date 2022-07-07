@@ -309,6 +309,7 @@ affect component version or version skew policy)
   - Extension of the kubeadm config file for allowing usage of pre-generated certificate keys
   - TokenCleaner enforcement
   - E2E tests
+- v1.24 retroactively promoted to GA
 
 ## Alternatives
 

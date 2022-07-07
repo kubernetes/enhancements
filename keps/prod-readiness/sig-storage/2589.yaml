@@ -1,3 +1,5 @@
 kep-number: 2589
 alpha:
   approver: "@ehashman"
+beta:
+  approver: "@wojtek-t"

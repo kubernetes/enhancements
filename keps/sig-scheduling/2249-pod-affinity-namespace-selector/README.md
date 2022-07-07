@@ -24,7 +24,7 @@ To get started with this template:
   appropriate SIG(s).
 - [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -129,11 +129,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -349,7 +349,7 @@ type PodAffinityTerm struct {
     // The term is applied to the union of the namespaces selected by this field
     // and the ones listed in the namespaces field.
     // nil selector and empty namespaces list means "this pod's namespace"
-    // An empty selector ({}) is not valid.
+    // An empty selector ({}) means all namespaces.
     NamespaceSelector *metav1.LabelSelector
 }
 ```
@@ -399,7 +399,14 @@ proposal will be implemented, this is the place to discuss them.
 - Benchmark Tests: 
   - evaluate performance for the case where the selector matches a large number of pods 
     in large number of namespaces. The evaluation shows that using NamespaceSelector has no
-    impact on performance (see https://github.com/kubernetes/kubernetes/pull/101329 for details).
+    impact on performance, summarized as follows:
+    - compares affinity performance without namespace selector 
+      of a workload that puts all pods in one namespace vs splitting them across 100 namespaces 
+      and using namespace selector
+    - tests both required and preferred, and for each affinity and anti-affinity
+    - measures the performance (latency and throughput) of scheduling 1000 pods on
+      5k nodes with 5k existing pods (4k in case of required anti-affinity)
+    - (see https://github.com/kubernetes/kubernetes/pull/101329 for details).
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -583,6 +590,25 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can an operator determine if the feature is in use by workloads?**
   The operator can query pods with the NamespaceSelector field set in pod affinity terms.
 
+* **How can someone using this feature know that it is working for their instance?**
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+- [x] Other (treat as last resort)
+  - Details: inter-pod affinity as a feature doesn't trigger pod status updates on its own,
+             none of the scheduler's filters/scores do on their own. If a pod using affinity
+             was successfully assigned a node, nodeName will be updated, if not, then 
+             PodScheduled condition will be false, and an event will be recorded with a detailed
+             message describing the reason including the failed filters (inter-pod affnity could
+             be one of them).
+
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [x] Metrics
@@ -686,6 +712,7 @@ information to express the idea and why it was not acceptable.
  - 2021-01-11: Initial KEP sent for review
  - 2021-02-10: Remove the restriction on empty namespace selector
  - 2021-04-26: Graduate the feature to Beta
+ - 2022-01-08: Graduate the feature to Stable
  
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

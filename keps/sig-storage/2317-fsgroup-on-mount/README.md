@@ -234,7 +234,9 @@ fields of API types, flags, etc.?**
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  We are going to split the metric that captures mount and permission timings. The full details are available in - https://github.com/kubernetes/kubernetes/issues/98667
+  The feature is in use if the feature gate DelegateFSGroupToCSIDriver is enabled in kubelet, and the CSI driver supports the `VOLUME_MOUNT_GROUP` node service capability.
+  
+  We have considered introducing a new metric with a label that identifies which fsgroup logic is used (https://github.com/kubernetes/kubernetes/issues/98667), but because this feature is small and simple enough, the benefit of such a label would be marginal.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
@@ -257,8 +259,8 @@ the health of the service?**
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
-  
-  https://github.com/kubernetes/kubernetes/issues/98667 as mentioned above - aiming to implement this as part of beta.
+
+  No
 
 ### Dependencies
 
@@ -348,7 +350,7 @@ _This section must be completed when targeting beta graduation to a release._
   In addition to existing k8s volume and CSI failure modes:
     
   - Driver fails to apply FSGroup (due to a driver error).
-    - Detection: SLI above, in conjunction with the metric in https://github.com/kubernetes/kubernetes/issues/98667 to determine if this feature is being used.
+    - Detection: SLI above, in conjunction with the `DelegateFSGroupToCSIDriver` feature gate and `VOLUME_MOUNT_GROUP` node service capability in the CSI driver to determine if this feature is being used.
     - Mitigations: Revert the CSI driver version to one without the issue, or avoid specifying an FSGroup in the pod's security context, if possible.
     - Diagnostics: Depends on the driver. Generally look for FSGroup-related messages in `NodeStageVolume` and `NodePublishVolume` logs.
     - Testing: Will add an e2e test with a test driver (csi-driver-host-path) simulating a FSGroup failure.

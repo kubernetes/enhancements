@@ -75,7 +75,7 @@ When enabled, this will trigger the `CPUManager` to evenly distribute CPUs acros
 ### Risks and Mitigations
 
 The risks of adding this new feature are quite low.
-It is isolated to a specific policy option within the `CPUManager`, and is protected both by the option itself, as well as the `CPUManagerPolicyExperimentalOptions` feature gate (which is disabled by default).
+It is isolated to a specific policy option within the `CPUManager`, and is protected both by the option itself, as well as the `CPUManagerPolicyAlphaOptions` feature gate (which is disabled by default).
 
 | Risk                                             | Impact | Mitigation |
 | -------------------------------------------------| -------| ---------- |
@@ -149,7 +149,7 @@ No changes needed
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `CPUManagerPolicyExperimentalOptions`
+  - Feature gate name: `CPUManagerPolicyAlphaOptions`
   - Components depending on the feature gate: `kubelet`
 - [X] Change the kubelet configuration to set a `CPUManager` policy of `static` and a `CPUManager` policy option of `distribute-cpus-across-numa`
   - Will enabling / disabling the feature require downtime of the control
@@ -161,14 +161,14 @@ No changes needed
 ###### Does enabling the feature change any default behavior?
 
 No. In order to trigger any of the new logic, three things have to be true:
-1. The `CPUManagerPolicyExperimentalOptions` feature gate must be enabled
+1. The `CPUManagerPolicyAlphaOptions` feature gate must be enabled
 1. The `static` `CPUManager` policy must be selected
 1. The new `distribute-cpus-across-numa` policy option must be selected
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, the feature can be disabled by either:
-1. Disabling the `CPUManagerPolicyExperimentalOptions` feature gate
+1. Disabling the `CPUManagerPolicyAlphaOptions` feature gate
 1. Switching the `CPUManager` policy to `none`
 1. Removing `distribute-cpus-across-numa` from the list of `CPUManager` policy options
 
@@ -254,3 +254,4 @@ No, the algorithm will run on a single `goroutine` with minimal memory requireme
 - 2021-08-26: Initial KEP created
 - 2021-08-30: Updates to fill out more sections, answer PRR questions
 - 2021-09-08: Change feature gate from `CPUManagerPolicyOptions` to `CPUManagerPolicyExperimentalOptions`
+- 2021-10-11: Change feature gate from `CPUManagerPolicyExperimentalOptions` to `CPUManagerPolicyAlphaOptions`

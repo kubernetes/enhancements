@@ -383,6 +383,7 @@ This section lists the deprecated Event API fields that should be removed before
 
 - Remove deprecated fields listed above
 - Gather data from performance and scalability tests
+- Remove all in-tree use of the core/v1.Event API in favour of events.k8s.io/v1
 
 #### Load Test
 

@@ -14,7 +14,19 @@ reviewers:
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
-editor: Eric Ernst
+stage: stable
+latest-milestone: "v1.24"
+milestone:
+  alpha: "v1.16"
+  beta: "v1.18"
+  stable: "v1.24"
 creation-date: 2019-02-26
-last-updated: 2020-10-27
-status: implemented (beta)
+last-updated: 2022-01-14
+status: implementable
+feature-gates:
+  - name: PodOverhead
+    components:
+      - kubelet
+      - kube-apiserver
+      - kube-scheduler
+      - controller-manager

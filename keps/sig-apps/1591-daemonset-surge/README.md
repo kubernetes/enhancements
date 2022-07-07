@@ -13,7 +13,14 @@
 - [Design Details](#design-details)
   - [Implications to drain](#implications-to-drain)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Alpha -&gt; Beta](#alpha---beta)
+    - [Beta -&gt; GA](#beta---ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -52,7 +59,7 @@ type RollingUpdateDaemonSet struct {
 	// The maximum number of DaemonSet pods that can be unavailable during the
 	// update. Value can be an absolute number (ex: 5) or a percentage of total
 	// number of DaemonSet pods at the start of the update (ex: 10%). Absolute
-	// number is calculated from percentage by rounding down to a minimum of one.
+	// number is calculated from percentage by rounding up.
 	// This cannot be 0 if MaxSurge is 0
 	// Default value is 1.
 	// Example: when this is set to 30%, at most 30% of the total number of nodes
@@ -71,15 +78,15 @@ type RollingUpdateDaemonSet struct {
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	// This can not be 0 if MaxUnavailable is 0.
 	// Absolute number is calculated from percentage by rounding up to a minimum of 1.
-	// Defaults to 25%.
+	// Default value is 0.
 	// Example: when this is set to 30%, at most 30% of the total number of nodes
 	// that should be running the daemon pod (i.e. status.desiredNumberScheduled)
 	// can have their a new pod created before the old pod is marked as deleted.
-  // The update starts by launching new pods on 30% of nodes. Once an updated
-  // pod is available (Ready for at least minReadySeconds) the old DaemonSet pod
-  // on that node is marked deleted. If the old pod becomes unavailable for any
-  // reason (Ready transitions to false, is evicted, or is drained) an updated
-  // pod is immediatedly created on that node without considering surge limits.
+	// The update starts by launching new pods on 30% of nodes. Once an updated
+	// pod is available (Ready for at least minReadySeconds) the old DaemonSet pod
+	// on that node is marked deleted. If the old pod becomes unavailable for any
+	// reason (Ready transitions to false, is evicted, or is drained) an updated
+	// pod is immediately created on that node without considering surge limits.
 	// Allowing surge implies the possibility that the resources consumed by the
 	// daemonset on any given node can double if the readiness check fails, and
 	// so resource intensive daemonsets should take into account that they may
@@ -141,9 +148,45 @@ pod). If the old pod delays deletion, then the new pod has a chance to accept ha
   * Testing should set up conflicting rules like HostPort and verify that surge fails and the correct daemonset condition is set and events are generated.
 	* A test should cover a pod going unready during rollout and verifying it is immediately replaced.
 
+
+#### Prerequisite testing updates
+[x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
+
+##### Unit tests
+
+```
+`k8s.io/kubernetes/pkg/apis/apps/validation`                     `06/06/2022`:     `90.6% of statements` `The tests added for the current feature in this package touches the daemonSet Spec field. No new tests are needed for promotion to GA`
+`k8s.io/kubernetes/pkg/apis/apps/validation/validation.go:387`:	 `06/06/2022`:		`100.0% of statements`
+`k8s.io/kubernetes/pkg/controller/daemon`: `06/06/2022`: `70.7% of statements`    `The tests added for the current feature in this package touches the daemonSet update strategies. No new tests are needed for promotion to GA`
+`k8s.io/kubernetes/pkg/registry/apps/daemonset`: `06/06/2022`: `31.1% of statements`  `The tests added for the current feature in this package makes sure that the kubernetes version upgrades/downgrades won't have any impact on the new field to the daemonSet api when persisting to etcd. No new tests are needed for promotion to GA`
+`k8s.io/kubernetes/pkg/registry/apps/daemonset/strategy.go:129`:	`06/06/2022`:	`100.0% of statements`
+```
+##### Integration tests
+
+A new integration which exercises maxSurge when `RollingUpdate` is used as update strategy will be added to [DS integration test suite](https://github.com/kubernetes/kubernetes/blob/master/test/integration/daemonset/daemonset_test.go)
+
+##### e2e tests
+
+An e2e test which exercises maxSurge when `RollingUpdate` is used as update strategy is added for daemonsets.
+
+- should surge pods onto nodes when spec was updated and update strategy is RollingUpdate: [test grid](https://storage.googleapis.com/k8s-triage/index.html?test=should%20surge%20pods)
+
+
 ### Graduation Criteria
 
 This will be added as a alpha field enhancement to DaemonSets with a backward compatible default. After sufficient exposure this field would be promoted to beta, and then to GA in successive releases. The feature gate for this field will be `DaemonSetUpdateSurge`.
+
+#### Alpha
+  - Complete feature behind a featuregate
+  - Have proper unit and e2e tests
+
+#### Alpha -> Beta
+  - Gather feedback from the community
+
+#### Beta -> GA
+   Atleast one of example of user benefitting from this feature:
+   - OpenShift has few critical [DS](https://github.com/openshift/cluster-dns-operator/blob/d87dd223e67c476220451d254d878209c50324a7/pkg/operator/controller/controller_dns_node_resolver_daemonset.go#L80) where maxSurge is beneficial
+
 
 ## Production Readiness Review Questionnaire
 
@@ -224,7 +267,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Manually tested. No issues were found when we enabled the feature gate -> disabled it ->
-  re-enabled the feature gate. We still need to test upgrade -> downgrade -> upgrade scenario.
+  re-enabled the feature gate. Upgrade -> downgrade -> upgrade scenario was tested manually.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
@@ -346,3 +389,4 @@ This feature will not work if the API server or etcd is unavailable as the contr
 - 2021-02-09: Initial KEP merged
 - 2021-03-05: Initial implementation merged
 - 2021-04-30: Graduate the feature to Beta proposed
+- 2022-05-10: Graduate the feature to stable proposed
