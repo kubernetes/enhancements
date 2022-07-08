@@ -86,6 +86,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Phase 1](#phase-1)
   - [Future work](#future-work)
     - [Pod Spec](#pod-spec)
+    - [Update sandbox-level QoS-class resources](#update-sandbox-level-qos-class-resources)
     - [Resource status/capacity](#resource-statuscapacity)
     - [Resource discovery](#resource-discovery)
     - [Access control](#access-control)
@@ -213,6 +214,15 @@ Having the support for QoS-class resources in place, it will provide a
 framework for the future, for instance class-based network or memory type
 prioritization.
 
+We have identified the need for both container-level and pod-level QoS-class
+resources as independent concepts. Intel RDT (above) is per-container by
+design because of the hardware implementation (the control/class hiearchy is
+flat). Also, the current support for blockio is container-level only (it is not
+possible to configure pod sandbox-level cgroup parameters). However, we have
+plans for implementing configuration of sandbox-level blockio parameters. Other
+usage for pod sandbox-level QoS-class resources would be communicating the
+Kubernetes Pod QoS class from kubelet to the container runtime.
+
 ## Motivation
 
 <!--
@@ -258,6 +268,7 @@ know that this has succeeded?
   - Support RDT class assignment of containers. This is already supported by
     the containerd and CRI-O runtime and part of the OCI runtime-spec
   - Support blockio class assignment of containers.
+  - Support Pod-level (sandbox-level) QoS-class resources
 - Make the API to support updating QoS-class resource assignment of running containers
 - Make the extensions flexible, enabling simple addition of other QoS-class
   resource types in the future.
@@ -272,6 +283,8 @@ and make progress.
 - Interface or mechanism for configuring the QoS-class resources (responsibility of
   the container runtime).
 - Enumerating possible (QoS-class) resource types or their detailed behavior
+- API changes to support updating Pod-level (sandbox-level) QoS-class resource
+  assignment of running pods (will be addressed in a separate KEP)
 - Resource status/capacity (will be addressed in a separate KEP)
 - Discovery of the QoS-class resources (will be addressed in a separate KEP)
 - Access control (will be addressed in a separate KEP)
@@ -362,6 +375,25 @@ long, must start and end with an alphanumeric character and may contain only
 alphanumeric characters, dashes, underscores or dots (`-`, `_` or `.`).
 Similar to labels, a namespace prefix (FQDN subdomain separated with a slash)
 in the key is allowed, similar to labels, e.g. `vendor/resource`.
+
+#### Update sandbox-level QoS-class resources
+
+Currently there is no endpoint in the CRI API to update the configuration of
+pod sandboxes. In contrast, container-level resources can be updated with the
+UpdateContainerResources API endpoint. In order to make container and pod
+(sandbox) level QoS-class resources symmetric we want to make it possible to
+update of pod-level resource assignments, too.
+
+This will likely required a new API endpoint in CRI:
+
+```diff
+@@ -38,6 +38,8 @@ service RuntimeService {
+     // RunPodSandbox creates and starts a pod-level sandbox. Runtimes must ensure
+     // the sandbox is in the ready state on success.
+     rpc RunPodSandbox(RunPodSandboxRequest) returns (RunPodSandboxResponse) {}
++    // UpdatePodSandboxConfig updates the configuration of an existing pod sandbox.
++    rpc UpdatePodSandboxConfig(UpdatePodSandboxConfigŔequest) returns (UpdatePodSandboxConfigŔesponse) {}
+```
 
 #### Resource status/capacity
 
@@ -493,9 +525,18 @@ nitty-gritty.
 -->
 
 We extend the CRI protocol to contain information about the QoS-class
-resource assignment of containers.  Currently we identify two types of
-resources (RDT and blockio) but the API changes will be generic so that it
-will serve other similar resources in the future.
+resource assignment of containers and pods.
+
+Pod-level and container-level QoS-class resources are completely independent
+resource types. E.g. specifying something in the pod-level request does not
+mean specifying a pod-level default for all containers of the pod.
+
+Currently we identify two types of container-level QoS-class resources (RDT and
+blockio) but the API changes will be generic so that it will serve other
+similar resources in the future. Currently there are no immediately enabled
+pod-level QoS-class resources but we see usage scenarios for those in the
+future (communicating the pod QoS class to the runtime and enabling pod-level
+cgroup controls for blockio).
 
 We also extend the CRI protocol to support updates of QoS-class resource
 assignment of running containers. We recognize that currently container
@@ -505,8 +546,8 @@ limitation in that and we are planning to implement update support for them
 in the future.
 
 We implement pod annotations the initial mechanism for Kubernetes users to
-control QoS-class resource assignment. We define two QoS-class resources that can be
-controlled via annotations, i.e. RDT and blockio.
+control QoS-class resource assignment. We define two container-level QoS-class
+resources that can be controlled via annotations, i.e. RDT and blockio.
 
 We introduce a feature gate that enables kubelet to interpret pod annotations
 for controlling the RDT and blockio class of containers.
@@ -700,19 +741,21 @@ Specifically, kubelet will support annotations for specifying RDT and blockio
 class, the two types of QoS-class resources that already have basic support in the
 container runtimes.
 
-- `rdt.resources.beta.kubernetes.io/pod` for setting a Pod-level default RDT
+  class for all containers
+- `rdt.resources.beta.kubernetes.io/default` for setting a Pod-level default RDT
   class for all containers
 - `rdt.resources.beta.kubernetes.io/container.<container-name>` for
   container-specific RDT class settings
-- `blockio.resources.beta.kubernetes.io/pod` for setting a Pod-level default
+  blockio class for all containers
+- `blockio.resources.beta.kubernetes.io/default` for setting a Pod-level default
   blockio class for all containers
 - `blockio.resources.beta.kubernetes.io/container.<container-name>` for
   container-specific blockio class settings
 
 ### Container runtimes
 
-We have implemented QoS-class RDT and blockio support in CRI-O and
-containerd:
+We have implemented support (container-level QoS-class resources) for Intel RDT
+and blockio in CRI-O and containerd:
 
 - cri-o:
   - [~~Add support for Intel RDT~~](https://github.com/cri-o/cri-o/pull/4830)
