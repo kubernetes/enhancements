@@ -742,14 +742,14 @@ class, the two types of QoS-class resources that already have basic support in t
 container runtimes.
 
   class for all containers
-- `rdt.resources.beta.kubernetes.io/default` for setting a Pod-level default RDT
+- `rdt.resources.alpha.kubernetes.io/default` for setting a Pod-level default RDT
   class for all containers
-- `rdt.resources.beta.kubernetes.io/container.<container-name>` for
+- `rdt.resources.alpha.kubernetes.io/container.<container-name>` for
   container-specific RDT class settings
   blockio class for all containers
-- `blockio.resources.beta.kubernetes.io/default` for setting a Pod-level default
+- `blockio.resources.alpha.kubernetes.io/default` for setting a Pod-level default
   blockio class for all containers
-- `blockio.resources.beta.kubernetes.io/container.<container-name>` for
+- `blockio.resources.alpha.kubernetes.io/container.<container-name>` for
   container-specific blockio class settings
 
 ### Container runtimes
