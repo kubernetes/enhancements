@@ -225,7 +225,7 @@ know that this has succeeded?
 managed as Kubernetes resources
 * Define the standard to be strict enough to be useful in the following user stories:
   * Establish reliable coordinates for determining clusterset membership and identity of a cluster within its cluster set
-  * Enable cluster-granularity DNS names for multicluster services
+  * Enable disambiguation of DNS names for multicluster Headless services with the same hostnames
   * Facilitate enrichment of log / event / metrics data with cluster id / set coordinates
 
 ### Non-Goals
