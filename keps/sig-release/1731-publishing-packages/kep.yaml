@@ -2,6 +2,8 @@ title: Publishing kubernetes packages
 kep-number: 1731
 authors:
   - "@hoegaarden"
+  - "@RobertKielty"
+  - "@saschagrunert"
 owning-sig: sig-release
 participating-sigs:
   - sig-cluster-lifecycle
@@ -17,7 +19,7 @@ approvers:
   - "@tpepper"
 editor: TBD
 creation-date: 2019-02-19
-last-updated: 2019-02-27
+last-updated: 2022-10-12
 status: provisional
 see-also:
   - "https://github.com/kubernetes/enhancements/pull/858"
