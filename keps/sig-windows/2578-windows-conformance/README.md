@@ -178,7 +178,6 @@ As an IT administrator, I want to know whether my current version of Kubernetes 
 #### Basic Service accounts and local storage
 
 - Ability to reboot all of the Windows nodes in a cluster while running Windows pods, in such a way that recovery of these deleted pods occurs in the scope of a few minutes.
-- Ability to delete and recreate services in such a way that load balancing rules for pods are recovered by whatever chosen service proxy is being utilized.
 - Ability to mount a hostPath storage volume from a Kubelet into a pod and write to it. 
 - Ability to mount a hostPath storage volume from a Kubelet into a pod and read from it. 
 - Ability to mount host volumes

@@ -68,7 +68,7 @@ This KEP extends kubernetes with user-friendly support for running parallel jobs
 Here, parallel means multiple pods per Job. Jobs can be:
 - Embarrassingly parallel, where the pods have no dependencies between each other.
 - Tightly coupled, where the Pods communicate among themselves to make progress
-  (kubernetes/kubernetes#99497)[https://github.com/kubernetes/kubernetes/issues/99497]
+  [kubernetes/kubernetes#99497](https://github.com/kubernetes/kubernetes/issues/99497)
 
 We propose the addition of completion indexes into the Pods of a *Job
 [with fixed completion count]* to support running embarrassingly parallel
