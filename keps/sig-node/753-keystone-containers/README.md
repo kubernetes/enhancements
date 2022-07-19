@@ -90,6 +90,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [API Changes:](#api-changes)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [alpha:](#alpha)
     - [beta:](#beta)
@@ -98,6 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+      - [How can a rollout or rollback fail? Can it impact already running workloads?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
@@ -155,7 +160,7 @@ This KEP proposes to initiate pod termination on the status of application conta
 
 This is particularly helpful in solving the blocking issue of sidecar containers with jobs. This will also help us to make a step forward with the sidecar KEP. 
 
-We are calling `application/essential/main/critical` containers as `keystone` containers in this KEP to distinguish them from sidecars.
+We are calling `application/essential/main/critical/primary` containers as `keystone` containers in this KEP to distinguish them from sidecars.
 <!--
 This section is incredibly important for producing high-quality, user-focused
 documentation such as release notes or a development roadmap. It should be
@@ -218,7 +223,7 @@ This identification of application containers is used by kubelet to make a decis
 
 - if all application containers exited successfully and the restart policy of the pod is "never" or "onFailure" then terminate the pod.
 
-- if all app containers are failed and the restart policy is "never" then terminate the pod. 
+- if all app containers are failed and the restart policy is "never" then terminate the pod, respecting the value of `terminationGracePeriodSeconds`. 
 If failure logs are concerned in this case (considering the logging container is sidecar) then the sidecar container will only be terminated when all app containers are in the failed state, so it must have captured the failure logs.
 
 The following are existing behaviors just mentioned here for clarity:
@@ -305,41 +310,32 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-We will add the logic to terminate pod on the basis of keystone container status, restart policy and exit code of keystone container in `computePodActions` of kuberuntime manager. `computePodAction` is called by pod worker during pod sync.
+We will add the logic to terminate pod on the basis of keystone container status in `computePodActions` of kuberuntime manager. `computePodAction` is called by pod worker during pod sync.
 
 
-```
+```go
 pkg/kubelet/kuberuntime/kuberuntime_manager.go 
 
 func (...) computePodActions(...){
 ....
 ....
-    if featureflag keystoneContainersEnabled 
-        keyContainer := getKeyContainer()
-        keyContainersStatus := getKeyContainerStatus(keyContainer)
-
-        if keyContainerStatus==Completed && restartPolicy != always
-        // kill other containers
-       
-        if keyContainerStatus==Failed && restartPolicy == never
-        // kill other containers
-		
+for _, container := range pod.Spec.Containers {
+  if container.Status != Running {
+    // run post stop hook if exists
+    ...
+    if featureflag keystoneContainersEnabled && containerIsKeystone(&container) {
+      // kill container
+    }
+  }
+}
 } 
 
-func getKeyContainerStatus() {
-
-    // Check status and exit code for all key containers 
-    // if all are exited with exit code 0 return "Completed"
-    // if all or any container exited with exit code other than zero return "Failed"
-    // if any container is running than return "Running"
-    
-}
-
-pkg/kubelet/kuberuntime/helpers.go
-
-func getKeyContainerList() {
-    // get keystone container from pod containers list,
-    // lifecycle type "keystone" is specified for keystone container
+func containerIsKeystone(container *v1.Container) bool {
+  if container.Lifecycle != nil && container.Lifecycle.Type != nil && strings.EqualFold(*container.Lifecycle.Type, "Keystone") {
+    return true
+  }
+  
+  return false
 }
 
 ```
@@ -353,21 +349,9 @@ type Lifecycle struct {
   // Type specifies the container type.
   // It can be keystone or, if not present, default behavior is used
   // +optional
-  Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
-}
+	Type *string `json:"type,omitempty" protobuf:"bytes,3,opt,name=type"`}
 ```
-New type `LifecycleType` will be added with one constant:
-```go
-// LifecycleType describes the lifecycle behaviour of the container
-type LifecycleType string
 
-const (
-  // LifecycleTypeKeystone means that this is the primary important
-  // container of the pod, and pod termination is intiated on successful
-  // completion of keystone container.
-  LifecycleTypeKeystone LifecycleType = "Keystone"
-)
-```
 Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
 
 <!--
@@ -400,6 +384,55 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+- `<package>`: `<date>` - `<test coverage>`
+
+##### Integration tests
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+- <test>: <link to test coverage>
+
+##### e2e tests
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+- <test>: <link to test coverage>
+
 ### Graduation Criteria
 
 #### alpha: 
@@ -431,6 +464,7 @@ or by redefining what graduation means.
 In general we try to use the same stages (alpha, beta, GA), regardless of how the
 functionality is accessed.
 
+[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
 [maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
@@ -485,7 +519,7 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-Enabling or disabling the new feature will be done using the feature flag.
+Enabling or disabling the new feature will be done using the feature gate.
 
 The api field `PodSpec.Containers[i].Lifecycle.Type` will be optional thus during upgrade there won't be any effect on previously created pods and kubelet will treat all containers as same as before.
 
@@ -509,7 +543,7 @@ enhancement:
 -->
 
 - Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-    - If the API server is on new version and Kubelet is on the older version then pods specifying `Lifecycle.Type` field would be treated as same as before by kubelet i.e kubelet won't handle the API field and default Pod lifecycle will be applied.
+    - If the API server is on a new version and Kubelet is on the older version then pods specifying `Lifecycle.Type` field would be treated as same as before by kubelet i.e kubelet won't handle the API field and default Pod lifecycle will be applied.
     - If the kubelet is updated before the API server, or if the feature isn't enabled in the latter, no API field will be present in the Pod and default Pod lifecycle will be applied.
    - feature gate enabled/disabled
         - apiserver enabled, kubelet enabled
@@ -520,7 +554,6 @@ enhancement:
             - kubelet will ignore, Lifecycle.Type field containers field and treats all containers as same as before.
         - apiserver disabled, kubelet enabled
             - api validation would fail if Lifecycle.Type is specified in containers.
-
 
 - Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
     - There won't be any effect on components like CSI, CSI or CNI
@@ -559,6 +592,11 @@ This section must be completed when targeting alpha to a release.
 
 <!--
 Pick one of these and delete the rest.
+
+Documentation is available on [feature gate lifecycle] and expectations, as
+well as the [existing list] of feature gates.
+[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
@@ -567,10 +605,9 @@ Pick one of these and delete the rest.
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
-    plane? 
+    plane?
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). 
-    
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 ###### Does enabling the feature change any default behavior?
 
@@ -589,6 +626,10 @@ Yes it can be rolled back, kubelet will simply ignore the alpha API field on the
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
 
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
+
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
@@ -605,6 +646,12 @@ The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
 with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
 Unit and e2e tests will be added to verify the feature is working as expected and have not introduced any regression. e2e tests can be run as a part of node alpha features CI job.
@@ -615,7 +662,7 @@ Unit and e2e tests will be added to verify the feature is working as expected an
 This section must be completed when targeting beta to a release.
 -->
 
-###### How can a rollout or rollback fail? Can it impact already running workloads?
+##### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -652,6 +699,9 @@ Even if applying deprecation policies, they may still surprise some users.
 
 <!--
 This section must be completed when targeting beta to a release.
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -674,10 +724,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
