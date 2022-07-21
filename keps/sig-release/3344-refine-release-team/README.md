@@ -174,7 +174,7 @@ updates.
 -->
 
 This change will introduce a "Release Team Roster".
-This roster will be a list of contributors, maintained by SIG Releases, who wish to contribute to current or future release teams.
+This roster will be a list of contributors, maintained by SIG Release, who wish to contribute to current or future release teams.
 
 Release teams will largely keep their existing structure, with some naming updates, including the distinct subteams and functions.
 Release teams leads (the release lead, and the subteam leads) will be selected via nomination in a process that is largely unchanged.
@@ -182,7 +182,7 @@ The rest of the team will be comprised of roster members and shadows.
 
 ## Motivation
 
-Each Kubernetes release consists of a [release team](https://github.com/kubernetes/sig-release/tree/master/release-team) of approximately 25–30 people.
+Each Kubernetes release is driven (from a procedure perspective) by a [release team](https://github.com/kubernetes/sig-release/tree/master/release-team) of 25–30 people.
 This team works for the entire cycle of the release — approximately 16 weeks.
 
 Presently each team is selected by nomination of established community members (typically release team members in the previous release) and a shadow survey, depending on the role within the team.
@@ -204,7 +204,9 @@ There are a number of qualities to the current process that are desirable, and s
 - The release team having some degree of 'churn' is natural and expected.
   An entirely static, or effectively static, team is not desirable. 
 
-Balancing these desires, this KEP introduces a stable
+Balancing these desires, this KEP introduces a long-lived "roster" of release team members.
+This roster is used to assemble release teams instead of a new shadow survey each time.
+
 <!--
 This section is for explicitly listing the motivation, goals, and non-goals of
 this KEP.  Describe why the change is important and the benefits to users. The
@@ -249,20 +251,21 @@ nitty-gritty.
 ### Release Team Roster
 
 We will add to SIG Release a "Release Team Roster".
-The list of roster members will be maintained in a YAML file in https://github.com/kubernetes/sig-release under a new release-team/roster directory.
+The list of roster members will be maintained in a YAML file in https://github.com/kubernetes/sig-release under a new `release-team/roster` directory.
 People on the roster can be in one of three roles: Shadow, Member, or Emeritus.
 
 At the time of creation, all former role leads or release leads from any release will be added as emeritus members, or a member if they want.
 The 1.25 EA will lead discussions around which shadows from 1.25 should be placed at the member or shadow level on the release team roster.
 
 Roster Shadows may leave at any time by opening a PR to remove themselves.
-Shadows that do not join a release team for two consecutive releases will generally be removed (although this is at the discression of SIG Release).
+Shadows that do not join a release team for two consecutive releases will generally be removed (although this is at the discretion of SIG Release).
 Members may leave at any time by opening a PR to move themselves to the Emeritus section.
 
 ### Release Team Changes
 
 The "Lead Shadow" role will be renamed to "Assistant Lead".
-This is to avoid confusion as to what a "shadow" is on the release team, as a "lead shadow" is sagnifcantly different to a role shadow.
+There is otherwise no change in the nature of this role.
+This is to avoid confusion as to what a "shadow" is on the release team, as a "lead shadow" is significantly different to a role shadow.
 
 ### Shadow Survey
 
@@ -294,6 +297,8 @@ At the end of each cycle, the current EA will lead discussions about which shado
 There is no set time, but it's generally expected to take at least two cycles of being a shadow before being moved to a full member.
 
 ### Notes/Constraints/Caveats (Optional)
+
+
 
 <!--
 What are the caveats to the proposal?
@@ -340,10 +345,6 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
-
 ##### Prerequisite testing updates
 
 <!--
@@ -373,7 +374,6 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
 Not applicable.
 
 ##### Integration tests
@@ -402,6 +402,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 Not applicable.
 
 ### Graduation Criteria
+
+This process change will graduate directly to GA/Stable.
+We will not use the Alpha or Beta stages.
+
+This is because there is no way to test these changes on the small scale, due to the nature of the change and the team.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -519,12 +524,14 @@ team. Please reach out on the
 [#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
 you need any help or guidance.
 -->
+Not applicable.
 
 ### Feature Enablement and Rollback
 
 <!--
 This section must be completed when targeting alpha to a release.
 -->
+Not applicable.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -538,15 +545,7 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+Not applicable.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -554,6 +553,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+Not applicable.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -567,9 +567,11 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Not applicable.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+Not applicable.
 ###### Are there any tests for feature enablement/disablement?
 
 <!--
@@ -584,12 +586,14 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+Not applicable.
 
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+Not applicable.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -602,6 +606,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+Not applicable.
 
 ###### What specific metrics should inform a rollback?
 
@@ -609,6 +614,7 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+Not applicable.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -617,12 +623,14 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Not applicable.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+Not applicable.
 
 ### Monitoring Requirements
 
@@ -632,6 +640,7 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+Not applicable.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -640,6 +649,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Not applicable.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -651,14 +661,7 @@ Please describe all items visible to end users below with sufficient detail so t
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Not applicable.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -676,19 +679,14 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+Not applicable.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+Not applicable.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -696,12 +694,14 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+Not applicable.
 
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+Not applicable.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -719,6 +719,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+Not applicable.
 
 ### Scalability
 
@@ -731,6 +732,7 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+Not applicable.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -746,6 +748,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+Not applicable.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -755,6 +758,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+Not applicable.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -763,6 +767,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+Not applicable.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -772,6 +777,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+Not applicable.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -783,6 +789,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+Not applicable.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -795,6 +802,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+Not applicable.
 
 ### Troubleshooting
 
@@ -808,9 +816,11 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+Not applicable.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Not applicable.
 ###### What are other known failure modes?
 
 <!--
@@ -825,8 +835,10 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+Not applicable.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+Not applicable.
 
 ## Implementation History
 
@@ -840,12 +852,21 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+- Kubernetes 1.26: GA and first use
 
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+Doing this will introduce significant change to the team.
+
+- Overhead to manage the change with current team members.
+- Fewer new members (per release team) will mean fewer new community members being onboarded in this way.
+  This could be mitigated by ensuring that other routes into the community are well resourced and advertised.
+- A more 'stagnant' team risks embedding knowledge in people, and not in documentation.
+- Disruption to team selection as we get started on this process could endanger release schedules if problems arise.
 
 ## Alternatives
 
@@ -855,6 +876,14 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+There are a few major options:
+
+- Do nothing.
+  The current process does produce teams which complete releases.
+- Have members explicitly join teams for longer periods, e.g. for 2 or 3 releases instead of just one at a time.
+  This would require an upfront time investment that might further disincentivise more casual contributors.
+  This proposal with the ability to 'drop in and out' of releases while on the roster is designed to mitigate this by allowing flexibility.
+
 ## Infrastructure Needed (Optional)
 
 <!--
@@ -862,3 +891,4 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+Not applicable.
