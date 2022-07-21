@@ -444,15 +444,15 @@ fields of API types, flags, etc.?**
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  `statefulset_when_deleted_policy` or `statefulset_when_scaled_policy` will
+  `statefulset_non_retain_when_deleted_policy` or `statefulset_non_retain_when_scaled_policy` will
   have nonzero counts for the `delete` policy fields.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - Metric name: `statefulset_reconcile_delay`
+  - Metric name: `statefulset_reconcile_seconds`
     - [Optional] Aggregation method: `quantile`
     - Components exposing the metric: `pke/controller/statefulset`
-  - Metric name: `statefulset_unhealthy_pods`
+  - Metric name: `statefulset_unhealthy_pods_count`
     - [Optional] Aggregation method: `sum`
     - Components exposing the metric: `pke/controller/statefulset`
 
