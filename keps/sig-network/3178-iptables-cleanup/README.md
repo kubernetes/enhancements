@@ -352,7 +352,7 @@ because it is more of a cleanup/bugfix than a new feature.) We should
 also ensure that kpng gets updated.
 
 Kubelet's behavior will not change by default, but if you enable the
-`IPTablesCleanup` feature gate, then:
+`IPTablesOwnershipCleanup` feature gate, then:
 
   1. It will stop creating `KUBE-MARK-DROP`, `KUBE-MARK-MASQ`,
      `KUBE-POSTROUTING`, and `KUBE-KUBELET-CANARY`. (`KUBE-FIREWALL`
@@ -518,7 +518,7 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in valuesin `kep.yaml`)
-  - Feature gate name: IPTablesCleanup
+  - Feature gate name: IPTablesOwnershipCleanup
   - Components depending on the feature gate:
     - kubelet
 
@@ -684,6 +684,7 @@ Major milestones might include:
 
 - Initial proposal: 2022-01-23
 - Updated: 2022-03-27, 2022-04-29
+- Updated: 2022-07-26 (feature gate rename)
 
 ## Drawbacks
 
