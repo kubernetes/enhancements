@@ -117,6 +117,7 @@ More information on the discussion can be found [here](https://github.com/kubern
 
 The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
   - Mark `v1beta2` as deprecated
+  - Remove Plugin `SelectorSpread` (in favor of `PodTopologySpread`)
 
 ### Risks and Mitigations
 
