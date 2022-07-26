@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3344: Refine Release Team Selection Process
+# KEP-3344: Release Team Roster
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
