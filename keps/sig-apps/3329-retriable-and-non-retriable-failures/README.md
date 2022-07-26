@@ -726,7 +726,7 @@ reason.
 ### New PodConditions
 
 A new condition type, called `TargetedForDisruption`, is introduced to indicate
-a pod failure caused by external disruption. In order to account for different
+a pod failure caused by a disruption. In order to account for different
 reasons for pod termination we add the following reason types based on the
 invocation context (we focus on covering these scenarios were the new
 condition makes it easier to determine if a failed pod should be restarted):
@@ -758,14 +758,13 @@ on the conditions associated with the pod failure.
 type PodFailurePolicyAction string
 
 const (
-
-	// This is an action which might be taken on pod failure - mark the
+	// This is an action which might be taken on a pod failure - mark the
 	// pod's job as Failed and terminate all running pods.
-	BackoffActionTerminate PodFailurePolicyAction = "Terminate"
+	PodFailurePolicyActionTerminate PodFailurePolicyAction = "Terminate"
 
-	// This is an action which might be taken on pod failure - the pod will be
-	// restarted and the counter for .backoffLimit will not be incremented.
-	BackoffActionIgnore PodFailurePolicyAction = "Ignore"
+	// This is an action which might be taken on a pod failure - the counter towards
+	// .backoffLimit is not incremented and a replacement pod is created.
+	PodFailurePolicyActionIgnore PodFailurePolicyAction = "Ignore"
 )
 
 type PodFailurePolicyOnExitCodesOperator string
@@ -775,20 +774,29 @@ const (
 	PodFailurePolicyOnExitCodesOpNotIn PodFailurePolicyOnExitCodesOperator = "NotIn"
 )
 
+// PodFailurePolicyOnExitCodesRequirement describes the requirement for handling
+// a failed pod based on its container exit codes.
 type PodFailurePolicyOnExitCodesRequirement struct {
-	// Restricts the check for exit codes to only apply to the container with
-	// the specified name. When empty the rule applies to all containers
+	// Restricts the check for exit codes to the container with the
+	// specified name. When null, the rule applies to all containers.
 	// +optional
 	ContainerName *string
 
 	// Represents the relationship between the container exit code(s) and the
-	// specified values.
+	// specified values. Possible values are:
+	// - In: the requirement is satisfied if at least one container exit code
+	//   (might be multiple if there are multiple containers not restricted
+	//   by the 'containerName' field) is in the set of specified values.
+	// - NotIn: the requirement is satisfied if at least one container exit code
+	//   (might be multiple if there are multiple containers not restricted
+	//   by the 'containerName' field) is not in the set of specified values.
 	Operator PodFailurePolicyOnExitCodesOperator
 
 	// Specifies the set of values. Each returned container exit code (might be
 	// multiple in case of multiple containers) is checked against this set of
-	// values with respect to the operator
-	Values []int
+	// values with respect to the operator.
+	// +listType=set
+	Values []int32
 }
 
 type PodFailurePolicyOnPodConditionsOperator string
@@ -797,26 +805,38 @@ const (
 	PodFailurePolicyOnPodConditionsOpIn PodFailurePolicyOnPodConditionsOperator = "In"
 )
 
+// PodFailurePolicyOnPodConditionsRequirement describes the requirement for handling
+// a failed pod based on its conditions.
 type PodFailurePolicyOnPodConditionsRequirement struct {
-
-	// Represents the relationship between the actual Pod condition types
-	// and the set of specified Pod condition types
+	// Represents the relationship between the set of actual Pod condition types
+	// and the set of specified Pod condition types. Possible values are:
+	// - In: the requirement is satisfied, if at least one actual Pod condition
+	//   type (for a condition with status=True) is present in the set of
+	//   specified Pod condition types.
 	Operator PodFailurePolicyOnPodConditionsOperator
 
-	// Specifies the set of values. Each actual pod condition type, with status=True,
-	// is checked against this set of values with respect to the operator
+	// Specifies the set of values. Each actual pod condition type,
+	// with status=True, is checked against this set with respect to the operator.
+	// +listType=set
 	Values []api.PodConditionType
 }
 
+// PodFailurePolicyRule describes how a pod failure is handled when the requirements are met.
+// Only one of OnExitCodes and onPodConditions can be used in each rule.
 type PodFailurePolicyRule struct {
 	// Specifies the action taken on a pod failure when the requirements are satisfied.
+	// Possible values are:
+	// - Terminate: indicates that the pod's job is marked as Failed and all
+	//   running pods are terminated.
+	// - Ignore: indicates that the counter towards the .backoffLimit is not
+	//   incremented and a replacement pod is created.
 	Action PodFailurePolicyAction
 
-	// Represents the requirement on the container exit code
+	// Represents the requirement on the container exit codes.
 	// +optional
 	OnExitCodes *PodFailurePolicyOnExitCodesRequirement
 
-	// Represents the requirement on the pod failure conditions
+	// Represents the requirement on the pod conditions.
 	// +optional
 	OnPodConditions *PodFailurePolicyOnPodConditionsRequirement
 }
@@ -827,7 +847,8 @@ type PodFailurePolicy struct {
 	// Once a rule matches a Pod failure, the remaining of the rules are ignored.
 	// When no rule matches the Pod failure, the default handling applies - the
 	// counter of pod failures is incremented and it is checked against
-	// the backoffLimit
+	// the backoffLimit.
+	// +listType=atomic
 	Rules []PodFailurePolicyRule
 }
 
@@ -838,7 +859,7 @@ type JobSpec struct {
 	// specify the set of actions and conditions which need to be
 	// satisfied to take the associated action.
 	// If empty, the default behaviour applies - the counter of pod failed is
-	// incremented and it is checked against the backoffLimit
+	// incremented and it is checked against the backoffLimit.
 	// +optional
 	PodFailurePolicy *PodFailurePolicy
   ...
@@ -880,7 +901,7 @@ spec:
     - action: Ignore
       onPodConditions:
         operator: In
-        values: [ PreemptedByScheduler ]
+        values: [ TargetedForDisruption ]
 ```
 
 ### Evaluation
