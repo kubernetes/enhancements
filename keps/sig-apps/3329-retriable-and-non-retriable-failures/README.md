@@ -402,7 +402,7 @@ spec:
     - action: Ignore
       onPodConditions:
         operator: In
-        values: [ TargetedForDisruption ]
+        values: [ DisruptionTarget ]
 ```
 
 Note that, in this case the user supplies a list of Pod condition type values.
@@ -699,7 +699,7 @@ condition type will require an API review. The constants will allow users of the
 package to reduce the risk of typing mistakes.
 
 Additionally, for Beta, we will re-evaluate an idea of a generic opinionated condition
-type indicating that a pod can be retried, for example `TargetedForDisruption`.
+type indicating that a pod can be retried, for example `DisruptionTarget`.
 
 Finally, we are going to cover the handling of pod failures associated with the
 new PodCondition types in integration tests.
@@ -725,7 +725,7 @@ reason.
 
 ### New PodConditions
 
-A new condition type, called `TargetedForDisruption`, is introduced to indicate
+A new condition type, called `DisruptionTarget`, is introduced to indicate
 a pod failure caused by a disruption. In order to account for different
 reasons for pod termination we add the following reason types based on the
 invocation context (we focus on covering these scenarios were the new
@@ -901,7 +901,7 @@ spec:
     - action: Ignore
       onPodConditions:
         operator: In
-        values: [ TargetedForDisruption ]
+        values: [ DisruptionTarget ]
 ```
 
 ### Evaluation
