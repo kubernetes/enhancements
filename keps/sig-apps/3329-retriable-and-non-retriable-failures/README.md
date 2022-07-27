@@ -765,6 +765,11 @@ const (
 	// This is an action which might be taken on a pod failure - the counter towards
 	// .backoffLimit is not incremented and a replacement pod is created.
 	PodFailurePolicyActionIgnore PodFailurePolicyAction = "Ignore"
+
+	// This is an action which might be taken on a pod failure - the pod failure
+	// is handled in the default way - the counter towards .backoffLimit is
+	// incremented.
+	PodFailurePolicyActionCount PodFailurePolicyAction = "Count"
 )
 
 type PodFailurePolicyOnExitCodesOperator string
@@ -830,6 +835,8 @@ type PodFailurePolicyRule struct {
 	//   running pods are terminated.
 	// - Ignore: indicates that the counter towards the .backoffLimit is not
 	//   incremented and a replacement pod is created.
+	// - Count: indicates that the pod is handled in the default way - the
+	//   counter towards the .backoffLimit is incremented.
 	Action PodFailurePolicyAction
 
 	// Represents the requirement on the container exit codes.
@@ -1340,7 +1347,7 @@ due to different reasons. For example, if jobs are terminated often due to
 with new rules to terminate jobs early more often
   - `job_pod_failure_total` (new): tracks the handling of failed pods. It will
 have the `action` label indicating how a pod failure was handled. Possible
-values are:`JobTerminated`, `Ignored` and `Default`. This metric can be used to
+values are:`JobTerminated`, `Ignored` and `Counted`. This metric can be used to
 assess the coverage of pod failure scenarios with `spec.podFailurePolicy` rules.
 
 <!--
