@@ -1090,6 +1090,8 @@ Below are some examples to consider, in addition to the aforementioned [maturity
   (see: [Failing delete when after a condition is added](#failing-delete-after-a-condition-is-added))
 - Re-evaluate the decision about marking pods as failed to prevent pods getting
   stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed))
+- Review and implement if feasible adding of pod conditions with the use of
+  [SSA](https://kubernetes.io/docs/reference/using-api/server-side-apply/) client.
 - The feature flag enabled by default
 
 #### GA
