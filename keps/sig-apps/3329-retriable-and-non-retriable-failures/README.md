@@ -96,9 +96,12 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Node-pressure eviction](#node-pressure-eviction)
       - [OOM kill](#oom-kill)
       - [Disconnected node](#disconnected-node)
+      - [Disconnected node when taint-manager is disabled](#disconnected-node-when-taint-manager-is-disabled)
       - [Direct container kill](#direct-container-kill)
     - [Termination initiated by Kubelet](#termination-initiated-by-kubelet)
     - [JobSpec API alternatives](#jobspec-api-alternatives)
+    - [Failing delete after a condition is added](#failing-delete-after-a-condition-is-added)
+    - [Marking pods as Failed](#marking-pods-as-failed)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Garbage collected pods](#garbage-collected-pods)
     - [Evolving condition types](#evolving-condition-types)
@@ -160,7 +163,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -356,15 +359,15 @@ spec:
         image: job-image
         command: ["./program"]
   backoffLimit: 6
-  backoffPolicy:
+  podFailurePolicy:
     rules:
     - action: Terminate
-      onExitCode:
+      onExitCodes:
         operator: NotIn
         values: [40,41,42]
 ```
 
-Note that, when no rule specified in `backoffPolicy` matches the pod failure
+Note that, when no rule specified in `podFailurePolicy` matches the pod failure
 the default handling of pod failures applies - the counter of pod failures
 is incremented and checked against the `backoffLimit`
 (see: [JobSpec API](#jobspec-api)]).
@@ -394,12 +397,12 @@ spec:
         image: job-monitoring
         command: ["./monitoring"]
   backoffLimit: 3
-  backoffPolicy:
+  podFailurePolicy:
     rules:
     - action: Ignore
       onPodConditions:
         operator: In
-        values: [ PreemptedByScheduler, EvictedByTaints ]
+        values: [ DisruptionTarget ]
 ```
 
 Note that, in this case the user supplies a list of Pod condition type values.
@@ -573,6 +576,24 @@ Disk-pressure eviction:
   - `reason=`
 - Retriable: Yes
 
+##### Disconnected node when taint-manager is disabled
+
+- Reproduction: Run kube-controller-manager with disabled taint-manager (with the
+  flag `--enable-taint-manager=false`). Then, run a job with a long-running pod and
+  disconnect the node
+- Comments: handled by node lifcycle controller in: `controller/nodelifecycle/node_lifecycle_controller.go`.
+  However, the pod phase remains `Running`.
+- Pod status:
+  - status: Unknown
+  - `phase=Running`
+  - `reason=NodeLost`
+  - `message=Node mycluster-worker which was running pod play-longrun-f28ls is unresponsive`
+- Container status:
+  - `state=Running`
+  - `exitCode=`
+  - `reason=`
+- Retriable: Yes
+
 ##### Direct container kill
 
 - Reproduction: We run a job with a long-running pod, then we kill the container
@@ -614,6 +635,38 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
+#### Failing delete after a condition is added
+
+Here we consider a scenario when a component fails (for example its container
+dies) between appending a pod condition and deleting the pod.
+
+In particular, scheduler can possibly decide to preempt
+a different pod the next time (or none). This would leave a pod with a
+condition that it was preempted, when it actually wasn't. This in turn
+could lead to inproper handling of the pod by the job controller.
+
+As a solution we are going to implement a worker, added to the disruption
+controller which clears the pod condition added if `DeletionTimestamp` is
+not added to the pod for a long enough time (for example 2 minutes).
+
+#### Marking pods as Failed
+
+As indicated by our experiments (see: [Disconnected node](#disconnected-node))
+a failed pod may get stuck in the `Running` phase when there is no kubelet
+working properly. In particular, this happens
+in case of orphaned pods which are deleted by garbage-collector. Due to this
+issue the logic of detecting pod failures in job controller is more complex than
+would be needed otherwise.
+
+Notably, this issue affects also an analogous scenario in which the taint-manager
+is disabled [Disconnected node when taint-manager is disabled](#disconnected-node-when-taint-manager-is-disabled).
+However, as disabling taint-manager is deprecated it is not a concern for this
+KEP.
+
+For Alpha, we implement a fix for this issue by setting the pod phase as `Failed`
+in podgc. For Beta, we are going to simplify the code in job controller
+responsible for detecting pod failures.
+
 ### Risks and Mitigations
 
 #### Garbage collected pods
@@ -638,7 +691,7 @@ condition type will require an API review. The constants will allow users of the
 package to reduce the risk of typing mistakes.
 
 Additionally, for Beta, we will re-evaluate an idea of a generic opinionated condition
-type indicating that a pod can be retried, for example `TerminatedByControlPlane`.
+type indicating that a pod can be retried, for example `DisruptionTarget`.
 
 Finally, we are going to cover the handling of pod failures associated with the
 new PodCondition types in integration tests.
@@ -664,14 +717,15 @@ reason.
 
 ### New PodConditions
 
-The following condition types are introduced to account for different
-reasons for pod termination (we focus on covering these scenarios were the new
+A new condition type, called `DisruptionTarget`, is introduced to indicate
+a pod failure caused by a disruption. In order to account for different
+reasons for pod termination we add the following reason types based on the
+invocation context (we focus on covering these scenarios were the new
 condition makes it easier to determine if a failed pod should be restarted):
-- PreemptedByScheduler (Pod preempted by kube-scheduler)
-- EvictedByTaints (Pod evicted by kube-controller-manager due to taints)
-- GarbageCollected (an orphaned Pod terminated by GC)
-- EvictedByAPI (Pod evicted by Eviction API)
-- EvictedFromUnhealthyNode (initiated by the node lifecycle controller)
+- PreemptionByKubeScheduler (Pod preempted by kube-scheduler)
+- DeletionByTaintManager (Pod evicted by kube-controller-manager due to taints)
+- EvictionByEvictionAPI (Pod deleted by Eviction API)
+- DeletionByPodGC (an orphaned Pod deleted by pod GC)
 
 The already existing `status.conditions` field in Pod will be used by kubernetes
 control plane components (kube-scheduler and kube-controller-manager) to append
@@ -692,81 +746,109 @@ We extend the Job API in order to allow to apply different actions depending
 on the conditions associated with the pod failure.
 
 ```golang
-// BackoffPolicyAction specifies how a Pod failure is handled.
-type BackoffPolicyAction string
+// PodFailurePolicyAction specifies how a Pod failure is handled.
+type PodFailurePolicyAction string
 
 const (
-
-	// This is an action which might be taken on pod failure - mark the
+	// This is an action which might be taken on a pod failure - mark the
 	// pod's job as Failed and terminate all running pods.
-	BackoffActionTerminate BackoffPolicyAction = "Terminate"
+	PodFailurePolicyActionTerminate PodFailurePolicyAction = "Terminate"
 
-	// This is an action which might be taken on pod failure - the pod will be
-	// restarted and the counter for .backoffLimit will not be incremented.
-	BackoffActionIgnore BackoffPolicyAction = "Ignore"
+	// This is an action which might be taken on a pod failure - the counter towards
+	// .backoffLimit is not incremented and a replacement pod is created.
+	PodFailurePolicyActionIgnore PodFailurePolicyAction = "Ignore"
+
+	// This is an action which might be taken on a pod failure - the pod failure
+	// is handled in the default way - the counter towards .backoffLimit is
+	// incremented.
+	PodFailurePolicyActionCount PodFailurePolicyAction = "Count"
 )
 
-type BackoffPolicyOnExitCodesOperator string
+type PodFailurePolicyOnExitCodesOperator string
 
 const (
-	BackoffPolicyOnExitCodesOpIn    BackoffPolicyOnExitCodesOperator = "In"
-	BackoffPolicyOnExitCodesOpNotIn BackoffPolicyOnExitCodesOperator = "NotIn"
+	PodFailurePolicyOnExitCodesOpIn    PodFailurePolicyOnExitCodesOperator = "In"
+	PodFailurePolicyOnExitCodesOpNotIn PodFailurePolicyOnExitCodesOperator = "NotIn"
 )
 
-type BackoffPolicyOnExitCodesRequirement struct {
-	// Restricts the check for exit codes to only apply to the container with
-	// the specified name. When empty the rule applies to all containers
+// PodFailurePolicyOnExitCodesRequirement describes the requirement for handling
+// a failed pod based on its container exit codes.
+type PodFailurePolicyOnExitCodesRequirement struct {
+	// Restricts the check for exit codes to the container with the
+	// specified name. When null, the rule applies to all containers.
 	// +optional
 	ContainerName *string
 
 	// Represents the relationship between the container exit code(s) and the
-	// specified values.
-	Operator BackoffPolicyOnExitCodesOperator
+	// specified values. Possible values are:
+	// - In: the requirement is satisfied if at least one container exit code
+	//   (might be multiple if there are multiple containers not restricted
+	//   by the 'containerName' field) is in the set of specified values.
+	// - NotIn: the requirement is satisfied if at least one container exit code
+	//   (might be multiple if there are multiple containers not restricted
+	//   by the 'containerName' field) is not in the set of specified values.
+	Operator PodFailurePolicyOnExitCodesOperator
 
 	// Specifies the set of values. Each returned container exit code (might be
 	// multiple in case of multiple containers) is checked against this set of
-	// values with respect to the operator
-	Values []int
+	// values with respect to the operator.
+	// +listType=set
+	Values []int32
 }
 
-type BackoffPolicyOnPodConditionsOperator string
+type PodFailurePolicyOnPodConditionsOperator string
 
 const (
-	BackoffPolicyOnPodConditionsOpIn BackoffPolicyOnPodConditionsOperator = "In"
+	PodFailurePolicyOnPodConditionsOpIn PodFailurePolicyOnPodConditionsOperator = "In"
 )
 
-type BackoffPolicyOnPodConditionsRequirement struct {
+// PodFailurePolicyOnPodConditionsRequirement describes the requirement for handling
+// a failed pod based on its conditions.
+type PodFailurePolicyOnPodConditionsRequirement struct {
+	// Represents the relationship between the set of actual Pod condition types
+	// and the set of specified Pod condition types. Possible values are:
+	// - In: the requirement is satisfied, if at least one actual Pod condition
+	//   type (for a condition with status=True) is present in the set of
+	//   specified Pod condition types.
+	Operator PodFailurePolicyOnPodConditionsOperator
 
-	// Represents the relationship between the actual Pod condition types
-	// and the set of specified Pod condition types
-	Operator BackoffPolicyOnPodConditionsOperator
-
-	// Specifies the set of values. Each actual pod condition type, with status=True,
-	// is checked against this set of values with respect to the operator
+	// Specifies the set of values. Each actual pod condition type,
+	// with status=True, is checked against this set with respect to the operator.
+	// +listType=set
 	Values []api.PodConditionType
 }
 
-type BackoffPolicyRule struct {
+// PodFailurePolicyRule describes how a pod failure is handled when the requirements are met.
+// Only one of OnExitCodes and onPodConditions can be used in each rule.
+type PodFailurePolicyRule struct {
 	// Specifies the action taken on a pod failure when the requirements are satisfied.
-	Action BackoffPolicyAction
+	// Possible values are:
+	// - Terminate: indicates that the pod's job is marked as Failed and all
+	//   running pods are terminated.
+	// - Ignore: indicates that the counter towards the .backoffLimit is not
+	//   incremented and a replacement pod is created.
+	// - Count: indicates that the pod is handled in the default way - the
+	//   counter towards the .backoffLimit is incremented.
+	Action PodFailurePolicyAction
 
-	// Represents the requirement on the container exit code
+	// Represents the requirement on the container exit codes.
 	// +optional
-	OnExitCodes *BackoffPolicyOnExitCodesRequirement
+	OnExitCodes *PodFailurePolicyOnExitCodesRequirement
 
-	// Represents the requirement on the pod failure conditions
+	// Represents the requirement on the pod conditions.
 	// +optional
-	OnPodConditions *BackoffPolicyOnPodConditionsRequirement
+	OnPodConditions *PodFailurePolicyOnPodConditionsRequirement
 }
 
-// BackoffPolicy describes how failed pods influence the backoffLimit.
-type BackoffPolicy struct {
-	// A list of backoff policy rules. The rules are evaluated in order.
+// PodFailurePolicy describes how failed pods influence the backoffLimit.
+type PodFailurePolicy struct {
+	// A list of pod failure policy rules. The rules are evaluated in order.
 	// Once a rule matches a Pod failure, the remaining of the rules are ignored.
 	// When no rule matches the Pod failure, the default handling applies - the
 	// counter of pod failures is incremented and it is checked against
-	// the backoffLimit
-	Rules []BackoffPolicyRule
+	// the backoffLimit.
+	// +listType=atomic
+	Rules []PodFailurePolicyRule
 }
 
 // JobSpec describes how the job execution will look like.
@@ -776,18 +858,18 @@ type JobSpec struct {
 	// specify the set of actions and conditions which need to be
 	// satisfied to take the associated action.
 	// If empty, the default behaviour applies - the counter of pod failed is
-	// incremented and it is checked against the backoffLimit
+	// incremented and it is checked against the backoffLimit.
 	// +optional
-	BackoffPolicy *BackoffPolicy
+	PodFailurePolicy *PodFailurePolicy
   ...
 ```
 
 Note that, we do not introduce the `NotIn` operator in
-`BackoffPolicyOnPodConditionsOperator` as its usage could make job
+`PodFailurePolicyOnPodConditionsOperator` as its usage could make job
 configurations error-prone and hard to maintain.
 
 Additionally, we validate the following constraints for each instance of
-BackoffPolicyRule:
+PodFailurePolicyRule:
 - exactly one of the fields `onExitCodes` and `OnPodConditions` is specified
   for a requirement
 - the specified `containerName` matches name of a configurated container
@@ -808,7 +890,7 @@ spec:
         image: job-monitoring
         command: ["./monitoring"]
   backoffLimit: 3
-  backoffPolicy:
+  podFailurePolicy:
     rules:
     - action: Terminate
       onExitCodes:
@@ -818,13 +900,13 @@ spec:
     - action: Ignore
       onPodConditions:
         operator: In
-        values: [ PreemptedByScheduler ]
+        values: [ DisruptionTarget ]
 ```
 
 ### Evaluation
 
 We use the `syncJob` function of the Job controller to evaluate the specified
-`backoffPolicy` rules against the failed pods. It is only the first rule with
+`podFailurePolicy` rules against the failed pods. It is only the first rule with
 matching requirements which is applied as the rules are evaluated in order. If
 the pod failure does not match any of the specified rules, then default
 handling of failed pods applies.
@@ -884,11 +966,11 @@ together with explanation why this is acceptable.
 
 Unit tests will be added along with any new code introduced. In particular,
 the following scenarios will be covered with unit tests:
-- handling or ignoring of `spec.backoffPolicy` by the Job controller when the
+- handling or ignoring of `spec.podFailurePolicy` by the Job controller when the
   feature gate is enabled or disabled, respectively,
-- validation of a job configuration with respect to `spec.backoffPolicy` by
+- validation of a job configuration with respect to `spec.podFailurePolicy` by
   kube-apiserver
-- handling of a pod failure, in accordance with the specified `spec.backoffPolicy`,
+- handling of a pod failure, in accordance with the specified `spec.podFailurePolicy`,
   when the failure is associated with
   - a failed container with non-zero exit code,
   - a dedicated Pod condition indicating termmination originated by a kubernetes component
@@ -905,8 +987,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 The core packages (with their unit test coverage) which are going to be modified during the implementation:
-- `k8s.io/kubernetes/pkg/controller/job`: `13 June 2022` - `88%`  <!--(handling of failed pods with regards to the configured backoffPolicy)-->
-- `k8s.io/kubernetes/pkg/apis/batch/validation`: `13 June 2022` - `94.4%` <!--(validation of the job configuration with regards to the backoffPolicy)-->
+- `k8s.io/kubernetes/pkg/controller/job`: `13 June 2022` - `88%`  <!--(handling of failed pods with regards to the configured podFailurePolicy)-->
+- `k8s.io/kubernetes/pkg/apis/batch/validation`: `13 June 2022` - `94.4%` <!--(validation of the job configuration with regards to the podFailurePolicy)-->
 - `k8s.io/kubernetes/pkg/apis/batch/v1`: `13 June 2022` - `83.6%`  <!--(extension of JobSpec)-->
 
 ##### Integration tests
@@ -981,7 +1063,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### Alpha
 
 - Implementation:
-  - handling of failed pods with respect to `spec.backoffPolicy` by Job controller
+  - handling of failed pods with respect to `spec.podFailurePolicy` by Job controller
   - appending of a dedicated Pod condition (when the Pod termination is
     initiated by a kubernetes control plane component) to the list of Pod
     conditions along with sending the Pod delete request
@@ -998,10 +1080,14 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - A scalability test to demonstrate the limited impact of the additional API call
   when terminating a Pod
 - Re-evaluate modification to kubelet to send a dedicated condition when
-  terminating a Pod, based on user feedback
-- Re-evaluate supporting of `onExitCodes` when `restartPolicy=OnFailure`
+  terminating a Pod, based on user feedback (see: [Termination initiated by Kubelet](#termination-initiated-by-kubelet))
+- Re-evaluate supporting of `onExitCodes` when `restartPolicy=OnFailure` (see: [Relationship with Pod.spec.restartPolicy](#relationship-with-podspecrestartpolicy))
 - Re-evaluate introduction of a generic opinionated condition type
-  indicating that a pod should be retried
+  indicating that a pod should be retried (see: [Evolving condition types](#evolving-condition-types))
+- Simplify the code in job controller responsible for detection of failed pods
+  based on the fix for pods stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed))
+- Review and implement if feasible adding of pod conditions with the use of
+  [SSA](https://kubernetes.io/docs/reference/using-api/server-side-apply/) client.
 - The feature flag enabled by default
 
 #### GA
@@ -1031,8 +1117,8 @@ N/A
 
 An upgrade to a version which supports this feature should not require any
 additional configuration changes. In order to use this feature after an upgrade
-users will need to configure their Jobs by specifying `spec.backoffPolicy`. The
-only noticeable difference in behaviour, without specifying `spec.backoffPolicy`,
+users will need to configure their Jobs by specifying `spec.podFailurePolicy`. The
+only noticeable difference in behaviour, without specifying `spec.podFailurePolicy`,
 is that Pods terminated by kubernetes components will have an additional
 condition appended to `status.conditions`.
 
@@ -1040,7 +1126,7 @@ condition appended to `status.conditions`.
 
 A downgrade to a version which does not support this feature should not require
 any additional configuration changes. Jobs which specified
-`spec.backoffPolicy` (to make use of this feature) will be handled in a
+`spec.podFailurePolicy` (to make use of this feature) will be handled in a
 default way.
 
 <!--
@@ -1121,11 +1207,15 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: JobBackoffPolicy
-  - Components depending on the feature gate:
+  - Feature gate name: PodDisruptionConditions
+    - Components depending on the feature gate:
       - kube-apiserver
       - kube-controller-manager
       - kube-scheduler
+  - Feature gate name: JobPodFailurePolicy
+    - Components depending on the feature gate:
+      - kube-apiserver
+      - kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -1139,7 +1229,7 @@ Yes. The kubernetes components (kube-scheduler and kube-controller-manager) will
 append a Pod Condition along with the request pod delete request.
 
 However, the part of the feature responsible for handling of the failed pods
-is opt-in with `.spec.backoffPolicy`.
+is opt-in with `.spec.podFailurePolicy`.
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
@@ -1149,7 +1239,7 @@ automations, so be extremely careful here.
 
 Yes. Using the feature gate is the recommended way. When the feature is disabled
 the Job controller manager handles pod failures in the default way even if
-`spec.backoffPolicy` is specified. Additionally, the dedicated Pod Conditions
+`spec.podFailurePolicy` is specified. Additionally, the dedicated Pod Conditions
 are no longer appended along with delete requests.
 
 <!--
@@ -1166,7 +1256,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The Job controller starts to handle pod failures according to the specified
-`spec.backoffPolicy`. Additionally, again, along with the delete requests, the
+`spec.podFailurePolicy`. Additionally, again, along with the delete requests, the
 dedicated Pod Conditions are appended to Pod's `status.condition`.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -1240,15 +1330,15 @@ We use the metrics-based approach based on the following metrics (exposed by
 kube-controller-manager):
   - `job_finished_total` (existing, extended by a label): the new `reason`
 label indicates the reason for the job termination. Possible values are
-`BackoffPolicyRule`, `BackoffLimitExceeded` and`DeadlineExceeded`.
+`PodFailurePolicyRule`, `BackoffLimitExceeded` and`DeadlineExceeded`.
 It can be used to determine what is the relative frequency of job terminations
 due to different reasons. For example, if jobs are terminated often due to
-`BackoffLimitExceeded` it may suggest that the backoff policy should be extended
+`BackoffLimitExceeded` it may suggest that the pod failure policy should be extended
 with new rules to terminate jobs early more often
   - `job_pod_failure_total` (new): tracks the handling of failed pods. It will
 have the `action` label indicating how a pod failure was handled. Possible
-values are:`JobTerminated`, `Ignored` and `Default`. This metric can be used to
-assess the coverage of pod failure scenarios with `spec.backoffPolicy` rules.
+values are:`JobTerminated`, `Ignored` and `Counted`. This metric can be used to
+assess the coverage of pod failure scenarios with `spec.podFailurePolicy` rules.
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -1408,7 +1498,7 @@ Think about adding additional work or introducing new steps in between
 
 The additional CPU and memory increase in kube-controller-manager related to
 handling of failed pods is negligible and only limited to these jobs which
-specify `spec.backoffPolicy`.
+specify `spec.podFailurePolicy`.
 
 <!--
 Things to keep in mind include: additional in-memory state, additional
@@ -1507,7 +1597,7 @@ condition types. It would also support the `key` field for constraining the
 spec using such API:
 
 ```yaml
-   backoffPolicy:
+   podFailurePolicy:
      rules:
      - action: Ignore
       - onPodConditions:
