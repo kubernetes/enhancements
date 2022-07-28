@@ -39,6 +39,7 @@ feature-gates:
       - kube-scheduler
   - name: JobPodFailurePolicy
     components:
+      - kube-apiserver
       - kube-controller-manager
 disable-supported: true
 

@@ -645,13 +645,9 @@ a different pod the next time (or none). This would leave a pod with a
 condition that it was preempted, when it actually wasn't. This in turn
 could lead to inproper handling of the pod by the job controller.
 
-One possible solution to this issue is to introduce a controller in
-kube-controller-manager that either completes a preemption (does a delete)
-or removes the condition (or set its status to false) if the condition
-timestamp is old enough and there is no deletion timestamp.
-
-We are going to re-evaluate the need for solving this issue and the solution
-for Beta.
+As a solution we are going to implement a worker, added to the disruption
+controller which clears the pod condition added if `DeletionTimestamp` is
+not added to the pod for a long enough time (for example 2 minutes).
 
 #### Marking pods as Failed
 
@@ -667,13 +663,9 @@ is disabled [Disconnected node when taint-manager is disabled](#disconnected-nod
 However, as disabling taint-manager is deprecated it is not a concern for this
 KEP.
 
-Setting the pod phase as `Failed` could be considered as a fix done as part of
-implementing this KEP. On the other hand, raising this issue as a dedicated ticket
-and PR could be also beneficial for minimizing the set of changes in this KEP.
-Also, it would give more time for a proper review and cleanup of code complications
-accumulated in job controller (and potentially other components).
-
-We are going to re-evaluate the decision for Beta.
+For Alpha, we implement a fix for this issue by setting the pod phase as `Failed`
+in podgc. For Beta, we are going to simplify the code in job controller
+responsible for detecting pod failures.
 
 ### Risks and Mitigations
 
@@ -1092,11 +1084,8 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Re-evaluate supporting of `onExitCodes` when `restartPolicy=OnFailure` (see: [Relationship with Pod.spec.restartPolicy](#relationship-with-podspecrestartpolicy))
 - Re-evaluate introduction of a generic opinionated condition type
   indicating that a pod should be retried (see: [Evolving condition types](#evolving-condition-types))
-- Re-evaluate the solution for the issue of failing delete after successful
-  appending o the pod condition
-  (see: [Failing delete when after a condition is added](#failing-delete-after-a-condition-is-added))
-- Re-evaluate the decision about marking pods as failed to prevent pods getting
-  stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed))
+- Simplify the code in job controller responsible for detection of failed pods
+  based on the fix for pods stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed))
 - Review and implement if feasible adding of pod conditions with the use of
   [SSA](https://kubernetes.io/docs/reference/using-api/server-side-apply/) client.
 - The feature flag enabled by default
@@ -1219,12 +1208,13 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: PodDisruptionConditions
-  - Components depending on the feature gate:
+    - Components depending on the feature gate:
       - kube-apiserver
       - kube-controller-manager
       - kube-scheduler
   - Feature gate name: JobPodFailurePolicy
-  - Components depending on the feature gate:
+    - Components depending on the feature gate:
+      - kube-apiserver
       - kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
