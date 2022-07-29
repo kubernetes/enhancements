@@ -293,7 +293,7 @@ on pods which use either no volumes or only volumes of the following types:
 This list of volumes was chosen as they can't be used to share files with other
 pods.
 
-The mapping length will be 65535, mapping the range 0-65534 to the pod. This wide
+The mapping length will be 65536, mapping the range 0-65535 to the pod. This wide
 range makes sure most workloads will work fine. Additionally, we don't need to
 worry about fragmentation of IDs, as all pods will use the same length.
 
@@ -302,7 +302,7 @@ different pods in this category ("without" volumes) a non-overlapping mapping.
 Giving non-overlapping mappings generates the best isolation for pods.
 
 Furthermore, the node UID space of 2^32 can hold up to 2^16 pods each with a
-mapping length of 65535 (2^16-1) top. This imposes a limit of 65k pods per node,
+mapping length of 65536 (2^16) top. This imposes a limit of 65k pods per node,
 but that is not an issue we will hit in practice for a long time, if ever (today
 we run 110 pods per node by default).
 
@@ -381,7 +381,7 @@ some other volume type than the ones listed for phase 1 is used. IOW, when phase
 the phase 2.
 
 All pods in this mode will use _the same_ mapping, chosen by the kubelet, with a
-length 65535, and mapping the range 0-65534 too. IOW, each pod will have its own user
+length 65536, and mapping the range 0-65535 too. IOW, each pod will have its own user
 namespace, but they will map to _the same_ UIDs/GIDs in the host.
 
 Using the same mapping allows for pods to share files and mitigates all the
