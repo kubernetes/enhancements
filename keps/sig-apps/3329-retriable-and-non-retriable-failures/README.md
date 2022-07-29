@@ -401,8 +401,7 @@ spec:
     rules:
     - action: Ignore
       onPodConditions:
-        operator: In
-        values: [ DisruptionTarget ]
+      - type: DisruptionTarget
 ```
 
 Note that, in this case the user supplies a list of Pod condition type values.
@@ -752,15 +751,16 @@ type PodFailurePolicyAction string
 const (
 	// This is an action which might be taken on a pod failure - mark the
 	// pod's job as Failed and terminate all running pods.
-	PodFailurePolicyActionTerminate PodFailurePolicyAction = "Terminate"
+	PodFailurePolicyActionFailJob PodFailurePolicyAction = "FailJob"
 
 	// This is an action which might be taken on a pod failure - the counter towards
-	// .backoffLimit is not incremented and a replacement pod is created.
+	// .backoffLimit, represented by the job's .status.failed field, is not
+	// incremented and a replacement pod is created.
 	PodFailurePolicyActionIgnore PodFailurePolicyAction = "Ignore"
 
 	// This is an action which might be taken on a pod failure - the pod failure
-	// is handled in the default way - the counter towards .backoffLimit is
-	// incremented.
+	// is handled in the default way - the counter towards .backoffLimit,
+	// represented by the job's .status.failed field, is incremented.
 	PodFailurePolicyActionCount PodFailurePolicyAction = "Count"
 )
 
@@ -772,7 +772,11 @@ const (
 )
 
 // PodFailurePolicyOnExitCodesRequirement describes the requirement for handling
-// a failed pod based on its container exit codes.
+// a failed pod based on its container exit codes. In particular, it lookups the
+// .state.terminated.exitCode for each app container and init container status,
+// represented by the .status.containerStatuses and .status.initContainerStatuses
+// fields in the Pod status, respectively. Containers completed with success
+// (exit code 0) are excluded from the requirement check.
 type PodFailurePolicyOnExitCodesRequirement struct {
 	// Restricts the check for exit codes to the container with the
 	// specified name. When null, the rule applies to all containers.
@@ -780,7 +784,8 @@ type PodFailurePolicyOnExitCodesRequirement struct {
 	ContainerName *string
 
 	// Represents the relationship between the container exit code(s) and the
-	// specified values. Possible values are:
+	// specified values. Containers completed with success (exit code 0) are
+	// excluded from the requirement check.Possible values are:
 	// - In: the requirement is satisfied if at least one container exit code
 	//   (might be multiple if there are multiple containers not restricted
 	//   by the 'containerName' field) is in the set of specified values.
@@ -791,31 +796,18 @@ type PodFailurePolicyOnExitCodesRequirement struct {
 
 	// Specifies the set of values. Each returned container exit code (might be
 	// multiple in case of multiple containers) is checked against this set of
-	// values with respect to the operator.
+	// values with respect to the operator. Value '0' cannot be used for the In
+	// operator.
 	// +listType=set
 	Values []int32
 }
 
-type PodFailurePolicyOnPodConditionsOperator string
-
-const (
-	PodFailurePolicyOnPodConditionsOpIn PodFailurePolicyOnPodConditionsOperator = "In"
-)
-
-// PodFailurePolicyOnPodConditionsRequirement describes the requirement for handling
-// a failed pod based on its conditions.
-type PodFailurePolicyOnPodConditionsRequirement struct {
-	// Represents the relationship between the set of actual Pod condition types
-	// and the set of specified Pod condition types. Possible values are:
-	// - In: the requirement is satisfied, if at least one actual Pod condition
-	//   type (for a condition with status=True) is present in the set of
-	//   specified Pod condition types.
-	Operator PodFailurePolicyOnPodConditionsOperator
-
-	// Specifies the set of values. Each actual pod condition type,
-	// with status=True, is checked against this set with respect to the operator.
-	// +listType=set
-	Values []api.PodConditionType
+// PodFailurePolicyOnPodConditionsPattern describes a pattern for matching
+// an actual pod condition type.
+type PodFailurePolicyOnPodConditionsPattern struct {
+	// Specifies the required Pod condition type. The pattern matches a pod condition
+	// if the specified type equals the pod condition type.
+	Type api.PodConditionType
 }
 
 // PodFailurePolicyRule describes how a pod failure is handled when the requirements are met.
@@ -823,7 +815,7 @@ type PodFailurePolicyOnPodConditionsRequirement struct {
 type PodFailurePolicyRule struct {
 	// Specifies the action taken on a pod failure when the requirements are satisfied.
 	// Possible values are:
-	// - Terminate: indicates that the pod's job is marked as Failed and all
+	// - FailJob: indicates that the pod's job is marked as Failed and all
 	//   running pods are terminated.
 	// - Ignore: indicates that the counter towards the .backoffLimit is not
 	//   incremented and a replacement pod is created.
@@ -835,9 +827,11 @@ type PodFailurePolicyRule struct {
 	// +optional
 	OnExitCodes *PodFailurePolicyOnExitCodesRequirement
 
-	// Represents the requirement on the pod conditions.
-	// +optional
-	OnPodConditions *PodFailurePolicyOnPodConditionsRequirement
+	// Represents the requirement on the pod conditions. The requirement is represented
+	// as a list of pod condition patterns. The requirement is satisfied if at
+	// least pattern matches an actual pod condition.
+	// +listType=atomic
+	OnPodConditions []PodFailurePolicyOnPodConditionsPattern
 }
 
 // PodFailurePolicy describes how failed pods influence the backoffLimit.
@@ -857,8 +851,13 @@ type JobSpec struct {
 	// Specifies the policy of handling failed pods. In particular, it allows to
 	// specify the set of actions and conditions which need to be
 	// satisfied to take the associated action.
-	// If empty, the default behaviour applies - the counter of pod failed is
-	// incremented and it is checked against the backoffLimit.
+	// If empty, the default behaviour applies - the counter of failed pods,
+	// represented by the jobs's .status.failed field, is incremented and it is
+	// checked against the backoffLimit. This field cannot be used in combination
+	// with restartPolicy=OnFailure.
+	//
+	// This field is alpha-level. To use this field, you must enable the
+	// `JobPodFailurePolicy` feature gate (disabled by default).
 	// +optional
 	PodFailurePolicy *PodFailurePolicy
   ...
@@ -899,8 +898,7 @@ spec:
         values: [1,2,3]
     - action: Ignore
       onPodConditions:
-        operator: In
-        values: [ DisruptionTarget ]
+      - type: DisruptionTarget
 ```
 
 ### Evaluation
@@ -1086,6 +1084,9 @@ Below are some examples to consider, in addition to the aforementioned [maturity
   indicating that a pod should be retried (see: [Evolving condition types](#evolving-condition-types))
 - Simplify the code in job controller responsible for detection of failed pods
   based on the fix for pods stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed))
+- Commonize the code for appending pod conditions between components
+- Do not update the pod disruption condition (with type=`DisruptionTarget`) if
+  it is already present with `status=True`
 - Review and implement if feasible adding of pod conditions with the use of
   [SSA](https://kubernetes.io/docs/reference/using-api/server-side-apply/) client.
 - The feature flag enabled by default
