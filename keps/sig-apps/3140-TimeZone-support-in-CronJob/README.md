@@ -90,10 +90,6 @@ fully GA-ed it's time to satisfy the original request.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
 
 ## Proposal
 
@@ -117,6 +113,10 @@ will allow CronJob authors to simplify the user experience when creating CronJob
 This problem can be mitigated with a fresh build of kube-controller-manager with
 updated golang version, but it heavily relies on the go community to keep the
 time zone database up-to-date.
+
+- Outdated time zone database on the system where kube-controller-manager is running
+
+Cluster administrator should always ensure their systems are up-to-date.
 
 - Malicious user can create multiple CronJobs with different time zone which can
 actually trigger Jobs at the exact same time
@@ -175,9 +175,9 @@ to implement this enhancement.
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/apis/batch/validation`: `2022-06-09` - `94.4%`
-- `k8s.io/kubernetes/pkg/controller/cronjob`: `2022-06-09` - `50.8%`
-- `k8s.io/kubernetes/pkg/registry/batch/cronjob`: `2022-06-09` - `61.8%`
+- `k8s.io/kubernetes/pkg/apis/batch/validation`: `2023-01-18` - `96.0%`
+- `k8s.io/kubernetes/pkg/controller/cronjob`: `2023-01-18` - `51.7%`
+- `k8s.io/kubernetes/pkg/registry/batch/cronjob`: `2023-01-18` - `56.3%`
 
 ##### Integration tests
 
@@ -185,7 +185,7 @@ None.
 
 ##### e2e tests
 
-None.
+- [CronJob should support timezone](https://github.com/kubernetes/kubernetes/blob/db4c64b1a987675fff7a234e8633f4fd01c69530/test/e2e/apps/cronjob.go#L301): https://storage.googleapis.com/k8s-triage/index.html?sig=apps&test=should%20support%20timezone
 
 ### Graduation Criteria
 
@@ -203,38 +203,7 @@ None.
 
 #### GA
 
-TBD
-
-<!---
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- Add a new condition when a cronjob controller encounters an invalid time zone.
 
 ### Upgrade / Downgrade Strategy
 
@@ -429,6 +398,7 @@ lies.
 
 - *2022-01-14* - Initial KEP draft
 - *2022-06-09* - Updated KEP for beta promotion.
+- *2023-01-18* - Updated KEP for stable promotion.
 
 ## Drawbacks
 
