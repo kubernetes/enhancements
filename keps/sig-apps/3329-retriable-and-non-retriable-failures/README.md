@@ -107,6 +107,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Evolving condition types](#evolving-condition-types)
 - [Design Details](#design-details)
   - [New PodConditions](#new-podconditions)
+  - [Interim FailureTarget condition](#interim-failuretarget-condition)
   - [JobSpec API](#jobspec-api)
   - [Evaluation](#evaluation)
   - [Test Plan](#test-plan)
@@ -169,7 +170,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -674,7 +675,8 @@ The Pod status (which includes the `conditions` field and the container exit
 codes) could be lost if the failed pod is garbage collected.
 
 Losing Pod's status before it is interpreted by Job Controller can be prevented
-by using the feature of [job tracking with finalizers](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/).
+by using the feature of [job tracking with finalizers](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/)
+(see more about the design details section: [Interim FailureTarget condition](#interim-failuretarget-condition)).
 
 #### Evolving condition types
 
@@ -739,6 +741,25 @@ pod delete requests are issued to modify the code to also append a meaningful
 condition with dedicated `Type`, `Reason` and `Message` fields based on the
 invocation context.
 
+### Interim FailureTarget condition
+
+There is a risk of losing the Pod status information due to PodGC, which could
+prevent Job Controller to react to a pod failure with respect to the configured
+pod failure policy rules (see also: [Garbage collected pods](#garbage-collected-pods)).
+
+In order to make sure all pods are checked against the rules we require the
+feature of [job tracking with finalizers](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/)
+to be enabled.
+
+Additionally, before we actually remove the finalizers from the pods
+(allowing them to be deleted by PodGC) we record the determined job failure
+message (if any rule with `JobFail` matched) in an interim job condition, called
+`FailureTarget`. Once the pod finalizers are removed we update the job status
+with the final `Failed` job condition. This strategy eliminates a possible
+race condition that we could lose the information about the job failure if
+Job Controller crashed between removing the pod finalizers are updating the final
+`Failed` condition in the job status.
+
 ### JobSpec API
 
 We extend the Job API in order to allow to apply different actions depending
@@ -746,6 +767,7 @@ on the conditions associated with the pod failure.
 
 ```golang
 // PodFailurePolicyAction specifies how a Pod failure is handled.
+// +enum
 type PodFailurePolicyAction string
 
 const (
@@ -764,6 +786,7 @@ const (
 	PodFailurePolicyActionCount PodFailurePolicyAction = "Count"
 )
 
+// +enum
 type PodFailurePolicyOnExitCodesOperator string
 
 const (
@@ -780,24 +803,29 @@ const (
 type PodFailurePolicyOnExitCodesRequirement struct {
 	// Restricts the check for exit codes to the container with the
 	// specified name. When null, the rule applies to all containers.
+	// When specified, it should match one the container or initContainer
+	// names in the pod template.
 	// +optional
 	ContainerName *string
 
 	// Represents the relationship between the container exit code(s) and the
 	// specified values. Containers completed with success (exit code 0) are
-	// excluded from the requirement check.Possible values are:
+	// excluded from the requirement check. Possible values are:
 	// - In: the requirement is satisfied if at least one container exit code
 	//   (might be multiple if there are multiple containers not restricted
 	//   by the 'containerName' field) is in the set of specified values.
 	// - NotIn: the requirement is satisfied if at least one container exit code
 	//   (might be multiple if there are multiple containers not restricted
 	//   by the 'containerName' field) is not in the set of specified values.
+	// Additional values are considered to be added in the future. Clients should
+	// react to an unknown operator by assuming the requirement is not satisfied.
 	Operator PodFailurePolicyOnExitCodesOperator
 
 	// Specifies the set of values. Each returned container exit code (might be
 	// multiple in case of multiple containers) is checked against this set of
-	// values with respect to the operator. Value '0' cannot be used for the In
-	// operator.
+	// values with respect to the operator. The list of values must be ordered
+	// and must not contain duplicates. Value '0' cannot be used for the In operator.
+	// At least one element is required. At most 255 elements are allowed.
 	// +listType=set
 	Values []int32
 }
@@ -805,13 +833,17 @@ type PodFailurePolicyOnExitCodesRequirement struct {
 // PodFailurePolicyOnPodConditionsPattern describes a pattern for matching
 // an actual pod condition type.
 type PodFailurePolicyOnPodConditionsPattern struct {
-	// Specifies the required Pod condition type. The pattern matches a pod condition
-	// if the specified type equals the pod condition type.
+	// Specifies the required Pod condition type. To match a pod condition
+	// it is required that specified type equals the pod condition type.
 	Type api.PodConditionType
+	// Specifies the required Pod condition status. To match a pod condition
+	// it is required that the specified status equals the pod condition status.
+	// Defaults to True.
+	Status api.ConditionStatus
 }
 
 // PodFailurePolicyRule describes how a pod failure is handled when the requirements are met.
-// Only one of OnExitCodes and onPodConditions can be used in each rule.
+// One of OnExitCodes and onPodConditions, but not both, can be used in each rule.
 type PodFailurePolicyRule struct {
 	// Specifies the action taken on a pod failure when the requirements are satisfied.
 	// Possible values are:
@@ -821,6 +853,8 @@ type PodFailurePolicyRule struct {
 	//   incremented and a replacement pod is created.
 	// - Count: indicates that the pod is handled in the default way - the
 	//   counter towards the .backoffLimit is incremented.
+	// Additional values are considered to be added in the future. Clients should
+	// react to an unknown action by skipping the rule.
 	Action PodFailurePolicyAction
 
 	// Represents the requirement on the container exit codes.
@@ -829,7 +863,7 @@ type PodFailurePolicyRule struct {
 
 	// Represents the requirement on the pod conditions. The requirement is represented
 	// as a list of pod condition patterns. The requirement is satisfied if at
-	// least pattern matches an actual pod condition.
+	// least one pattern matches an actual pod condition. At most 20 elements are allowed.
 	// +listType=atomic
 	OnPodConditions []PodFailurePolicyOnPodConditionsPattern
 }
@@ -840,7 +874,7 @@ type PodFailurePolicy struct {
 	// Once a rule matches a Pod failure, the remaining of the rules are ignored.
 	// When no rule matches the Pod failure, the default handling applies - the
 	// counter of pod failures is incremented and it is checked against
-	// the backoffLimit.
+	// the backoffLimit. At most 20 elements are allowed.
 	// +listType=atomic
 	Rules []PodFailurePolicyRule
 }
@@ -854,7 +888,7 @@ type JobSpec struct {
 	// If empty, the default behaviour applies - the counter of failed pods,
 	// represented by the jobs's .status.failed field, is incremented and it is
 	// checked against the backoffLimit. This field cannot be used in combination
-	// with restartPolicy=OnFailure.
+	// with .spec.podTemplate.spec.restartPolicy=OnFailure.
 	//
 	// This field is alpha-level. To use this field, you must enable the
 	// `JobPodFailurePolicy` feature gate (disabled by default).
@@ -1083,7 +1117,9 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Re-evaluate introduction of a generic opinionated condition type
   indicating that a pod should be retried (see: [Evolving condition types](#evolving-condition-types))
 - Simplify the code in job controller responsible for detection of failed pods
-  based on the fix for pods stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed))
+  based on the fix for pods stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed)).
+  Also, introduce a worker in the disruption controller to mark pods
+  stuck in the pending phase, with set deletionTimestamp, as failed.
 - Commonize the code for appending pod conditions between components
 - Do not update the pod disruption condition (with type=`DisruptionTarget`) if
   it is already present with `status=True`
@@ -1544,6 +1580,16 @@ For each of them, fill in the following information by copying the below templat
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
+
+- 2022-06-23: Initial KEP merged
+- 2022-07-12: Preparatory PR "Refactor gc_controller to do not use the deletePod stub" merged
+- 2022-07-14: Preparatory PR "efactor taint_manager to do not use getPod and getNode stubs" merged
+- 2022-07-20: Preparatory PR "Add integration test for podgc" merged
+- 2022-07-28: KEP updates merged
+- 2022-08-01: Additional KEP updates merged
+- 2022-08-02: PR "Append new pod conditions when deleting pods to indicate the reason for pod deletion" merged
+- 2022-08-02: PR "Add worker to clean up stale DisruptionTarget condition" merged
+- 2022-08-04: PR "Support handling of pod failures with respect to the configured rules" merged
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
