@@ -118,6 +118,14 @@ tarballs, documentation and the SBOM.
 This explicitly exudes the provenance data, which will be signed into a
 different location once we graduate the feature to GA.
 
+Part of this graduation is that we integrate the file signing into our existing
+release pipeline. This incorporates an architectural change, because we will now
+sign images as well as files in a dedicated step. We call this step `krel sign`,
+and it will run between `krel stage` and `krel release`. The purpose of
+`krel sign` will be to read the staged files and images, sign them and push the
+signatures into their desired locations for the following promotion as well as
+`krel release` steps.
+
 ### User Stories (Optional)
 
 - As an end user, I would like to be able to verify the Kubernetes release
