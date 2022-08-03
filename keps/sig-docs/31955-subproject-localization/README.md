@@ -70,7 +70,7 @@ A monthly localization meeting is already on the SIG Docs calendar and attended 
 
 ### Risks and Mitigations
 
-The main risks are abandonment of localization efforts and staleness of localizations as the English site changes. We've already seen larger changes to English documentation be harder to take on and implement down the localization funnel, hence, having leads of an official subproject involved in those discussions and decisions will hopefully mitigate those issues. We see this occuring via regular communication in SIG Docs bi-weekly meetings, alongside the regularly monthly meetings that localization contributors are already having.
+The main risks are abandonment of localization efforts and staleness of localizations as the English site changes. We've already seen larger changes to English documentation be harder to take on and implement down the localization funnel, hence, having leads of an official subproject involved in those discussions and decisions will hopefully mitigate those issues. We see this occurring via regular communication in SIG Docs bi-weekly meetings, alongside the regularly monthly meetings that localization contributors are already having.
 
 ## Drawbacks
 
