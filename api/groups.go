@@ -42,9 +42,10 @@ type GroupFetcher interface {
 // DefaultGroupFetcher returns the default GroupFetcher, which depends on GitHub
 func DefaultGroupFetcher() GroupFetcher {
 	return &RemoteGroupFetcher{
-		GroupsListURL:     "https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml",
-		OwnersAliasesURL:  "https://raw.githubusercontent.com/kubernetes/enhancements/master/OWNERS_ALIASES",
-		PRRApproversAlias: "prod-readiness-approvers",
+		GroupsListURL:             "https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml",
+		OwnersAliasesURL:          "https://raw.githubusercontent.com/kubernetes/enhancements/master/OWNERS_ALIASES",
+		PRRApproversAlias:         "prod-readiness-approvers",
+		PRRApproversEmeritusAlias: "prod-readiness-approvers-emeritus",
 	}
 }
 
@@ -78,8 +79,10 @@ type RemoteGroupFetcher struct {
 	GroupsListURL string
 	// Basically kubernetes/enhancements/OWNERS_ALIASES
 	OwnersAliasesURL string
-	// The alias name to look for in OWNERS_ALIASES
+	// The alias name to look for PRR approvers in OWNERS_ALIASES
 	PRRApproversAlias string
+	// The alias name to look for emeritus PRR approvers in OWNERS_ALIASES
+	PRRApproversEmeritusAlias string
 }
 
 var _ GroupFetcher = &RemoteGroupFetcher{}
@@ -156,6 +159,8 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 
 	var result []string
 	result = append(result, config.Data[f.PRRApproversAlias]...)
+	// TODO: Figre out if we want to treat emeritus approvers differently.
+	result = append(result, config.Data[f.PRRApproversEmeritusAlias]...)
 
 	if len(result) == 0 {
 		return nil, errors.New("retrieved zero PRR approvers, which is unexpected")

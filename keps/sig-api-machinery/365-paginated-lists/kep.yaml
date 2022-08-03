@@ -2,6 +2,7 @@ title: Paginated API Lists
 kep-number: 365
 authors:
   - "@smarterclayton"
+  - "@wojtek-t"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scalability

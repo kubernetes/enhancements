@@ -68,7 +68,7 @@ This KEP extends kubernetes with user-friendly support for running parallel jobs
 Here, parallel means multiple pods per Job. Jobs can be:
 - Embarrassingly parallel, where the pods have no dependencies between each other.
 - Tightly coupled, where the Pods communicate among themselves to make progress
-  (kubernetes/kubernetes#99497)[https://github.com/kubernetes/kubernetes/issues/99497]
+  [kubernetes/kubernetes#99497](https://github.com/kubernetes/kubernetes/issues/99497)
 
 We propose the addition of completion indexes into the Pods of a *Job
 [with fixed completion count]* to support running embarrassingly parallel
@@ -466,6 +466,15 @@ gate enabled and disabled.
 - [E2E](https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=Indexed) test graduates to conformance
 - Scalability tests for Jobs of varying sizes, up to 500 parallelism, that keep
   track of metric `job_sync_duration_seconds`.
+
+  Using a [clusterloader2 test](https://github.com/kubernetes/perf-tests/pull/1998)
+  that creates 101 jobs of varying sizes (total of 1200 pods) on a 20 nodes cluster, 
+  with 100 QPS for the job controller, I obtained the following completion times (averaged for 5 runs):
+    - NonIndexed jobs: 34.2s
+    - Indexed jobs: 33.4s
+  
+  The slight improvement for Indexed Jobs can be attributed to one less API call
+  necessary to track job status with finalizers.
 
 ### Upgrade / Downgrade Strategy
 

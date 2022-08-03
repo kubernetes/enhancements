@@ -1,0 +1,47 @@
+@startuml
+!theme reddress-lightblue
+skinparam componentStyle rectangle
+
+cloud "resource driver" {
+  component "resource driver controller" as drivercontroller
+  component "resource kubelet plugin" as driverplugin
+}
+
+component Kubernetes {
+  component apiserver {
+      file Pod
+      file ResourceClaim
+      file PodScheduling
+  }
+  component scheduler {
+    component "resource plugin" as k8sresourceplugin
+  }
+  component "controller-manager" as controllermanager {
+    component "resource claim controller" as k8sresourceclaimcontroller
+  }
+  component kubelet {
+    component "plugin manager" as pluginmanager
+    component "resource manager" as resourcemanager
+  }
+}
+
+controllermanager -[hidden]> kubelet
+drivercontroller -[hidden]> driverplugin
+
+Pod <. ResourceClaim: owned by\n(if created from template)
+Pod <. PodScheduling: owned by
+
+
+Pod -u-> k8sresourceclaimcontroller: read claim template\nfrom Pod spec
+ResourceClaim <-u- k8sresourceclaimcontroller: create claim,\nclean up users
+ResourceClaim <-u-> kubelet
+k8sresourceplugin <-u-> PodScheduling
+
+Pod <--> scheduler
+ResourceClaim <--> k8sresourceplugin
+
+ResourceClaim <-> drivercontroller
+pluginmanager <-> driverplugin
+resourcemanager <-> driverplugin
+PodScheduling <-> drivercontroller
+@enduml

@@ -3,10 +3,9 @@ kep-number: 127
 authors:
   - "@rata"
   - "@giuseppe"
-  - "@mauriciovasquezbernal"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: 2021-11-02
 reviewers:
   - "@mrunalp"
@@ -14,8 +13,15 @@ reviewers:
   - "@thockin"
 approvers:
   - "@derekwaynecarr"
+
+stage: alpha
+latest-milestone: "v1.25"
+milestone:
+  alpha: "v1.25"
+
 feature-gates:
   - name: UserNamespacesSupport
     components:
       - kubelet
+      - kube-apiserver
 disable-supported: true

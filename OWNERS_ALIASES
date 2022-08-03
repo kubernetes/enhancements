@@ -81,9 +81,6 @@ aliases:
   sig-security-leads:
     - IanColdwater
     - tabbysable
-  sig-service-catalog-leads:
-    - jberkhahn
-    - jhvhs
   sig-storage-leads:
     - jsafrane
     - msau42
@@ -191,6 +188,7 @@ aliases:
     - johnbelamaric
     - deads2k
     - wojtek-t
+  prod-readiness-approvers-emeritus:
     - ehashman
   provider-aws:
     - justinsb

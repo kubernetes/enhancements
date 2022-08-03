@@ -17,7 +17,8 @@ prr-approvers:
 see-also:
   - "/keps/sig-scheduling/1451-multi-scheduling-profiles"
   - "/keps/sig-scheduling/2458-node-resource-score-strategy"
-stage: beta
-latest-milestone: "v1.23"
+stage: stable
+latest-milestone: "v1.25"
 milestone:
   beta: "v1.19"
+  stable: "v1.25"

@@ -37,6 +37,10 @@
   - [Request lifetime Bound](#request-lifetime-bound)
   - [Bounds](#bounds)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -1013,10 +1017,83 @@ testing and benchmarking.
 
 ### Test Plan
 
-We will extend both the unit test suite and the integration test suite to cover the CRD validation rule described in this KEP.
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
-We also intend to explore what testing utilities could be added to make it easier for 3rd party
-developers to test their validation rules.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+N/A
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+The unit tests are added together with the added code:
+
+- `k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel`: `May 23rd, 2022` - `79.6%`
+- `k8s.io/apiextensions-apiserver/third_party/forked/celopenapi/model`: `May 23rd, 2022` - `76.5%`
+- `k8s.io/apiextensions-apiserver/pkg/registry/customresourcedefinition`: `May 23rd, 2022` - `13.1%`
+- `k8s.io/apiextensions-apiserver/pkg/apiserver/validation`: `May 23rd, 2022` - `87.2%`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+The integration test has been added to test the crd expression validation with feature gate on/off:
+
+- test/integration/apiserver/crd_validation_expressions_test.go
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+We plan to add e2e test under api-machinery for crd expression validation:
+
+- test/e2e/apimachinery/crd_expressions_validation.go: https://storage.googleapis.com/k8s-triage/index.html?sig=api-machinery
 
 ### Graduation Criteria
 
@@ -1035,6 +1112,8 @@ developers to test their validation rules.
 - [Reduce noise of invalid data messages reported from cel.UnstructuredToVal](https://github.com/kubernetes/kubernetes/issues/106440)
 - [Benchmark cel.UnstructuredToVal and optimize away repeated wrapper object construction](https://github.com/kubernetes/kubernetes/issues/106438)
 - Demonstrate adoption and successful feature usage in the community
+- Optimization on super-linear complexity growth
+- Adding metric of the latency of CEL evaluation for CRD evaluation
 
 ## Production Readiness Review Questionnaire
 
@@ -1168,6 +1247,9 @@ combination of large, compact, complex vs. similar combinations using existing v
 <!--
 This section must be completed when targeting beta to a release.
 
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
 The Troubleshooting section currently serves the `Playbook` role. We may consider
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
@@ -1175,23 +1257,17 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Same as without the feature.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+1. The feature can be disabled by setting the feature-gate to false if the performance impact of it is not tolerable.
+2. Try to run the rules separately to see which rule is slow
+3. Remove the problematic rules or update the rules to meet the requirements
 
 ## Graduation Criteria
 

@@ -1,7 +1,6 @@
 # KEP-2799: Reduction of Secret-based Service Account Tokens
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -16,6 +15,10 @@
   - [LegacyServiceAccountTokenTracking](#legacyserviceaccounttokentracking)
   - [LegacyServiceAccountTokenCleanUp](#legacyserviceaccounttokencleanup)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [LegacyServiceAccountTokenNoAutoGeneration](#legacyserviceaccounttokennoautogeneration-1)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -165,16 +168,30 @@ If `tracked-since` is unavailable, no secret would be removed.
 
 ### Test Plan
 
-- Unit tests
-- Integration tests
-  - Previously auto-generated secret-based token that's used within the
-    configurable cleanup duration will continue to work.
-  - Previously auto-generated secret-based token that's used after the
-    configurable cleanup duration will be deleted.
-- E2E tests
-  - Secret-based tokens would not be auto-generated.
-  - Still able to explicitly request a secret-based token.
-  - The explicitly requested token would not be deleted.
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+None
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/controller/serviceaccount`: `2022-06-13` - `67.5%`
+
+##### Integration tests
+
+- Previously auto-generated secret-based token that's used within the
+  configurable cleanup duration will continue to work.
+- Previously auto-generated secret-based token that's used after the
+  configurable cleanup duration will be deleted.
+
+##### e2e tests
+
+- Secret-based tokens would not be auto-generated.
+- Still able to explicitly request a secret-based token.
+- The explicitly requested token would not be deleted.
 
 ### Graduation Criteria
 

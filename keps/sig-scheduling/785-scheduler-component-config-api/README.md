@@ -10,6 +10,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -35,7 +39,7 @@
 - [x] (R) Production readiness review completed
 - [x] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -47,7 +51,9 @@
 
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
 for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced
-`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively.
+`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively. We'd like to graduate it
+to GA in 1.25 and mark `v1beta2` as deprecated to avoid breaking existing users,
+we'll remove the support of `v1beta2` in 1.26.
 
 ## Motivation
 
@@ -108,6 +114,11 @@ The third iteration, `kubescheduler.config.k8s.io/v1beta3`, includes the followi
 The main reason is that some plugins have "default" behavior without needing user inputs, whereas the above plugins are
 about user preferences, so should have more influence while making scheduling decisions.
 More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).
+
+The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
+  - Mark `v1beta2` as deprecated
+  - Remove Plugin `SelectorSpread` (in favor of `PodTopologySpread`)
+
 ### Risks and Mitigations
 
 The major risk is around the removal of the `unreserve` extension point.
@@ -127,12 +138,92 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 
 ### Test Plan
 
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
 - [x] Compatibility tests for defaults and overrides of `.bindTimeoutSeconds`
   in `VolumeBindingArgs` type.
 - [x] Tests for `RequestedToCapacityRatioArgs` that: (1) fail to pass with
   bad casing and (2) get encoded with lower case.
 - [x] Tests for parsing, conversion, defaulting and validation.
 - [] Tests which assert predictability of node assignment with increased weights.
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+None
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `cmd/kube-scheduler/app`: `2022-06-13` -  `32.2%`
+- `cmd/kube-scheduler/app/options`: `2022-06-13` -  `42.2%`
+- `pkg/scheduler/apis/config/scheme`: `2022-06-13` - `100%`
+- `pkg/scheduler/apis/config/v1`: `2022-06-13` - `0%`
+- `pkg/scheduler/apis/config/validation`: `2022-06-13` - `93.9%`
+
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+We have no special integration tests to cover the graduation of Component Config. But we do
+cover the latest Component Config in scheduling by using the latest version. See
+- [Configuring plugins with the latest Component Config](https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler/plugins/plugins_test.go)
+- [Preemption](https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler/preemption/preemption_test.go)
+- [Queueing](https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler/queue_test.go)
+- [Scheduling in score](https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler/scoring/priorities_test.go)
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+None.
 
 ### Graduation Criteria
 
@@ -219,6 +310,15 @@ N/A
   - No changes to plugins enabled by default. Only their weights would change.
   - Remove `v1beta1`.
 
+  When `v1` gets introduced:
+  - Mark `v1beta2` as deprecated.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
+
+  Yes, when `v1` gets introduced, we'll mark `v1beta2` as deprecated, and
+  remove the support of `v1beta2` in 1.26.
+
+
 ### Monitoring requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
@@ -242,6 +342,18 @@ N/A
   observability if this feature?**
 
   N/A.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the enhancement?**
+
+  N/A
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
+
+  N/A
+
+* **Are there any missing metrics that would be useful to have to improve observability of this feature?**
+
+  N/A
 
 ### Dependencies
 
@@ -302,3 +414,4 @@ N/A
 - 2021-07-08: Introducing `v1beta2`.
 - 2021-08-06: Introducing `v1beta3`.
 - 2021-09-01: Remove `v1beta1` and the legacy policy config API.
+- 2022-05-18: Introducing `v1` and mark `v1beta2` as deprecated.

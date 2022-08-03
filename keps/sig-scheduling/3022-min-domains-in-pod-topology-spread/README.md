@@ -1,7 +1,6 @@
 # KEP-3022: min domains in Pod Topology Spread
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -14,6 +13,10 @@
   - [Implementation details](#implementation-details)
   - [How user stories are addressed](#how-user-stories-are-addressed)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.24):](#alpha-v124)
     - [Beta (v1.25):](#beta-v125)
@@ -99,7 +102,7 @@ is equal to the minimum number of matching pods on a domain.
 
 As a result, when the number of domains is less than `minDomains`, scheduler doesn't schedule a matching Pod to Nodes on the domains that have the same or more number of matching Pods as `maxSkew`.
 
-`minDomains` is an optional parameter and the default value is 0.
+`minDomains` is an optional parameter. If `minDomains` is nil, the constraint behaves as if MinDomains is equal to 1.
 
 ### API
 
@@ -108,12 +111,31 @@ New optional parameter called `MinDomains` is introduced to `PodSpec.TopologySpr
 ```go
 type TopologySpreadConstraint struct {
 ......
-  // When the number of domains with matching topology keys is less than `minDomains`,
-  // Pod Topology Spread treats "global minimum" as 0.
-  // As a result, when the number of domains is less than `minDomains`,
-  // scheduler doesn't schedule a matching Pod to Nodes on the domains that have the same or more number of matching Pods as `maxSkew`.
-  // Default value is 0. When value is different than 0, WhenUnsatisfiable must be DoNotSchedule.
-  // +optional
+	// MinDomains indicates a minimum number of eligible domains.
+	// When the number of eligible domains with matching topology keys is less than minDomains,
+	// Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+	// And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+	// this value has no effect on scheduling.
+	// As a result, when the number of eligible domains is less than minDomains,
+	// scheduler won't schedule more than maxSkew Pods to those domains.
+	// If value is nil, the constraint behaves as if MinDomains is equal to 1.
+	// Valid values are integers greater than 0.
+	// When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+	//
+	// For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+	// labelSelector spread as 2/2/2:
+	// +-------+-------+-------+
+	// | zone1 | zone2 | zone3 |
+	// +-------+-------+-------+
+	// |  P P  |  P P  |  P P  |
+	// +-------+-------+-------+
+	// The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+	// In this situation, new pod with the same labelSelector cannot be scheduled,
+	// because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+	// it will violate MaxSkew.
+	//
+	// This is an alpha field and requires enabling MinDomainsInPodTopologySpread feature gate.
+	// +optional
   MinDomains *int32
 }
 ```
@@ -179,6 +201,13 @@ With the flow, this deployment will be spread over at least 5 Nodes while protec
 
 ### Test Plan
 
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
 To ensure this feature to be rolled out in high quality. Following tests are mandatory:
 
 - **Unit Tests**: All core changes must be covered by unit tests.
@@ -188,13 +217,66 @@ To ensure this feature to be rolled out in high quality. Following tests are man
   using this feature, but it shouldn't impose penalty to users who are not using
   this feature. We will verify it by designing some benchmark tests.
 
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2022-06-17` - `86%`
+- `k8s.io/kubernetes/pkg/api/pod`: `2022-06-17` - `66.7%`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2022-06-17` - `82.1%`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+test: https://github.com/kubernetes/kubernetes/blob/19c8a2127177b43effb9bfe1de272d6f08ea56e8/test/integration/scheduler/filters/filters_test.go#L1060
+k8s-triage: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestPodTopologySpreadFilter
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+N/A
+
+--
+
+This feature doesn't introduce any new API endpoints and doesn't interact with other components. 
+So, E2E tests doesn't add extra value to integration tests.
+
 ### Graduation Criteria
 
 #### Alpha (v1.24):
 
-- [ ] Add new parameter `MinDomains` to `TopologySpreadConstraint` and feature gating.
-- [ ] Filter extension point implementation.
-- [ ] Implement all tests mentioned in the [Test Plan](#test-plan).
+- [x] Add new parameter `MinDomains` to `TopologySpreadConstraint` and feature gating.
+- [x] Filter extension point implementation.
+- [x] Implement all tests mentioned in the [Test Plan](#test-plan).
 
 #### Beta (v1.25):
 
@@ -273,12 +355,22 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+It shouldn't impact already running workloads. It's an opt-in feature,
+and users need to set `pod.spec.topologySpreadConstraints.minDomains` field to use this feature. 
+
+When this feature is disabled by the feature flag, the already created Pod's `pod.spec.topologySpreadConstraints.minDomains` field is preserved,
+but, the newly created Pod's `pod.spec.topologySpreadConstraints.minDomains` field is silently dropped.
+
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- A spike on metric `schedule_attempts_total{result="error|unschedulable"}` when pods using this feature are added.
+- A spike on metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` or `scheduling_algorithm_duration_seconds` when pods using this feature are added. 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -288,11 +380,34 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Yes. The behavior is changed as expected.
+
+Test scenario:
+1. start kube-apiserver v1.24 where `MinDomains` feature is disabled. 
+2. create three nodes and pods spread across nodes as 2/2/1
+3. create new Pod that has a TopologySpreadConstraints: maxSkew is 1, topologyKey is `kubernetes.io/hostname`, and minDomains is 4 (larger than the number of domains (= 3)).
+4. the Pod created in (3) is scheduled because `MinDomain` is disabled.
+5. delete the Pod created in (3).
+6. recreate kube-apiserver v1.25 where `MinDomains` feature is enabled.
+7. create the same Pod as (3).
+8. the Pod created in (7) isn't scheduled because `MinDomain` is enabled and minDomains is larger than the number of domains (= 3)).
+9. delete the Pod created in (7).
+10. recreate kube-apiserver v1.24 where `MinDomains` feature is disabled.
+11. create the same Pod as (3).
+12. the Pod created in (11) is scheduled because `MinDomain` is disabled.
+13. delete the Pod created in (11).
+14. recreate kube-apiserver v1.25 where `MinDomains` feature is enabled.
+15. create the same Pod as (3).
+16. the Pod created in (15) isn't scheduled because `MinDomain` is enabled and minDomains is larger than the number of domains (= 3)).
+17. delete the Pod created in (15).
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -308,6 +423,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The operator can query pods with `pod.spec.topologySpreadConstraints.minDomains` field set.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -319,13 +436,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: 
+              The feature MinDomains in Pod Topology Sprad plugin doesn't cause any logs, any events, any pod status updates.
+              If a Pod using `pod.spec.topologySpreadConstraints.minDomains` was successfully assigned a Node,
+              nodeName will be updated. 
+              And if not, `PodScheduled` condition will be false and an event will be recorded with a detailed message
+              describing the reason including the failed filters. (Pod Topology Spread plugin could be one of them.)
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -344,18 +461,18 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+- Metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` <= 100ms on 90-percentile.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  - [x] Metrics
+    - Component exposing the metric: kube-scheduler
+      - Metric name: `plugin_execution_duration_seconds{plugin="PodTopologySpread"}`
+      - Metric name: `schedule_attempts_total{result="error|unschedulable"}`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -363,6 +480,10 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Yes. It would be useful if we could see which filter plugin affected Pod's scheduling results in metrics.
+
+Issue: https://github.com/kubernetes/kubernetes/issues/110643
 
 ### Dependencies
 
@@ -386,6 +507,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -447,7 +570,12 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The feature isn't affected because Pod Topology Spread plugin doesn't communicate with kube-apiserver or etcd
+during Filter phase.
+
 ###### What are other known failure modes?
+
+N/A
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -464,6 +592,12 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+- Check `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` to see if latency increased. 
+  - In this case, the metrics showes literally the feature is slow.
+  - You should stop using `MinDomains` in your Pods and may need to disable `MinDomains` feature by feature flag `MinDomainsInPodTopologySpread`.
+- Check `schedule_attempts_total{result="error|unschedulable"}` to see if the number of attempts increased.
+  - In this case, your use of `MinDomains` may be incorrect or not appropriate for your cluster.
+
 ## Implementation History
 
 <!--
@@ -476,6 +610,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+ - 2021-11-02: Initial KEP sent for review
+ - 2022-01-14: Initial KEP is merged. 
+ - 2022-03-16: The implementation PRs are merged.
+ - 2022-05-03: The MinDomain feature is released as alpha feature with Kubernetes v1.24 release.
 
 ## Drawbacks
 

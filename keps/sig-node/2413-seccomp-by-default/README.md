@@ -1,7 +1,6 @@
 # KEP-2413: Enable seccomp by default
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -12,6 +11,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
@@ -29,22 +32,22 @@
 - [Alternatives](#alternatives)
   - [Alternative 1: Define a new <code>KubernetesDefault</code> profile](#alternative-1-define-a-new--profile)
   - [Alternative 2: Allow admins to pick one of <code>KubernetesDefault</code>, <code>RuntimeDefault</code> or a custom profile](#alternative-2-allow-admins-to-pick-one-of---or-a-custom-profile)
-  <!-- /toc -->
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
 Items marked with (R) are required _prior to targeting to a milestone / release_.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -136,21 +139,49 @@ section](https://kubernetes.io/docs/tutorials/clusters/seccomp).
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+There are no prerequisites required.
+
+##### Unit tests
+
 There will be unit tests for the feature, whereas the existing seccomp tests can
 be extended to cover the new behavior if enabled.
+
+- `pkg/kubelet/kuberuntime`: `2022-06-15` - `66.3%`
+
+##### Integration tests
+
+No integration tests have been added for the alpha implementation because the
+feature is off by default.
+
+For the beta graduation we will defer this section to the e2e tests.
+
+##### e2e tests
+
+No e2e tests have been added for the alpha implementation because the feature is
+off by default.
+
+For the beta graduation, we will add a serial e2e test which covers the kubelet
+configuration.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- [ ] Implement the new feature gate and kubelet configuration
-- [ ] Ensure proper tests are in place
-- [ ] Update documentation to make the feature visible
+- [x] Implement the new feature gate and kubelet configuration
+- [x] Ensure proper tests are in place
+- [x] Update documentation to make the feature visible
 
 #### Alpha to Beta Graduation
 
-- [ ] Enable the feature per default
-- [ ] No major bugs reported in the previous cycle
+- [x] Enable the feature gate per default
+      (the kubelet configuration value still default to `false`)
+- [x] No major bugs reported in the previous cycle
 
 #### Beta to GA Graduation
 
@@ -171,19 +202,19 @@ risks and mitigations are available for each one.
    that the application code does not trigger syscalls blocked by the
    `RuntimeDefault` profile (for [CRI-O][default-crio] or
    [containerd][default-containerd]). This can be done by:
-   - *Recommended*: Analyzing the code for any executed syscalls which may be
+   - _Recommended_: Analyzing the code for any executed syscalls which may be
      blocked by the default profiles. If that's the case, either craft a custom
      seccomp profile based on the default or change the application deployment
      to `Unconfined`.
-   - *Recommended*: Run the application against an e2e test suite to trigger
+   - _Recommended_: Run the application against an e2e test suite to trigger
      relevant code paths. Monitor the application hosts audit logs (via auditd
      or `/var/log/audit/audit.log`) for blocking syscalls via `type=SECCOMP`. If
      that's the case, use the same mitigation as mentioned above.
-   - *Optional*: Create a custom seccomp profile based on the default and change
+   - _Optional_: Create a custom seccomp profile based on the default and change
      their default action from `SCMP_ACT_ERRNO` to `SCMP_ACT_LOG`. This means
      that the seccomp filter will have no effect on the application at all, but
      the audit logs will now indicate which syscalls may be blocked.
-   - *Optional*: Use cluster additions like the [Security Profiles
+   - _Optional_: Use cluster additions like the [Security Profiles
      Operator][spo] for profiling the application via its log enrichment feature
      or recording a profile by using its recording feature.
 3. **Deploying the modified application**:
@@ -280,53 +311,50 @@ _This section must be completed when targeting beta graduation to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 - **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  Operators have to check the kubelet config value for the node where the
+  workload runs on. They can also run `crictl inspect` to examine the used OCI
+  runtime spec and find out which profile is in use.
 
 - **What are the SLIs (Service Level Indicators) an operator can use to determine
   the health of the service?**
 
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - A workload is exiting unexpectedly after the feature has been enabled.
+
+    - The termination reason is a "permission denied" error.
+    - The termination is reproducible.
+    - Replacing `SCMP_ACT_ERRNO` to `SCMP_ACT_LOG` in the default profile will
+      show seccomp error messages in auditd or syslog.
+    - There are no other reasons for container termination (like eviction or
+      exhausting resources)
+
+  - A workload is not behaving completely functional, for example some features
+    are misbehaving but the appliction does not exit.
+
+    - There are permission denied errors in the workload logs.
+    - The behavior is reproducible.
+    - Replacing `SCMP_ACT_ERRNO` to `SCMP_ACT_LOG` in the default profile will
+      show seccomp error messages in auditd or syslog.
 
 - **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
 
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  The workload availability, functionality and health is exactly the same with
+  the feature enabled. This can be done by tracking the
+  `kube_pod_container_status_restarts_total` in
+  [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/379b60abd97be5914c0b4e292b14e75c5d3cf694/docs/pod-metrics.md#pod-metrics).
 
 - **Are there any missing metrics that would be useful to have to improve observability
   of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  None
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 - **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  None
 
 ### Scalability
 
@@ -378,26 +406,22 @@ _This section must be completed when targeting beta graduation to a release._
 
 - **How does this feature react if the API server and/or etcd is unavailable?**
 
-- **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
+  It will still work as intended since it's a kubelet internal feature.
 
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+- **What are other known failure modes?**
+
+  None
 
 - **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  None
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing slis/slos]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
+- 2022-03-15: Updated KEP to beta
 - 2021-05-05: KEP promoted to implementable
 
 ## Alternatives

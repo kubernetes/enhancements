@@ -32,7 +32,7 @@ func addCreate(topLevel *cobra.Command) {
 		Use:           "create",
 		Short:         "Create a new KEP",
 		Long:          "Create a new KEP using the current KEP template for the given type",
-		Example:       `  kepctl create --name a-path --title "My KEP" --number 123 --owning-sig sig-foo`,
+		Example:       `  kepctl create --name a-path --title "My KEP" --number 123 --owning-sig sig-foo --approvers someapprover --authors githubhandle`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -92,6 +92,20 @@ func addCreate(topLevel *cobra.Command) {
 		"s",
 		string(api.ProvisionalStatus),
 		"KEP State",
+	)
+
+	cmd.PersistentFlags().StringArrayVar(
+		&co.Approvers,
+		"approvers",
+		[]string{},
+		"Approvers",
+	)
+
+	cmd.PersistentFlags().StringVar(
+		&co.Stage,
+		"stage",
+		string(api.AlphaStage),
+		"KEP Stage",
 	)
 
 	cmd.PersistentFlags().StringVar(

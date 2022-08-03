@@ -5,6 +5,11 @@
 <!-- toc -->
 - [Summary](#summary)
   - [New Feature Gates](#new-feature-gates)
+- [Design Details](#design-details)
+  - [Prerequisite testing updates](#prerequisite-testing-updates)
+  - [Unit tests](#unit-tests)
+  - [Integration tests](#integration-tests)
+  - [e2e tests](#e2e-tests)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -35,6 +40,29 @@ used as as described in its parent KEP. For all other contents, please refer to 
   on kubelet and treat vSphere CSI migration as already complete. And directly redirect traffic to CSI 
   driver for all vsphere volume related operations.
 
+## Design Details
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+### Prerequisite testing updates
+No additional prerequisite tests are needed.
+
+
+### Unit tests
+Unit tests for vSphere CSI Migration is added in the csi-translation-lib repository
+ - https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/vsphere_volume_test.go (85.1% coverage)
+
+### Integration tests
+ - No Integration tests required for this feature
+
+### e2e tests
+ - [e2e storage test suite](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage/testsuites) should pass before and after migration.
+ - Existing e2e tests developed for in-tree vSphere volume plugin executed - https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage/vsphere
+ - Additional tests added in the [vSphere CSI Driver repository](https://github.com/kubernetes-sigs/vsphere-csi-driver) to ensure vSphere CSI Migration is production ready.
+   - https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/master/tests/e2e/vcp_to_csi_create_delete.go
+   - https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/master/tests/e2e/vcp_to_csi_attach_detach.go
+   - https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/master/tests/e2e/vcp_to_csi_full_sync.go
+   - https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/master/tests/e2e/vcp_to_csi_syncer.go
 
 ## Production Readiness Review Questionnaire
 
@@ -54,5 +82,8 @@ Major milestones for vSphere in-tree plugin CSI migration:
 - 1.19
   - vSphere CSI migration to Beta, off by default
   
-- 1.24
-  - vSphere CSI migration to Beta, on by default
+- 1.25
+  - vSphere CSI migration to Beta, On by default
+
+- 1.26
+  - vSphere CSI migration to Stable

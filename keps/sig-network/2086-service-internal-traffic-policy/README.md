@@ -167,6 +167,10 @@ Beta:
 * feature gate `ServiceInternalTrafficPolicy` is enabled by default.
 * consensus on how internalTrafficPolicy overlaps with topology-aware routing.
 
+GA:
+* metrics for total number of Services that have no endpoints (kubeproxy/sync_proxy_rules_no_endpoints_total) with additional labels for internal/external and local/cluster policies.
+* consensus on whether or not "PreferLocal" should be included as a new policy type
+
 ### Upgrade / Downgrade Strategy
 
 * The `trafficPolicy` field will be off by default during the alpha stage but can handle any existing Services that has the field already set.
@@ -205,6 +209,11 @@ New Services should be able to set the `internalTrafficPolicy` field. Existing S
 
 There will be unit tests to verify that apiserver will drop the field when the `ServiceInternalTrafficPolicy` feature gate is disabled.
 
+Tests added so far:
+* https://github.com/kubernetes/kubernetes/blob/0038bcfad495a0458372867a77c8ca646f361c40pkg/registry/core/service/strategy_test.go#L368-L390
+* https://github.com/kubernetes/kubernetes/blob/0038bcfad495a0458372867a77c8ca646f361c40/pkg/registry/core/service/storage/storage_test.go#L682-L684
+* https://github.com/kubernetes/kubernetes/blob/0038bcfad495a0458372867a77c8ca646f361c40/test/integration/service/service_test.go
+
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
@@ -233,9 +242,7 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can an operator determine if the feature is in use by workloads?**
 
 * Check Service to see if `internalTrafficPolicy` is set to `Local`.
-* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints).
-
-TODO: add metric name once it's decided
+* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules/blackhole_total` (subject to rename).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**

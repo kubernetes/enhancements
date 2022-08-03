@@ -16,13 +16,12 @@ approvers:
 prr-approvers:
   - "@ehashman"
 creation-date: 2021-01-27
-last-updated: 2022-01-25
+last-updated: 2022-06-16
 status: implementable
-stage: beta
-latest-milestone: "v1.24"
+stage: alpha
+latest-milestone: "v1.25"
 milestone:
   alpha: "v1.23"
-  beta: "v1.24"
 see-also:
   - N/A
 replaces:

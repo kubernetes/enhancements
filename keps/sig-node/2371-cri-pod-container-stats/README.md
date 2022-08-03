@@ -28,6 +28,10 @@
       - [CRI implementations](#cri-implementations)
       - [cAdvisor](#cadvisor-1)
     - [Test Plan](#test-plan)
+        - [Prerequisite testing updates](#prerequisite-testing-updates)
+        - [Unit tests](#unit-tests)
+        - [Integration tests](#integration-tests)
+        - [e2e tests](#e2e-tests)
     - [Graduation Criteria](#graduation-criteria)
       - [Alpha implementation](#alpha-implementation)
       - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -235,9 +239,10 @@ This will be described in more detail in the [design details section](#design-de
 ### /metrics/cadvisor
 
 1. Expose the metric fields provided in `/metrics/cadvisor` in an analogous Prometheus endpoint directly from the CRI implementation.
-5. cAdvisor should be updated to support no longer collecting stats that are duplicated with CRI implementation, and omit them from the report sent to `/metrics/cadvisor`.
+2. cAdvisor should be updated to support no longer collecting stats that are duplicated with CRI implementation, and omit them from the report sent to `/metrics/cadvisor`.
 3. The precise endpoint can change, but all the fields should be duplicated (so custom rules can be maintained).
 4. Kubelet does not collect nor expose pod and container level metrics that were formally collected for and exposed by `/metrics/cadvisor`.
+5. Kubelet should broadcast the endpoint from the CRI, similarly to how it does for `/metrics/cadvisor`.
 
 ### User Stories [optional]
 
@@ -267,7 +272,6 @@ Thus, this KEP largely the plan described [here](#plan), with some changes:
 
 #### Open Questions
 1. For the newly introduced CRI API fields, should there be Windows and Linux specific fields?
-
 
 ### Risks and Mitigations
 
@@ -527,12 +531,75 @@ Below is the proposed strategy for doing so:
 
 As a requirement for the Beta stage, cAdvisor must support optionally collecting and broadcasting these metrics, similarly to the changes needed for summary API.
 
-
 ### Test Plan
+
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `pkg/kubelet/server/stats`: 06-15-2022 - 74.9
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
 
 - Internally in the Kubelet, there should be integration tests verifying that information gotten from the two sources is not too different.
 - Each CRI implementation should do regression testing on performance to make sure the gathering of these stats is reasonably efficient.
 - Any identified external user of either of these endpoints (prometheus, metrics-server) should be tested to make sure they're not broken by API changes.
+
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- A test using the CRI stats feature gate with enabled CRI implementations should be used with cri_stats_provider to ensure the stats reported are conformant.
 
 ### Graduation Criteria
 #### Alpha implementation
@@ -540,6 +607,9 @@ As a requirement for the Beta stage, cAdvisor must support optionally collecting
 - CRI should be extended to provide required stats for `/stats/summary`
 - Kubelet should be extended to provide the required stats from CRI implementation for `/stats/summary`.
 - This new behavior will be gated by a feature gate to prevent regressions for users that rely on the old behavior.
+- cAdvisor should be able to optionally not report the metrics needed for both summary API and `/metrics/cadvisor`. This behavior will be toggled by the Kubelet feature gate.
+- Kubelet will query the CRI implementation for endpoints to broadcast from its own server.
+	- This will allow the CRI to broadcast `/metrics/cadvisor` through the Kubelet's HTTP server.
 
 #### Alpha -> Beta Graduation
 
@@ -548,7 +618,6 @@ As a requirement for the Beta stage, cAdvisor must support optionally collecting
 - Validate performance impact of this feature is within allowable margin (or non-existent, ideally).
 	- The CRI stats implementation should perform better than they did with CRI+cAdvisor.
 - cAdvisor stats provider may be marked as deprecated (depending on stability of new CRI based implementations).
-- cAdvisor should be able to optionally not report the metrics needed for both summary API and `/metrics/cadvisor`. This behavior will be toggled by the Kubelet feature gate.
 
 #### Beta -> GA Graduation
 
@@ -788,11 +857,13 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-2021-1-27: KEP opened
-2021-5-12: KEP merged, targeted at Alpha in 1.22
-2021-7-8: KEP deemed not ready for Alpha in 1.22
+2021-01-27: KEP opened
+2021-05-12: KEP merged, targeted at Alpha in 1.22
+2021-07-08: KEP deemed not ready for Alpha in 1.22
 2021-12-07: KEP successfully implemented at Alpha in 1.23
-2022-1-25: KEP targeted at Beta in 1.24
+2022-01-25: KEP targeted at Beta in 1.24
+2022-04-20: KEP deemed not ready for Beta in 1.24
+2022-06-13: Move some Beta criteria to Alpha criteria in 1.25
 
 ## Drawbacks
 

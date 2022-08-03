@@ -8,11 +8,16 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation](#implementation)
+    - [CRI Updates](#cri-updates)
   - [User Stories](#user-stories)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Future Enhancements](#future-enhancements)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
@@ -65,7 +70,7 @@ will not be aware of any sandboxed analysis.
 
 ### Goals
 
-The goal of this KEP is to introduce *checkpoint* and *restore* to the CRI API.
+The goal of this KEP is to introduce *checkpoint* to the CRI API.
 This includes extending the *kubelet* API to support checkpointing single
 containers with the forensic use case in mind.
 
@@ -106,13 +111,24 @@ For the first implementation we do not want to support restore in the
 outside of Kubernetes. The restore is a container engine only operation
 in this first step.
 
-The forensic use case is targeted to be part of the next (1.24) release.
+#### CRI Updates
 
-Although this KEP only adds checkpointing support to the kubelet the CRI API in
-the corresponding code pull request is extended to support *checkpoint* and
-*restore* in the CRI API. The reason to add *restore* to the CRI API without
-implementing it in the kubelet is to make development and especially testing
-easier on the container engine level.
+The CRI API will be extended to introduce one new RPC:
+```
+    // CheckpointContainer checkpoints a container
+    rpc CheckpointContainer(CheckpointContainerRequest) returns (CheckpointContainerResponse) {}
+```
+with the following parameters:
+```
+message CheckpointContainerRequest {
+    // ID of the container to be checkpointed.
+    string container_id = 1;
+    // Location of the checkpoint archive used for export/import
+    string location = 2;
+}
+
+message CheckpointContainerResponse {}
+```
 
 ### User Stories
 
@@ -156,13 +172,77 @@ discussed in [#3949](https://github.com/kubernetes/kubernetes/issues/3949).
 
 ### Test Plan
 
-For alpha:
-- Unit tests available
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
 
-For beta:
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `pkg/kubelet`: 06-17-2022 - 64.5
+- `pkg/kubelet/container`: 06-17-2022 - 52.1
+- `pkg/kubelet/server`: 06-17-2022 - 64.3
+- `pkg/kubelet/cri/remote`: 06-17-2022 - 13.2
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
 - CRI API changes need to be implemented by at least one
   container engine
-- Enable e2e testing
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- Alpha will include e2e tests with the expectation that
+  no CRI implementation provides the newly added RPC calls.
+  Once CRI implementation provide the relevant RPC calls
+  the e2e tests will not fail but need to be extended.
 
 ### Graduation Criteria
 
@@ -268,6 +348,8 @@ does not compress the checkpoint archive on disk.
 * 2021-09-22: Removed everything which is not directly related to the forensic use case
 * 2022-01-06: Reworked based on review
 * 2022-01-20: Reworked based on review and renamed feature gate to `ContainerCheckpoint`
+* 2022-04-05: Added CRI API section and targeted 1.25
+* 2022-05-17: Remove *restore* RPC from the CRI API
 
 ## Drawbacks
 

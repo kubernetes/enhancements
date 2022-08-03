@@ -17,6 +17,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -140,10 +144,34 @@ The same field will be used by Kubernetes to fill secretRef in the
 NodeExpandVolume request.
 
 ### Test Plan
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+N/A
+
+##### Unit tests
+
 - Unit tests around all the added logic in kubelet.
 - Unit tests around all the added logic in kube-apiserver.
+
+The Unit tests for this feature is available [here](https://github.com/kubernetes/kubernetes/blob/master/pkg/api/persistentvolume/util_test.go#L31)
+,[here](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/validation/validation_test.go)
+and [here](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/expander_test.go#L36)
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
+
 - E2E tests around nodeExpandVolume to make sure the field value has passed
-  and can be used.
+  and can be used, however these tests require external dependency like external-provisioner
+  [sidecar](https://github.com/kubernetes-csi/external-provisioner/). Once added this
+  support to mentioned sidecar, the e2e tests will be added and validated using
+  example CSI driver [tests](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/drivers/csi-test/driver/driver.go).
 
 ### Graduation Criteria
 

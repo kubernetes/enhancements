@@ -19,6 +19,10 @@
     - [kubelet](#kubelet)
     - [kubectl](#kubectl)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -96,16 +100,16 @@ This would work for:
 ## Proposal
 
 ### Implement client for logs endpoint viewer (OS agnostic)
-- Extend `kubectl logs` to work with node objects.
+- Implement a new `kubectl node-logs` to work with node objects.
 - Implement a client for the `/var/log/` kubelet endpoint viewer.
 
 ### Linux distros with systemd / journald
 Supplement the the `/var/log/` endpoint viewer on the kubelet with a thin shim
-over the `journal` directory that shells out to journalctl. Then extend
-`kubectl logs` to also work with node objects.
+over the `journal` directory that shells out to journalctl. Then implement
+`kubectl node-logs` to also work with node objects.
 
 ### Linux distributions without systemd / journald
-Running the new "kubectl logs nodes" command against services on nodes that do
+Running the new "kubectl node-logs" command against services on nodes that do
 not use systemd / journald should return "OS not supported". However getting
 logs from `/var/log/` should work on all systems.
 
@@ -118,22 +122,22 @@ Reuse the kubelet API for querying the Linux journal for invoking the
 Consider a scenario where pods / containers are refusing to come up on certain
 nodes. As mentioned in the motivation section, troubleshooting this scenario
 involves the cluster administrator to SSH into nodes to scan the logs. Allowing
-them to use `kubectl logs` to do the same as they would to debug issues with a
+them to use `kubectl node-logs` to do the same as they would to debug issues with a
 pod / container would greatly simply their debug workflow. This also opens up
 opportunities for tooling and simplifying automated log gathering. The feature
 can also be used to debug issues with Kubernetes services especially in Windows
 nodes that run as native Windows services and not as DaemonSets or Deployments.
 
-Here are some example of how a cluser administrator would use this feature:
+Here are some example of how a cluster administrator would use this feature:
 ```
 # Show kubelet and crio journal logs from all masters
-kubectl logs nodes --role master -s kubelet -s crio
+kubectl node-logs --role master -q kubelet -q crio
 
 # Show kubelet log file (/var/log/kubelet/kubelet.log) from all Windows worker nodes
-kubectl logs nodes --label kubernetes.io/os=windows -s kubelet
+kubectl node-logs --label kubernetes.io/os=windows -q kubelet
 
 # Display docker runtime WinEvent log entries from a specific Windows worker node
-kubectl logs nodes <node-name> --service docker
+kubectl node-logs <node-name> --query docker
 ```
 
 ### Risks and Mitigations
@@ -163,7 +167,7 @@ that is lacking a client. Given its existence we can supplement that with a
 wafer thin shim over the /journal directory that shells out to journalctl. This
 allows us to extend the endpoint for getting logs from the system journal on
 Linux systems that support systemd. To enable filtering of logs, we can reuse
-the existing filters supported by journalctl. The `kubectl logs` will have
+the existing filters supported by journalctl. The `kubectl node-logs` will have
 command line options for specifying these filters when interacting with node
 objects.
 
@@ -191,13 +195,13 @@ configured. Here are some examples:
 The `/var/log/` endpoint is enabled using the `enableSystemLogHandler` kubelet
 configuration options. To gain access to this new feature this option needs to
 be enabled. In addition when introducing this feature it will be hidden behind a
-`NodeLogs` feature gate in the kubelet that needs to be explicitly enabled. So
+`NodeLogViewer` feature gate in the kubelet that needs to be explicitly enabled. So
 you need to enable both options to get access to this new feature and disabling
 `enableSystemLogHandler` will disable the new feature irrespective of the
-`NodeLogs` feature gate.
+`NodeLogViewer` feature gate.
 
-A reference implementation of this feature without the feature gate is
-available [here](https://github.com/kubernetes/kubernetes/pull/96120).
+A reference implementation of this feature is available
+[here](https://github.com/kubernetes/kubernetes/pull/96120).
 
 #### kubectl
 
@@ -209,36 +213,42 @@ to appropriate resource type and associated endpoints, it will allow us to
 restrict node logs access to only cluster administrators as long as the cluster
 is setup in that manner. Access to the `node/logs` sub-resource needs to be
 explicitly granted as a user with access to `nodes` will not automatically have
-access to `node/logs`.
+access to `node/logs`. In the alpha phase the functionality will be behind
+`kubectl alpha node-logs` sub-command. The functionality will be moved to
+`kubectl node-logs` in the beta phase. However the examples will reference the
+final destination i.e. `kubectl node-logs`.
 
-The `logs` sub-command for node objects will follow a heuristics approach when
+The `logs --query` sub-command for node objects will follow a heuristics approach when
 asked to query for logs from a Windows or Linux service. If asked to get the
 logs from a service `foobar`, it will first assume `foobar` logs to the Linux
 journal / Windows eventing mechanisms (Application, System, and ETW). If unable
 to get logs from these, it will attempt to get logs from `/var/log/foobar.log`,
 `/var/log/foobar/foobar.log`, `/var/log/foobar*INFO` or
-`/var/log/foobar/foobar*INFO` in that order.
+`/var/log/foobar/foobar*INFO` in that order. Alternatively an explicit file
+location can be passed to the `--query` option.
 Here are some examples and explanation of the options that will be added.
 ```
 Examples:
   # Show kubelet logs from all masters
-  kubectl logs nodes --role master -s kubelet
+  kubectl node-logs --role master -q kubelet
 
   # Show docker logs from Windows nodes
-  kubectl logs nodes -l kubernetes.io/os=windows -s docker
+  kubectl node-logs -l kubernetes.io/os=windows -q docker
+
+  # Show foo.log from Windows nodes
+  kubectl node-logs -l kubernetes.io/os=windows -q /foo/foo.log
 
 Options:
-      --case-sensitive=true: Filters are case sensitive by default. Pass --case-sensitive=false to do a case insensitive filter.
   -g, --grep='': Filter log entries by the provided regex pattern. Only applies to node journal logs.
   -o, --output='': Display journal logs in an alternate format (short, cat, json, short-unix). Only applies to node journal logs.
       --raw=false: Perform no transformation of the returned data.
       --role='': Set a label selector by node role.
   -l, --selector='': Selector (label query) to filter on.
-      --since='': Return logs after a specific ISO timestamp or relative date. Only applies to node journal or Get-WinEvent logs.
-      --tail=0: Return up to this many lines (not more than 100k) from the end of the log. Only applies to node journal or Get-WinEvent logs.
+      --since-time='': Return logs after a specific ISO timestamp.
+      --tail=-1: Return up to this many lines (not more than 100k) from the end of the log.
       --sort=timestamp: Interleave logs by sorting the output. Defaults on when viewing node journal logs.
-  -s, --service=[]: Return log entries from the specified service(s).
-      --until='': Return logs before a specific ISO timestamp or relative date.
+  -q, --query=[]: Return log entries that matches any of the specified service(s).
+      --until-time='': Return logs before a specific ISO timestamp.
 ```
 
 The `--sort=timestamp` feature will introduce log unification across node
@@ -247,25 +257,58 @@ to see logs across nodes from the same time. Similarly for pods, it will allow
 seeing logs across containers aligned by time.
 
 Given that the feature will be introduced behind a feature gate, by default
-`kubectl logs nodes` will return a feature not enabled message. When the
-feature is enabled in alpha phase, `kubectl logs nodes` will display a
-warning message that the feature is in alpha. When the `--service` option
+`kubectl node-logs` will return a functionality not available message. When the
+feature is enabled in alpha phase, `kubectl node-logs` will display a
+warning message that the feature is in alpha. When the `--query` option
 is used against Linux nodes that do not support systemd/journald and the service
-does not log to `/var/log`, an OS not supported message will be returned.
+does not log to `/var/log`, the same functionality not available message will be
+returned.
 
 ### Test Plan
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
 Add unit tests to kubelet and kubectl that exercise the new arguments that
 have been added. A reference implementation of the tests can be seen
-[here](https://github.com/kubernetes/kubernetes/pull/96120/commits/c606a38ec38ccfe486033495a1dc433279ce71f8#diff-1d703a87c6d6156adf2d0785ec0174bb365855d4883f5758c05fda1fee8f7f1bR1)
+[here](https://github.com/kubernetes/kubernetes/pull/96120/commits/253dbad91a3896680da74da32595f02120f56cfa#diff-1d703a87c6d6156adf2d0785ec0174bb365855d4883f5758c05fda1fee8f7f1b)
+
+Given that a new kubelet package is introduced as part of this feature there is
+no existing test coverage to link to.
+
+##### Integration tests
+
+Given that we need the kubelet running locally to test this feature, integration
+tests will not be possible for this feature.
+
+##### e2e tests
+
+We will add a test that query the kubelet service logs on Windows and Linux nodes.
+On Windows node, the same kubelet service logs will queried by explicitly
+specifying the log file. In Linux the explicit log file query will be tested by
+querying a random file in present in /var/log.
+
+On the Linux side tests will be added to [kubelet node](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/node/kubelet.go)
+e2e tests. For Windows a new set of tests will be added to the existing
+[e2e tests](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows).
+
+- node: https://storage.googleapis.com/k8s-triage/index.html?sig=node
+- windows: https://storage.googleapis.com/k8s-triage/index.html?sig=windows
 
 ### Graduation Criteria
 
-The plan is to introduce the feature as alpha in the v1.22 time frame behind the
-`NodeLogs` feature gate.
+The plan is to introduce the feature as alpha in the v1.25 time frame behind the
+`NodeLogViewer` kubelet feature gate and using the `kubectl alpha node-logs`
+sub-command.
 
 #### Alpha -> Beta Graduation
 
-The plan is to graduate the feature to beta in the v1.23 time frame. At that
+The plan is to graduate the feature to beta in the v1.26 time frame. At that
 point we would have collected feedback from cluster administrators and
 developers who have enabled the feature. Based on this feedback and issues
 opened we should consider adding a kubelet side throttle for the viewing the
@@ -273,9 +316,11 @@ logs. In addition we will garner feedback on the heuristic approach and based on
 that we will decide if we need introduce options to explicitly differentiate
 between file vs journal / WinEvent logs.
 
+The kubectl implementation will move from `kubectl alpha node-logs` to 
+`kubectl node-logs`.
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.24 time frame at which point
+The plan is to graduate the feature to GA in the v1.27 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 
@@ -283,7 +328,7 @@ beta phases.
 
 ### Version Skew Strategy
 
-If a kubectl version that has the new `logs nodes` option is used against a node
+If a kubectl version that has the new `node-logs` option is used against a node
 that is using a kubelet that does not have the extended `/var/log` endpoint
 viewer, the result should be "feature not supported".
 
@@ -293,13 +338,13 @@ viewer, the result should be "feature not supported".
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate
-    - Feature gate name: NodeLogs
+    - Feature gate name: NodeLogViewer
     - Components depending on the feature gate: kubelet
 
 * **Does enabling the feature change any default behavior?** No
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes. It can be disabled by disabling the `NodeLogs` feature
+  the enablement)?** Yes. It can be disabled by disabling the `NodeLogViewer` feature
   gate in the kubelet.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
@@ -373,5 +418,5 @@ logs. The Windows side would require privileged container support. However this
 would not help scenarios where containers are not launching successfully on the
 nodes.
 
-For the kubectl changes an alternative to extending `kubect logs` would be to
-introduce a plugin or add a new sub-command under `kubectl alpha`.
+For the kubectl changes an alternative to introducing `kubectl node-logs` would be to
+introduce a plugin.

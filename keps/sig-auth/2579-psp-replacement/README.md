@@ -24,6 +24,10 @@
   - [Windows Support](#windows-support)
   - [Flexible Extension Support](#flexible-extension-support)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Monitoring](#monitoring)
   - [Audit Annotations](#audit-annotations)
   - [PodSecurityPolicy Migration](#podsecuritypolicy-migration)
@@ -553,41 +557,47 @@ publish the following tools:
 
 ### Test Plan
 
-The admission controller can safely be enabled as a no-op with the default-defaults, i.e. everything
-is privileged. This will let us run the admission controller in our standard E2E test jobs, by
-relabeling specific test namespaces.
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-**E2E Tests:** The following tests should be added:
+##### Prerequisite testing updates
 
-1. Enforce mode tests:
-    - Test all profile levels
-    - Test profile version support
-2. Warning mode tests:
-    - Profile levels & version support
-3. Namespace policy relabeling
-    - Ensure labeling completes even when there are warnings
-    - Test warning on violating pods
-    - Test dry-run mode
+None.
 
-Additionally, we should add tests to the upgrade test suite to ensure that version skew is properly
-handled:
+##### Unit tests
 
-- A minimally specified pod (just a container image) should always be allowed by the baseline
-  policy.
-- A privileged pod should never be allowed by baseline or restricted
-- A Fully specified pod within the bounds of baseline should be allowed by baseline, and rejected by
-  restricted.
-- A minimally specified restricted pod should be allowed at a pinned version.
+- `k8s.io/pod-security-admission/admission`: `2022-05-12` - `80.7% of statements`
+- `k8s.io/pod-security-admission/admission/api`: `2022-05-12` - `1.4% of statements` (mostly boilerplate & generated code)
+- `k8s.io/pod-security-admission/admission/api/load`: `2022-05-12` - `88.5% of statements`
+- `k8s.io/pod-security-admission/admission/api/scheme`: `2022-05-12` - `100.0% of statements`
+- `k8s.io/pod-security-admission/admission/api/v1alpha1`: `2022-05-12` - `1.7% of statements` (generated API)
+- `k8s.io/pod-security-admission/admission/api/v1beta1`: `2022-05-12` - `1.7% of statements` (generated API)
+- `k8s.io/pod-security-admission/admission/api/validation`: `2022-05-12` - `100.0% of statements`
+- `k8s.io/pod-security-admission/api`: `2022-05-12` - `9.3% of statements` **room for improvement**
+- `k8s.io/pod-security-admission/cmd/webhook`: `2022-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/cmd/webhook/server`: `2022-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/cmd/webhook/server/options`: `2022-05-12` - `no unit tests` (mostly server setup, covered by integration)
+- `k8s.io/pod-security-admission/metrics`: `2022-05-12` - `93.8% of statements`
+- `k8s.io/pod-security-admission/policy`: `2022-05-12` - `88.3% of statements`
+- `k8s.io/pod-security-admission/test`: `2022-05-12` - `73.7% of statements`
 
-**Integration Tests:** Audit mode tests should be added to integration testing, where we have
-existing audit logging tests.
+##### Integration tests
 
-**Manual Testing Resources:** Pod resources will be provided covering all dimensions of the baseline
-& restricted profiles, for validation of 3rd party policy implementations. These have been drafted
-by @JimBugwadia: https://github.com/JimBugwadia/pod-security-tests
+`k8s.io/kubernetes/test/integration/auth/podsecurity_test.go`
+https://storage.googleapis.com/k8s-triage/index.html?test=TestPodSecurity
 
-**Unit Tests:** Both the library and admission controller implementations will have thorough
-coverage of unit tests.
+Pod Security admission has very thorough integration test coverage, including:
+- Generated test fixtures for failing & passing pods across every type of check, version and level.
+- Tests with only GA feature gates enabled, and the default set.
+- Tests running as a built-in admission controller & webhook.
+- Tests pods run directly & via a controller
+
+##### e2e tests
+
+There are no Pod Security specific E2E tests (we rely on integration test coverage instead), but the
+Pod Security admission controller is enabled in E2E clusters, and all E2E test namespaces are
+labeled with the enforcement label for Pod Security.
 
 ### Monitoring
 
@@ -735,15 +745,27 @@ We are targeting Beta in v1.23.
 
 #### GA
 
-<<[UNRESOLVED]>>
+Targeting GA in v1.25.
 
-We are targeting GA in v1.24 to allow for migration off PodSecurityPolicy before it is removed in
-v1.25.
+**Conformance:**
+- Enabling the admission controller with the "default-default" enforcing mode of privileged is
+  essentially a no-op without adding namespace labels, so it doesn't have any impact on
+  conformance.
+- E2E framework has been updated to explicitly label test namespaces with the appropriate
+  enforcement level, using the `NamespacePodSecurityEnforceLevel` framework value. For GA,
+  conformance tests should be updated to use the most restrictive level possible.
+- Pod Security Admission is *not* required for conformance.
 
-- Examples of real world usage and positive user feedback.
-- [Conformance test plan](#conformance)
+**User Experience Improvements:**
+- [Warn when labeling exempt namespaces](https://github.com/kubernetes/kubernetes/issues/109549)
+- [Dedupe overlapping forbidden messages](https://github.com/kubernetes/kubernetes/issues/106129)
+- [Aggregate identical warnings for multiple pods in a namespace](https://github.com/kubernetes/kubernetes/issues/103213)
+- [Add context to failure messages](https://github.com/kubernetes/kubernetes/pull/105314)
 
-<<[/UNRESOLVED]>>
+**API Changes:**
+- No changes to namespace label schema
+- Add `pod-security.admission.config.k8s.io/v1` (admission configuration, not a REST API) with no
+  changes from the `v1beta1` API.
 
 ### Upgrade / Downgrade Strategy
 
@@ -910,6 +932,8 @@ previous answers based on experience in the field._
     There will be a hard cap on the number of pods analyzed, and a timeout for the review of those pods 
     that ensures evaluation does not exceed a percentage of the time allocated to the request.
     See [Namespace policy update warnings](#namespace-policy-update-warnings).
+    - Timeout: minimum of 1 second or (remaining request deadline / 2)
+    - Max pods to check: 3000 ([benchmarks](https://github.com/kubernetes/kubernetes/pull/104588) indicate that 3000 pods should evaluate in under 10ms)
 
 * **Will enabling / using this feature result in introducing new API types?**
   - No.
@@ -1046,13 +1070,10 @@ templated pod resources. This could be useful in CI/CD pipelines and tests.
 
 ### Conformance
 
-As this feature progresses towards GA, we should think more about how it interacts with conformance.
-
-- Enabling the admission controller with the "default-default" enforcing mode of privileged is
-  essentially a no-op without adding namespace labels, so it shouldn't have any impact on
-  conformance.
-- If we want a more restricted version to still be considered conformant, we might need to
-  explicitly label namespaces in the conformance tests with the privilege level the tests require.
+Clusters requiring baseline or restricted Pod Security levels should still be able to pass
+conformance. This might require
+[Conformance Profiles](https://github.com/kubernetes/enhancements/tree/master/keps/sig-architecture/1618-conformance-profiles)
+to be feasible.
 
 ## Implementation History
 

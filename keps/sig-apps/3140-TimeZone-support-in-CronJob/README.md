@@ -13,6 +13,10 @@
   - [CronJob API](#cronjob-api)
   - [CronJob controller](#cronjob-controller)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -39,17 +43,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -159,14 +163,29 @@ In all other cases the controller will maintain the current behavior.
 
 ### Test Plan
 
-Unit and integration tests covering the time zone mechanics of CronJob, including:
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-- defaulting
-- validation
-- creating CronJob
-- updating CronJob
+##### Prerequisite testing updates
 
-Additionally, all of tests will be performed with feature gate enabled and disabled.
+1. Add tests ensuring that case insensitive location loading is properly handled.
+   See [beta requirements](#beta) for more details.
+2. Add at least integration and optionally e2e covering TimeZone usage.
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/apis/batch/validation`: `2022-06-09` - `94.4%`
+- `k8s.io/kubernetes/pkg/controller/cronjob`: `2022-06-09` - `50.8%`
+- `k8s.io/kubernetes/pkg/registry/batch/cronjob`: `2022-06-09` - `61.8%`
+
+##### Integration tests
+
+None.
+
+##### e2e tests
+
+None.
 
 ### Graduation Criteria
 
@@ -178,7 +197,9 @@ Additionally, all of tests will be performed with feature gate enabled and disab
 
 #### Beta
 
-TBD
+- Solve issue with case insensitive location loading:
+  - Test skipped on MacOS (https://github.com/kubernetes/kubernetes/pull/109218)
+  - Golang issue (https://github.com/golang/go/issues/21512)
 
 #### GA
 
@@ -247,7 +268,6 @@ This feature has no node runtime implications.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: CronJobTimeZone
   - Components depending on the feature gate: kube-apiserver, kube-controller-manager
@@ -275,21 +295,7 @@ Yes, both units and integration tests for enablement, disablement and transition
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
-
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
 
 An upgrade flow can be vulnerable to the enable, disable, enable if you have
 a lease that is acquired by a new kube-controller-manager, then an old
@@ -297,128 +303,71 @@ kube-controller-manager, then a new kube-controller-manager.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Increased `cronjob_job_creation_skew` which tracks how much a job creation
+is delayed compared to requested time slot.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Upgrade->downgrade->upgrade path was manually tested. No issues were found during tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+There's no explicit metric for TimeZone but operator should monitor `cronjob_job_creation_skew`,
+ensuring the job creation skew is not increasing.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Events
+  - Event Reason: `UnknownTimeZone` when specified TimeZone is not correct
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+99th percentile over day for cron_job_creation_skew is <= 15s
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-
-<!--
-Pick one more of these and delete the rest.
--->
 
 - [x] Metrics
   - Metric name: `cronjob_controller_rate_limiter_use`
   - Components exposing the metric: `kube-controller-manager`
-- [ ] Other (treat as last resort)
-  - Details:
+  - Metric name: `cron_job_creation_skew`
+  - Components exposing the metric: `kube-controller-manager`
+
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
+CronJob's TimeZone support relies on external TimeZone package, if one is missing
+golang's internal package will be used, instead.
 
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+- kube-controller-manager and kube-apiserver
+  - Usage description:
+    Both kube-controller-manager and kube-apiserver need to have `CronJobTimeZone`
+    feature gate turned for this feature to fully work.
+    - Impact of its outage on the feature:
+      CronJob's TimeZone functionality will not work.
+    - Impact of its degraded performance or high-error rates on the feature:
+      Delays in creating new Jobs.
+
+- TimeZone package
+  - Usage description: CronJob's TimeZone support relies on external TimeZone package,
+    if one is missing golang's internal package will be used, instead.
+    - Impact of its outage on the feature:
+      TimeZone functionality will not work.
+    - Impact of its degraded performance or high-error rates on the feature:
+      Delays in creating new Jobs.
 
 ### Scalability
-
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -451,67 +400,48 @@ We're not using it, yet.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Incorrect TimeZone
+  - Detection: `UnknownTimeZone` events being reported for a CronJob.
+  - Mitigations: Fix the TimeZone or suspend a CronJob.
+  - Diagnostics: Logs containing `TimeZone` phrase.
+  - Testing: A set of unit tests is ensuring that invalid TimeZone is properly
+    handled both in the apiserver and in the controller itself, reporting to
+    user the problem.
+- Job creation problems
+  - Detection: `cron_job_creation_skew` metric is exceeding expected 15s per day.
+  - Mitigations: Disable `CronJobTimeZone` feature gate.
+  - Diagnostics: Check logs from CronJob controller.
+  - Testing: A set of unit tests is ensuring that invalid TimeZone is properly
+    handled both in the apiserver and in the controller itself, reporting to
+    user the problem.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+If possible increase the log level for kube-controller-manager and check cronjob's
+controller logs looking for warnings and errors which might point where the problem
+lies.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- *2022-01-14* - Initial KEP draft
+- *2022-06-09* - Updated KEP for beta promotion.
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+Using TimeZone might be simpler for users working with a cluster in different
+TimeZones, but adds additional complexity to the code and to the operator
+who will need to re-calculate when an actual CronJob will be creating a Job
+when `.spec.timeZone` is set.
 
 ## Alternatives
 
 Another approach was to specify time zone as an offset to UTC, but using the
 name instead seems more user friendly.
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+None.

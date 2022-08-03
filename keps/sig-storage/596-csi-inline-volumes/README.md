@@ -21,9 +21,10 @@
   - [Ephemeral inline volume operations](#ephemeral-inline-volume-operations)
   - [Read-only volumes](#read-only-volumes)
   - [Test Plan](#test-plan)
-    - [All unit tests](#all-unit-tests)
-    - [Ephemeral inline volumes unit tests](#ephemeral-inline-volumes-unit-tests)
-    - [E2E tests](#e2e-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -48,8 +49,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
@@ -137,7 +138,7 @@ For example, `csi-driver-nfs` allows anybody who can create a pod to mount any N
 
 Downstream distributions and cluster admins that wish to exercise fine-grained control over which CSI drivers are allowed to use ephemeral inline volumes within a pod spec should do so with a 3rd party pod admission plugin or webhook (not part of this KEP).
 
-We will update the documentation to include the security aspects of inline CSI volumes and recommend CSI driver vendors not implement inline volumes for persistent storage unless they also provide a 3rd party pod admission plugin.
+The [Kubernetes docs](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/) and [CSI docs](https://kubernetes-csi.github.io/docs/ephemeral-local-volumes.html) have been updated to include the security aspects of inline CSI volumes and recommend CSI driver vendors not implement inline volumes for persistent storage unless they also provide a 3rd party pod admission plugin.
 
 This is consistent with the proposal by sig-auth in [KEP-2579](https://github.com/kubernetes/enhancements/blob/787515fbfa386bed95ff4d21e472474f61d1c536/keps/sig-auth/2579-psp-replacement/README.md?plain=1#L512-L519) regarding how inline CSI volumes should be handled.
 
@@ -263,7 +264,7 @@ To benefit from this behavior, the following should be implemented in the CSI dr
   * We can't trust cluster admins that they deploy the admission webhook mentioned above.
 * When both conditions above are satisfied, the driver MAY ignore the `readonly` flag in [NodePublish](https://github.com/container-storage-interface/spec/blob/5b0d4540158a260cb3347ef1c87ede8600afb9bf/csi.proto#L1375) and set up the volume as read-write. Kubelet then can apply fsGoup if needed. Seeing `ReadOnly: true` in the Pod spec, kubelet then tells CRI to bind-mount the volume to the container as read-only, while it's read-write on the host / in the CSI driver. This behavior is already implemented in Kubelet for all projected volumes (Secrets, ConfigMap, Projected and DownwardAPI), we're allowing ephemeral CSI driver to reuse it for their Secrets-like volumes.
 
-This behavior will be documented in [github.com/kubernetes-csi/docs](http://github.com/kubernetes-csi/docs). Ignoring the `readonly` flag in [NodePublish](https://github.com/container-storage-interface/spec/blob/5b0d4540158a260cb3347ef1c87ede8600afb9bf/csi.proto#L1375) of in-line CSI volumes will be supported as a valid CSI driver behavior.
+This behavior is documented in the [CSI docs](https://kubernetes-csi.github.io/docs/ephemeral-local-volumes.html). Ignoring the `readonly` flag in [NodePublish](https://github.com/container-storage-interface/spec/blob/5b0d4540158a260cb3347ef1c87ede8600afb9bf/csi.proto#L1375) of in-line CSI volumes will be supported as a valid CSI driver behavior.
 
 Examples where this is used by the Secrets Store CSI driver:
 - [NodePublish ReadOnly check](https://github.com/kubernetes-sigs/secrets-store-csi-driver/blob/d32ca72038650c79561092dab26bf6d5a9c9e40a/pkg/secrets-store/nodeserver.go#L174-L177)
@@ -272,32 +273,90 @@ Examples where this is used by the Secrets Store CSI driver:
 
 ### Test Plan
 
-#### All unit tests
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-* Volume operation that use CSIVolumeSource can only work with proper feature gate enabled
+##### Prerequisite testing updates
 
-#### Ephemeral inline volumes unit tests
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
 
-* Ensure required fields are provided: csi.storage.k8s.io/ephemeral (https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/pkg/volume/csi/csi_mounter_test.go#L140-L146)
-* Mount/Unmount should be triggered with CSIVolumeSource: https://github.com/kubernetes/kubernetes/blob/10005d2e1e1425904f8c7bf5615e730fb0fea7c9/pkg/volume/csi/csi_mounter_test.go#L386
-* Expected generated volumeHandle is created properly: https://github.com/kubernetes/kubernetes/blob/10005d2e1e1425904f8c7bf5615e730fb0fea7c9/pkg/volume/csi/csi_plugin_test.go#L177
-* Ensure that CSIDriver.VolumeLifecycleModes field is validated properly: https://github.com/kubernetes/kubernetes/pull/80568
-* Ensure volumeHandle conforms to resource naming format: TODO
-* CSIVolumeSource info persists in CSI json file during mount/unmount: TODO
-* Ensure Kubelet skips attach/detach when `CSIDriver.VolumeLifecycleModes = Ephemeral`: TODO
-* Ensure Kubelet skips inline logic when `CSIDriver.VolumeLifecycleModes = Persistent` or `CSIDriver.VolumeLifecycleModes is empty`: covered by existing tests
-* Add unit tests for feature gate enablement / disablement, similar to this [network policy strategy test](https://github.com/kubernetes/kubernetes/blob/b7c82bb83c1b3933b99fbc5fdcffa59fd6441617/pkg/registry/networking/networkpolicy/strategy_test.go#L246-L281): TODO
+##### Unit tests
 
-#### E2E tests
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
 
-* Pod spec with an ephemeral inline volume request can be mounted/unmounted: https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/test/e2e/storage/csi_mock_volume.go#L356-L371, https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/test/e2e/storage/testsuites/ephemeral.go#L110-L115
-* Two pods accessing an ephemeral inline volume which has the same attributes in both pods: "should support two pods which share the same data" in `ephemeral.go` (upcoming PR)
-* Single pod referencing two distinct inline volume request from the same driver: "should support multiple inline ephemeral volumes" in `ephemeral.go` (upcoming PR)
-* CSI Kubelet code invokes driver operations during mount for ephemeral volumes: `checkPodLogs` in `csi_mock_volume.go` (upcoming PR)
-* CSI Kubelet code invokes driver operation during unmount of ephemeral volumes: `checkPodLogs` in `csi_mock_volume.go` (upcoming PR)
-* CSI Kubelet cleans up ephemeral volume paths once pod goes away: TODO
-* Enable testing of an external ephemeral CSI driver: https://github.com/kubernetes/kubernetes/pull/79983/files#diff-e5fc8d9911130b421b74b1ebc273f458
-* Enable testing of the csi-host-path-driver in ephemeral mode in Kubernetes-CSI Prow jobs and Kubernetes itself: TODO
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/kubernetes/pkg/volume/csi`: `6/9/22` - `76.3`
+  - `k8s.io/kubernetes/pkg/volume/csi/csi_attacher.go`: `6/9/22` - `78.2`
+  - `k8s.io/kubernetes/pkg/volume/csi/csi_client.go`: `6/9/22` - `76.4`
+  - `k8s.io/kubernetes/pkg/volume/csi/csi_mounter.go`: `6/9/22` - `82.1`
+  - `k8s.io/kubernetes/pkg/volume/csi/csi_plugin.go`: `6/9/22` - `75.1`
+  - `k8s.io/kubernetes/pkg/volume/csi/csi_util.go`: `6/9/22` - `93.2`
+
+Specific unit tests that were implemented for this feature:
+- [Volume operations that use CSIVolumeSource can only work with proper feature gate enabled](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L668))
+- [Ensure required fields are provided: csi.storage.k8s.io/ephemeral](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_mounter_test.go#L154-L160)
+- [Mount/Unmount should be triggered with CSIVolumeSource](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_mounter_test.go#L504)
+- [driverPolicy is ReadWriteOnceWithFSTypeFSGroupPolicy with CSI inline volume](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_mounter_test.go#L1205)
+- [Expected generated volumeHandle is created properly](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L280)
+- [CanSupport works with CSI inline volumes](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L372)
+- [ConstructVolumeSpec works with CSI inline volumes](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L506)
+- [NewMounter works with CSI inline volumes](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L757)
+- [CanAttach works with CSI inline volumes](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L995)
+- [FindAttachablePlugin works with CSI inline volumes](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L1049)
+- [CanDeviceMount works with CSI inline volumes](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L1125)
+- [FindDeviceMountablePluginBySpec works with CSI inline volumes](https://github.com/kubernetes/kubernetes/blob/163aab43d7d1a279dfa4a261202a8f424933e7dd/pkg/volume/csi/csi_plugin_test.go#L1177)
+- [Ensure that CSIDriver.VolumeLifecycleModes field is validated properly](https://github.com/kubernetes/kubernetes/pull/80568)
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+See E2E tests below.
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- [TestPattern: CSI Ephemeral-volume (default fs)](https://github.com/kubernetes/kubernetes/blob/7c127b33dafc530f7ca0c165ddb47db86eb45880/test/e2e/storage/framework/testpattern.go#L98-L102): [test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=.*CSI%20Ephemeral-volume%20%5C%28default%20fs%5C%29.*)
+- [should create read-only inline ephemeral volume](https://github.com/kubernetes/kubernetes/blob/7c127b33dafc530f7ca0c165ddb47db86eb45880/test/e2e/storage/testsuites/ephemeral.go#L175): [test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20create%20read-only%20inline%20ephemeral%20volume)
+- [should create read/write inline ephemeral volume](https://github.com/kubernetes/kubernetes/blob/7c127b33dafc530f7ca0c165ddb47db86eb45880/test/e2e/storage/testsuites/ephemeral.go#L196): [test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20create%20read%2Fwrite%20inline%20ephemeral%20volume)
+- [should support two pods which have the same volume definition](https://github.com/kubernetes/kubernetes/blob/7c127b33dafc530f7ca0c165ddb47db86eb45880/test/e2e/storage/testsuites/ephemeral.go#L277): [test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20support%20two%20pods%20which%20have%20the%20same%20volume%20definition)
+- [should support multiple inline ephemeral volumes](https://github.com/kubernetes/kubernetes/blob/7c127b33dafc530f7ca0c165ddb47db86eb45880/test/e2e/storage/testsuites/ephemeral.go#L315): [test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20support%20multiple%20inline%20ephemeral%20volumes)
+- [contain ephemeral=true when using inline volume](https://github.com/kubernetes/kubernetes/blob/7c127b33dafc530f7ca0c165ddb47db86eb45880/test/e2e/storage/csi_mock_volume.go#L495): [test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=contain%20ephemeral%3Dtrue%20when%20using%20inline%20volume)
 
 
 ### Graduation Criteria
@@ -314,12 +373,15 @@ Examples where this is used by the Secrets Store CSI driver:
 
 #### GA
 
-- Remove dependency on deprecated `PodSecurityPolicy` and document new strategy
-- Upgrade / downgrade manual testing, document results in PRR questionnaire.
-- Conformance tests implemented / promoted
-- Updated documentation as described in [Security Considerations](#security-considerations) and [Read-only volumes](#read-only-volumes)
-- Fix for [#79980 - CSI volume reconstruction](https://github.com/kubernetes/kubernetes/issues/79980)
-- Ensure our sponsored [NFS](https://github.com/kubernetes-csi/csi-driver-nfs) and [SMB](https://github.com/kubernetes-csi/csi-driver-smb) CSI drivers align with the new guidance in [Security Considerations](#security-considerations)
+- [x] Remove dependency on deprecated `PodSecurityPolicy` and document new strategy
+- [x] Fix for [#89290 - CSI Inline volume panic when calling applyFSGroup](https://github.com/kubernetes/kubernetes/issues/89290)
+- [x] Fix for [#79980 - CSI volume reconstruction](https://github.com/kubernetes/kubernetes/issues/79980)
+- [x] Updated documentation as described in [Security Considerations](#security-considerations) and [Read-only volumes](#read-only-volumes)
+- [ ] Upgrade / downgrade manual testing, document results in the [upgrade / rollback section](#rollout-upgrade-and-rollback-planning).
+- [ ] Provide measurements for the [Scalability section](#scalability) (time taken to start a pod)
+- [ ] Ensure our sponsored [NFS](https://github.com/kubernetes-csi/csi-driver-nfs) and [SMB](https://github.com/kubernetes-csi/csi-driver-smb) CSI drivers align with the new guidance in [Security Considerations](#security-considerations)
+- [ ] Conformance tests implemented / promoted
+- [ ] Feature flag set to GA
 
 
 ## Production Readiness Review Questionnaire
@@ -389,7 +451,7 @@ Examples where this is used by the Secrets Store CSI driver:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-  To be documented as part of manual GA testing.
+  TODO: To be documented as part of manual GA testing.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -571,5 +633,11 @@ implementation more complex.
   (https://github.com/kubernetes/kubernetes/pull/80568, merged)
 
 1.24:
+- Remove dependency on deprecated `PodSecurityPolicy` and document new strategy
+- Fix for [#89290 - CSI Inline volume panic when calling applyFSGroup](https://github.com/kubernetes/kubernetes/issues/89290)
+- Updated documentation as described in [Security Considerations](#security-considerations) and [Read-only volumes](#read-only-volumes)
+
+1.25:
+- Fix for [#79980 - CSI volume reconstruction](https://github.com/kubernetes/kubernetes/issues/79980)
 - GA status
 

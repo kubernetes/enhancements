@@ -14,8 +14,8 @@ approvers:
 prr-approvers:
   - "@deads2k"
 creation-date: 2019-07-11
-last-updated: 2022-01-10
-status: implementable
+last-updated: 2022-05-09
+status: implemented
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

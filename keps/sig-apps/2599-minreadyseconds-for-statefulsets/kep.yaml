@@ -7,24 +7,26 @@ participating-sigs:
   - "sig-apps"
 status: implementable
 creation-date: 2021-04-07
-last-updated: 2021-04-12
+last-updated: 2022-06-08
 reviewers:
   - "@soltysh"
 approvers:
   - "@soltysh"
 prr-approvers:
   - "@ehashman"
+  - "@deads2k"
+  - "@wojtek-t"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/65098
 
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "v1.25"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -43,4 +45,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-#  - my_feature_metric
+  - kube_statefulset_status_replicas_available
+

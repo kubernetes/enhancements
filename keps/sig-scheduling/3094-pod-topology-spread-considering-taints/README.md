@@ -89,6 +89,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -198,7 +202,7 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Introduce a new struct to define all node inclusion policies explicitly
+- Introduce two new fields to define all node inclusion policies explicitly
 - Provide an option for end-users to specify whether to respect taints or not
 
 ### Non-Goals
@@ -219,7 +223,7 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-Introduce a new field to `TopologySpreadConstraint` to define all node inclusion
+Introduce two new fields to `TopologySpreadConstraint` to define all node inclusion
 policies including nodeAffinity and nodeTaint.
 
 ### User Stories (Optional)
@@ -271,40 +275,42 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-A new field named `NodeInclusionPolicies` will be introduced to `TopologySpreadConstraint`:
+Two new fields named `NodeAffinityPolicy` and `NodeTaintsPolicy` will be
+introduced to `TopologySpreadConstraint`:
 ```golang
 type TopologySpreadConstraint struct {
-  // NodeInclusionPolicies includes several policies
-  // when calculating pod topology spread skew
-  NodeInclusionPolicies NodeInclusionPolicies
+	// NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+	// when calculating pod topology spread skew. Options are:
+	// - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+	// - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+	//
+	// If this value is nil, the behavior is equivalent to the Honor policy.
+	// This is a alpha-level feature enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
+	// +optional
+	NodeAffinityPolicy *NodeInclusionPolicy
+	// NodeTaintsPolicy indicates how we will treat node taints when calculating
+	// pod topology spread skew. Options are:
+	// - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+	// has a toleration, are included.
+	// - Ignore: node taints are ignored. All nodes are included.
+	//
+	// If this value is nil, the behavior is equivalent to the Ignore policy.
+	// This is a alpha-level feature enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
+	// +optional
+	NodeTaintsPolicy *NodeInclusionPolicy
 }
 ```
 
-There are two policies now regarding to nodeAffinity and nodeTaint:
+We will define two NodeInclusionPolicy:
 ```golang
-type NodeInclusionPolicies struct {
-  // NodeAffinity policy indicates how we will treat nodeAffinity/nodeSelector
-  // when calculating pod topology spread skew. The semantics vary by PolicyName:
-  // - Respect (default): nodes matching nodeAffinity/nodeSelector will be included.
-  // - Ignore: all nodes will be included.
-  NodeAffinity PolicyName
-  // NodeTaint policy indicates how we will treat node taints
-  // when calculating pod topology spread skew. The semantics vary by PolicyName:
-  // - Respect: tainted nodes that tolerate the incoming pod, along with regular nodes, will be included.
-  // - Ignore (default): all nodes will be included.
-  NodeTaint PolicyName
-}
-```
-
-We will define two policyNames by default:
-```golang
-type PolicyName string
+// NodeInclusionPolicy defines the type of node inclusion policy
+type NodeInclusionPolicy string
 
 const (
-  // Ignore means ignore this policy in calculating.
-  Ignore PolicyName  = "Ignore"
-  // Respect means use this policy in calculating.
-  Respect PolicyName  = "Respect"
+	// NodeInclusionPolicyIgnore means ignore this scheduling policy when calculating pod topology spread skew.
+	NodeInclusionPolicyIgnore NodeInclusionPolicy = "Ignore"
+	// NodeInclusionPolicyHonor means use this scheduling policy when calculating pod topology spread skew.
+	NodeInclusionPolicyHonor NodeInclusionPolicy = "Honor"
 )
 ```
 
@@ -316,14 +322,7 @@ not change the default behavior.
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -331,12 +330,73 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
-- Unit and integration tests:
-  - Defaulting and validation tests
-  - Feature gate enable/disable tests
-  - `NodeInclusionPolicies` works as expected
-- Benchmark tests:
-  - Verify the performance of looping all toleration and taints in calculating skew is acceptable
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+No.
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `pkg/api/pod`: `2022-06-17` - `66.7%`
+- `pkg/apis/core/validation`: `2022-06-17` - `82.1%`
+- `pkg/scheduler`: `2022-06-17` - `75%`
+- `pkg/scheduler/framework/plugins/defaultpreemption`: `2022-06-17` - `85.2%`
+- `pkg/scheduler/framework/plugins/podtopologyspread`: `2022-06-17` - `86%`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- [tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go) with policies honored/ignored in filtering
+- [tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/podtopologyspread/scoring_test.go) with policies honored/ignored in scoring
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+None. Considering we didn't introduce any new API endpoints in this KEP and this feature only impacts the kube-scheduler,
+so rely on integration tests to verify the scheduling results is enough.
+
 
 ### Graduation Criteria
 
@@ -426,8 +486,9 @@ enhancement:
 -->
 
 - Upgrade
-  - While the feature gate is enabled, `NodeInclusionPolicies` is allowed to use by end-users.
-  - While the feature gate is enabled, and we don't set this field, default values
+  - While the feature gate is enabled, `NodeAffinityPolicy` and `NodeTaintsPolicy` are
+  allowed to use by end-users.
+  - While the feature gate is enabled, and we don't set these two fields, default values
   will be configured, which will maintain previous behavior.
 - Downgrade
   - Previously configured values will be ignored.
@@ -485,7 +546,7 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PodTopologySpreadNodePolicies
+  - Feature gate name: NodeInclusionPolicyInPodTopologySpread
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -578,8 +639,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Operator can query `pod.spec.topologySpreadConstraints[].NodeInclusionPolicies` field
-and identify if this is set to non-default values
+Operator can query `pod.spec.topologySpreadConstraints[].NodeAffinityPolicy`
+and `pod.spec.topologySpreadConstraints[].NodeAffinityPolicy` to identify whether
+this is set to non-default values
 
 ###### How can someone using this feature know that it is working for their instance?
 
