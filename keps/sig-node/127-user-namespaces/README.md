@@ -1,4 +1,4 @@
-# KEP-127: Support User Namespaces
+# KEP-127: Support User Namespaces in stateless pods
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -72,7 +72,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP adds support to use user-namespaces in pods.
+This KEP adds support to use user-namespaces in stateless pods.
 
 ## Motivation
 
@@ -128,6 +128,7 @@ Here we use UIDs, but the same applies for GIDs.
   the pod (not valid in the host).
 - Benefit from the security hardening that user namespaces provide against some
   of the future unknown runtime and kernel vulnerabilities.
+- Support only stateless pods
 
 ### Non-Goals
 
@@ -138,17 +139,16 @@ Here we use UIDs, but the same applies for GIDs.
 - Implement all the very nice use cases that user namespaces allows. The goal
   here is to allow them as incremental improvements, not implement all the
   possible ideas related with user namespaces.
+- Support stateful pods
 
 [kubelet-userns]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2033-kubelet-in-userns-aka-rootless
 
 ## Proposal
 
 This KEP adds a new `hostUsers` field  to `pod.Spec` to allow to enable/disable
-using user namespaces for pods.
+using user namespaces for stateless pods.
 
-This proposal aims to support running pods inside user namespaces. This will
-improve the pod to node isolation (phase 1 and 2) and pod to pod isolation
-(phase 3) we currently have.
+This proposal aims to support running stateless pods inside user namespaces.
 
 This mitigates all the vulnerabilities listed in the motivation section.
 
@@ -262,27 +262,11 @@ message NamespaceOption {
 
 ```
 
-### Phases
+### Support for stateless pods
 
-We propose to divide the work in 3 phases. Each phase makes this work with
-either more isolation or more workloads. When no support is yet added to handle
-some workload, a clear error will be shown.
-
-PLEASE note that only phase 1 is targeted for alpha.
-
-Please note the last sub-section here is a table with the summary of the changes
-proposed on each phase. That table is not updated (it is from the initial
-proposal, doesn't have all the feedback and adjustments we discussed) but can
-still be useful as a general overview.
-
-TODO: move the table to markdown and include it here.
-
-
-#### Phase 1: pods "without" volumes
-
-This phase makes pods "without" volumes work with user namespaces. This is
-activated via the bool `pod.spec.HostUsers` and can only be set to `false`
-on pods which use either no volumes or only volumes of the following types:
+Make pods "without" volumes work with user namespaces. This is activated via the
+bool `pod.spec.HostUsers` and can only be set to `false` on pods which use
+either no volumes or only volumes of the following types:
 
  - configmap
  - secret
@@ -321,7 +305,55 @@ limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
 leaves us plenty of host UID space free and this limits is probably never hit in
 practice. See UNRESOLVED for more some UNRESOLVED info we still have on this.
 
-##### pkg/volume changes for phase I
+##### pkg/volume changes
+
+For the user inside the userns to be able to read the files of the mounted
+volumes, we will rely on the FSGroup feature for most volumes. This was
+[requested by sig-storage][sig-storage-fsgroup] during review to merge in v1.25.
+
+We need to teach the [operation executor][operation-executor] to convert
+the container UIDs/GIDs to the host UIDs/GIDs that this pod is mapped to. To do
+this, we will modify the [KubeletVolumeHost
+interface][kubeletVolumeHost-interface] adding functions to transform a
+container ID to the corresponding host ID, so the operation executor will just
+call that function (via self.volumePluginMgr.Host.GetHostIDsForPod())
+
+This function will call the kubelet, which will use the user namespace manager
+created to transform the IDs for that pod. The [KubeletVolumeHost
+interface][kubeletVolumeHost-interface] will then have this new method:
+
+```
+GetHostIDsForPod(pod *v1.Pod, containerUID, containerGID *int64) (hostUID, hostGID *int64, err error)
+```
+
+This method will only transform the IDs if the pod is running with userns
+enabled. If userns is disabled, the params will not be translated.
+
+If the feature gate is enabled and the pod is running with userns enabled, then
+an hostGID will always be returned by GetHostIDsForPod(). If the received
+containerGID param is nil, it will return the hostGID for user 0 inside the
+conatainer, otherwise the hostGID corresponding to the containerGID param.
+
+By returning a hostGID even if the containerGID is nil, we guarantee that the pod
+will be able to read the files of the volumes. As this will, in turn, force the
+fsGroup to be set for these volumes.
+
+Note that FSGroup has some limitations, for example see issue
+[#57923][fsgroup-issue]. We will hit the same limitations: when userns is used,
+the defaultMode or mode field these volumes can have, will not be honored. If we
+use FSGroup, then the file can never have 0600 permissions (it will always have
+permissions for the group), so some libraries and tools (like ssh) that enforce
+those permissions will fail.
+
+We will work with sig-storage to see how to improve upon this current limitation
+we have. For that end, we leave untouched a subsection on how we proposed to
+solve this problem in earlier versions of the KEP.
+
+
+[sig-storage-fsgroup]: https://github.com/kubernetes/kubernetes/pull/111090#discussion_r936900666
+[fsgroup-issue]: https://github.com/kubernetes/kubernetes/issues/57923
+
+##### Ideas to improve support for these stateless volumes (configmaps, etc.)
 
 We need the files created by the kubelet for these volume types to be readable
 by the user the pod is mapped to in the host. Luckily, Kuberentes already
@@ -369,33 +401,9 @@ For fsGroup() we don't need any changes, these volume types already honors it.
 [volume-mounter-args]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/volume.go#L125-L129
 [operation-executor]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/util/operationexecutor/operation_generator.go#L674-L675
 [volumeHost interface]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/plugins.go#L360-L361
+[kubeletVolumeHost]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/plugins.go#L326-L327
 [atomic-writer-fsUser]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/util/atomic_writer.go#L68
 [configmap-fsuser]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/configmap/configmap.go#L272-L273
-
-#### Phase 2: pods with volumes
-
-This phase makes user namespaces work in pods with volumes too. This is
-activated via the bool `pod.spec.HostUsers` too and pods fall into this mode if
-some other volume type than the ones listed for phase 1 is used. IOW, when phase
-2 is implemented, pods that use volume types not supported in phase 1, fall into
-the phase 2.
-
-All pods in this mode will use _the same_ mapping, chosen by the kubelet, with a
-length 65536, and mapping the range 0-65535 too. IOW, each pod will have its own user
-namespace, but they will map to _the same_ UIDs/GIDs in the host.
-
-Using the same mapping allows for pods to share files and mitigates all the
-listed vulnerabilities (as the host is protected from the container). It is also
-a trivial next-step to take, given that we have phase 1 implemented: just return
-the same mapping if the pod has other volumes.
-
-While these pods do not use a distinct user namespace mapping, they are still
-using a new user namespace object in the kernel (so they cannot join/attack
-other pods namespaces). Security-wise this is a middle layer between what we
-have today (no userns at all) and using a distinct UID/GID mapping for the user
-namespace.
-
-#### Phase 3: TBD
 
 #### Unresolved
 
@@ -446,10 +454,6 @@ Idem before, see Sergey idea from previous item.
   UPDATE: Windows maintainers reviewed and [this change looks good to them][windows-review].
 
 [windows-review]: https://github.com/kubernetes/enhancements/pull/3275#issuecomment-1121603308
-
-### Summary of the Proposed Changes
-
-[This table](https://docs.google.com/presentation/d/1z4oiZ7v4DjWpZQI2kbFbI8Q6botFaA07KJYaKA-vZpg/edit#slide=id.gfd10976c8b_1_41) gives you a quick overview of each phase (note it is outdated, but still useful for a general overview).
 
 ### Test Plan
 
