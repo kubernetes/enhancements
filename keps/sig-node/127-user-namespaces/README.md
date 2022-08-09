@@ -421,15 +421,10 @@ something else to this list:
   For now we will limit the number of pods, so the wide mapping is not
   problematic, but [there are downsides to this too](https://github.com/kubernetes/enhancements/pull/3065#discussion_r812806223)
 
-
 - Tim suggested we should try to not use the whole UID space. Something to keep
   in mind for next revisions. More info [here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r797100081)
 
 Idem before, see Sergey idea from previous item.
-
-- While we said that if support is not implemented we will throw a clear error,
-  we have not said if it will be API-rejected at admission time or what. I'd
-  like to see how that code looks like before promising something. Was raised [here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798730922)
 
 - Tim suggested that we might want to allow the container runtimes to choose
   the mapping and have different runtimes pick different mappings. While KEP
