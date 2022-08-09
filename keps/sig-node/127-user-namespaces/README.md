@@ -413,28 +413,6 @@ we don't want to forget or want to highlight it. Some things that are obvious we
 need to tackle are not listed. Let us know if you think it is important to add
 something else to this list:
 
-- We will start with mappings of 64K. Tim Hockin, however, has expressed
-  concerns. See more info on [this Github discussion](https://github.com/kubernetes/enhancements/pull/3065#discussion_r781676224)
-  SergeyKanzhelev [suggested a nice alternative](https://github.com/kubernetes/enhancements/pull/3065#discussion_r807408134),
-  to limit the number of pods so we guarantee enough spare host UIDs in case we
-  need them for the future. There is no final decision yet on how to handle this.
-  For now we will limit the number of pods, so the wide mapping is not
-  problematic, but [there are downsides to this too](https://github.com/kubernetes/enhancements/pull/3065#discussion_r812806223)
-
-- Tim suggested we should try to not use the whole UID space. Something to keep
-  in mind for next revisions. More info [here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r797100081)
-
-Idem before, see Sergey idea from previous item.
-
-- Tim suggested that we might want to allow the container runtimes to choose
-  the mapping and have different runtimes pick different mappings. While KEP
-  authors disagree on this, we still need to discuss it and settle on something.
-  This was [raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
-
-- (will clarify later with Tim what he really means here). Tim [raised this](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798766024): do
-  we actually want to ship phase 2 as automatic thing? If we do, any workloads
-  that use it can't ever switch to whatever we do in phase 3
-
 - What about windows or VM container runtimes, that don't use linux namespaces?
   We need a review from windows maintainers once we have a more clear proposal.
   We can then adjust the needed details, we don't expect the changes (if any) to be big.
@@ -448,7 +426,6 @@ Idem before, see Sergey idea from previous item.
   allows). Same applies for VM runtimes.
   UPDATE: Windows maintainers reviewed and [this change looks good to them][windows-review].
 
-[windows-review]: https://github.com/kubernetes/enhancements/pull/3275#issuecomment-1121603308
 
 ### Test Plan
 
@@ -1033,6 +1010,40 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+Here is a list of considerations raised in PRs discussion that were considered.
+This list is not exhaustive.
+
+### 64k mappings?
+
+We will start with mappings of 64K. Tim Hockin, however, has expressed
+concerns. See more info on [this Github discussion](https://github.com/kubernetes/enhancements/pull/3065#discussion_r781676224)
+SergeyKanzhelev [suggested a nice alternative](https://github.com/kubernetes/enhancements/pull/3065#discussion_r807408134),
+to limit the number of pods so we guarantee enough spare host UIDs in case we
+need them for the future. There is no final decision yet on how to handle this.
+For now we will limit the number of pods, so the wide mapping is not
+problematic, but [there are downsides to this too](https://github.com/kubernetes/enhancements/pull/3065#discussion_r812806223)
+
+For stateless pods this is of course not an issue.
+
+### Allow runtimes to pick the mapping?
+
+Tim suggested that we might want to allow the container runtimes to choose the
+mapping and have different runtimes pick different mappings. While KEP authors
+disagree on this, we still need to discuss it and settle on something.  This was
+[raised
+here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
+
+For stateless pods with 64k mappings this is not an issue. This was considered
+something to discuss for pods with volumes (out of scope of this KEP).
+
+### Should phase 2 be automatic?
+
+Tim [raised this](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798766024): do
+we actually want to ship phase 2 as automatic thing? If we do, any workloads
+that use it can't ever switch to whatever we do in phase 3
+
+Phase 2 (support for pods with volumes) is out of scope.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
