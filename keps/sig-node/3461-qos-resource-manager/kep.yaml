@@ -1,0 +1,11 @@
+title: QoS Resource Manager
+kep-number: 3461
+authors:
+  - "@waynepeking348"
+  - "@csfldf"
+  - "@Aiden-cn"
+  - "@cj1179"
+emails:
+  - "shaowei.wayne@bytedance.com"
+  - "wangbo.cloudnative@bytedance.com"
+  - "sunjianyu@bytedance.com"
