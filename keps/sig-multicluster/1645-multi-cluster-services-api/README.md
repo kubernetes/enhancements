@@ -669,7 +669,7 @@ endpoints:
      topology.kubernetes.io/zone: us-west2-a
 ```
 
-The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
+The `ServiceImport.Spec.IP` (VIP) can be used to access this service from outside
 this cluster.
 
 ### ClusterSet Service Behavior Expectations
