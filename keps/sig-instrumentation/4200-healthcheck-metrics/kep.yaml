@@ -1,0 +1,23 @@
+id: "4200"
+prnumber: ""
+name: healthcheck-metrics
+title: Kubernetes Healthcheck Metrics
+kep-number: "4200"
+authors: ['@logicalhan']
+owning-sig: sig-instrumentation
+participating-sigs: [sig-instrumentation]
+reviewers: ['@ehashman']
+approvers: ['@ehashman']
+prr-approvers: []
+creation-date: "2022-08-16"
+last-updated: v1.19
+status: provisional
+stage: alpha
+latest-milestone: ""
+milestone:
+    alpha: ""
+    beta: ""
+    stable: ""
+feature-gates: []
+disable-supported: false
+metrics: []
