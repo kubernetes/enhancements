@@ -48,18 +48,19 @@ compile() {
   echo "${tool} compiled & installed"
 }
 
-check_deps() {
-  echo "Checking dependencies..."
 
-  compile github.com/psampaz/go-mod-outdated
+# check_deps() {
+#   # echo "Checking dependencies..."
 
-  local gmo_args=( '-update' '-direct' )
-  if [ -n "${FAIL_ON_OUTDATED:-}" ]; then
-    gmo_args+=( '-ci' )
-  fi
+#   # compile github.com/psampaz/go-mod-outdated
 
-  go list -u -m -json all | go-mod-outdated "${gmo_args[@]}"
-}
+#   # local gmo_args=( '-update' '-direct' )
+#   # if [ -n "${FAIL_ON_OUTDATED:-}" ]; then
+#   #   gmo_args+=( '-ci' )
+#   # fi
+
+#   # go list -u -m -json all | go-mod-outdated "${gmo_args[@]}"
+# }
 
 compile_with_flags() {
   local git_tree_state
@@ -88,7 +89,7 @@ main() {
   cd "$(dirname "${BASH_SOURCE[0]}")"
 
   setup_env
-  check_deps
+  # check_deps
 
   if [ $# = 0 ]; then
     # default to all tools
