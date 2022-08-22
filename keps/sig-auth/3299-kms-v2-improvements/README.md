@@ -196,25 +196,19 @@ message EncryptRequest {
 }
 ```
 
-In terms of storage, a new structured protobuf format is proposed. Similar to the proto serializer, it will use a magic number to detect when the stored data is in a format that it understands:
+In terms of storage, a new structured protobuf format is proposed. The prefix for the new format is `k8s:enc:kms:v2:<config name>:`.
 
 ```go
-encryptedProtoEncodingPrefix = []byte{'e', 'k', '8', 's', 0}
-```
-
-The last byte represents the encoding style, with 0 meaning that the rest of the byte stream is a proto message of type `EncryptedObject`:
-
-```go
+// EncryptedObject is the representation of data stored in etcd after envelope encryption.
 type EncryptedObject struct {
-    TypeMeta `json:",inline" protobuf:"bytes,1,opt,name=typeMeta"`
-    // KeyID is the KMS key ID used for encryption operations.
-    KeyID string `protobuf:"bytes,2,opt,name=keyID"`
-    // PluginName is the name of the KMS plugin used for encryption.
-    PluginName string `protobuf:"bytes,3,opt,name=pluginName"`
-    // Ciphertext is the encrypted DEK.
-    Ciphertext []byte `protobuf:"bytes,4,opt,name=ciphertext"`
-    // Annotations is additional metadata that was provided by the KMS plugin.
-    Annotations map[string][]byte `protobuf:"bytes,5,opt,name=annotations"`
+	// EncryptedData is the encrypted data.
+	EncryptedData []byte `protobuf:"bytes,1,opt,name=encryptedData,proto3" json:"encryptedData,omitempty"`
+	// KeyID is the KMS key ID used for encryption operations.
+	KeyID string `protobuf:"bytes,2,opt,name=keyID,proto3" json:"keyID,omitempty"`
+	// EncryptedDEK is the encrypted DEK.
+	EncryptedDEK []byte `protobuf:"bytes,3,opt,name=encryptedDEK,proto3" json:"encryptedDEK,omitempty"`
+	// Annotations is additional metadata that was provided by the KMS plugin.
+	Annotations          map[string][]byte `protobuf:"bytes,4,rep,name=annotations,proto3" json:"annotations,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 ```
 
