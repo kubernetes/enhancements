@@ -88,8 +88,7 @@ main() {
   cd "$(dirname "${BASH_SOURCE[0]}")"
 
   setup_env
-  # TODO: we need to fix this later
-  # check_deps
+  check_deps
 
   if [ $# = 0 ]; then
     # default to all tools
