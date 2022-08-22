@@ -22,6 +22,6 @@ package internal
 
 import (
 	_ "github.com/maxbrunsfeld/counterfeiter/v6"
-
+	_ "github.com/psampaz/go-mod-outdated"
 	_ "k8s.io/release/pkg/version"
 )
