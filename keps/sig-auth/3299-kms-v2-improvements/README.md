@@ -8,6 +8,11 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
 - [Design Details](#design-details)
+  - [v2 API](#v2-api)
+  - [Key Hierarchy](#key-hierarchy)
+  - [Metadata](#metadata)
+  - [Status API](#status-api)
+  - [Observability](#observability)
   - [Sequence Diagram](#sequence-diagram)
     - [Encrypt Request](#encrypt-request)
     - [Decrypt Request](#decrypt-request)
@@ -124,6 +129,8 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+### v2 API
+
 `EncryptionConfiguration` will be expanded to support the new v2 API:
 
 ```diff
@@ -138,6 +145,8 @@ index d7d68d2584d..84c1fa6546f 100644
 
 Support key hierarchy in KMS plugin that generates local KEK and add v2alpha1 `KeyManagementService` proto service contract in Kubernetes to include `key_id`, `annotations`, and `status`. 
 
+### Key Hierarchy
+
 Key Hierarchy in KMS plugin (reference implementation):
 
 1. No changes to the API server, keep 1:1 DEK mapping
@@ -149,6 +158,8 @@ Key Hierarchy in KMS plugin (reference implementation):
 1. Local KEK is used for encryption based on policy (N events, X time, etc)
 
 Since key hierarchy is implemented at the KMS plugin level, it should be seamless for the kube-apiserver. So whether the plugin is using a key hierarchy or not, the kube-apiserver should behave the same.
+
+### Metadata
 
 What is required of the kube-apiserver is to be able to tell the KMS plugin which KEK (local KEK or KMS KEK) it should use to decrypt the incoming DEK. To do so, upon encryption, the KMS plugin could provide the encrypted local KEK as part of the `annotations` field in the `EncryptResponse`. The kube-apiserver would then store it in etcd next to the DEK. Upon decryption, the kube-apiserver provides the encrypted local KEK in `annotations` and `key_id` from the last encryption when calling Decrypt. In case no encrypted local KEK is provided in the `annotations`, then we can assume key hierarchy is not used. The KMS plugin would query the external KMS to use the remote KEK to decrypt the DEK (same behavior as today). No state coordination is required between different instances of the KMS plugin.
 
@@ -168,7 +179,7 @@ message EncryptResponse {
 }
 ```
 
-The `DecryptRequest` passes the same `key_id` and `annotations` returned by the previous `EncryptResponse` of this data as its `key_id` and `metadata` for the decryption request.
+The `DecryptRequest` passes the same `key_id` and `annotations` returned by the previous `EncryptResponse` of this data as its `key_id` and `annotations` for the decryption request.
 
 ```proto
 message DecryptRequest {
@@ -214,6 +225,8 @@ type EncryptedObject struct {
 
 This object simply provides a structured format to store the `EncryptResponse` data with the plugin name and encrypted object data. New fields can easily be added to this format.
 
+### Status API
+
 To improve health check reliability, the new StatusResponse provides version, healthz information, and can trigger key rotation via storage version status updates.
 
 ```proto
@@ -257,6 +270,8 @@ index bfa249e135c..e671fe599a9 100644
 ```
 
 > NOTE: Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields. The rotation feature will first be scoped to a single API server and will not be part of the graduation criteria for this KEP.
+
+### Observability
 
 To improve observability, this design also generates a new `UID` for each envelope operation similar to `UID` generation in admission review requests here: https://github.com/kubernetes/kubernetes/blob/e9e669aa6037c380469b45200e59cff9b52d6d68/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/request/admissionreview.go#L137.
 
