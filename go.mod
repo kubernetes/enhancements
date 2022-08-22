@@ -7,7 +7,7 @@ require (
 	github.com/go-playground/validator/v10 v10.4.1
 	github.com/google/go-github/v33 v33.0.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
-	github.com/olekukonko/tablewriter v0.0.4
+	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.7.0
 	github.com/spf13/cobra v1.1.1
