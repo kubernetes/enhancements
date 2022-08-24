@@ -16,11 +16,11 @@ prr-approvers: []
 creation-date: "2022-05-30"
 status: implementable
 stage: alpha
-latest-milestone: "v1.25"
+latest-milestone: "v1.26"
 milestone:
-  alpha: "v1.25"
-  beta: "v1.26"
-  stable: "v1.27"
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.28"
 feature-gates:
 - name: SelfSubjectAttributesReview
   components:
