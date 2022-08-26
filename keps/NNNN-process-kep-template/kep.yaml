@@ -1,0 +1,28 @@
+title: Process KEP Template
+kep-type: process
+kep-number: NNNN
+authors:
+  - "@jane.doe"
+owning-sig: sig-xyz
+participating-sigs:
+  - sig-aaa
+  - sig-bbb
+# As a process KEP, if the status is "implemented", the process is enacted.
+status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
+creation-date: yyyy-mm-dd
+reviewers:
+  - TBD
+  - "@alice.doe"
+approvers:
+  - TBD
+  - "@oscar.doe"
+
+see-also:
+  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
+  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
+replaces:
+  - "/keps/sig-ccc/3456-replaced-kep"
+
+# All process KEPs use "stable" as the stage. See status determine if the process
+# enhancement is enacted or not.
+stage: stable
