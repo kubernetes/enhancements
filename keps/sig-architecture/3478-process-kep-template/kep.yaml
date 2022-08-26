@@ -1,0 +1,20 @@
+title: Process KEP Template
+kep-type: process
+kep-number: 3478
+authors:
+  - "@jpbetz"
+owning-sig: sig-architecture
+# As a process KEP, if the status is "implemented", the process is enacted.
+status: implementable
+creation-date: 2022-08-26
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-architecture/0000-kep-process"
+
+# All process KEPs use "stable" as the stage. See status determine if the process
+# enhancement is enacted or not.
+stage: stable
