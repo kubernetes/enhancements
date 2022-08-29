@@ -32,7 +32,7 @@ An enhancement is anything that:
 - users will notice and come to rely on
 
 It is unlikely an enhancement if it is:
-- implemented using `CustomResourceDefinition` and/or in https://github.com/kubernetes/contrib
+- implemented using a `CustomResourceDefinition`
 - fixing a flaky test
 - refactoring code
 - performance improvements, which are only visible to users as faster API operations, or faster control loops
