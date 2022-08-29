@@ -19,11 +19,19 @@
   - [Deleted Pods](#deleted-pods)
   - [Deleted Jobs](#deleted-jobs)
   - [Pod adoption](#pod-adoption)
+- [Monitoring Pods with finalizers](#monitoring-pods-with-finalizers)
+- [Migrating Jobs with legacy tracking](#migrating-jobs-with-legacy-tracking)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [E2E test:](#e2e-test)
+      - [Load test:](#load-test)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -68,8 +76,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -307,21 +319,89 @@ finalizer.
 The job controller adds the finalizer in the same patch request that modifies
 the owner reference.
 
+## Monitoring Pods with finalizers
+
+Starting in 1.26, the metric `job_pod_tracking_finalizer` is a gauge that
+tracks the number of pods that currently have a job tracking finalizer.
+
+The metric increments when the job controller observes a pod created or adopted,
+and decrements when the job controller observes an update that removes the
+finalizer or a pod deletion.
+
+## Migrating Jobs with legacy tracking
+
+Starting in 1.26, when the feature gate `MigrateJobLegacyTracking` is enabled,
+the job controller migrates jobs with legacy tracking to tracking with finalizers.
+
+If a Job doesn't have the annotation `batch.kubernetes.io/job-completion`, it
+means that is not currently tracked with finalizers. The job controller starts
+the following migration process:
+1. Add the finalizer `batch.kubernetes.io/job-completion` to all pods with
+   `.status.phase=(Pending/Running)`.
+2. Ignore pods with `.status.phase=(Complete/Failed)` that don't have the `batch.kubernetes.io/job-completion`.
+   They are considered to be already counted in `.status.(failed/succeeded)`.
+3. Add the annotation `batch.kubernetes.io/job-completion`.
+
+This might lead to extra pods being created, but this is acceptable because:
+
+- After the `JobTrackingWithFinalizers` feature was enabled for some time, the
+  Job controller is already tracking most Jobs using finalizers.
+- For the remaining Jobs, the Job controller already accounted most of the
+  finished Pods in the status. The controller might leave some
+  finished Pods unaccounted, if they finish before the controller has a chance
+  to add a finalizer. This situation is no worse that the legacy tracking
+  were the controller doesn't account for Pods removed by garbage collection or
+  other means.
+
 ### Test Plan
 
-- Unit tests:
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+Already fulfilled at alpha and beta stages.
+
+##### Unit tests
+
   - Job sync with feature gate enabled.
   - Removal of finalizers when feature gate is disabled.
-  - Tracking of terminating Pods.
-- Integration tests:
-  - Job tracking with feature enabled.
-  - Tracking of terminating Pods.
-  - Transition from feature enabled to disabled and enabled again.
-  - Clean up finalizers of Orphan Pods.
+  - Tracking of terminating Pods for NonIndexed and Indexed Jobs.
+
+Coverage:
+
+- `pkg/controller/job`: 2022-08-06 - 90%
+- `pkg/apis/batch/validation`: 2022-08-06 - 96%
+- `pkg/apis/batch/v1`: 2022-08-06 - 85.2%
+- `pkg/registry/batch/job`: 2022-08-06 - 79.7%
+
+##### Integration tests
+
+Almost the entire [test suite](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=test%2Fintegration%2Fjob) runs with finalizers.
+
+  - Job tracking with feature enabled: `TestNonParallelJob`, `TestParallelJob`, `TestParallelJobParallelism`, `TestIndexedJob`, `TestJobFailedWithInterrupts`.
+  - Transition from feature enabled to disabled and enabled again: `TestDisableJobTrackingWithFinalizers`.
+  - Clean up finalizers of Orphan Pods `TestOrphanPodsFinalizersClearedWithGC`
   - Tracking Jobs with big number of Pods, making sure the status is eventually
-    consistent.
-- E2E test:
-  - Job tracking with feature enabled.
+    consistent (`TestParallelJobWithCompletions`, `TestFinalizersClearedWhenBackoffLimitExceeded`)
+
+Exceptions:
+
+  - Test orphan pods are cleared when TrackingWithFinalizers is disabled: `TestOrphanPodsFinalizersClearedWithFeatureDisabled`.
+  - Test suspend jobs (finalizers to be enabled).
+  - Test mutable scheduling directives (finalizers to be enabled).
+
+##### E2E test:
+
+[Every E2E](https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-e2e-gci-gce&width=20&include-filter-by-regex=%5C%5Bsig-apps%5C%5D%20Job)
+test is affected. The feature didn't require new tests, as it doesn't add
+new endpoints or new functionality.
+
+##### Load test:
+
+A [clusterloader2 test](https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/testing/batch/config.yaml)
+for jobs with multiple sizes.
 
 ### Graduation Criteria
 
@@ -346,20 +426,31 @@ the owner reference.
 
 #### Beta -> GA Graduation
 
-- Remove legacy tracking and the use of `batch.kubernetes.io/job-completion` as
-  an annotation. This is possible assuming:
-  - After the feature was enabled for some time, the Job controller is already
-    tracking most Jobs using finalizers.
-  - For the remaining Jobs, the Job controller already accounted most of the
-    finished Pods in the status. The controller adds a tracking finalizer to
-    any running Pod that doesn't have it. The controller might leave some
-    finished Pods unaccounted, if they finish before the controller has a chance
-    to add a finalizer. This is acceptable as it's no worse that the current
-    behavior were the controller doesn't account for Pods removed by garbage
-    collection or other means.
+- [Migrate existing Jobs to tracking with finalizers](#migrating-jobs-with-legacy-tracking)
+  under feature gate `MigrateJobLegacyTracking`, disabled by default.
 - Job E2E tests graduate to conformance.
 - Job tracking scales to 10^5 completions per Job processed within an order of
   minutes.
+
+#### Deprecation
+
+In 1.26:
+
+- Declare deprecation of annotation `batch.kubernetes.io/job-completion` in
+  [documentation](https://kubernetes.io/docs/reference/labels-annotations-taints/#batch-kubernetes-io-job-tracking).
+- Lock `JobTrackingWithFinalizers` to true.
+
+In 1.27:
+
+- Lock `MigrateJobLegacyTracking` to true.
+- Remove legacy tracking code.
+
+In 1.28:
+
+- Stop adding annotation `batch.kubernetes.io/job-completion` and remove from
+  documentation.
+- Remove feature gates `JobTrackingWithFinalizers` and `MigrateJobLegacyTracking`.
+- Remove legacy to finalizers migration code.
 
 ### Upgrade / Downgrade Strategy
 
@@ -448,6 +539,7 @@ No implications to node runtime.
     duration than previous versions of the job controller due to the new API
     calls.
   - Stale `job_sync_total` or `job_finished_total`.
+  - The metric `job_pod_tracking_finalizer` doesn't decrease when pods finish.
 
 #### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   
@@ -472,7 +564,7 @@ The flow was completed successfully with all the stated verifications.
 
 #### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
   
-  No.
+Yes, see [Deprecation](#deprecation) for the full plan.
 
 ### Monitoring Requirements
 
@@ -504,14 +596,17 @@ The flow was completed successfully with all the stated verifications.
 
 - [x] Metrics
     - Metric name: `job_sync_duration_seconds`
-    - [Optional] Aggregation method:
-    - Components exposing the metric: `kube-controller-manager`
+      - [Optional] Aggregation method:
+      - Components exposing the metric: `kube-controller-manager`
+    - Metric name: `job_pod_tracking_finalizer`
+      - [Optional] Aggregation method:
+      - Components exposing the metric: `kube-controller-manager`
 
 #### Are there any missing metrics that would be useful to have to improve observability of this feature?
   
-  - A label in `job_sync_total` for the type of Job tracking. This label would
-    have to be removed when we graduate the feature to GA, adding operational
-    burden.
+  - A label in `job_sync_total` for the type of Job tracking. We decided not to
+    add this label because it would have to be removed on GA graduation, adding
+    operational burden.
 
 ### Dependencies
 
@@ -570,20 +665,21 @@ The flow was completed successfully with all the stated verifications.
 
 #### What are other known failure modes?
   
-  TBD from user feedback. No know failures modes so far.
-  
-  <!--
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
-  -->
+  - Terminated pods are stuck with finalizers
+    - Detection:
+      - Before 1.26: Observe the behavior in pods.
+      - After 1.26: Based on metric `job_pod_tracking_finalizer`
+    - Mitigations:
+      Before 1.26, disable `JobTrackingWithFinalizers`.
+    - Diagnostics:
+      The job controller reports errors updating the Job status and/or patching
+      Pods.
+      There were some bugs that would cause this (examples:
+      [#109485](https://github.com/kubernetes/kubernetes/issues/109485),
+      [#111646](https://github.com/kubernetes/kubernetes/pull/111646)).
+      In newer versions, this can still happen if there is a buggy webhook
+      that prevents pod updates to remove finalizers.
+    - Testing: Discovered bugs are covered by unit and integration tests.
 
 #### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -608,6 +704,7 @@ The flow was completed successfully with all the stated verifications.
 - 2021-08-18: PRR completed and graduation to beta proposed.
 - 2021-10-14: Added details for Upgrade->Downgrade->Upgrade manual test.
 - 2021-10-21: Add link to testgrid.
+- 2022-08-29: Add GA and deprecation notes.
 
 ## Drawbacks
 
