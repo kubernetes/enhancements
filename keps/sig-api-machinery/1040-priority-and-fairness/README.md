@@ -793,12 +793,11 @@ integers.
 
 The priority levels would all be fairly happy if we set CurrentCL =
 SmoothSeatDemand for each.  We clip that by the lower bound just shown
-and the configured upper bound.  We define `Target(i)` as follows and
-take it as a first-order target for each non-exempt priority level
-`i`.
+and define `Target(i)` as follows, taking it as a first-order target
+for each non-exempt priority level `i`.
 
 ```
-Target(i) = min( MaxCL(i), max( MinCurrentCL(i), SmoothSeatDemand(i) ))
+Target(i) = max( MinCurrentCL(i), SmoothSeatDemand(i) )
 ```
 
 Sadly, the sum of the Target values --- let's name that TargetSum ---
@@ -810,8 +809,12 @@ FairProp * Target(i)` for each non-exempt priority level `i`.
 Similarly, if `TargetSum > ServerCL` then all the Targets could be
 scaled down in the same proportion (if that did not violate any lower
 bound) to get the new concurrency limits.  This shares the wealth or
-the pain proportionally among the priority levels.  The following
-computation generalizes this idea to respect the relevant bounds.
+the pain proportionally among the priority levels (but note: the upper
+bound does not affect the target, lest the pain of not achieving a
+high SmoothSeatDemand be distorted, while the lower bound _does_
+affect the target, so that merely achieving the lower bound is not
+considered a gain).  The following computation generalizes this idea
+to respect the relevant bounds.
 
 We can not necessarily scale all the Targets by the same factor ---
 because that might violate some upper or lower bounds.  The problem is
