@@ -2046,6 +2046,7 @@ This KEP adds the following metrics.
 - apiserver_service_duration (histogram, broken down by priority, FlowSchema)
 - `apiserver_flowcontrol_request_concurrency_limit` (gauge of NominalCL, broken down by priority)
 - `apiserver_flowcontrol_request_min_concurrency_limit` (gauge of MinCL, broken down by priority)
+- `apiserver_flowcontrol_request_max_concurrency_limit` (gauge of MaxCL, broken down by priority)
 - `apiserver_flowcontrol_request_current_concurrency_limit` (gauge of CurrentCL, broken down by priority)
 - `apiserver_flowcontrol_demand_seats` (timing ratio histogram of seat demand / NominalCL, broken down by priority)
 - `apiserver_flowcontrol_demand_seats_high_water_mark` (gauge of HighSeatDemand, broken down by priority)
