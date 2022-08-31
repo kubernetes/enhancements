@@ -12,6 +12,7 @@
   - [Key Hierarchy](#key-hierarchy)
   - [Metadata](#metadata)
   - [Status API](#status-api)
+  - [Rotation](#rotation)
   - [Observability](#observability)
   - [Sequence Diagram](#sequence-diagram)
     - [Encrypt Request](#encrypt-request)
@@ -115,9 +116,9 @@ Performance, Health Check, Observability and Rotation:
     - If there is an issue with creating or updating any of the transformers, retain the current configuration in the kube-apiserver and generate an error in logs.
 - Enable fully automated rotation for `latest` key in KMS:
     > NOTE: Prerequisite: `EncryptionConfiguration` is set up to always use the `latest` key version in KMS and the values can be interpreted dynamically at runtime by the KMS plugin to hot reload the current write key. Rotation process sequence:
-    - record initial key ID across all API servers (this could be recorded in the `StorageVersionStatus` as a new field)
+    - record initial key ID across all API servers
     - cause key rotation in KMS (user action in the remote KMS)
-    - observe the change across the stack (wait for convergence of `StorageVersionStatus`)
+    - observe the change across the stack
     - storage migration (run storage migrator)
 
 ## Design Details
@@ -227,7 +228,7 @@ This object simply provides a structured format to store the `EncryptResponse` d
 
 ### Status API
 
-To improve health check reliability, the new StatusResponse provides version, healthz information, and can trigger key rotation via storage version status updates.
+To improve health check reliability, the new StatusResponse provides version, healthz information, and can trigger key rotation via encryption state status updates.
 
 ```proto
 message StatusRequest {}
@@ -242,34 +243,48 @@ message StatusResponse {
 }
 ```
 
-The `key_id` may be funneled into the storage version status as another field that API servers can attempt to gain consensus on:
+### Rotation
 
-```diff
-diff --git a/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go b/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go
-index bfa249e135c..e671fe599a9 100644
---- a/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go
-+++ b/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go
-@@ -56,6 +56,8 @@ type StorageVersionStatus struct {
-	 // +optional
-	 CommonEncodingVersion *string `json:"commonEncodingVersion,omitempty" protobuf:"bytes,2,opt,name=commonEncodingVersion"`
- 
-+    CommonKeyID *string `json:"commonKeyID,omitempty" protobuf:"bytes,4,opt,name=commonKeyID"`
-+
-	 // The latest available observations of the storageVersion's state.
-	 // +optional
-	 // +listType=map
-@@ -77,6 +79,8 @@ type ServerStorageVersion struct {
-	 // The encodingVersion must be included in the decodableVersions.
-	 // +listType=set
-	 DecodableVersions []string `json:"decodableVersions,omitempty" protobuf:"bytes,3,opt,name=decodableVersions"`
-+
-+    KeyID *string `json:"keyID,omitempty" protobuf:"bytes,4,opt,name=keyID"`
- }
- 
- type StorageVersionConditionType string
+The `key_id` will be funneled into the status of the new encryption state REST API.  Each API server will create this resource with a random name on startup (stale objects will be garbage collected by a new controller).  This resource provides the necessary information for a controller to automatically initiate storage migration when consensus has been reached among the different API server instances.  Opaque hashes are used to prevent leaking any specific information about the encryption configuration and the key IDs in use.  This is a cluster scoped REST API that is only meant to be read by the associated controllers and the cluster admin.
+
+```go
+// metadata.name is the ID of the API server
+type EncryptionState struct {
+    metav1.TypeMeta `json:",inline"`
+    // +optional
+    metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+    Spec EncryptionStateSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
+
+    Status EncryptionStateStatus `json:"status" protobuf:"bytes,3,opt,name=status"`
+}
+
+// spec is empty
+type EncryptionStateSpec struct{}
+
+type EncryptionStateStatus struct {
+    EncryptionConfigurationHash Hash `json:"encryptionConfigurationHash" protobuf:"bytes,1,opt,name=encryptionConfigurationHash"`
+
+    Resources []EncryptionStateResource `json:"resources" protobuf:"bytes,2,opt,name=resources"`
+}
+
+type EncryptionStateResource struct {
+    Resource metav1.GroupResource `json:"resource" protobuf:"bytes,1,opt,name=resource"`
+
+    WriteKeyIDHash Hash `json:"writeKeyIDHash" protobuf:"bytes,2,opt,name=writeKeyIDHash"`
+
+    ReadKeyIDHashes []Hash `json:"readKeyIDHashes" protobuf:"bytes,3,opt,name=readKeyIDHashes"`
+
+    // this field would be populated by scanning all KMS v2 encrypted data and recording all observed
+    // key IDs.  this would be an expensive operation and is a bit weird to be per API server.
+    InUseKeyIDHashes []Hash `json:"inUseKeyIDHashes" protobuf:"bytes,4,opt,name=inUseKeyIDHashes"`
+}
+
+type Hash struct {
+    Value       string      `json:"value" protobuf:"bytes,1,opt,name=value"`
+    LastUpdated metav1.Time `json:"lastUpdated" protobuf:"bytes,2,opt,name=lastUpdated"`
+}
 ```
-
-> NOTE: Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields. The rotation feature will first be scoped to a single API server and will not be part of the graduation criteria for this KEP.
 
 ### Observability
 
@@ -357,8 +372,6 @@ This section is incomplete and will be updated before the beta milestone.
 
 
 ### Graduation Criteria
-
-Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields.  The rotation feature will first be scoped to a single API server and will not be part of the graduation criteria for this KEP because the storage version API will take time to mature. However, testing of rotation will be part of the graduation criteria to confirm that the right information is being made available to allow for automated rotation when the storage version API graduates.
 
 #### Alpha
 
