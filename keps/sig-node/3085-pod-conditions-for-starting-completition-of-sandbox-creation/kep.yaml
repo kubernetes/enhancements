@@ -5,12 +5,15 @@ authors:
   - "@agamdua"
 owning-sig: sig-node
 participating-sigs:
+  - sig-network
 status: implementable
 creation-date: 2021-12-14
 reviewers:
   - "@ehashman"
+  - "@dcbw"
 approvers:
   - "@derekwaynecarr"
+  - "@aojea"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
