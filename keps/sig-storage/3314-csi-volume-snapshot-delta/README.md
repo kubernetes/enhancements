@@ -75,12 +75,15 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
-    - [Segmenting Critical Datapath Resource Requirements](#segmenting-critical-datapath-resource-requirements)
-    - [Securing The CallBack Listener](#securing-the-callback-listener)
+    - [Kubernetes API Server - flow control and response latency](#kubernetes-api-server---flow-control-and-response-latency)
+    - [Aggregated API Server - denial of service](#aggregated-api-server---denial-of-service)
+    - [APIService Resource - CA bundle expiry](#apiservice-resource---ca-bundle-expiry)
 - [Design Details](#design-details)
   - [CBT Datapath Worklow](#cbt-datapath-worklow)
   - [High Availability Mode](#high-availability-mode)
   - [API Specification](#api-specification)
+    - [VolumeSnapshotDelta Resource](#volumesnapshotdelta-resource)
+    - [DriverDiscovery Resource](#driverdiscovery-resource)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -166,13 +169,13 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Changed block tracking (CBT) techniques have been used by backup software to
-efficiently back up large amount of data. They identify block-level changes
-between two arbitrary pair of snapshots of the same volume and selectively
-capture only what has changed between the two checkpoints. This type of
-differential backup approach is a lot more efficient than backing up the entire
-volume. This KEP proposes a new CSI API that can be used to identify the list of
-changed blocks between a pair of CSI volume snapshots.
+Changed block tracking (CBT) techniques have been used by backup systems to
+efficiently back up large amount of data in block volumes. They identify
+block-level changes between two arbitrary pair of snapshots of the same block
+volume, and selectively capture what has changed between the two checkpoints.
+This type of differential backup approach is a lot more efficient than backing
+up the entire volume. This KEP proposes a new CSI API that can be used to
+identify the list of changed blocks between a pair of CSI volume snapshots.
 
 ## Motivation
 
@@ -191,10 +194,10 @@ backups, being able to identify and back up only what has changed can
 drastically improve backup bottlenecks and streamline the user's data protection
 workflows.
 
-Many storage providers are already utilizing these kind of block-level changes
+Many storage providers already have the ability to detect block-level changes
 for efficient data backup and restoration. This KEP proposes a design to extend
-the Kubernetes CSI architecture to utilize these CBT features to bring efficient
-, cloud-native data protection to Kubernetes users.
+the Kubernetes CSI framework to utilize these CBT features to bring efficient,
+cloud-native data protection to Kubernetes users.
 
 ### Goals
 
@@ -204,20 +207,16 @@ know that this has succeeded?
 -->
 
 * Provide a secure, idiomatic CSI API to efficiently identify changes between
-two arbitrary pairs of CSI volume snapshots of the same volume.
+two arbitrary pairs of CSI volume snapshots of the same block volume.
 * The API can efficiently and reliably relay large amount of changed block data
 from the storage provider back to the user, without exhausting cluster resources,
 nor introducing flaky resource spikes and leaks.
-* The blast radius of API failure should be sufficiently isolated from the rest
-of the CSI architecture with no knock-on effects on other CSI components.
-* Storage providers can opt in to expose their CBT functionality to Kubernetes
-via this new API. This API remains an optional component of the CSI
-architecture.
-* Enable CBT for raw block volumes as well as file system PV that are backed by
-block volumes.
-* Support provider-specific user input parameters such as block size,
-fixed-sized vs. variable-sized blocks etc., without leaking provider-specific
-implementation into CSI.
+* The blast radius of component failure should be sufficiently isolated from the
+rest of the cluster.
+* This API remains an optional component of the CSI framework. Storage providers
+can opt in to expose their CBT functionality to Kubernetes via this new API.
+* Provide CBT support for both block as well as file system mode (backed by
+block volume) persistent volumes.
 
 ### Non-Goals
 
@@ -228,8 +227,7 @@ and make progress.
 
 * Retrieval of the actual data blocks is outside the scope of this KEP. The
 proposed API returns only the metadata of the changed blocks.
-* The ability to identify changes on file snapshots are slated for future KEP.
-This includes support for directories, subdirectories and files.
+* Changed list support for file storage system are slated for future KEP.
 
 ## Proposal
 
@@ -242,30 +240,36 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-This KEP introduces a new CRD called `VolumeSnapshotDelta` to the CSI
-architecture.
+This KEP introduces two new custom resources called `VolumeSnapshotDelta` and
+`DriverDiscovery` to the CSI framework.
 
-The CRD abstracts away the details around interacting with the storage
-providers' CBT endpoints. Essentially, the CRD allows a Kubernetes user to say,
+The `VolumeSnapshotDelta` resource abstracts away the details around interacting
+with the storage providers' CBT endpoints. Essentially, this new API allows a
+Kubernetes user to say,
 
-> Help me find all the data blocks that have changed between these two
-> snapshots.
+> Find all the data blocks that have changed between these two snapshots.
 
-The new `VolumeSnapshotDelta` component must be able to handle large amount of
-data returned by the storage providers, without negatively impacting the rest of
-the cluster through resource contention and starvation. Specifically, this KEP
-emphasizes on not putting Kubernetes' etcd in the CBT datapath, to avoid bogging
-it down with heavy IOPS operations.
+**Note that the proposed API is used to retrieve the changed blocks metadata
+only. Retrieval of the actual data blocks is out of the scope of this KEP.**
 
-The `VolumeSnapshotDelta` component will be implemented as a [CSI sidecar]
-container, following the existing CSI driver deployment model. The new component
-will have:
+The new component that serves the `VolumeSnapshotDelta` API must be able to
+handle large amount of data returned by the storage providers, without
+contesting with or starving the rest of the cluster. Specifically, the CBT
+datapath should not burden the Kubernetes' etcd with heavy IOPS operations.
 
-* a controller that watches for new `VolumeSnapshotDelta` resources.
-* a HTTP listener the provides direct datapaths to handle CBT requests and
-responses.
+The `VolumeSnapshotDelta` API is owned and handled by an [aggregated API
+server][0]. This aggregation extension mechanism provides more control over the
+registry and storage implementation, than a [custom resource controller][11].
 
-[CSI sidecar]: https://kubernetes-csi.github.io/docs/sidecar-containers.html
+The Kubernetes API server and [metrics server][12] are the two main
+implementations that inspired this aggregated extension design, recognizing that
+the CBT payloads are no worse (in size and bandwidth) than the metrics or [pod
+logs][13] served by these two API servers.
+
+The `DriverDiscovery` resource is implemented as a [Custom Resource Definition
+(CRD)][2], owned and handled by a new custom resource controller. The aggregated
+API server uses this resource to discover CSI drivers that support CBT
+functionalities.
 
 ### Risks and Mitigations
 
@@ -281,29 +285,54 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-#### Segmenting Critical Datapath Resource Requirements
+#### Kubernetes API Server - flow control and response latency
 
-It's not uncommon that the response payload from the storage providers can be
-quite large, in the magnitude of gigabytes of changed block metadata, per volume
-snapshot pair. The usual declarative approach of updating the custom
-resource's `status` subresource with the payload may put etcd at risk of
-storage capacity exhaustion as well as regular IOPS spikes.
+The proposed aggregation extension model relies on the Kubernetes API server to
+proxy all the CBT requests to the aggregated API server. To protect the
+Kubernetes API server from being overwhelmed by the CBT payloads, flow controls
+policy enforced by Kubernetes [API Priority and Fairness][4] will be bundled
+with the CBT deployment manifest, with the default priority level set to
+[`workload-low`][5].
 
-To mitigate this issue, this KEP proposes a 2-hop request mechanism where
-instead of handling the requests directly, the `VolumeSnapshotDelta` controller
-returns a callback URL to the user so that CBT requests can be directed to this
-"out-of-band" endpoint to fetch the changed block metadata. This mechanism
-allows the response payloads to be returned directly to the user, without
-persisting them in etcd.
+To ensure [low latency between the Kubernetes API server and the aggregated API
+server][6]:
 
-#### Securing The CallBack Listener
+* The aggregated API server will enforce overridable pagination behaviour such
+as limiting the response payload to 256 CBT entries
+* The deployment manifests will include configurable pod affinity, taint and
+toleration properties to provide control over scheduling and placement of the
+aggregated API server
 
-The `VolumeSnapshotDelta` callback listener will be secured by delegating the
-request authentication and authorisation to the Kubernetes API server, using the
-[`TokenReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#tokenreview-v1-authentication-k8s-io)
-and
-[`SubjectAccessReview`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#subjectaccessreview-v1-authorization-k8s-io)
-APIs to protect both the `nonResourceURL` endpoint as well as the resources.
+The latency incurred by discovery requests is expected to be relatively
+insignificant as the aggregated API server exposes only one API, to serve the
+`VolumeSnapshotDelta` resource.
+
+#### Aggregated API Server - denial of service
+
+The CBT aggregated API server must be protected from a series of continuous
+expensive requests, e.g., from rogue retries or malicious DOS attempts targeting
+the storage provider's backend CBT endpoints.
+
+To mitigate this, the aggregated API server can enforce server-side rate
+limiting using constructs found in the `k8s.io/apiserver/pkg/util/flowcontrol`
+package and its sub-packages.
+
+A caching layer to serve subsequent requests with the same input parameters can
+also be considered. Given the complexity associated with caching, more design
+consideration will be needed to determine cache invalidation period, persistence
+mechanism, cache key scheme etc.
+
+#### APIService Resource - CA bundle expiry
+
+The [`APIService` resource][8] provides information on the in-cluster target
+`Service` resource that fronts the aggregated API server. The `spec.caBundle`
+property defines the PEM bundle needed to establish the TLS trust between the
+Kubernetes API server and the service. If expired, the communication between the
+Kubernetes API server and the aggregated API server can be disrupted.
+
+This KEP deems the bundling of certificate management tools with the CBT
+components to be out-of-scope. User should incorprate the management of this CA
+bundle into their overall cluster PKI strategy.
 
 ## Design Details
 
@@ -314,87 +343,112 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-The proposed design involves extending CSI with the `VolumeSnapshotDelta` CRD.
-Storage providers can opt in to support this feature by implementing the
-`SNAPSHOT_DELTA` capability in their CSI drivers.
+The proposed design involves extending CSI with the `VolumeSnapshotDelta` and
+`DriverDiscovery` custom resources. Storage providers can opt in to support this
+feature by implementing the `SNAPSHOT_DELTA` capability in their CSI drivers.
 
 The `VolumeSnapshotDelta` resource is a namespace-scoped resource. It must be
-created in the same namespace as the base and target CSI `VolumeSnapshot`s.
+created in the same namespace as the base and target CSI `VolumeSnapshot`s. On
+the other hand, the `DriverDiscovery` resource will be implemented as a
+cluster-scoped resource.
 
 ### CBT Datapath Worklow
 
-A Kubernetes user (can be a human or a computer process) initiates the datapath
-workflow by creating a new `VolumeSnapshotDelta` custom resource. The
-`VolumeSnapshotDelta` controller, deployed as a CSI sidecar in the storage
-provider's CSI driver, watches for new `VolumeSnapshotDelta` resources:
+The CSI CBT is made up of three components:
+
+* An aggregated API server to serve CBT requests, initiated by the creation of
+`VolumeSnapshotDelta` resources
+* A CRD controller that watches and reconciles `DriverDiscovery` resources
+* A [CSI CBT sidecar][9] that makes a CSI driver discoverable by the aggregated
+API server
 
 ![CBT Step 1](./img/cbt-step-01.png)
 
-Instead of satisfying the request directly, the controller constructs a callback
-URL and adds it to the resource's `status` subresource. The user can then use
-the callback URL to fetch the list of changed block metadata:
+When CSI CBT is deployed on a Kubernetes cluster, the `cbt-aggapi` aggregated
+API server registers itself with the `kube-aggregator` to claim the URL path
+based  on the group version defined in the `APIService` resource.
+
+The `driver-discovery` CRD controller starts a reconciler to watch and
+reconciler `DriverDiscovery` resources.
+
+A storage provider that supports CBT functionalities needs to embeds the
+`cbt-http` sidecar in its CSI driver. As the CSI driver initializes, the
+`cbt-http` sidecar publishes itself by creating a `DriverDiscovery` resource
+with information on where the CSI driver's `cbt-http` endpoint is.
+
+With CSI CBT in-place, a user can initiate the datapath workflow by creating a
+new `VolumeSnapshotDelta` resource:
 
 ![CBT Step 2](./img/cbt-step-02.png)
 
-The callback URL points to the `VolumeSnapshotDelta` listener, which runs in
-the same container as the `VolumeSnapshotDelta` controller. The CSI driver
-`Service` resource's FQDN will be used as the hostname of the callback URL, which
-essentially looks like:
+Following the [storage implementation pattern][3] of the `authorization.k8s.io`
+group, the `VolumeSnapshotDelta` is treated as "virtual resource" (like
+`SubjectAccessReview`), where it is created without being persisted in the
+Kubernetes etcd.
 
-```sh
-https://<csi-driver.ns.svc.cluster.local>:<listener-port>/<resource-namespace>/<resource-name>
-```
+The `cbt-aggapi` depends on the Kubernetes API server to authenticate and
+authorize the new request. For more information on how this delegation works,
+see the aggregated API server authentication flow [documentation][10].
 
-The `VolumeSnapshotDelta` listener delegates the authentication and
-authorisation of the request to the Kubernetes API server via the `TokenReview`
-and `SubjectAccessReview` APIs, in order to protect both the `nonResourceURL`
-endpoint as well as access to the `VolumeSnapshotDelta` resources.
+To fulfill the CBT request associated to this new `VolumeSnapshotDelta` resource
+, the `cbt-aggapi` will need to retrieve:
 
-The user must include the `Authorization` header in the request, using an
-authorised service account's secret token as the bearer token. If the user's
-service account is deployed with `automountServiceAccountToken` set to `false`,
-they will have to extract the appropriate token from their secret.
-
-The `VolumeSnapshotDelta` listener then issues a GRPC call to the
-`GetVolumeSnapshotDelta` service on the storage provider's CSI plugin sidecar:
+* The `VolumeSnaphot` resources referenced by the `spec.baseVolumeSnapshotName` and
+`spec.targetVolumeSnapshotName` properties,
+* The bounded `VolumeSnapshotContent` resources referenced by the
+`status.BoundVolumeSnapshotContentName` properties of the `VolumeSnapshot`
+resources,
+* The `DriverDiscovery` resource corresponds to the `spec.driverName` of the
+`VolumeSnapshot` resources
 
 ![CBT Step 3](./img/cbt-step-03.png)
 
-The original `VolumeSnapshotDelta` resource can be retrieved by using the
-identifier (namespace and name) embedded in the URL path, in case there are
-user-provided input parameters which need to be included in the GRPC request.
+If any of these resources don't exist in the cluster, the `cbt-aggapi` service
+will fail the request.
 
-It is the storage provider's CSI plugin responsibility to call the provider's
-CBT endpoint and manage the in-between authentication and authorisation
-protocols.
+The snapshot handles (i.e. snapshot IDs) from the `VolumeSnapshotContent`
+resources along with the pagination parameters found in the
+`VolumeSnapshotDelta` resource are send to the `cbt-http` sidecar in the CSI
+driver as JSON payload over HTTP:
 
-The response payloads are then directly returned to the user from the
-`VolumeSnapshotDelta` listener. This synchronous request/response
-mechanism removes the needs to persist the response payloads in etcd.
+![CBT Step 4](./img/cbt-step-04.png)
 
-Pagination parameters from the storage provider will also be included in the
-listener's response to the user. The user will be responsible for coordinating
-subsequent paginated requests.
+The `DriverDiscovery` resource has the endpoint information of the `Service`
+resource that fronts the `cbt-http` sidecar in its `spec.clientConfig`
+property.
 
-The user can then use these changed block metadata to retrieve the actual data
-blocks. The design and implementation of the block data retrieval segment of the
-datapath is slated for future KEPs.
+The `cbt-http` sidecar then issues a GRPC call to the storage provider's
+`csi-plugin` container, over the host's local Unix socket.
+
+The `csi-plugin` is responsible for invoking the storage provider's
+backend CBT endpoints to fulfill the request. It also takes care of the
+authentication with the storage provider's backend, freeing CSI CBT from this
+concern.
+
+The CBT entries are then returned to the user through `cbt-http` and then
+`cbt-aggapi`, without persisting any of them in the Kubernetes etcd.
+
+Any pagination parameters from the storage provider needed to fetch additional
+data will be included in the response payload to the user. The user will be
+responsible for coordinating subsequent paginated requests, including managing
+the pagination session including recovery from interruption and partition.
 
 ### High Availability Mode
 
-In high availability mode where there may be multiple replicas of the
-`VolumeSnapshotDelta` sidecar, an active/passive leader election process will
-be used to elect a single leader instance, while idling other non-leader
-instances.
+To ensure high availability, CSI CBT can be scaled to run multiple replicas of
+the `cbt-aggapi` aggregated API server.
 
-Non-leader instances will voluntarily fail their readiness probe to remove
-themselves from the `Service`'s request path. Optionally, the `Service` can be
-deployed with its `sessionAffinity` set to `clientIP` to ensure paginated
-requests from the same origin are always directed back to the same leader pod.
+In setup where there may be multiple replicas of the CSI driver, an active/
+passive leader election process will be used to elect a single leader instance
+of the `cbt-http` sidecar, while idling other non-leader instances. Non-leader
+instances will voluntarily fail their readiness probe to remove themselves from
+the `Service`'s request path.
 
 ### API Specification
 
-The section describes the specification of proposed CRD:
+#### VolumeSnapshotDelta Resource
+
+The section describes the specification of `VolumeSnapshotDelta` resource:
 
 ```go
 // VolumeSnapshotDelta represents a VolumeSnapshotDelta resource.
@@ -407,7 +461,6 @@ type VolumeSnapshotDelta struct {
   metav1.ObjectMeta `json:"metadata,omitempty"`
 
   // spec defines the desired characteristics of a snapshot delta requested by a user.
-  // More info: https://kubernetes.io/docs/concepts/storage/volume-snapshots#volumesnapshots
   // Required.
   Spec VolumeSnapshotDeltaSpec `json:"spec"`
 
@@ -419,7 +472,7 @@ type VolumeSnapshotDelta struct {
 // VolumeSnapshotDeltaSpec is the spec of a VolumeSnapshotDelta resource.
 type VolumeSnapshotDeltaSpec struct {
   // The name of the base CSI volume snapshot to use for comparison.
-  // If not specified, return all changed  blocks.
+  // If not specified, return all changed blocks.
   // +optional
   BaseVolumeSnapshotName string `json:"baseVolumeSnapshotName,omitempty"`
 
@@ -430,44 +483,63 @@ type VolumeSnapshotDeltaSpec struct {
   // Defines the type of volume. Default to "block".
   // Required.
   Mode string `json:"mode,omitempty"`
+
+  // Define the maximum number of entries to return in the response.
+  Limit uint64 `json:"limit"`
+
+	// Defines the start of the block index in the response.
+  Offset uint64 `json:"offset"`
 }
 
 // VolumeSnapshotDeltaStatus is the status for a VolumeSnapshotDelta resource
 type VolumeSnapshotDeltaStatus struct {
+  // The list of CBT entries.
+  ChangedBlocks []*ChangedBlocks `json:"changedBlocks;omitempty"`
+
   // Captures any error encountered.
   Error string `json:"error,omitempty"`
-
-  // The Callback URL to send the CBT requests to.
-  CallbackURL string `json:"callbackURL"`
 
   // A very brief description to communicate the current state of the CBT
   // operation.
   State VolumeSnapshotDeltaState `json:"state"`
+
+  // The limit defined in the request.
+  Limit uint64 `json:"limit"`
+
+	// The offset defined in the request.
+  Offset uint64 `json:"offset"`
+
+  // The starting block index of the next request.
+  Continue uint64 `json:"continue"`
+}
+
+// ChangedBlock represents a CBT entry returned by the storage provider.
+type ChangedBlock struct {
+	// Offset defines the start of the block index in the response.
+  Offset uint64 `json:"offset"`
+
+  // The size of the blocks.
+  BlockSizeBytes unit64 `json:"blockSizeBytes"`
+
+  // The optional token used to retrieve the actual data block at the given
+  // offset.
+  DataToken *DataToken `json:"dataToken,omitempty"`
 }
 
 type VolumeSnaphotDeltaState int
 
 const (
-  TransferringData VolumeSnapshotDeltaState = iota
-  Failed
-  Pending
-  URLReady
-)
+  // Successfully retrieved chunks of CBT entries starting at offset, and ending
+  // at offset + limit, with no more data left.
+  Completed VolumeSnapshotDeltaState = iota
 
-func (s VolumeSnapshotDeltaState) String() string {
-  switch s {
-  case TransferringData:
-    return "transferring-data"
-  case Failed:
-    return "failed"
-  case URLReady:
-    return "url-ready"
-  case Pending:
-    fallthrough
-  default:
-    return "pending"
-  }
-}
+  // Similar to `Completed`, but with more data available.
+  Continue
+
+  // Something went wrong while retrieving the CBT entries.
+  // `status.error` should have the error message.
+  Failed VolumeSnapshotDeltaState = iota
+)
 
 // VolumeSnapshotDeltaList is a list of VolumeSnapshotDelta resources
 type VolumeSnapshotDeltaList struct {
@@ -476,7 +548,7 @@ type VolumeSnapshotDeltaList struct {
   // +optional
   metav1.ListMeta `json:"metadata"`
 
-  // list of VolumeSnapshotDeltas.
+  // List of VolumeSnapshotDeltas.
   Items []VolumeSnapshotDelta `json:"items"`
 }
 ```
@@ -547,13 +619,13 @@ message VolumeSnapshotDeltaResponse {
 }
 
 message BlockVolumeSnapshotDelta {
-  // The list of changed blocks deltas. If empty, it means there are no
-  // differences between the base and target snapshots.
+  // The list of changed blocks. If empty, it means there are no differences
+  // between the base and target snapshots.
   // This field is OPTIONAL.
-  repeated ChangedBlockDelta changed_block_deltas = 1;
+  repeated ChangedBlock changed_block = 1;
 }
 
-message ChangedBlockDelta {
+message ChangedBlock {
   // The block logical offset on the volume.
   // This field is REQUIRED.
   uint64 offset = 1;
@@ -582,6 +654,67 @@ message DataToken {
   // the time of issuance with this value.
   // This field is REQUIRED.
   .google.protobuf.Duration ttl_seconds = 3;
+}
+```
+
+#### DriverDiscovery Resource
+
+The section describes the specification of `DriverDiscovery` resource:
+
+```go
+// DriverDiscovery represents a DriverDiscovery resource.
+type DriverDiscovery struct {
+  metav1.TypeMeta `json:",inline"`
+
+  // Standard object's metadata.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+  // +optional
+  metav1.ObjectMeta `json:"metadata,omitempty"`
+
+  // spec defines the desired characteristics of the driver discovery resource.
+  // Required.
+  Spec DriverDiscoverySpec `json:"spec"`
+
+  // status represents the current information of a snapshot delta.
+  // +optional
+  Status DriverDiscoveryStatus `json:"status,omitempty"`
+}
+
+// DriverDiscoverySpec is the spec of a DriverDiscovery resource.
+type DriverDiscoverySpec struct {
+  // Name of the CSI driver.
+  DriverName string `json: "driverName"`
+
+  // Service endpoint configuration of the CBT CSI driver. The CBT aggregated
+  // API server sends the CBT request to this service.
+  ClientConfig ClientConfig `json:"clientConfig"`
+}
+
+// ClientConfig contains the service endpoint configuration of the CBT CSI
+// driver. The CBT aggregated API server sends the CBT request to this service.
+type ClientConfig struct {
+  // Service that fronts the CSI driver.
+  Service Service `json:"service"`
+
+  // PEM CA bundle used to establish TLS trust between the aggregated API server
+  // and the CSI driver.
+  CABundle string `json:"caBundle"`
+}
+
+// Service is an in-cluster Kubernetes Service resource that fronts the CSI
+// driver.
+type Service struct {
+  // Name of the service.
+  Name string `json:"name"`
+
+  // Namespace of the service.
+  Namespace string `json:"namespace"`
+
+  // Path of the endpoint.
+  Path string `json:"path"`
+
+  // Port that the service listens at.
+  Port uint32 `json:"port"`
 }
 ```
 
@@ -1322,3 +1455,18 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+[0]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/apiserver-aggregation/
+[1]: https://kubernetes-csi.github.io/docs/sidecar-containers.html
+[2]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/
+[3]: https://github.com/kubernetes/kubernetes/blob/cb057985ce2c1366eb7bf6adbcaa8af63a212bb8/pkg/registry/authorization/subjectaccessreview/rest.go#L55-L83
+[4]: https://kubernetes.io/docs/concepts/cluster-administration/flow-control/
+[5]: https://kubernetes.io/docs/concepts/cluster-administration/flow-control/#suggested-configuration-objects
+[6]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/apiserver-aggregation/#response-latency
+[7]: https://en.wikipedia.org/wiki/Thundering_herd_problem
+[8]: https://kubernetes.io/docs/tasks/extend-kubernetes/configure-aggregation-layer/#register-apiservice-objects
+[9]: https://kubernetes-csi.github.io/docs/sidecar-containers.html
+[10]: https://kubernetes.io/docs/tasks/extend-kubernetes/configure-aggregation-layer/#authentication-flow
+[11]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#custom-controllers
+[12]: https://github.com/kubernetes-sigs/metrics-server
+[13]: https://kubernetes.io/docs/concepts/cluster-administration/logging/
