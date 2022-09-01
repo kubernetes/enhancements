@@ -76,7 +76,7 @@ As of the 1.26 release, enhancements from this repo are visualized in the Enhanc
 
 Links:
 
-- [1.26 Milestone](INEED A BITLY LINK)
+- [1.26 Milestone](http://bit.ly/k8s126-enhancements)
 
 ## Enhancements Tracking Spreadsheet (deprecated)
 
