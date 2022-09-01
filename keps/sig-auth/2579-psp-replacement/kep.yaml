@@ -9,7 +9,7 @@ participating-sigs:
   - sig-windows          # For Windows support
   - sig-node             # For Pod Security Standards definition
   - sig-instrumentation  # For metrics definition
-status: implementable
+status: implemented
 creation-date: 2021-03-19
 reviewers:
   - "@mrunalp"  # SIG-Node representative, Pod Security Standards

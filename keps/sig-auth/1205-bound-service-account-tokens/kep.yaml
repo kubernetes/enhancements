@@ -13,7 +13,7 @@ approvers:
   - "@liggitt"
 creation-date: 2019-08-06
 last-updated: 2021-04-29
-status: implementable
+status: implemented
 replaces:
   - "/keps/sig-storage/2451-service-account-token-volumes"
 stage: stable
