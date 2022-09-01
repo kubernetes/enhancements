@@ -7,7 +7,7 @@ participating-sigs:
   - sig-node
   - sig-windows
   - sig-auth
-status: implementable
+status: implemented
 reviewers:
   - "@marosset"
   - "@aravindhp"

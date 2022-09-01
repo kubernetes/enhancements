@@ -410,9 +410,11 @@ Disabling the `IdentifyPodOS` featuregate will help in determining the problem.
 ## Implementation History
 - 2021-09-08: Initial KEP merged
 - 2021-10-29: Initial implementation PR merged
-- 2022-01-19: Graduate the feature to Beta proposed 
+- 2021-12-07: Feature introduced in v1.23.0 as `Alpha`
+- 2022-01-19: Graduate the feature to Beta proposed
+- 2022-05-03: Graduated to `Beta` in v1.24.0
 - 2022-05-09: Graduate the feature to GA proposed
-
+- 2022-08-23: Graduated to `Stable` in v1.25.0
 
 ## Drawbacks
 
