@@ -778,80 +778,42 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 Prerequisites:
 
-* Install `etcd` per instructions in sig-testing
-[integration tests documentation]
-* Create two CSI `VolumeSnapshot`s backed by the CSI [host path driver].
-* Inject a mock handler in the `VolumeSnapshotDelta` listener
+* Create two CSI `VolumeSnapshot` test resources backed by the CSI [host path
+driver][14].
+* Inject a mock handler in the `cbt-aggapi` aggregated API server to return mock
+CBT entries.
 
-[integration tests documentation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/integration-tests.md#install-etcd-dependency
-[host path driver]: https://github.com/kubernetes-csi/csi-driver-host-path
 
-###### Test Suite 1 - Validate Required Fields
+###### Test Suite 1 - VolumeSnapshotDelta Validation
 
 Test case 1:
 
-* Description: Create a `VolumeSnapshotDelta` custom resource referencing the two
-base and target `VolumeSnapshot`s in the fixture. Then send a HTTP request to
-the callback URL.
-* Expected result: `status` subresource is updated with the new callback URL.
-The HTTP listener returns mock response payloads along with a HTTP 200 status
-code.
+* Requirement: Handle existing base and target `VolumeSnapshot` resources.
+* Description: Create a `VolumeSnapshotDelta` resource referencing the two base
+and target `VolumeSnapshot` fixtures.
+* Expected result: `status` subresource is updated with the mock CBT entries.
 
 Test case 2:
 
-* Description: Create `VolumeSnapshotDelta` custom resource referencing the
-target `VolumeSnapshot`, with the base `VolumeSnapshot` left empty. Then send a
-HTTP request to the callback URL.
-* Expected result: `status` subresource is updated with the new callback URL.
-The HTTP listener returns mock response payloads along with a HTTP 200 status
-code.
 * Requirement: The base `VolumeSnapshot` is an optional field.
+* Description: Create `VolumeSnapshotDelta` resource referencing the target
+`VolumeSnapshot` fixture, with the base `VolumeSnapshot` left empty.
+* Expected result: `status` subresource is updated with the mock CBT entries.
 
 Test case 3:
 
-* Description: Create `VolumeSnapshotDelta` custom resource referencing the
-base `VolumeSnapshot`, with the target `VolumeSnapshot` left empty. Then send
-a HTTP request to the callback URL.
-* Expected result: `status` subresource is updated with the new callback URL.
-The HTTP listener returns with a HTTP 400 status code.
 * Requirement: The target `VolumeSnapshot` is a required field.
+* Description: Create `VolumeSnapshotDelta` custom resource referencing the
+base `VolumeSnapshot`, with the target `VolumeSnapshot` left empty.
+* Expected result: The aggregated API server failed to request. The `status`
+subresource is updated with `status.State` set to `Failed` and `status.Error`
+set to the reason for the failure.
 
 Test case 4:
 
-* Description: Create `VolumeSnapshotDelta` custom resource referencing a
-non-existing base and target `VolumeSnapshot`s. Then send a HTTP request to the
-callback URL.
-* Expected result: `status` subresource is updated with the new callback URL.
-The HTTP listener returns with a HTTP 400 status code.
-* Requirement: The target `VolumeSnapshot` is a required field.
-
-###### Test Suite 2 - Resource Update And Deletion
-
-Test case 1:
-
-* Description: Update an existing `VolumeSnapshotDelta` custom resource to
-reference a different target `VolumeSnapshot`.
-* Expected result: Custom resource is updated successfully. Its `status`
-subresource is updated to include callback URL and `url-ready` state.
-
-Test case 2:
-
-* Description: Delete an existing `VolumeSnapshotDelta` custom resource.
-* Expected result: Custom resource is deleted successfully.
-
-###### Test Suite 3 - Callback Listener
-
-Test case 1:
-
-Send a HTTP request with a fake `Authorisation` bearer token to the
-`VolumeSnapshotDelta` callback listener's fake handler.
-* Expected result: The listener should return a HTTP 200 `OK` status code.
-
-Test case 2:
-
-* Description: Send a HTTP request without an  `Authorisation` bearer token to the
-`VolumeSnapshotDelta` callback listener's fake handler.
-* Expected result: The listener should return a HTTP 403 `Forbidden` status code.
+* Requirement: The target `VolumeSnapshot` must exist.
+* Description: Repeat test case 3 with a non-existing target `VolumeSnapshot`.
+* Expected result: Same as that of test case 3.
 
 ##### e2e tests
 
@@ -867,39 +829,32 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 Prerequisites:
 
-* Use `kubetest` to build Kubernetes and run the tests per sig-testing
-[e2e tests documentation].
-* Create two CSI `VolumeSnapshot`s backed by the CSI [host path driver].
-* Deploy a sample client to initiate the CBT datapath API and send CBT requests
-to the `VolumeSnapshotDelta` listener.
+* Use `kubetest` to build Kubernetes and run the tests per sig-testing [e2e
+tests documentation][15].
+* Create two CSI `VolumeSnapshot` test resources backed by the CSI [host path
+driver][14].
+* Deploy a sample client to initiate the CBT request
 * Deploy a mock CSI driver plugin to returned fake CBT payloads.
 
-[e2e tests documentation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#building-kubernetes-and-running-the-tests
+Initial e2e test flow:
 
-For alpha release, the initial e2e test flow is defined as follows:
-
-* When the test is started, the sample client creates a `VolumeSnapshotDelta`
-custom resource referencing the two base and target `VolumeSnapshot`s in the
-fixture.
-* The `VolumeSnapshotDelta` controller update its `status` subresource to
-include a callback URL and set its state to `url-ready`.
-* The sample client extracts the callback URL from the `status` subresource,
-and sends its CBT requests to the `VolumeSnapshotDelta` listener at the
-callback URL.
-* The callback listener authenticates and authorises the CBT requests by
-delegating to the Kubernetes API server via the `TokenReview` and
-`SubjectAccessReview` APIs.
-* Once the request is authenticated and authorised, the listener uses the
-identifier (resource's name and namespace) embedded in the callback URL to
-get the original `VolumeSnapshotDelta` custom resource, in order to retrieve the
-user-provided input parameters. These parameters will be included in the
-next GRPC request to the mock CSI driver plugin.
-* The listener sends the GRPC request to the mock CSI driver plugin.
-* The mock plugin responds with a list of fake CBT data and pagination
-parameters to the callback listener.
-* The listener forwards the response payloads back to the sample client.
-* The sample client uses the pagination parameters to fetch the second page of
-CBT data.
+* Sample client creates a `VolumeSnapshotDelta` resource referencing the two
+base and target `VolumeSnapshot` test resources.
+* The aggregated API server validates the existence of the two `VolumeSnapshot`
+resources.
+* The `cbt-aggapi` aggregated API server fetches the `DriverDiscovery` resource
+based on the driver name specified in the `VolumeSnapshot` resource.
+* It also discovers the CSI driver endpoint based on information found in the
+`spec.clientConfig` property of the `DriverDiscovery` resource.
+* The CBT request is then forwarded to the service endpoint of the `cbt-http`
+sidecar.
+* The `cbt-http` sidecar then sends a GRPC request to the mock CSI driver
+plugin.
+* The mock plugin responds with a list of fake CBT entries.
+* The `cbt-http` forwards the response payload back to the `cbt-aggapi`
+aggregated API server.
+* The response payload is appended to the `VolumeSnapshotDelta`'s `status`
+subresource.
 
 ### Graduation Criteria
 
@@ -968,14 +923,12 @@ in back-to-back releases.
 #### Alpha
 
 - Completed functionalities include:
-  - Approved specification of the `VolumeSnapshotDelta` CRD and CSI GRPC
-services
-  - Ability to create, update, delete, retrieve and watch `VolumeSnapshotDelta`
-custom resources.
-  - Validator to enforce validation criteria like missing required fields.
-  - Authentication and authorisation delegation to the Kubernetes API server.
-  - Implementation of the CSI GRPC client-side logic on the
-`VolumeSnapshotDelta` listener.
+  - Approved specification of the `VolumeSnapshotDelta` and `DriverDiscovery`
+custom resources
+  - Approved specification of the CSI CBT GRPC service
+  - Ability to create `VolumeSnapshotDelta` resource.
+  - Ability to reconcile `DriverDiscovery` resource.
+  - Ability to enforce validation criteria like missing required fields.
 - Initial e2e tests completed and enabled.
 - Since this is an out-of-tree CSI component, no feature flag is required.
 
@@ -1470,3 +1423,5 @@ SIG to get the process for these resources started right away.
 [11]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#custom-controllers
 [12]: https://github.com/kubernetes-sigs/metrics-server
 [13]: https://kubernetes.io/docs/concepts/cluster-administration/logging/
+[14]: https://github.com/kubernetes-csi/csi-driver-host-path
+[15]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#building-kubernetes-and-running-the-tests
