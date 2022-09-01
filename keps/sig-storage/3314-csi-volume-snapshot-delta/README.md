@@ -1008,8 +1008,8 @@ well as the [existing list] of feature gates.
   - Components depending on the feature gate:
 - [x] Other
   - Describe the mechanism: The new component will be implemented as an
-    out-of-tree CSI sidecar container which storage providers can include in
-    their CSI drivers, if they choose to support this feature.
+out-of-tree CSI component which storage providers can include in their CSI
+drivers, if they choose to support this feature.
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -1037,17 +1037,15 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, the storage provider can remove the `VolumeSnapshotDelta` sidecar
-container from their CSI drivers in order to disable the CSI CBT feature.
-All new `VolumeSnapshotDelta` resources will be ignored. Subsequent CBT
-requests to existing callback URLs will fail with HTTP 404.
+Yes, the storage provider can uninstall the `cbt-aggapi` aggregated API server
+and `cbt-http` sidecar container from their CSI drivers to disable CSI CBT. All
+new `VolumeSnapshotDelta` resources will be ignored.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The `VolumeSnapshotDelta` controller will re-assess the status of all the
-existing `VolumeSnapshotDelta` resources and provision callback URLs for those
-that are not in the `url-ready` state. Users will be responsible for restarting
-previously incomplete CBT requests to the callback listener.
+Since the `VolumeSnapshotDelta` resources are not persisted, there will be no
+unintended re-evaluation and re-execution of the CSI CBT logic, when CSI CBT is
+re-enabled. Users will have to re-submit their CBT request.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1064,9 +1062,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Since this is an out-of-tree CSI component, Kubernetes feature gates are not
-involved. Out-of-tree CSI test suites will be added to install and uninstall the
-`VolumeSnapshotDelta` sidecar.
+Since this is an out-of-tree CSI component, Kubernetes feature enablement/
+disablement is not necessary.
 
 ### Rollout, Upgrade and Rollback Planning
 
