@@ -255,7 +255,7 @@ The list of roster members will be maintained in a YAML file in https://github.c
 People on the roster can be in one of three roles: Shadow, Member, or Emeritus.
 
 At the time of creation, all former role leads or release leads from any release will be added as emeritus members, or a member if they want.
-The 1.25 EA will lead discussions around which shadows from 1.25 should be placed at the member or shadow level on the release team roster.
+The 1.26 Emeritus Advisor (EA) will lead discussions around which shadows from 1.26 should be placed at the member or shadow level on the release team roster.
 
 Roster Shadows may leave at any time by opening a PR to remove themselves.
 Shadows that do not join a release team for two consecutive releases will generally be removed (although this is at the discretion of SIG Release).
@@ -274,7 +274,7 @@ Anyone may sign up to become a shadow in the future at any time.
 
 ### Release Team Selection
 
-Starting with the Kubernetes 1.26 release team:
+Starting with the Kubernetes 1.27 release team:
 
 Each release team area, with the exception of the lead, will build their teams from a combination of members and shadows from the roster.
 The expected distribution for each area is one lead (who will themselves be a roster member), two roster members, and two roster shadows.
@@ -852,7 +852,7 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
-- Kubernetes 1.26: GA and first use
+- Kubernetes 1.27: Stable and first use
 
 ## Drawbacks
 
