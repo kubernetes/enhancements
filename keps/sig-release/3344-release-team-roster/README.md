@@ -205,7 +205,7 @@ There are a number of qualities to the current process that are desirable, and s
   An entirely static, or effectively static, team is not desirable. 
 
 Balancing these desires, this KEP introduces a long-lived "roster" of release team members.
-This roster is used to assemble release teams instead of a new shadow survey each time.
+This roster is used to assemble release teams with recurring contributors in addition to the shadow survey for new contributors.
 
 <!--
 This section is for explicitly listing the motivation, goals, and non-goals of
@@ -251,8 +251,9 @@ nitty-gritty.
 ### Release Team Roster
 
 We will add to SIG Release a "Release Team Roster".
-The list of roster members will be maintained in a YAML file in https://github.com/kubernetes/sig-release under a new `release-team/roster` directory.
-People on the roster can be in one of three roles: Shadow, Member, or Emeritus.
+The list of roster members will be maintained in the group YAML file in github.com/kubernetes/k8s.io under `groups/sig-release/groups.yaml`.
+It will be a new group named `release-team-roster`.
+People on the roster can be in one of two roles: Member for current members, or Emeritus for former members.
 
 At the time of creation, all former role leads or release leads from any release will be added as emeritus members, or a member if they want.
 The 1.26 Emeritus Advisor (EA) will lead discussions around which shadows from 1.26 should be placed at the member or shadow level on the release team roster.
@@ -269,8 +270,8 @@ This is to avoid confusion as to what a "shadow" is on the release team, as a "l
 
 ### Shadow Survey
 
-The per-release shadow selection survey will be replaced with a rolling "expression of interest" form.
-Anyone may sign up to become a shadow in the future at any time.
+The existing shadow survey will still exist, but will only be used for non-roster members.
+This will be brand new contributors, and possibly former contributors who did not join the release team roster after their previous cycle for any reason.
 
 ### Release Team Selection
 
