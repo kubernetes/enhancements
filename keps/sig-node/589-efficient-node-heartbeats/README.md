@@ -37,7 +37,7 @@ means that etcd enters "alert mode" and stops accepting all write requests.
 The underlying root cause is combination of:
 
 - etcd keeping both current state and transaction log with copy-on-write
-- node heartbeats being pontetially very large objects (note that images
+- node heartbeats being potentially very large objects (note that images
   are only one potential problem, the second are volumes and customers
   want to mount 100+ volumes to a single node) - they may easily exceed 15kB;
   even though the patch send over network is small, in etcd we store the
