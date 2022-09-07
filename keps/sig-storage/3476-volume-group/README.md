@@ -1,38 +1,9 @@
----
-title: Volume Group
-authors:
-  - "@xing-yang"
-  - "@jingxu97"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@msau42"
-  - "@saad-ali"
-  - "@thockin"
-approvers:
-  - "@msau42"
-  - "@saad-ali"
-  - "@thockin"
-editor: TBD
-creation-date: 2020-02-12
-last-updated: 2022-03-24
-status: provisional
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
-# Title
-
-Volume Group
+# KEP-3476: Volume Group and Group Snapshot
 
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -84,7 +55,60 @@ Volume Group
     - [ModifyVolume](#modifyvolume)
     - [Create VolumeGroup with Selector](#create-volumegroup-with-selector)
   - [Example Yaml Files for Volume Placement](#example-yaml-files-for-volume-placement)
+- [Graduation Criteria](#graduation-criteria)
+  - [Alpha](#alpha)
+  - [Alpha -&gt; Beta](#alpha---beta)
+  - [Beta -&gt; GA](#beta---ga)
+- [Test Plan](#test-plan)
+  - [Unit tests](#unit-tests)
+  - [E2E tests](#e2e-tests)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [ ] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -140,18 +164,18 @@ This proposal introduces new CRDs VolumeGroup, VolumeGroupContent, VolumeGroupCl
 
 Create new VolumeGroup can be done in several ways:
 
-Phase 1:
-1. Create an empty group first, then create a new PVC with the group name. This will create a new volume and add that volume to the already created group. When deleting this volume group, all volumes in the group will be deleted together with the group. A CSI driver supporting VOLUME_GROUP controller capability MUST implement this feature.
+Phase 1 (Note: only Phase 1 will be covered in this KEP which is targeting Alpha in K8s v1.26):
+1. Create an empty group first, then create a new PVC with the group name. This will create a new volume and add that volume to the already created group. When deleting this volume group, all volumes in the group will be deleted together with the group. A CSI driver supporting CREATE_DELETE_VOLUME_GROUP controller capability MUST implement this feature.
 2. Create an empty group first, then add an existing PVC to the group one by one. A CSI driver supporting VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME MUST implement this feature.
 
-Phase 2:
+Phase 2 (After v1.26):
 1. Create a new volume group from an existing group snapshot in one step. Design details will be added in a future KEP.
 2. Non-goal: Create a new empty group and in the same time create new empty PVCs and add to the new group.
 
 ### Modify VolumeGroup
 
 Modify an existing VolumeGroup:
-1. Create a new volume with an existing VolumeGroup name will create a new volume and add it to the group. Option 1 of creating VolumeGroup above falls into this case. As mentioned earlier, a CSI driver supporting VOLUME_GROUP MUST implement this feature.
+1. Create a new volume with an existing VolumeGroup name will create a new volume and add it to the group. Option 1 of creating VolumeGroup above falls into this case. As mentioned earlier, a CSI driver supporting CREATE_DELETE_VOLUME_GROUP MUST implement this feature.
 2. Add an existing volume to an existing VolumeGroup or remove a volume from a VolumeGroup. Option 2 of creating VolumeGroup above falls into this case. As mentioned earlier, a CSI driver supporting VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME MUST implement this feature.
 
 ### Create and Modify VolumeGroup
@@ -165,7 +189,7 @@ VolumeGroups can be created and/or modified in several ways as described in the 
 * User creates a new PVC with an existing VolumeGroup name created above. As a result, a new PVC is created and added to VolumeGroup. VolumeGroup is modified so Status has this new PVC in PVCList.
 * External-provisioner will be modified so that VolumeGroupName will be passed to the CSI driver when creating a volume.
 
-Only CSI drivers supporting VOLUME_GROUP capability can support the volume group this way.
+Only CSI drivers supporting CREATE_DELETE_VOLUME_GROUP capability can support the volume group this way.
 
 When a new PVC is created with the existing VolumeGroup name, the VolumeGroup will be modified and the PVC will be added to PVCList in the Status, and the VolumeGroupContent will also be modified and the PV will be added to the PVList in the Status.
 
@@ -173,7 +197,7 @@ The same PVC can belong to different groups, i.e., different types of groups or 
 
 #### Modify VolumeGroup with existing PVCs
 
-We can add an existing PVC to the group or remove a PVC from the group without deleting it. A VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME capability will be added to CSI Spec. Only CSI drivers supporting both VOLUME_GROUP and VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME capabilities can support the volume group this way.
+We can add an existing PVC to the group or remove a PVC from the group without deleting it. A VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME capability will be added to CSI Spec. Only CSI drivers supporting both CREATE_DELETE_VOLUME_GROUP and VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME capabilities can support the volume group this way.
 
 * Admin creates a VolumeGroupClass, with the SupportVolumeGroupSnapshot boolean flag set to true.
 * User creates a new empty VolumeGroup, specifying the above VolumeGroupClass. A new empty VolumeGroupContent will also be created and bound to the VolumeGroup.
@@ -203,7 +227,7 @@ The VolumeGroup controller will retrieve all volumeHandles in the VolumeGroup fr
 
 ### Create VolumeGroupSnapshot
 
-A VolumeGroupSnapshot can be created with a VolumeGroup as the source if the CSI driver supports the GROUP_SNAPSHOT capability.
+A VolumeGroupSnapshot can be created with a VolumeGroup as the source if the CSI driver supports the CREATE_DELETE_GROUP_SNAPSHOT capability.
 
 #### Dynamic provisioning
 
@@ -245,7 +269,7 @@ The VolumeGroupSnapshot controller will retrieve all volumeSnapshotHandles in th
 
 ### Delete VolumeGroupSnapshot
 
-A VolumeGroupSnapshot can be deleted if the CSI driver supports the GROUP_SNAPSHOT capability.
+A VolumeGroupSnapshot can be deleted if the CSI driver supports the CREATE_DELETE_GROUP_SNAPSHOT capability.
 * When a VolumeGroupSnapshot is deleted, the VolumeGroupSnapshot controller will call the DeleteVolumeGroupSnapshot CSI function as well as DeleteSnapshot CSI functions.
   * Since CSI driver handles individual snapshot creation in CreateVolumeGroupSnapshot, it should handle individual snapshot deletion in DeleteVolumeGroupSnapshot.
 * DeleteSnapshot on a single snapshot that belongs to a group snapshot is not allowed.
@@ -322,7 +346,7 @@ Type VolumeGroupSpec struct {
 
         // Phase 2
         // +optional
-        VolumeGroupSource *VolumeGroupSource
+        // VolumeGroupSource *VolumeGroupSource
 }
 
 // Phase 2: VolumeGroupSource will be in Phase 2
@@ -732,16 +756,16 @@ Snapshot controller will be modified to update VolumeSnapshot status. External s
 
 #### CSI Capabilities
 
-New controller capabilities VOLUME_GROUP, VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME, GROUP_SNAPSHOT, INDIVIDUAL_SNAPSHOT_RESTORE, GET_VOLUME_GROUP, GET_VOLUME_GROUP_SNAPSHOT, LIST_VOLUME_GROUPS, LIST_VOLUME_GROUP_SNAPSHOTS will be added.
+New controller capabilities CREATE_DELETE_VOLUME_GROUP, VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME, CREATE_DELETE_GROUP_SNAPSHOT, INDIVIDUAL_SNAPSHOT_RESTORE, GET_VOLUME_GROUP, GET_VOLUME_GROUP_SNAPSHOT, LIST_VOLUME_GROUPS, LIST_VOLUME_GROUP_SNAPSHOTS will be added.
 
-* VOLUME_GROUP:
+* CREATE_DELETE_VOLUME_GROUP:
   Indicates that the controller plugin supports creating and deleting a volume group.
 
 * VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME:
   Indicates that the controller plugin supports adding an existing volume to a volume
   group and removing a volume from a volume group without deleting it.
 
-* GROUP_SNAPSHOT:
+* CREATE_DELETE_GROUP_SNAPSHOT:
   Indicates that the controller plugin supports creating a snapshot of all volumes
   in a volume group.
 
@@ -958,7 +982,7 @@ message ModifyVolumeGroupRequest {
   // If no volume_ids are provided, all existing volumes will
   // be removed from the group.
   // This field is OPTIONAL.
-  repeated string volume_ids = 3;
+  repeated string volume_ids = 2;
 }
 
 message ModifyVolumeGroupResponse {
@@ -1443,3 +1467,214 @@ spec:
 ```
 
 If both placement group and volume group with groupSnapshot support are defined, it is possible for the same volume to join both groups. For example, a volume group with groupSnapshot support may include volume members from two placement groups as they belong to the same application.
+
+## Graduation Criteria
+### Alpha
+* Initial feature implementation, including:
+  * Volume group.
+  * Volume group snapshot.
+* Sample implementation in the csi-driver-host-path.
+* Add basic unit tests.
+
+### Alpha -> Beta
+* Unit tests and e2e tests outlined in design proposal implemented.
+
+### Beta -> GA
+* Volume group and group snapshot support is added to multiple CSI drivers.
+* Volume group and group snapshot feature deployed in production and have gone through at least one K8s upgrade.
+
+## Test Plan
+### Unit tests
+* Unit tests for external volume group and group snapshot controller.
+* Unit tests for modified code path of external-provisioner and external-snapshotter.
+
+### E2E tests
+* e2e tests for external volume group and group snapshot controller.
+* e2e tests for modified code path of external-provisioner and external-snapshotter.
+* Add stress and scale tests before moving from beta to GA.
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Other
+    - Describe the mechanism:
+      The external volume group and group snapshot controllers do not have a
+      feature gate because they are out of tree.
+      It is enabled when these external controller sidecars are deployed with the CSI driver.
+      There are proposed changes in PersistentVolumeClaim and PersistentVolume core API objects. These changes need to be controlled by a feature gate.
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+      From the controller side, it only affects the external controller sidecars.
+      For the changes in PVC and PV, enabling / disabling the feature does require downtime of the control plane.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      No.
+
+* **Does enabling the feature change any default behavior?**
+  Yes. Enabling the feature can allow a new PVC to be created and added to a VolumeGroup. Enabling the feature can also allow a VolumeSnapshot to be created as part of the VolumeSnapshotGroup.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  Yes. All VolumeGroup and VolumeGroupSnapshot API objects need to be deleted before this feature can be truly disabled.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  We will be able to create new VolumeGroup and VolumeGroupSnapshot API objects again.
+
+* **Are there any tests for feature enablement/disablement?**
+  Unit tests will be added for the in-tree feature enable/disablement.
+  Since there is no feature gate for this feature on the external controller side and the only way to
+  enable or disable this feature is to install or unistall the sidecar, we cannot write
+  tests for feature enablement/disablement.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+
+* **What specific metrics should inform a rollback?**
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  <!--
+  At a high level, this usually will be in the form of "high percentile of SLI
+  per day <= X". It's impossible to provide comprehensive guidance, but at the very
+  high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99,9% of /health requests per day finish with 200 code
+  -->
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+  <!--
+  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+  implementation difficulties, etc.).
+  -->
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  For each of these, fill in the following—thinking about running existing user workloads
+  and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]:
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  Describe them, providing:
+  - API call type (e.g. PATCH pods): new APIs VolumeGroup, VolumeGroupContent, VolumeGroupClass, VolumeGroupSnapshot, VolumeGroupSnapshotContent, VolumeGroupSnapshotClass
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+  focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+
+* **Will enabling / using this feature result in introducing new API types?**
+  Describe them, providing:
+  - API type:
+  - Supported number of objects per cluster:
+  - Supported number of objects per namespace (for namespace-scoped objects):
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+  Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B):
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+  Think about adding additional work or introducing new steps in between
+  (e.g. need to do X to start a container), etc. Please describe the details.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  Things to keep in mind include: additional in-memory state, additional
+  non-trivial computations, excessive access to disks (including increased log
+  volume), significant amount of data sent and/or received over network, etc.
+  This through this both in small and large cases, again with respect to the
+  [supported limits].
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+* **What are other known failure modes?**
+  For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+
+    - Testing: Are there any tests for failure mode? If not, describe why.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
+## Implementation History

@@ -1,0 +1,35 @@
+title: Volume Group and Group Snapshot 
+kep-number: 3476 
+authors:
+  - "@xing-yang"
+  - "@jingxu97"
+owning-sig: sig-storage
+participating-sigs:
+status: implementable
+creation-date: 2020-02-12
+reviewers:
+  - "@msau42"
+  - "@saad-ali"
+  - "@thockin"
+approvers:
+  - "@msau42"
+  - "@saad-ali"
+  - "@thockin"
+see-also:
+replaces:
+
+latest-milestone: "v1.26"
+stage: "alpha"
+milestone:
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.28"
+
+feature-gates:
+  - name: VolumeGroup
+    components:
+      - kube-controller-manager
+      - kube-apiserver
+disable-supported: true
+
+metrics:
