@@ -6,8 +6,8 @@ kep-number: "4242"
 authors: ['@logicalhan', '@dgrisonnet', '@coffeepac']
 owning-sig: sig-instrumentation
 participating-sigs: [sig-architecture, sig-instrumentation]
-reviewers: ['@dashpole', '@ehashman']
-approvers: []
+reviewers: ['@dashpole']
+approvers: ['@dashpole']
 prr-approvers: ['@ehashman']
 creation-date: "2022-09-05"
 last-updated: v1.26
