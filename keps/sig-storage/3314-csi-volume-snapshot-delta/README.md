@@ -488,7 +488,7 @@ type VolumeSnapshotDeltaSpec struct {
   // Define the maximum number of entries to return in the response.
   Limit uint64 `json:"limit"`
 
-	// Defines the start of the block index in the response.
+  // Defines the start of the block index in the response.
   Offset uint64 `json:"offset"`
 }
 
@@ -507,7 +507,7 @@ type VolumeSnapshotDeltaStatus struct {
   // The limit defined in the request.
   Limit uint64 `json:"limit"`
 
-	// The offset defined in the request.
+  // The offset defined in the request.
   Offset uint64 `json:"offset"`
 
   // The starting block index of the next request.
@@ -516,7 +516,7 @@ type VolumeSnapshotDeltaStatus struct {
 
 // ChangedBlock represents a CBT entry returned by the storage provider.
 type ChangedBlock struct {
-	// Offset defines the start of the block index in the response.
+  // Offset defines the start of the block index in the response.
   Offset uint64 `json:"offset"`
 
   // The size of the blocks.
