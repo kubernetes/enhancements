@@ -366,7 +366,8 @@ API server
 
 When CSI CBT is deployed on a Kubernetes cluster, the `cbt-aggapi` aggregated
 API server registers itself with the `kube-aggregator` to claim the URL path
-based  on the group version defined in the `APIService` resource.
+based of the `v1alpha1.cbt.storage.k8s.io` group version, as defined in the
+`APIService` resource.
 
 The `driver-discovery` CRD controller starts a reconciler to watch and
 reconciler `DriverDiscovery` resources.
