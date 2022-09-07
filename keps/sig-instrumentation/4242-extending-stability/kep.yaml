@@ -9,11 +9,11 @@ participating-sigs: [sig-architecture, sig-instrumentation]
 reviewers: ['@dashpole', '@ehashman']
 approvers: []
 prr-approvers: ['@ehashman']
-creation-date: "2021-06-27"
-last-updated: v1.24
+creation-date: "2022-09-05"
+last-updated: v1.26
 status: provisional
 stage: "ALPHA"
-latest-milestone: "v1.24"
+latest-milestone: "v1.26"
 milestone:
     alpha: ""
     beta: ""
