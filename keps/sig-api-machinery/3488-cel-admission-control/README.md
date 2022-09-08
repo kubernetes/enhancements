@@ -86,7 +86,6 @@ Rules](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machi
 feature that graduated to beta in 1.25, but with a focus on the policy
 enforcement capabilities of validating admission control.
 
-
 ## Motivation
 
 This KEP will lower the infrastructure barrier to enforcing customizable
@@ -96,7 +95,6 @@ adhere to best practices of both K8s and its extensions.
 Currently the way custom policies are enforced are via admission
 webhooks. Admission webhooks are extremely flexible, but have a few drawbacks as
 compared to in-process policy enforcement:
-
 
 - They require building infrastructure to host the admission webhook.
 - They contribute to latency by requiring another network hop.
@@ -150,10 +148,10 @@ sense to provide in-tree.
   in types exist in an older Kubernetes version.
 - Provide a polyfill implementation that is supported by the Kubernetes org to
   provide this enhancement functionality to Kubernetes versions where this
-  enhancement is not available. (need details: Max, Alex, jpbetz) AND we want to
-  provide a lot of functionality as a library (needed for shift left, and policy
-  rule auditing against already written resources)
-
+  enhancement is not available.
+- Provide core functionality as a library so that use cases like GitOps,
+  CI/CD pipelines, and auditing can run the same CEL validation checks
+  that the API server does.
 
 ### Non-Goals
 
@@ -206,12 +204,11 @@ AdmissionRequest to include it.
 Consider an admission rule that disallows requests based on a blocklist.
 
 While it is possible to inline a blocklist directly into a CEL expression as a
-data literal (`!(object.metadata.name in ['blocked1', 'blocked2'])`), there are
-a couple problems:
+data literal (`!(object.metadata.name in ['blocked1', 'blocked2'])`), this quickly
+becomes problematic:
 
 - Long blocklists become unwieldy quickly in CEL expressions
-- Having something like a different blocklist for each namespace gets really
-  messy
+- A blocklist per scope (e.g. namespace) is inconvenient express and maintain
 
 The need to configure admission rules is common enough (see below use cases)
 that we propose configuration be a 1st class concept in the API.
@@ -250,11 +247,11 @@ when first created.
 
 ### Phase 1
 
-Introduce a new "ValidatingAdmissionConfiguration" kind to the
+Introduce a new `ValidatingAdmissionPolicy` kind to the
 admissionregistration.k8s.io group. (suggestions welcome on exact name to use
 for kind)
 
-At a high level, the API needs to support:
+At a high level, the API will support:
 
 - Request matching (similar to webhook Rules, NamespaceSelector,
   ObjectSelector)
@@ -268,143 +265,271 @@ At a high level, the API needs to support:
   and oldObject in AdmissionRequest)
 - Configurability, as motivated above.
 
-There are also lots of details (response message formatting, severity
-levels, failure policies, type safety, ...) that will be discussed in detail
-further on in this proposal.
+There are also lots of additional capabilities (response message formatting,
+severity, levels, failure policies, type safety, ...) that will be discussed
+in detail further on in this proposal.
 
-#### Configurability in the API
+#### API
 
-How configurability is expressed in the API will have significant influence
-how the API is shaped. We are currently considering two design options:
+Before getting into all the individual fields and capabilities, let's look at the
+general "shape" of the API.
 
-##### Configurability Option 1: Embed configuration into the object, grouped with match criteria
+We will separate policy definition from policy configuration. This has a couple advantages:
 
-```
+- Access to, and delegation of, policy configuration is more managable with this separation of concerns.
+- Without the separation, all configuration would need to be encoded into a single resource could become
+  very large and it prone to running into the resource size limits.
+
+`ValidatingAdmissionPolicy` will define a admission control policy. It
+will contain the CEL expressions for the vallidation rule and declare how a policy is
+configured.
+
+For example:
+
+```yaml
+# Policy definition
 apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionConfiguration
+kind: ValidatingAdmissionPolicy
 metadata:
   name: "validate-xyz.example.com"
-configurationSchema:  
-  openAPIV3Schema: ... # the below configuration is validated against this schema
 spec:
   match:
-  - rules: ... # see ValidatatingWebhookConfiguration rules
-    objectSelectors: ...  # "
-    namespaceSelectors ... # "
-    configuration: {x: 1} # each match may be configured differently
-  - rules: ...
-    objectSelectors: ...
-    namespaceSelectors ...
-    configuration: {x: 2}
-validations:
-  - rule: "self.spec.xyz == configuration.x"
-    # ...other rule related fields here...
-```
-
-Pros:
-
-- Self-contained resource
-- Higher level policy abstractions can be defined out-of-tree and can be
-  translated into this form by controllers
-
-Cons:
-
-- The resource grows by the number of match rules and amounts of configuration data.
-- Need to define how configurations of overlapping matches are interpreted. If
-  any of the matches fail does the rule as an admission check fail, or if any
-  matches pass does the admission check as a whole pass?
-
-##### Configurability Option 2: Put configuration in separate resources
-
-```
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionConfiguration
-metadata:
-  name: "validate-xyz.example.com"
-spec:
-  configurationCustomResourceDefinition:
+  - rules:
+      resources: ["deployments"]
+  config:
     group: rules.example.com
-    kind: LimitRule
-    ...
-      openAPIV3Schema: ... # the below configuration is validated against this schema
+    kind: ReplicaLimit
+    version: v1
+  validations:
+    - expression: "self.spec.xyz == config.x"
+      # ...other rule related fields here...
+```
+
+To configure a policy, custom resources of the Kind referenced by
+the `spec.config` field of the `ValidatingAdmissionPolicy` are used:
+
+For example:
+
+```yaml
+# Policy configurations
+apiVersion: rules.example.com/v1
+kind: ReplicaLimit
+metadata:
+  name: "replica-limit-test.example.com"
+spec:
+  match:
+    namespaceSelectors:
+    - key: environment,
+      operator: In,
+      values: ["prod", "staging"]
+  maxReplicas: 3
+```
+
+##### Matching
+
+Policies are only enforced at admission for to the resources that are matched.
+
+Both policy definitions (`ValidatingAdmissionPolicy`) and policy configurations contain match criteria.
+
+Policy definition matching (i.e. the match rules in `ValidatingAdmissionPolicy`):
+
+- Establish what resources the policy applies to across the entire cluster. Even when no policy
+  configurations match the resource, if the policy definition matches, the admission policy is enforced.
+  This enables zero trust policies-- policies that default to their most restrictive state. 
+- Govern what data a CEL expression has access to. If the rules match a single Group, Version and Kind (GVK) then
+  the CEL expression is allowed to access all fields of that kind, otherwise the CEL expression is only
+  allowed to access metadata.  Accessing the scale subresource of multiple resources still results in a match
+  against a single GVK, so if both deployment/scale and replicaset/scale are matched, the CEL expression has access
+  to all the scale resource fields.
+
+Policy configuration matching (e.g. the match rules in `ReplicaLimit` custom resource in the above example):
+
+- Determines which resources are validated using the configuration of the particular policy.
+- Is constrainted matching criteria of the policy definition. For example, if the policy definition matches
+  v1.Pods, then policy configuration may only further constrain the match with additional matching
+  rules (e.g. a namespaceSelector), but it will never match anything other than v1.Pods.
+- Differs depending on the scope of the policy configuration resource:
+  - If the configuration resource is namespace scoped, it matches resources only in the namespace it is in.
+  - If the configuration resource is cluster scoped, it match all resources (namespace and cluster scoped) 
+    unless it contains are additonal match rules that constrain their matching to a specific namespace.
+- May overlap. If two policy configurations match a resource, it is validated against both configurations.
+
+TODO: What happens when the policy definition has no match rules. It should be possible to have an "abstract"
+policy definition that does not match anything but allows policy configurations to apply it anywhere. Is
+it reasonable to have this behavior if the policy definition has not match rules?
+
+TODO: How to match ONLY cluster scoped resources? If matching a single kind, then using a cluster scoped
+policy configuration is sufficient. But I don't think it is possible all cluster scoped resources with
+what we've defined here.
+
+TODO: Example: Zero trust policy
+
+TODO: Example: Policy that is abstract/defaults to off
+
+TODO: Example: Single resource policy
+
+##### Configuration
+
+The policy definition may provide a default configuration.
+
+Policy configurations may override the default configuration.
+
+If the policy definition declares a configuration kind, all possible resource matches are
+required to have a configuration. This includes resources that match the policy
+definitions but not any policy configurations.
+
+TODO: Explain how policy configuration is handled for combinations of policy definition
+{has config, does not have config} and policy configuration {has config, does not have config}.
+
+TODO: what if all the fields of a policy configuration are
+optional? does that impact the above requirements, or do we still require a `config: {}` to state
+explicitly that an empty configuration is desired.
+
+If a policy definition does not declare a configuration kind, then it
+may not have any configuration (making the policy definition resource
+and entirely self contained policy).
+
+TODO: Example: Configuration override
+
+TODO: Example: Abstract policy that must be configured by each policy configuration (no default). (same as above "abstract/defaults to off" example?)
+
+#### API Capabilities
+
+In addition to the basic API "shape" proposed above, there are quite
+a few other capatiblities that will be included in the API:
+
+We expect that the design and implementation of some of these will need to
+be deferred to future phases. We have ordered these by priority of
+implementation, where we are prioritizing capatiblities that impact the system
+as a whole over those that are more isolated and could be added independantly
+with minimal impact on other aspects of the API.
+
+##### Failure Policy
+
+- For in-process validation there is no remote request, so errors should be
+  deterministic.
+- Cases we should consider:
+  - What if a CEL rule evaluates to an error?
+  - What if a CEL rule is for a CRD kind and the CRD changes such that the CEL
+    rule fails type checking? (or the CRD does not exist?)
+
+Because failure policy is most often selected based on the need to guarantee
+enforcement, we propose defaulting failure policy to "fail" and allowing it to
+be configured on a per-rule basis:
+
+```yaml
   validations:
     - rule: "self.spec.xyz == configuration.x"
-      # ...other rule related fields here...
-    ...
----
-apiVersion: rules.example.com/v1
-kind: LimitRule
-metadata:
-  name: "validate-xyz-rule1.example.com"
-spec:
-  match:
-  - rules: ...
-    objectSelectors: …
-    namespaceSelectors ... 
-  x: 1 
+      failurePolicy: (Fail|Ignore)
 ```
 
-Pros:
+##### Type safety
 
-- Aligns closely with how policy frameworks separate policy definition from
-  policy configuration
-- Scalable beyond the maximum size of a single K8s resource
-- Easy to identify/modify/track individual policies
-- More easily allows separation-of-concerns when policy is a joint effort
-  between multiple people/teams
-- Allows for updating the abstract policy definition separate from the concrete
-  policy
+- How can CEL rules know what types they are validating? This gets complicated if the
+  ValidatingAdmissionConfiguration matches multiple GVKs.
+- What happens when a ValidatingAdmissionConfiguration is created in a cluster
+  where either CRDs or native types are incompatible with CEL rules and the CEL
+  rules fail to compile?
 
-Cons:
+To keep failure policy easy to reason about, and to continue to use CEL in a type-safe way
+we propose:
 
-- Significantly more complex implementation
-  - CRDs need to be created when a ValidatingAdmissionConfiguration is created
-  - Requires the API server establish watches on the CRs to accumulate all the
-    configuration information
-- Possible to implement using Option 1. A controller can construct a
-  resource for the API in Option 1 from custom resources that define this
-  option (e.g. via a controller).
-- CRD lifecycle prevents CRs from being written until the CRD is written, which
-  means that until a ValidatingAdmissionConfiguration is written AND a CRD is
-  created for it, no CRs can be written.  Applying multiple resources
-  (e.g. kubectl apply -f <lots of yaml files>) only works if the apply
-  operations are ordered and objects are verified to exist at specific steps.
+- If a ValidatingAdmissionConfiguration matches:
+  - ...a single GVK, then the CEL expression is allowed access to the full object in a typesafe way.
+  - ...multiple GVKs, then the CEL expression is allowed access to the metadata only.
+- If there are any type checking errors (or if the CRD for the matched GVK does not exist) 
+  all runtime evaluations of the rule fail immediately, without the CEL expression being
+  evaluated.
+- All type check errors are reported in the status of the ValidatingAdmissionConfiguration.
 
-#### Additional Capabilities (WIP)
+The main disadvantage of this approach is that CEL rules that would have evaluated successfully
+dynamtically (where type checking is skipped), will instead fail. By favoring type safety here
+were are trading off avaiability for consistent and perdictable behavior.
 
-In addition to the high level API structure proposed above, there are quite
-a few capatiblities that are important to this enhancement that we are working
-on defining. These are all work-in-progress.
+Example: Typesafe access to object 
 
-Rule Message:
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionConfiguration
+metadata:
+  name: "validate-xyz.example.com"
+spec:
+  match:
+  - rules:
+      apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      resources: ["deployments"]
+validations:
+    # replicas is accessible because this resource matches only v1 deployments
+  - rule: "self.spec.replicas < 100"
+```
 
-- message formatting (need support for string formatting. Allow a CEL expression
-  to be used to format the whole string? Or allow CEL expressions to evaluate
-  template values?)
-- severity (e.g. "Warning")
-- status type equivalent (e.g. Forbidden can be returned from a webhook using
-  HTTP 403) (can a match rule override this? or can it be selected via a CEL
-  expression?)
-- Similar to how each match has configuration, can each match also select
-  the severity of messages?
+Example: Typesafe access only to metadata
 
-Rule scope:
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionConfiguration
+metadata:
+  name: "validate-xyz.example.com"
+spec:
+  match:
+  - rules:
+      apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      resources: ["deployments", "statefulSet"]
+validations:
+    # minReadySeconds is not accessible because this resource matches multiple types
+  - rule: "self.spec.minReadySeconds > 60" # ERROR! Not such field "minReadySeconds".
+    # metadata is always accessible
+  - rule: "self.name.startsWith('xyz')"
+```
+
+##### Rule scope
 
 - Dereferencing to deeply nested fields in CEL can be burdonsome. A field
   containing a field path would allow a CEL rule to be scope to some node in
-  the schema.
-- Also, the idea of named scopes (e.g. "ALL_CONTAINERS") would allow a single
+  the schema. E.g. `spec.containers[*].image`
+- More ambitiously, the idea of named scopes (e.g. "ALL_CONTAINERS") would allow a single
   rule to be applied to all container definitions in a resource (e.g. both
   "containers" and "initContainers" in a pod)
 
-Failure Policy:
+##### Transition rules
 
-- Not the same as webhooks, where failure policy is about the remote request
-- What if a CEL rule evaluates to an error?
-- What if a CEL rule is for a CRD kind and the CRD changes such that the CEL
-  rule fails type checking? (or the CRD does not exist?)
+- Should we use "self" and "oldSelf"? How do transition rules work for delete?
 
-Decision Rules:
+##### Messages
+
+We need:
+
+- Formatted messages (need support for string formatting. Allow a CEL expression
+  to be used to format the whole string? Or allow CEL expressions to evaluate
+  template values?). Note that CRD Validation Rules do NOT support formatted
+  messages (but if we add support for formatted message for admission control,
+  we should consider adding the feature to CRD validation as well).
+- severity (e.g. "Warning")
+- status types (e.g. Forbidden can be returned from a webhook using
+  HTTP 403) (can a match rule override this? or can it be selected via a CEL
+  expression?)
+- Similar to how each match has configuration, can each match also select
+  the severity of messages? It make it possible to configure a policy as
+  warning only when first enabling it. Some policy frameworks support this.
+
+##### Access to namespace labels
+
+- Most heavily needed fields not directly available in the resource being
+  validated. Note that namespaceSelectors already allow matches to examine
+  namespace levels.
+
+##### RBAC checks
+
+kube-apiserver authorizer checks (aka Secondary-authz checks) have been proposed as a way of doing things like:
+
+- Validate that only a user with a specific permission can set an enum to the "HOLD" value.
+- Validate that only a controller responsible for a finalizer can remove it from the finalizers field.
+ 
+ Concerns: "Is joe authorized to do this"? That only works for the objects joe creates, but not objects that get created on joe's behalf by a controller. Ditto for updates. I heard someone cite PSP as an example for why it's needed, but IMO that was an anti-pattern of PSP, and one that we explicitly decided to omit from PSA
+
+##### Decision Rules
 
 - Are overlapping matches combined using an OR or AND? Can this be configured?
 - Can a validation rule depend on another validation rule (only evaluate if the
@@ -412,32 +537,10 @@ Decision Rules:
 - How to make it so that an "not authorized" error prevents all other validation
   messages from being returned (to prevent exfiltration)?
 
-Composition utilities:
+##### Composition utilities
 
 - Ability to define a sub-expression and then use it in validation rules (xref
   cel-policy-template "terms")
-
-Transition rules:
-
-- Should we use "self" and "oldSelf" ? How do transition rules work for delete?
-
-Access to namespace labels:
-
-- Most heavily needed fields not directly available in the resource being
-  validated. Note that namespaceSelectors already allow matches to examine
-  namespace levels.
-
-Type safety:
-
-- What happens when a ValidatingAdmissionConfiguration is created in a cluster
-  where either CRDs or native types are incompatible with CEL rules and the CEL
-  rules fail to compile?
-  - Option: Put something into status about the type check error and apply the
-    fail policy instead of evaluating the CEL expression at runtime
-  - Option: Put something into status and run the CEL expression dynamically, if
-    it fails with an error apply the fail policy
-  - Option: Provide a field on each rule that determines the behavior
-    ("TypeCheckFailPolicy: (FailAll|RunDynamic)").
 
 ### Phase 2
 
