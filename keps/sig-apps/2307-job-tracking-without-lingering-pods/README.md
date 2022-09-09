@@ -321,21 +321,27 @@ the owner reference.
 
 ## Monitoring Pods with finalizers
 
-Starting in 1.26, the metric `job_pod_tracking_finalizer` is a gauge that
-tracks the number of pods that currently have a job tracking finalizer.
+Starting in 1.26, the metric `job_terminated_pod_tracking_finalizer` is a gauge
+that tracks the number of terminated pods (`.status.phase=(Succeeded|Failed)`)
+that currently have a job tracking finalizer.
 
-The metric increments when the job controller observes a pod created or adopted,
-and decrements when the job controller observes an update that removes the
-finalizer or a pod deletion.
+The job controller tracks this metric in its event handlers.
 
 ## Migrating Jobs with legacy tracking
 
-Starting in 1.26, when the feature gate `MigrateJobLegacyTracking` is enabled,
-the job controller migrates jobs with legacy tracking to tracking with finalizers.
+Once `JobTrackingWithFinalizers` graduates to stable, Jobs that start in a
+kubernetes version where `JobTrackingWithFinalizer` is disabled need to be
+migrated to the new tracking. This migration mechanism will be initially guarded
+by the feature gate `MigrateJobLegacyTracking`, starting in 1.26,
+enabled by default.
+
+When the feature gate `MigrateJobLegacyTracking` is enabled, the job controller
+migrates jobs with legacy tracking to tracking with finalizers as described
+below:
 
 If a Job doesn't have the annotation `batch.kubernetes.io/job-completion`, it
-means that is not currently tracked with finalizers. The job controller starts
-the following migration process:
+means that the Job is not currently tracked with finalizers. The job controller
+starts the following migration process:
 1. Add the finalizer `batch.kubernetes.io/job-completion` to all pods with
    `.status.phase=(Pending/Running)`.
 2. Ignore pods with `.status.phase=(Complete/Failed)` that don't have the `batch.kubernetes.io/job-completion`.
@@ -349,7 +355,7 @@ This might lead to extra pods being created, but this is acceptable because:
 - For the remaining Jobs, the Job controller already accounted most of the
   finished Pods in the status. The controller might leave some
   finished Pods unaccounted, if they finish before the controller has a chance
-  to add a finalizer. This situation is no worse that the legacy tracking
+  to add a finalizer. This situation is no worse than the legacy tracking
   were the controller doesn't account for Pods removed by garbage collection or
   other means.
 
@@ -427,7 +433,7 @@ for jobs with multiple sizes.
 #### Beta -> GA Graduation
 
 - [Migrate existing Jobs to tracking with finalizers](#migrating-jobs-with-legacy-tracking)
-  under feature gate `MigrateJobLegacyTracking`, disabled by default.
+  under feature gate `MigrateJobLegacyTracking`, enabled by default.
 - Job E2E tests graduate to conformance.
 - Job tracking scales to 10^5 completions per Job processed within an order of
   minutes.
@@ -539,7 +545,7 @@ No implications to node runtime.
     duration than previous versions of the job controller due to the new API
     calls.
   - Stale `job_sync_total` or `job_finished_total`.
-  - The metric `job_pod_tracking_finalizer` doesn't decrease when pods finish.
+  - The metric `job_terminated_pod_tracking_finalizer` increases steadily.
 
 #### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   
@@ -598,7 +604,7 @@ Yes, see [Deprecation](#deprecation) for the full plan.
     - Metric name: `job_sync_duration_seconds`
       - [Optional] Aggregation method:
       - Components exposing the metric: `kube-controller-manager`
-    - Metric name: `job_pod_tracking_finalizer`
+    - Metric name: `job_terminated_pod_tracking_finalizer`
       - [Optional] Aggregation method:
       - Components exposing the metric: `kube-controller-manager`
 
@@ -668,7 +674,7 @@ Yes, see [Deprecation](#deprecation) for the full plan.
   - Terminated pods are stuck with finalizers
     - Detection:
       - Before 1.26: Observe the behavior in pods.
-      - After 1.26: Based on metric `job_pod_tracking_finalizer`
+      - After 1.26: Based on metric `job_terminated_pod_tracking_finalizer`
     - Mitigations:
       Before 1.26, disable `JobTrackingWithFinalizers`.
     - Diagnostics:
