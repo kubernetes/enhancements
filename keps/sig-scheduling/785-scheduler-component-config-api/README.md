@@ -51,9 +51,9 @@
 
 The kube-scheduler configuration API `kubescheduler.config.k8s.io` was in alpha
 for several releases. We graduated it to beta in 1.19 as `v1beta1`. We introduced
-`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively. We'd like to graduate it
-to GA in 1.25 and mark `v1beta2` as deprecated to avoid breaking existing users,
-we'll remove the support of `v1beta2` in 1.26.
+`v1beta2` and `v1beta3` in 1.22 and 1.23 respectively. And it was graduated to GA
+in 1.25 as `v1`. The `v1beta2` was marked as deprecated in 1.25 and will be removed 
+in 1.28. `v1beta3` will be marked as deprecated in 1.26 and removed in 1.29.
 
 ## Motivation
 
@@ -116,8 +116,9 @@ about user preferences, so should have more influence while making scheduling de
 More information on the discussion can be found [here](https://github.com/kubernetes/kubernetes/issues/88174).
 
 The fourth iteration, `kubescheduler.config.k8s.io/v1`, includes the following changes:
-  - Mark `v1beta2` as deprecated
+  - Mark `v1beta2` as deprecated in 1.25 and remove in 1.28
   - Remove Plugin `SelectorSpread` (in favor of `PodTopologySpread`)
+  - Mark `v1beta3` as deprecated in 1.26 and remove in 1.29
 
 ### Risks and Mitigations
 
@@ -415,3 +416,4 @@ N/A
 - 2021-08-06: Introducing `v1beta3`.
 - 2021-09-01: Remove `v1beta1` and the legacy policy config API.
 - 2022-05-18: Introducing `v1` and mark `v1beta2` as deprecated.
+- 2022-09-07: Mark `v1beta3` as deprecated.
