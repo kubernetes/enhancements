@@ -1,0 +1,52 @@
+title: Host Network Support for Windows Pods
+kep-number: 3503
+authors:
+  - "@marosset"
+owning-sig: sig-windows
+participating-sigs:
+  - sig-node
+  - sig-network
+status: implementable
+creation-date: 2022-09-12
+reviewers:
+  - "@aojea" # sig-network
+  - "@saschagrunert" # sig-node
+approvers:
+  - "@jayunit100"
+
+##### WARNING !!! ######
+# prr-approvers has been moved to its own location
+# You should create your own in keps/prod-readiness
+# Please make a copy of keps/prod-readiness/template/nnnn.yaml
+# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
+#prr-approvers:
+
+see-also:
+# - "/keps/sig-aaa/1234-we-heard-you-like-keps"
+#  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
+replaces:
+#  - "/keps/sig-ccc/3456-replaced-kep"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.26"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: WindowsHostNetwork
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+#  - my_feature_metric
