@@ -426,8 +426,65 @@ backend CBT endpoints to fulfill the request. It also takes care of the
 authentication with the storage provider's backend, freeing CSI CBT from this
 concern.
 
-The CBT entries are then returned to the user through `cbt-http` and then
-`cbt-aggapi`, without persisting any of them in the Kubernetes etcd.
+The CBT entries are then returned to the user, as JSON payload, through the
+`cbt-http` sidecar and then the `cbt-aggapi` aggregated API server, without
+persisting any of them in the Kubernetes etcd.
+
+The CBT entries are appended to the `status` of the original
+`VolumeSnapshotDelta` resource like the following:
+
+```json
+{
+  "kind": "VolumeSnapshotDelta",
+  "apiVersion": "cbt.storage.k8s.io/v1alpha1",
+  "metadata": {
+    "name": "test-delta",
+    "namespace": "default",
+    "creationTimestamp": null
+  },
+  "spec": {
+    "baseVolumeSnapshotName": "vol-snap-base",
+    "targetVolumeSnapshotName": "vol-snap-target",
+    "mode": "block",
+    “limit”: 256,
+    “offset”: 0
+  },
+  "status": {
+    “limit”: 256,
+    “offset”: 0,
+    "continue": 3, # starting offset of the next chunk
+    "changedBlockDeltas": [
+      {
+        "offset": 0,
+        "blockSizeBytes": 524288,
+        "dataToken": {
+          "token": "ieEEQ9Bj7E6XR",
+          "issuanceTime": "2022-07-13T03:19:30Z",
+          "ttl": "3h0m0s"
+        }
+      },
+      {
+        "offset": 1,
+        "blockSizeBytes": 524288,
+        "dataToken": {
+          "token": "widvSdPYZCyLB",
+          "issuanceTime": "2022-07-13T03:19:30Z",
+          "ttl": "3h0m0s"
+        }
+      },
+      {
+        "offset": 2,
+        "blockSizeBytes": 524288,
+        "dataToken": {
+          "token": "VtSebH83xYzvB",
+          "issuanceTime": "2022-07-13T03:19:30Z",
+          "ttl": "3h0m0s"
+        }
+      }
+    ]
+  }
+}
+```
 
 Any pagination parameters from the storage provider needed to fetch additional
 data will be included in the response payload to the user. The user will be
