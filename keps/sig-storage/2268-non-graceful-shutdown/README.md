@@ -83,7 +83,7 @@ Similarly, this approach can also be applied to the case when a node is in a non
 ### Use Cases
 
 * If user wants to intentionally shutdown a node, he/she can validate whether graceful node shutdown feature works. If Kubelet is able to detect node is shutting down, it will gracefully delete pods, and new pods will be created on another running node.
-* If graceful shutdown is not working or node is in non-recoverable state due to hardware failure or broken OS, etc., user now can enable this feature, and add `out-of-service=nodeshutdown:NoExecute` taint which will be explained in detail below to trigger non-graceful shutdown behavior.
+* If graceful shutdown is not working or node is in non-recoverable state due to hardware failure or broken OS, etc., user now can enable this feature, and add `node.kubernetes.io/out-of-service=nodeshutdown:NoExecute` taint which will be explained in detail below to trigger non-graceful shutdown behavior.
 
 ### Goals
 
@@ -114,7 +114,7 @@ Proposed logic change:
 1. [Proposed change] This proposal requires a user to apply a `out-of-service` taint on a node when the user has confirmed that this node is shutdown or in a non-recoverable state due to the hardware failure or broken OS. Note that user should only add this taint if the node is not coming back at least for some time. If the node is in the middle of restarting, this taint should not be used.
 
 1. [Proposed change] In the Pod GC Controller, part of the kube-controller-manager, add a new function called gcTerminating. This function would need to go through all the Pods in terminating state, verify that the node the pod scheduled on is NotReady. If so, do the following:
-  1.  Upon seeing the `out-of-service` taint, the Pod GC Controller will forcefully delete the pods on the node if there are no matching tolation on the pods. This new `out-of-service` taint has `NoExecute` effect, meaning the pod will be evicted and a new pod will not schedule on the shutdown node unless it has a matching toleration. For example, `out-of-service=nodeshutdown:NoExecute` or `out-of-service=hardwarefailure:NoExecute`. We suggest to use `NoExecute` effect in taint to make sure pods will be evicted (deleted) and fail over to other nodes.
+  1.  Upon seeing the `out-of-service` taint, the Pod GC Controller will forcefully delete the pods on the node if there are no matching tolation on the pods. This new `out-of-service` taint has `NoExecute` effect, meaning the pod will be evicted and a new pod will not schedule on the shutdown node unless it has a matching toleration. For example, `node.kubernetes.io/out-of-service=out-of-service=nodeshutdown:NoExecute` or `node.kubernetes.io/out-of-service=out-of-service=hardwarefailure:NoExecute`. We suggest to use `NoExecute` effect in taint to make sure pods will be evicted (deleted) and fail over to other nodes.
   1. We'll follow taint and toleration policy. If a pod is set to tolerate all taints and effects, that means user does NOT want to evict pods when node is not ready. So GC controller will filter out those pods and only forcefully delete pods that do not have a matching toleration. If your pod tolerates the `out-of-service` taint, then it will not be terminated by the taint logic, therefore none of this applies.
 
 1. [Proposed change] Once pods are selected and forcefully deleted, the attachdetach reconciler should check the `out-of-service` taint on the node. If the taint is present, the attachdetach reconciler will not wait for 6 minutes to do force detach. Instead it will force detach right away and allow `volumeAttachment` to be deleted.
@@ -165,13 +165,12 @@ Deleting a pod will trigger PVC to be detached: https://github.com/kubernetes/ku
 
 #### Integration tests
 
-Add a test for forcefully terminating pods in https://github.com/kubernetes/kubernetes/blob/master/test/integration/garbagecollector/garbage_collector_test.go.
-
-Add a test for force detach without waiting for 6 minutes in https://github.com/kubernetes/kubernetes/blob/master/test/integration/volume/attach_detach_test.go
+After reviewing the tests, we decided that the best place to add a test for this feature is under test/e2e/storage:
+https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/non_graceful_node_shutdown.go
 
 #### E2E tests
 
-*   New E2E tests to validate workloads move successfully to another running node when a node is shutdown.
+*   Added E2E tests to validate workloads move successfully to another running node when a node is shutdown: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/non_graceful_node_shutdown.go
     * Feature gate for `NodeOutOfServiceVolumeDetach` is disabled, feature is not active.
     * Feature gate for `NodeOutOfServiceVolumeDetach` is enabled. Add `out-of-service` taint after node is shutdown:
       * Verify workloads are moved to another node successfully.
@@ -182,7 +181,7 @@ We also plan to test this with different version Skews.
 
 ### Graduation Criteria
 
-This KEP will be treated as a new feature, and will be introduced with a new feature gate, `NonGracefulFailover`.
+This KEP will be treated as a new feature, and will be introduced with a new feature gate, `NodeOutOfServiceVolumeDetach`.
 
 This enhancement will go through the following maturity levels: alpha, beta and stable.
 
