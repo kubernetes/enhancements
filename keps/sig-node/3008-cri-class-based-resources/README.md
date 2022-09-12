@@ -415,8 +415,10 @@ Some alternatives for presenting this information:
             // Defaults to Capacity.
             // +optional
             Allocatable ResourceList `json:"allocatable,omitempty" protobuf:"bytes,2,rep,name=allocatable,casttype=ResourceList,castkey=ResourceName"`
-   +        // ResourceClasses lists the available
-   +        ClassResources []ClassResourceList
+   +        // PodClassResrouces lists the available class resources available for pod sandboxes.
+   +        PodClassResources []ClassResourceList
+   +        // ContainerClassResrouces lists the available class resources available for containers.
+   +        ContainerClassResources []ClassResourceList
    +
    +type ClassResourceList {
    +        // Name of the resource
@@ -465,7 +467,10 @@ Some possible alternatives.
       +// ResourcesInfo contains information about the resources discovered by the
       +// runtime.
       +message ResourcesInfo {
-      +    repeated ClassResourceInfo class_resources = 1;
+      +    // Pod-level class resources available.
+      +    repeated ClassResourceInfo pod_class_resources = 1;
+      +    // Container-level class resources available.
+      +    repeated ClassResourceInfo container_class_resources = 2;
       +}
       +
       +// ClassResourceInfo contains information about one type of class resource.
@@ -474,7 +479,7 @@ Some possible alternatives.
       +    repeated string classes = 2;
       +    bool immutable = 3;
        }
-      ```
+     ```
 
    1. OR Populate a (json) file in a known location
 
@@ -506,12 +511,25 @@ would implement restrictions based on the namespace.
      // object tracked by a quota but expressed using ScopeSelectorOperator in combination
      // with possible values.
      ScopeSelector *ScopeSelector
-+    // AllowedClasses specifies the list of allowed classes for each QoS-class resource
-+    AllowedClasses map[ClassResourceName]ResourceClassList
-}
++    // PodClassResources contains the allowed pod-level class resources.
++    PodClassResources []ClassResourceInfo
++    // ContainerClassResources contains the allowed container-level class resources.
++    ContainerClassResources []ClassResourceInfo
+ }
 
-+// ResourceClassList is a list of classes of a specific type of QoS-class resource.
-+type ResourceClassList []string
+ // ResourceQuotaStatus defines the enforced hard limits and observed use.
+ type ResourceQuotaStatus struct {
+        ...
+        // Used is the current observed total usage of the resource in the namespace
+        // +optional
+        Used ResourceList
++       // PodClassResources contains the enforced set of pod-level class resources available.
++       PodClassResources []ClassResourceInfo
++       // ContainerClassResources contains the enforced set of container class resources available.
++       ContainerClassResources []ClassResourceInfo
+ }
+
+
 ```
 ## Proposal
 
