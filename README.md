@@ -54,7 +54,7 @@ Create an [issue](https://github.com/kubernetes/enhancements/issues/new) in this
 
 ## Why Are Enhancements Tracked
 
-Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete documentation. As the project grows, no single person can track whether all those requirements are met. 
+Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete documentation. As the project grows, no single person can track whether all those requirements are met.
 
 The development of an enhancement often spans three stages: Alpha, Beta, and Stable. Enhancement Tracking Issues provide a checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the
 development lifetime of an enhancement.
@@ -75,6 +75,7 @@ All the enhancements from this repo are visualized in the Enhancements Tracking 
 
 Links:
 
+- [1.26 Milestone](https://bit.ly/k8s126-enhancements)
 - [1.25 Milestone](https://bit.ly/k8s125-enhancements)
 - [1.24 Milestone](https://bit.ly/k8s124-enhancements)
 - [1.23 Milestone](https://bit.ly/k8s123-enhancements)
