@@ -1351,24 +1351,24 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-A alternate prototype based on [aggregated API server] was rejected because the
-design would essentially put the Kubernetes API server in the CBT
-request/response path. An aggregated API server that performs `GET`/`LIST`
-operations would also be limited in its response payload delivery mechanism, as
-restricted by the normal API machinery, unlike e.g., `CREATE`-only aggregated
-API server like the metrics server.
+The previous alternate design which involves generating and returning a callback
+endpoint to the caller has been superceded by the aggregation extension
+mechanism described in this KEP. The aggregation extension design provides a
+tighter integration with the Kubernetes API server, enabling the re-use of the
+existing Kubernetes machinery of GVR and GVK binding, URL registration and
+delegated authentication and authorization.
 
-Hence, the only viable solution would still involve using some form of direct
-"out-of-band" callback endpoints to serve the CBT payload, which can be
-implemented without an aggregated API server.
+Another alternative that allows user to provide the callback URL to send the
+CBT response payload to has also been rejected due to concerns around the lack
+of control over the authenticity of the remote URLs.
 
-The second alternative involves direct imperative invocation of the CBT HTTP
-endpoint, without a CRD. This approach was rejected, in preference for the
-structured API and Kubernetes-native security model that CRD provides,
-without needing additional client/server code generation.
-
-[aggregated API server]: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/apiserver-aggregation/
-
+Some consideration was given to associating the initialization of CBT requests
+to the `LIST` action, instead of the `CREATE` action, to match the "retrieve a
+list of CBT entries" semantics. This KEP decided to implement the `CREATE`
+action as its allows us to encapsulate the CBT request parameters as the
+structured `VolumeSnapshotDelta` resources. The proposed API also ensures that
+the `CREATE` action provides user with the pagination control over the amount of
+data returned.
 
 ## Infrastructure Needed (Optional)
 
