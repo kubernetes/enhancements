@@ -890,15 +890,14 @@ in back-to-back releases.
 
 #### Alpha
 
-- Completed functionalities include:
-  - Approved specification of the `VolumeSnapshotDelta` and `DriverDiscovery`
+- Approved specification of the `VolumeSnapshotDelta` and `DriverDiscovery`
 custom resources
-  - Approved specification of the CSI CBT GRPC service
-  - Ability to create `VolumeSnapshotDelta` resource.
-  - Ability to reconcile `DriverDiscovery` resource.
-  - Ability to enforce validation criteria like missing required fields.
-- Initial e2e tests completed and enabled.
-- Since this is an out-of-tree CSI component, no feature flag is required.
+- Approved specification of the CSI CBT GRPC services and messages
+- Can create `VolumeSnapshotDelta` resource and return CBT payload to user
+- Can discover opt-in CSI drivers using the `DriverDiscovery` resources
+- Initial e2e tests completed and enabled
+
+Since this is an out-of-tree CSI component, no feature flag is required.
 
 ### Upgrade / Downgrade Strategy
 
