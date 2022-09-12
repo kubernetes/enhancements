@@ -777,44 +777,22 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-Prerequisites:
+The integration tests will cover the lifecycle of the `VolumeSnapshotDelta` and
+`DriverDiscovery` resources. Test cases will be included to ensure that the
+`VolumeSnapshotDelta` resource works only with the `CREATE` operation. The
+typical CRUD operations of a CRD will work with the `DriverDiscovery` resource.
 
-* Create two CSI `VolumeSnapshot` test resources backed by the CSI [host path
-driver][14].
+The validation logic of the `VolumeSnapshotDelta` resource will also be covered,
+to ensure the aggregated API server serves the CBT request only if the required
+`VolumeSnapshot` and `DriverDiscovery` resources exist. If they don't, the
+request will fail.
+
+The integration tests setup will require the following fixtures:
+
+* The `VolumeSnapshot` [controller][16]
+* The CSI [host path driver][14].
 * Inject a mock handler in the `cbt-aggapi` aggregated API server to return mock
 CBT entries.
-
-
-###### Test Suite 1 - VolumeSnapshotDelta Validation
-
-Test case 1:
-
-* Requirement: Handle existing base and target `VolumeSnapshot` resources.
-* Description: Create a `VolumeSnapshotDelta` resource referencing the two base
-and target `VolumeSnapshot` fixtures.
-* Expected result: `status` subresource is updated with the mock CBT entries.
-
-Test case 2:
-
-* Requirement: The base `VolumeSnapshot` is an optional field.
-* Description: Create `VolumeSnapshotDelta` resource referencing the target
-`VolumeSnapshot` fixture, with the base `VolumeSnapshot` left empty.
-* Expected result: `status` subresource is updated with the mock CBT entries.
-
-Test case 3:
-
-* Requirement: The target `VolumeSnapshot` is a required field.
-* Description: Create `VolumeSnapshotDelta` custom resource referencing the
-base `VolumeSnapshot`, with the target `VolumeSnapshot` left empty.
-* Expected result: The aggregated API server failed to request. The `status`
-subresource is updated with `status.State` set to `Failed` and `status.Error`
-set to the reason for the failure.
-
-Test case 4:
-
-* Requirement: The target `VolumeSnapshot` must exist.
-* Description: Repeat test case 3 with a non-existing target `VolumeSnapshot`.
-* Expected result: Same as that of test case 3.
 
 ##### e2e tests
 
@@ -828,34 +806,23 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-Prerequisites:
+The e2e tests will extend the integration tests to run on an actual Kubernetes
+cluster, set up with `kubetest` per the sig-testing [e2e tests
+documentation][15].
 
-* Use `kubetest` to build Kubernetes and run the tests per sig-testing [e2e
-tests documentation][15].
-* Create two CSI `VolumeSnapshot` test resources backed by the CSI [host path
-driver][14].
-* Deploy a sample client to initiate the CBT request
-* Deploy a mock CSI driver plugin to returned fake CBT payloads.
+A sample client will be used to create a `VolumeSnapshotDelta` resource to
+initiate the CBT request to the aggregated API server. The aggregated API server
+discovers the mock CSI driver using its `DriverDiscovery` resource. The CBT
+request is then forwarded to the mock CSI driver where the CSI GRPC invocation
+happens. The mock response payload is then returned to the sample client for
+verification.
 
-Initial e2e test flow:
+The e2e tests setup will require the following fixtures:
 
-* Sample client creates a `VolumeSnapshotDelta` resource referencing the two
-base and target `VolumeSnapshot` test resources.
-* The aggregated API server validates the existence of the two `VolumeSnapshot`
-resources.
-* The `cbt-aggapi` aggregated API server fetches the `DriverDiscovery` resource
-based on the driver name specified in the `VolumeSnapshot` resource.
-* It also discovers the CSI driver endpoint based on information found in the
-`spec.clientConfig` property of the `DriverDiscovery` resource.
-* The CBT request is then forwarded to the service endpoint of the `cbt-http`
-sidecar.
-* The `cbt-http` sidecar then sends a GRPC request to the mock CSI driver
-plugin.
-* The mock plugin responds with a list of fake CBT entries.
-* The `cbt-http` forwards the response payload back to the `cbt-aggapi`
-aggregated API server.
-* The response payload is appended to the `VolumeSnapshotDelta`'s `status`
-subresource.
+* The `VolumeSnapshot` [controller][16]
+* The CSI [host path driver][14].
+* The sample client
+* The mock CSI driver
 
 ### Graduation Criteria
 
@@ -1423,3 +1390,4 @@ SIG to get the process for these resources started right away.
 [13]: https://kubernetes.io/docs/concepts/cluster-administration/logging/
 [14]: https://github.com/kubernetes-csi/csi-driver-host-path
 [15]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#building-kubernetes-and-running-the-tests
+[16]: https://github.com/kubernetes-csi/external-snapshotter
