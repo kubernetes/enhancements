@@ -974,8 +974,8 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: The new component will be implemented as an
-out-of-tree CSI component which storage providers can include in their CSI
+  - Describe the mechanism: The new components will be implemented as part of
+the out-of-tree CSI framework. Storage providers can include them in their CSI
 drivers, if they choose to support this feature.
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
@@ -1004,15 +1004,20 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, the storage provider can uninstall the `cbt-aggapi` aggregated API server
-and `cbt-http` sidecar container from their CSI drivers to disable CSI CBT. All
-new `VolumeSnapshotDelta` resources will be ignored.
+Storage providers disable the CSI CBT feature by uninstalling the CSI CBT
+aggregated API server and sidecar container from their CSI drivers. No feature
+gates are invovled.
+
+As described in the design details, the `VolumeSnapshotDelta` resources are not
+persisted in `etcd`. Hence, there will be no unintended side effects. The
+`DriverDiscovery` resources are deleted when its CRD controller is uninstalled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Since the `VolumeSnapshotDelta` resources are not persisted, there will be no
-unintended re-evaluation and re-execution of the CSI CBT logic, when CSI CBT is
-re-enabled. Users will have to re-submit their CBT request.
+The CSI CBT feature is re-enabled by re-installing the relevant CSI components.
+No feature gates are involved. There will be no unintended side-effects as due
+to resources from the previous installation, as they were removed during an
+uninstallation.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1029,7 +1034,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Since this is an out-of-tree CSI component, Kubernetes feature enablement/
+Since these are out-of-tree CSI components, Kubernetes feature enablement/
 disablement is not necessary.
 
 ### Rollout, Upgrade and Rollback Planning
