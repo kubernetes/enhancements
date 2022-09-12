@@ -445,14 +445,14 @@ The CBT entries are appended to the `status` of the original
   "spec": {
     "baseVolumeSnapshotName": "vol-snap-base",
     "targetVolumeSnapshotName": "vol-snap-target",
+    "limit": 256,
     "mode": "block",
-    “limit”: 256,
-    “offset”: 0
+    "offset": 0
   },
   "status": {
-    “limit”: 256,
-    “offset”: 0,
-    "continue": 3, # starting offset of the next chunk
+    "limit": 256,
+    "offset": 0,
+    "continue": 3,
     "changedBlockDeltas": [
       {
         "offset": 0,
