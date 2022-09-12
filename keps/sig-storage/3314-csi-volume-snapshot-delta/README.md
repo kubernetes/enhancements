@@ -366,11 +366,11 @@ API server
 
 When CSI CBT is deployed on a Kubernetes cluster, the `cbt-aggapi` aggregated
 API server registers itself with the `kube-aggregator` to claim the URL path
-based of the `v1alpha1.cbt.storage.k8s.io` group version, as defined in the
+of the `v1alpha1.cbt.storage.k8s.io` group version, as defined in the
 `APIService` resource.
 
 The `driver-discovery` CRD controller starts a reconciler to watch and
-reconciler `DriverDiscovery` resources.
+reconcile `DriverDiscovery` resources.
 
 A storage provider that supports CBT functionalities needs to embeds the
 `cbt-http` sidecar in its CSI driver. As the CSI driver initializes, the
@@ -405,11 +405,11 @@ resources,
 ![CBT Step 3](./img/cbt-step-03.png)
 
 If any of these resources don't exist in the cluster, the `cbt-aggapi` service
-will fail the request.
+fails the request.
 
 The snapshot handles (i.e. snapshot IDs) from the `VolumeSnapshotContent`
 resources along with the pagination parameters found in the
-`VolumeSnapshotDelta` resource are send to the `cbt-http` sidecar in the CSI
+`VolumeSnapshotDelta` resources are sent to the `cbt-http` sidecar in the CSI
 driver as JSON payload over HTTP:
 
 ![CBT Step 4](./img/cbt-step-04.png)
@@ -431,7 +431,7 @@ The CBT entries are then returned to the user, as JSON payload, through the
 persisting any of them in the Kubernetes etcd.
 
 The CBT entries are appended to the `status` of the original
-`VolumeSnapshotDelta` resource like the following:
+`VolumeSnapshotDelta` resource:
 
 ```json
 {
@@ -487,7 +487,7 @@ The CBT entries are appended to the `status` of the original
 ```
 
 Any pagination parameters from the storage provider needed to fetch additional
-data will be included in the response payload to the user. The user will be
+data will also be included in the response payload to the user. The user will be
 responsible for coordinating subsequent paginated requests, including managing
 the pagination session including recovery from interruption and partition.
 
@@ -847,7 +847,7 @@ request will fail.
 The integration tests setup will require the following fixtures:
 
 * The `VolumeSnapshot` [controller][16]
-* The CSI [host path driver][14].
+* The CSI [host path driver][14]
 * Inject a mock handler in the `cbt-aggapi` aggregated API server to return mock
 CBT entries.
 
@@ -877,7 +877,7 @@ verification.
 The e2e tests setup will require the following fixtures:
 
 * The `VolumeSnapshot` [controller][16]
-* The CSI [host path driver][14].
+* The CSI [host path driver][14]
 * The sample client
 * The mock CSI driver
 
@@ -1032,8 +1032,9 @@ well as the [existing list] of feature gates.
   - Components depending on the feature gate:
 - [x] Other
   - Describe the mechanism: The new components will be implemented as part of
-the out-of-tree CSI framework. Storage providers can include them in their CSI
-drivers, if they choose to support this feature.
+the out-of-tree CSI framework. Storage providers can embed the CBT sidecar
+component in their CSI drivers, if they choose to support this feature. Users
+will also need to install the CBT aggregated API server.
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -1061,20 +1062,16 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Storage providers disable the CSI CBT feature by uninstalling the CSI CBT
-aggregated API server and sidecar container from their CSI drivers. No feature
-gates are involved.
-
-As described in the design details, the `VolumeSnapshotDelta` resources are not
-persisted in `etcd`. Hence, there will be no unintended side effects. The
-`DriverDiscovery` resources are deleted when its CRD controller is uninstalled.
+Users disable the CBT feature by uninstalling the CBT aggregated API servers
+from their cluster. No feature gate is involved.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The CSI CBT feature is re-enabled by re-installing the relevant CSI components.
-No feature gates are involved. There will be no unintended side-effects as due
-to resources from the previous installation, as they were removed during an
-uninstallation.
+The CBT feature can be re-enabled by re-installing the CSI CBT components on
+their cluster. There will be no unintended side-effects because resources from
+the previous installation would have been deleted during the previous
+uninstallation. Also, the `VolumeSnapshotDelta` resources are not persisted in
+etcd, per the design proposal.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1091,8 +1088,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Since these are out-of-tree CSI components, Kubernetes feature enablement/
-disablement is not necessary.
+No.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1256,22 +1252,19 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-The `VolumeSnapshotDelta` controller will be interacting with the APIs
-associated with these GVRs:
+The CBT aggregated API server  will be interacting with the APIs associated
+with these GVRs:
 
 ```yaml
-- apiGroups: ["snapshot.storage.k8s.io"]
+- apiGroups: ["cbt.storage.k8s.io"]
   resources: ["volumesnapshotdeltas"]
+  verbs: ["create"]
+- apiGroups: ["cbt.storage.k8s.io"]
+  resources: ["driverdiscovery"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["snapshot.storage.k8s.io"]
   resources: ["volumesnapshotcontents", "volumesnapshots", "volumesnapshotclasses"]
-  verbs: ["get", "list"]
   verbs: ["get", "list", "watch"]
-- apiGroups: ["authorization.k8s.io"]
-  resources: ["subjectaccessreviews"]
-  verbs: ["create"]
-- apiGroups: ["authentication.k8s.io"]
-  resources: ["tokenreviews"]
-  verbs: ["create"]
 ```
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -1283,8 +1276,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-The `VolumeSnapshotDelta` namespace-scoped CRD will be added to the
-`snapshot.storage.k8s.io` group.
+The `VolumeSnapshotDelta` and `DriverDiscovery` custom resources will be added
+to the CSI `cbt.storage.k8s.io` group.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1294,10 +1287,8 @@ Describe them, providing:
   - Estimated increase:
 -->
 
-The `VolumeSnapshotDelta` component will not issue direct calls to the cloud
-providers. The provider-specific CSI driver plugin which the
-`VolumeSnapshotDelta` component depends on will be responsible for interacting
-with their 3rd party APIs.
+Not by the CSI. All external calls to storage provider endpoints will be handled
+by the provider's CSI drivers.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1308,7 +1299,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No other kinds of existing API objects will be created.
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1321,14 +1312,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-Since the response payloads are returned to the user over "out-of-band" HTTP
-endpoints that don't involve the Kubernetes API server nor etcd, we don't
-foresee any negative impact on existing API latency SLIs/SLOs.
-
-The `VolumeSnapshotDelta` sidecar uses a simple startup process to initialize a
-Go process with 2 long-running goroutines, serving as the controller and the
-callback listener. It will have no negative impact on Kubernetes startup latency
-SLIs/SLOs.
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1342,12 +1326,9 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-The `VolumeSnapshotDelta` component is expected to be memory-intensive as it
-needs to be able to return large, paginated response payloads from the storage
-provider to the user. Hence, its pods must be deployed with sensible memory
-requests and limits specification. In the event of excessive memory usages, it is
-expected that the host's kernel will issue `OOMKilled` signals to terminate the
-pods. There are no requirements on pod priority or disruption budget.
+The Kubernetes API server proxies the CBT payloads between the user and the
+aggregated API server. See the [Risks and Mitigations](#risks-and-mitigations)
+section on using flow control to protect the Kubernetes API server.
 
 ### Troubleshooting
 
