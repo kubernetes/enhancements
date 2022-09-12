@@ -269,7 +269,7 @@ regardless of their termination state. If this is undesired, workloads should be
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name: TBD
+  - Metric name: `sync_proxy_rules_no_endpoints_total`
   - [Optional] Aggregation method:
   - Components exposing the metric:
     - kube-proxy
@@ -364,6 +364,7 @@ For each of them, fill in the following information by copying the below templat
 
 - [x] 2020-04-23: KEP accepted as implementable for v1.19
 - [x] 2021-01-21: KEP scope expanded to include both internal and external traffic.
+- [x] 1.24: implementation updated to handle all types of traffic policies.
 
 ## Drawbacks
 
