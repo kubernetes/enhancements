@@ -1063,7 +1063,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 Storage providers disable the CSI CBT feature by uninstalling the CSI CBT
 aggregated API server and sidecar container from their CSI drivers. No feature
-gates are invovled.
+gates are involved.
 
 As described in the design details, the `VolumeSnapshotDelta` resources are not
 persisted in `etcd`. Hence, there will be no unintended side effects. The
