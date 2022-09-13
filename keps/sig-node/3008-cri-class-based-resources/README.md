@@ -194,34 +194,31 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-We would like to add support for QoS-class resources in Kubernetes.
-QoS-class resources can be thought of as non-accountable resources, each of
-which is presented by a set of classes. Being non-accountable means that
-multiple containers can be assigned to the same class. They are also supposed
-to be opaque to the CRI client in the sense that the container runtime takes
-care of configuration and control of the resources and the classes within.
+Add support to Kubernetes for declaring _quality-of-service_ resources, and
+assigning these to Pods. A quality-of-service (QoS-class) resource is similar
+to other Kubernetes resource types (i.e. native resources such as `cpu` and
+`memory` or extended resources) because you can assign that resource to a
+particular container. However, QoS-class resources are also different from
+those other resources because they are used to assign a _class identifier_,
+rather than to declare a specific amount of capacity that is allocated.
+
+Main characteristics of the new resource type (and the technologies they are
+aimed at enabling) are:
+
+- multiple containers can be assigned to the same class of a certain type of
+  resource
+- resources are represented by a limited set of class identifiers
+- each type of resource has its own set of class identifiers
+
+With QoS-class resources, Pods and their containers can request
+opaque QoS-class identifiers (classes) for some particular mechanism
+(QoS-class resource type), such as block I/O bandwidth. Kubelet relays this
+information to the container runtime which is responsible for enforcing the
+request in the underlying system.
 
 A prime example of a QoS-class resource is Intel RDT (Resource Director
 Technology). RDT is a technology for controlling the cache lines and memory
-bandwidth available to applications. RDT provides a class-based approach for
-QoS control of these shared resources: all processes in the same hardware class
-share a portion of cache lines and memory bandwidth.
-
-We also believe that the Linux Block IO controller (cgroup) should be handled
-as a QoS-class resource on the level of container orchestration. This enables
-configuring I/O scheduler priority and throttling I/O bandwidth per workload.
-Having the support for QoS-class resources in place, it will provide a
-framework for the future, for instance class-based network or memory type
-prioritization.
-
-We have identified the need for both container-level and pod-level QoS-class
-resources as independent concepts. Intel RDT (above) is per-container by
-design because of the hardware implementation (the control/class hiearchy is
-flat). Also, the current support for blockio is container-level only (it is not
-possible to configure pod sandbox-level cgroup parameters). However, we have
-plans for implementing configuration of sandbox-level blockio parameters. Other
-usage for pod sandbox-level QoS-class resources would be communicating the
-Kubernetes Pod QoS class from kubelet to the container runtime.
+bandwidth available to applications.
 
 ## Motivation
 
@@ -234,28 +231,50 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-RDT implements a class-based mechanism for controlling the cache and memory
-bandwidth QoS of applications, providing a tool for mitigating noisy neighbors
-and fulfilling SLAs. In Linux control happens via resctrl -- a
-pseudo-filesystem provided by the kernel which makes it virtually agnostic of
-the hardware architecture. The OCI runtime-spec has supported Intel RDT for a
-while already. Other hardware vendors have comparable technologies which use
-the same resctrl interface.
+This enhancement proposal aims at improving the quality of service of
+applications in Kubernetes by introducing a new type of resource control
+mechanism. Certain types of resources are inherently shared by application (e.g.
+cache, memory bandwidth and disk I/O) and while there are technologies for
+controlling these, there is currently no meaningful way in Kubernetes to
+support those tehcnologies. This proposal suggests to address the issue above
+in a generalized way by extending the Kubernetes resource model with a new type
+of resources, i.e. QoS-class resources.
+
+[Intel RDT][intel-rdt] implements a class-based mechanism for controlling the
+cache and memory bandwidth QoS of applications. All processes in the same
+hardware class share a portion of cache lines and memory bandwidth. RDT
+proveides a way for mitigating noisy neighbors and fulfilling SLAs. In Linux
+control happens via resctrl -- a pseudo-filesystem provided by the kernel which
+makes it virtually agnostic of the hardware architecture. The OCI runtime-spec
+has supported Intel RDT for a while already. Other hardware vendors have
+comparable technologies which use the same [resctrl interface][linux-resctrl].
 
 The Linux Block IO controller parameters depend very heavily on the underlying
 hardware and system configuration (device naming/numbering, IO scheduler
 configuration etc) which makes it very impractical to control from the Pod spec
-level. In order to hide this complexity the concept of blockio classes is being
+level. In order to hide this complexity the concept of blockio classes has been
 added to the container runtimes (CRI-O and containerd). A system administrator
 is able to configure blockio controller parameters on per-class basis and the
-classes are then made available for CRI clients.
+classes are then made available for CRI clients. Following this model also
+provies a possible framework for the future improvements, for instance enabling
+class-based network or memory type prioritization of applications.
 
-Currently, there is no mechanism in Kubernetes to use these types of resources
-. CRI-O and containerd runtimes have support for RDT and blockio classes and
-they provide an bridge-gap user interface through special pod annotations. We
-would like to eventually get these types of resources first class citizen and
+Currently, there is no mechanism in Kubernetes to use these types of resources.
+CRI-O and containerd runtimes have support for RDT and blockio classes and they
+provide an bridge-gap user interface through special pod annotations. We would
+like to eventually get these types of resources first class citizen and
 properly supported in Kubernetes, providing visibility, a well-defined user
 interface, and permission controls.
+
+It seems necessary to support both container-level and pod-level QoS-class
+resources as independent concepts. Intel RDT (above) is per-container by
+design because of the hardware implementation (the control/class hiearchy is
+flat). Also, the current support for blockio is container-level only (it is not
+possible to configure pod sandbox-level cgroup parameters). However, having
+pod-level QoS-class resources makes it possible to implement support for
+sandbox-level blockio parameters. Other usage for pod sandbox-level QoS-class
+resources would be communicating the Kubernetes Pod QoS class from
+kubelet to the container runtime.
 
 ### Goals
 
@@ -272,6 +291,7 @@ know that this has succeeded?
 - Make the API to support updating QoS-class resource assignment of running containers
 - Make the extensions flexible, enabling simple addition of other QoS-class
   resource types in the future.
+- Make QoS-class resources opqaue (as possible) to the CRI client
 
 ### Non-Goals
 
@@ -291,12 +311,16 @@ and make progress.
 
 ## Implementation phases
 
-We have split the full implementation of QoS-class resources into multiple phases,
-building functionality gradually, step-by-step. The goal is to make the
-discussions more focused and easier. We may also learn on the way, insights
-from earlier phases affecting design choises made in the later phases,
+This proposal splits the full implementation of QoS-class resources into
+multiple phases, building functionality gradually, step-by-step. The goal is to
+make the discussions more focused and easier. We may also learn on the way,
+insights from earlier phases affecting design choises made in the later phases,
 hopefully resulting in a better overall end result. However, we also outline
 all the future steps to not lose the overall big picture.
+
+In the current design QoS-class resources are designed to be opaque to the CRI
+client in the sense that the container runtime takes care of configuration and
+control of the resources and the classes within.
 
 ### Phase 1
 
@@ -772,8 +796,8 @@ container runtimes.
 
 ### Container runtimes
 
-We have implemented support (container-level QoS-class resources) for Intel RDT
-and blockio in CRI-O and containerd:
+Currently, there is support (container-level QoS-class resources) for Intel RDT
+and blockio in CRI-O and containerd runtimes:
 
 - cri-o:
   - [~~Add support for Intel RDT~~](https://github.com/cri-o/cri-o/pull/4830)
@@ -1520,3 +1544,7 @@ For proper end-to-end testing of RDT, a cluster with nodes that have RDT
 enabled would be required. Similarly, for end-to-end testing of blockio, nodes
 with blockio cgroup controller and suitable i/o scheduler enabled would be
 required.
+
+<!-- References -->
+[intel-rdt]: https://www.intel.com/content/www/us/en/architecture-and-technology/resource-director-technology.html
+[linux-resctrl]: https://www.kernel.org/doc/html/latest/x86/resctrl.html
