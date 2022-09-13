@@ -169,13 +169,14 @@ Beta:
 
 GA:
 * metrics for total number of Services that have no endpoints (kubeproxy/sync_proxy_rules_no_endpoints_total) with additional labels for internal/external and local/cluster policies.
-* consensus on whether or not "PreferLocal" should be included as a new policy type
+* Fix a bug where internalTrafficPolicy=Local would force externalTrafficPolicy=Local (https://github.com/kubernetes/kubernetes/pull/106497).
+* Sufficient integration/e2e tests (many were already added for Beta, but we'll want to revisit tests based on changes that landed during Beta).
 
 ### Upgrade / Downgrade Strategy
 
-* The `trafficPolicy` field will be off by default during the alpha stage but can handle any existing Services that has the field already set.
+* The `internalTrafficPolicy` field will be off by default during the alpha stage but can handle any existing Services that has the field already set.
 This ensures n-1 apiservers can handle the new field on downgrade.
-* On upgrade, if the feature gate is enabled there should be no changes in the behavior since the default value for `trafficPolicy` is `Cluster`.
+* On upgrade, if the feature gate is enabled there should be no changes in the behavior since the default value for `internalTrafficPolicy` is `Cluster`.
 
 ### Version Skew Strategy
 
@@ -242,12 +243,12 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can an operator determine if the feature is in use by workloads?**
 
 * Check Service to see if `internalTrafficPolicy` is set to `Local`.
-* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules/blackhole_total` (subject to rename).
+* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules_no_endpoints_total` (subject to rename).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
-They can check the "blackhole" metric when internalTrafficPolicy=Local and there are no endpoints.
+They can check the `kubeproxy/sync_proxy_rules_no_endpoints_total` metric when internalTrafficPolicy=Local and there are no endpoints.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
@@ -314,8 +315,8 @@ already have many checks like this for `externalTrafficPolicy: Local`.
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 Any increase in CPU usage by kube-proxy to calculate node-local topology will likely
-be offset by reduced iptable rules it needs to sync when using `PreferLocal` or `Local`
-traffic policies.
+be offset by reduced iptable rules it needs to sync when using the `Local`
+traffic policy.
 
 ### Troubleshooting
 
