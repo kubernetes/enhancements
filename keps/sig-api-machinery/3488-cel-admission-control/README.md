@@ -34,7 +34,7 @@
   - [User Stories](#user-stories)
     - [Use Case: Standalone Policy](#use-case-standalone-policy)
     - [Use Case: Shared Configuration](#use-case-shared-configuration)
-    - [Use Case: Policy that defaults to most restrictive state (Zero trust)](#use-case-policy-that-defaults-to-most-restrictive-state-zero-trust)
+    - [Use Case: Principle of least privilege policy](#use-case-principle-of-least-privilege-policy)
     - [Use Case: Migrating from validating webhook to validation policy](#use-case-migrating-from-validating-webhook-to-validation-policy)
   - [Potential Applications](#potential-applications)
     - [Use Case: Build-in admission controllers](#use-case-build-in-admission-controllers)
@@ -47,6 +47,9 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [CEL Integration with Kubernetes native types](#cel-integration-with-kubernetes-native-types)
+  - [Versioning](#versioning)
+    - [Policy Definition Versioning](#policy-definition-versioning)
+    - [Configuration CRD Versioning](#configuration-crd-versioning)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -280,10 +283,10 @@ allowing CEL expressions that pass compilation and type checking significantly
 reduces the opportunities for runtime errors.
 
 Also, making it possible (and convenient) to declare "zero trust" policies is
-important to compliance. By "zero trust", we mean policy rules that apply
-automatically to newly created resources (e.g. namespaces) in a restrictive way
-but that can be made less restrictive on a more granular level (e.g. per
-namespace).
+important to compliance. By "zero trust", we mean policy rules that apply the
+principle of least privilege to newly created resources (e.g. namespaces) where
+the policy is initially set to the most restrictive state and can be made less
+restrictive via configuration.
 
 ## Proposal
 
@@ -358,13 +361,12 @@ configuration CRD is `ReplicaLimit`.
 Note: This is a "Bring Your Own CRD" design. The admission policy definition
 author is responsible for providing the `ReplicaLimit` configuration CRD.
 
-`spec.kind` specifies that the CEL expressions in `validations.expression` have
-access to the fields of the `v1.Deployment` kind.
+`spec.constraints` specifies that the CEL expressions in
+`validations.expression` have access to the fields of the `v1.Deployment` kind.
+Multiple resources of the same kind may be matched, e.g. `*/scale`.
 
 To configure an admission policy, "policy configurations" of the configuration
-CRD kind are created.
-
-For example:
+CRD kind are created. For example:
 
 ```yaml
 # Policy configurations
@@ -381,12 +383,26 @@ spec:
   maxReplicas: 3
 ```
 
-This `replica-limit-test.example.com` policy configuration limits deployments to
-a max of 3 repliacas in all namespaces in the test environment.
+This policy configuration limits deployments to a max of 3 repliacas in all
+namespaces in the test environment.
 
-An admission policy may have multiple configurations. In this example an
-additional `ReplicaLimit` could be created to configure the "prod" environment
-to have a maxReplicas limit of 100.
+An admission policy may have multiple configurations. To configure the "prod"
+environment to have a maxReplicas limit of 100, create:
+
+```yaml
+# Policy configurations
+apiVersion: rules.example.com/v1
+kind: ReplicaLimit
+metadata:
+  name: "replica-limit-prod.example.com"
+spec:
+  match:
+    namespaceSelectors:
+    - key: environment,
+      operator: In,
+      values: ["prod"]
+  maxReplicas: 100
+```
 
 This design separates admission policy _definition_ from _configuration_. This
 has a couple advantages:
@@ -399,19 +415,26 @@ has a couple advantages:
 
 ##### Policy Constraints
 
-Each `ValidatingAdmissionPolicy` resource may optionally constrain the resources
-it validates. 
+Each `ValidatingAdmissionPolicy` resource may optionally set `spec.constraints`
+to constrain the resources it validates. 
 
-- `spec.constraints` is used for CEL expression type checking, see the below "Type
-  safety" section for more details.
-- Only if this `spec.constraints` is matched are the constraints of
-  configuration resources checked for a match.
+- `spec.constraints` limits which resources may be matched configurations of the
+  policy. This allows the CEL expressions to make safe assumptions. E.g. a CEL
+  expression that is constrained to CREATES and UPDATES of resources is
+  guaranteed the root `object` variable is never null, but a CEL expression that
+  might need to evaluate a DELETE must handle the root `object` variable being
+  null.
+- `spec.constraints` is used for CEL expression type checking, see the below
+  "Type safety" section for more details.
+
 
 Alternatives considered:
 
-- Add a `spec.match` field. This field name would imply the the policy matches the
-  criteria, but it will only match if the constraint and a configuration resource's
-  match criteria also matches.
+- Name the constraint field `spec.constraints` instead of `spec.match`. This
+  field name would imply that the field works the same as a policy configuration
+  object's `match` field, but we intend for different semantics here. We're
+  setting constraints on what can be matched, not defining match criteria
+  directly.
 - Use a GVK instead of match rules. This works well for type checking, but doesn't
   help establish a the criteria for what resources a policy is allowed to apply to.
 
@@ -422,7 +445,7 @@ The `spec.config` field of the `ValidatingAdmissionPolicy` references the
 
 Policy configuration CRDs are the interface between `ValidatingAdmissionPolicy`
 authors and the administrators that configure the policies for clusters. The
-configuration CRD allows policy definition authors to define for how exactly a
+configuration CRD allows policy definition authors to define how exactly a
 `ValidatingAdmissionPolicy` may be configured using a OpenAPIv3 structural
 schema.
 
@@ -457,9 +480,9 @@ multiple `ValidatingAdmissionPolicy` resources. Each of which may apply
 different policy validation rules using the same configuration.  For example,
 one `ValidatingAdmissionPolicy` might validate the containers declared in `pods`
 while another might validate the containers declared in the `podTemplate` of a
-`replicaSet`. As long as both are validating containers for the same policy
-rules defined by a policy configuration, they can share that policy
-configuration.
+`replicaSet`. As long as both are validating that the same policy configuration
+is being enforced, just in different ways, it is reasonable for both to share
+the same policy configuration resources.
 
 Alternative considered: Embed the configuration CRD schema directly into
 `ValidatingAdmissionPolicy`.
@@ -655,19 +678,28 @@ To prevent clusters from being put into a unustable state that cannot be
 recoverd from via the API, admission webhooks are not allowed to match
 `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` kinds.
 
-We will extend this approach, and not allow `ValidatingAdmissionPolicy`,
-`ValidatingWebhookConfiguration` or `MutatingWebhookConfiguration` kinds to be
-matched by any of the admission control extension mechanisms (webhooks or cel).
+We will extend this approach:
+
+- `ValidatingAdmissionPolicy` cannot match `ValidatingAdmissionPolicy`
+- `ValidatingWebhookConfiguration` cannot match `ValidatingAdmissionPolicy` or
+  `MutatingWebhookConfiguration`.
+
+Note that this does allow `ValidatingAdmissionPolicy` to match
+`ValidatingWebhookConfiguration`.
 
 We are also considering not allowing a `ValidatingAdmissionPolicy` to match the
 configuration CRD kind that is uses for config. It would be possible to recover
-form this since the `ValidatingAdmissionPolicy` would remain accessible, but
+from this since the `ValidatingAdmissionPolicy` would remain accessible, but
 might require a privileged user do the repair.
 
 TODO: We should consider loosening this up and allow admission configuration to
 intercept/guard writes to admission configuration while preventing deadlock -
 Add feature to configure a set of webhooks to intercept other webhooks
 https://github.com/kubernetes/kubernetes/issues/101794.
+
+Alternative considered: Each `ValidatingAdmissionPolicy` has a "level", a
+`ValidatingAdmissionPolicy` can match another `ValidatingAdmissionPolicy` of a
+higher level. This could be added later.
 
 ### Phase 2
 
@@ -891,7 +923,7 @@ implement by having multiple `ValidatingAdmissionPolicy` resources that all
 reference the same `spec.config` CRD but that each enforce the policy for a
 different Kubernetes network kind.
 
-#### Use Case: Policy that defaults to most restrictive state (Zero trust)
+#### Use Case: Principle of least privilege policy
 
 A cluster administrator would like disallow the use of a list of reserved labels
 by default, but allow use of the labels in specific namespaces so long as the
@@ -1008,6 +1040,18 @@ CEL was integrated with CRD structural schemas and the "unstructured" data
 representation. For admission control, we also need CEL to be integrated with
 the Kubernetes Go structs used to representative native API types, both for type
 checking and for runtime data access.
+
+### Versioning
+
+#### Policy Definition Versioning
+
+As a built-in type, `ValidatingAdmissionPolicy` follows Kubernetes API guidelines.
+
+#### Configuration CRD Versioning
+
+A configuration CFD may offer a new version using the existing CRD schema
+versioning and version conversion support. The policy definition can then
+migrate from reading the old version to the new version.
 
 ### Test Plan
 
