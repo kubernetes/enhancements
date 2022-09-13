@@ -6,9 +6,9 @@ kep-number: "3466"
 authors: ['@logicalhan']
 owning-sig: sig-instrumentation
 participating-sigs: [sig-instrumentation]
-reviewers: ['@ehashman']
-approvers: ['@ehashman']
-prr-approvers: []
+reviewers: ['@dgrisonnet', '@dashpole']
+approvers: ['@dgrisonnet']
+prr-approvers: ['@johnbelamaric']
 creation-date: "2022-08-16"
 last-updated: v1.26
 status: provisional
