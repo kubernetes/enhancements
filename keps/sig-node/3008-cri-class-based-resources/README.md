@@ -759,7 +759,7 @@ runtime.
 Also, define "known" QoS-class resource types to more easily align container
 runtime implementations:
 
-```
+```diff
 +
 +const (
 +       // ClassResourceRdt is the name of the RDT QoS-class resource
