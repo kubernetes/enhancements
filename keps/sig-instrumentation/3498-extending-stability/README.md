@@ -55,7 +55,7 @@ This KEP intends to propose additional stability classes to extend on the existi
 
 ## Motivation
 
-It's become more obvious recently that we need additional stability classes, particularly in respect to various stages of feature releases. This has become more obvious with the advent of PRR (production readiness reviews) and mandated production readiness metrics. 
+It's become more obvious recently that we need additional stability classes, particularly in respect to various stages of feature releases. This has become more obvious with the advent of PRR (production readiness reviews) and [mandated production readiness metrics](https://github.com/kubernetes/community/blob/cf715a4404c4cefcfb52278bc128b7a765373fc7/sig-architecture/production-readiness.md#common-feedback-from-reviewers). 
 
 ### Goals
 
@@ -65,6 +65,7 @@ Introduce two more metric classes: `beta`, corresponding to the `beta` stage of 
 ### Non-Goals
 
 - establishing if specific metrics fall into a stability class, this exercise is left for component owners, who own their own metrics
+- establishing the guarantees of the `beta` stability class, this will be an exercise we will defer until the beta version of this KEP.
 
 
 ## Proposal

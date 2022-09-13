@@ -1,8 +1,8 @@
-id: "2306"
+id: "3498"
 prnumber: ""
 name: extending-stability
 title: Extending Metrics Stability
-kep-number: "4242"
+kep-number: "3498"
 authors: ['@logicalhan', '@dgrisonnet', '@coffeepac']
 owning-sig: sig-instrumentation
 participating-sigs: [sig-architecture, sig-instrumentation]
