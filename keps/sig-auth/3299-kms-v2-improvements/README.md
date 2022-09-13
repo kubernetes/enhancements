@@ -245,7 +245,11 @@ message StatusResponse {
 
 ### Rotation
 
-The `key_id` will be funneled into the status of the new encryption state REST API.  Each API server will create this resource with a random name on startup (stale objects will be garbage collected by a new controller).  This resource provides the necessary information for a controller to automatically initiate storage migration when consensus has been reached among the different API server instances.  Opaque hashes are used to prevent leaking any specific information about the encryption configuration and the key IDs in use.  This is a cluster scoped REST API that is only meant to be read by the associated controllers and the cluster admin.
+The `key_id` will be funneled into the status of the new encryption state REST API.  Each API server will create this resource (via a controller that will likely run as a post start hook) with a random name on startup (stale objects will be garbage collected by a new controller that runs in the Kubernetes controller manager).  This resource provides the necessary information for a controller to automatically initiate storage migration when consensus has been reached among the different API server instances.  Opaque hashes are used to prevent leaking any specific information about the encryption configuration and the key IDs in use.  This is a cluster scoped REST API that is only meant to be read by the associated controllers and the cluster admin.
+
+**Question: should writes to this resource be limited to the API server loopback identity?**
+
+**Question: should we have a status field with the Kubernetes version to prevent migration during differences in API server version?**
 
 ```go
 // metadata.name is the ID of the API server
@@ -262,29 +266,56 @@ type EncryptionState struct {
 // spec is empty
 type EncryptionStateSpec struct{}
 
+// status will be updated every 1 minute
+// KCM garbage collector will delete objects that have not been updated within the last 15 minutes
 type EncryptionStateStatus struct {
+	// running a storage migration when the API servers do not agree on the
+	// desired state will result in the etcd data being in an undefined state
     EncryptionConfigurationHash Hash `json:"encryptionConfigurationHash" protobuf:"bytes,1,opt,name=encryptionConfigurationHash"`
 
+	// all resources that are encrypted are represented as idividual items in this list
+	// note that this may get problamtic if we support */*
     Resources []EncryptionStateResource `json:"resources" protobuf:"bytes,2,opt,name=resources"`
+
+	// the last time any status hash was updated
+	LastUpdated metav1.Time `json:"lastUpdated" protobuf:"bytes,3,opt,name=lastUpdated"`
 }
 
 type EncryptionStateResource struct {
     Resource metav1.GroupResource `json:"resource" protobuf:"bytes,1,opt,name=resource"`
 
+	// an empty string from the hash value with a non-empty updated time means that
+	// a non-KMS v2 write key is in use.  This can be used with the `EncryptionConfigurationHash`
+	// to determine when the API servers are at the same state.
     WriteKeyIDHash Hash `json:"writeKeyIDHash" protobuf:"bytes,2,opt,name=writeKeyIDHash"`
 
+	// note that this field does not cover KMS v1 and other legacy encryption modes that
+	// are set as read keys.  This is okay because those configurations are statically
+	// covered by the `EncryptionConfigurationHash`.  KMS v2 can dynamically change keys
+	// at runtime without any change to the `EncryptionConfigurationHash` and thus needs
+	// its own hash tracking mechanism.
     ReadKeyIDHashes []Hash `json:"readKeyIDHashes" protobuf:"bytes,3,opt,name=readKeyIDHashes"`
-
-    // this field would be populated by scanning all KMS v2 encrypted data and recording all observed
-    // key IDs.  this would be an expensive operation and is a bit weird to be per API server.
-    InUseKeyIDHashes []Hash `json:"inUseKeyIDHashes" protobuf:"bytes,4,opt,name=inUseKeyIDHashes"`
 }
 
 type Hash struct {
+	// opaque string, likely base64(SHA-256)
     Value       string      `json:"value" protobuf:"bytes,1,opt,name=value"`
     LastUpdated metav1.Time `json:"lastUpdated" protobuf:"bytes,2,opt,name=lastUpdated"`
 }
 ```
+
+A controller would run the following steps to perform a storage migration (in conjunction with `kube-storage-version-migrator`):
+
+1. Check (likely hard-coded) config for expected number of API servers `N`
+2. Wait for `N` `EncryptionState` objects to exist
+3. Wait for all objects to have a `.status.lastUpdated` that is within `5` minutes of `time.Now()`
+4. Wait for all status hashes to be in sync
+5. Generate a hash `X` that is deterministically computed based on all status hashes
+6. Create one `migration.k8s.io/v1alpha1` `StorageVersionMigration` object per group resource (if it does not exist)
+	1. Set `.metadata.name` to `base64(X).group.resource`
+	2. Set `.spec.resource.version` to the preferred version based on discovery
+	3. (Unclear, maybe) Set `.metadata.ownerReferences` to include all `N` `EncryptionState` objects
+7. Wait for `.status.conditions[.type = Succeeded].status` `==` `true`
 
 ### Observability
 
@@ -400,6 +431,7 @@ Pick one of these and delete the rest.
   - Feature gate name: `KMSv2`
   - Components depending on the feature gate:
     - kube-apiserver
+    - kube-controller-manager
 
 ```go
 FeatureSpec{
@@ -596,6 +628,19 @@ We considered using the `AuditID` from the kube-apiserver request that generated
 1. `AuditID` can be configured by the user with the `Audit-ID` header in the API server request. Multiple requests can be sent to the kube-apiserver with the same `Audit-ID`.
 2. Not all API server requests will generate an envelope operation. The API server caches DEKs and for the DEK that's available in the cache, the kube-apiserver will not generate an envelope operation.
 3. Since not all calls to the KMS correspond to an audit log, using audit ID is not complete for correlating calls from kube-apiserver->kms-plugin->KMS.
+
+**Rotation**:
+
+Since the storage format is structured and contains plaintext key ID information, the `EncryptionState` resource could include information about the current state of etcd:
+
+```go
+	// Reminder: this needs a way to indicate that non-kms v2 encryption methods are in use as well as when unencrypted data is present.
+    // this field would be populated by scanning all KMS v2 encrypted data and recording all observed
+    // key IDs.  this would be an expensive operation and is a bit weird to be per API server.
+    InUseKeyIDHashes []Hash `json:"inUseKeyIDHashes" protobuf:"bytes,4,opt,name=inUseKeyIDHashes"`
+```
+
+This API has been deferred as it is not explicitly required for rotation.  It is still something that should be considered as it would provide an easy way for a user to confirm that storage migration was successful (for example, it allows a user to understand that an old KMS key can be safely deleted).
 
 ## Infrastructure Needed
 
