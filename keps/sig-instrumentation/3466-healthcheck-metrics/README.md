@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4200: Healthcheck metrics
+# KEP-3466: Healthcheck metrics
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -168,7 +168,7 @@ into an SLI.
 
 ## Proposal
 
-We are proposing to add a new endpoint on Kubernetes components `/health/metrics` which returns
+We are proposing to add a new endpoint on Kubernetes components `/metrics/health` which returns
 health check data in prometheus format.
 
 
@@ -183,6 +183,10 @@ case we are proposing known dimensions to the metrics, specifically:
 
 
 ## Design Details
+
+We will write the actual metric data in the healthz/livez/readyz paths and expose this in our new metrics endpoint. Admittedly, this has the downside of staleness though, since the health check data can be as stale as the length of the kubelet scrape interval. However, given our e2e tests configure [apiserver to 1s intervals](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/manifests/kube-apiserver.manifest#L58), it is reasonable to assume that other cloud-providers likely configure similar small scrape intervals, which means staleness should not realistically be much of an issue. 
+
+We considered the alternative of actually fetching health check data when the metrics endpoint was hit, but this would introduce extra load against the health endpoint, which we took care to avoid. Using a gaugeFunc would also preclude making the metric `stable`, since gaugeFuncs are dynamic by nature and therefore cannot be parsed at compile time by the stability framework. 
 
 
 ### Test Plan
@@ -239,7 +243,7 @@ adds instrumentation of these endpoints' results.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes, we are proposing that this health metrics are surfaced in each component under `/health/metrics` which 
+Yes, we are proposing that this health metrics are surfaced in each component under `/metrics/health` which 
 will have to be consumed for the feature to be useful. However, this should be relatively innocuous since 
 it will an isolated endpoint strictly for the purpose of surfacing health metrics.
 
@@ -263,7 +267,7 @@ also hits these endpoints).
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No/
+No.
 
 ### Troubleshooting
 

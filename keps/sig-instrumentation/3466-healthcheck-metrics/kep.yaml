@@ -1,8 +1,8 @@
-id: "4200"
+id: "3466"
 prnumber: ""
 name: healthcheck-metrics
 title: Kubernetes Healthcheck Metrics
-kep-number: "4200"
+kep-number: "3466"
 authors: ['@logicalhan']
 owning-sig: sig-instrumentation
 participating-sigs: [sig-instrumentation]
