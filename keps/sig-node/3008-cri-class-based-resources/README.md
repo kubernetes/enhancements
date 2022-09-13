@@ -481,28 +481,28 @@ Some possible alternatives.
    1. A separate gRPC endpoint or update `StatusResponse`
 
      ```diff
-       message RuntimeStatus {
-           // List of current observed runtime conditions.
-           repeated RuntimeCondition conditions = 1;
-      +    // Information about the discovered resources
-      +    ResourcesInfo resources = 2;
-      +}
-      +
-      +// ResourcesInfo contains information about the resources discovered by the
-      +// runtime.
-      +message ResourcesInfo {
-      +    // Pod-level class resources available.
-      +    repeated ClassResourceInfo pod_class_resources = 1;
-      +    // Container-level class resources available.
-      +    repeated ClassResourceInfo container_class_resources = 2;
-      +}
-      +
-      +// ClassResourceInfo contains information about one type of class resource.
-      +message ClassResourceInfo {
-      +    string Name = 1;
-      +    repeated string classes = 2;
-      +    bool immutable = 3;
-       }
+      message RuntimeStatus {
+          // List of current observed runtime conditions.
+          repeated RuntimeCondition conditions = 1;
+     +    // Information about the discovered resources
+     +    ResourcesInfo resources = 2;
+     +}
+     +
+     +// ResourcesInfo contains information about the resources discovered by the
+     +// runtime.
+     +message ResourcesInfo {
+     +    // Pod-level class resources available.
+     +    repeated ClassResourceInfo pod_class_resources = 1;
+     +    // Container-level class resources available.
+     +    repeated ClassResourceInfo container_class_resources = 2;
+     +}
+     +
+     +// ClassResourceInfo contains information about one type of class resource.
+     +message ClassResourceInfo {
+     +    string Name = 1;
+     +    repeated string classes = 2;
+     +    bool immutable = 3;
+      }
      ```
 
    1. OR Populate a (json) file in a known location
