@@ -273,7 +273,7 @@ type EncryptionStateStatus struct {
 	// desired state will result in the etcd data being in an undefined state
     EncryptionConfigurationHash Hash `json:"encryptionConfigurationHash" protobuf:"bytes,1,opt,name=encryptionConfigurationHash"`
 
-	// all resources that are encrypted are represented as idividual items in this list
+	// all resources that are encrypted are represented as individual items in this list
 	// note that this may get problamtic if we support */*
     Resources []EncryptionStateResource `json:"resources" protobuf:"bytes,2,opt,name=resources"`
 
