@@ -8,7 +8,6 @@ owning-sig: sig-instrumentation
 participating-sigs: [sig-architecture, sig-instrumentation]
 reviewers: ['@dashpole']
 approvers: ['@dashpole']
-prr-approvers: ['@ehashman']
 creation-date: "2022-09-05"
 last-updated: v1.26
 status: provisional
