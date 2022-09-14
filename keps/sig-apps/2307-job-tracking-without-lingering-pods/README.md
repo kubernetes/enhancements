@@ -12,6 +12,7 @@
     - [New API calls](#new-api-calls)
     - [Bigger Job status](#bigger-job-status)
     - [Unprotected Job status endpoint](#unprotected-job-status-endpoint)
+    - [Jobs with legacy tracking](#jobs-with-legacy-tracking)
 - [Design Details](#design-details)
   - [API changes](#api-changes)
   - [Algorithm](#algorithm)
@@ -20,7 +21,6 @@
   - [Deleted Jobs](#deleted-jobs)
   - [Pod adoption](#pod-adoption)
 - [Monitoring Pods with finalizers](#monitoring-pods-with-finalizers)
-- [Migrating Jobs with legacy tracking](#migrating-jobs-with-legacy-tracking)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -84,7 +84,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -172,6 +172,25 @@ status updates. See [Algorithm](#algorithm) below.
 Changes in the status not produced by the Job controller in
 kube-controller-manager could affect the Job tracking. Cluster administrators
 should make sure to protect the Job status endpoint via RBAC.
+
+#### Jobs with legacy tracking
+
+Starting in 1.27, the job controller will ignore the annotation `batch.kubernetes.io/job-completion`
+and will start tracking every Job with finalizers.
+This means that terminated pods without finalizers will be ignored and
+replacement pods might be created (with finalizers). This behavior is similar
+to:
+- Having a low terminated pods threshold in the Pod GC or
+- Losing pods because of node upgrades.
+
+The impact should be minimal for the following reasons:
+- During 1.26, all new Jobs will be tracked with finalizers, as the feature
+  cannot be disabled.
+- Most clusters would also have the feature enabled in 1.25, giving extra
+  time for jobs to terminate.
+
+In other words, in most clusters Jobs will have 2 releases to terminate
+before getting their pods recreated.
 
 ## Design Details
 
@@ -327,38 +346,6 @@ that currently have a job tracking finalizer.
 
 The job controller tracks this metric in its event handlers.
 
-## Migrating Jobs with legacy tracking
-
-Once `JobTrackingWithFinalizers` graduates to stable, Jobs that start in a
-kubernetes version where `JobTrackingWithFinalizer` is disabled need to be
-migrated to the new tracking. This migration mechanism will be initially guarded
-by the feature gate `MigrateJobLegacyTracking`, starting in 1.26,
-enabled by default.
-
-When the feature gate `MigrateJobLegacyTracking` is enabled, the job controller
-migrates jobs with legacy tracking to tracking with finalizers as described
-below:
-
-If a Job doesn't have the annotation `batch.kubernetes.io/job-completion`, it
-means that the Job is not currently tracked with finalizers. The job controller
-starts the following migration process:
-1. Add the finalizer `batch.kubernetes.io/job-completion` to all pods with
-   `.status.phase=(Pending/Running)`.
-2. Ignore pods with `.status.phase=(Complete/Failed)` that don't have the `batch.kubernetes.io/job-completion`.
-   They are considered to be already counted in `.status.(failed/succeeded)`.
-3. Add the annotation `batch.kubernetes.io/job-completion`.
-
-This might lead to extra pods being created, but this is acceptable because:
-
-- After the `JobTrackingWithFinalizers` feature was enabled for some time, the
-  Job controller is already tracking most Jobs using finalizers.
-- For the remaining Jobs, the Job controller already accounted most of the
-  finished Pods in the status. The controller might leave some
-  finished Pods unaccounted, if they finish before the controller has a chance
-  to add a finalizer. This situation is no worse than the legacy tracking
-  were the controller doesn't account for Pods removed by garbage collection or
-  other means.
-
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -432,8 +419,6 @@ for jobs with multiple sizes.
 
 #### Beta -> GA Graduation
 
-- [Migrate existing Jobs to tracking with finalizers](#migrating-jobs-with-legacy-tracking)
-  under feature gate `MigrateJobLegacyTracking`, enabled by default.
 - Job E2E tests graduate to conformance.
 - Job tracking scales to 10^5 completions per Job processed within an order of
   minutes.
@@ -448,15 +433,12 @@ In 1.26:
 
 In 1.27:
 
-- Lock `MigrateJobLegacyTracking` to true.
 - Remove legacy tracking code.
+- Ignore annotation `batch.kubernetes.io/job-completion` and stop adding it.
+  Mark the annotation as legacy in the documentation.
 
 In 1.28:
-
-- Stop adding annotation `batch.kubernetes.io/job-completion` and remove from
-  documentation.
-- Remove feature gates `JobTrackingWithFinalizers` and `MigrateJobLegacyTracking`.
-- Remove legacy to finalizers migration code.
+- Remove feature gate `JobTrackingWithFinalizers`.
 
 ### Upgrade / Downgrade Strategy
 

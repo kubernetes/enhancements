@@ -35,9 +35,6 @@ feature-gates:
   components:
     - kube-apiserver
     - kube-controller-manager
-- name: MigrateJobLegacyTracking
-  components:
-    - kube-controller-manager
 disable-supported: false
 
 # The following PRR answers are required at beta release
