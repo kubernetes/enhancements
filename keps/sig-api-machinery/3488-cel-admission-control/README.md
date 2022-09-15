@@ -52,6 +52,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [CEL Integration with Kubernetes native types](#cel-integration-with-kubernetes-native-types)
+  - [Writing to Status](#writing-to-status)
   - [Versioning](#versioning)
     - [Policy Definition Versioning](#policy-definition-versioning)
     - [Configuration CRD Versioning](#configuration-crd-versioning)
@@ -301,20 +302,19 @@ for kind)
 
 At a high level, the API will support:
 
-- Request matching (similar to webhook Rules, NamespaceSelector,
-  ObjectSelector)
+- Request matching (similar to the match rules of admission webhooks, RBAC, priority & fairness and Audit)
 - CEL rule evaluation (similar to both [CRD Validation
   Rules](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2876-crd-validation-expression-language)
   and
   [AdmissionRequest](https://github.com/kubernetes/kubernetes/blob/2ac6a4121f5b2a94acc88d62c07d8ed1cd34ed63/staging/src/k8s.io/api/admission/v1/types.go#L40))
-- Automatic version conversion support (similar to webhooks MatchPolicy=Equivalent), with ability to introspect GVK of admitted resource in CEL expression.
+- Version conversion support (similar to webhooks MatchPolicy)
 - Access the old object (similar to [transition
   rules](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2876-crd-validation-expression-language#transition-rules)
   and oldObject in AdmissionRequest)
 - Configurability, as motivated above.
 
 There are also lots of additional capabilities (response message formatting,
-severity, levels, failure policies, type safety, ...) that will be discussed
+failure policies, type safety, advanced matching rules, ...) that will be discussed
 in detail further on in this proposal.
 
 We have divided this proposal into phases, all of which must be completed before
@@ -422,15 +422,15 @@ has a couple advantages:
 Each `ValidatingAdmissionPolicy` resource may optionally set `spec.match`
 to constrain the resources it validates. 
 
-- `spec.match` limits which resources may be matched configurations of the
-  policy. This allows the CEL expressions to make safe assumptions. E.g. a CEL
-  expression that is constrained to CREATES and UPDATES of resources is
-  guaranteed the root `object` variable is never null, but a CEL expression that
-  might need to evaluate a DELETE must handle the root `object` variable being
-  null.
-- `spec.match` is used for CEL expression type checking, see the below
-  "Type safety" section for more details.
-
+- `spec.match` constraints which resources this policy can be applied to. Policy
+  configurations each have match rules with further narrow this constraint, but
+  cannot expand it. This allows the CEL expressions to make safe assumptions.
+  E.g. a CEL expression that is constrained to CREATES and UPDATES of resources
+  is guaranteed the root `object` variable is never null, but a CEL expression
+  that might need to evaluate a DELETE must handle the root `object` variable
+  being null.
+- `spec.match` guides CEL expression type checking, see the below "Type safety"
+  section for more details.
 
 Alternatives considered:
 
@@ -463,20 +463,8 @@ If any of the above configuration CRD restrictions are violated, the errors will
 be reported in the status of the `ValidatingAdmissionPolicy`. If the match
 criteria is malformed, this unfortunately may cause the policy to fail open--
 without match criteria, there is no way to know what resources the policy should
-match.
-
-TODO: (per
-https://github.com/kubernetes/enhancements/pull/3492#discussion_r964841045):
-status on API server configuration objects has been tricky to design in the
-past, because of the following:
-
-- multiple active kube-apiservers (sometimes at identical versions, sometimes
-  skewed by one version during upgrade)
-- multiple active non-kube-apiserver servers (aggregated servers)
-- Note: 'NonStructural' relies on the fact that the status change is a function
-  of the resource then generation can be used
-  (https://github.com/kubernetes/kubernetes/commit/2cfc3c69dc7c17b2711af0168f39ed7f515675c2).
-  Can this approach be somehow extended?
+match. (See "Writing to Status" for more details about the structure of status
+and how it will be updated).
 
 Note that a policy configuration CRD may be referenced by the `spec.config` of
 multiple `ValidatingAdmissionPolicy` resources. Each of which may apply
@@ -540,7 +528,7 @@ Matching is performed in quite a few systems across Kubernetes:
 | user/userGroup                           | Audit                        | phase 2? see "Secondary Authz" section |
 | permissions (RBAC verb)                  | RBAC                         | phase 2? see "Secondary Authz" section |
 
-* WH = Admission webhooks, P&F = Priority and Fairness
+WH = Admission webhooks, P&F = Priority and Fairness
 
 Match criteria must be declared in the `spec.match` field of policy
 configuration resources (see `ReplicaLimit` in the above example) and will be
@@ -588,15 +576,10 @@ type ReplicaLimit struct {
 }
 ```
 
-`MatchPolicy` will implicitly be `Equivalent`, and will not be configurable,
-but it will be possible to opt-out of the behavior by inspecting the
-GVK of the admitted resource in the CEL expression.
-
-Note that a "accept" or "deny" decision is only reported in metrics for resources that
-match the criteria. If no match criteria existed, the number of "accept"
-occurrences would need to be much higher (the CEL expressions would need to
-explicitly check for all pre-conditions and accept requests that do not meet
-them). This would make metrics more difficult to interpret.
+`MatchPolicy` will work the same as for admission webhooks. It will default to
+`Equivalent` but may be set to `Exact`. See "Use Case: Multiple policy
+definitions for different versions of CRD" for an explanation of why we need
+`MatchPolicy`.
 
 xref:
 https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-rules
@@ -620,10 +603,12 @@ Cons:
 For a policy that requires no configuration, we would prefer not to ask users
 create configuration CRD and configuration resource that serve no actual
 purpose. Instead, we will allow a `ValidatingAdmissionPolicy` to define
-a singleton policy:
+a singleton policy, the recipe is:
 
-- Has `policyType: Singleton` field
-- Has no `spec.config`
+- Set a `policyType: Singleton` field
+- Exclude `spec.config`
+
+For example:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
@@ -643,10 +628,10 @@ spec:
   - expression: "object.spec.replicas < 100"
 ```
 
-By using a `policyType` we make it easier for a user examining the policy to
-observe that behaves differently from configurable policies. This is much less
-obvious if we infer that a policy is a singleton by the state of the other
-fields. It also makes validation errors reported when validating a
+Adding a `policyType` field makes it easier for a user examining the policy to
+observe that the policy is different that normal (configurable) policies. This
+is much less obvious if we infer that a policy is a singleton by the state of
+the other fields. It also makes validation errors reported when validating a
 `ValidatingAdmissionPolicy` much easier to communicate to the policy author.
 
 #### Type safety
@@ -662,17 +647,12 @@ type-safe way we propose:
   - When a `ValidatingAdmissionPolicy` is created/update. Any type check errors
     against Kubernetes built-in types result in the create/update request
     failing validation with the type error. 
-  - When a configuration CRD is created/updated: The type check errors are
-    detected by an control loop watching the CRDs with an informer in the API
-    server, and reported in the status of the ValidatingAdmissionPolicy. The
-    policy toggles to a "misconfigured" state where all admission requests
-    matching and of the policy configurations of the policy fail according to
-    the `FailureMode`.
-  - When policy configuration resources are created/update: The type check
-    errors are detected by an control loop watching the CRs and toggles a bit
-    tracking that the policy configuration is "misconfigured" state where all
-    admission requests matching the policy configuration fail according to the
-    `FailureMode`.
+  - When any CRD a `ValidatingAdmissionPolicy` needs for type chekcing is
+    created/updated: The type check errors are detected by an control loop
+    watching the CRDs with an informer in the API server, and reported in the
+    status of the ValidatingAdmissionPolicy. The policy toggles to a
+    "misconfigured" state where all admission requests matching and of the
+    policy configurations of the policy fail according to the `FailureMode`.
 
 Example: Typesafe access to object 
 
@@ -1242,6 +1222,95 @@ CEL was integrated with CRD structural schemas and the "unstructured" data
 representation. For admission control, we also need CEL to be integrated with
 the Kubernetes Go structs used to representative native API types, both for type
 checking and for runtime data access.
+
+### Writing to Status
+
+This enhancement proposes using status to of `ValidatingAdmissionPolicy` to
+communicate type-checking errors and any other misconfigurations such as CRD not
+found errors.
+
+As mentioned in
+https://github.com/kubernetes/enhancements/pull/3492#discussion_r964841045,
+status on API server configuration objects has been tricky to design in the
+past, because of the following:
+
+- multiple active kube-apiservers (sometimes at identical versions, sometimes
+  skewed by one version during upgrade)
+- multiple active non-kube-apiserver servers (aggregated servers)
+
+As a concrete example, The CRD `NonStructural` status field takes advantage of
+the metadata generation field
+(https://github.com/kubernetes/kubernetes/commit/2cfc3c69dc7c17b2711af0168f39ed7f515675c2).
+
+We will use a similar approach. we will use `generation` numbers of resources to
+determine if an apiserver is observing a state newer than the written status of
+a `ValidatingAdmissionPolicy`, and will only update the status if this is true.
+
+An apiserver controller will watch:
+
+- `ValidatingAdmissionPolicy` resources
+- All CRDs the CEL expressions need to be type checked against (Configuration
+  CRDs and any CRDs matched by the match criteria of the policy)
+
+It will track the last seen `generation` of all these resources in
+`ValidatingAdmissionPolicy`:
+
+```
+apiVersion: "admissionregisteration/v1alpha1"
+kind: "ValidatingAdmissionPolicy"
+metadata:
+  name: "myPolicy"
+  generation: 2
+spec:
+  ...
+  config:
+    apiVersion: "example.com/v1"
+    kind: "fooLimits"
+  ...
+status:
+  config:
+    generation: 5
+  matchedCustomResource:
+    apiVersion: "example.com/v1"
+    kind: "foo"
+    generation: 100
+```
+
+Any time any of the resources the apiserver controller is watching change, it
+will check that:
+
+- last seen ValidatingAdmissionPolicy generation is no older current
+- last seen `spec.config` apiVersion/kind if different than current OR last seen
+  `status.config.generation` is no older than current
+- last seen `status.matchedCustomResource` apiVersion/kind if different than
+  current OR last seen `status.matchedCustomResource.generation` is no older
+  than current
+- At least one of the generations have increased
+
+If all are true, then the controller has observed a forward progress of the
+status and should update the status along with any conditions and errors
+observed:
+
+```
+status:
+  ...
+  conditions:
+    type: "Available" # TODO: pick an appropriate type for broken policies
+    status: "False"
+    reason: Misconfigured
+    message: "Validation expressions contain errors. Config custom resource definition not found."
+    ...
+  validationErrors:
+    - expression: "object.baz > config.min"
+      errors:
+        - "illegal ..."
+        - "no such field ..."
+  configCustomResourceDefinitionErrors:
+    - "Config custom resource definition not found"
+```
+
+Note that write conflicts do not require a retry since the write that caused the
+conflict will result in another sync once it is observed.
 
 ### Versioning
 
