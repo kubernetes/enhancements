@@ -18,9 +18,9 @@
       - [Policy Constraints](#policy-constraints)
       - [Configuration](#configuration)
       - [Match Criteria](#match-criteria)
+      - [Exclude matching](#exclude-matching)
     - [Singleton policies](#singleton-policies)
     - [Type safety](#type-safety)
-      - [Type safety and version skew](#type-safety-and-version-skew)
     - [Failure Policy](#failure-policy)
     - [Safety measures](#safety-measures)
     - [Reporting violations](#reporting-violations)
@@ -28,7 +28,7 @@
     - [Namespace scoped policy configuration](#namespace-scoped-policy-configuration)
     - [CEL expression scoping](#cel-expression-scoping)
     - [Secondary Authz](#secondary-authz)
-    - [Exclude and default matching](#exclude-and-default-matching)
+    - [Default matching](#default-matching)
     - [Access to namespace metadata](#access-to-namespace-metadata)
     - [Transition rules](#transition-rules)
     - [Composition utilities](#composition-utilities)
@@ -356,6 +356,9 @@ spec:
       scope:       "*"
   validations:
     - expression: "object.spec.replicas <= config.maxReplicas"
+      level: Deny
+      reason: Invalid
+      messageExpression: "'object.spec.replicas must be no greater than ' + config.maxReplicas"
       # ...other rule related fields here...
 ```
 
@@ -390,21 +393,22 @@ spec:
 This policy configuration limits deployments to a max of 3 repliacas in all
 namespaces in the test environment.
 
-An admission policy may have multiple configurations. To configure the "prod"
-environment to have a maxReplicas limit of 100, create:
+An admission policy may have multiple configurations. To configure all other
+environments environment to have a maxReplicas limit of 100, create another
+configuration:
 
 ```yaml
 # Policy configurations
 apiVersion: rules.example.com/v1
 kind: ReplicaLimit
 metadata:
-  name: "replica-limit-prod.example.com"
+  name: "replica-limit-nontest.example.com"
 spec:
   match:
     namespaceSelectors:
     - key: environment,
-      operator: In,
-      values: ["prod"]
+      operator: NotIn,
+      values: ["test"]
   maxReplicas: 100
 ```
 
@@ -459,6 +463,20 @@ Policy configuration CRDs have a few restrictions:
 - For phase 1, configuration CRDs must be cluster scoped. See phase 2 (below)
   for our plan on namespace scoped configuration CRDs.
 
+TODO: Pick a design.
+
+Alternatives are summarized here and discussed in more detail below:
+
+| Design Alternative                                | Summary                        |
+| ------------------------------------------------- | ------------------------------ |
+| Duck Typed CRDs                                   | Require CRDs be defined with match field of correct structure |
+| `/matchRules` subresource                         | Use a subresource to enforce CRDs provide match criteria      |
+| `PolicyConfiguration` kind with config reference  | Match criteria is defined in a kind, it references a config CRD that is freeform | 
+| `PolicyConfiguration` kind with config embedded   | Match criteria is defined in a kind, it embeds a config CRD that is freeform |
+| Generate CRDs                                     | Policy defintions contain inline OpenAPIv3 schema for config, CRD is generated with both match and config sections |
+
+Alternative: Duck Typed CRDs
+
 If any of the above configuration CRD restrictions are violated, the errors will
 be reported in the status of the `ValidatingAdmissionPolicy`. If the match
 criteria is malformed, this unfortunately may cause the policy to fail open--
@@ -475,8 +493,100 @@ while another might validate the containers declared in the `podTemplate` of a
 is being enforced, just in different ways, it is reasonable for both to share
 the same policy configuration resources.
 
-Alternative considered: Embed the configuration CRD schema directly into
-`ValidatingAdmissionPolicy`.
+Alternative: `/matchRules` subresource
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: replicalimit.example.com
+spec:
+  group: example.com
+  versions:
+    ... # configuration schema(s) go here
+  subresources:
+    matchRules:
+      matchRulesPath: .spec.match
+```
+
+Pros:
+
+- Follows pattern used by scale subresource to provide polymorphism across CRDs
+
+Cons:
+
+- Introduces another subresources with all the overhead and complexity that entails
+
+Alternative: `PolicyConfiguration` kind with config reference
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: PolicyConfiguration
+metadata:
+  name: "replica-limit-prod.example.com"
+spec:
+  match:
+    namespaceSelectors:
+    - key: environment,
+      operator: NotIn,
+      values: ["test"]
+  config:
+    apiVersion: rules.example.com/v1
+    kind: ReplicaLimit
+    name: replica-limit-prod-config.example.com
+---
+apiVersion: rules.example.com/v1
+kind: ReplicaLimit
+metadata:
+  name: "replica-limit-prod-config.example.com"
+spec:
+  maxReplicas: 100
+```
+
+Pros:
+
+- Matching criteria is fully defined and validated in a builtin type
+
+Cons:
+
+- Requires two resources for each configuration of a policy
+  - Cannot atomically change the match rules and configuration of a policy configuration
+
+Alternative considered: `PolicyConfiguration` kind with config embedded
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: PolicyConfiguration
+metadata:
+  name: "replica-limit-prod.example.com"
+spec:
+  match:
+    namespaceSelectors:
+    - key: environment,
+      operator: NotIn,
+      values: ["test"]
+  config:
+    apiVersion: rules.example.com/v1
+    kind: ReplicaLimit
+    spec:
+      maxReplicas: 100
+```
+
+Pros:
+
+- Matching criteria is fully defined and validated in a builtin type
+
+Cons:
+
+- Embedded config needs the same treatment as custom resource, but
+  reimplementing it all on an embedded resource is, at best, highly impractical
+  in the apiserver as it exists today
+
+Alternative: Generate CRDs
+
+This allows the apiserver to combine the configuration schema with the match
+schema and then generate a CRD.  The apiserver then can run a control loop
+to always keep the CRD match stanzas in sync with what is expected.
 
 Pros:
 
@@ -519,11 +629,11 @@ Matching is performed in quite a few systems across Kubernetes:
 | object selectors                         | WH                           | phase 1                        |
 | resource apiGroup + resource             | WH/Audit/P&F/RBAC            | phase 1                        |
 | apiVersion                               | WH                           | phase 1                        |
-| resourceName                             | Audit/RBAC                   | ?                              |
-| scope (cluster|namespace)                | WH/P&F                       | phase 1                        |
+| resourceName                             | Audit/RBAC                   | TODO: support?                 |
+| scope (cluster\|namespace)               | WH/P&F                       | phase 1                        |
 | operation (HTTP verb)                    | WH/Audit/P&F                 | phase 1                        |
+| exclude / skip resource kinds            | Audit (level=None)           | phase 1, see below "Exclude matching" |
 | NonResourceURLs                          | Audit/RBAC/P&F               |                                |
-| exclude / skip resource kinds            | Audit (level=None)           | phase 2? see "Exclude and default matching" section |
 | default / fallthrough matching           |                              | phase 2? see "Exclude and default matching" section |
 | user/userGroup                           | Audit                        | phase 2? see "Secondary Authz" section |
 | permissions (RBAC verb)                  | RBAC                         | phase 2? see "Secondary Authz" section |
@@ -555,7 +665,7 @@ other match related properties in the future).
 // TODO: Add this as a struct into the Kubernetes codebase so it can easily be
 // imported?
 type Match struct {
-  Rules []admissionregisterationv1.RuleWithOperations `json:"rules,omitempty" protobuf:"bytes,1,rep,name=rules"`
+  Rules []admissionregisterationv1.RuleWithOperations `json:"rules,omitempty" protobuf:"bytes,1,rep,name=rules"` // TODO: need exclude support here too
   NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty" protobuf:"bytes,2,opt,name=namespaceSelector"`
   ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty" protobuf:"bytes,3,opt,name=objectSelector"`
   MatchPolicy MatchPolicy // ...
@@ -598,6 +708,24 @@ Cons:
 - We intend to allow policy configuration resources declare match criteria,
   making it difficult to pre-compile or type-check CEL expressions.
 
+##### Exclude matching
+
+Benefits:
+
+- Exclude rules make it easier for policy definition authors to do things like
+  exclude kube-system or other special purpose namespaces from policies that apply
+  to all "normal" namespaces.
+- Default rules make it easier to apply principal of least privilege to
+  policies. I.e. ensure that newly created resources default to a least
+  privilege state until configured otherwise.
+
+Exclude rules can be modeled after the approach exstablished in Audit where
+level=None on a match rule can be used to exlude any rules beneath it. E.g.
+`effect: Exclude`.
+
+If we want this, it is essential that we introduce it early, the exclude inverts
+the semantics of a match, adding it in a later release is _very_ incompatible.
+
 #### Singleton policies
 
 For a policy that requires no configuration, we would prefer not to ask users
@@ -635,6 +763,37 @@ the other fields. It also makes validation errors reported when validating a
 `ValidatingAdmissionPolicy` much easier to communicate to the policy author.
 
 #### Type safety
+
+This is complicated by:
+
+- Version skew
+- CRDs
+- Aggregated API servers
+
+Problem examples:
+
+| Problem                                                | Summary                                     |
+| ------------------------------------------------------ | ------------------------------------------- |
+| version skew: ephemeralContainers case                 | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
+| version skew: Migration from annotation to field       | Need to be able to validate annotation (if present) or field (if it exists and is populated) |
+| CRD is deleted                                         | Nothing to type check against, but also means there are no coresponding custom resources |
+| CRD is in multiple clusters, but schema differs        | If policy author is aware of the schema variations, can they write policies that work for all the variations? |
+| Validation of an aggregated API server type            | Main API server does not have type definitions |
+
+Design options:
+
+TODO: Pick a design.
+
+Alternatives are summarized here and discussed in more detail below:
+
+| Design Alternative                                | Summary                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Typesafe CEL expressions and scopes               | Expressions and the schema paths of expression scopes are fully typechecked, any type errors trigger the `failureMode` of the policy |
+| Typesafe CEL expressions, dynamic scopes          | Expressions are typesafe, but scopes are dynamically typed, easing version skew cases                                               |
+| Informational type checking                       | Expressions and scopes are typechecked, but only to report warnings, evaluation is dynamic                                           |
+| No typechecking                                   | Expressions and scopes are evaluated dynamically                                                                                     |
+ 
+Alternative: Typesafe CEL expressions and scopes
 
 To keep failure policy easy to reason about, and to continue to use CEL in a
 type-safe way we propose:
@@ -696,45 +855,112 @@ spec:
   - expression: "object.name.startsWith('xyz')"
 ```
 
-Alternative Considered: Do not use CEL type-checking and instead dynamically evaluate
-all CEL expressions.
-
 Pros:
 
-- Can write a single CEL expression that processes multiple GVKs
-- Possible to write expressions that cope with the absence of fields in schemas
+- All CEL expressions are type checked,
 
 Cons:
 
-- Most errors that would have failed type checking will still result in a
-  runtime error when the expression is evaluated. But type-check errors can be
-  surfaced much earlier. Also, while type checking is comprehensive, runtime
-  errors are dependent on how a CEL expression is evaluated, with some only
-  occurring for specific inputs. Operating a policy that uses statically
-  type-checked expressions is easier to validate as safe for use with
-  `failureMode: Fail` than a dynamicially typed one.
+- Does not support all above cases, in particular: version skew cases,
+  validation of an aggregated API server type.
+- Typechecking happens quite late for some operations, lots of failure modes to
+  reason through (policy created before CRD, CRD updated/deleted/recreated, CRD
+  schema differs across clusters, incompatible CRD change, version skew, ...)
 
-##### Type safety and version skew
+Alternative Considered: Typesafe CEL expressions, dynamic scopes
 
-Similar to how changes to a CRD schema can impact a policy, changes to
-Kubernetes built-in types can also impact policy. If a field is added to a
-resource kind at version X, a policy that references the field in expressions
-will fail type checking against version X-1.
+Idea is to use "CEL expression scoping" (see section below) in such a way
+that missing schema fields due to version skew or CRD changes/inconsistencies
+can be tolerated.
 
-Use case: ephemeralContainers are added and policy authors would like to apply
-the same policy rules to all containers in a pod (containers, initContainer,
-ephemeralContainers).
+Scope schema paths are typechecked, but if there are any fields are missing:
 
-Our plan is to document rollout strategies that minimize risk. Even if we didn't
-do type-checking and could check for existence of fields dynamically, good
-rollout strategies will be needed.
+- the scoped expression skips validation
+- warnings are reported, but no error states are triggered
 
-Alternatives considered:
+Example usage:
 
-- Favor dynamic typing to allow CEL expression authors the option of using
-  `has(object.field)` checks.
-- Guard CEL expressions with match criteria (e.g. only match objects where
-  schema has fields {x.y, a.b}). This ends up being a list of all the fields accessed
+```yaml
+# Policy definition
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "validate-xyz.example.com"
+spec:
+  config:
+    group: rules.example.com
+    kind: ReplicaLimit
+    version: v1
+  match:
+    rules:
+    - apiGroups:   ["apps"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE", "UPDATE"]
+      resources:   ["deployments"]
+      scope:       "*"
+  validations:
+    - expression: "self.name.startsWith('xyz-')"
+      scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
+status:
+  expressionWarnings:
+    - expression: "self.name.startsWith('xyz-')"
+      scope: "spec.ephemeralContainers[*]"
+      # For Kubernetes versions that pre-date the ephemeralContainers field:
+      warnings: ["spec.ephemeralContainers[*] is not a valid schema path"]
+```
+
+Pros:
+
+- Retains typechecking of CEL expressions while still supporting version skew
+  cases and CRD changes/inconsistencies via the dynamic evalution of expression scopes.
+- Possible to have a policy definition suppress expression scope warnings. E.g. 
+  `suppressWarning: { type: MissingField, field: spec.ephemeralContainers, reason: 'Field is only available in Kubernetes 1.x+' }`
+
+Cons:
+
+- Does not handle aggregated API server case.
+- Strange mix of type safety and dynamic typing. Difficult to explain, document, justify.
+
+Alternative: Informational type checking
+
+All CEL expressions are evaluated dynamically.
+
+Type checking is still performed for all expressions where a GVK can be matched
+to type check against, resulting in warnings, e.g.:
+
+```yaml
+...
+status:
+  expressionWarnings:
+    - expression: "object.foo"
+      warning: "no such field 'foo'"
+```
+
+Pros:
+
+- Can handle all use cases listed.
+- Does not depend on implementing "CEL expression scoping" to support listed use
+  cases.
+- Policy definition authors can still opt-in to take full advantage of type
+  checking at development time.
+- Cluster administrators can check if a policy passes type checking before
+  enabled it.
+- Possible to have a policy definition suppress warnings. E.g. 
+  `suppressWarning: { type: MissingField, field: spec.ephemeralContainers, reason: 'Field is only available in Kubernetes 1.x+' }`
+
+Cons:
+
+- Type errors that would have prevented production issues can be ignored.
+
+Alternative Considered: No typechecking
+
+Pros:
+
+- Possible to handle all cases dynamically.
+
+Cons:
+
+- No opportunity to benefit from type checking.
 
 #### Failure Policy
 
@@ -782,22 +1008,80 @@ higher level. This could be added later.
 
 #### Reporting violations
 
-We need:
+Goals:
 
-- Formatted messages (need support for string formatting. Allow a CEL expression
-  to be used to format the whole string? Or allow CEL expressions to evaluate
-  template values?). Note that CRD Validation Rules do NOT support formatted
-  messages (but if we add support for formatted message for admission control,
-  we should consider adding the feature to CRD validation as well).
-- severity (e.g. "Warning")
-- Audit Annotations - Information recorded to the audit system but not reported
-  back in the response.
-- status types (e.g. Forbidden can be returned from a webhook using
-  HTTP 403) (can a match rule override this? or can it be selected via a CEL
-  expression?)
-- Similar to how each match has configuration, can each match also select
-  the severity of messages? It make it possible to configure a policy as
-  warning only when first enabling it. Some policy frameworks support this.
+- Feature parity with `AdmissionReview`
+- Ability to format message strings
+- support for reasons/codes
+
+Example:
+
+```yaml
+# Policy definition
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "validate-xyz.example.com"
+spec:
+  ...
+  validations:
+    - expression: "self.name.startsWith('xyz-')"
+      level: Deny # the default
+      messageExpression: "self.name + ' must start with \"xyz-\"'"
+      reason: Invalid
+    - expression: "self.name.contains('bad')"
+      level: Warn
+      message: "name contains 'bad' which is discouraged due to ..."
+    - expression: "self.name.contains('suspicious')"
+      level: Audit
+      messageExpression: "self.name + ' contains \"suspicious\"'"
+      auditKey: suspicious-container-name
+```
+
+Equivalent `AdmissionReview`:
+
+```yaml
+request:
+  ...
+response:
+  allowed: false
+  status:
+    #status: Failure
+    message: "nothing-suspicious-or-bad-here must start with \"xyz-\""
+    reason: Invalid
+    code: 422 # Code for "Invalid"
+  auditAnnotations:
+    suspicious-container-name: "nothing-suspicious-or-bad-here contains \"suspicious\""
+  warnings:
+    - "name contains \"bad\" which is discouraged due to ..."
+```
+
+The resulting message would be something like:
+
+```
+configuration validate-config1.example.com of admission policy validate-xyz.example.com denied the request: nothing-suspicious-or-bad-here must start with "xyz-"
+```
+
+Notes:
+
+- using `level` makes it easy to toggle between `Warn` and `Deny`, it also
+  makes `Audit` more consistent with the other outputs (although it does require
+  a key field).
+- `message` is for plain string messages that do not need any formatting
+  (`messageExpression` and `message` would be exclusive)
+- if there are not `Deny` validations, `response.allowed` will automatically be `true`
+
+TODOs:
+
+- What if multiple validations fail?  What if they have different reasons (Invalid + Forbidden)?
+  - Current admission chain short circuits on validating admission rejections? So just return 1st failed?
+
+xref:
+
+- https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/dispatcher.go#L220
+- https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/errors/statuserror.go#L28
+- https://github.com/kubernetes/kubernetes/blob/d7a06ede70b293d9932925b5430c4df08b3744e3/staging/src/k8s.io/apiserver/pkg/util/webhook/error.go#L46
+- https://github.com/kubernetes/kubernetes/blob/5b92e46b2238b4d84358451013e634361084ff7d/staging/src/k8s.io/apimachinery/pkg/api/errors/errors.go#L71
 
 ### Phase 2
 
@@ -830,6 +1114,27 @@ Use cases:
   broadly and uniformly (e.g. to match initContainers, containers,
   ephemeralContainers).
 
+For example, to validate all containers:
+
+```yaml
+  validations:
+    - expression: "self.name.startsWith('xyz-')"
+      scopes: ["spec.containers[*]"]
+```
+
+This could be extended to validate all kinds of containers in a pod if scopes
+supports a homogeniously typed list:
+
+```yaml
+  validations:
+    - expression: "self.name.startsWith('xyz-')"
+      scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
+```
+
+`ephemeralContainers` might not exist due to version skew (it's a relative new
+field), in which case that scope would be dropped (but a warning would be added
+to the status).
+
 #### Secondary Authz
 
 kube-apiserver authorizer checks (aka Secondary-authz checks) have been proposed
@@ -848,22 +1153,9 @@ This could be supported by matching criteria, or via CEL expression access, or b
  but IMO that was an anti-pattern of PSP, and one that we explicitly decided to
  omit from PSA
 
-#### Exclude and default matching
+#### Default matching
 
-Both exclusion rules and a default configuration have useful properties.
-
-- Exclude rules make it easier for policy definition authors to do things like
-  exclude kube-system or other special purpose namespaces from policies that apply
-  to all "normal" namespaces.
-- Default rules make it easier to apply principal of least privilege to
-  policies. I.e. ensure that newly created resources default to a least
-  privilege state until configured otherwise.
-
-Exclude rules can be modeled after the approach exstablished in Audit where
-level=None on a match rule can be used to exlude any rules beneath it. E.g.
-`effect: Skip`. (naming TDB).
-
-Default configurations are more difficult. Options:
+Default configurations are difficult. Options:
 
 - Embed the default configuration into the policy definition. Messy to
   implement, less appropriate for use cases where the default configuration is
@@ -1054,12 +1346,27 @@ Policy author wants to write a policy that validates a property of all
 containers in a pod, including ephemeralContainers for versions of
 Kubernetes where ephemeralContainers are available.
 
-This is the sort of policy where cluster managers would ideally be able to
+```yaml
+  validations:
+    - expression: "object.spec.containers.all(c, c.name.startsWith('xyz-'))"
+    - expression: "!has(object.spec.initContainers) || object.spec.initContainers.all(c, c.name.startsWith('xyz-'))"
+    - expression: "!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, c.name.startsWith('xyz-'))"
+```
+
+This does not work if type checking is strict. The ephemeralContainers field
+will be reported as unrecognized.
+
+This becomes far more compact if we offer scoping:
+
+```yaml
+  validations:
+    - expression: "self.name.startsWith('xyz-')"
+      scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
+```
+
+Note: This is the sort of policy where cluster managers would ideally be able to
 register the policy to validate ephemeralContainers _before_ upgrading to the
 version of Kubernetes where ephemeralContainers are available for use.
-
-TODO: write up the best approach for this. Multiple policies with a clear
- rollout approach to avoid breaking clusters?
 
 #### Use Case: Multiple policy definitions for different versions of CRD
 
@@ -1241,19 +1548,18 @@ past, because of the following:
 As a concrete example, The CRD `NonStructural` status field takes advantage of
 the metadata generation field
 (https://github.com/kubernetes/kubernetes/commit/2cfc3c69dc7c17b2711af0168f39ed7f515675c2).
+This avoids repeated updates for the same generation and potential fights of API
+server in HA environments even without leader elected controllers.
 
-We will use a similar approach. we will use `generation` numbers of resources to
-determine if an apiserver is observing a state newer than the written status of
-a `ValidatingAdmissionPolicy`, and will only update the status if this is true.
+We will use a similar approach. The complication here is that for this case we
+must consider up to 3 resources:
 
-An apiserver controller will watch:
+- `ValidatingAdmissionPolicy` resource
+- Configuration CRD
+- If policy matches a CRD, the matched CRD
 
-- `ValidatingAdmissionPolicy` resources
-- All CRDs the CEL expressions need to be type checked against (Configuration
-  CRDs and any CRDs matched by the match criteria of the policy)
-
-It will track the last seen `generation` of all these resources in
-`ValidatingAdmissionPolicy`:
+In order to be able to know how old the three resources were when the status was
+last written, we must track additional information in the status:
 
 ```
 apiVersion: "admissionregisteration/v1alpha1"
@@ -1261,35 +1567,44 @@ kind: "ValidatingAdmissionPolicy"
 metadata:
   name: "myPolicy"
   generation: 2
-spec:
-  ...
-  config:
-    apiVersion: "example.com/v1"
-    kind: "fooLimits"
   ...
 status:
   config:
+    apiVersion: "example.com/v1"
+    kind: "fooLimits"
     generation: 5
+    resourceVersion: 10100
   matchedCustomResource:
     apiVersion: "example.com/v1"
     kind: "foo"
     generation: 100
+    resourceVersion: 10200
 ```
 
-Any time any of the resources the apiserver controller is watching change, it
-will check that:
+Whenever an apiserver is performing a sync (of any of these three resources), it
+takes the latest state is has of all three resources and checks if they represent
+forward progress compared to a consistent read of the resource.
 
-- last seen ValidatingAdmissionPolicy generation is no older current
-- last seen `spec.config` apiVersion/kind if different than current OR last seen
-  `status.config.generation` is no older than current
-- last seen `status.matchedCustomResource` apiVersion/kind if different than
-  current OR last seen `status.matchedCustomResource.generation` is no older
-  than current
-- At least one of the generations have increased
+Forward progress is (1) no resource state is older than used for the last status
+update (2) at least one resource state is newer.
 
-If all are true, then the controller has observed a forward progress of the
-status and should update the status along with any conditions and errors
-observed:
+For spec.generation, this is trival, just compare the generation from the
+observed with the current state.
+
+For referenced CRDs, it is more involved:
+
+- Forward progress requires comparing both the apiVersion/kind and the
+  generation/resourceVersion.
+- If the apiVersion/kind does not match the CRD from the spec, it can safely be
+  considered older without checking the generation. Goal is to converge with
+  what is in the spec.
+- Generation and resourceVersion comparison:
+    - observed resourceVersion > existing status resourceVersion: older.
+    - observedresourceVersion > existing status resourceVersion && observed generation == status generation: same.
+    - observedresourceVersion > existing status resourceVersion && observed generation > status generation: newer.
+
+If the controller has observed forward progress it updates the entire status,
+including any conditions and error information:
 
 ```
 status:
@@ -1311,6 +1626,16 @@ status:
 
 Note that write conflicts do not require a retry since the write that caused the
 conflict will result in another sync once it is observed.
+
+Alternative Considered: Use Leader election
+
+Pro:
+
+- Reconciliation loop becomes noticibly simpler
+
+Con:
+
+- My understanding 
 
 ### Versioning
 
