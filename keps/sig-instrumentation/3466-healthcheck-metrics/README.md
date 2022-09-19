@@ -160,6 +160,8 @@ into an SLI.
 
 - Create a uniform interface by which we can consume health checking information
 - Allow availability SLIs to be created without a specialized monitoring agent
+- Allow for increased granularity (by configuring a smaller scrape interval) of health check metric data
+- Minimize the diff involved for each Kubernetes component
 
 
 ### Non-Goals
@@ -184,9 +186,21 @@ case we are proposing known dimensions to the metrics, specifically:
 
 ## Design Details
 
-We will write the actual metric data in the healthz/livez/readyz paths and expose this in our new metrics endpoint. Admittedly, this has the downside of staleness though, since the health check data can be as stale as the length of the kubelet scrape interval. However, given our e2e tests configure [apiserver to 1s intervals](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/manifests/kube-apiserver.manifest#L58), it is reasonable to assume that other cloud-providers likely configure similar small scrape intervals, which means staleness should not realistically be much of an issue. 
+We will write the actual metric data in the healthz/livez/readyz paths and expose this in our new
+metrics endpoint. Admittedly, this has the downside of staleness though, since the health check 
+data can be as stale as the length of the kubelet scrape interval. However, given our e2e tests 
+configure [apiserver to 1s intervals](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/manifests/kube-apiserver.manifest#L58), it is reasonable to assume that other cloud-providers 
+likely configure similar small scrape intervals, which means staleness should not realistically 
+be much of an issue. 
 
-We considered the alternative of actually fetching health check data when the metrics endpoint was hit, but this would introduce extra load against the health endpoint, which we took care to avoid. Using a gaugeFunc would also preclude making the metric `stable`, since gaugeFuncs are dynamic by nature and therefore cannot be parsed at compile time by the stability framework. 
+We considered fetching metric data when the metrics endpoint was hit, but this would introduce 
+extra load against the health endpoint, which we took care to avoid. Alternatively, we considered
+periodic polling of the metrics endpoint such that the metrics would be incremented only during this
+periodic poll, but that change would be larger and would need to be implemented in each component
+for each of their health check endpoints. 
+
+Using a gaugeFunc would also preclude making the metric `stable`, since gaugeFuncs are
+dynamic by nature and therefore cannot be parsed at compile time by the stability framework. 
 
 
 ### Test Plan
