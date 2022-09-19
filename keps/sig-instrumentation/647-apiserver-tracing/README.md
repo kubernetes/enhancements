@@ -176,10 +176,11 @@ Alpha
 Beta
 
 - [] Tracing 100% of requests does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
-- [] OpenTelemetry reaches GA
+- [X] OpenTelemetry reaches GA
 - [] Publish examples of how to use the OT Collector with kubernetes
-- [] Allow time for feedback
+- [X] Allow time for feedback
 - [] Revisit the format used to export spans.
+- [] Parity with the old text-based Traces
 
 GA
 

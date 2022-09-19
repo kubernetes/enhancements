@@ -22,11 +22,11 @@ prr-approvers:
 see-also:
 replaces:
 stage: beta
-last-updated: 2022-01-18
-latest-milestone: "v1.24"
+last-updated: 2022-09-19
+latest-milestone: "v1.26"
 milestone:
   alpha: "v1.22"
-  beta: "v1.24"
+  beta: "v1.26"
 feature-gates:
   - name: APIServerTracing
 disable-supported: true
