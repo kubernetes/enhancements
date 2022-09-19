@@ -243,7 +243,7 @@ of resources, i.e. QoS-class resources.
 [Intel RDT][intel-rdt] implements a class-based mechanism for controlling the
 cache and memory bandwidth QoS of applications. All processes in the same
 hardware class share a portion of cache lines and memory bandwidth. RDT
-proveides a way for mitigating noisy neighbors and fulfilling SLAs. In Linux
+provides a way for mitigating noisy neighbors and fulfilling SLAs. In Linux
 control happens via resctrl -- a pseudo-filesystem provided by the kernel which
 makes it virtually agnostic of the hardware architecture. The OCI runtime-spec
 has supported Intel RDT for a while already. Other hardware vendors have
@@ -292,6 +292,11 @@ know that this has succeeded?
 - Make the extensions flexible, enabling simple addition of other QoS-class
   resource types in the future.
 - Make QoS-class resources opqaue (as possible) to the CRI client
+- API changes to support updating Pod-level (sandbox-level) QoS-class resource
+  assignment of running pods ([future work](#future-work))
+- Resource status/capacity ([future work](#future-work))
+- Discovery of the QoS-class resources ([future work](#future-work))
+- Access control ([future work](#future-work))
 
 ### Non-Goals
 
@@ -303,11 +308,6 @@ and make progress.
 - Interface or mechanism for configuring the QoS-class resources (responsibility of
   the container runtime).
 - Enumerating possible (QoS-class) resource types or their detailed behavior
-- API changes to support updating Pod-level (sandbox-level) QoS-class resource
-  assignment of running pods (will be addressed in a separate KEP)
-- Resource status/capacity (will be addressed in a separate KEP)
-- Discovery of the QoS-class resources (will be addressed in a separate KEP)
-- Access control (will be addressed in a separate KEP)
 
 ## Implementation phases
 
@@ -342,8 +342,8 @@ are currently out of the scope of this KEP and were listed under
 
 #### Pod Spec
 
-Replace pod annotations with proper user interface via the Pod spec. Below, one
-possible option is presented.
+This future step will replace pod annotations with proper user interface via
+the Pod spec. Below, one possible option is presented.
 
 Introduce a new field (e.g. class) into ResourceRequirements of Container.
 
@@ -402,6 +402,8 @@ in the key is allowed, similar to labels, e.g. `vendor/resource`.
 
 #### Update sandbox-level QoS-class resources
 
+This future step would be a second extesion to the CRI API.
+
 Currently there is no endpoint in the CRI API to update the configuration of
 pod sandboxes. In contrast, container-level resources can be updated with the
 UpdateContainerResources API endpoint. In order to make container and pod
@@ -421,8 +423,10 @@ This will likely required a new API endpoint in CRI:
 
 #### Resource status/capacity
 
-This KEP does not speak out anything about presenting the available resource
-types (or classes within) to the users.
+This future step will add support for representing information about the
+available QoS-class resource types (and the classes within each resource type).
+This is important for the end users (to see what is available for the pods and
+containers to consume) and also an enabler for scheduler support.
 
 Some alternatives for presenting this information:
 
@@ -459,10 +463,13 @@ Some alternatives for presenting this information:
 
 #### Resource discovery
 
+This future step will add support for discovery of available QoS-class resource
+types (and the classes withing each type) on each node.
+
 Resource discovery together with resource status/capacity information (above)
 enables scheduler support for QoS-class resources. This would also make it
 possible to delete/evict pods from nodes when requested QoS-class resource
-types (or classes within) are no longer availab.e
+types (or classes within) are no longer available.
 
 The discovery needs to be able to carry the following information:
 
@@ -515,6 +522,9 @@ Some possible alternatives.
    classes would be presented as separate API objects.
 
 #### Access control
+
+This future step adds support for controlling the access to available QoS-class
+resources.
 
 If QoS-class resources were advertised as API objects the natural access
 control mechanism would be through RBAC.
@@ -633,16 +643,14 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-This is only the first step in getting QoS-class resources supported in
-Kubernetes. Important pieces like resource assignment via pod spec, resource
-status, resource disovery and permission control are [non-goals](#non-goals)
-not solved here.
-These aspects
-are briefly discussed in [future work](#future-work). The risk in this sort of
-piecemeal approach is finding devil in the details, resulting in inconsistent
-and/or crippled and/or cumbersome end result. However, there is a lot of
-experience in extending the API and understanding which sort of solutions are
-functional and practical.
+Implementation Phase 1 is only the first step in getting QoS-class resources
+supported in Kubernetes. Important pieces like resource assignment via pod
+spec, resource status, resource disovery and permission control are [future
+work](#future-work) not fully solved here. The risk in this sort of piecemeal
+approach is finding devil in the details, resulting in inconsistent and/or
+crippled and/or cumbersome end result. However, there is a lot of experience in
+extending the API and understanding which sort of solutions are functional and
+practical.
 
 ### Risks and Mitigations
 
@@ -772,9 +780,11 @@ runtime implementations:
 ### Pod annotations
 
 Use Pod annotation as the initial K8s user interface, similar to e.g. how
-seccomp support was added. This will bridge the gap between enabling
-QoS-class resources in the CRI protocol and making them available in the Pod
-spec.
+seccomp support was added. This will bridge the gap between the first
+implementation phase, i.e. enabling QoS-class resources in the CRI protocol,
+and the future work which makes them available in the Pod spec. Kubelet will
+read the specific Pod annotations and translate them into corresponding fields
+in the CRI messages.
 
 A feature gate ClassResources enables kubelet to look for pod
 annotations and set the QoS-class resource assignment via CRI protocol accordingly.
