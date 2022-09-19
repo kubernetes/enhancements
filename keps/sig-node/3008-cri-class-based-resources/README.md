@@ -380,7 +380,7 @@ comparable to the PodClassResources message in PodSandboxConfig in the CRI API.
  }
 ```
 
-There is already an ongoing effort to add [Pod level resource limits](#1592)
+There is already an ongoing effort to add [Pod level resource limits][kep-2837]
 that aims at adding a pod level `Resources` field in a similar fashion.
 
 In practice, the QoS-class resource information will be directly used in the CRI
@@ -1548,3 +1548,4 @@ required.
 <!-- References -->
 [intel-rdt]: https://www.intel.com/content/www/us/en/architecture-and-technology/resource-director-technology.html
 [linux-resctrl]: https://www.kernel.org/doc/html/latest/x86/resctrl.html
+[kep-2837]: https://github.com/kubernetes/enhancements/pull/1592
