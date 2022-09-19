@@ -620,7 +620,7 @@ syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-// to be added to the Controller service
+// to be added to the Controller
 rpc ListSnapshotDeltas(ListSnapshotDeltasRequest)
   returns (ListSnapshotDeltasResponse) {
     option (alpha_method) = true;
@@ -629,14 +629,14 @@ rpc ListSnapshotDeltas(ListSnapshotDeltasRequest)
 message ListSnapshotDeltasRequest {
   option (alpha_message) = true;
 
-  // The name of the base snapshot handle to use for comparison. If
+  // The ID of the base snapshot handle to use for comparison. If
   // not specified, return all changed blocks up to the target
   // specified by snapshot_target. This field is OPTIONAL.
-  optional string snapshot_base = 1;
+  string snapshot_base_id = 1;
 
-  // The name of the target snapshot handle to use for comparison. If
+  // The ID of the target snapshot handle to use for comparison. If
   // not specified, an error is returned. This field is REQUIRED.
-  string snapshot_target = 2;
+  string snapshot_target_id = 2;
 
   // Defines the type of storage. Default to "BLOCK". This field is
   // REQUIRED.
@@ -664,14 +664,14 @@ message ListSnapshotDeltasRequest {
   // `next_token` returned by a previous `ListSnapshotDeltas` call to
   // get the next page of entries. This field is OPTIONAL.
   // An empty string is equal to an unspecified field value.
-  optional string starting_token = 5;
+  string starting_token = 5;
 }
 
 message ListSnapshotDeltasResponse {
   option (alpha_message) = true;
 
   // The volume size in bytes. This field is OPTIONAL.
-  optional uint64 volume_size_bytes = 1;
+  uint64 volume_size_bytes = 1;
 
   // This token allows you to get the next page of entries for
   // `ListSnapshotDeltas` request. If the number of entries is larger
@@ -679,13 +679,13 @@ message ListSnapshotDeltasResponse {
   // `starting_token` field in the next `ListSnapshotDeltas` request.
   // This field is OPTIONAL.
   // An empty string is equal to an unspecified field value.
-  optional string next_token = 2;
+  string next_token = 2;
 
   // Changed block deltas between the source and target snapshots. An
   // empty list means there is no difference between the two. Leave
   // unspecified if the volume isn't of block type. This field is
   // OPTIONAL.
-  optional BlockSnapshotChangedBlock changed_blocks = 3;
+  repeated BlockSnapshotChangedBlock changed_blocks = 3;
 }
 
 message BlockSnapshotChangedBlock {
@@ -701,7 +701,7 @@ message BlockSnapshotChangedBlock {
   // data block at the given offset. If the provider doesn't support
   // token-based data blocks retrieval, this should be left
   // unspecified. This field is OPTIONAL.
-  optional BlockSnapshotChangedBlockToken token = 3;
+  BlockSnapshotChangedBlockToken token = 3;
 }
 
 message BlockSnapshotChangedBlockToken {
