@@ -464,7 +464,7 @@ Some alternatives for presenting this information:
 #### Resource discovery
 
 This future step will add support for discovery of available QoS-class resource
-types (and the classes withing each type) on each node.
+types (and the classes within each type) on each node.
 
 Resource discovery together with resource status/capacity information (above)
 enables scheduler support for QoS-class resources. This would also make it
