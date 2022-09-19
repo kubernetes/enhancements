@@ -10,13 +10,18 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+  - [Story 3](#story-3)
+  - [Story 4](#story-4)
   - [Overview of all conditions](#overview-of-all-conditions)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Progressing condition](#progressing-condition)
+    - [Available condition](#available-condition)
   - [Proposed Conditions](#proposed-conditions)
     - [Progressing](#progressing)
     - [Complete](#complete)
     - [Failed](#failed)
-    - [Available](#available)
+    - [Operational](#operational)
+      - [Implementation Details](#implementation-details)
     - [Batch Workloads Conditions: Waiting &amp; Running](#batch-workloads-conditions-waiting--running)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -69,8 +74,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The main goal of this enhancement is to compare all the workload conditions and consolidate the workload controller lifecycle
-state. The secondary goal is to identify and expose other conditions that could bring benefit to the users.
-This includes defining conditions (Waiting, Running, Progressing, Available) for:
+state. The secondary goal is to identify and expose other conditions that could bring benefit to the users. 
+This includes defining conditions (Waiting, Running, Progressing, Operational) where applicable for:
 - Deployment
 - DaemonSet
 - ReplicaSet & ReplicationController
@@ -80,13 +85,17 @@ This includes defining conditions (Waiting, Running, Progressing, Available) for
 ## Motivation
 
 Today only deployment controller has a [status](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#deployment-status) to fully reflect the state during its lifecycle.
-This enhancement extends the scope of those and other conditions to other controllers (DaemonSet, Job, ReplicaSet & ReplicationController, StatefulSet).
+This enhancement extends the scope of those and other conditions to other controllers (DaemonSet, Job, ReplicaSet & ReplicationController, StatefulSet, Deployment) where applicable.
+
+These conditions can be used by high-level controllers, tools, and end users in an effort to hide specifics of each workload
+and have common approaches for working with these workloads.
 
 ### Goals
 
 The current status of a workload can be depicted via its conditions. It can be a subset of:
 - Progressing: designates the state of the latest rollout.
 - Available: designates if the required number of available replicas is `available`.
+- Operational: TBD
 - ReplicaFailure: ReplicaSet failed to create/delete a Pod.
 - Suspended: execution of a Job is suspended.
 - Complete: Job run to a completion, or rollout completed (via Progressing condition).
@@ -113,9 +122,14 @@ Workload controllers should have above conditions (when applicable) to reflect t
 As an end-user of Kubernetes, I'd like all my workload controllers to have consistent statuses.
 
 #### Story 2
-As an developer building Kubernetes Operators, I'd like all my operators deployed to have
+As a developer building Kubernetes Operators, I'd like all my operators and operands deployed to have
 consistent statuses.
 
+### Story 3
+As an end-user of Kubernetes I would like to wait and check for conditions of my workloads by using `kubectl wait --for condition` ([kubernetes/kubernetes/issues/79606](https://github.com/kubernetes/kubernetes/issues/79606))
+
+### Story 4
+Unified conditions should help users to be less dependent on additional tools like `kapply status` from [kubernetes-sigs/cli-utils](https://github.com/kubernetes-sigs/cli-utils) and scripts for monitoring and managing their applications. It should also help to simplify the internal logic of such tools and scripts.
 
 ### Overview of all conditions
 
@@ -136,16 +150,40 @@ The following table gives an overview on what conditions each of the workload re
 
 ### Notes/Constraints/Caveats (Optional)
 
+#### Progressing condition
 As observed in some issues (https://github.com/kubernetes/website/pull/31226) and talking to the users, there is a misunderstanding about the meaning of the `Progressing` condition. These include:
 - Thinking that the `Progressing` condition reflects the state of the current Deployment instead of the last rollout. Which includes expectation that the `Progressing` condition will keep checking availability of replicas and revert to `progressing`/`failed` state even after the `complete` state is reached. And that the progressing condition will thus also reflect any changes in scaling.
 - Confusion that ProgressDeadlineExceeded does not occur after the Deployment rollout completes when the availability of pods degrades before the  `.spec.progressDeadlineSeconds` times out.
 
 To summarize, the name of the `Progressing` condition doesn't indicate its true meaning that its main responsibility is the indication of rollouts, and it confuses the users.
 
+#### Available condition
+
+The Available condition in Deployment indicates that sufficient number of replicas is `Available` (`Ready` for MinReadySeconds).
+The behaviour depends on the type of the deployment strategy:
+- `Recreate`: The condition becomes `True` when all the replicas are available.
+- `RollingUpdate`: The condition takes into account the rollout constraints `maxUnavailable` and `maxSurge` to achieve availability (`status=True`) even during a rollout.
+The evaluation rule is `availableReplicas >= replicas - maxUnavailable` and `maxSurge` just influences the defaulting of `maxUnavailable`.
+This rule stays the same even after the rollout has finished and as a consequence adds a toleration for certain amount of failing pods in normal operation, while still being considered available.
+
+The semantic meaning of `Available` condition is that the deployment is healthy and operating at sufficient capacity(number of replicas).
+
+Introducing this condition as is, to other workloads is not straightforward:
+- ReplicaSet & ReplicationController: To introduce this in ReplicaSet we would have to mark `status=True` in Available condition when all the replicas are Available since there is no rollout mechanic in ReplicaSets.
+This would diverge from the Deployment's `Available` meaning which states that it should operate in a sufficient capacity.
+There are users which run large ReplicaSets, which can have a certain percentage of pods down at all times. Such users would still consider their workloads as `Available`. This was also discussed in [kubernetes/pull/108863](https://github.com/kubernetes/kubernetes/pull/108863#discussion_r833585522)
+- StatefulSet: StatefulSet's pods are inherently unique and one pod down could mean the StatefulSet does not have sufficient amount of replicas. This could be true even when used in tandem with a rollout strategy where at least 1 unavailable pod is required for a functioning StatefulSet - compared to Deployments where this is not required as `maxSurge` can be used.
+- DaemonSet: The same problem occurs here as in the StatefulSets as the uniqueness is designated by the node it is deployed.
+DaemonSets cannot be marked as `Available` during a rollout because there might not be a sufficient amount of pods up.
+ Also, we cannot rely on `maxSurge` functionality since it cannot be applied to all DaemonSets
+
+`Available` condition is coupled to the Deployment and the Deployment rollout and as we saw cannot be easily applied to other Workloads.
+We would like to introduce a new condition called `Operational` in the next section, which would be similar to `Available` and that would address these problems.
+
 ### Proposed Conditions
 
 We are proposing 4 new conditions to be added to the following controllers:
-- Available (DaemonSet, ReplicaSet & ReplicationController, StatefulSet)
+- Operational (Deployment, DaemonSet, ReplicaSet & ReplicationController, StatefulSet)
 - Progressing (DaemonSet, StatefulSet)
 - Waiting (Job)
 - Running (Job)
@@ -155,14 +193,14 @@ The definitions for Progressing condition (including Failed/Complete) are simila
 
 The following table is indicating what conditions are currently available (`X`) and what conditions will be added (`A`).
 
-|                                    | Waiting | Running | Progressing | Available |  ReplicaFailure | Suspended | Failed | Complete |
-| ---------------------------------  | --------| ------- | ----------- | --------- | --------------- | --------- | ------ | -------- |
-| ReplicaSet & ReplicationController | -       | -       | -           | A         | X               | -         | -      | -        |
-| Deployment                         | -       | -       | X           | X         | X               | -         | -      | -        |
-| StatefulSet                        | -       | -       | A           | A         | -               | -         | -      | -        |
-| DaemonSet                          | -       | -       | A           | A         | -               | -         | -      | -        |
-| Job                                | A       | A       | -           | -         | -               | X         | X      | X        |
-| CronJob                            | -       | -       | -           | -         | -               | -         | -      | -        |
+|                                    | Waiting | Running | Progressing | Available | Operational |  ReplicaFailure | Suspended | Failed | Complete |
+| ---------------------------------  | --------| ------- | ----------- |-----------|-------------| --------------- | --------- | ------ | -------- |
+| ReplicaSet & ReplicationController | -       | -       | -           | -         | A           | X               | -         | -      | -        |
+| Deployment                         | -       | -       | X           | X         | A           | X               | -         | -      | -        |
+| StatefulSet                        | -       | -       | A           | -         | A           | -               | -         | -      | -        |
+| DaemonSet                          | -       | -       | A           | -         | A           | -               | -         | -      | -        |
+| Job                                | A       | A       | -           | -         | -           | -               | X         | X      | X        |
+| CronJob                            | -       | -       | -           | -         | -           | -               | -         | -      | -        |
 
 #### Progressing
 Individual workload controllers mark a DaemonSet or Stateful as `progressing` when:
@@ -191,12 +229,40 @@ See the [Kubernetes API Conventions](https://git.k8s.io/community/contributors/d
 Because of the number of changes that are involved as part of this effort, we are thinking of a phased approach where we introduce these conditions to DaemonSet controller first and then make similar changes to ReplicaSet and StatefulSet controller. We would graduate ExtendedWorkloadConditions to beta once all the features and `progressDeadlineSeconds` KEP are implemented.
 This also needs some code refactoring of existing conditions for Deployment controller.
 
-#### Available
-Individual workload controllers mark a ReplicaSet or StatefulSet as `available` when number of available replicas reaches number of replicas.
-- This could be confusing in ReplicaSets a bit since Deployment could get available sooner than its ReplicaSet due `maxUnavailable`.
-- Available replicas is alpha feature guarded by StatefulSetMinReadySeconds gate in StatefulSets, but the value defaults to ReadyReplicas when the feature gate is disabled so using it shouldn't be an issue.
+#### Operational
+The goal is to have a better version of `Available` condition that would show healthiness of a workload regardless of the workload implementation, deployment strategy and rollout constraints.
+This should take into account and try to solve all the problems mentioned in [Notes/Constraints/Caveats > Available Condition](#available-condition)
 
-DaemonSet controller marks DaemonSet as `available` when `numberUnavailable` or `desiredNumberScheduled - numberAvailable` is zero.
+Since we have to deal with a workload that still could be considered healthy even when some number of replicas is down, we would like to introduce a threshold that would distinguish between these cases.
+This threshold would dictate whether the application is Functional/Operational/NominallyAvailable or not.
+The problem is that some users might consider their application to be healthy at 50%, 75%, 90% or 100% of available pods.
+
+There are two options how to implement this:
+1. Hardcode the threshold to 100% of available replicas. Then ask a community for a feedback before graduating this feature, and if there is an interest, we could introduce a field that would allow customization of this threshold.
+2. Introduce a field that would allow customizing the threshold of available replicas right from the alpha version.
+
+Default value of the threshold should be 100% to avoid false negatives.
+For example, if we would set it to 90%, the application would signal a healthy state (`status=True`) by default to the user,
+even if some replicas would be down and that would impact healthiness of the user's application.
+Also, it would be hard to change this default value later.
+
+Other possible names for the new Operational condition:
+- Functional
+- NominallyAvailable
+
+##### Implementation Details
+
+Individual workload controllers mark a ReplicaSet or StatefulSet as `Operational` when `availableReplicas >= replicas - threshold`.
+- Available replicas is a beta feature guarded by StatefulSetMinReadySeconds gate in StatefulSets, but the value defaults to ReadyReplicas when the feature gate is disabled so using it shouldn't be an issue.
+
+Implementation of `Operational` condition in Deployments with a different threshold other than 100% is not straightforward.
+There are a couple of things to consider.
+- Should it be possible to set this threshold only to a ReplicaSet, Deployment, or both ReplicaSet and Deployment? There should be a way to reconcile these values or block incompatible values on admission.
+- Should the deployment balance the threshold in a rollout across its ReplicaSets depending on the amount of replicas in each ReplicaSet? The computation of this also depends on the threshold being a number or a percentage, and if any rounding occurs.
+- Each Deployment's ReplicaSet could have a different computed status of `Operational` depending on the availability of their replicas and the threshold. Deployment thus shouldn't depend on its ReplicaSets conditions and compute its own `Operational` condition from the global state of all its managed replicas.
+
+
+DaemonSet controller marks DaemonSet as `Operational` when  `numberAvailable >= desiredNumberScheduled - threshold`.
 
 #### Batch Workloads Conditions: Waiting & Running
 
@@ -369,6 +435,17 @@ No.
 Adds more complexity to Deployment, DaemonSet, Job, ReplicaSet, ReplicationController, StatefulSet controllers in terms of checking conditions and updating the conditions continuously.
 
 ## Alternatives
-Continue to check AvailableReplicas, Replicas and other fields instead of having explicit conditions. This is not always foolproof and can cause problems.
+
+1. Continue to check AvailableReplicas, Replicas and other fields instead of having explicit conditions.
+  - Workloads expose similar things under different fields. Eg. DaemonSet's `NumberAvailable` vs Deployment's `availableReplicas`.
+    Even though they are a bit semantically different (DaemonSet takes into account the number of nodes),
+    the user has to keep these differences in mind when evaluating how their workloads are performing.
+  - It is not always foolproof and can cause problems since the users need to take into account other variables like
+    `.spec.progressDeadlineSeconds` and rollout constraints.
+
+2. Depend on custom controllers that would compute and set these conditions on user's workloads.
+  - It is not an easy task and feasible for each user to implement or deploy their own controller that does this.
+  - Problems could arise with RBAC permission and collision with other controllers that would manage these conditions.
+    It is better for this to be implemented by a platform so everybody can benefit from a standardized functionality.
 
 ## Infrastructure Needed (Optional)
