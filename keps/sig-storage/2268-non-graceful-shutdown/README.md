@@ -171,7 +171,6 @@ https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/non_gracef
 #### E2E tests
 
 *   Added E2E tests to validate workloads move successfully to another running node when a node is shutdown: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/non_graceful_node_shutdown.go
-    * Feature gate for `NodeOutOfServiceVolumeDetach` is disabled, feature is not active.
     * Feature gate for `NodeOutOfServiceVolumeDetach` is enabled. Add `out-of-service` taint after node is shutdown:
       * Verify workloads are moved to another node successfully.
       * Verify the `out-of-service` taint is removed after the shutdown node is cleaned up.
@@ -336,7 +335,8 @@ the health of the service?**
     - Metric name: We can add new metrics deleting_pods_total, deleting_pods_error_total
       in Pod GC Controller.
       For Attach Detach Controller, there's already a metric:
-      attachdetach_controller_forced_detaches.
+      attachdetach_controller_forced_detaches. We could keep it for force detach
+      by timeout and add a new metric attachdetach_controller_forced_detaches_taint.
     - [Optional] Aggregation method:
     - Components exposing the metric:
   - [ ] Other (treat as last resort)
@@ -355,8 +355,9 @@ the health of the service?**
   The failover should always happen if the feature gate is enabled, the taint
   is applied, and there are other running nodes.
   We can also check the deleting_pods_total, deleting_pods_error_total metrics
-  in Pod GC Controller and the attachdetach_controller_forced_detaches metric
-  in the Attach Detach Controller.
+  in Pod GC Controller and the attachdetach_controller_forced_detaches and
+  attachdetach_controller_forced_detaches_taint metric in the Attach Detach
+  Controller.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
@@ -421,7 +422,7 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
-  No.
+  Volume detach/attach could trigger cloud provider calls.
 
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
