@@ -156,34 +156,86 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Adds a migration path to use server-side-apply from usage of client-side-apply.
 
-## Motivatio
+## Motivation
 
-The current documentation for Kubernetes Server-Side-Apply has instructions for
-migrating from usage of client-side-apply to server-side-apply:
+The current documentation for Kubernetes Server-Side-Apply has [instructions for
+migrating](https://kubernetes.io/docs/reference/using-api/server-side-apply/#upgrading-from-client-side-apply-to-server-side-apply) from usage of client-side-apply to server-side-apply:
 
-QUOTE
+> Client-side apply users who manage a resource with kubectl apply can start using server-side apply with the following flag.
+>
+>     kubectl apply --server-side [--dry-run=server]
 
 
 Unfortunately it is not so simple. By following these instructions you can be
 left with the following situation:
 
+Create a configmap in the cluster with client-side apply:
+```shell
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+data:
+  key: value
+  legacy: unused
+EOF
 ```
-$ csa an object
+```console
+configmap/test created
 ```
 
+Apply the same manifest with `--server-side` flag, as per server-side-apply migration instructions:
+```shell
+cat <<EOF | kubectl apply --server-side -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+data:
+  key: value
+  legacy: unused
+EOF
 ```
-$ ssa same object
+```console
+configmap/test serverside-applied
 ```
 
+Remove one of the values from the configmap and apply again using server-side apply:
+```shell
+cat <<EOF | kubectl apply --server-side -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+data:
+  key: value
+EOF
 ```
-$ ssa object but delete field
+```console
+configmap/test serverside-applied
 ```
 
+Check the configmap, expecting the legacy value to be removed, and be surprised that it remains:
+```shell
+kubectl get configmap -o yaml test
 ```
-$ show field is still present, despite last command, due to csa manager retaining ownership
+```console
+apiVersion: v1
+kind: ConfigMap
+data:
+  key: value
+  legacy: unused
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"key":"value"},"kind":"ConfigMap","metadata":{"name":"test","namespace":"default"}}
+  name: test
+  namespace: default
 ```
 
-This KEP is intended to bridge the gap, and provide a one-time operation
+This KEP is intended to fix this problem by providing users with a path to completely
+migrate their managed fields to be used with server-side-apply.
 
 ### Goals
 
@@ -193,101 +245,222 @@ from client-side-apply to server-side-apply
 
 ### Non-Goals
 
-1. Provide a server-side fix to this problem
+1. Provide a server-side fix to this problem (see alternatives considered)
 
 ## Proposal
 
-Add a new CLI flag `--csa-manager`.
+Add a new CLI method `migrate`.
 
-When --server-side is used, fields owned by ---csa-manager will be converted to
-ownership of the ssa manager.
-
-If --csa-manager is not specified, then it is implied to be the same value as
-`--fieldmanager`
-
+### Example Usage
 
 ```
-# Apply object with client-side-apply
-kubectl apply -f pod.yaml --fieldmanager mycsamanager
+# Migrate fields owned by `mymanagername`
+kubectl migrate pod test --fieldmanager=mymanagername
 ```
 
-```
-# Apply object again with server-side-apply
-kubectl apply -f pod.yaml --fieldmanager=myssamanager --csa-manager=mycsamanager --server-side
-```
+With this operation, kubectl will migrate all fields owned by `mymanagername` previously used for client-side-apply to be now be prepared for use with server-side-apply. This process is irreversible.
 
-With these flags, kubectl will migrate all fields owned by `mycsamanager` for client-side-apply
-to be now be owned by `myssamanager` for use with server-side-apply. This process
-is irreversible.
+### Sensible Defaults
 
-### Inferred Defaults
+For client-side-apply, by default kubectl uses the fieldmanager name `kubectl-client-side-apply`. 
+If`fieldmanager` is omitted from a `merge` operation, its value can be defaulted to `kubectl-client-side-apply`
+for easier use:
 
 ```
-# Apply object with client-side-apply
-kubectl apply -f pod.yaml
-```
-
-```
-# Apply object again with server-side-apply
-# Behind the scenes --csa-manager is inferred to be "kubectl-client-side-apply", 
-# and its fields are migrated to server-side-apply
-kubectl apply -f pod.yaml --server-side
-```
-
-These reasonable defaults are in line with what the kubernetes documentation says
-is the correct process for migrating to server-side apply, and users do not
-need to take extra steps.
-
-### Custom FieldManager
-
-If a custom `--fieldmanager` is specified in kubectl, that case behaves as expected as well
-
-```
-# Apply object with client-side-apply
-kubectl apply -f pod.yaml --fieldmanager mymanagername
-```
-
-```
-# Apply object again with server-side-apply
-# Behind the scenes --csa-manager is inferred to be "mymanagername"
-kubectl apply -f pod.yaml --fieldmanager=mymanagername --server-side
+# Migrate fields owned by 'kubectl-client-side-apply` for use with server-side-apply in the future
+kubectl migrate pod test
 ```
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
 ## Design Details
 
 The bug this enhancement fixes is due to the fact that when `--server-side` is
-used today, it causes all managed fields owned by both the client-side-apply manager
-and the server-side-apply manager. So when the SSA manager drops a field, the CSA
+used today, it causes all fields to be owned by **both** the client-side-apply manager
+and the server-side-apply manager. When the SSA manager drops a field, the CSA
 manager still owns it, and it is not deleted from the object:
 
-ManagedFIelds Before --server-side:
+ManagedFiields Before --server-side:
+```shell
+cat <<EOF | kubectl apply --f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+data:
+  key: value
+  legacy: unused
+EOF
+kubectl get configmap test -o yaml --show-managed-fields
+```
 
+```console
+apiVersion: v1
+kind: ConfigMap
+data:
+  key: value
+  legacy: unused
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"key":"value","legacy":"unused"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"test","namespace":"default"}}
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:key: {}
+        f:legacy: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+  name: test
+  namespace: default
+```
 
 After --server-side:
+```shell
+cat <<EOF | kubectl apply --server-side -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+data:
+  key: value
+  legacy: unused
+EOF
+kubectl get configmap test -o yaml --show-managed-fields
+```
+
+```console
+apiVersion: v1
+kind: ConfigMap
+data:
+  key: value
+  legacy: unused
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"key":"value","legacy":"unused"},"kind":"ConfigMap","metadata":{"name":"test","namespace":"default"}}
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        f:key: {}
+        f:legacy: {}
+    manager: kubectl
+    operation: Apply
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:key: {}
+        f:legacy: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+  name: test
+  namespace: default
+```
+
+Note that after the `--server-side` command there are now two owners of the 
+`legacy` field:
 
 
 After field is removed from SSA apply:
+```shell
+cat <<EOF | kubectl apply --server-side -f -                                                                                           csa-to-ssa*
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+data:
+  key: value
+EOF
+kubectl get configmap test -o yaml --show-managed-fields
+```
 
+```console
+apiVersion: v1
+kind: ConfigMap
+data:
+  key: value
+  legacy: unused
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"key":"value"},"kind":"ConfigMap","metadata":{"name":"test","namespace":"default"}}
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        f:key: {}
+    manager: kubectl
+    operation: Apply
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:key: {}
+        f:legacy: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+  name: test
+  namespace: default
+```
+
+Note that the `f:legacy: {}` entry was removed from the `kubectl` `Apply` manager,
+but it persists on the `kubectl-client-side-apply` manager. Because the field is
+still owned by at least one manager, it is not removed from the underlying object.
+
+If the user was to now run `kubectl migrate pod test`, the expected fields would
+look like the following:
+
+```console
+apiVersion: v1
+kind: ConfigMap
+data:
+  key: value
+  legacy: unused
+metadata:
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:key: {}
+        f:legacy: {}
+    manager: kubectl
+    operation: Apply
+  name: test
+  namespace: default
+```
+
+The fields of `kubectl` and `kubectl-client-side-apply` have been unioned and merged
+into the single `Apply` entry of `kubectl`. 
 
 ### Approach
 
-Whenever `--server-side` is used with the `apply` subcommand, kubectl simply calls
-[`UpgradeManagedFields`](https://github.com/kubernetes/kubernetes/pull/111967/files#diff-4538195db8472f5237db69d0424dfd6fd7a7b0232f67f67dae52f57aea7b1af1R53) with the `--fieldmanager`
-and inferred `--csa-manager` as arguments. Kubectl then operates as normal.
+Whenever the migration is to be performed, kubectl fetches the object and simply calls
+[`UpgradeManagedFields`](https://github.com/kubernetes/kubernetes/pull/111967/files#diff-4538195db8472f5237db69d0424dfd6fd7a7b0232f67f67dae52f57aea7b1af1R53) to
+migrate the managed fields to their desired form. The changes can then be
+sent as a PATCH or UPDATE to the apiserver to install the change.
 
 ### Test Plan
 
@@ -509,10 +682,8 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No this feature proposes a new operation to be added to kubectl, so any
+functionality is strictly "opt-in".
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -813,6 +984,43 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+
+### Server-Side Solution
+
+There is an argument to be made in favor of performing this migration on the
+server-side upon the initial call to `kubectl apply --server-side` for a
+previously csa'd object.
+
+There are a few problems with this approach:
+
+1.) **The server cannot disambiguate intent**. Server-side-apply is designed to
+keep separate lists of managed fields for Update vs Apply operations: the same 'manager'
+might switch between them.
+
+If server-side-apply automatically converted all managed fields for `Update` operations
+to be for `Apply` operations, then those field managers would now be rejected from
+future `Update` operations: breaking existing clients who rely on this functionality.
+
+2.) **Existing users need a way out**: There are users today which have corrupted
+managed fields which are owned by both client-side-apply and server-side-apply. These
+users need a path out of this situation that does not require so much manual effort.
+
+
+### Transparent ManagedFields Patching
+
+It was proposed early on in the design process to make this conversion transparent.
+That is, `kubectl` will unconditionally include a patch of the managed fields with the
+user's own patch whenever server-side-apply is used on the client side.
+
+The main problem with this approach is that server-side-apply on the server-side
+will reject any `PATCH` requests sent which include managed fields. Server-side apply is
+not allowed to be used with patches that modify managed fields, so this approach is
+unworkable from the beginning.
+
+Additionally, this violates the main benefits of using server-side-apply: injecting
+a race condition by making SSA now into a read-modify-write operation as opposed to
+an atomic patch request.
 
 ## Infrastructure Needed (Optional)
 
