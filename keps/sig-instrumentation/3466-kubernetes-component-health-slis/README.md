@@ -191,7 +191,10 @@ in a gauge metric. Admittedly, this has the downside of staleness though, since 
 data can be as stale as the length of the kubelet scrape interval. However, given our e2e tests 
 configure [apiserver to 1s intervals](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/manifests/kube-apiserver.manifest#L58), it is reasonable to assume that other cloud-providers 
 likely configure similar small scrape intervals, which means staleness should not realistically 
-be much of an issue. 
+be much of an issue. However, in the case that the kubelet gets stuck, one can alert off of the
+counter that we expose; if the counter stops incrementing, then we know that the health endpoint
+is not getting hit and that our gauge data is too stale. It would therefore be prudent to set a
+staleness alert off of the counter.
 
 We considered fetching metric data when the metrics endpoint was hit, but this would introduce 
 extra load against the health endpoint, which we took care to avoid. Alternatively, we considered
