@@ -21,8 +21,8 @@ milestone:
   beta: "v1.18"
   stable: "v1.24"
 creation-date: 2019-02-26
-last-updated: 2022-01-14
-status: implementable
+last-updated: 2022-09-19
+status: implemented
 feature-gates:
   - name: PodOverhead
     components:
