@@ -45,20 +45,20 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-    - [ ] e2e Tests for all Beta API Operations (endpoints)
-    - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+    - [X] e2e Tests for all Beta API Operations (endpoints)
+    - [X] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
     - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-    - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Graduation criteria is in place
+    - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -247,10 +247,16 @@ https://storage.googleapis.com/k8s-triage/index.html
 - test/integration/volume/persistent_volumes_test.go: Has few cases for PV/PVC
   binding.
 
-We plan to extend these test to include default SC and how it will be applied to
+Tests were extended to include default SC and how it will be applied to
 existing PVCs. We use integration tests almost like e2e tests of the new
 behavior to be sure that change of the default SC won't affect other tests
 running in parallel.
+
+Test: 
+https://github.com/kubernetes/kubernetes/blob/dfc9bf0953360201618ad52308ccb34fd8076dff/test/integration/volume/persistent_volumes_test.go#L1043
+
+Testgrid:
+https://testgrid.k8s.io/sig-release-master-blocking#integration-master&width=5
 
 ##### e2e tests
 
@@ -269,9 +275,12 @@ need to create/delete default SCs, which could affect other tests running in
 parallel that may expect that a default SC exists (typically StatefulSet e2e
 tests).
 
-We plan to add a few `[Disruptive]` `[Serial]` tests with the new behavior as
-"smoke" tests of the new behavior, still, most of the tests will be integration
+We added a `[Disruptive]` `[Serial]` test with the new behavior as
+"smoke" test of the new behavior, still, most of the tests will be integration
 ones.
+
+Test:
+https://github.com/kubernetes/kubernetes/blob/91a9ce28ac2486c50222aeeec1f76e664155d769/test/e2e/storage/pvc_storageclass.go#L62
 
 ### Graduation Criteria
 
@@ -288,6 +297,7 @@ ones.
 - No conformance tests, since we don't test StorageClasses there.
 - Manually test version skew between the API server and KCM. See the expected
   behavior below in Version Skew Strategy.
+- Manually test upgrade->downgrade->upgrade path.
 
 #### GA
 
@@ -356,63 +366,42 @@ Unit tests will cover feature enablement/disablement.
 
 ### Rollout, Upgrade and Rollback Planning
 
-Will be provided when graduating to beta.
-
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+In case the feature is not enabled during rollout due to a failure there
+should be no impact and the behavior of StorageClass assignment will not change.
+If the feature is rolled out partially, so it's enabled only on some API
+servers, there will be no impact on running workloads because the request will
+be  processed as if the feature is disabled - that means nothing happens and PVC
+will not be changed.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+A KCM metric for failure counts called `retroactive_storageclass_errors_total`
+will indicate a problem with the feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Upgrade and rollback will be tested when the feature gate will change to beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+A counter metric will be present in KCM metric endpoint, it will show total
+count of successful and failed retroactive StorageClass assignments.
 
 ###### How can someone using this feature know that it is working for their instance?
+
+By inspecting a `retroactive_storageclass_total` metric value. If the counter
+is increasing while letting PVCs being updated retroactively with a default 
+StorageClass the feature is enabled. And at the same time if
+`retroactive_storageclass_errors_total` counter does not increase the feature
+works as expected.
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
@@ -428,8 +417,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
     - Condition name:
     - Other field:
-- [ ] Other (treat as last resort)
-    - Details:
+- [X] Other (treat as last resort)
+    - Details: metric
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -450,18 +439,17 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-    - Metric name:
+- [X] Metrics
+    - Metric name: `retroactive_storageclass_total` and `retroactive_storageclass_errors_total`
     - [Optional] Aggregation method:
-    - Components exposing the metric:
-- [ ] Other (treat as last resort)
-    - Details:
+    - Components exposing the metric: KCM
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+A metric which would include PersistentVolumeClaim name or StorageClass name 
+as a label to help users debug possible issues. A metric with such labels should
+not be added because PVCs and SCs are in control of users and if they would
+create too many of those resources it could overload the metric system.
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
@@ -476,20 +464,7 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No.
 
 ### Scalability
 
@@ -583,6 +558,7 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 - 1.25: initial version
+- 1.26: beta
 
 ## Drawbacks
 
