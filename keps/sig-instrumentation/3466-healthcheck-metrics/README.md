@@ -160,7 +160,7 @@ into an SLI.
 
 - Create a uniform interface by which we can consume health checking information
 - Allow availability SLIs to be created without a specialized monitoring agent
-- Allow for increased granularity (by configuring a smaller scrape interval) of health check metric data
+- Allow for increased granularity (by configuring a more frequent interval) of health check metric data
 - Minimize the diff involved for each Kubernetes component
 
 
