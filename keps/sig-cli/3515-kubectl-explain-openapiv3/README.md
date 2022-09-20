@@ -187,16 +187,19 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-### Richer OpenAPI V3 Data
+### OpenAPI v3 is a richer API description than OpenAPI v2
 
-OpenAPI V3 support in Kubernetes is planned to go GA in 1.26. OpenAPI V3 is a richer
-representation of the kubernetes API to our users, who have been asking for visibility
+OpenAPI v3 support in Kubernetes is currently beta since version 1.24.
+OpenAPI V3 is a richer representation of the kubernetes API to our users, who have been asking for visibility
 into things like:
 
 1. nullable
 2. default
-2. validation fields like oneOf, anyOf
-2. <jeffrey what else does openapi v3 add>
+3. validation fields like oneOf, anyOf, etc.
+
+To show each of these additional data points by themselves is a strong reason
+to switch to using OpenAPI v3.
+
 
 ### CRD schemas expressed as OpenAPI v2 are lossy
 
@@ -207,6 +210,9 @@ to v2 format.
 This process is [very lossy](https://github.com/kubernetes/kubernetes/blob/6e0de20fbb4c127d2e45c7a22347c08545fc7a86/staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/v2/conversion.go#L56-L66), so `kubectl explain` when used against CRDs
 making use of v3 features does not have a good experience with inaccurate information, or fields removed altogther.
 
+This transformation causes bugs, for example, when attempting to `explain` a field
+that is `nullable`, kubectl instead shows nothing, due to the lossy conversion
+wiping nullable fields.
 
 ### Goals
 
@@ -218,11 +224,16 @@ making use of v3 features does not have a good experience with inaccurate inform
     * markdown
     * maybe others
 5. (Optional?) Allow users to specify their own templates for use with kubectl
-  explain
+  explain (there may be interesting use cases for this)
 
 ### Non-Goals
 
-any?
+1. "Fix" openapi v3 to openapi v2 conversion
+  This is a non-goal for two reasons:
+    * These formats are not compatible, and there WILL be data loss and inaccuracy
+    * This negates the benefits of using OpenAPI v3 for the richer type information
+2. Provide general-purpose OpenAPI visualization.
+
 
 ## Proposal
 
@@ -258,7 +269,7 @@ might be saved and used for a documentation website, for example.
 ```
 
 ### Custom Templates
-Users should also be able to specify a path to a custom template file for
+Users might also like to be able to specify a path to a custom template file for
 the resource information to be written to:
 
 human-readable plaintext form:
@@ -266,7 +277,7 @@ human-readable plaintext form:
 kubectl explain pods --template /path/to/template.tmpl
 ```
 
-#### Example template
+#### Example template Format
 
 TBD
 
@@ -857,6 +868,12 @@ The current hard-coded printer is capable of printing any objects in `proto.Mode
 [We already have a way to express OpenAPI v3 data as `proto.Models`, so this can be
 seen as a path of least resistence for plugging OpenAPI v3 into `kubectl explain`.
 
-We decide against this approach due to our desire to deprecate `proto.Models`.
-We see`proto.Models` conversion as unnecessary and costly buraucracy in the code,
-and we are seeking to deprecate the type in favor of the kube-openapi types.
+This approach is undesirable for a few different reasons:
+
+1.) We would like to update the explain printer to include new OpenAPI v3 information,
+the current design makes that time consuming and not maintainable.
+
+2.) API-Machinery has desire to deprecate `proto.Models`. We see`proto.Models`
+conversion as unnecessary and costly buraucracy, that contributes to high
+OpenAPI overhead. We are seeking to deprecate the type in favor of the
+kube-openapi types for future usage.
