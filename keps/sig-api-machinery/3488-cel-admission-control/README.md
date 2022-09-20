@@ -362,7 +362,7 @@ spec:
       # ...other rule related fields here...
 ```
 
-The `spec.validations[*].expression` fields contain CEL expressions. If a
+The `spec.validations[*].expression` fields contain CEL expressions. If an
 expression evaluates to false, the validation check has failed.
 
 The `spec.config` field of the `ValidatingAdmissionPolicy` specifies the
@@ -416,6 +416,13 @@ spec:
       values: ["test"]
   maxReplicas: 100
 ```
+
+Configurations can have overlapping match criteria. The policy is evaluated for
+each matching configuration. For example, if you have a blocklist policy and
+have two policy configurations (each containing their own set of blocklist
+entries) that overlap, the policy is evaluated twice, once with each blocklist.
+(We won't attempt to merge the blocklists, we'll just run the policy as-is with
+each blocklist).
 
 This design separates admission policy _definition_ from _configuration_. This
 has a couple advantages:
@@ -600,27 +607,47 @@ The idea of this alternative is to use duck typing: If a CRD author includes a
 below) and then for the apiserver access the data and treats it as match
 criteria.
 
-If the schema for `spec.match` it is malformed, errors are reported in the
-status of the `ValidatingAdmissionPolicy`.
+To detect and handle any mismatches between how CRDs declare the `spec.match`
+schema and what the apiserver expects:
+- When consuming configuration CRDs OR policy configuration resources used for
+  policy configuration:
+  - If any unrecognized fields, missing required fields, or incorrectly typed
+    fields are found under `spec.match`:
+    - For configuration CRDs:
+      - Set the `ValidatingAdmissionPolicy` state to "misconfigured" in the
+        status (via a Condition, I believe).
+      - Trigger the `FailurePolicy` on all admission validations.
+      - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
+    - For policy configuration resources:
+      - Track in the status of `ValidatingAdmissionPolicy` that some policy
+        configurations are misconfigured. (also via a Condition?).
+      - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
+      - Trigger the `FailurePolicy` on admission for resources that match the
+        policy configuration.
+  - If the CRD is deleted:
+    - Set state to "misconfigured
+    - Trigger `FailurePolicy` on all admission validations
+    - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
 
 A partial `spec.match` schema (subset of the full schema) is okay so long as
 only optional fields are omitted. But any unrecognized field in the `spec.match`
 would not be allowed. 
 
+Allow an annotation on a CRD manifest that means "inject the correct .spec.match
+during admission and keep it up to date with a controller". (Suggested by
+deads2k).  This minimizes version skew if new match criteria is added to
+`spec.match` and also minimizes development effort by removing the need
+to manually declare the fields in CRDs.
+
 Pros:
 
 - A single resource is used to configure both the match criteria and
   configuration params of a policy.
-- Policy authors can choose to only provide the subset of `spec.match` schema
-  that apply to the configuration of the policy they have defined. E.g. a policy
-  that is already constrained to pods by the policy definition does not
-  need to expose the match criteria for GVR matching.
 
 Cons:
 
 - API server must check for a wide range of error conditions and define how
   exactly it handles each of them.
-- The way CRDs expose Match criteria is entirely implicit.
 - If the `spec.match` schema is incorrectly defined, CRD author might not
   realize it since they need to check the status of the corresponding
   `ValidatingAdmissionPolicy` for any errors.
@@ -760,7 +787,7 @@ Matching is performed in quite a few systems across Kubernetes:
 | namespace                                | Audit, P&F                   | phase 1                                |
 | namespace label selectors                | WH                           | phase 1                                |
 | label selectors                          | WH                           | phase 1                                |
-| resource apiGroup + resource             | WH/Audit/P&F/RBAC            | phase 1                                |
+| apiGroup + resource                      | WH/Audit/P&F/RBAC            | phase 1                                |
 | apiVersion                               | WH                           | phase 1                                |
 | resource name                            | Audit/RBAC                   | phase 1                                |
 | scope (cluster\|namespace)               | WH/P&F                       | phase 1                                |
@@ -770,6 +797,7 @@ Matching is performed in quite a few systems across Kubernetes:
 | NonResourceURLs                          | Audit/RBAC/P&F               | No                                     |
 | default / fallthrough matching           |                              | phase 2 see "Default matching" section |
 | user/userGroup                           | Audit                        | phase 2 see "Secondary Authz" section  |
+| user.Extra                               | (in WH AdmissionReview)      | phase 2 see "Secondary Authz" section  |
 | permissions (RBAC verb)                  | RBAC                         | phase 2 see "Secondary Authz" section  |
 
 WH = Admission webhooks, P&F = Priority and Fairness
@@ -780,27 +808,18 @@ declared with API types in a format similar to admission webhooks, P&F, RBAC and
 Audit. Match criteria will also use ordered list of rules similar to these other
 systems.
 
-In order for policy configuration resources to declare match criteria, the
-corresponding configuration CRD schema must have a `spec.match` property. This
-property must conform to the below "matching schema template". This ensures that
-the match criteria is in the format that API server expects (the API server will
-be using duck typing here since there is no established way to do polymorphism
-across CRDs). The schemas of these fields in the configuration CRD may omit any
-optional properties; policy definition authors should only include the parts of
-the "match schema template" that are useful for configuring a particular policy.
-
 Proposed matching mechanism:
 
 - Ordered list of matches. First match that is true determine if the request is
   validated by the policy-- if exclude is false, it is validated, otherwise it
   is not.
 - Supported criteria for each match:
-  - GVR (resource apiGroup + resource)
+  - GVR (apiGroup + resource)
   - scope (cluster|namespace) 
   - operation (HTTP verb) 
   - exclude (if criteria matches, match result is "no match")
-  - namespace selectors
-  - object selectors
+  - namespace label selectors
+  - label selectors
   - resource name
   - user/userGroup
   - permissions (RBAC verb)
@@ -817,53 +836,6 @@ Wildcards support? Or defer this type of check for CEL expression evaluation?
 <<[UNRESOLVED jpbetz, maxsmythe ]>>
 Offer both GVR and GVK matching?  Need to add GVK matching to below, if so.
 <<[/UNRESOLVED]>>
-
-TBD:
-
-```go
-// TODO: Add this as a struct into the Kubernetes codebase so it can easily be
-// imported?
-type MatchCriteria struct {
-  admissionregisterationv1.RuleWithOperations `json:,inline`
-
-  Namespaces ... `json:...`
-  NamespaceLabelSelector *metav1.LabelSelector `json:...`
-  LabelSelector *metav1.LabelSelector `json:...`
-  ResourceNames ... `json:...`
-  Users ... `json:...` // See "Secondary Authz" section below
-  UserGroups ... `json:...` // See "Secondary Authz" section below
-  Permissions ... `json:...` // See "Secondary Authz" section below
-  Effect MatchEffect ... `json:...` // See "Exclude matching" section below
-}
-```
-
-(Also, by allowing the "matching schema template" in configuration CRDs to be a
-omit optional properties, this API is future proofed against the addition of
-other match related properties in the future).
-
-"matching schema template":
-
-```go
-type PolicyConfiguration struct {
-  Match []MatchCriteria `json:...`
-  MatchPolicy MatchPolicy `json:...`
-  Enforcement EnforcementAction `json:...` // See "Reporting violations" section below
-  FailurePolicy FailurePolicy `json:...` // See "Failure Policy" section below
-}
-```
-
-Example usage:
-
-```go
-// +genclient
-// +genclient:nonNamespaced
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type ReplicaLimit struct {
-  PolicyConfiguration `json:",inline"
-
-  MaxReplicas int32 `json:"maxReplicas" protobuf:"varint,2,name=maxReplicas"`
-}
-```
 
 `MatchPolicy` will work the same as for admission webhooks. It will default to
 `Equivalent` but may be set to `Exact`. See "Use Case: Multiple policy
@@ -1252,6 +1224,26 @@ Use cases:
 - network.openshift.io/RestrictedEndpointsAdmission
 - security.openshift.io/SecurityContextConstraint
 - security.openshift.io/SCCExecRestrictions
+
+From deads2k:
+
+> Note that user.Extra in AdmissionReview has pod claims, which are valuable.
+
+> sig-auth has previous talked about trying to find a way to restrict access
+> from a daemonset pod to a customresource/foo that has Foo.spec.NodeName set to
+> the Node.metadata.name of the pod bound to the particular SA token. This is
+> tantalizingly close because user.Extra contains
+> authentication.kubernetes.io/pod-uid to locate a pod, determine a
+> Pod.spec.NodeName.
+
+> A built-in that does that may be well received and unlock many use-cases.
+> Exploring the idea may be useful. If most also require controlled read
+> permission, then its probably better to create something specifically for the
+> purpose.
+
+Looking up the pod (or any other additional resources) is not something we are
+currently planning to support in this KEP, but the use case is interesting and
+we should investigate with sig-auth.
 
 #### Default configurations
 
