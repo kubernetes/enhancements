@@ -458,8 +458,8 @@ into the single `Apply` entry of `kubectl`.
 
 ### Approach
 
-Whenever the migration is to be performed, kubectl fetches the object and simply calls
-[`UpgradeManagedFields`](https://github.com/kubernetes/kubernetes/pull/111967/files#diff-4538195db8472f5237db69d0424dfd6fd7a7b0232f67f67dae52f57aea7b1af1R53) to
+Whenever the migration is to be performed, kubectl fetches the object and simply 
+calls the recently added client-go library function [`UpgradeManagedFields`](https://github.com/kubernetes/kubernetes/pull/111967/files#diff-4538195db8472f5237db69d0424dfd6fd7a7b0232f67f67dae52f57aea7b1af1R53) to
 migrate the managed fields to their desired form. The changes can then be
 sent as a PATCH or UPDATE to the apiserver to install the change.
 
