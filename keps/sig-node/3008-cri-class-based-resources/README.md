@@ -1132,12 +1132,15 @@ running workloads continue to work without any changes as their QoS-class
 resource assigment in the runtime is not changed.
 Restarting or re-deploying a workload causes it to lose its QoS-class resource
 assignment as the annotation parsing in kubelet is disabled. In other words,
-the workload is able to run but the QoS-class resource assignment request from
-the user (via pod annotations) is effectively ignored.
+the workload is able to run but the QoS-class resource assignment requests from
+the user, i.e. via pod annotations, are ignored by kubelet.
 
 Future implementation phases: running workloads continue to work without any
 changes. Restarting or re-deploying a workload causes it to fail as the
-requested QoS-class resources are not available.
+requested QoS-class resources are not available in Kubernetes anymore. The
+resources are still supported by the underlying runtime but disabling the
+feature in Kubernetes makes them unavailable and the related PodSpec fields are
+not accepted in validation.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1146,8 +1149,7 @@ annotations to correctly communicate QoS-class resource assignments to the
 container runtime.
 
 Future implementation phases: workloads might have failed because of
-unsupported fields in the pod spec resource requirements and need to be
-restarted.
+unsupported fields in the pod spec and need to be restarted.
 
 ###### Are there any tests for feature enablement/disablement?
 
