@@ -168,7 +168,8 @@ migrating](https://kubernetes.io/docs/reference/using-api/server-side-apply/#upg
 
 
 Unfortunately it is not so simple. By following these instructions you can be
-left with the following situation:
+left in a situation where after migrating to server-side-apply, certain fields
+become un-deletable from the object. Here is a simple reproducing case:
 
 Create a configmap in the cluster with client-side apply:
 ```shell
@@ -202,7 +203,9 @@ EOF
 configmap/test serverside-applied
 ```
 
-Remove one of the values from the configmap and apply again using server-side apply:
+Remove one of the values from the configmap, we choose `legacy` key, and apply
+again using server-side apply. You would expect that the field is now removed 
+from the object, but it is not:
 ```shell
 cat <<EOF | kubectl apply --server-side -f -
 apiVersion: v1
@@ -373,8 +376,9 @@ metadata:
   namespace: default
 ```
 
-Note that after the `--server-side` command there are now two owners of the 
-`legacy` field:
+Note that after the `--server-side` command there are now two owners of `key` and `legacy` fields. 
+This is what causes problems for users. When the user removes the
+field `legacy` via server-side-apply, it surprisingly persists within the object:
 
 
 After field is removed from SSA apply:
