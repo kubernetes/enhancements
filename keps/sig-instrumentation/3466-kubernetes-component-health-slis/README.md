@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3466: Healthcheck metrics
+# KEP-3466: Kubernetes Component Health SLIs
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -145,8 +145,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP intends to allow us to emit health check data in a structured and consistent way,
-so that monitoring agents can consume healthz/livez/readyz data and create SLOs/alerts off
-of these inputs.
+so that monitoring agents can consume healthz/livez/readyz data and create SLOs (service level 
+objectives) and alerts off of these SLIs (service level indicators).
 
 ## Motivation
 
@@ -186,8 +186,8 @@ case we are proposing known dimensions to the metrics, specifically:
 
 ## Design Details
 
-We will write the actual metric data in the healthz/livez/readyz paths and expose this in our new
-metrics endpoint. Admittedly, this has the downside of staleness though, since the health check 
+When healthz/livez/readyz paths are accessed (not on a timer), they will record whatever they return
+in a gauge metric. Admittedly, this has the downside of staleness though, since the health check 
 data can be as stale as the length of the kubelet scrape interval. However, given our e2e tests 
 configure [apiserver to 1s intervals](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/manifests/kube-apiserver.manifest#L58), it is reasonable to assume that other cloud-providers 
 likely configure similar small scrape intervals, which means staleness should not realistically 
@@ -200,8 +200,9 @@ periodic poll, but that change would be larger and would need to be implemented 
 for each of their health check endpoints. 
 
 Using a gaugeFunc would also preclude making the metric `stable`, since gaugeFuncs are
-dynamic by nature and therefore cannot be parsed at compile time by the stability framework. 
-
+dynamic by nature and therefore cannot be parsed at compile time by the stability framework. Since
+these metrics are intended to be used as component health SLIs, we want them to be able to
+be promoted to `stable` status.
 
 ### Test Plan
 
@@ -229,8 +230,9 @@ dynamic by nature and therefore cannot be parsed at compile time by the stabilit
 
 ### Feature Enablement and Rollback
 
-We can feature gate the api and the registry for this metrics endpoint, such that it is disabled by default and toggleable only by feature-gate. Given the lazy
-nature of the Kubernetes metric framework, this will ensure that we do not encounter any memory leaks.
+We can feature gate the api and the registry for this metrics endpoint, such that it is disabled by default
+and toggleable only by feature-gate. Given the lazy nature of the Kubernetes metric framework, this will
+ensure that we do not encounter any memory leaks.
 
 
 ###### How can this feature be enabled / disabled in a live cluster?

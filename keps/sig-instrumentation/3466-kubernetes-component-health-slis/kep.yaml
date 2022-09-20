@@ -1,7 +1,7 @@
 id: "3466"
 prnumber: ""
 name: healthcheck-metrics
-title: Kubernetes Healthcheck Metrics
+title: Kubernetes Component Health SLIs
 kep-number: "3466"
 authors: ['@logicalhan']
 owning-sig: sig-instrumentation
