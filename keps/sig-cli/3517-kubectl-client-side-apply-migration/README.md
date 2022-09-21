@@ -1028,6 +1028,20 @@ Additionally, this violates the main benefits of using server-side-apply: inject
 a race condition by making SSA now into a read-modify-write operation as opposed to
 an atomic patch request.
 
+
+### kubectl Plugin
+
+To avoid making direct changes to kubectl, we can instead offer a plugin with this proposed functionality for users migrating to SSA to install.
+
+Pros
+1. Can be maintained by API-machinery
+2. Easy to deprecate once client-side-apply is no longer used, and migration is not necessary (users just stop installing plugin)
+3. No extra complexity in kubectl
+
+Cons
+1. Users must perform extra step to use functionality
+
+
 ## Infrastructure Needed (Optional)
 
 <!--
