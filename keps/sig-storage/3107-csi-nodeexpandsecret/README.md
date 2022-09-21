@@ -172,18 +172,22 @@ N/A
   [sidecar](https://github.com/kubernetes-csi/external-provisioner/). Once added this
   support to mentioned sidecar, the e2e tests will be added and validated using
   example CSI driver [tests](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/drivers/csi-test/driver/driver.go).
+- E2E test PR is available [here](https://github.com/kubernetes/kubernetes/pull/115451)
+  and this test has been enabled in the [testgrid](https://k8s-testgrid.appspot.com/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features)
 
 ### Graduation Criteria
 
 #### Alpha
 
 - Implemented the feature.
-- Wrote all the unit and E2E tests.
+- implementation of unit tests.
 
 #### Beta
 
 - Deployed the feature in production and went through at least minor k8s
   version.
+- Feedback from users.
+- Implementation of e2e tests.
 
 #### GA
 
@@ -191,7 +195,23 @@ N/A
 
 ### Upgrade / Downgrade Strategy
 
+1. Upgrading a Kubernetes cluster with this feature flag enabled:
+- in this upgraded cluster, a CSI driver should receive secrets as
+part of NodeExpansion RPC call from CO side and should be able to
+make use of it while expanding volumes on node.
+
+2. Downgrading a Kubernetes cluster with feature disabled:
+- in this downgraded cluster, a CSI driver will not receive secrets
+as part of the NodeExpansion RPC call from CO side.
+ 
 ### Version Skew Strategy
+
+The proposal requires changes to kubelet and kube api server feature
+flag set. If any of the components are not upgraded to a version
+supporting this feature, then the feature will not work as expected.
+From an end user perspective, the existing behaviour will continue, ie,
+there will be no facility to get the secrets as part of the node expansion
+RPC call from CO side to the CSI driver.
 
 ## Production Readiness Review Questionnaire
 
@@ -220,53 +240,138 @@ N/A
 
 ### Rollout, Upgrade and Rollback Planning
 
-TBD
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-TBD
+A failed scenario of rollout or rollback dont have any impact on running workloads.
+The CSI drivers use the feature based on the availability of Secrets in NodeExpansion
+call which is controlled by the Kubernetes feature flag set.
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
 
 ###### What specific metrics should inform a rollback?
 
-TBD
+`csi_kubelet_operations_seconds` metric available
+[here](https://github.com/kubernetes/kubernetes/blob/6b55f097bb2140381a58312aeede37fc76a0762e/pkg/volume/util/metrics.go#L66)
+covers CSI NodeExpand operation which can be used for this purpose.
 
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD
+manual testing will be performed on upgrade and rollback.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-TBD
+No.
 
 ### Monitoring Requirements
 
-TBD
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-TBD
+An operator can query for api server and kubelet flags in the cluster
+for `CSINodeExpandSecret` flag and if it exist then the feature is
+in use.
 
-###### How can someone using this feature know that it is working for their instance?
 
-TBD
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+- [ ] Events
+  - Event Reason:
+- [ ] API .status
+  - Condition name:
+  - Other field:
+- [x] Other (treat as last resort)
+  - Details: to make use of this feature in a cluster a StorageClass instance  has
+to carry below entries in the parameter list.
+
+  ```
+  csi.storage.k8s.io/node-expand-secret-name
+  csi.storage.k8s.io/node-expand-secret-namespace
+ ```
+
+  The subjected CSI PV object should have `nodeExpandSecretRef` field filled with the
+  details given in the StorageClass.
+
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-TBD
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-TBD
+
+<!--
+Pick one more of these and delete the rest.
+-->
+
+- [ ] Metrics
+  - Metric name: `csiOperationsLatencyMetric` can be used by an operator to determine
+the health of the service.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-TBD
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
 
 ### Dependencies
 
-TBD
+This feature depends on the cluster having CSI drivers and sidecars that use CSI
+spec v1.5.0 at minimum.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-TBD
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
+- [CSI drivers and sidecars]
+  - Usage description:
+    - Impact of its outage on the feature: Inability to perform CSI storage
+      operations with NodeExpandVolume RPC call where the CSI driver require
+      credentials to complete this specific operation.
+    - Impact of its degraded performance or high-error rates on the feature:
+      Increase in latency performing CSI storage operations (due to repeated
+      retries)
 
 ### Scalability
 
@@ -279,7 +384,8 @@ TBD
   provider?** no.
 
 - **Will enabling / using this feature result in increasing size or count of
-  the existing API objects?** no.
+  the existing API objects?**
+  yes, this adds a new field to the API so it changes the size.
 
 - **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs]?** no.
@@ -287,7 +393,20 @@ TBD
 - **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?** no.
 
+- **Can enabling / using this feature result in resource exhaustion of som
+  node resources (PIDs, sockets, inodes, etc.)?** no.
+
 ### Troubleshooting
+
+If the CSI driver does not receive the secrets as part of nodeExpansion
+request, below things have to be checked in a cluster.
+
+- make sure StorageClass has `csi.storage.k8s.io/node-expand-secret-name`
+  and `csi.storage.k8s.io/node-expand-secret-namespace` parameters set
+  with proper value.
+
+- make sure `CSINodeExpandSecret` feature gate has been enabled for
+  `kubelet` and `kube-apiserver` configuration in the cluster.
 
 ## Implementation History
 
@@ -303,4 +422,9 @@ however this is really a hacky way and not the CSI driver authors want.
 
 ## Infrastructure Needed (Optional)
 
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
 ---
