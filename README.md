@@ -55,7 +55,7 @@ Create an [issue](https://github.com/kubernetes/enhancements/issues/new) in this
 
 ## Why Are Enhancements Tracked
 
-Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete documentation. As the project grows, no single person can track whether all those requirements are met. 
+Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete documentation. As the project grows, no single person can track whether all those requirements are met.
 
 The development of an enhancement often spans three stages: Alpha, Beta, and Stable. Enhancement Tracking Issues provide a checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the
 development lifetime of an enhancement.
@@ -82,7 +82,7 @@ Links:
 
 Prior to the 1.26 release, enhancements from this repo were visualized using Enhancements Tracking Spreadsheets.
 
-Please refer to the [Enhancements Tracking Spreadsheet Archive](docs/archived-tracking-sheets.md) for links to 
+Please refer to the [Enhancements Tracking Spreadsheet Archive](docs/archived-tracking-sheets.md) for links to
 these sheets.
 
 Procedure:
@@ -100,11 +100,13 @@ The Exceptions Process is handled by the Release Team, please see their [documen
 
 | Label Name | Purpose | How to use this label | Who should use this label |
 | ------ | ------ | ------ | ------ |
-| `sig/foo` | Denotes the SIG(s) which owns this enhancement—e.g., `SIG Foo` | Set the label using the comment `/sig foo` (on a separate line) | Anyone |
-| `kind/feature` | Denotes that the issue should be tracked as an enhancement (all enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
-| `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
-| `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and will not be actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
+| `sig/foo` | Denotes the SIG(s) which owns the enhancement and other responsible SIG(s)-e.g., `SIG Foo` | Set the label using the comment `/sig foo` (on a separate line) | Anyone |
+| `kind/feature` | Denotes an issue should be tracked as an enhancement (all enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
+| `tracked/yes` | Denotes an issue has been reviewed by the enhancements team (SIG Release) and is actively tracked for the current milestone | Set the label using the comment `/label tracked/yes` (on a separate line) | Release enhancements team ONLY |
+| `tracked/no` | Denotes an issue has been reviewed by the enhancements team (SIG Release) and will not be actively tracked for the current milestone | Set the label using the comment `/label tracked/no` (on a separate line) | Release enhancements team ONLY |
+| `tracked/out-of-tree` | Denotes an issue has an out-of-tree implementation | Set the label using the comment `/label tracked/out-of-tree` (on a separate line) | Release enhancements team ONLY |
 | `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
+| `lead-opted-in` | Denotes that an issue has been opted in to a release | Set the label using the comment `/label lead-opted-in` (on a separate line) | SIG leads ONLY |
 
 ## Glossary
 
