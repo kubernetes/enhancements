@@ -1,22 +1,37 @@
-id: "3498"
-prnumber: ""
-name: extending-stability
+kep-number: 3498
 title: Extending Metrics Stability
-kep-number: "3498"
-authors: ['@logicalhan', '@dgrisonnet', '@coffeepac']
+authors:
+  - "@logicalhan"
+  - "@dgrisonnet"
+  - "@coffeepac"
 owning-sig: sig-instrumentation
-participating-sigs: [sig-architecture, sig-instrumentation]
-reviewers: ['@dashpole']
-approvers: ['@dashpole']
-creation-date: "2022-09-05"
-last-updated: v1.26
-status: provisional
-stage: "ALPHA"
+participating-sigs:
+  - sig-instrumentation
+  - sig-architecture
+status: implementable
+creation-date: "2022-08-16"
+reviewers:
+  - "@dashpole"
+approvers:
+  - "@dashpole"
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
 latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-    alpha: ""
-    beta: ""
-    stable: ""
-feature-gates: []
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.29"
+
+feature-gates:
+  - name: "n/a"
 disable-supported: false
-metrics: []
+
+# The following PRR answers are required at beta release
+metrics:
+  - registered_metrics_total{stability_level}
