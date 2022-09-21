@@ -15,7 +15,6 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Deprecation](#deprecation)
@@ -132,10 +131,10 @@ use un-encrypted...
 
 ## Proposal
 
-For alpha `kubelet` will keep a list, since boot, of container images that required
-authentication and a list of the authentications that successfully pulled the image.
-For beta the list will be persisted across reboot of host, and restart of kubelet.
-Additionally, an API will be considered to manage the ensure metadata.
+For alpha `kubelet` will keep a list, across reboots of host and restart of
+kubelet, of container images that required authentication and a list of the
+authentications that successfully pulled the image.
+For beta an API will be considered to manage the ensure metadata.
 
 `kubelet` will ensure any image in the list is always pulled if an authentication
 used is not present, thus enforcing authentication / re-authentication.
@@ -170,7 +169,7 @@ Since images can be pre-loaded, loaded outside the `kubelet` process, and
 garbage collected.. the list of images that required authentication in `kubelet`
 will not be a source of truth for how all images were pulled that are in the
 container runtime cache. To mitigate, images can be garbage collected at boot.
-And for beta, we will persist ensure metadata across reboot of host, and restart
+And we will persist ensure metadata across reboot of host, and restart
 of kubelet, and possibly look at a way to add ensure metadata for images loaded
 outside of kubelet. In beta we will add a switch to enable re-auth on boot for
 admins seeking that instead of having to garbage collect where they do not use
@@ -179,10 +178,27 @@ or expect preloaded images since boot.
 
 ## Design Details
 
-Kubelet will track, in memory, a hash map for the credentials that were successfully used to pull an image. The hash map
-will not be persisted to disk, in alpha. For alpha explicitly, we will not reuse or add other state manager concepts to kubelet.
+Kubelet will track, in memory, a hash map for the credentials that were successfully used to pull an image. It has been decided that the hash map will be persisted to disk, in alpha.
 
-See PR for detailed design / behavior documentation.
+See `/var/lib/kubelet/image_manager_state` in [kubernetes/kubernetes#114847](https://github.com/kubernetes/kubernetes/pull/114847)
+
+> ```
+> {
+>   "images": {
+>     "sha256:eb6cbbefef909d52f4b2b29f8972bbb6d86fc9dba6528e65aad4f119ce469f7a": {
+>       "authHash": {
+>         "115b8808c3e7f073": {
+>           "ensured": true,
+>           "dueDate": "2023-05-30T05:26:53.76740982+08:00"
+>         }
+>       },
+>       "name": "daocloud.io/daocloud/dce-registry-tool:3.0.8"
+>     }
+>   }
+> }
+> ```
+
+See PR linked above for detailed design / behavior documentation.
 
 ### Test Plan
 
@@ -213,6 +229,8 @@ For alpha, exhaustive Kubelet unit tests will be provided. Functions affected by
  	}
 ```
 [TestShouldPullImage link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-7297f08c72da9bf6479e80c03b45e24ea92ccb11c0031549e51b51f88a91f813R311-R438)
+
+PersistHashMeta()
 
 At beta we should revisit if integration buckets are warranted for e2e node and/or cri-tools/critest, and after gathering feedback.
 
