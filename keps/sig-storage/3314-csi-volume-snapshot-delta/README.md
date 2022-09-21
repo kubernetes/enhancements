@@ -539,9 +539,13 @@ type VolumeSnapshotDeltaSpec struct {
   // Required.
   TargetVolumeSnapshotName string `json:"targetVolumeSnapshotName"`
 
-  // Defines the type of volume. Default to "block".
-  // Required.
-  Mode string `json:"mode,omitempty"`
+  // VolumeSnapshotDeltaRef is a reference to the secret object containing
+  // sensitive information to pass to the CSI driver to complete the CSI
+  // calls for VolumeSnapshotDelta.
+  // This field is optional, and may be empty if no secret is required. If the
+  // secret object contains more than one secret, all secrets are passed.
+  // +optional
+  VolumeSnapshotDeltaSecretRef *SecretReference
 
   // Define the maximum number of entries to return in the response.
   Limit uint64 `json:"limit"`
@@ -626,29 +630,25 @@ rpc ListSnapshotDeltas(ListSnapshotDeltasRequest)
     option (alpha_method) = true;
   }
 
+// List the deltas between two snapshots on the storage system
+// regardless of how they were created
 message ListSnapshotDeltasRequest {
   option (alpha_message) = true;
 
   // The ID of the base snapshot handle to use for comparison. If
   // not specified, return all changed blocks up to the target
   // specified by snapshot_target. This field is OPTIONAL.
-  string snapshot_base_id = 1;
+  string from_snapshot_id = 1;
 
   // The ID of the target snapshot handle to use for comparison. If
   // not specified, an error is returned. This field is REQUIRED.
-  string snapshot_target_id = 2;
+  string to_snapshot_id = 2;
 
-  // Defines the type of storage. Default to "BLOCK". This field is
-  // REQUIRED.
-  enum Mode {
-    option (alpha_enum) = true;
-
-    // Indicates that the underlying storage is of block type.
-    BLOCK = 0; [(alpha_enum_value) = true];
-
-    // Indicates that the underlying storage is of file type.
-    FILE = 1; [(alpha_enum_value) = true];
-  }
+  // Secrets required by plugin to complete list snapshot deltas
+  // request.
+  // This field is OPTIONAL. Refer to the `Secrets Requirements`
+  // section on how to use this field.
+  map<string, string> secrets = 3 [(csi_secret) = true];
 
   // If specified (non-zero value), the Plugin MUST NOT return more
   // entries than this number in the response. If the actual number of
@@ -717,7 +717,7 @@ message BlockSnapshotChangedBlockToken {
   // The TTL of the token in seconds. The expiry time is calculated by
   // adding the time of issuance with this value. This field is
   // REQUIRED.
-  .google.protobuf.Duration ttl_seconds = 3;
+  int32 ttl_seconds = 3;
 }
 ```
 
