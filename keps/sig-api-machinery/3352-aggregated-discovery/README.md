@@ -217,14 +217,18 @@ mechanism is `kubectl`, and more specifically the
 latency, kubectl has implemented a 6 hour timer during which the
 discovery API is not refreshed. The drawback of this approach is that
 the freshness of the cache is doubtful and the entire discovery API
-needs to be refreshed after 6 hours, even if it hasn’t expired.
+needs to be refreshed after 6 hours, even if it hasn’t expired. Other
+clients such as Openshift UI have slow loading times due to the
+browser limit of the amount of parallel requests that can be made.
 
-This not only impacts kubectl, but all clients of kubernetes. We can
-do better.
+This primarily concerns clients that need a discovery cache and need
+to frequently poll the apiserver for the latest discovery information.
+Clients include kubectl, web interfaces, controllers, etc.
 
 ### Goals
 
-- Fix the discovery storm issue currently present in kubectl
+- Fix the discovery storm issue that clients face when first loading the discovery document
+- On an update to the discovery document, efficiently allow clients to detect new types for appropriate decisions to be made
 - Aggregate the discovery documents for all Kubernetes types
 
 <!-- List the specific goals of the KEP. What is it trying to achieve?
@@ -239,6 +243,8 @@ Since the current discovery separated by group-version is already GA,
 removal of the endpoint will not be attempted. There are still use
 cases for publishing the discovery document per group-version and this
 KEP will solely focus on introducing the new aggregated endpoint.
+
+Watchable discovery is also outside the scope of this KEP.
 
 ## Proposal
 
@@ -288,96 +294,132 @@ discovery document for all types that a Kubernetes cluster supports.
 
 ### API
 
-The contents of this endpoint will be an `APIGroupList`, which is the
-same type that is returned in the discovery document at `/apis`. The
-`APIGroupList` contains a list of `APIGroup` types which includes a
-list of
-[`GroupVersionForDiscovery`](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1071)
-types. We will modify this `GroupVersionForDiscovery` type to include
-a list of
-[`APIResource`](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1080).
-This list of `APIResource` is what is currently published at the
-`/apis/<group>/version` endpoint and is what will be aggregated into
-the new endpoint that we publish.
+The contents of this endpoint will be an `APIGroupDiscoveryList`, containing a list of `APIGroupDiscovery`, with each group include a list of versions (`APIVersionDiscovery`). Each `APIVersionDiscovery` will include a list of `APIResourcesForDiscovery`. There are a couple minor changes for the `APIResourceForDiscovery` compared to the current `APIResource` object, but all states expressible with the current API will be representable in the new API.
 
 The endpoint will also publish an ETag calculated based on a hash of
 the data for clients.
 
-This is approximately what the new API will look like (conflicting names will be renamed)
+These types will live in a new group version `apidiscovery/v2`
+
+This is what the new API will look like.
 
 ```go
-// APIGroupList is a list of APIGroup, to allow clients to discover the API at
-// /apis.
-type APIGroupList struct {
+// APIGroupDiscoveryList is a resource containing a list of APIGroupDiscovery.
+// This is what is returned from the /discovery/v1 endpoint and is used to discover
+// the list of API resources (built-ins, Custom Resource Definitions, resources from aggregated servers)
+// that a cluster supports.
+type APIGroupDiscoveryList struct {
 	TypeMeta `json:",inline"`
-	// groups is a list of APIGroup.
-	Groups []APIGroup `json:"groups" protobuf:"bytes,1,rep,name=groups"`
+	// ResourceVersion will not be set, because this does not have a replayable ordering among multiple apiservers.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	// items is the list of groups for discovery.
+	Items []APIGroupDiscovery `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
-// APIGroup contains the name, the supported versions, and the preferred version
-// of a group.
-type APIGroup struct {
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// APIGroupDiscovery holds information about which resources are being served for all version of the API Group.
+// It contains a list of APIVersionDiscovery that holds a list of APIResourceDiscovery types served for a version.
+// Versions are in descending order of preference, with the first version being the preferred entry.
+type APIGroupDiscovery struct {
 	TypeMeta `json:",inline"`
-	// name is the name of the group.
-	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
-	// versions are the versions supported in this group.
-	// This will be sorted in descending order based on the preferred version
-	Versions []GroupVersionForDiscovery `json:"versions" protobuf:"bytes,2,rep,name=versions"`
-	// PreferredVersion will be removed for the new Discovery API
-	// The GroupVersionForDiscovery will be sorted based on the preferred version
-	// PreferredVersion GroupVersionForDiscovery `json:"preferredVersion,omitempty" protobuf:"bytes,3,opt,name=preferredVersion"`
-
- 	// ServerAddresssByClientCIDRs will be removed for the new Discovery API
-	//ServerAddressByClientCIDRs []ServerAddressByClientCIDR `json:"serverAddressByClientCIDRs,omitempty" protobuf:"bytes,4,rep,name=serverAddressByClientCIDRs"`
+	// Standard object's metadata.
+	// The only field completed will be name. For instance, resourceVersion will be empty.
+	// name is the name of the API group whose discovery information is presented here.
+	// name is allowed to be "" to represent the legacy, ungroupified resources.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	// versions are the versions supported in this group. They are sorted in descending order of preference,
+	// with the preferred version being the first entry.
+	// +listType=map
+	// +listMapKey=version
+	Versions []APIVersionDiscovery `json:"versions,omitempty" protobuf:"bytes,2,rep,name=versions"`
 }
 
-// GroupVersion contains the "group/version" and "version" string of a version.
-// It is made a struct to keep extensibility.
-type GroupVersionForDiscovery struct {
-	// groupVersion specifies the API group and version in the form "group/version"
-	// This will be removed for the new discovery
-	// GroupVersion string `json:"groupVersion" protobuf:"bytes,1,opt,name=groupVersion"`
-	// version specifies the version in the form of "version". This is to save
-	// the clients the trouble of splitting the GroupVersion.
-	Version string `json:"version" protobuf:"bytes,2,opt,name=version"`
-	// resources contains the name of the resources and if they are namespaced.
-	APIResources []APIResource `json:"resources" protobuf:"bytes,2,rep,name=resources"`
-
- 	// LastContacted is the last time that the apiserver has successfully reached the
- 	// corresponding group version's discovery document. This will be nil if the group-version
- 	// has not been aggregated yet (APIResources will be empty). To maintain consistency across scenarios with multiple
- 	// apiservers, this time will be quantized down to the nearest fifteen minutes.
- 	LastContacted *time.Time `json:"lastContacted" protobuf:"bytes,opt,name=lastContacted"`
+// APIVersionDiscovery holds a list of APIResourceDiscovery types that are served for a particular version within an API Group.
+type APIVersionDiscovery struct {
+	// version is the name of the version within a group version.
+	Version string `json:"version" protobuf:"bytes,1,opt,name=version"`
+	// resources is a list of APIResourceDiscovery objects for the corresponding group version.
+	// +listType=map
+	// +listMapKey=resource
+	Resources []APIResourceDiscovery `json:"resources,omitempty" protobuf:"bytes,2,rep,name=resources"`
+	// freshness marks whether a group version's discovery document is up to date.
+	// "Current" indicates no problems when fetching the discovery document. "Stale" indicates
+	// that there was an error fetching the discovery document, and the current version may not
+	// be up to date.
+	Freshness DiscoveryFreshness `json:"freshness,omitempty" protobuf:"bytes,3,opt,name=freshness"`
 }
 
-// APIResource specifies the name of a resource and whether it is namespaced.
-type APIResource struct {
-	// name is the plural name of the resource.
-	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
-	// singularName is the singular name of the resource.  This allows clients to handle plural and singular opaquely.
-	// The singularName is more correct for reporting status on a single item and both singular and plural are allowed
-	// from the kubectl CLI interface.
-	SingularName string `json:"singularName" protobuf:"bytes,6,opt,name=singularName"`
-	// namespaced indicates if a resource is namespaced or not.
-	Namespaced bool `json:"namespaced" protobuf:"varint,2,opt,name=namespaced"`
-	// group is the preferred group of the resource.  Empty implies the group of the containing resource list.
-	// For subresources, this may have a different value, for example: Scale".
-	Group string `json:"group,omitempty" protobuf:"bytes,8,opt,name=group"`
-	// version is the preferred version of the resource.  Empty implies the version of the containing resource list
-	// For subresources, this may have a different value, for example: v1 (while inside a v1beta1 version of the core resource's group)".
-	Version string `json:"version,omitempty" protobuf:"bytes,9,opt,name=version"`
-	// kind is the kind for the resource (e.g. 'Foo' is the kind for a resource 'foo')
-	Kind string `json:"kind" protobuf:"bytes,3,opt,name=kind"`
-	// verbs is a list of supported kube verbs (this includes get, list, watch, create,
-	// update, patch, delete, deletecollection, and proxy)
-	Verbs Verbs `json:"verbs" protobuf:"bytes,4,opt,name=verbs"`
+// APIResourceDiscovery provides information about an API resource for discovery.
+type APIResourceDiscovery struct {
+	// resource is the plural name of the resource.  This is used in the URL path and is the unique identifier
+	// for this resource across all versions in the API group.
+	// resources with non-"" groups are located at /apis/<APIGroupDiscovery.objectMeta.name>/<APIVersionDiscovery.version>/<APIResourceDiscovery.Resource>
+	// resource with "" groups are located at /api/v1/<APIResourceDiscovery.Resource>
+	Resource string `json:"resource" protobuf:"bytes,1,opt,name=resource"`
+	// responseKind describes the type of serialization that will typically be returned from this endpoint.
+	// APIs may return other objects types at their discretion, such as error conditions, requests for alternate representations, or other operation specific behavior.
+	ResponseKind GroupVersionKind `json:"responseKind" protobuf:"bytes,2,opt,name=responseKind"`
+	// scope indicates the scope of a resource, either Cluster or Namespaced
+	Scope ResourceScope `json:"scope" protobuf:"bytes,3,opt,name=scope"`
+	// singularResource is the singular name of the resource.  This allows clients to handle plural and singular opaquely.
+	// For many clients the singular form of the resource will be more understandable to users reading messages and should be used when integrating the name of the resource into a sentence.
+	// The command line tool kubectl, for example, allows use of the singular resource name in place of plurals.
+	// The singular form of a resource should always be an optional element - when in doubt use the canonical resource name.
+	SingularResource string `json:"singularResource" protobuf:"bytes,4,opt,name=singularResource"`
+	// verbs is a list of supported API operation types (this includes
+	// but is not limited to get, list, watch, create update, patch,
+	// delete, deletecollection, and proxy)
+	Verbs Verbs `json:"verbs" protobuf:"bytes,5,opt,name=verbs"`
 	// shortNames is a list of suggested short names of the resource.
-	ShortNames []string `json:"shortNames,omitempty" protobuf:"bytes,5,rep,name=shortNames"`
-	// categories is a list of the grouped resources this resource belongs to (e.g. 'all')
+	// +listType=set
+	ShortNames []string `json:"shortNames,omitempty" protobuf:"bytes,6,rep,name=shortNames"`
+	// categories is a list of the grouped resources this resource belongs to (e.g. 'all').
+	// Clients may use this to simplify acting on multiple resource types at once.
+	// +listType=set
 	Categories []string `json:"categories,omitempty" protobuf:"bytes,7,rep,name=categories"`
+	// subresources is a list of subresources provided by this resource. Subresources are located at /apis/<APIGroupDiscovery.objectMeta.name>/<APIVersionDiscovery.version>/<APIResourceDiscovery.Resource>/name-of-instance/<APIResourceDiscovery.subresources[i].subresource>
+	// +listType=map
+	// +listMapKey=subresource
+	Subresources []APISubresourceDiscovery `json:"subresources,omitempty" protobuf:"bytes,8,rep,name=subresources"`
+}
 
- 	// StorageVersionHash will be removed in the new Discovery API
-	// StorageVersionHash string `json:"storageVersionHash,omitempty" protobuf:"bytes,10,opt,name=storageVersionHash"`
+// ResourceScope is an enum defining the different scopes available to a resource.
+type ResourceScope string
+
+const (
+	ScopeCluster   ResourceScope = "Cluster"
+	ScopeNamespace ResourceScope = "Namespaced"
+)
+
+// DiscoveryFreshness is an enum defining whether the Discovery document published by an apiservice is up to date (fresh).
+type DiscoveryFreshness string
+
+const (
+	DiscoveryFreshnessCurrent DiscoveryFreshness = "Current"
+	DiscoveryFreshnessStale   DiscoveryFreshness = "Stale"
+)
+
+// APISubresourceDiscovery provides information about an API subresource for discovery.
+type APISubresourceDiscovery struct {
+	// subresource is the name of the subresource.  This is used in the URL path and is the unique identifier
+	// for this resource across all versions.
+	Subresource string `json:"subresource" protobuf:"bytes,1,opt,name=subresource"`
+	// responseKind describes the type of serialization that will be returned from this endpoint.
+	// Some subresources do not return normal resources, these will have nil return types.
+	ResponseKind *GroupVersionKind `json:"responseKind,omitempty" protobuf:"bytes,2,opt,name=responseKind"`
+	// acceptedTypes describes the kinds that this endpoint accepts.  It is possible for a subresource to accept multiple kinds.
+	// It is also possible for an endpoint to accept no standard types.  Those will have a zero length list.
+	// +listType=set
+	AcceptedTypes []GroupVersionKind `json:"acceptedTypes,omitempty" protobuf:"bytes,3,rep,name=acceptedTypes"`
+	// verbs is a list of supported kube verbs: get, list, watch, create,
+	// update, patch, delete
+	Verbs Verbs `json:"verbs" protobuf:"bytes,4,opt,name=verbs"`
 }
 ```
 
@@ -393,8 +435,8 @@ api servers may take longer to respond and we do not want to delay
 cluster startup, the health check will only block on the local api
 servers (built-ins and CRDs) to have their discovery ready. For api
 servers that have not been aggregated, their group-versions will be
-published with an empty resource list and a null value for
-`lastContacted` to indicate that they have not synced yet.
+published with an empty resource list and a `Stale` for
+`Freshness` to indicate that they have not synced yet.
 
 ### Client
 
@@ -512,6 +554,8 @@ Below are some examples to consider, in addition to the aforementioned
 - Initial e2e tests completed and enabled
 - At least one client (kubectl) has an implementation to use the
   aggregated discovery feature
+
+We want all clients to benefit from this feature, but for alpha our main focus will be on kubectl and golang clients.
 
 #### Beta
 
@@ -872,3 +916,5 @@ changed or stayed the same, and re-use files that have kept the same
 name without downloading them again.
 
 Aggregated Discovery was selected because of the amount of requests that are saved both on startup and on changes involving multiple group versions. For a full comparison between Discovery Cache Busting and Aggregated Discovery, please refer to the [Google Doc](https://docs.google.com/document/d/1sdf8nz5iTi86ErQy9OVxvQh_0RWfeU3Vyu0nlA10LNM).
+
+An additional alternative that we considered is watchable discovery. After diving into the use cases, polling with ETag support is sufficient for most clients and adding support for watch changes the scope of this proposal.
