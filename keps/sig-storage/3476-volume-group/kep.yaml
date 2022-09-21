@@ -26,10 +26,6 @@ milestone:
   stable: "v1.28"
 
 feature-gates:
-  - name: VolumeGroup
-    components:
-      - kube-controller-manager
-      - kube-apiserver
 disable-supported: true
 
 metrics:

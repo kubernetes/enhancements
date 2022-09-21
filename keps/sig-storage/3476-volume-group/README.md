@@ -6,6 +6,8 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Use cases for this KEP](#use-cases-for-this-kep)
+  - [Future use cases](#future-use-cases)
   - [Goals](#goals)
   - [Non Goals](#non-goals)
 - [Proposal for VolumeGroup and VolumeGroupSnapshot](#proposal-for-volumegroup-and-volumegroupsnapshot)
@@ -14,7 +16,7 @@
   - [Create and Modify VolumeGroup](#create-and-modify-volumegroup)
     - [Create new PVC and add to the VolumeGroup](#create-new-pvc-and-add-to-the-volumegroup)
     - [Modify VolumeGroup with existing PVCs](#modify-volumegroup-with-existing-pvcs)
-    - [Phase 2: Create VolumeGroup from VolumeGroupSnapshot](#phase-2-create-volumegroup-from-volumegroupsnapshot)
+    - [Phase 2: Create VolumeGroup from VolumeGroupSnapshot or another VolumeGroup](#phase-2-create-volumegroup-from-volumegroupsnapshot-or-another-volumegroup)
     - [Pre-provisioned VolumeGroup](#pre-provisioned-volumegroup)
   - [Create VolumeGroupSnapshot](#create-volumegroupsnapshot)
     - [Dynamic provisioning](#dynamic-provisioning)
@@ -50,11 +52,7 @@
     - [ListVolumeGroupSnapshots](#listvolumegroupsnapshots)
   - [Alternatives](#alternatives)
     - [Immutable VolumeGroup](#immutable-volumegroup)
-- [Proposal for Volume Placement](#proposal-for-volume-placement)
-  - [API Changes](#api-changes)
     - [ModifyVolume](#modifyvolume)
-    - [Create VolumeGroup with Selector](#create-volumegroup-with-selector)
-  - [Example Yaml Files for Volume Placement](#example-yaml-files-for-volume-placement)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
   - [Alpha -&gt; Beta](#alpha---beta)
@@ -118,32 +116,28 @@ This proposal is to introduce a VolumeGroup API to manage multiple volumes toget
 
 While there is already a KEP (https://github.com/kubernetes/enhancements/pull/1051) that introduces APIs to do application snapshot, backup, and restore, there are other use cases not covered by that KEP.
 
-Use case 1:
-A VolumeGroup allows users to manage multiple volumes belonging to the same application together and therefore it is very useful in general. For example, it can be used to group all volumes in the same StatefulSet together.
+### Use cases for this KEP
 
-Use case 2:
-For some storage systems, volumes are always managed in a group. For these storage systems, they will have to create a group for a single volume if they need to implement a create volume function in Kubernetes. Providing a VolumeGroup API will be very convenient for them.
+* A VolumeGroup allows users to manage multiple volumes belonging to the same application together and therefore it is very useful in general. For example, it can be used to group all volumes in the same StatefulSet together and we can take a group snapshot of all the volumes in this StatefulSet.
 
-Use case 3:
-Instead of taking individual snapshots one after another, VolumeGroup can be used as a source for taking a snapshot of all the volumes in the same volume group. This may be a storage level consistent group snapshot if the storage system supports it. In any case, when used together with quiesce hooks, this group snapshot can be application consistent. For this use case, we will introduce another CRD VolumeGroupSnapshot.
+* For some storage systems, volumes are always managed in a group. For these storage systems, they will have to create a group for a single volume if they need to implement a create volume function in Kubernetes. Volume snapshotting, cloning, expansion, and deletion, etc. are all performed at a group level. Providing a VolumeGroup API will be very convenient for them.
 
-Use case 4:
-VolumeGroup can be used to manage group replication or consistency group replication if the storage system supports it. Note replication is out of scope for this proposal. It is mentioned here as a potential future use case.
+* Instead of taking individual snapshots one after another, VolumeGroup can be used as a source for taking a snapshot of all the volumes in the same volume group. This may be a storage level consistent group snapshot if the storage system supports it. In any case, when used together with quiesce hooks, this group snapshot can be application consistent. For this use case, we will introduce another CRD VolumeGroupSnapshot.
 
-Use case 5:
-VolumeGroup can be used to manage volume placement to either spread the volumes across storage pools or stack the volumes on the same storage pool. Related KEPs proposing the concept of storage pool for volume placement is as follows:
+* VolumeGroup can also be used together with application snapshot. It can be a resource managed by the ApplicationSnapshot CRD.
+
+* Some applications may not want to use ApplicationSnapshot CRD because they don’t use Kubernetes workload APIs such as StatefulSet, Deployment, etc. Instead, they have developed their own operators. In this case it is more convenient to use VolumeGroup to manage persistent volumes used in those applications.
+
+* Application quiesce is time consuming. Some users may not want to do application quiesce very frequently for that reason. For example, a user may want to run weekly backups with application quiesce and nightly backups without application quiesce but with consistency group support which provides crash consistency across all volumes in the group.
+
+### Future use cases
+
+* VolumeGroup can be used to manage group replication or consistency group replication if the storage system supports it. Note replication is out of scope for this proposal. It is mentioned here as a potential future use case.
+
+* VolumeGroup can be used to manage volume placement to either spread the volumes across storage pools or stack the volumes on the same storage pool. Related KEPs proposing the concept of storage pool for volume placement is as follows:
   https://github.com/kubernetes/enhancements/pull/1353
   https://github.com/kubernetes/enhancements/pull/1347
 We may not really need a VolumeGroup for this use case. A StoragePool is probably enough. This is to be determined.
-
-Use case 6:
-VolumeGroup can also be used together with application snapshot. It can be a resource managed by the ApplicationSnapshot CRD.
-
-Use case 7: 
-Some applications may not want to use ApplicationSnapshot CRD because they don’t use Kubernetes workload APIs such as StatefulSet, Deployment, etc. Instead, they have developed their own operators. In this case it is more convenient to use VolumeGroup to manage persistent volumes used in those applications.
-
-Use case 8:
-Application quiesce is time consuming. Some users may not want to do application quiesce very frequently for that reason. For example, a user may want to run weekly backups with application quiesce and nightly backups without application quiesce but with consistency group support which provides crash consistency across all volumes in the group.
 
 ### Goals
 
@@ -169,7 +163,8 @@ Phase 1 (Note: only Phase 1 will be covered in this KEP which is targeting Alpha
 2. Create an empty group first, then add an existing PVC to the group one by one. A CSI driver supporting VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME MUST implement this feature.
 
 Phase 2 (After v1.26):
-1. Create a new volume group from an existing group snapshot in one step. Design details will be added in a future KEP.
+1. Create a new volume group by querying a label on existing persistent volume claims and adding them to the volume group.
+2. Create a new volume group from an existing group snapshot or another volume group in one step. Design details will be added in a future KEP.
 2. Non-goal: Create a new empty group and in the same time create new empty PVCs and add to the new group.
 
 ### Modify VolumeGroup
@@ -193,7 +188,7 @@ Only CSI drivers supporting CREATE_DELETE_VOLUME_GROUP capability can support th
 
 When a new PVC is created with the existing VolumeGroup name, the VolumeGroup will be modified and the PVC will be added to PVCList in the Status, and the VolumeGroupContent will also be modified and the PV will be added to the PVList in the Status.
 
-The same PVC can belong to different groups, i.e., different types of groups or different groups of the same type, if the storage system supports it. Storage system will decide whether to support this or not. We don't prevent it in the API or controller directly.
+The same PVC can belong to different groups, i.e., different types of groups or different groups of the same type, if the storage system supports it. Storage system will decide whether to support this or not. If it does not support it, an INVALID_ARGUMENT error code should be returned with a message explaining why. We don't prevent it in the API or controller directly.
 
 #### Modify VolumeGroup with existing PVCs
 
@@ -201,8 +196,8 @@ We can add an existing PVC to the group or remove a PVC from the group without d
 
 * Admin creates a VolumeGroupClass, with the SupportVolumeGroupSnapshot boolean flag set to true.
 * User creates a new empty VolumeGroup, specifying the above VolumeGroupClass. A new empty VolumeGroupContent will also be created and bound to the VolumeGroup.
-* Add an existing PVC to an existing VolumeGroup (VolumeGroup can be empty to start with or it can have other PVCs already) by adding VolumeGroup name to the PVC Spec.
-  * The VolumeGroup name is added by user to each PVC Spec, not by the VolumeGroup controller. The VolumeGroup controller watches PVCs and reacts to the PVC updated with a VolumeGroup name event as described in the following step.
+* Add an existing PVC to an existing VolumeGroup (VolumeGroup can be empty to start with or it can have other PVCs already) by adding VolumeGroup name as a label to the PVC.
+  * The VolumeGroup name is added by user to each PVC, not by the VolumeGroup controller. The VolumeGroup controller watches PVCs and reacts to the PVC updated with a VolumeGroup name event as described in the following step.
 * VolumeGroup is modified so the existing PVC is added to the PVCList in the Status. VolumeGroupContent is also modified so the PV is added to the PVList in the Status.
   * Note: The VolumeGroup controller will be implemented to have a desired state
     of the world and an actual state of the world. The desired state of the world
@@ -215,15 +210,15 @@ We can add an existing PVC to the group or remove a PVC from the group without d
 * If one volume fails to be added, it should not affect it if it is used by a pod, but there will be error messages.
 * Removing a PVC from a VolumeGroup will trigger the external-provisioner and the VolumeGroup controller as well.
 
-#### Phase 2: Create VolumeGroup from VolumeGroupSnapshot
+#### Phase 2: Create VolumeGroup from VolumeGroupSnapshot or another VolumeGroup
 
 This is in Phase 2 so won't be discussed in detail here. Creating a new volume group from an existing group snapshot will be supported in Phase 2 if the CSI driver supports VOLUME_GROUP_FROM_GROUP_SNAPSHOT capability. As a result, PVCs will be created from source snapshots and placed in a new volume group.
 
 #### Pre-provisioned VolumeGroup
 
-Admin can create a VolumeGroupContent, specifying an existing VolumeGroupHandle in the storage system and specifying a VolumeGroup name and namespace. Then create a VolumeGroup that points to the VolumeGroupContent name.
+Admin can create a VolumeGroupContent, specifying an existing VolumeGroupHandle in the storage system and specifying a VolumeGroup name and namespace. Then the user creates a VolumeGroup that points to the VolumeGroupContent name.
 
-The VolumeGroup controller will retrieve all volumeHandles in the VolumeGroup from the CSI driver, create PVs pointing to the volumeHandles, and create PVCs pointing to the PVs.
+Admin will retrieve all volumeHandles in the VolumeGroup from the storage system, create PVs pointing to the volumeHandles. Then the user creates PVCs pointing to the PVs.
 
 ### Create VolumeGroupSnapshot
 
@@ -263,9 +258,9 @@ status:
 
 #### Pre-provisioned VolumeGroupSnapshot
 
-Admin can create a VolumeGroupSnapshotContent, specifying an existing VolumeGroupSnapshotHandle in the storage system and specifying a VolumeGroupSnapshot name and namespace. Then create a VolumeGroupSnapshot that points to the VolumeGroupSnapshotContent name.
+Admin can create a VolumeGroupSnapshotContent, specifying an existing VolumeGroupSnapshotHandle in the storage system and specifying a VolumeGroupSnapshot name and namespace. Then the user creates a VolumeGroupSnapshot that points to the VolumeGroupSnapshotContent name.
 
-The VolumeGroupSnapshot controller will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the CSI driver, create VolumeSnapshotContents pointing to the volumeSnapshotHandles, and create VolumeSnapshots pointing to the VolumeSnapshotContents.
+Admin will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the storage system, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the user can create VolumeSnapshots pointing to the VolumeSnapshotContents.
 
 ### Delete VolumeGroupSnapshot
 
@@ -284,7 +279,7 @@ Phase 1:
 
 Phase 2:
 
-* A VolumeGroup can be created from a VolumeGroupSnapshot source in one step. This is the same as what is described in the section `Create VolumeGroup from VolumeGroupSnapshot`.
+* A VolumeGroup can be created from a VolumeGroupSnapshot or VolumeGroup source in one step. This is the same as what is described in the section `Create VolumeGroup from VolumeGroupSnapshot or another VolumeGroup`.
 
 
 ### API Definitions
@@ -309,11 +304,28 @@ type VolumeGroupClass struct {
         // +optional
         Parameters map[string]string
 
+        // +optional
+        VolumeGroupDeletionPolicy *VolumeGroupDeletionPolicy
+
         // This field specifies whether group snapshot is supported.
         // The default is false.
         // +optional
         SupportVolumeGroupSnapshot *bool
 }
+
+// VolumeGroupDeletionPolicy describes a policy for end-of-life maintenance of
+// volume group contents
+type VolumeGroupDeletionPolicy string
+
+const (
+	// VolumeGroupContentDelete means the group will be deleted from the
+	// underlying storage system on release from its volume group.
+	VolumeGroupContentDelete VolumeGroupDeletionPolicy = "Delete"
+
+	// VolumeGroupContentRetain means the group will be left in its current
+	// state on release from its volume group.
+	VolumeGroupContentRetain VolumeGroupDeletionPolicy = "Retain"
+)
 ```
 
 #### VolumeGroup
@@ -350,19 +362,15 @@ Type VolumeGroupSpec struct {
 }
 
 // Phase 2: VolumeGroupSource will be in Phase 2
-// VolumeGroupSource contains 3 options. If VolumeGroupSource is not nil,
-// one of the 3 options must be defined.
+// VolumeGroupSource contains 2 options. If VolumeGroupSource is not nil,
+// one of the 2 options must be defined.
 Type VolumeGroupSource struct {
-        // A list of existing persistent volume claims
-        // +optional
-        PVCList []PersistentVolumeClaim
-
         // A label query over existing persistent volume claims to be added to the volume group.
         // +optional
         Selector *metav1.LabelSelector
 
         // This field specifies the source of a volume group. (this is for restore)
-        // Supported Kind is VolumeGroupSnapshot
+        // Supported Kind is VolumeGroupSnapshot or VolumeGroup
         // +optional
         GroupDataSource *TypedLocalObjectReference
  }
@@ -426,6 +434,19 @@ Type VolumeGroupContentSpec struct {
 
         // +optional
         VolumeGroupDeletionPolicy *VolumeGroupDeletionPolicy
+
+        // This field specifies whether group snapshot is supported.
+        // The default is false.
+        // +optional
+        SupportVolumeGroupSnapshot *bool
+
+	// VolumeGroupSecretRef is a reference to the secret object containing
+	// sensitive information to pass to the CSI driver to complete the CSI
+	// calls for VolumeGroups.
+	// This field is optional, and may be empty if no secret is required. If the
+	// secret object contains more than one secret, all secrets are passed.
+	// +optional
+	VolumeGroupSecretRef *SecretReference
 }
 
 // VolumeGroupContentSource
@@ -478,7 +499,25 @@ type VolumeGroupSnapshotClass struct {
         // to the driver.
         // +optional
         Parameters map[string]string
+
+        // +optional
+        VolumeGroupSnapshotDeletionPolicy *VolumeGroupSnapshotDeletionPolicy
 }
+
+// VolumeGroupSnapshotDeletionPolicy describes a policy for end-of-life maintenance of
+// volume group snapshot contents
+type VolumeGroupSnapshotDeletionPolicy string
+
+const (
+        // VolumeGroupSnapshotContentDelete means the group snapshot will be deleted from the
+        // underlying storage system on release from its volume group snapshot.
+        VolumeGroupSnapshotContentDelete VolumeGroupSnapshotDeletionPolicy = "Delete"
+
+        // VolumeGroupSnapshotContentRetain means the group snapshot will be left in its current
+        // state on release from its volume group snapshot.
+        VolumeGroupSnapshotContentRetain VolumeGroupSnapshotDeletionPolicy = "Retain"
+)
+
 ```
 
 #### VolumeGroupSnapshot
@@ -507,6 +546,14 @@ type VolumeGroupSnapshotSpec struct {
         // Source has the information about where the group snapshot is created from.
         // Required.
         Source VolumeGroupSnapshotSource
+
+        // VolumeGroupSnapshotSecretRef is a reference to the secret object containing
+        // sensitive information to pass to the CSI driver to complete the CSI
+        // calls for VolumeGroupSnapshots.
+        // This field is optional, and may be empty if no secret is required. If the
+        // secret object contains more than one secret, all secrets are passed.
+        // +optional
+        VolumeGroupSnapshotSecretRef *SecretReference
 }
 
 // OneOf VolumeGroupName or VolumeGroupSnapshotContentName
@@ -577,7 +624,7 @@ type VolumeGroupSnapshotContentSpec struct {
        VolumeGroupSnapshotRef core_v1.ObjectReference
 
         // Required
-        DeletionPolicy DeletionPolicy
+        VolumeGroupSnapshotDeletionPolicy VolumeGroupSnapshotDeletionPolicy
 
         // Required
         Driver string
@@ -626,30 +673,7 @@ Type VolumeGroupSnapshotContentStatus struct {
 
 #### PersistentVolumeClaim and PersistentVolume
 
-For PersistentVolumeClaim, the user can request it to be added to be VolumeGroup. So VolumeGorupNames will be in both Spec and Status.
-
-```
-type PersistentVolumeClaimSpec struct {
-	......
-        // +optional
-        VolumeGroupNames []string
-	......
-}
-
-type PersistentVolumeClaimStatus struct {
-	......
-        // +optional
-        VolumeGroupNames []string
-	......
-}
-
-type PersistentVolumeStatus struct {
-	......
-        // +optional
-        VolumeGroupContentNames []string
-	......
-}
-```
+For PersistentVolumeClaim, the user can request it to be added to a VolumeGroup by adding a label with the VolumeGroup name, i.e., volumegroup.storage.k8s.io/volumegroup:volumeGroup1. In the initial phase, no changes will be proposed to PersistentVolumeClaim and PersistentVolume API objects. Before moving to Beta, we will re-evaluate this.
 
 #### VolumeSnapshot and VolumeSnapshotContent
 
@@ -707,6 +731,8 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc1
+  labels:
+    volumegroup.storage.k8s.io/volumegroup:volumeGroup1
 spec:
   accessModes:
   - ReadWriteOnce
@@ -853,8 +879,8 @@ CSI Plugins MAY create the following types of volume groups:
 * At restore time, create a single volume from individual snapshot and then join an existing group.
  * Create an empty group.
  * Create a volume from snapshot, specifying the group name in the volume.
-* Phase 2: Create a new volume group from a source group snapshot.
-* Phase 2: Create a new volume group and add a list of existing volumes to the group.
+* Phase 2: Create a new volume group from a source group snapshot or another group.
+* Phase 2: Create a new volume group and add a list of existing volumes to the group by querying a label on PVCs.
 
 The following is non-goal:
 * Non goal: Create a new group and at the same time create a list of new volumes in the group.
@@ -983,6 +1009,11 @@ message ModifyVolumeGroupRequest {
   // be removed from the group.
   // This field is OPTIONAL.
   repeated string volume_ids = 2;
+
+  // Secrets required by plugin to complete volume group modification request.
+  // This field is OPTIONAL. Refer to the `Secrets Requirements`
+  // section on how to use this field.
+  map<string, string> secrets = 3 [(csi_secret) = true];
 }
 
 message ModifyVolumeGroupResponse {
@@ -1231,7 +1262,7 @@ message ListVolumeGroupSnapshotsResponse {
 
 #### Immutable VolumeGroup
 
-During the design discussions, an immutable VolumeGroup was considered but was removed because this would add lots of complexity to the design without much gain.
+During the design discussions, an immutable VolumeGroup was considered but was removed because this would add lots of complexity to the design without much gain. It would also make it impossible to support the current way PVCs are provisioned in a Statefulset.
 
 Immutable VolumeGroup - PVCList or PVC Selector in the ImmutableSource field in the Spec (optional field); PVCList is in the Status.
 * Create a new VolumeGroup with existing PVCs by PVCList or PVC Selector in the Spec. The PVCList will be in the VolumeGroup Status as well.
@@ -1311,43 +1342,6 @@ VOLUMEGROUP_IMMUTABLE and VOLUMEGROUP_MUTABLE capability will be added to the CS
 If VOLUMEGROUP_IMMUTABLE is supported, a VolumeGroup with an ImmutableSource can be created. Mutable will be false, PVCList will be set, and Ready will be true in the Status.
 Otherwise, a VolumeGroup with an ImmutableSource will not be created successfully.
 
-## Proposal for Volume Placement
-
-### API Changes
-
-In order to support Volume Placement, An `AllowedTopologies` field will be added to the VolumeGroupClass API:
-
-```
-type VolumeGroupClass struct {
-        metav1.TypeMeta
-        // +optional
-        metav1.ObjectMeta
-
-        // Driver is the driver expected to handle this VolumeGroupClass.
-        // This value may not be empty.
-        Driver string
-
-        // Parameters holds parameters for driver.
-        // These values are opaque to the system and are passed directly
-        // to the driver.
-        // +optional
-        Parameters map[string]string
-
-        // This field specifies whether group snapshot is supported.
-        // The default is false.
-        // +optional
-        VolumeGroupSnapshot *bool
-
-        // Restrict the topologies where a group of volumes can be located.
-        // Each driver defines its own supported topology specifications.
-        // An empty TopologySelectorTerm list means there is no topology restriction.
-        // This field is passed on to the drivers to handle placement of a group of
-        // volumes on storage pools.
-        // +optional
-        AllowedTopologies []api.TopologySelectorTerm
-}
-```
-
 #### ModifyVolume
 
 ModifyVolume CSI RPC was considered earlier to add/remove one volume to/from a group at a time but it was removed because ModifyVolumeGroup CSI RPC was added.
@@ -1383,97 +1377,13 @@ message ModifyVolumeRequest {
 ```
 External-provisioner will be modified so that modifying PVC by adding VolumeGroupName will trigger a ModifyVolume call (a new CSI controller RPC) to CSI driver.
 
-#### Create VolumeGroup with Selector
-
-Create VolumeGroup with Selector is an option discussed but moved to alternatives section. The suggestion is to add a new CRD and controller to select labeled PVCs. Whether this controller can only add new PVC or can also modify existing PVC will be decided later.
-
-Creating a new volume group and adding existing PVCs matching the label selector to the group is supported if the CSI driver supports VOLUMEGROUP capability.
-
-CSI drivers that do not have a volume_group_id concept can use the VolumeGroup name stored in Kubernetes API server as the volume_group_id.
-
-// VolumeGroupSpec describes the common attributes of group storage devices
-// and allows a Source for provider-specific attributes
-Type VolumeGroupSpec struct {
-        // +optional
-        VolumeGroupClassName *string
-
-        // If InitSource is nil, an empty volume group will be created.
-        // Otherwise, a volume group will be created with PVCs.
-        // If Selector is set in InitSource, existing PVCs with matching
-        // label will be added to the volume group.
-        // If SourceVolumeGroupSnapshotName is not nil, the volume group
-        // will be created from the source VolumeGroupSnapshot.
-        // This field determines what PVCs will be in the volume group
-        // when it is initially created. PVCs can be added to or removed
-        // from the volume group later if CSI driver supports
-        // VOLUMEGROUP_ADD_REMOVE_EXISTING_VOLUME.
-        // +optional
-        InitSource *VolumeGroupSource
-}
-
-// VolumeGroupSource contains 2 options. If VolumeGroupSource is not nil,
-// one and only one of the 2 options must be defined.
-Type VolumeGroupSource struct {
-        // A label query over existing persistent volume claims to be added to the volume group.
-        // +optional
-        Selector *metav1.LabelSelector
-
-        // If specified, the VolumeGroup will be created from the source
-        // VolumeGroupSnapshot.
-        // +optional
-        SourceVolumeGroupSnapshotName *string
-}
-
-
-### Example Yaml Files for Volume Placement
-
-A VolumeGroupClass that supports placement:
-```
-apiVersion: volumegroup.storage.k8s.io/v1alpha1
-kind: VolumeGroupClass
-metadata:
-  name: placementGroupClass1
-spec:
-  parameters:
-     …...
-  allowedTopologies: [failure-domain.example.com/placement: storagePool1]
-```
-```
-apiVersion: volumegroup.storage.k8s.io/v1alpha1
-kind: VolumeGroup
-metadata:
-  Name: placemenGroup1
-spec:
-  volumeGroupClassName: placementGroupClass1
-```
-
-A PVC that belongs to both the volume group with groupSnapshot support and placement.
-```
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pvc1
-  annotations:
-spec:
-  accessModes:
-  - ReadWriteOnce
-  dataSource: null
-  resources:
-        requests:
-        storage: 1Gi
-  storageClassName: storageClass1
-  volumeMode: Filesystem
-  volumeGroupNames: [volumeGroup1, placementGroup1]
-```
-
-If both placement group and volume group with groupSnapshot support are defined, it is possible for the same volume to join both groups. For example, a volume group with groupSnapshot support may include volume members from two placement groups as they belong to the same application.
-
 ## Graduation Criteria
 ### Alpha
 * Initial feature implementation, including:
   * Volume group.
   * Volume group snapshot.
 * Sample implementation in the csi-driver-host-path.
+* Reviews from vendors whose storage systems can support this feature.
 * Add basic unit tests.
 
 ### Alpha -> Beta
@@ -1505,11 +1415,9 @@ _This section must be completed when targeting alpha to a release._
       The external volume group and group snapshot controllers do not have a
       feature gate because they are out of tree.
       It is enabled when these external controller sidecars are deployed with the CSI driver.
-      There are proposed changes in PersistentVolumeClaim and PersistentVolume core API objects. These changes need to be controlled by a feature gate.
     - Will enabling / disabling the feature require downtime of the control
       plane?
       From the controller side, it only affects the external controller sidecars.
-      For the changes in PVC and PV, enabling / disabling the feature does require downtime of the control plane.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
       No.
