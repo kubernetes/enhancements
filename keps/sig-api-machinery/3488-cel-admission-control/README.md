@@ -349,12 +349,11 @@ spec:
     kind: ReplicaLimit
     version: v1
   match:
-    rules:
-    - apiGroups:   ["apps"]
-      apiVersions: ["v1"]
-      operations:  ["CREATE", "UPDATE"]
-      resources:   ["deployments"]
-      scope:       "*"
+    - resourceRules:
+      - apiGroups:   ["apps"]
+        apiVersions: ["v1"]
+        operations:  ["CREATE", "UPDATE"]
+        resources:   ["deployments"]
   validations:
     - expression: "object.spec.replicas <= config.maxReplicas"
       reason: Invalid
@@ -365,17 +364,17 @@ spec:
 The `spec.validations[*].expression` fields contain CEL expressions. If an
 expression evaluates to false, the validation check has failed.
 
-The `spec.config` field of the `ValidatingAdmissionPolicy` specifies the
-resource used to configure this policy. For this example, it is configured by
-`ReplicaLimit` custom resources. Note that `config.maxReplicas` in the CEL
-expression is accessing configuration data of this policy, and so the CRD for
-`ReplicaLimit` must declare a `maxReplicas` field in the schema.
-
-This is a "Bring Your Own CRD" design. The admission policy definition author is
-responsible for providing the `ReplicaLimit` configuration CRD.
+The `spec.config` field of the `ValidatingAdmissionPolicy` specifies the kind of
+resources used to configure this policy. For this example, it is configured by
+`ReplicaLimit` custom resources. In this example, the CEL expression contains
+`config.maxReplicas` which will only work if the CRD for `ReplicaLimit` declares
+`maxReplicas` as a required field.
 
 `spec.match` specifies what resources this policy is designed to validate. This
 also guides type-checking, see below "Type safety" section for details.
+
+This is a "Bring Your Own CRD" design. The admission policy definition author is
+responsible for providing the `ReplicaLimit` configuration CRD.
 
 To configure an admission policy, "policy configurations" of the configuration
 CRD kind are created. For example:
@@ -388,41 +387,58 @@ metadata:
   name: "replica-limit-test.example.com"
 spec:
   match:
-    namespaceSelectors:
-    - key: environment,
-      operator: In,
-      values: ["test"]
+    - namespaceSelectors:
+      - key: environment,
+        operator: In,
+        values: ["test"]
   maxReplicas: 3
 ```
 
 This policy configuration limits deployments to a max of 3 repliacas in all
 namespaces in the test environment.
 
+Note that in addition to the `maxReplicas` field there is a `spec.match` field.
+This is a standard field that all policy configurations will have. See the
+"Policy Configurations" for more details about this field.
+
 An admission policy may have multiple configurations. To configure all other
 environments environment to have a maxReplicas limit of 100, create another
 configuration:
 
 ```yaml
-# Policy configurations
 apiVersion: rules.example.com/v1
 kind: ReplicaLimit
 metadata:
   name: "replica-limit-nontest.example.com"
 spec:
   match:
-    namespaceSelectors:
-    - key: environment,
-      operator: NotIn,
-      values: ["test"]
+    - namespaceSelectors:
+      - key: environment
+        operator: NotIn
+        values: ["test"]
   maxReplicas: 100
 ```
 
 Configurations can have overlapping match criteria. The policy is evaluated for
-each matching configuration. For example, if you have a blocklist policy and
-have two policy configurations (each containing their own set of blocklist
-entries) that overlap, the policy is evaluated twice, once with each blocklist.
-(We won't attempt to merge the blocklists, we'll just run the policy as-is with
-each blocklist).
+each matching configuration. In the above example, the "nontest" policy
+configuration could instead have been defined as a global policy:
+
+```yaml
+apiVersion: rules.example.com/v1
+kind: ReplicaLimit
+metadata:
+  name: "replica-limit-global.example.com"
+spec:
+  match:
+    - namespaceSelectors:
+      - key: environment
+        operator: Exists
+  maxReplicas: 100
+```
+
+With this configuration, the test and global policy configurations overlap.
+Resources admitted to test environment would then be checked against both policy
+configurations.
 
 This design separates admission policy _definition_ from _configuration_. This
 has a couple advantages:
@@ -470,8 +486,8 @@ organized into CEL variables as well as some other useful variables:
   - 'options'
 - 'config' - configuration data of the policy configuration being validated 
 
-See below "Reporting violations to Clients" for more detail about how violations
-are reported.
+See below "Reporting violations to Clients" for more detail about how the
+`spec.validations` field works and how violations are reported.
 
 ##### Policy Configurations
 
@@ -517,17 +533,13 @@ metadata:
     policyConfig: xyzlimit
 spec:
   match:
-    - apiGroups: ["*"]
-      apiVersions: ["*"]
-      resources: ["*/scale"]
-  matchPolicy: Exact
-  failurePolicy: Fail
-  enforcement: Warn
-  params:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["*/scale"]
+  config:
     name: xyzlimit-scale-config.example.com
 ```
-
-Example:
 
 ```yaml
 apiVersion: rules.example.com/v1
@@ -545,6 +557,10 @@ spec:
 Note that for policy configurations that require no parameterization, only the
 `PolicyConfiguration` is needed.
 
+The `metadata.labels.policyConfig` label on `PolicyConfiguration` is needed so
+that each `ValidatingAdmissionPolicy` use a label selector to reference the
+policy configurations that configure it.
+
 Pros:
 
 - Matching criteria is fully defined and validated in a builtin type.
@@ -557,6 +573,8 @@ Cons:
 
 - Requires two resources for each configuration of a policy
   - Cannot atomically change the match rules and configuration of a policy configuration
+- Must establish relationships between `ValidatingAdmissionPolicy` and
+  `PolicyConfiguration` resources.
 
 Alternative: OpenAPIv3 `$ref` in CRDs
 
@@ -590,12 +608,12 @@ spec:
 Pros:
 
 - Match rule schema is owned by Kubernetes, so as it evolves, CRDs automatically
-  pick up changes
+  pick up changes.
 
 Cons:
 
 - CRDs to not yet support OpenAPIv3 `$ref`s, so support would need to be added,
-  presumably this is a separate KEP
+  presumably this is a separate KEP.
 
 
 Alternative: Duck Typed CRDs
@@ -607,8 +625,10 @@ The idea of this alternative is to use duck typing: If a CRD author includes a
 below) and then for the apiserver access the data and treats it as match
 criteria.
 
-To detect and handle any mismatches between how CRDs declare the `spec.match`
-schema and what the apiserver expects:
+The main challenge with this alternative is dealing with mismatches between how
+CRDs declare the `spec.match` schema and what the apiserver expects. For this
+our plan is:
+
 - When consuming configuration CRDs OR policy configuration resources used for
   policy configuration:
   - If any unrecognized fields, missing required fields, or incorrectly typed
@@ -692,10 +712,10 @@ metadata:
   name: "replica-limit-prod.example.com"
 spec:
   match:
-    namespaceSelectors:
-    - key: environment,
-      operator: NotIn,
-      values: ["test"]
+    - namespaceSelectors:
+      - key: environment,
+        operator: NotIn,
+        values: ["test"]
   config:
     apiVersion: rules.example.com/v1
     kind: ReplicaLimit
@@ -787,6 +807,7 @@ Matching is performed in quite a few systems across Kubernetes:
 | namespace                                | Audit, P&F                   | phase 1                                |
 | namespace label selectors                | WH                           | phase 1                                |
 | label selectors                          | WH                           | phase 1                                |
+| annotations                              |                              | TBD                                    |
 | apiGroup + resource                      | WH/Audit/P&F/RBAC            | phase 1                                |
 | apiVersion                               | WH                           | phase 1                                |
 | resource name                            | Audit/RBAC                   | phase 1                                |
@@ -805,37 +826,165 @@ WH = Admission webhooks, P&F = Priority and Fairness
 Match criteria must be declared in the `spec.match` field of policy
 configuration resources (see `ReplicaLimit` in the above example) and will be
 declared with API types in a format similar to admission webhooks, P&F, RBAC and
-Audit. Match criteria will also use ordered list of rules similar to these other
-systems.
+Audit.
 
 Proposed matching mechanism:
 
-- Ordered list of matches. First match that is true determine if the request is
-  validated by the policy-- if exclude is false, it is validated, otherwise it
-  is not.
-- Supported criteria for each match:
-  - GVR (apiGroup + resource)
-  - scope (cluster|namespace) 
-  - operation (HTTP verb) 
-  - exclude (if criteria matches, match result is "no match")
-  - namespace label selectors
-  - label selectors
-  - resource name
-  - user/userGroup
-  - permissions (RBAC verb)
-  - matchPolicy (allows for fine grained control of version matching, useful in
-    shift left and version skew cases)
+- Matching criteria is defined as an ordered list of match objects (similar to
+  [Audit
+  Policy](https://kubernetes.io/docs/reference/config-api/apiserver-audit.v1/#audit-k8s-io-v1-Policy))
+  - If a match object evaluates to true
+    - If the match object is an "exclude", skip validation
+    - Otherwise perform validation
+  - If all match objects in the list evaluate to false, skip validation
+- The criteria of each match object in the list is applied conjunctively (ANDed)
 
-Note that the criteria of a match is conjunctive (ANDed) but the list of matches
-is not.
+<<[UNRESOLVED, maxsmythe, ?? ]>>
+Consider an alternative where instead of a list of match criteria, we have a
+single match criteria where it is possible to handle excludes. I.e. we sanely
+generalize how labelSelectors support excludes to all the other match criteria?
+<<[/UNRESOLVED]>>
+
+Examples:
+
+```yaml
+# Matches resources with {namespace a, label x=1} and {namespace b, label x=2}
+# but not {namespace a, label x=2} or {namespace b, label x=1}.
+match:
+- namespaces: ["a"]
+  labelSelector:
+  - key: x
+    operator: In
+    values: ["1"] 
+- namespaces: ["b"]
+  labelSelector:
+- key: x
+    operator: In
+    values: ["2"] 
+```
+
+```yaml
+# Matches {namespace a, label x=2}, {namespace b, label x=1}, {namespace b, label x=2}
+# but not {namespace a, label x=1}.
+match:
+- namespaces: ["a"]
+  labelSelector:
+  - key: x
+    operator: In
+    values: ["1"] 
+  effect: Exclude
+- namespaces: ["a", "b"]
+  labelSelector:
+  - key: x
+    operator: In
+    values: ["1", "2"] 
+```
 
 <<[UNRESOLVED jpbetz, maxsmythe, ?? ]>>
-Wildcards support? Or defer this type of check for CEL expression evaluation?
+Provide wildcard prefix support to namespaces, resource name or any other fields?
+Or better to defer this type of check for CEL expression evaluation?
 <<[/UNRESOLVED]>>
 
 <<[UNRESOLVED jpbetz, maxsmythe ]>>
-Offer both GVR and GVK matching?  Need to add GVK matching to below, if so.
+Offer both GVR and GVK matching?
 <<[/UNRESOLVED]>>
+
+*Special case: apiGroup + resource + operation matching*
+
+For admission webhooks, at least one `spec.rules` must be declared to state
+which apiGroup + resource + operations the webhook operates on. To configure a
+webhook to match everything (which is a very bad idea), a match rule would need
+to be written to do that, e.g.:
+
+```yaml
+spec:
+  rules:
+    - apiGroups:   ["*"]
+      apiVersions: ["*"]
+      operations:  ["*"]
+      resources:   ["*"]
+```
+
+This forces the webhook configuration author to explicitly declare that
+they intend to match.
+
+The same principal applies here but with one major difference-- if a policy
+definition has a match rules for apiGroup + resource + operation, then all
+configurations of that policy are already constrainted to that apiGroup +
+resource + operation match.
+
+For example:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+...
+spec:
+  config: ...
+  match:
+    rules:
+    - apiGroups:   ["apps"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE", "UPDATE"]
+      resources:   ["deployments"]
+```
+
+Since this policy is constrainted to create/update of deployments. Policy
+configurations don't need to repeat this constraint. For example:
+
+```yaml
+apiVersion: rules.example.com/v1
+kind: ReplicaLimit
+...
+spec:
+  match:
+    - namespaceSelectors:
+      - key: environment
+        operator: Exists
+ ...
+```
+
+But policy configurations could narrow it further, e.g. to just create:
+
+```yaml
+apiVersion: rules.example.com/v1
+kind: ReplicaLimit
+...
+spec:
+  match:
+    - resourceRules:
+      - apiGroups:   ["apps"]
+        apiVersions: ["v1"]
+        operations:  ["CREATE"]
+        resources:   ["deployments"]
+      namespaceSelectors:
+      - key: environment
+        operator: NotIn
+        values: ["test"]
+  ...
+```
+
+In general, we can say:
+
+- Policy definitions match rules must match apiGroup + resource + operation. We
+  can enforce this in validation.
+- Policy configurations are not required to match apiGroup + resource +
+  operation since the policy definition is already required to do this.
+- If a policy configuration should be applied globally (applies everywhere
+  allowed by the policy definition) it must do so by using a wildcard match
+  rule. E.g. `{ "match": [ "namespaces": "*"]}`.
+
+This encourages policy definition authors to consider the assumptions that the
+CEL expressions make. If the expressions unconditionally access `object` without
+a `has(object)` check, the expression will only ever work on `CREATE` and
+`UPDATE` and would fail at runtime on a `DELETE`. It is quite difficult to write
+CEL expression that handle all admission requests well, so we want to guide
+policy authors toward matching only the requests that they intend to support.
+The Kubernetes admission chain also scales better, and is more resiliant, when
+matching is precise and the validation expressions don't need to do any
+post-matching checks that could have been handled by matching.
+
+Match Policy:
 
 `MatchPolicy` will work the same as for admission webhooks. It will default to
 `Equivalent` but may be set to `Exact`. See "Use Case: Multiple policy
