@@ -257,20 +257,21 @@ Add a new CLI method `migrate`.
 
 ### Example Usage
 
-```
-# Migrate fields owned by `mymanagername`
-kubectl migrate pod test --fieldmanager=mymanagername
+```shell
+# Migrate fields owned by field manager `mycsamanager` to now be owned by `myssamanager`
+kubectl migrate pod test --from=mycsamanager --to=myssamanager
 ```
 
-With this operation, kubectl will migrate all fields owned by `mymanagername` previously used for client-side-apply to be now be prepared for use with server-side-apply. This process is irreversible.
+With this operation, kubectl will migrate all fields owned by `mycsamanager` previously used for client-side-apply to be now be prepared for use with server-side-apply under the field manage `myssamanager`. 
+This process is irreversible.
 
 ### Sensible Defaults
 
-For client-side-apply, by default kubectl uses the fieldmanager name `kubectl-client-side-apply`. 
-If`fieldmanager` is omitted from a `merge` operation, its value can be defaulted to `kubectl-client-side-apply`
-for easier use:
+For client-side-apply, by default kubectl uses the fieldmanager name `kubectl-client-side-apply`. And for server-side-apply it uses the name `kubectl`.
 
-```
+If`fieldmanager` is omitted from a `merge` operation, `--from` and `--to` can be defaulted to `kubectl-client-side-apply` and `kubectl`, respectively, for easier use:
+
+```shell
 # Migrate fields owned by 'kubectl-client-side-apply` for use with server-side-apply in the future
 kubectl migrate pod test
 ```
