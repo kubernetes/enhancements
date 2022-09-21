@@ -1,22 +1,44 @@
-id: "3466"
-prnumber: ""
-name: healthcheck-metrics
 title: Kubernetes Component Health SLIs
-kep-number: "3466"
-authors: ['@logicalhan']
+kep-number: 3466
+authors:
+  - "@logicalhan"
 owning-sig: sig-instrumentation
-participating-sigs: [sig-instrumentation]
-reviewers: ['@dgrisonnet', '@dashpole']
-approvers: ['@dgrisonnet']
+participating-sigs:
+  - sig-instrumentation
+  - sig-api-machinery
+status: implementable
 creation-date: "2022-08-16"
-last-updated: v1.26
-status: provisional
+reviewers:
+  - "@dgrisonnet"
+  - "@dashpole"
+  - "@lavalamp"
+approvers:
+  - "@dgrisonnet"
+# The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
-latest-milestone: ""
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-    alpha: ""
-    beta: ""
-    stable: ""
-feature-gates: []
-disable-supported: false
-metrics: []
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.29"
+
+feature-gates:
+  - name: ComponentHealthSLIsFeatureGate
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+      - kubelet
+      - kube-proxy
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - k8s_healthcheck
+  - k8s_healthchecks_total
