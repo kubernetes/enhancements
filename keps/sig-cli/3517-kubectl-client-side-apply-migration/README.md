@@ -243,8 +243,13 @@ migrate their managed fields to be used with server-side-apply.
 
 ### Goals
 
-1. Provide irreversable operation to kubectl users to convert management of an object's fields
-from client-side-apply to server-side-apply
+This bug prevents users of server-side-apply, which is in GA, from deleting any fields of their objects unless they revert back to using client-side-apply. It especailly poses huge
+challenges to cluster operators seeking to upgrade a large collection of resources to server-side-apply. Without an automatic method of preparing objects for use with SSA,
+adoption for server-side-apply is blocked for many users.
+
+1. The primary goal of this KEP is to provide a pathway for users blocked by this issue to adopt SSA.
+2. Provide a new extra migrate step to convert large collections of resources to server-side apply, especially for automatic systems
+3. Keep the number of requests to the apiserver limited on the nominal server-side apply path (no additional writes)
 
 
 ### Non-Goals
@@ -1031,7 +1036,7 @@ an atomic patch request.
 
 ### kubectl Plugin
 
-To avoid making direct changes to kubectl, we can instead offer a plugin with this proposed functionality for users migrating to SSA to install.
+To avoid making direct changes to kubectl, we can instead offer a plugin with this proposed functionality for users migrating to SSA to install with krew.
 
 Pros
 1. Can be maintained by API-machinery
