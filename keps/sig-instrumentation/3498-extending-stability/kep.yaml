@@ -1,0 +1,37 @@
+kep-number: 3498
+title: Extending Metrics Stability
+authors:
+  - "@logicalhan"
+  - "@dgrisonnet"
+  - "@coffeepac"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-instrumentation
+  - sig-architecture
+status: implementable
+creation-date: "2022-08-16"
+reviewers:
+  - "@dashpole"
+approvers:
+  - "@dashpole"
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.29"
+
+feature-gates:
+  - name: "n/a"
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics:
+  - registered_metrics_total{stability_level}
