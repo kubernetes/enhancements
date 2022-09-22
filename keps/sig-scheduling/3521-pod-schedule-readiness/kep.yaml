@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-machinery
-status: provisional
+status: implementable
 creation-date: 2022-09-16
 reviewers:
   - "@ahg-g"
