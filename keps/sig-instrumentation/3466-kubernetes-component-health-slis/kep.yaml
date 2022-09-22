@@ -29,7 +29,7 @@ milestone:
   stable: "v1.29"
 
 feature-gates:
-  - name: ComponentHealthSLIsFeatureGate
+  - name: ComponentSLIsFeatureGate
     components:
       - kube-apiserver
       - kube-controller-manager

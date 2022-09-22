@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-3466: Kubernetes Component SLIs
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -154,23 +154,23 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP intends to allow us to emit health check data in a structured and consistent way,
-so that monitoring agents can consume healthz/livez/readyz data and create SLOs (service level 
-objectives) and alerts off of these SLIs (service level indicators).
+This KEP intends to allow us to emit SLI data in a structured and consistent way,
+so that monitoring agents can consume this data at higher scrape intervals and create SLOs 
+(service level objectives) and alerts off of these SLIs (service level indicators).
 
 ## Motivation
 
 Healthchecking data is currently surfaced in unstructured format and is scraped by monitoring
 agents (as well as the kubelet), which must be configured to interpret the health data and
-to act upon it. This process does not lend itself readily to the creation of availability SLOs,
-since we basically require an outside agent to parse the health endpoint and convert this signal
-into an SLI. 
+to act upon it. This process does not lend itself readily to the creation of availability
+SLOs, since we basically require an outside agent to parse the health endpoint and convert 
+this signal into an SLI. 
 
 ### Goals
 
 - Create a uniform interface by which we can consume health checking information
-- Allow availability SLIs to be created without a specialized monitoring agent
-- Allow for increased granularity (by configuring a more frequent interval) of health check metric data
+- Allow SLIs to be created without a specialized monitoring agent
+- Allow for increased granularity (by configuring a more frequent interval) of SLI metric data
 - Minimize the diff involved for each Kubernetes component
 
 
@@ -180,14 +180,16 @@ into an SLI.
 
 ## Proposal
 
-We are proposing to add a new endpoint on Kubernetes components `/metrics/health` which returns
-health check data in prometheus format.
+We are proposing to add a new endpoint on Kubernetes components `/metrics/slis` which returns
+SLI data in prometheus format.
 
 
 ### Risks and Mitigations
 
-This is a separate endpoint, it does not have to be used. The risk of adding metrics is generally cardinality, but in this
-case we are proposing known dimensions to the metrics, specifically:
+In the alpha phase of this KEP, we propose adding health check data to the `metrics/slis` 
+endpoint.  Since this is a separate endpoint, it does not have to be used. The risk of 
+adding metrics is  generally cardinality, but in this case we are proposing known dimensions
+to the metrics, specifically:
 
 1. status - one of `Success`, `Error`, `Pending`
 1. type - one of `livez`, `readyz`, `healthz`
@@ -196,26 +198,26 @@ case we are proposing known dimensions to the metrics, specifically:
 
 ## Design Details
 
-When healthz/livez/readyz paths are accessed (not on a timer), they will record whatever they return
-in a gauge metric. Admittedly, this has the downside of staleness though, since the health check 
-data can be as stale as the length of the kubelet scrape interval. However, given our e2e tests 
-configure [apiserver to 1s intervals](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/manifests/kube-apiserver.manifest#L58), it is reasonable to assume that other cloud-providers 
-likely configure similar small scrape intervals, which means staleness should not realistically 
-be much of an issue. However, in the case that the kubelet gets stuck, one can alert off of the
-counter that we expose; if the counter stops incrementing, then we know that the health endpoint
-is not getting hit and that our gauge data is too stale. It would therefore be prudent to set a
-staleness alert off of the counter.
+When healthz/livez/readyz paths are accessed (not on a timer), they will record whatever 
+they return in a gauge metric. This has the downside of staleness though, since 
+the health check data can be as stale as the length of the kubelet scrape interval. However, 
+given our e2e tests  configure [apiserver to 1s intervals](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/manifests/kube-apiserver.manifest#L58), it is reasonable to assume
+that other cloud-providers  likely configure similar small scrape intervals, which means 
+staleness should not realistically be much of an issue. However, in the case that the 
+kubelet gets stuck, one can alert off of the counter that we expose; if the counter stops 
+incrementing, then we know that the health endpoint is not getting hit and that our gauge
+data is too stale. It would therefore be prudent to set a staleness alert off of the counter.
 
-We considered fetching metric data when the metrics endpoint was hit, but this would introduce 
-extra load against the health endpoint, which we took care to avoid. Alternatively, we considered
-periodic polling of the metrics endpoint such that the metrics would be incremented only during this
-periodic poll, but that change would be larger and would need to be implemented in each component
-for each of their health check endpoints. 
+We considered fetching metric data when the metrics endpoint was hit, but this would 
+introduce extra load against the health endpoint, which we took care to avoid. 
+Alternatively, we considered periodic polling of the metrics endpoint such that the metrics 
+would be incremented only during this periodic poll, but that change would be larger and
+would need to be implemented in each component for each of their health check endpoints. 
 
 Using a gaugeFunc would also preclude making the metric `stable`, since gaugeFuncs are
-dynamic by nature and therefore cannot be parsed at compile time by the stability framework. Since
-these metrics are intended to be used as component health SLIs, we want them to be able to
-be promoted to `stable` status.
+dynamic by nature and therefore cannot be parsed at compile time by the stability framework. 
+Since these metrics are intended to be used as component health SLIs, we want them to be 
+able to be promoted to `stable` status.
 
 ### Test Plan
 
@@ -316,9 +318,9 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 ### Upgrade / Downgrade Strategy
 
-This is a new metrics endpoint and should not affect upgrade/downgrade strategy with the exception that
-if you are scraping this endpoint, downgrading may remove this endpoint from the Kubernetes components
-and you may end up missing these metrics.
+This is a new metrics endpoint and should not affect upgrade/downgrade strategy with the 
+exception that if you are scraping this endpoint, downgrading may remove this endpoint from 
+the Kubernetes components and you may end up missing these metrics.
 
 ### Version Skew Strategy
 
@@ -335,7 +337,7 @@ We will target this feature behind a flag `ComponentHealthSLIsFeatureGate`
 
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ComponentHealthSLIsFeatureGate`
+  - Feature gate name: `ComponentSLIsFeatureGate`
   - Components depending on the feature gate:
     + apiserver
     + kubelet
@@ -362,11 +364,11 @@ We intend to add them with our e2e tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
-I'm not sure these are super relevant for this feature.
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-This feature should not cause rollout failures. If it does, we can disable the feature.
+This feature should not cause rollout failures. If it does, we can disable the feature. In the worst
+case, it is possible it could cause runtime failures, but it is highly unlikely we would not detect this
+with existing tests.
 
 ###### What specific metrics should inform a rollback?
 
@@ -391,7 +393,7 @@ They can check their prometheus scrape configs.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-They can curl the apiserver's `metrics/health` endpoint. 
+They can curl the apiserver's `metrics/slis` endpoint. 
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -420,7 +422,7 @@ adds instrumentation of these endpoints' results.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes, we are proposing that this health metrics are surfaced in each component under `/metrics/health` which 
+Yes, we are proposing that this health metrics are surfaced in each component under `/metrics/slis` which 
 will have to be consumed for the feature to be useful. However, this should be relatively innocuous since 
 it will an isolated endpoint strictly for the purpose of surfacing health metrics.
 
