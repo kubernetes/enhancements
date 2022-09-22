@@ -1130,8 +1130,6 @@ type ResourceClass struct {
 	// will be able to distinguish between parameters stored here and and
 	// those stored in ResourceClaimSpec. These parameters here can only be
 	// set by cluster administrators.
-	//
-	// The object must be cluster-scoped.
 	Parameters ResourceClassParametersReference
 
 	// Only nodes matching the selector will be considered by the scheduler
@@ -1528,7 +1526,7 @@ type ResourceClaimTemplate struct {
 }
 
 // ResourceClassParametersReference contains enough information to let you locate the
-// parameters for a ResourceClass. The object must be cluster-scoped.
+// parameters for a ResourceClass.
 type ResourceClassParametersReference struct {
 	// APIGroup is the group for the resource being referenced.
 	// If APIGroup is not specified, the specified Kind must be in the core API group.
@@ -1539,6 +1537,10 @@ type ResourceClassParametersReference struct {
 	Kind string
 	// Name is the name of resource being referenced
 	Name string
+	// Namespace that contains the referenced resource. Must be empty
+	// for cluster-scoped resources and non-empty for namespaced
+	// resources.
+	Namespace string
 }
 
 // ResourceClaimParametersReference contains enough information to let you locate the
