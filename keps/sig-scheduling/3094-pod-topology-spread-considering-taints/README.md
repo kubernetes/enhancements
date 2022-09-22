@@ -494,7 +494,6 @@ enhancement:
   - Previously configured values will be ignored.
 
 ### Version Skew Strategy
-N/A
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -508,6 +507,9 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+If we have a `V+1` version of api-server(`V` refers to the kubernetes version we support this feature), and a `V` version scheduler,
+we'll just ignore `NodeInclusionPolicy` with no side effects.
 
 ## Production Readiness Review Questionnaire
 
@@ -555,7 +557,7 @@ Pick one of these and delete the rest.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-No.
+No, it's backwards compatible.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -565,7 +567,7 @@ feature, can it break the existing applications?).
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes.
+Yes, we can just disable the feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 The policies are respected again.
@@ -611,13 +613,14 @@ that might indicate a serious problem?
 - A spike on failure events with keyword "failed spreadConstraint" in scheduler log.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-No. This will be tested upon beta graduation.
 
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+Not yet, but it will be tested manually prior to upgrade.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 No
@@ -661,7 +664,71 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field:
 - [ ] Other (treat as last resort)
   - Details: -->
-N/A
+
+- [x] Other (treat as last resort)
+  - Details:
+
+    1. Launch a cluster with two workload nodes, let's say node1 and node2, both has label key `kubernetes.io/hostname`.
+    2. Add a taint to node1 which ready-to-deploy pods will not tolerate.
+    3. Apply a deployment looks like:
+      ```
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nginx
+      spec:
+        replicas: 2
+        selector:
+          matchLabels:
+            foo: bar
+        template:
+          metadata:
+            labels:
+              foo: bar
+          spec:
+            restartPolicy: Always
+            containers:
+            - name: nginx
+              image: nginx:1.14.2
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    foo: bar
+      ```
+    4. One pod will be pending.
+    5. Enable the NodeInclusionPolicy and redeploy the deployment:
+      ```
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nginx
+      spec:
+        replicas: 2
+        selector:
+          matchLabels:
+            foo: bar
+        template:
+          metadata:
+            labels:
+              foo: bar
+          spec:
+            restartPolicy: Always
+            containers:
+            - name: nginx
+              image: nginx:1.14.2
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                NodeTaintsPolicy: Honor
+                labelSelector:
+                  matchLabels:
+                    foo: bar
+      ```
+    6. Both pods will be scheduled successfully.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -711,7 +778,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-N/A
+
+No.
 
 ### Dependencies
 
@@ -748,7 +816,6 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
-No
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -831,7 +898,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-N/A
+
+It only works in pod scheduling, but if the API server or etcd down, pods will not be scheduled successfully.
 
 ###### What are other known failure modes?
 
@@ -851,7 +919,8 @@ For each of them, fill in the following information by copying the below templat
 Configuration errors are logged to stderr.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-N/A
+
+Check the metrics to see whether it was caused by this feature, if so, disable the feature gate.
 
 ## Implementation History
 
@@ -868,13 +937,15 @@ Major milestones might include:
 
 - 2021.01.12: KEP proposed for review, including motivation, proposal, risks,
 test plan and graduation criteria.
+- 2022.09.22: Graduate to Beta in v1.26.
 
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
-N/A
+
+None, it's a backward compatible feature, if users don't want it, no need to configure anything.
 
 ## Alternatives
 
@@ -896,4 +967,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
-N/A
+
+No
