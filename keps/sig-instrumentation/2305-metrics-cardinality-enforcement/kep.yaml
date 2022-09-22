@@ -14,8 +14,6 @@ reviewers:
   - "@x13n"
 approvers:
   - "@ehashman"
-prr-approvers:
-  - "@johnbelamaric"
 creation-date: 2020-04-15
 last-updated: 2021-02-08
 stage: alpha

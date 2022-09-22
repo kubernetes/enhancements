@@ -11,8 +11,6 @@ reviewers:
   - "@Huang-Wei"
 approvers:
   - "@Huang-Wei"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
 
 # The target maturity stage in the current dev cycle for this KEP.

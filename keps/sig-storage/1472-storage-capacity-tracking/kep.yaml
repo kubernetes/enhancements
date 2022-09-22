@@ -15,8 +15,6 @@ reviewers:
 approvers:
   - "@saad-ali"
   - "@msau42"
-prr-approvers:
-  - "@wojtek-t"
 stage: stable
 see-also:
   - "https://docs.google.com/document/d/1WtX2lRJjZ03RBdzQIZY3IOvmoYiF5JxDX35-SsCIAfg"

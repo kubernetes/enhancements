@@ -11,8 +11,6 @@ reviewers:
   - "@smarterclayton"
 approvers:
   - "@thockin"
-prr-approvers:
-  - "@johnbelamaric"
 creation-date: 2020-04-07
 last-updated: 2022-01-21
 status: implementable

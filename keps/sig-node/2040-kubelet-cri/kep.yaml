@@ -12,8 +12,6 @@ reviewers:
 approvers:
   - "@derekwaynecarr"
   - "@dchen1107"
-prr-approvers:
-  - "@deads2k"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: beta

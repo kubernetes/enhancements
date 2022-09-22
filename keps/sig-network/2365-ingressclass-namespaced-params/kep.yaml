@@ -12,8 +12,6 @@ reviewers:
   - "@bowei"
 approvers:
   - "@thockin"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
   - "/keps/sig-network/1453-ingress-api"
 

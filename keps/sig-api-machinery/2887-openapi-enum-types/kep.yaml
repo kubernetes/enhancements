@@ -14,8 +14,6 @@ approvers:
   - "@jpbetz"
   - "@deads2k"
   - "@lavalamp"
-prr-approvers:
-  - "@deads2k"
 
 see-also:
   - https://github.com/kubernetes/enhancements/issues/2896

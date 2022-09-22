@@ -11,8 +11,6 @@ reviewers:
   - "@vishnu"
 approvers:
   - "@dawnchen"
-prr-approvers:
-  - "@ehashman"
 stage: stable
 latest-milestone: "v1.22"
 # The milestone at which this feature was, or is targeted to be, at each stage.

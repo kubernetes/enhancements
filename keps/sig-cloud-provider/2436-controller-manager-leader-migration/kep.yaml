@@ -12,8 +12,6 @@ reviewers:
   - "@andrewsykim"
 approvers:
   - "@cheftako"
-prr-approvers:
-  - "@deads2k"
 creation-date: 2019-04-22
 status: implementable
 see-also:

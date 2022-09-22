@@ -17,8 +17,6 @@ approvers:
   - "@jsafrane"
   - "@Huang-Wei"
   - "@ahg-g"
-prr-approvers:
-  - "@wojtek-t"
 
 stage: alpha
 

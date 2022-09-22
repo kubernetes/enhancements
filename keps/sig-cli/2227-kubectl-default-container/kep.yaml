@@ -16,9 +16,6 @@ reviewers:
 approvers:
   - "@soltysh"
   - "@rikatz"
-prr-approvers:
-  - "@johnbelamaric"
-  - "@deads2k"
 see-also:
 
 # The target maturity stage in the current dev cycle for this KEP.

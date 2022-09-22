@@ -14,9 +14,6 @@ reviewers:
 approvers:
 - spiffxp
 - saschagrunert
-# NOTE: there's no production change in this KEP
-prr-approvers:
-- johnbelamaric 
 see-also: []
 replaces: []
 

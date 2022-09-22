@@ -10,8 +10,6 @@ reviewers:
 approvers:
   - "@josephburnett"
   - "@gjtempleton"
-prr-approvers:
-  - "@johnbelamaric"
 creation-date: 2021-05-10
 last-updated: 2021-09-08
 status: implemented

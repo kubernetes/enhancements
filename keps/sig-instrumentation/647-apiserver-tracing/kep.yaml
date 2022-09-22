@@ -17,8 +17,6 @@ reviewers:
 approvers:
   - "@brancz"
   - "@lavalamp"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
 replaces:
 stage: beta
