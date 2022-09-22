@@ -1,0 +1,15 @@
+sequenceDiagram
+    Title: Existing Generic PLEG
+    Generic PLEG-->>Generic PLEG: Global cache update timestamp = time.Now()
+    Generic PLEG->>+Runtime: GetPods()
+    Runtime-->>-Generic PLEG: List of Pods
+    Generic PLEG-->>Generic PLEG: Generate PodLifeCycleEvents for updated Pods
+    loop EventsbyPodID
+        Generic PLEG-->>Generic PLEG: Pod cache update timestamp = time.now()
+        Generic PLEG->>+Runtime: Get Sandbox Statuses 
+        Runtime-->>-Generic PLEG: 
+        Generic PLEG->>+Runtime: Get Container Statuses 
+        Runtime-->>-Generic PLEG: 
+        Generic PLEG-->>Generic PLEG: Update the PodStatus in the cache
+        Generic PLEG-->>PLEG Channel: Send PodLifeCycleEvent
+    end
