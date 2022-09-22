@@ -95,6 +95,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Container Lifecycle](#container-lifecycle)
     - [Container users](#container-users)
     - [Container Mounts](#container-mounts)
+      - [Compatibility](#compatibility)
     - [Container Images](#container-images)
     - [Container Image Build/Definition](#container-image-builddefinition)
   - [CRI Implementation Details](#cri-implementation-details)
@@ -107,6 +108,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [CRI Support Only](#cri-support-only)
     - [Feature Gates](#feature-gates)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -145,10 +150,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -478,7 +487,7 @@ Because Windows privileged containers will work much differently than Linux priv
 #### Resource Limits
 
 - Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
-- Disk resource tracking may work slightly differently for `hostProcess` containers due to how these containers are bootstrapped. Resource usage will be trackable and the differences would be in how resource usage is calculated.
+- Note: HostProcess containers will have access to nodes root filesystem. Disk limits and resource usage will only apply to the scatch volume provisioned for each HostProcess container.
 
 #### Container Lifecycle
 
@@ -486,38 +495,79 @@ Because Windows privileged containers will work much differently than Linux priv
 
 #### Container users
 
-- The `hostProcess` container can run as any user that's available on the host or in the domain of the host machine.
-Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
-More information on Windows resource access can be found at https://docs.microsoft.com/en-us/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions.
-- Note: Support for local accounts with passwords is being investigated. Support for this scenario will most likely involve retrieving credential from the 'Windows Credential Manager' as shown in the following [proposed hcsshim changes](https://github.com/marosset/hcsshim/commit/cf42f301cf507f98d7137c8be008902306df9609). Any changes here will not require any changes to Kubernetes or pod/deployment manifests.
+- By default `hostProcess` containers can run one of the following system accounts:
+  - `NT AUTHORITY\SYSTEM`
+  - `NT AUTHORITY\Local service`
+  - `NT AUTHORITY\NetworkService`
+- Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
+- To run a `hostProcess` container as a non SYSTEM/admin account, a local users Group must first be created on the host.
+Permissions to restrict access to system resources can should be configured to allow/deny access for the Group.
+When a new `hostProcess` container is created with the name of a local users Group set as the `runAsUserName` then a temporary user account will be created as a member of the specified group for the container to run as.
+
+  - More information on Windows resource access can be found at <https://docs.microsoft.com/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions>
+  - Example of configuring non SYSTEM/admin account can be found at <https://github.com/microsoft/hcsshim/pull/1286#issuecomment-1030223306>
 
 #### Container Mounts
 
-- When `hostProcess` containers are started a new Windows volume will be created on the host which will contain the contents of the container image. Containers will have a default working directory that points to this container volume.
-Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
-  - Note: there will be no `chroot` equivalent.
-- An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted for `hostProcess` containers.
-  - Note: Syntax for referencing environment variables differs depending on what shell you are using. In cmd.exe env vars are surrounded by %'s (ex: `%CONTAINER_SANDBOX_MOUNT_POINT%`) and in powershell env vars are prefixed with $env: (ex: `$env:CONTAINER_SANDBOX_MOUNT_POINT`).
-  - This environment variable will be set to `c:\c\<containerid>\` (trailing \ included!) for each container.
-  - This environment variable can be used inside the Pod manifest / command line args for containers. See files in this [pull request](https://github.com/kubernetes-sigs/sig-windows-tools/pull/161/files#diff-b8195f7a2ad8f9ae9ebdd1bde8a0f3756c4508c1d9d9dd99f4a3bfa19fc3b828R135) for examples of using `$CONTAINER_SANDBOX_MOUNT_POINT` inside deployment manifests.
-- `$CONTAINER_SANDBOX_MOUNT_POINT` will not be set for non-`hostProcess` containers.
-- Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
-  - Note: We are prototyping a new approach to how the file system is created for `hostProcess` containers that would present the filesystem in a similar manner to non-hostProcess containers running on Windows (`c:\` (trailing \ included) would be the root instead of `c:\c\<container id>\`).
-  This would make it so files from volume mounts would be accessible via relative paths (ex: `/foo.exe` instead of needing to specify `$CONTAINER_SANDBOX_MOUNT_POINT/foo.exe`)
-  HostProcess containers would still have full access to the host file-system and `$CONTAINER_SANDBOX_MOUNT_POINT` would continue to be set so that workloads which already access files from inside volume months using this environment variable would continue to work without modification.
-  https://github.com/microsoft/hcsshim/pull/1107 is tracking this exploratory work.
-  This functionality will most-likely not be ready during Kubernetes v1.23 and any changes made to how volume mounts work would be done before this features becomes stable.
+There will be two different behaviors for how volume mounts are configured in `hostProcess` containers.
 
-- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess` containers.
-The decision to update client libraries (or not) will be postponed until the above mentioned merged container/OS filesystem investigations are concluded. Until then various workloads running in `hostProcess` containers need to communicate with the cluster can inject the `$CONTAINER_SANDBOX_MOUNT_POINT` environment variables into a kubeconfig file manually. Here is an example of how to do this today - https://github.com/jsturtevant/sig-windows-tools/blob/c9be1f0a9e95a34fda91bb7e8fc519e3447d8d93/hostprocess/calico/kube-proxy/start.ps1#L44-L52.
-  - Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after `hostProcess` containers while this feature is in `alpha`.
-  - [kubernetes/kubernetes#104490](https://github.com/kubernetes/kubernetes/pull/104490) adds support for `HostProcess` containers to the golang client library.
-- Named Pipe mounts will **not** be supported. Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
-  - The following error will be returned if `hostProcess` containers attempt to use name pipe mounts - https://github.com/microsoft/hcsshim/blob/358f05d43d423310a265d006700ee81eb85725ed/internal/jobcontainers/mounts.go#L40.
-- Unix domain sockets mounts support will be added before `HostProcess` containers graduate to `stable`. For `alpha` and `beta` Unix domain sockets can be accessed via their paths on the host like named pipes.
-  - The Windows APIs needed to support mounting unix domain socket mounts in `hostProcess` containers was introduced in Windows Server Ver, 2004. Microsoft is planning on backporting these APIs to Windows Server 2019 (min support Windows Server OS) to provide a consistent user experience.
-- Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers - kubelet will explicitly block this scenario.
-- All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
+- **Bind Mounts**
+  - With the approach Window's bind-filter driver will be used to create a view that merges the host's OS filesystem with container-local volumes.
+  - When `hostProcess` containers are started a new volume will be created which contains the contents of the container image.
+    This volume will be mounted to `c:\hpc`.
+  - Additional volume mounts specified for `hostProcess` containers will be mounted at their requested location and can be access the same way as volume mounts in Linux or regular Windows Server containers.
+    - ex: a volume with a mountPath of `/var/run/secrets/token` for containers will be mounted at `c:\var\run\secrets\token` for containers.
+  - Volume mounts will only be visible to the containers they are mounted into.
+  - The default working directory for `hostProcess` containers will also be set to `c:\hpc`.
+  - If a volume is mounted over a path that already exists on the host then the contents of the directory of the host, only the contents of the mounted volume will be visiable to the `hostProcess` container. This is the same behavior as regular Windows server behaviors.
+    - A `warn` message will be written to the containerd logs if a volume is being mounted at a location that already exists on the host.
+
+- **Symlinks**
+  - With this approach container image contents and volume mounts will be mounted at predicable paths on the host's filesystem.
+  - When `hostProcess` containers are started a new volume will be created which containers the contents of the container image.
+    this volume will be mounted to `c:\C\{container-id}`.
+  - Additional volumes mounts specified for `hostProcess` containers will be mounted to `c:\C\{container-id}\{mount-destination}`
+    - ex: a volume with a mountPath of `/var/run/secrets/token` for a container with id `1234` can be accessed at `c:\C\1235\var\run\secrets\token`
+  - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the path where the container volume is mounted (`c:\c\{container-id}`) to access content.
+    - This environment variable can be used inside the Pod manifest / command line / args for containers.
+
+A recording of the behavior differences from a SIG-Windows community meeting can be found [here](https://youtu.be/8GeZKXgvkdY?t=309).
+Note -  In the recording it was mentioned that this functionality might not be supported on WS2019.
+    This functionality will be available in WS2019 but will require an OS patch (ETA: July 2022).
+
+Additionally the following will be true for either volume mount behavior:
+
+- Named Pipe mounts will **not** be supported.
+    Instead named pipes should be accessed via their path on the host (\\\\.\\pipe\\*).
+    The following error will be returned if `hostProcess` containers attempt to use name pipe mounts -
+    https://github.com/microsoft/hcsshim/blob/358f05d43d423310a265d006700ee81eb85725ed/internal/jobcontainers/mounts.go#L40.
+- Unix domain sockets mounts also not not be supported for `hostProces` containers.
+    Unix domain sockets can be accessed via their paths on the host like named pipes.
+- Mounting directories from the host OS into `hostProcess` containers will work just like with normal containers but this is not recommend.
+    Instead workloads should access the host OS's file-system as if not being run in a container.
+  - All other volume types supported for normal containers on Windows will work with `hostProcess` containers.
+- `HostProcess` Containers will have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container).
+- There will be no `chroot` equivalent.
+
+##### Compatibility
+
+During the alpha/beta implementations of this feature only **Symlink** volume mount behavior was implemented.
+This implemention did unlock a lot of critical use cases for managing Windows nodes in Kubernets clusters but did have some usability issues
+(such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig not working as expected).
+
+The **bind mount** volume mount behavior gives full access to the host OS's filesystem (an explicit goal of this enhancement) and addreses the usability issues with the initial approach.
+This approach requires the use of Windows OS APIs that were not present in Windows Server 2019 during alpha/beta implmentations of this feature.
+These APIs *will* be available in WS2019 beginning in July 2022 with the monthly OS security patches.
+Containerd v1.7+ will be required for this behavior.
+
+- On containerd v1.6 **symlink** volume mount behavior will always be used.
+- On containerd v1.7 **bind** volume mount behavior will always be used.
+  - If users are running nodes with Windows Server 2019 with security patches older than July 2022 the volume mounts for HostProcessContainers will fail.
+
+We are going to use the Kubernetes v1.25 to explore options to make migration from `symlink` volume mount behavior to `bind` volume mount behavior as smooth as possible.
+
+The worst case migration plan is as follows:
+Users who have workloads that depend on the **symlink** mount behavior (ex: are expecting to find mounted volumes under `$CONTAINER_SANDBOX_MOUNT_POINT`) will need to stay on containerd v1.6 releases until their workloads are updated to be compatible with **bind** mount behavior.
 
 #### Container Images
 
@@ -688,14 +738,7 @@ https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -703,6 +746,10 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
 Alpha
 
@@ -717,6 +764,83 @@ Beta
 - Validate running a CNI implementation as a daemon set
 - Validate behaviors of various volume mount types as described in [Container Mounts](#container-mounts) with e2e tests
 - Add e2e tests to test different ways to construct paths for container command, args, and workingDir fields for both `hostProcess` and non-hostProcess containers. These tests will include constructing paths with and without `$CONTAINER_SANDBOX_MOUNT_POINT` set and with different combinations of forward and backward slashes.
+
+Graduation
+
+- Add e2e tests to validate running `hostProcess` containers as non SYSTEM/admin accounts
+- Update e2e tests for new volume mount behavior as described in [Container Mounts](#container-mounts)
+
+#### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+No additional tests have been identified that would be required prior to implementing this enhancement.
+
+#### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `<k8s.io/kubernetes/pkg/api/pod>`: `<2022-05-27>` - `<66.7%>`
+- `<k8s.io/kubernetes/pkg/apis/core>`: `<2022-05-27>` - `<78.9%>`
+- `<k8s.io/kubernetes/pkg/kubelet/container>`: `<2022-05-27>` - `<52.1%>`
+- `<k8s.io/kubernetes/pkg/kubelet/kuberuntime>`: `<2022-05-27>` - `<66.7%>`
+- `<k8s.io/kubernetes/pkg/securitycontext>`: `<2022-05-27>` - `<66.8%>`
+- `<k8s.io/cri-api/pkg/apis/runtime/v1>`: `<2022-05-27>` - No unit test coverage - protobuf definition
+- `<k8s.io/test/e2e/windows>`: `<2022-05-27>` - No unit test coverage - this package contains e2e test code
+
+#### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+It is not currently possible to test Windows specific code through existing the integration test frameworks.
+For this enhancement unit and e2e tests will be used for validation.
+
+#### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers should run as a process on the host/node: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L88-L135)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers should support init containers: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L137-L195)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers container command path validation: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L197-L420)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers metrics should report count of started and failed to start HostProcess containers: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L422-L481)
+- [sig-windows] [Feature:WindowsHostProcessContainers] [MinimumKubeletVersion:1.22] HostProcess containers should support various volume mount types: [source](https://github.com/kubernetes/kubernetes/blob/016a7bbc0bfef29298cff449067bf350ec4c1032/test/e2e/windows/host_process.go#L483-L577)
+
+TestGrid job for Kubernetes@master - (https://testgrid.k8s.io/sig-windows-signal#capz-windows-containerd-master&include-filter-by-regex=WindowsHostProcessContainers)
+
+k8s-triage link - (https://storage.googleapis.com/k8s-triage/index.html?job=capz&test=Feature%3AWindowsHostProcessContainers)
 
 ### Graduation Criteria
 
@@ -800,9 +924,11 @@ Graduation to Beta
 
 Graduation to GA:
 
-- Address any issues uncovered in alpha/beta
+- Add documentation for running as a non-SYSTEM/admin account to k8s.io
+- Update documention on how volume mounts are set up for `hostProcess` containers on k8s.io
 - Set `WindowsHostProcessContainers` feature gate to `GA`
-- TBD
+- Provide reference images/workloads using the `bind` volume mounting behavior in Cluster-API-Provider-azure (which is used to run the majority of Windows e2e test passes).
+- Migrate all deployments using `hostProcess` containers under in the [sig-windows-tools repo](https://github.com/kubernetes-sigs/sig-windows-tools/tree/master/hostprocess) to be compatible with `bind` volume behavior.
 
 ### Upgrade / Downgrade Strategy
 
@@ -929,10 +1055,11 @@ _This section must be completed when targeting beta graduation to a release._
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [x] Metrics
-    - Metric name: Add labels to report counts of `HostProcess` containers (host_process_container, host_process_init_container, and host_process_ephemeral_container) to `started_containers_total` and `started_containers_errors_total`
-    TODO: get confirmation from sig-node / ehashman
+    - Metric name: **started_host_process_containers_total** - reports the total number of host-process containers started on a given node
+    - Metric name: **started_host_process_containers_errors_total** - reports the total number of host-process containers that have failed to start given node.
     - [Optional] Aggregation method:
     - Components exposing the metric: Kubelet
+    - Notes: Both metrics were added in v1.23 and are validated with [e2e tests](https://github.com/kubernetes/kubernetes/blob/fdb2d544751adc9fd2f6fa5075e9a16df7d352df/test/e2e/windows/host_process.go#L483-L575)
   - [ ] Other (treat as last resort)
     - Details:
 
@@ -952,7 +1079,8 @@ _This section must be completed when targeting beta graduation to a release._
   - [ContainerD]
     - Usage description:
       - `HostProcess` containers support will not be added to dockershim.
-      - Containerd v1.5.6+ is required.
+      - Containerd v1.6.x is required for `symlink` volume mount behavior
+      - Containerd v1.7+ is required for `bind` volume mount behavior.
       - Impact of its outage on the feature: Containers will fail to start.
       - Impact of its degraded performance or high-error rates on the feature: Containers may behave expectantly and node may go into the NotReady state.
 
@@ -1001,7 +1129,66 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
-  N/A
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+    - [InClusterConfig() fails inside HostProcessContainers]
+      - Causes: 
+        - Due to how volume mounts for HostProcess containers are configured in containerd v1.6.X, service account tokens in the container are not present at the location expected by the golang API rest client.
+      - Mitigations: 
+        - If containers are using `symlink` mount behavior as described at [Compatibility](#compatibility) you can construct a kubeconfig
+          file with the containers assigned service account token and use that to authenticate.
+          Example: https://github.com/kubernetes-sigs/sig-windows-tools/blob/fbe00b42e2a5cca06bc182e1b6ee579bd65ed1b5/hostprocess/calico/install/calico-install.ps1#L8-L11
+        - Switch to container runtime/version that supports `bind` mount behavior as as described at [Compatibility](#compatibility)
+      - Diagnostics:
+        - Calls to rest.InClusterConfig will fail in workloads.
+      - Testing:
+        - No - known limitation
+
+    - [Containers running as non-HostProcessContainers]
+      - Causes:
+        - Container runtime does not support HostProcessContainers
+        - Bug in kubelet in some v1.23/v1.24 patch versions [#110140](https://github.com/kubernetes/kubernetes/pull/110140)
+      - Detection:
+        - Varies based on cause
+        - Likely result will be an error in the app/workload running running inside containers
+      - Mitigations: 
+        - If error is caused by [#110140](https://github.com/kubernetes/kubernetes/pull/110140) then either 
+          specify `PodSecurityContext.WindowsSecurityContextOptions.HostProcess=true` (instead of setting HostProcess=true on container[*].SecurityContext.WindowsSecurityContextOptions.HostProcess=true) or upgrade kubelet to a version fix for issue.
+        - Provision nodes with a containerd v1.6+
+      - Diagnostics:
+        - Exec into a container and run `whoami` and ensure running user is as expected (ex: not ContainerUser or ContainerAdministrator for HostProcessContainers)
+        - Run `kubectl get nodes -o wide` to check the container runtime and version for nodes
+        - Examine container logs
+        - On the node run `crictl inspectp [podid]` and ensure pod has "microsoft.com/hostprocess-container": "true" in annotation list (to detect [#110140](https://github.com/kubernetes/kubernetes/pull/110140))
+        - Inspect container `trace` log messages and ensure `hostProcess=true` is set for `RunPodSandbox` calls. 
+      - Testing: 
+        - Yes - tests have been added to [#110140](https://github.com/kubernetes/kubernetes/pull/110140) to catch issues caused by this bug.
+
+    - [HostProcess containers fail to start with `failed to create user process token: failed to logon user: Access is denied.: unknown`]
+      - Causes: 
+        - Containerd is running as a user account.
+          On Windows user accounts (even Administrator accounts) cannot create logon tokens for system (which can be used by HostProcessContainers).
+      - Detection:
+        - Metrics: **started_host_process_containers_errors_total** count increasing
+        - Events: ContainerCreate failure events with reason of `failed to create user process token: failed to logon user: Access is denied.: unknown`
+      - Mitigations: 
+        - Run containerd as `LocalSystem` (default) or `LocalService` service accounts
+      - Diagnostics: 
+        - On the node run `Get-Process containerd -IncludeUserName` to see which account containerd is running as.
+      - Testing: 
+        - No - It is not feasible to restart the container runtime as a different user during tests passes.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
@@ -1016,7 +1203,10 @@ _This section must be completed when targeting beta graduation to a release._
 - **2021-12-17:** Initial KEP draft merged - [#2037](https://github.com/kubernetes/enhancements/pull/2037).
 - **2021-02-17:** KEP approved for alpha release - [#2288](https://github.com/kubernetes/enhancements/pull/2288).
 - **2021-05-20:** Alpha implementation PR merged - [kubernetes/kubernetes#99576](https://github.com/kubernetes/kubernetes/pull/99576).
-- **2021-08-05:** K8s 1.22 released with alpha support for `HostProcess` containers.
+- **2021-08-05:** K8s 1.22 released with alpha support for `WindowsHostProcessContainers` feature.
+- **2021-08-21:** HostProcessContainers (via CRI) support added to containerd - [containerd/containerd#5131](https://github.com/containerd/containerd/pull/5131).
+- **2021-12-07:** K8s 1.23 released with beta support for `WindowsHostProcessContainers` feature.
+- **2022-02-15:** Containerd 1.6.0 relased with support for HostProcessContainers.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
