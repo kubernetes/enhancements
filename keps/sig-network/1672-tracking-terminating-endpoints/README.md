@@ -233,7 +233,150 @@ large number of traffic to the apiserver.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not yet, but manual upgrade and rollback testing will be done prior to graduating the feature to Beta.
+Rollback was manually validated using the following steps:
+
+Create a kind cluster:
+```
+$ kind create cluster
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.25.0) 🖼
+ ✓ Preparing nodes 📦
+ ✓ Writing configuration 📜
+ ✓ Starting control-plane 🕹️
+ ✓ Installing CNI 🔌
+ ✓ Installing StorageClass 💾
+Set kubectl context to "kind-kind"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-kind
+
+Thanks for using kind! 😊
+```
+
+Check an EndpointSlice object to verify that the EndpointSliceTerminatingCondition feature gate is enabled.
+Note that endpoints should have 3 conditions, `ready`, `serving` and `terminating`:
+```
+$ kubectl -n kube-system get endpointslice
+NAME             ADDRESSTYPE   PORTS        ENDPOINTS               AGE
+kube-dns-zp8h5   IPv4          9153,53,53   10.244.0.2,10.244.0.4   2m20s
+$ kubectl -n kube-system get endpointslice kube-dns-zp8h5 -oyaml
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints:
+- addresses:
+  - 10.244.0.2
+  conditions:
+    ready: true
+    serving: true
+    terminating: false
+  nodeName: kind-control-plane
+  targetRef:
+    kind: Pod
+    name: coredns-565d847f94-lgsrp
+    namespace: kube-system
+    uid: cefa189a-66e0-4da3-8341-5c4e9f11407b
+- addresses:
+  - 10.244.0.4
+  conditions:
+    ready: true
+    serving: true
+    terminating: false
+  nodeName: kind-control-plane
+  targetRef:
+    kind: Pod
+    name: coredns-565d847f94-ptfln
+    namespace: kube-system
+    uid: d9003b65-2316-4d76-96f5-34d7570e6fcb
+kind: EndpointSlice
+metadata:
+...
+...
+```
+
+Turn off the `EndpointSliceTerminatingCondition` feature gate in `kube-apiserver` and `kube-controller-manager` (this is effectively
+the state of the feature gate when it was Alpha).
+```
+$ docker ps
+CONTAINER ID   IMAGE                  COMMAND                  CREATED         STATUS         PORTS                       NAMES
+501fafe18dbd   kindest/node:v1.25.0   "/usr/local/bin/entr…"   4 minutes ago   Up 4 minutes   127.0.0.1:36795->6443/tcp   kind-control-plane
+$ docker exec -ti kind-control-plane bash
+$ vim /etc/kubernetes/manifests/kube-apiserver.yaml
+# append --feature-gates=EndpointSliceTerminatingCondition=false to kube-apiserver flags
+$ vim /etc/kubernetes/manifests/kube-controller-manager.yaml
+# append --feature-gates=EndpointSliceTerminatingCondition=false to kube-controller-manager flags
+```
+
+Once `kube-apiserver` and `kube-controller-manager` restarts with the flag disabled, check that endpoints have the
+`serving` and `terminating` conditions preserved and only dropped on the next update.
+```
+# preserved initially
+$ kubectl -n kube-system get endpointslice kube-dns-zp8h5 -oyaml
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints:
+- addresses:
+  - 10.244.0.2
+  conditions:
+    ready: true
+    serving: true
+    terminating: false
+  nodeName: kind-control-plane
+  targetRef:
+    kind: Pod
+    name: coredns-565d847f94-lgsrp
+    namespace: kube-system
+    uid: cefa189a-66e0-4da3-8341-5c4e9f11407b
+- addresses:
+  - 10.244.0.4
+  conditions:
+    ready: true
+    serving: true
+    terminating: false
+  nodeName: kind-control-plane
+  targetRef:
+    kind: Pod
+    name: coredns-565d847f94-ptfln
+    namespace: kube-system
+    uid: d9003b65-2316-4d76-96f5-34d7570e6fcb
+kind: EndpointSlice
+metadata:
+...
+
+# trigger an update to endpointslice
+$ kubectl -n kube-system delete po -l k8s-app=kube-dns
+pod "coredns-565d847f94-lgsrp" deleted
+pod "coredns-565d847f94-ptfln" deleted
+
+# verify that serving/terminating conditions are now dropped
+$ kubectl -n kube-system get endpointslice kube-dns-zp8h5 -oyaml
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints:
+- addresses:
+  - 10.244.0.6
+  conditions:
+    ready: true
+  nodeName: kind-control-plane
+  targetRef:
+    kind: Pod
+    name: coredns-565d847f94-jhtxk
+    namespace: kube-system
+    uid: b9a45145-fd3a-4f03-8243-59b0a0789bbf
+- addresses:
+  - 10.244.0.5
+  conditions:
+    ready: true
+  nodeName: kind-control-plane
+  targetRef:
+    kind: Pod
+    name: coredns-565d847f94-r6n9s
+    namespace: kube-system
+    uid: e20ce163-cf2b-4251-bcc8-352dcaf135c9
+kind: EndpointSlice
+metadata:
+...
+...
+```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
