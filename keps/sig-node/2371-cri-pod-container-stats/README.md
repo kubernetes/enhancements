@@ -276,7 +276,7 @@ Thus, this KEP largely the plan described [here](#plan), with some changes:
     For the alpha implementation, [PR #102789](https://github.com/kubernetes/kubernetes/pull/102789) added a Linux specific field
     `LinuxPodSandboxStats`. It also added Windows Specific field called  `WindowsPodSandboxStats` but left it blank.  
 
-    Using the `WindowsPodSandboxStats` stats struct we will use create new Windows specific fields that make sense for Windows stats.  The
+    Using the `WindowsPodSandboxStats` stats struct we will create new Windows specific fields that make sense for Windows stats.  The
     motivation behind this is Windows has differences in stats that are specific to its OS and doesn't currently fill certain fields (in some
     cases cannot such as `rss_bytes`). By adopting a Windows Specific set of stats it will allow for flexibity and customization in the
     future. 
