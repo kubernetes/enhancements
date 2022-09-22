@@ -422,6 +422,7 @@ for jobs with multiple sizes.
 - Job E2E tests graduate to conformance.
 - Job tracking scales to 10^5 completions per Job processed within an order of
   minutes.
+- Write blog post about the feature and the future deprecation plans.
 
 #### Deprecation
 
@@ -668,6 +669,13 @@ Yes, see [Deprecation](#deprecation) for the full plan.
       In newer versions, this can still happen if there is a buggy webhook
       that prevents pod updates to remove finalizers.
     - Testing: Discovered bugs are covered by unit and integration tests.
+  - Job pods might be recreated upon upgrade to 1.27.
+    - Detection:
+      In 1.26, there are non-finished jobs without annotation `batch.kubernetes.io/job-completion`.
+    - Mitigation:
+      - Keep `JobTrackingWithFinalizers` feature gate enabled in 1.25. This
+        minimizes the chances of having legacy jobs before upgrading to 1.27.
+      - Wait for Jobs without `batch.kubernetes.io/job-completion` to finish.
 
 #### What steps should be taken if SLOs are not being met to determine the problem?
 
