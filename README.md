@@ -70,9 +70,14 @@ Please comment on the enhancement issue to:
 Please do not comment on the enhancement issue to:
 - discuss a detail of the design, code or docs. Use a linked-to-issue or PR for that
 
+
+## Current Release Info
+
+[Dates and further information for the 1.26 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.26)
+
 ## Enhancements Tracking Board
 
-As of the 1.26 release, enhancements from this repo are visualized in the Enhancements Tracking Boards.
+As of the 1.26 release, enhancements from this repo are tracked through a Github Project Board.
 
 Links:
 
@@ -80,17 +85,10 @@ Links:
 
 ## Enhancements Tracking Spreadsheet
 
-Prior to the 1.26 release, enhancements from this repo were visualized using Enhancements Tracking Spreadsheets.
+Prior to the 1.26 release, enhancements from this repo were tracked through a Google Sheets spreadsheet.
 
 Please refer to the [Enhancements Tracking Spreadsheet Archive](docs/archived-tracking-sheets.md) for links to
 these sheets.
-
-Procedure:
-*TBA*
-
-### Current Release Cycle
-
-[Dates and further information for the 1.25 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.25)
 
 ## Exceptions to Enhancement Milestone Dates
 
@@ -104,7 +102,7 @@ The Exceptions Process is handled by the Release Team, please see their [documen
 | `kind/feature` | Denotes an issue should be tracked as an enhancement (all enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
 | `tracked/yes` | Denotes an issue has been reviewed by the enhancements team (SIG Release) and is actively tracked for the current milestone | Set the label using the comment `/label tracked/yes` (on a separate line) | Release enhancements team ONLY |
 | `tracked/no` | Denotes an issue has been reviewed by the enhancements team (SIG Release) and will not be actively tracked for the current milestone | Set the label using the comment `/label tracked/no` (on a separate line) | Release enhancements team ONLY |
-| `tracked/out-of-tree` | Denotes an issue has an out-of-tree implementation | Set the label using the comment `/label tracked/out-of-tree` (on a separate line) | Release enhancements team ONLY |
+| `tracked/out-of-tree` | Denotes an issue has an out-of-tree (outside of [k/k](https://github.com/kubernetes/kubernetes)) implementation | Set the label using the comment `/label tracked/out-of-tree` (on a separate line) | Release enhancements team ONLY |
 | `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
 | `lead-opted-in` | Denotes that an issue has been opted in to a release | Set the label using the comment `/label lead-opted-in` (on a separate line) | SIG leads ONLY |
 
