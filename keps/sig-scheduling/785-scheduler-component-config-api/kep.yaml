@@ -12,8 +12,6 @@ reviewers:
 approvers:
   - "@ahg-g"
   - "@liggitt"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
   - "/keps/sig-scheduling/1451-multi-scheduling-profiles"
   - "/keps/sig-scheduling/2458-node-resource-score-strategy"

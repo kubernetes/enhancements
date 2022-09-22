@@ -16,8 +16,6 @@ approvers:
   - "@brancz"
   - "@dashpole"
   - "@ahg-g"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
 replaces:
 latest-milestone: "v1.21"

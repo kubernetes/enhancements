@@ -13,10 +13,6 @@ approvers:
   - "@dashpole"
   - "@sjenning"
   - "@dchen1107"
-prr-approvers:
-  - "deads2k"
-  - "johnbelamaric"
-  - "wojtek-t"
 see-also:
   - "/keps/sig-node/20190129-hugepages.md"
 replaces: []

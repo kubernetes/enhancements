@@ -17,9 +17,6 @@ reviewers:
 approvers:
   - "@brancz"
   - "@thockin"
-prr-approvers:
-  - "@wojtek-t"
-  - "@johnbelamaric"
 see-also:
 replaces:
 stage: beta

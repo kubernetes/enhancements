@@ -18,8 +18,6 @@ approvers:
   - "@thockin"
   - "@dchen1107"
 see-also:
-prr-approvers:
-  - "@johnbelarmic"
 stage: "beta"
 latest-milestone: "v1.24"
 milestone:

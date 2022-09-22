@@ -15,7 +15,6 @@ reviewers:
   - "@klueska"
 approvers:
   - "@sig-node-leads"
-prr-approvers: []
 see-also:
   - "keps/sig-node/606-compute-device-assignment/"
   - "keps/sig-node/2043-pod-resource-concrete-assigments/"

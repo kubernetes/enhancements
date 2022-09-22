@@ -14,8 +14,6 @@ reviewers:
   - "@jsturtevant"
 approvers:
   - "@jsturtevant"
-prr-approvers:
-  - "@deads2k"
 creation-date: 2021-06-28
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

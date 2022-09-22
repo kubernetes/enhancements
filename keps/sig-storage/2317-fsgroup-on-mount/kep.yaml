@@ -12,7 +12,6 @@ reviewers:
   - "@jsafrane"
 approvers:
   - "@msau42"
-prr-approvers:
 see-also:
   - https://github.com/kubernetes/enhancements/issues/1682
 replaces:

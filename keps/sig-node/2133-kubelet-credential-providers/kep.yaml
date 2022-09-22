@@ -17,8 +17,6 @@ approvers:
   - "@cheftako"
   - "@liggitt"
   - "@derekwaynecarr"
-prr-approvers:
-  - "@deads2k"
 replaces:
   - "/keps/sig-cloud-provider/20191004-out-of-tree-credential-providers.md"
 

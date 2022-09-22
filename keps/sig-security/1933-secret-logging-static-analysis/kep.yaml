@@ -18,8 +18,6 @@ reviewers:
 approvers:
 - "@dashpole"
 - "@ehashman"
-prr-approvers:
-- "@deads2k"
 see-also:
 - /keps/sig-instrumentation/1753-logs-sanitization
 - /keps/sig-instrumentation/1602-structured-logging

@@ -12,10 +12,6 @@ reviewers:
   - "@soltysh"
 approvers:
   - "@soltysh"
-prr-approvers:
-  - "@ehashman"
-  - "@deads2k"
-  - "@wojtek-t"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/65098
 

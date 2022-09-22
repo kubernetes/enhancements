@@ -13,8 +13,6 @@ reviewers:
 approvers:
   - "derekwaynecarr"
   - "dawnchen"
-prr-approvers:
-  - "@johnbelamaric"
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.

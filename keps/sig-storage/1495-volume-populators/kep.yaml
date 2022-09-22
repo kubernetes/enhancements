@@ -16,8 +16,6 @@ reviewers:
 approvers:
   - "@thockin"
   - "@saad-ali"
-prr-approvers:
-  - "@deads2k"
 replaces:
   - "/keps/sig-storage/20200120-generic-data-populators.md"
 stage: beta

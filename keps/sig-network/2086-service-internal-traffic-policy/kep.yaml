@@ -11,8 +11,6 @@ reviewers:
   - "thockin"
 approvers:
   - "@thockin"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
   - "/keps/sig-network/2004-topology-aware-subsetting"
   - "/keps/sig-network/20181024-service-topology.md"
