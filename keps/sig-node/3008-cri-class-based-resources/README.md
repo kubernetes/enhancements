@@ -256,8 +256,8 @@ level. In order to hide this complexity the concept of blockio classes has been
 added to the container runtimes (CRI-O and containerd). A system administrator
 is able to configure blockio controller parameters on per-class basis and the
 classes are then made available for CRI clients. Following this model also
-provies a possible framework for the future improvements, for instance enabling
-class-based network or memory type prioritization of applications.
+provides a possible framework for the future improvements, for instance
+enabling class-based network or memory type prioritization of applications.
 
 Currently, there is no mechanism in Kubernetes to use these types of resources.
 CRI-O and containerd runtimes have support for RDT and blockio classes and they
@@ -410,7 +410,7 @@ UpdateContainerResources API endpoint. In order to make container and pod
 (sandbox) level QoS-class resources symmetric we want to make it possible to
 update of pod-level resource assignments, too.
 
-This will likely required a new API endpoint in CRI:
+This will likely require a new API endpoint in CRI:
 
 ```diff
 @@ -38,6 +38,8 @@ service RuntimeService {
