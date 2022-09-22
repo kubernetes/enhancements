@@ -92,3 +92,6 @@ Major milestones for Azure File in-tree plugin CSI migration:
 
 - 1.24
   - AzureFile CSI migration to Beta, on by default
+
+- 1.26
+  - AzureFile CSI migration to GA, on by default
