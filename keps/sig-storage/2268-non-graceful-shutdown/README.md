@@ -335,8 +335,8 @@ the health of the service?**
     - Metric name: We can add new metrics deleting_pods_total, deleting_pods_error_total
       in Pod GC Controller.
       For Attach Detach Controller, there's already a metric:
-      attachdetach_controller_forced_detaches. We could keep it for force detach
-      by timeout and add a new metric attachdetach_controller_forced_detaches_taint.
+      attachdetach_controller_forced_detaches
+      It is also useful to know how many nodes have taints. We can explore with [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) which generates metrics about the state of the objects.
     - [Optional] Aggregation method:
     - Components exposing the metric:
   - [ ] Other (treat as last resort)
