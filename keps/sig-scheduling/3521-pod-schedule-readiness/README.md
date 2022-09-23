@@ -180,7 +180,7 @@ updates.
 -->
 
 This KEP aims to add a `.spec.schedulingPaused` field to Pod's API, to mark a Pod's schedule readiness.
-Integrators can mutate this field to instruct scheduler whether it's ready for scheduling or not.
+Integrators can mutate this field to signal to scheduler when a Pod is ready for scheduling.
 
 ## Motivation
 
@@ -193,9 +193,9 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Pods are naturally perceived ready for scheduling once created. Kubernetes scheduler does
+Pods are currently considered ready for scheduling once created. Kubernetes scheduler does
 its due diligence to find nodes to place all pending Pods. However, in a real-world case,
-some Pods may stay in a "miss-essential-resources" state for a long period. These pods,
+some Pods may stay in a "miss-essential-resources" state for a long period. These pods
 actually churn the scheduler (and downstream integrators like Cluster AutoScaler) in an
 unnecessary manner.
 
@@ -214,7 +214,7 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Define API to mark Pod as schedule-paused/unpaused.
+- Define an API to mark Pods as scheduling-paused/unpaused.
 - Design a new Enqueue extension point to customize Pod's queueing behavior.
 - A default enqueue plugin to honor the new API semantics.
 
@@ -243,7 +243,7 @@ We propose a new field `.spec.schedulingPaused` to the Pod API. The field is def
 For Pods carrying `.spec.schedulingPaused=true`, they will be "parked" in scheduler's internal
 unschedulablePods pool, and only get tried when the field is set to `false`.
 
-Practically, this field can be initialized to `true` by MutatingWebhook, and be flipped to `false`
+Practically, this field can be initialized to `true` by a MutatingWebhook, and be flipped to `false`
 by external integrators when certain criteria is met.
 
 ### User Stories (Optional)
@@ -257,15 +257,17 @@ bogged down.
 
 #### Story 1
 
-As an orchestrator developer, I'm knowledgeable to know when my Pods are schedule-ready, but I know
-nothing about scheduling internals. It'd be ideal for me to only set/unset the "paused" flag,
-instead of developing scheduler plugins, to control the schedulability of my Pods.
+As an orchestrator developer, such as a dynamic quota manager, I have the full picutre to know when
+Pods are scheduling-ready; therefore, I want an API to signal to kube-scheduler when to consider a
+Pod for scheduling. The pattern for this story would be to use a mutating webhook to force creating
+pods in a "not-ready to schedule" state that the custom orchestrator changes to ready at a later
+time based on its own evaluations.
 
 #### Story 2
 
-Different orchestrator developers want to manipulate the state of scheduling readiness separately.
-It'd be ideal to have a list of scheduling readiness gates, and each controller is responsible for
-updating their own portion.
+This story is an extension of the previous one in that more than one custom orchestrator could be
+deployed on the same cluster, therefore they want an API that enables establishing an agreement om
+when a pod is considered ready for scheduling.
 
 #### Story 3
 
@@ -625,11 +627,14 @@ enhancement:
 -->
 
 - Upgrade
-  - While the feature gate is enabled, `.spec.schedulingPaused` can be mutated by users.
-  - While the feature gate is enabled and `.spec.schedulingPaused` is not set, a default value will
-  be given to behave the same like it's specified by users.
+  - Enable the feature gate in both API Server and Scheduler, and gate the Pod's scheduling
+  readiness by setting `.spec.schedulingPaused` to true. Next, set it to false when readiness
+  condition is met.
 - Downgrade
-  - Previously configured values will be ignored.
+  - Disable the feature gate in both API Server and Scheduler, so that previously configured value
+  will be ignored.
+  - The previously configured value of a Pod will be preserved until it's updated for the first time
+  after the feature gate gets disabled.
 
 ### Version Skew Strategy
 
