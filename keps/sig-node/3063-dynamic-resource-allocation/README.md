@@ -1529,10 +1529,10 @@ type ResourceClaimTemplate struct {
 // parameters for a ResourceClass.
 type ResourceClassParametersReference struct {
 	// APIGroup is the group for the resource being referenced.
-	// If APIGroup is not specified, the specified Kind must be in the core API group.
+	// If APIGroup is empty, the specified Kind must be in the core API group.
 	// For any other third-party types, APIGroup is required.
 	// +optional
-	APIGroup *string
+	APIGroup string
 	// Kind is the type of resource being referenced
 	Kind string
 	// Name is the name of resource being referenced
@@ -1548,10 +1548,10 @@ type ResourceClassParametersReference struct {
 // as the ResourceClaim.
 type ResourceClaimParametersReference struct {
 	// APIGroup is the group for the resource being referenced.
-	// If APIGroup is not specified, the specified Kind must be in the core API group.
+	// If APIGroup is empty, the specified Kind must be in the core API group.
 	// For any other third-party types, APIGroup is required.
 	// +optional
-	APIGroup *string
+	APIGroup string
 	// Kind is the type of resource being referenced
 	Kind string
 	// Name is the name of resource being referenced
