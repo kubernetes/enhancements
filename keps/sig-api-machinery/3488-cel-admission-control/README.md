@@ -473,7 +473,7 @@ Policy definitions are responsible for:
 Each `ValidatingAdmissionPolicy` resource contains a `spec.match` to declare
 what resources it validates. This field is required.
 
-- `spec.match` constraints which resources this policy can be applied to. Policy
+- `spec.match` constrains which resources this policy can be applied to. Policy
   configurations each have match rules with further narrow this constraint, but
   cannot expand it. This allows the CEL expressions to make safe assumptions.
   E.g. a CEL expression that is constrained to CREATES and UPDATES of resources
@@ -507,7 +507,7 @@ See below "Reporting violations to Clients" for more detail about how the
 
 Policy configurations are the interface between `ValidatingAdmissionPolicy`
 authors and the administrators that configure the policies for clusters. The
-configurations allows policy definition authors to define how exactly a
+configuration allows policy definition authors to define how exactly a
 `ValidatingAdmissionPolicy` may be configured using a OpenAPIv3 structural
 schema.
 
