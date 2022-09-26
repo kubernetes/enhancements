@@ -1854,6 +1854,7 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+N/A
 
 ##### Unit tests
 
@@ -1887,8 +1888,16 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
+In the first alpha phrase, the integration tests are expected to be added for:
+- The behavior with feature gate and API turned on/off and mix match
+- The happy path with everything configured and validation proceeded successfully
+- Validation with different enforcement policies
+- Validation with different failure policies
+- Validation with different Match Criteria
+- Validation violations for different reasons including type checking failures, misconfiguration, failed validation, etc and formatted messages
+- Singleton policy
+- Validation limit check including cost limit, max policy binding limit, max length, etc.
 
-- <test>: <link to test coverage>
 
 ##### e2e tests
 
@@ -1901,8 +1910,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
-
-- <test>: <link to test coverage>
+We will test the edge cases mostly in integration test and unit test.
+We may add e2e test for spot check of the feature presence.
 
 ### Graduation Criteria
 
@@ -1967,6 +1976,10 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 -->
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Ensure proper tests are in place.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1981,6 +1994,8 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+In alpha, no changes are required to maintain previous behavior. And the feature gate
+and the required API could be turned on to make use of the enhancement.
 
 ### Version Skew Strategy
 
@@ -1996,6 +2011,7 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+N/A
 
 ## Production Readiness Review Questionnaire
 
@@ -2040,8 +2056,8 @@ well as the [existing list] of feature gates.
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+  - Feature gate name: ValidatingAdmissionPolicy
+  - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -2055,6 +2071,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No, default behavior is the same.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -2068,8 +2085,10 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Yes, disabling the feature will result in validation expressions being ignored.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+The validatingAdmissionPolicy will be enforced again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -2085,6 +2104,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+Unit test and integration test will be introduced in alpha implementation.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -2103,6 +2123,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+The existing workload could potentially fail the validation and cause unexpected failures if the validation is misconfigured.
+ 
+While rollout, the cluster administrator could configure the feature with `enforcement: [Warn, Audit]` or similar,
+and wait until being comfortable to switch the enforcement level to `Deny`. In this way it will minimize the effect on the running workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -2110,6 +2134,10 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+On a cluster that has not yet opted into ValidatingAdmissionPolicy, non-zero counts for either of the following metrics mean 
+the feature is not working as expected:
+- cel_admission_validation_total
+- cel_admission_validation_errors
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -2118,12 +2146,14 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Upgrade and rollback will be tested before the feature goes to Beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No.
 
 ### Monitoring Requirements
 
