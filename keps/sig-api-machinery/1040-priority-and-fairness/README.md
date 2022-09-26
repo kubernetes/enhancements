@@ -639,6 +639,9 @@ Requests of an exempt priority are never held up in a queue; they are
 always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
+As mentioned [above](#non-goals), the functionality described here
+operates independently in each apiserver.
+
 The concurrency limit of an apiserver is divided among the non-exempt
 priority levels, and they can do a limited amount of borrowing from
 each other.
