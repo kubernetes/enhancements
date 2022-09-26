@@ -140,7 +140,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Extend Device Plugins](#extend-device-plugins)
   - [Webhooks instead of ResourceClaim updates](#webhooks-instead-of-resourceclaim-updates)
   - [ResourceDriver](#resourcedriver)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -2505,12 +2505,10 @@ type ResourceDriverFeature struct {
 ```
 
 
-## Infrastructure Needed (Optional)
+## Infrastructure Needed
 
 Initially, all development will happen inside the main Kubernetes
-repository. The mock driver can be developed inside test/integration. Once we
-understand better what kind of support code might be useful for driver
-developers (for example, something similar to
-https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner and the
-code in node-driver-registrar), we may want to share that in a staging repository
-where the in-tree mock driver and third-party drivers can use it.
+repository. The mock driver can be developed inside test/e2e/dra.  For the
+generic part of that driver, i.e. the code that other drivers can reuse, and
+other common code a new staging repo `k8s.io/dynamic-resource-allocation` is
+needed.
