@@ -19,11 +19,11 @@ approvers:
 see-also:
   - /keps/sig-storage/695-skip-permission-change/README.md
 stage: alpha
-latest-milestone: "v1.24"
+latest-milestone: "v1.26"
 milestone:
   alpha: "v1.24"
-  beta: "v1.25"
-  stable: "v1.27"
+  beta: "v1.27"
+  stable: "v1.29"
 feature-gates:
   - name: SELinuxMountReadWriteOncePod
     components:
@@ -31,4 +31,9 @@ feature-gates:
       - kubelet
 disable-supported: true
 metrics:
-  # TODO: fill at beta
+  - volume_manager_selinux_container_errors_total
+  - volume_manager_selinux_container_warnings_total
+  - volume_manager_selinux_pod_context_mismatch_errors_total
+  - volume_manager_selinux_pod_context_mismatch_warnings_total
+  - volume_manager_selinux_volume_context_mismatch_errors_total
+  - volume_manager_selinux_volume_context_mismatch_warnings_total

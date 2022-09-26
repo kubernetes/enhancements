@@ -55,18 +55,18 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
@@ -508,10 +508,24 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
+
   - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - All `errors_total` metrics below cover real errors when a Pod can't start.
+      It applies to `ReadWriteOncePod` volumes.
+    - All `warnings_total` metrics below cover **future** errors that would appear if this feature was extended to all volumes.
+      This will be evaluated in Phase 2.
+    - 1. `volume_manager_selinux_container_errors_total` + `volume_manager_selinux_container_warnings_total`: Number of errors when kubelet cannot compute SELinux context for a container.
+        This indicates an error converting SELinux context into SELinux label by github.com/opencontainers/selinux/go-selinux library.
+        Reading its source code, this should never happen, but one never knows.
+      1. `volume_manager_selinux_pod_context_mismatch_errors_total` + `volume_manager_selinux_pod_context_mismatch_warnings_total`: Number of errors when a Pod defines different SELinux contexts for its containers that use the same volume.
+         Before this feature, only one container in such a Pod could access the volume.
+         With this feature, the Pod won't even start.
+         This metric captures nr. of failed Pod starts, including periodic retries.
+      1. `volume_manager_selinux_volume_context_mismatch_errors_total` + `volume_manager_selinux_volume_context_mismatch_warnings_total`: Number of errors when a Pod uses a volume that is already mounted with a different SELinux context than the Pod needs.
+         Before this feature, both pods would start, but only one such pod could access the volume.
+         With this feature, one of the Pods won't even start.
+    - Components exposing the metric: KCM
+
   - [ ] Other (treat as last resort)
     - Details:
 
@@ -653,7 +667,9 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-* 1.25: Alpha
+* 1.25: Partial implementation of alpha.
+  * Volume reconstruction after kubelet start does not reconstruct SELinux contexts.
+* 1.26: Alpha with everything implemented.
 
 ## Drawbacks [optional]
 
