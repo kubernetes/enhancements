@@ -419,8 +419,8 @@ kind: ResourceClass
 metadata:
   name: acme-gpu
 driverName: gpu.example.com
-parameters:
-  apiVersion: gpu.example.com/v1
+parametersRef:
+  apiGroup: gpu.example.com
   kind: GPUInit
   name: acme-gpu-init
 ```
@@ -450,8 +450,8 @@ spec:
   - name: "gpu" # this name gets referenced below under "claims"
     template:
       resourceClassName: "acme-gpu"
-      parameters:
-        apiVersion: gpu.example.com/v1
+      parametersRef:
+        apiGroup: gpu.example.com
         kind: GPURequirements
         name: device-consumer-gpu-parameters
   containers:
@@ -1124,13 +1124,13 @@ type ResourceClass struct {
 	// (acme.example.com).
 	DriverName string
 
-	// Parameters references an arbitrary separate object that may hold
+	// ParametersRef references an arbitrary separate object that may hold
 	// parameters that will be used by the
 	// driver when allocating a resource that uses this class. The driver
 	// will be able to distinguish between parameters stored here and and
 	// those stored in ResourceClaimSpec. These parameters here can only be
 	// set by cluster administrators.
-	Parameters ResourceClassParametersReference
+	ParametersRef ResourceClassParametersReference
 
 	// Only nodes matching the selector will be considered by the scheduler
 	// when trying to find a Node that fits a Pod when that Pod uses
@@ -1180,12 +1180,12 @@ type ResourceClaimSpec struct {
 	// reject claims where the class is missing.
 	ResourceClassName string
 
-	// Parameters references a separate object with arbitrary parameters
+	// ParametersRef references a separate object with arbitrary parameters
 	// that will be used by the
 	// driver when allocating a resource for the claim.
 	//
 	// The object must be in the same namespace as the ResourceClaim.
-	Parameters ResourceClaimParametersReference
+	ParametersRef ResourceClaimParametersReference
 
 	// Allocation can start immediately or when a Pod wants to use the
 	// resource. Waiting for a Pod is the default.
