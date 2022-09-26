@@ -969,28 +969,39 @@ Without any additional support, the only possible approach is:
 ```
 
 But if we were to offer a way for some validations to short-circuit validation
-execution, this would be cleaner. E.g.:
+execution, this could be simpler. E.g.:
 
 ```yaml
   validations:
     - expression: "<CEL match expression>"
-      onSuccess: HaltValidation
-    - expression: "<actual validation expression 1>"
-    - expression: "<actual validation expression 2>"
+      failureTreatment: NoMatch # TODO: What's the least bad way to express this?
+    - expression: "<normal validation expression 1>"
+    - expression: "<normal validation expression 2>"
 ```
 
 The other use for short-circuiting is to skip any other validations, this can be
-used in a security context to prevent messages from exfiltrating data, or more
-generally to minimize noise where subsequent validation messages are of low
-value if a particular validation fails.
+used in a security context (if authz check fails, don't show user any other
+info), or more generally to minimize noise where subsequent validation messages
+are of low value if a particular validation fails.
 
 ```yaml
   validations:
     - expression: "<CEL precondition check>"
-      onFail: HaltValidation
-    - expression: "<CEL post-condition check>"
-    - expression: "<CEL post-condition check>"
+      failureTreatment: IgnoreOtherValidationFailures
+    - expression: "..."
+    - expression: "..."
 ```
+
+`failureTreatment` would support:
+
+- `NoMatch` - The resource is considered "not matched" by this policy check and
+  is allowed to be admitted (at least by this policy) regardless of the outcome
+  of other validations.
+- `Enforce` - Apply the enforcement of this validation.
+- `IgnoreOtherValidationFailures` - Only this policy failure is enforced. Any
+  other validation failures are ignored. If multiple validations have this
+  `failureTreatment` the first in the list to failure is shown and all others
+  are ignored.
 
 *Special case: apiGroup + resource + operation matching*
 
@@ -1091,11 +1102,23 @@ when validations fail.
 
 <<[UNRESOLVED jpbetz, DangerOnTheRanger ]>>
 
-Is it reasonable to also use CEL expressions to format messages? CEL is strict
-about types, so things like `object.int1 + ' is less than ' + object.int2`, must be
-expressed as `string(object.int1) + ' is less than ' + string(object.int2)`. 
+Decide on message formatting.
 
-Alternative:
+Alternative: offer a CEL expression
+
+```yaml
+- expression: "..."
+  messageExpression: "string(object.int1) + ' is less than ' + string(object.int2)"
+```
+
+Cons:
+
+- CEL requires explicit casts to string
+- Plain string message support is a bit messy. Options:
+  - Use CEL always: `"'this is a simple message'"`
+  - Offer both plain string (`message`) and CEL (`messageExpression`)
+
+Alternative: Inline CEL expressions
 
 Single `message` field but it supports templating, e.g.:
 
@@ -1103,7 +1126,37 @@ Single `message` field but it supports templating, e.g.:
 "{{object.int1}} is less than {{object.int2}}"
 ```
 
-Where the templating uses CEL expressions.
+Cons:
+
+- Must defining escaping rules in string for including `{{` or `}}` as a literal
+- CEL expressions must be properly escaped
+
+Alternative: Inline JSON path
+
+```
+"{{.object.int1}} is less than {{.object.int2}}"
+```
+
+Cons:
+
+- (Same as above "Inline CEL expressions")
+- Author must switch between using CEL and JSON Path in adjacent fields
+- JSON Path is less expressive than CEL (both a pro and a con)
+
+Alternative: CEL expressions, separate args from format string
+
+```yaml
+- expression: "..."
+  message: "{1} is less than {2}"
+  messageArgs: ["object.int1", "object.int2"]
+```
+
+Note "%s is less than %s" is also viable, but CEL can always preformat and emit
+a string for cases where developer needs more control.
+
+Cons:
+
+- Slightly more verbose format (but avoid all the escaping problems)
 
 <<[/UNRESOLVED]>>
 
@@ -1118,8 +1171,12 @@ High level proposal:
 
 - Each policy may set a `denyReason` and/or `denyCode`
 - Each validation may define a message:
-  - `message` for plain strings
-  - `messageExpression` for a CEL expression that evaluates to a string
+  - `message` - may contain `{1}` formatted args that are supplied by
+    `meesageArgs: [<cel expression>, <cel expressiion>, ...]`
+    - If `meesage` is absent, `expression` and `name` will be included in the
+      failure message
+    - If any of the arg CEL expressions fail: `expression` and `name` will be
+      included in the failure message plus the arg evaluation failure
 - allow/deny, warnings, audit annotations will be collectively referred to as
   `enforcement`, which will have the following levels:
   - `Deny`,
@@ -1129,7 +1186,7 @@ High level proposal:
   enforcement is `Audit` the name can be used as the audit annotation key.
 - Policy configurations set enforcement options
 
-Example:
+Example policy definition:
 
 ```yaml
 # Policy definition
@@ -1146,14 +1203,18 @@ spec:
   validations:
     - expression: "self.name.startsWith('xyz-')"
       name: name-prefix
-      messageExpression: "self.name + ' must start with \"xyz-\"'"
+      message: "{1} must start with 'xyz-'"
+      messageArgs: ["self.name"]
     - expression: "self.name.contains('bad')"
       name: bad-name
       message: "name contains 'bad' which is discouraged due to ..."
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
-      messageExpression: "self.name + ' contains \"suspicious\"'"
+      messageExpression: "{1} contains 'suspicious'"
+      messageArgs: ["self.name"]
 ```
+
+corresponding policy configuration:
 
 ```yaml
 kind: XyzConfig
