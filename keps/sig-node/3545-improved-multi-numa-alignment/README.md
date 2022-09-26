@@ -33,6 +33,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
+    - [Beta to G.A Graduation](#beta-to-ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -109,9 +112,9 @@ This limitation surfaces in multi socket, as well as single socket multi NUMA sy
 
 ### Risks and Mitigations
 
-| Risk                                             | Impact | Mitigation |
-| -------------------------------------------------| -------| ---------- |
-| Bugs in the implementation lead to kubelet crash | High   | Disable the policy option and restart the kubelet. The workload will run but resources allocation can be spread among NUMA nodes which are non-adjacent what can lead to higher latency.
+| Risk                                             | Impact | Mitigation                                                                                                                                                                               |
+|--------------------------------------------------|--------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Bugs in the implementation lead to kubelet crash | High   | Disable the policy option and restart the kubelet. The workload will run but resources allocation can be spread among NUMA nodes which are non-adjacent what can lead to higher latency. |
 
 ## Design Details
 
