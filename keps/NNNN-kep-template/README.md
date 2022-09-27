@@ -560,9 +560,13 @@ previous answers based on experience in the field.
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
+If you are using a feature-gate, then you do not have to answer this question, 
+you will be able to detect if your feature is enabled using the 
+`kubernetes_feature_enabled` metric. 
+
+Otherwise, ideally this should be a metric. Operations against the Kubernetes 
+API (e.g., checking if there are objects with field X set) may be a last resort. 
+Avoid logs or events for this purpose.
 -->
 
 ###### How can someone using this feature know that it is working for their instance?
