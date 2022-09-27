@@ -810,6 +810,12 @@ container runtimes.
 - `blockio.resources.alpha.kubernetes.io/container.<container-name>` for
   container-specific blockio class settings
 
+A validation check (core api validation) is added in the API server to reject
+changes to these annotations after a Pod has been created. This ensures that
+the annotations always reflect the actual assignment of QoS-class resources of
+a Pod. It also serves as part of the UX to indicate the in-place updates of the
+resources via annotations is not supported.
+
 ### Container runtimes
 
 Currently, there is support (container-level QoS-class resources) for Intel RDT
