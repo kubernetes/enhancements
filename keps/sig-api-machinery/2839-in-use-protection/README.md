@@ -29,7 +29,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Namespace Deletion](#namespace-deletion)
     - [Block Adding Additional <code>Liens</code> while Deleting](#block-adding-additional--while-deleting)
     - [Race of removing/adding liens](#race-of-removingadding-liens)
-    - [Subresource](#subresource)
     - [Unresolved issues](#unresolved-issues)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -266,18 +265,6 @@ Specifying the option should only be allowed to a limited set of users and group
 Restricting the `IgnoreLiens` API option to specific users is beta blocker and won't be included in the initial implementation.
 Therefore, in the initial implementation, any users with delete permission will be able to delete resources with liens by specifying the `IgnoreLiens` API option.
 
-#### Subresource
-
-There is a use case to disallow a controller to write to its CRD except for the status subresource, but allow it to update finalizers/liens.
-To allow this use case, it is required to provide a feature to set a separate RBAC to update finalizers/liens.
-On the other hand, finalizers field is currently not subresourced.
-Therefore, it needs to provide this feature in a compatible way for finalizers, and it would be better to implement liens field in the same way to finalizers.
-
-To solve this issue, there is [another KEP](https://github.com/kubernetes/enhancements/issues/3285) to add a new knob for just patching only a specific field via an endpoint of a subresource, without modifying the field itself.
-In this way, a feature to set a separate RBAC can be implemented later without making liens field itself a subresource.
-
-Subresourcing `Liens` is a beta blocker and won't be included in the initial implementation.
-
 #### Unresolved issues
 
 - Decision: When you delete a namespace and an object in that namespace has a lien:
@@ -290,23 +277,10 @@ Subresourcing `Liens` is a beta blocker and won't be included in the initial imp
   - Does the namespace deletion not proceed until all objects in the namespace are free of liens?
     - [ ] No. If you delete the namespace, the content will be removed. Namespace lifecycle cleanup will not honor liens.
     - [x] No. If you delete the namespace, the content will be removed. Namespace lifecycle cleanup will honor liens only to guarantee the deletion order inside a namespace (guarantee of the deletion order is a beta blocker).
-    - [ ] ~~Yes. Namespace lifecycle cleanup will honor liens. If you delete the namespace, it won't be deleted until all the content will be deleted.~~
+    - [ ] Yes. Namespace lifecycle cleanup will honor liens. If you delete the namespace, it won't be deleted until all the content will be deleted.
 - Name:
     - [x] "liens" is short and precise, but an unusual word
     - [ ] Other candidates: InUse, deleteInhibitors, hold, lease, claim, deletionBlockers, protections, guards
-- Subresource:
-  - Do you need a special permission to add a lien?
-    - [ ] Yes. Liens can only be changed via a call to resource/liens subresource. Create/update permission for the resource/liens subresource is required.
-    - [ ] ~~No. Only create/update permission forthe resource is required.~~
-    - [x] Not always. Create/Update permission for resource or update permission for resource/liens subresource are required (subresourcing is a beta blocker).
-  - To remove a lien?
-    - [ ] Delete permission for the resource/liens subresource is required.
-    - [ ] ~~Delete permission for the resource is required.~~
-    - [x] Delete permission for the resource or delete permission for the resource/liens subresource are required (subresourcing is a beta blocker).
-  - To delete anyway and ignore liens?
-    - [x] `--not-block-on-lien` kubectl option will pass `IgnoreLiens` API option in `DeleteOptions` to force delete.
-  - Who can ignore liens and how it can be specified?
-    - [x] Users who have delete permission for the resource/liens subresource without any additional configurations (restricting the option to specific users is a beta blocker).
 
 Please also see the original comments [here](https://github.com/kubernetes/enhancements/pull/2840#issuecomment-1023774538) and [here](https://github.com/kubernetes/enhancements/pull/2840#issuecomment-1024437024).
 
