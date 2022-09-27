@@ -12,6 +12,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
       - [Beta](#beta)
       - [GA](#ga)
@@ -35,17 +39,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -102,7 +106,7 @@ Following is a list of long standing issues for `events`
 
 ### Goals
 
-- Add an experimental `events` sub-command under the kubectl
+- Add an new `events` sub-command under the kubectl
 - Address existing issues mentioned above
 
 ### Non-goals
@@ -122,7 +126,8 @@ and most importantly will extend the `kubectl get events` functionality to addre
 
 ### Risks and Mitigations
 
-None.
+Accessing events to which users don't have access to. This should be mitigated by a proper RBAC rules
+allowing access based on a need to know principle.
 
 ## Design Details
 
@@ -138,17 +143,41 @@ Additionally, the new command should support all the printing flags available in
 
 ### Test Plan
 
-In addition to standard unit tests for kubectl, the events command will be released as a kubectl alpha subcommand, signaling users to expect instability. During the alpha phase we will gather feedback from users that we expect will improve the design of debug and identify the Critical User Journeys we should test prior to Alpha -> Beta graduation.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+Before any additional functional updates we need to ensure the current functionality
+is properly cover with unit and integration (`test/cmd`) tests.
+Before promoting to beta at least a single e2e test should also be added in
+`k8s.io/kubernetes/test/e2e/kubectl/kubectl.go`.
+
+##### Unit tests
+
+- `k8s.io/kubectl/pkg/cmd/events`: `2022-09-21` - `36.6%`
+
+##### Integration tests
+
+- `k8s.io/kubernetes/test/cmd/events.sh`: [test-cmd.run_kubectl_events_tests](https://testgrid.k8s.io/sig-release-master-blocking#integration-master)
+
+##### e2e tests
+
+- missing
 
 ### Graduation Criteria
 
 Once the experimental kubectl events command is implemented, this can be rolled out in multiple phases.
 
 ##### Beta
-- [ ] Gather the feedback, which will help improve the command
-- [ ] Extend with the new features based on feedback
+
+- [x] Add e2e tests, increase unit coverage.
+- [x] Gather the feedback, which will help improve the command
+- [x] Extend with the new features based on feedback
 
 ##### GA
+
 - [ ] Address all major issues and bugs raised by community members
 
 ### Upgrade / Downgrade Strategy
@@ -172,7 +201,7 @@ so there should be no problems with Version Skew.
   - Components depending on the feature gate:
 - [X] Other
   - Describe the mechanism:
-    A new command in `kubectl alpha`
+    A new sub-command in `kubectl`
   - Will enabling / disabling the feature require downtime of the control
     plane?
     No
@@ -198,249 +227,115 @@ There will be explicit command for retrieving events.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, because it cannot be disabled or enabled in a single release
+No, because it cannot be disabled or enabled in a single release.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+None, kubectl rollout requires just shipping a new binary.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+A wrong binary might be delivered.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+There are no metrics to follow.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+E2E which will be added with beta promotion will allow us to verify if the command
+behaves correctly during upgrade and downgrade.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+The `kubectl alpha events` is being moved under `kubectl events`. Invoking the old
+location will print a warning that this command moved.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+None.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+There is no way cluster operator to differentiate between `kubectl get events` and `kubectl events`
+invocations since both invoke a GET operation on Events endpoint.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+`kubectl events` should be returning events similar to `kubectl get events`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+None.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: invoking `kubectl events` returns data in a timely manner
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+None.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+None.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+None.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+No new API calls are expected if compared with `kubectl get events`.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+Running `kubectl events` with unavailable API server and/or etcd will result
+in an error reported to user stating that the cluster is not available.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- [No events]
+  - Detection: Invoking `kubectl events` does not return any events.
+  - Mitigations: Use `kubectl get events` instead.
+  - Diagnostics: Compare with the output of `kubectl get events`. It's possible that
+    there are no events in given namespace. Alternatively, use different namespace
+    with `--namespace` flag.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+None.
 
 ## Implementation History
 
 - *2020-01-16* - Initial KEP draft
 - *2021-09-06* - Updated KEP with the new template and mark implementable for alpha implementation.
+- *2022-09-21* - Updated KEP for beta promotion.
 
 ## Alternatives
 
