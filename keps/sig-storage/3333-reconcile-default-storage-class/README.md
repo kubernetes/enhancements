@@ -282,6 +282,9 @@ ones.
 Test:
 https://github.com/kubernetes/kubernetes/blob/91a9ce28ac2486c50222aeeec1f76e664155d769/test/e2e/storage/pvc_storageclass.go#L62
 
+Test Grid:
+https://testgrid.k8s.io/sig-network-gce#gci-gce-alpha-features.
+
 ### Graduation Criteria
 
 #### Alpha
@@ -362,7 +365,13 @@ enabled for the first time.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests will cover feature enablement/disablement.
+Unit tests cover feature enablement/disablement.
+
+Validation tests:
+https://github.com/RomanBednar/kubernetes/blob/2f533cd572e265e5ad3a244adc9a888534245b89/pkg/apis/core/validation/validation_test.go#L2291
+
+PV controller tests:
+https://github.com/RomanBednar/kubernetes/blob/2f533cd572e265e5ad3a244adc9a888534245b89/pkg/controller/volume/persistentvolume/pv_controller_test.go#L794
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -447,9 +456,8 @@ question.
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 A metric which would include PersistentVolumeClaim name or StorageClass name 
-as a label to help users debug possible issues. A metric with such labels should
-not be added because PVCs and SCs are in control of users and if they would
-create too many of those resources it could overload the metric system.
+as a label to help users debug possible issues. Such metric would have
+potentially unbounded cardinality, which is a hard blocker for adding it.
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
@@ -528,7 +536,15 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+API requests are performed by Persistent volume controller periodically. If 
+some requests fail the PVC will not get updated with current default storage
+class as it would under normal operation and a metric with error count is
+increased. PV controller will attempt the PVC update again in the next
+periodic sync.
+
 ###### What are other known failure modes?
+
+None.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -544,6 +560,10 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+The only case that is considered a failure is when a PVC fails to update due
+to API server error so users should investigate API server logs to determine
+the problem.
 
 ## Implementation History
 
