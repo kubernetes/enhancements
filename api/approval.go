@@ -37,9 +37,11 @@ type PRRApproval struct {
 	Number string `json:"kepNumber" yaml:"kep-number" validate:"required"`
 
 	// TODO: Need to validate these milestone pointers are not nil
-	Alpha  *PRRMilestone `json:"alpha" yaml:"alpha,omitempty"`
-	Beta   *PRRMilestone `json:"beta" yaml:"beta,omitempty"`
-	Stable *PRRMilestone `json:"stable" yaml:"stable,omitempty"`
+	Alpha      *PRRMilestone `json:"alpha" yaml:"alpha,omitempty"`
+	Beta       *PRRMilestone `json:"beta" yaml:"beta,omitempty"`
+	Stable     *PRRMilestone `json:"stable" yaml:"stable,omitempty"`
+	Deprecated *PRRMilestone `json:"deprecated" yaml:"deprecated,omitempty"`
+	Removed    *PRRMilestone `json:"removed", yaml:"removed,omitempty"`
 
 	// TODO(api): Move to separate struct for handling document parsing
 	Error error `json:"-" yaml:"-"`

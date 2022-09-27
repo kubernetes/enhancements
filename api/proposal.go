@@ -103,7 +103,6 @@ type Proposal struct {
 	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
 	Reviewers         []string `json:"reviewers" yaml:",flow"`
 	Approvers         []string `json:"approvers" yaml:",flow" validate:"required"`
-	PRRApprovers      []string `json:"prrApprovers" yaml:"prr-approvers,flow"`
 	Editor            string   `json:"editor" yaml:"editor,omitempty"`
 	CreationDate      string   `json:"creationDate" yaml:"creation-date"`
 	LastUpdated       string   `json:"lastUpdated" yaml:"last-updated"`
@@ -221,22 +220,6 @@ func (k *KEPHandler) validateGroups(p *Proposal) []error {
 	return errs
 }
 
-// validatePRRApprovers returns errors for each invalid PRR Approver in the
-// given Proposal, or nil if there are no invalid PRR Approvers
-func (k *KEPHandler) validatePRRApprovers(p *Proposal) []error {
-	var errs []error
-	validPRRApprovers := make(map[string]bool)
-	for _, a := range k.PRRApprovers {
-		validPRRApprovers[a] = true
-	}
-	for _, a := range p.PRRApprovers {
-		if _, ok := validPRRApprovers[a]; !ok {
-			errs = append(errs, fmt.Errorf("invalid prr-approver: %s", a))
-		}
-	}
-	return errs
-}
-
 // Validate returns errors for each reason the given proposal is invalid,
 // or nil if it is valid
 func (k *KEPHandler) Validate(p *Proposal) []error {
@@ -246,9 +229,6 @@ func (k *KEPHandler) Validate(p *Proposal) []error {
 		allErrs = append(allErrs, fmt.Errorf("struct-based validation: %w", err))
 	}
 	if errs := k.validateGroups(p); errs != nil {
-		allErrs = append(allErrs, errs...)
-	}
-	if errs := k.validatePRRApprovers(p); errs != nil {
 		allErrs = append(allErrs, errs...)
 	}
 	if err := p.Status.IsValid(); err != nil {

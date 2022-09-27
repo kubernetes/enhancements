@@ -10,8 +10,6 @@ reviewers:
   - "@beth"
 approvers:
   - "@carolyn"
-prr-approvers:
-  - "@dorothy"
 stage: stable
 latest-milestone: v1.4
 milestone:

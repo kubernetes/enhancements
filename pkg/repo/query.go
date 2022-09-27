@@ -146,7 +146,8 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 		if len(opts.Stage) > 0 && !allowedStage[string(k.Stage)] {
 			continue
 		}
-		if len(opts.PRRApprover) > 0 && !atLeastOne(k.PRRApprovers, allowedPRR) {
+		// TODO: Fetch PRR approvers from approval files.
+		if len(opts.PRRApprover) > 0 && !atLeastOne([]string{}, allowedPRR) {
 			continue
 		}
 		if len(opts.Author) > 0 && !atLeastOne(k.Authors, allowedAuthor) {

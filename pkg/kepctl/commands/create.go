@@ -122,13 +122,6 @@ func addCreate(topLevel *cobra.Command) {
 		"Participating SIGs",
 	)
 
-	cmd.PersistentFlags().StringArrayVar(
-		&co.PRRApprovers,
-		"prr-approver",
-		[]string{},
-		"PRR Approver",
-	)
-
 	topLevel.AddCommand(cmd)
 }
 

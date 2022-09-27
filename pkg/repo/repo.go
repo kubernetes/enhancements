@@ -483,45 +483,6 @@ func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) 
 			"%v",
 			errors.Wrapf(err, "validating PRR for %s", p.Name),
 		)
-	} else {
-		sig := filepath.Base(filepath.Dir(filepath.Dir(kepPath)))
-		prrPath := filepath.Join(
-			prrApprovalPath,
-			sig,
-			p.Number+".yaml",
-		)
-
-		prrFile, err := os.Open(prrPath)
-		if os.IsNotExist(err) {
-			return &p, nil
-		}
-
-		if err != nil {
-			return nil, errors.Wrapf(err, "opening PRR approval %s", prrPath)
-		}
-
-		approval, err := handler.Parse(prrFile)
-		if err != nil {
-			return nil, errors.Wrapf(err, "parsing PRR")
-		}
-
-		approver, err := approval.ApproverForStage(p.Stage)
-		if err != nil {
-			logrus.Errorf(
-				"%v",
-				fmt.Errorf("getting PRR approver for stage '%s' for kep %s: %w", p.Stage, fullKEPPath, err),
-			)
-		}
-
-		for _, a := range p.PRRApprovers {
-			if a == approver {
-				approver = ""
-			}
-		}
-
-		if approver != "" {
-			p.PRRApprovers = append(p.PRRApprovers, approver)
-		}
 	}
 
 	return &p, nil

@@ -88,13 +88,6 @@ func TestProposalValidate(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid KEP: prr-approver does not exist",
-			file: "testdata/invalid-prr-approver.yaml",
-			errs: []error{
-				fmt.Errorf("invalid prr-approver: not-a-prr-approver"),
-			},
-		},
-		{
 			name: "invalid KEP: status does not exist",
 			file: "testdata/invalid-status.yaml",
 			errs: []error{
