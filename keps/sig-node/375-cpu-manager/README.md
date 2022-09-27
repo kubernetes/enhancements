@@ -8,8 +8,8 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Story 1 : High-performance applications](#story-1--high-performance-applications)
+    - [Story 2 : KubeVirt](#story-2--kubevirt)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -131,7 +131,7 @@ reconciliation loop.
 
 ### Non-Goals
 
-TBD
+N/A
 
 ## Proposal
 
@@ -145,15 +145,20 @@ observability and checkpointing extensions._
 
 ### User Stories (Optional)
 
-TBD
+#### Story 1 : High-performance applications
 
-#### Story 1
+Systems such as real-time trading system or 5G CNFs (User Plane Function, UPF) need to maximize the CPU time; CPU pinning ensure exclusive CPU allocation and allows to avoid performance issues due to core switches, cold caches.
+NUMA aware allocation of CPUs, provided by CPU manager cooperating with Topology Manager, is also a critical prerequisite for these applications to meet their performance requirement.
+The alignment of resources on the same NUMA node, CPUs first and foremost, prevents performance degradation due to inter-node (between NUMA nodes) communication overhead.
 
-#### Story 2
+#### Story 2 : KubeVirt
+
+KubeVirt leverages the CPU pinning provided by CPU manager to assign full CPU cores to vCPUs inside the VM to [enhance performance][kubevirt-cpus].
+[NUMA support for VMs][kubevirt-numa] is also built on top of the CPU pinning and NUMA-aware CPU allocation.
 
 ### Notes/Constraints/Caveats (Optional)
 
-TBD
+N/A
 
 ### Risks and Mitigations
 
@@ -399,19 +404,35 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-TBD
-
 ##### Unit tests
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
 
-- `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager`: `20220606` - `86%`
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager`: `20220929` - `86.2%`
 
 ##### Integration tests
 
-- <test>: <link to test coverage>
+- TBD
 
 ##### e2e tests
 
-- <test>: <link to test coverage>
+- TBD
 
 ### Graduation Criteria
 
@@ -432,6 +453,13 @@ TBD
 - N installs
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
+
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
+
+**For non-optional features moving to GA, the graduation criteria must include
+[conformance tests].**
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
@@ -469,13 +497,17 @@ Not relevant
 
 ###### Does enabling the feature change any default behavior?
 
-TBD
+No, unless the non-none policy is explicitly configured.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-TBD
+Yes, using the kubelet config.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The impact is node-local only.
+If the state of a node is steady, no changes.
+If a guaranteed pod is admitted, running non-guaranteed pods will have their CPU cgroup changed while running.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -485,57 +517,57 @@ Yes, covered by e2e tests
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-TBD
+A rollout can fail if a bug in the cpumanager prevents _new_ pods to start, or existing pods to be restarted.
+Already running workload will not be affected if the node state is steady
 
 ###### What specific metrics should inform a rollback?
 
-TBD
+Pod creation errors o a node-by-node basis.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD
+No to both.
+Changes in behavior only affects pods meeting the conditions (guaranteed QoS, integral CPU request) scheduler after the upgrade.
+Running pods will be unaffected by any change. This offers some degree of safety in both upgrade->rollback
+and upgrade->downgrade->upgrade scenarios.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-TBD
+No
 
 ### Monitoring Requirements
 
-TBD
+Monitor the pod admission counter
+Monitor the pods not going running after successful schedule
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-TBD
+The operator need to inspect the node and verify the cpu pinning assignment either checking the cgroups on the node
+or accessing the podresources API of the kubelet.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-TBD
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: the containers need to check the cpu set they are allowed to run; in addition, node agents (e.g. node_exporter)
+    can report the CPU assignment
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-TBD
+- N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-TBD
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
+     a operator should check that pods go running correctly and the cpu pinning is performed. The latter can
+     be checked by inspecting the cgroups at node level.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-TBD
+No, because all the metrics we were aware of leaked hardware details.
+All of the metrics experimented by consumers of the feature so far require to expose hardware details of the
+worker nodes, and are dependent on the worker node hardware configuration (e.g. processor core layout).
 
 ### Dependencies
 
@@ -579,14 +611,15 @@ No
 
 ###### What are other known failure modes?
 
-TBD
+After changing the CPU manager policy from `none` to `static` or the the other way around, before to start the kubelet again,
+you must remove the CPU manager state file(`/var/lib/kubelet/cpu_manager_state`), otherwise the kubelet start will fail.
+Startup failures for this reason will be logged in the kubelet log.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
-- **2020-12-30:** kep translated to the most recent template available at time
-- **2022-06-06:** kep translated to the most recent template available at time; proposed to GA; added PRR info.
+- **2022-09-29:** kep translated to the most recent template available at time; proposed to GA; added PRR info.
 
 ## Drawbacks
 
@@ -718,6 +751,8 @@ Record of information of the original KEP without a clear fit in the latest temp
 
 [cat]: http://www.intel.com/content/www/us/en/communications/cache-monitoring-cache-allocation-technologies.html
 [cpuset-files]: http://man7.org/linux/man-pages/man7/cpuset.7.html#FILES
+[kubevirt-cpus]: https://kubevirt.io/user-guide/virtual_machines/dedicated_cpu_resources/
+[kubevirt-numa]: https://kubevirt.io/user-guide/virtual_machines/numa/#preconditions
 [ht]: http://www.intel.com/content/www/us/en/architecture-and-technology/hyper-threading/hyper-threading-technology.html
 [hwloc]: https://www.open-mpi.org/projects/hwloc
 [node-allocatable]: /contributors/design-proposals/node/node-allocatable.md#phase-2---enforce-allocatable-on-pods
