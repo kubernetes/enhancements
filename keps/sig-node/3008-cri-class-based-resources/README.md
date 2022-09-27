@@ -1026,13 +1026,13 @@ in back-to-back releases.
 #### Beta
 
 - Gather feedback from developers and surveys
-- In addition to the simple change in CRI API, implement the following
+- In addition to the changes in CRI API, implement the following
   - Pod spec update
-  - Resource discovery
   - Resource status/capacity (with scheduling)
   - Parmission control
 - Well-defined behavior with [In-place pod vertical scaling](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources)
 - Additional tests are in Testgrid and linked in KEP
+- User documentation is available
 
 #### GA
 
