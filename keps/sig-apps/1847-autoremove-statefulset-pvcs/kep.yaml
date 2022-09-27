@@ -20,11 +20,11 @@ approvers:
 
 stage: beta
 
-latest-milestone: "v1.25"
+latest-milestone: "v1.26"
 
 milestone:
   alpha: "v1.23"
-  beta: "v1.25"
+  beta: "v1.26"
   stable: "v1.27"
 
 feature-gates:

@@ -31,6 +31,7 @@
       - [Upgrade/downgrade &amp; feature enabled/disable tests](#upgradedowngrade--feature-enableddisable-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha release](#alpha-release)
+    - [Beta release](#beta-release)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -322,7 +323,7 @@ to implement this enhancement.
   
 ##### Integration tests
 
-- `test/integration/statefulset`: `2022-06-15`: These do not appear to be
+- `test/integration/statefulset`: `2022-09-21`: These do not appear to be
   running in a job visible to the triage dashboard, see for example a search
   for the previously existing [TestStatefulSetStatusWithPodFail](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStatusWithPodFail).
 
@@ -330,8 +331,8 @@ Added `TestAutodeleteOwnerRefs` to `k8s.io/kubernetes/test/integration/statefuls
 
 ##### E2E tests
 
-- `ci-kuberentes-e2e-gci-gce-statefulset`: `2022-06-15`: `3/646 Failures`
-  - Note that as this is behind the `StatefulSetAutoDeletePVC` feature gate,
+- `[gci-gce-statefulset](https://testgrid.k8s.io/google-gce#gci-gce-statefulset)`: `2022-09-21`: `0 Failures`
+  - Note that as this KEP is behind the `StatefulSetAutoDeletePVC` feature gate,
     tests for this KEP are not being run.
 
 Added `Feature:StatefulSetAutoDeletePVC` tests to `k8s.io/kubernetes/test/e2e/apps/`.
@@ -351,8 +352,12 @@ mechanism to run upgrade/downgrade tests.
 ### Graduation Criteria
 
 #### Alpha release
-- Complete adding the items in the 'Changes required' section.
-- Add unit, functional, upgrade and downgrade tests to automated k8s test.
+- (Done) Complete adding the items in the 'Changes required' section.
+- (Done) Add unit, functional, upgrade and downgrade tests to automated k8s test.
+
+#### Beta release
+- Validate with customer workloads
+- Enable feature gate for e2e pipelines
 
 ### Upgrade / Downgrade Strategy
 
@@ -427,11 +432,10 @@ are not involved so there is no version skew between nodes and the control plane
   happens during a stateful set scale down or delete.
 
 * **What specific metrics should inform a rollback?**
-  The operator can monitor the `statefulset_pvcs_owned_by_*` metrics to see if
-  there are possible pending deletions. If consistent behavior is required, the
-  operator can wait for those metrics to stablize. For example, 
-  `statefulset_pvcs_owned_by_pod` going to zero indicates all scale down
-  deletions are complete.
+  The operator can monitor `kube_persistent_volume_*` metrics from
+  kube-state-metrics to watch for large numbers of undeleted
+  PersistentVolumes. If consistent behavior is required, the operator can wait
+  for those metrics to stablize.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Yes. The race condition wasn't exposed, but we confirmed the PVCs were updated correctly.
@@ -443,35 +447,32 @@ fields of API types, flags, etc.?**
 
 ### Monitoring Requirements
 
+Metrics are provided by `kube-state-metrics` unless otherwise noted.
+
 * **How can an operator determine if the feature is in use by workloads?**
-  `statefulset_when_deleted_policy` or `statefulset_when_scaled_policy` will
-  have nonzero counts for the `delete` policy fields.
+  `kube_statefulset_persistent_volume_claim_retention_policy will have nonzero
+  counts for the `delete` policy fields.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - Metric name: `statefulset_reconcile_delay`
-    - [Optional] Aggregation method: `quantile`
-    - Components exposing the metric: `pke/controller/statefulset`
-  - Metric name: `statefulset_unhealthy_pods`
-    - [Optional] Aggregation method: `sum`
-    - Components exposing the metric: `pke/controller/statefulset`
+  - Metric name: `kube_statefulset_status_replicas_current` should be near
+    `kube_statefulset_stats_replicas_ready`.
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `kube-state-metrics`
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-  The reconcile delay (time between statefulset reconcilliation loops) should be
-  low. For example, the 99%ile should be at most minutes.
-  
-  This can be combined with the unhealthy pod count, although as unhealthy pods
-  are usually an application error rather than a problem with the stateful set
-  controller, this will be more a decision for the operator to decide on a
+  `kube_statefulset_stats_replicas_ready /
+  kube_statefulset_stats_replicas_current` should be near 1.0, although as
+  unhealthy replicas are often an application error rather than a problem with
+  the stateful set controller, this will need to be tuned by an operator on a
   per-cluster basis.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
 
-  The stateful set controller has not had any metrics in the past despite it
-  being a core Kubernetes feature for some time. Hence which metrics are useful
-  in practice is an open question in spite of the stability of the feature.
+  kube-state-metrics have filled a gap in the traditional lack of metrics from
+  core Kubernetes controllers.
 
 ### Dependencies
 
@@ -534,8 +535,10 @@ control plane returns.
 
 * **What are other known failure modes?**
   - PVCs from a stateful set not being deleted as expected.
-    - Detection: This can be deteted by lower than expected counts of the
-      `statefulset_pvcs_owned_by_*` metrics and by an operator listing and examining PVCs.
+    - Detection: This can be deteted by higher than expected counts of
+      `kube_persistentvolumeclaim_status_phase{phase=Bound}`, lower than
+      expected counts of `kube_persistentvolume_status_phase{phase=Released}`,
+      and by an operator listing and examining PVCs.
     - Mitigations: We expect this to happen only if there are other,
       operator-installed, controllers that are also managing owner refs on
       PVCs. Any such PVCs can be deleted manually. The conflicting controllers
@@ -558,6 +561,7 @@ stateful set controller lives) should be examined and/or restarted.
 
   - 1.21, KEP created.
   - 1.23, alpha implementation.
+  - 1.26, graduation to beta.
 
 ## Drawbacks
 The StatefulSet field update is required.
