@@ -318,15 +318,21 @@ insights from earlier phases affecting design choises made in the later phases,
 hopefully resulting in a better overall end result. However, we also outline
 all the future steps to not lose the overall big picture.
 
+The figure below illustrates the design of the full implementation (less quota)
+and the part the first implementation phase covers. This KEP (the
+[Proposal](#proposal)) in its current form implements this first phase – the
+KEP will evolve and be supplemented with future phases getting implemented.
+
+![design](./design.svg)
+
 In the current design QoS-class resources are designed to be opaque to the CRI
 client in the sense that the container runtime takes care of configuration and
 control of the resources and the classes within.
 
 ### Phase 1
 
-This KEP (the [Proposal](#proposal)) implements the first phase. The goal is to
-enable a bare minimum for users to leverage QoS-class resources and start
-experimenting with them in Kubernetes:
+The goal is to enable a bare minimum for users to leverage QoS-class resources
+and start experimenting with them in Kubernetes:
 
 - extend the CRI protocol to allow QoS-class resource assignment and updates
 - implement pod annotations as an initial user interface
