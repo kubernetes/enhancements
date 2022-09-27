@@ -744,11 +744,8 @@ or blockio) support updates because of runtime limitations, yet.
 ```
 
 The `PodSandboxConfig` will be supplemented with a corresponding
-`class_resources` field that will be the Pod level configuration. Depending on
-the resource this might be interpreted as a pod-level default (that is used if
-nothing is specified in the `ContainerConfig`) or as a true Pod-level setting -
-in the end the detailed behavior will be responsibility of the container
-runtime.
+`class_resources` field that specifies the assignment of pod-level QoS-class
+resources.
 
 ```diff
  message PodSandboxConfig {
@@ -1428,10 +1425,9 @@ Describe them, providing:
 
 Implementation Phase 1: [pod annotations](#pod-annotations) are used as the
 initial user interface so assign QoS-class resources to containers. Exact size
-of each annotation varies (depending on the type of resource and whether it
-is pod-level of container-specific) but the annotation key is expected to be
-few tens of bytes. The value part is the name of the class expected to be a few
-bytes long.
+of each annotation varies (depending on the type of resource) but the
+annotation key is expected to be few tens of bytes. The value part is the name
+of the class expected to be a few bytes long.
 
 Future implementations: New fields in the pod spec will increase the size of
 `Pod` objects by a few bytes per class requested. New fields will be added to
