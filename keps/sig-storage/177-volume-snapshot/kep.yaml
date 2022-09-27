@@ -17,8 +17,6 @@ approvers:
   - "@msau42"
   - "@saad-ali"
   - "@thockin"
-prr-approvers:
-  - "@deads2k"
 see-also:
   - "keps/sig-storage/1900-volume-snapshot-validation-webhook"
 
