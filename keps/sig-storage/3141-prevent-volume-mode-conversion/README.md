@@ -338,23 +338,65 @@ decisions.
 
 ### Test Plan
 
-E2E tests will be added for this design, that attempt to restore a volume with
-and without requisite privileges. 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-#### Unit tests
+##### Prerequisite testing updates
 
-- With feature flag disabled:
-  - attempt to convert volume mode when creating a `PVC`
-  from a `VolumeSnapshot`.
-- With feature flag enabled, attempt to convert volume mode when creating a `PVC`
-from a `VolumeSnapshot`:
-  - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
-  annotation present.
-  - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
-  annotation.
-  - With `Spec.SourceVolumeMode` set to `nil`.
+<!--
+ Based on reviewers feedback describe what additional tests need to be added prior
+ implementing this enhancement to ensure the enhancements have also solid foundations.
+ -->
 
-#### E2E tests
+None. New E2E tests will be added for the transition to beta.
+
+##### Unit tests
+
+<!--
+ In principle every added code should have complete unit test coverage, so providing
+ the exact set of tests will not bring additional value.
+ However, if complete unit test coverage is not possible, explain the reason of it
+ together with explanation why this is acceptable.
+ -->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+The unit tests were added to the CSI external-provisioner repo. 
+
+- https://github.com/kubernetes-csi/external-provisioner/pull/726/
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- <test>: <link to test coverage>
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- <test>: <link to test coverage>
 
 The feature flag will be enabled for e2e tests. The tests will attempt to convert volume 
 mode when creating a `PVC` from a `VolumeSnapshot`:
@@ -468,6 +510,8 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+N/A.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
@@ -483,11 +527,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Yes. The feature flag was enabled and disabled separately in the csi-provisioner and snapshot-controller.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -503,6 +551,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+TODO: Include metric in provisioner
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -514,13 +564,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Events
+  - Event Reason: ProvisioningFailed
+  - Event Message: ailed to provision volume with StorageClass "csi-hostpath-sc": error getting handle for DataSource Type 
+  VolumeSnapshot by Name new-snapshot-demo: requested volume default/hpvc-restore modifies the mode of the source volume 
+  but does not have permission to do so. snapshot.storage.kubernetes.io/allowVolumeModeChange annotation is not present 
+  on snapshotcontent snapcontent-8d709f2e-db04-444f-aae2-e17d6c5398dd
+
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -539,6 +589,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -552,12 +604,16 @@ Pick one more of these and delete the rest.
 - [ ] Other (treat as last resort)
   - Details:
 
+TODO: Include metric in provisioner
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+TODO: Include metric in provisioner
 
 ### Dependencies
 
@@ -582,10 +638,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+No.
+
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
-
 
 This feature does not add any new API calls. 
 
