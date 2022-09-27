@@ -738,7 +738,6 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [x] Other (treat as last resort)
   - Details: We can only observe the behaviors based on pod scheduling results.
-  We can follow the steps described at [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
