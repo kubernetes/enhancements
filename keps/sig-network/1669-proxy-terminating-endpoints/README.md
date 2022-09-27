@@ -185,6 +185,7 @@ All existing E2E tests for Services should continue to pass.
 
 * E2E tests are in place, exercising all permutations of internalTrafficPolicy and externalTrafficPolicy.
 * Metrics to publish how many Services/Endpoints are routing traffic to terminating endpoints.
+* Rollback testing (manual or automated)
 
 ### Upgrade / Downgrade Strategy
 
@@ -252,7 +253,7 @@ gauge if a rollback is necessary.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade->downgrade->upgrade path has not been tested yet. We may want to require this for beta or GA.
+Upgrade->downgrade->upgrade testing (manual or automated) will be required for Beta. If tested manually, the steps will be documented in this KEP.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
