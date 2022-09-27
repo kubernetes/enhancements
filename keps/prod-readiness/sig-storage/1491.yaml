@@ -1,3 +1,5 @@
 kep-number: 1491
+beta:
+  approver: "@wojtek-t"
 stable:
   approver: "@wojtek-t"
