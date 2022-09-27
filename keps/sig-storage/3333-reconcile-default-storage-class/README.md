@@ -414,9 +414,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
     - Event Reason:
-- [ ] API .status
+- [X] API .spec
     - Condition name:
-    - Other field:
+    - Other field: `pvc.spec.storageClassName` changing from nil to current default StorageClass name after the default is set
 - [X] Other (treat as last resort)
     - Details: metric
 

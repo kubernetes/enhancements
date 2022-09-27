@@ -1,4 +1,4 @@
-title: Retroactive default StorageClass assignement
+title: Retroactive default StorageClass assignment
 kep-number: 3333
 authors:
   - "@RomanBednar"
@@ -43,5 +43,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - retroactive_storageclass_fail
-  - retroactive_storageclass_success
+  - retroactive_storageclass_total
+  - retroactive_storageclass_errors_total
