@@ -16,7 +16,7 @@
   - [Phase 1](#phase-1)
     - [API Shape](#api-shape)
       - [Policy Definitions](#policy-definitions)
-      - [Policy Configurations](#policy-configurations)
+      - [Policy Configuration](#policy-configuration)
       - [Match Criteria](#match-criteria)
     - [Reporting violations to Clients](#reporting-violations-to-clients)
     - [Informational type checking](#informational-type-checking)
@@ -24,7 +24,7 @@
     - [Safety measures](#safety-measures)
     - [Default Validations](#default-validations)
   - [Phase 2](#phase-2)
-    - [Namespace scoped policy configuration](#namespace-scoped-policy-configuration)
+    - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
       - [Variables](#variables)
       - [Scopes](#scopes)
@@ -34,10 +34,11 @@
     - [Resource constraints](#resource-constraints)
     - [Safety Features](#safety-features)
     - [Aggregated API servers](#aggregated-api-servers)
+    - [Short Circuiting](#short-circuiting)
     - [Metrics](#metrics)
   - [User Stories](#user-stories)
     - [Use Case: Singleton Policy](#use-case-singleton-policy)
-    - [Use Case: Shared Configuration](#use-case-shared-configuration)
+    - [Use Case: Shared Parameter Resource](#use-case-shared-parameter-resource)
     - [Use Case: Principle of least privilege policy](#use-case-principle-of-least-privilege-policy)
     - [Use Case: Validating native type with new field (version skew case)](#use-case-validating-native-type-with-new-field-version-skew-case)
     - [Use Case: Multiple policy definitions for different versions of CRD](#use-case-multiple-policy-definitions-for-different-versions-of-crd)
@@ -59,7 +60,7 @@
   - [Writing to Status](#writing-to-status)
   - [Versioning](#versioning)
     - [Policy Definition Versioning](#policy-definition-versioning)
-    - [Configuration CRD Versioning](#configuration-crd-versioning)
+    - [Parameter CRD Versioning](#parameter-crd-versioning)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -79,6 +80,13 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Type checking alternatives](#type-checking-alternatives)
+  - [Policy definition and configuration separation alternatives](#policy-definition-and-configuration-separation-alternatives)
+    - [Alternative: Duck Typed CRDs](#alternative-duck-typed-crds)
+    - [Alternative: OpenAPIv3 <code>$ref</code> in CRDs](#alternative-openapiv3--in-crds)
+    - [Alternative: <code>/matchRules</code> subresource](#alternative--subresource)
+    - [Alternative: <code>PolicyConfiguration</code> kind with config embedded](#alternative--kind-with-config-embedded)
+    - [Alternative: Generate CRDs](#alternative-generate-crds)
+  - [Message formatting alternatives](#message-formatting-alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -348,7 +356,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: "replicalimit-policy.example.com"
 spec:
-  config:
+  paramSource:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
@@ -361,97 +369,109 @@ spec:
   denyReason: Invalid
   validations:
     - name: max-replicas
-      expression: "object.spec.replicas <= config.maxReplicas"
-      messageExpression: "'object.spec.replicas must be no greater than ' + string(config.maxReplicas)"
+      expression: "object.spec.replicas <= params.maxReplicas"
+      message: "object.spec.replicas must be no greater than {1}"
+      messageArgs: ["params.maxReplicas"]
       # ...other rule related fields here...
 ```
 
-The `spec.config` field of the `ValidatingAdmissionPolicy` specifies the kind of
-resources used to configure this policy. For this example, it is configured by
-`ReplicaLimit` custom resources. In this example, the CEL expression contains
-`config.maxReplicas` which will only work if the CRD for `ReplicaLimit` declares
-`maxReplicas` as a required field.
+The `spec.paramSource` field of the `ValidatingAdmissionPolicy` specifies the
+kind of resources used to parameterize this policy. For this example, it is
+configured by `ReplicaLimit` custom resources. Note in this example how the CEL
+expression references to the parameters via the CEL `params` variable, e.g.
+`params.maxReplicas`.
 
 `spec.match` specifies what resources this policy is designed to validate. This
 also guides type-checking, see the "Informational type checking" section for
 details.
 
 The `spec.validations` fields contain CEL expressions. If an expression
-evaluates to false, the validation check is enforced (the enforcement can be one
-of: `Deny`, `Warn` or `Audit`).
-
+evaluates to false, the validation check is enforced (the below `PolicyBinding`
+configures the enforcement).
 
 This is a "Bring Your Own CRD" design. The admission policy definition author is
-responsible for providing the `ReplicaLimit` configuration CRD.
+responsible for providing the `ReplicaLimit` parameter CRD.
 
-To configure an admission policy, "policy configurations" of the configuration
-CRD kind are created. For example:
+To configure an admission policy for use in a cluster, a binding and parameter
+resource are created. For example:
 
 ```yaml
-# Policy configurations
-apiVersion: rules.example.com/v1
-kind: ReplicaLimit
+# Policy binding
+apiVersion: admissionregistration.k8s.io/v1
+kind: PolicyBinding
 metadata:
-  name: "replica-limit-test.example.com"
+  name: "xyzlimit-scale.example.com"
 spec:
+  policy: "replicalimit-policy.example.com"
+  params: "replica-limit-test.example.com"
   match:
     namespaceSelectors:
     - key: environment,
       operator: In,
       values: ["test"]
-  enforcement:
-    max-replicas: Deny
-  maxReplicas: 3
+  enforcement: [Deny]
 ```
 
-This policy configuration limits deployments to a max of 3 repliacas in all
+```yaml
+# Policy parameters
+apiVersion: rules.example.com/v1
+kind: ReplicaLimit
+metadata:
+  name: "replica-limit-test.example.com"
+maxReplicas: 3
+```
+
+This policy parameter resource limits deployments to a max of 3 repliacas in all
 namespaces in the test environment.
 
-Note that in addition to the `maxReplicas` field there is a `spec.match` field.
-This is a standard field that all policy configurations will have. See the
-"Policy Configurations" for more details about this field.
+An admission policy may have multiple bindings. To bind all other environments
+environment to have a maxReplicas limit of 100, create another `PolicyBinding`:
 
-An admission policy may have multiple configurations. To configure all other
-environments environment to have a maxReplicas limit of 100, create another
-configuration:
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: PolicyBinding
+metadata:
+  name: "xyzlimit-scale.example.com"
+spec:
+  policy: "replicalimit-policy.example.com"
+  params: "replica-limit-nontest.example.com"
+  match:
+    namespaceSelectors:
+    - key: environment,
+      operator: NotIn,
+      values: ["test"]
+  enforcement: [Deny]
+```
 
 ```yaml
 apiVersion: rules.example.com/v1
 kind: ReplicaLimit
 metadata:
   name: "replica-limit-nontest.example.com"
-spec:
-  match:
-    namespaceSelectors:
-    - key: environment
-      operator: NotIn
-      values: ["test"]
-  enforcement:
-    max-replicas: Deny
-  maxReplicas: 100
+maxReplicas: 100
 ```
 
-Configurations can have overlapping match criteria. The policy is evaluated for
-each matching configuration. In the above example, the "nontest" policy
-configuration could instead have been defined as a global policy:
+Bindings can have overlapping match criteria. The policy is evaluated for each
+matching binding. In the above example, the "nontest" policy binding could
+instead have been defined as a global policy:
 
 ```yaml
-apiVersion: rules.example.com/v1
-kind: ReplicaLimit
+apiVersion: admissionregistration.k8s.io/v1
+kind: PolicyBinding
 metadata:
-  name: "replica-limit-global.example.com"
+  name: "xyzlimit-scale.example.com"
 spec:
+  policy: "replicalimit-policy.example.com"
+  params: "replica-limit-nontest.example.com"
   match:
     namespaceSelectors:
-    - key: environment
+    - key: environment,
       operator: Exists
-  enforcement:
-    max-replicas: Deny
-  maxReplicas: 100
+  enforcement: [Deny]
 ```
 
-With this configuration, the test and global policy configurations overlap.
-Resources admitted to test environment would then be checked against both policy
+With this binding, the test and global policy bindings overlap. Resources
+admitted to test environment would then be checked against both policy
 configurations.
 
 To summarize, this "API Shape" separates admission policy _definition_ from
@@ -474,13 +494,12 @@ Each `ValidatingAdmissionPolicy` resource contains a `spec.match` to declare
 what resources it validates. This field is required.
 
 - `spec.match` constrains which resources this policy can be applied to. Policy
-  configurations each have match rules with further narrow this constraint, but
-  cannot expand it. This allows the CEL expressions to make safe assumptions.
-  E.g. a CEL expression that is constrained to CREATES and UPDATES of resources
-  is guaranteed the root `object` variable is never null, but a CEL expression
-  that might need to evaluate a DELETE must handle the root `object` variable
-  being null. See below "Match criteria" section for how match criteria is
-  described.
+  bindings each have match rules with further narrow this constraint, but cannot
+  expand it. This allows the CEL expressions to make safe assumptions. E.g. a
+  CEL expression that is constrained to CREATES and UPDATES of resources is
+  guaranteed the root `object` variable is never null, but a CEL expression that
+  might need to evaluate a DELETE must handle the root `object` variable being
+  null. See below "Match criteria" section for how match criteria is described.
 - `spec.match` guides CEL expression type checking, see the below "Type safety"
   section for more details. 
 
@@ -503,362 +522,62 @@ organized into CEL variables as well as some other useful variables:
 See below "Reporting violations to Clients" for more detail about how the
 `spec.validations` field works and how violations are reported.
 
-##### Policy Configurations
+##### Policy Configuration
 
-Policy configurations are the interface between `ValidatingAdmissionPolicy`
-authors and the administrators that configure the policies for clusters. The
-configuration allows policy definition authors to define how exactly a
-`ValidatingAdmissionPolicy` may be configured using a OpenAPIv3 structural
-schema.
+`PolicyBinding` resources and parameter CRDs together define how cluster
+administrators configure policies for clusters.
 
-How these configuration CRDs are defined has not yet been decided.
-Alternatives are summarized here and discussed in more detail below:
+Each `PolicyBinding` contains:
 
-<<[UNRESOLVED jpbetz, liggitt, ?? ]>>
-Reach consensus on this.
-<<[/UNRESOLVED]>>
-
-| Design Alternative                                | Summary                        |
-| ------------------------------------------------- | ------------------------------ |
-| Duck Typed CRDs                                   | Require CRDs be defined with match field of correct structure |
-| `PolicyConfiguration` kind with config reference  | Match criteria is defined in builtin type which references a config  | 
-| OpenAPIv3 `$ref` in CRDs                          | Match criteria is defined by k8s as a OpenAPIv3 type and CRDs schemas are modified to be allowed to reference it |
-| `/matchRules` subresource                         | Use a subresource to enforce CRDs provide match criteria      |
-| `PolicyConfiguration` kind with config embedded   | Match criteria is defined in a kind, it embeds a config CRD that is freeform |
-| Generate CRDs                                     | Policy defintions contain inline OpenAPIv3 schema for config, CRD is generated with both match and config sections |
-
-###### Alternative: Duck Typed CRDs
-
-This is the alternative shown in the initial examples of this KEP.
-
-Policy authors write a CRD to define how each policy is configured. E.g.:
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: replicalimit.rules.example.com
-  annotations:
-    admission.kubernetes.io/is-policy-configuration-definition: "true"
-spec:
-  group: example.com
-  versions:
-    - name: v1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              properties:
-                config:
-                  type: object
-                    maxReplicas:
-                      type: int
-  scope: Cluster
-  names:
-    kind: ReplicaLimit
-```
-
-The `admission.kubernetes.io/is-policy-configuration-definition` annotation
-means "inject the correct .spec.match during admission and keep it up to date
-with a controller". (Suggested by deads2k). This minimizes version skew if new
-match criteria is added to `spec.match` and also minimizes development effort by
-removing the need to manually declare the fields in CRDs.
-
-The main challenge with this alternative is dealing with mismatches between how
-CRDs declare the `spec.match` schema and what the apiserver expects, even with a
-controller keeping it in sync, it can briefly become out of sync. For this our
-plan is:
-
-- When consuming configuration CRDs OR policy configuration resources used for
-  policy configuration:
-  - If any unrecognized fields, missing required fields, or incorrectly typed
-    fields are found under `spec.match`:
-    - For configuration CRDs:
-      - Set the `ValidatingAdmissionPolicy` state to "misconfigured" in the
-        status (via a Condition, I believe).
-      - Trigger the `FailurePolicy` on all admission validations.
-      - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
-    - For policy configuration resources:
-      - Track in the status of `ValidatingAdmissionPolicy` that some policy
-        configurations are misconfigured. (also via a Condition?).
-      - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
-      - Trigger the `FailurePolicy` on admission for resources that match the
-        policy configuration.
-  - If the CRD is deleted:
-    - Set state to "misconfigured
-    - Trigger `FailurePolicy` on all admission validations
-    - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
-
-A partial `spec.match` schema (subset of the full schema) is okay so long as
-only optional fields are omitted. But any unrecognized field in the `spec.match`
-would not be allowed. 
-
-Proposed annotation: 
-
-> Example: `admission.kubernetes.io/is-policy-configuration-definition: "true"`
-> 
-> Used on: CustomResourceDefinition
-> 
-> What a CustomResourceDefinition has the annotation set to "true", the
-> OpenAPIv3 schema of all versions of this resource is modified and then
-> kept-in-sync by a controller to always contain the expected schema fields of
-> admission policy configuration resources.
-
-xref: https://kubernetes.io/docs/reference/labels-annotations-taints/
-
-Pros:
-
-- A single resource is used to configure both the match criteria and
-  configuration params of a policy.
-- Provides a clear marker on every CRD that is used for policy configuration
-  that it is intended for this purpose, in a machine readable way.
-
-Cons:
-
-- API server must check for a wide range of error conditions and define how
-  exactly it handles each of them.
-- If the `spec.match` schema is incorrectly defined, CRD author might not
-  realize it since they need to check the status of the corresponding
-  `ValidatingAdmissionPolicy` for any errors.
-
-###### Alternative: `PolicyConfiguration` kind with config reference
-
-Require two resources:
-
-- A `PolicyConfiguration` resources contains the match criteria and a reference
-  to a configuration resource.
-- A configuration resource that contains only configuration (no match criteria).
+- `spec.policy` - A reference to the policy being configured
+- `spec.match` - Match criteria for which resources the policy should validate
+- `spec.params` - Reference to the custom resource containing the params to use
+  when validating resources 
+- `spec.enforcement` - How validation failures should be enforced
 
 Example:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyConfiguration
+kind: PolicyBinding
 metadata:
   name: "xyzlimit-scale.example.com"
-  labels:
-    policyConfig: xyzlimit
 spec:
+  policy: xyzlimit-scale.example.com
+  params: xyzlimit-scale-settings.example.com
   match:
-    resourceRules:
-      - apiGroups: ["*"]
-        apiVersions: ["*"]
-        resources: ["*/scale"]
-  config:
-    name: xyzlimit-scale-config.example.com
+    namespaceSelectors:
+    - key: environment,
+      operator: Exists
+  enforcement: [Deny, Audit]
 ```
+
+Each parameter CRD defines the custom resources that are referenced by the
+`spec.params` field of `PolicyBinding` resources. Example:
 
 ```yaml
 apiVersion: rules.example.com/v1
 kind: XyzLimit
 metadata:
-  name: "xyzlimit-config.example.com"
-spec:
-  allowed: ["a", "b", "c"]
-  banned: ["x", "y", "z"]
-  xyz:
-    fuzzFactor: 0.8
-    reticulate: true
+  name: "xyzlimit-settings.example.com"
+allowed: ["a", "b", "c"]
+banned: ["x", "y", "z"]
+xyz:
+  fuzzFactor: 0.8
+  reticulate: true
 ```
 
-Note that for policy configurations that require no parameterization, only the
-`PolicyConfiguration` is needed.
+Note that for policies that require no parameterization, only the
+`PolicyBinding` is needed.
 
-The `metadata.labels.policyConfig` label on `PolicyConfiguration` is needed so
-that each `ValidatingAdmissionPolicy` use a label selector to reference the
-policy configurations that configure it.
-
-Pros:
+See "Alternatives considered" section for rejected alternatives. This design was
+selected because:
 
 - Matching criteria is fully defined and validated in a builtin type.
-- The configuration data that the policy definition is treated as an opaque
-  payload from an apiserver perspective, it passes it to the policy definition
-  so that CEL expressions can access it, but there is no code in the apiserver
-  that cares about the structure of the configuration CRD.
-- If later Kubernetes OpenAPIv3 supports `$ref`, there is a migration path from
-  this approach to the `$ref` approach (below).
-
-Cons:
-
-- Requires two resources for each configuration of a policy
-  - Cannot atomically change the match rules and configuration of a policy configuration
-- Must establish relationships between `ValidatingAdmissionPolicy` and
-  `PolicyConfiguration` resources.
-
-###### Alternative: OpenAPIv3 `$ref` in CRDs
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: replicalimit.rules.example.com
-spec:
-  group: example.com
-  versions:
-    - name: v1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              properties:
-                config:
-                  type: object
-                    maxReplicas:
-                      type: int
-                match:
-                  $ref: "#/components/schemas/matchrules"
-  scope: Cluster
-  names:
-    kind: ReplicaLimit
-```
-
-Pros:
-
-- Match rule schema is owned by Kubernetes, so as it evolves, CRDs automatically
-  pick up changes.
-
-Cons:
-
-- CRDs to not yet support OpenAPIv3 `$ref`s, so support would need to be added,
-  presumably this would require a separate KEP.
-
-###### Alternative: `/matchRules` subresource
-
-The idea of this alternative is to require a configuration CRD to declare that
-it provides match criteria by exposing a `/matchRules` subresource:
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: replicalimit.example.com
-spec:
-  group: example.com
-  versions:
-    ... # configuration schema(s) go here
-  subresources:
-    matchRules:
-      matchRulesPath: .spec.match
-```
-
-Pros:
-
-- CRD explicitly opt-in to providing match criteria in a structured way.
-- Follows pattern used by scale subresource to provide polymorphism across CRDs
-
-Cons:
-
-- One of the primary purposes of subresources is accessing/modifying a portion
-  of a resource independently, which is not what we're trying to achieve.
-- Kubernetes development/maintenance perspective, subresources, particularly for
-  CRDs, are expensive to introduce and maintain.
-
-###### Alternative: `PolicyConfiguration` kind with config embedded
-
-```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyConfiguration
-metadata:
-  name: "replica-limit-prod.example.com"
-spec:
-  match:
-    namespaceSelectors:
-    - key: environment,
-      operator: NotIn,
-      values: ["test"]
-  config:
-    apiVersion: rules.example.com/v1
-    kind: ReplicaLimit
-    spec:
-      maxReplicas: 100
-```
-
-Pros:
-
-- Matching criteria is fully defined and validated in a builtin type
-
-Cons:
-
-- Embedded config needs the same treatment as custom resource, but
-  reimplementing it all on an embedded resource is, at best, highly impractical
-  in the apiserver as it exists today. E.g.. there is not automatic validation
-  of the embedded resource.
-
-###### Alternative: Generate CRDs
-
-The `ValidatingAdmissionPolicy` contains a OpenAPIv3 schema defining how the
-policy is configured. The schema need only contains the policy specific
-configuration (it does not need to contain match rules or anything else that is
-standard).
-
-```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
-kind: ValidatingAdmissionPolicy
-metadata:
-  name: "validate-xyz.example.com"
-spec:
-  config:
-    group: rules.example.com
-    kind: ReplicaLimit
-    version: v1
-    openAPIV3Schema:
-      type: object
-      properties:
-        spec:
-          type: object
-          properties:
-            maxReplicas:
-              type: int
-```
-
-This allows the apiserver to combine the configuration schema with the match
-schema and then generate a CRD. The apiserver then can run a control loop to
-always keep the CRD match stanzas in sync with what is expected.
-
-This could alternatively be kept separate from the policy definition by having
-something like:
-
-```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
-kind: ValidatingAdmissionConfigurationDefinition
-metadata:
-  name: "validate-configuration-xyz.example.com"
-spec:
-  configSchema:
-    group: rules.example.com
-    kind: ReplicaLimit
-    version: v1
-    openAPIV3Schema:
-      type: object
-      properties:
-        spec:
-          type: object
-          properties:
-            maxReplicas:
-              type: int
-```
-
-Pros:
-
-- Policy author doesn't need to define the CRD. It can instead be generated for
-  them.
-
-Cons:
-
-- Most of the cons of "Duck Typed CRDs" alternative apply, since ultimately a
-  CRD is created and behaves the same.
-- This implies that the policy owns the configuration. But we have use cases
-  where multiple policies share the same configuration. For this model it seems
-  misleading and potentially problematic to have both policies attempting to
-  define the same configuration.
+- Type checking is straight forward.
+- Policy parameterization is separated from the policy binding, allowing for
+  well abstracted parameterization types to be used by applied in different ways
+  by multiple policies.
 
 ##### Match Criteria
 
@@ -877,9 +596,8 @@ For CEL expressions, the primary benefits of match criteria are:
 - Match criteria establishes bounds on what sort of admission requests the CEL
   expressions must consider. The CEL expressions can be written knowing that the
   match criteria has filtered out requests that is does not need to consider.
-- Match criteria is available on policy configurations and allows the
-  configuration author to further constrain what resources the particular
-  configuration applies to.
+- Match criteria is available on policy bindings and allows the binding author
+  to further constrain what resources the particular binding applies to.
 
 Matching is performed in quite a few systems across Kubernetes:
 
@@ -903,10 +621,17 @@ Matching is performed in quite a few systems across Kubernetes:
 
 WH = Admission webhooks, P&F = Priority and Fairness
 
-Match criteria must be declared in the `spec.match` field of policy
-configuration resources (see `ReplicaLimit` in the above example) and will be
-declared with API types in a format similar to admission webhooks, P&F, RBAC and
-Audit, but with improved support for exclude matching.
+Match criteria must be declared in the `spec.match` field of `PolicyBinding`
+resources (see `ReplicaLimit` in the above example) and will be declared with
+API types in a format similar to admission webhooks, P&F, RBAC and Audit, but
+with improved support for exclude matching.
+
+*Excluding*:
+
+Exclude support make it possible to do things like validate all namespaces
+except `kube-system`. This is difficult to support with out direct exclude
+support, particularly for 3rd party policy enforcements systems that cannot
+assume permission to set labels on kube-system.
 
 Exclude matching will be offered adding `exclude<fieldname>` for match fields
 where exclude is appropriate. Fields such as `namespaceSelector` that already
@@ -919,14 +644,7 @@ E.g.:
 match:
   excludeNamespaces: ["kube-system"] # excludeNamespaces and namespaces are mutually exclusive
   excludePermissions: ["all-the-superpowers"]
-  namespaceSelector:
-  - keys: "xyz"
-    operator: NotIn
-    values: ["1"]
-  - keys: "xyz"
-    operator: NotIn
-    values: ["1"]
-  labelSelector: # Already has exclude support via NotIn and DoesNotExist
+  namespaceSelector: # Already has exclude support via NotIn and DoesNotExist
   - keys: "xyz"
     operator: NotIn
     values: ["1"]
@@ -942,66 +660,6 @@ match:
     resources:        ["*"]
   ...
 ```
-
-*Advanced Matching*:
-
-<<[UNRESOLVED, maxsmythe, jpbetz ]>>
-Important users are using GVK and there is no conversion to GVR..
-Option: Add direct support in matching.
-Option: Make it possible for cel to do this check in a well supported way.
-<<[/UNRESOLVED]>>
-
-<<[UNRESOLVED, maxsmythe, jpbetz ]>>
-For a policy framework that supports this, are we stuck having to munge CEL code
-to get this effect? Support for this, or at least a well lit path is valuable.
-<<[/UNRESOLVED]>>
-
-Matching defined in YAML is not as expressive as CEL functions. Any additional
-filtering of objects that cannot be expressed in the match rules will need to be
-handled as "second pass" match filtering in CEL.
-
-Without any additional support, the only possible approach is:
-
-```yaml
-  validations:
-    - expression: "!(<CEL match expression>) || <actual validation expression 1>"
-    - expression: "!(<CEL match expression>) || <actual validation expression 2>"
-```
-
-But if we were to offer a way for some validations to short-circuit validation
-execution, this could be simpler. E.g.:
-
-```yaml
-  validations:
-    - expression: "<CEL match expression>"
-      failureTreatment: NoMatch # TODO: What's the least bad way to express this?
-    - expression: "<normal validation expression 1>"
-    - expression: "<normal validation expression 2>"
-```
-
-The other use for short-circuiting is to skip any other validations, this can be
-used in a security context (if authz check fails, don't show user any other
-info), or more generally to minimize noise where subsequent validation messages
-are of low value if a particular validation fails.
-
-```yaml
-  validations:
-    - expression: "<CEL precondition check>"
-      failureTreatment: IgnoreOtherValidationFailures
-    - expression: "..."
-    - expression: "..."
-```
-
-`failureTreatment` would support:
-
-- `NoMatch` - The resource is considered "not matched" by this policy check and
-  is allowed to be admitted (at least by this policy) regardless of the outcome
-  of other validations.
-- `Enforce` - Apply the enforcement of this validation.
-- `IgnoreOtherValidationFailures` - Only this policy failure is enforced. Any
-  other validation failures are ignored. If multiple validations have this
-  `failureTreatment` the first in the list to failure is shown and all others
-  are ignored.
 
 *Special case: apiGroup + resource + operation matching*
 
@@ -1024,8 +682,8 @@ they intend to match.
 
 The same principle applies here but with one major difference-- if a policy
 definition has a match rules for apiGroup + resource + operation, then all
-configurations of that policy are already constrainted to that apiGroup +
-resource + operation match.
+bindings of that policy are already constrainted to that apiGroup + resource +
+operation match.
 
 Take, for example:
 
@@ -1034,7 +692,7 @@ apiVersion: admissionregistration.k8s.io/v1alpha1
 kind: ValidatingAdmissionPolicy
 ...
 spec:
-  config: ...
+  paramSource: ...
   match:
     resourceRules:
     - apiGroups:   ["apps"]
@@ -1044,11 +702,11 @@ spec:
 ```
 
 Since this policy is constrainted to create/update of deployments. Policy
-configurations don't need to repeat this constraint. This would be sufficient:
+bindings don't need to repeat this constraint. This would be sufficient:
 
 ```yaml
-apiVersion: rules.example.com/v1
-kind: ReplicaLimit
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: PolicyBinding
 ...
 spec:
   match:
@@ -1062,7 +720,7 @@ We can enforce this by requiring:
 
 - Policy definitions match rules are validated to match one or more apiGroup +
   resource + operation.
-- Policy configurations are not required to match apiGroup + resource +
+- Policy bindings are not required to match apiGroup + resource +
   operation since the policy definition is already required to do this.
 
 This encourages policy definition authors to consider the assumptions that the
@@ -1075,11 +733,11 @@ The Kubernetes admission chain also scales better, and is more resiliant, when
 matching is precise and the validation expressions don't need to do any
 post-matching checks that could have been handled by matching.
 
-Note that if a policy configuration is to be applied as broadly as possible
-(i.e. everywhere allowed by the policy definition) it must do so by using a
-wildcard match rule. An `effect: MatchAll` (only permitted if no other match
-criteria is present) could be offered to make this easy, or an existing match
-criteria that supports wildcards could be used.
+Note that if a policy binding is to be applied as broadly as possible (i.e.
+everywhere allowed by the policy definition) it must do so by using a wildcard
+match rule. An `effect: MatchAll` (only permitted if no other match criteria is
+present) could be offered to make this easy, or an existing match criteria that
+supports wildcards could be used.
 
 Match Policy:
 
@@ -1100,66 +758,6 @@ xref:
 This section focuses on how information is reported back to clients in
 when validations fail.
 
-<<[UNRESOLVED jpbetz, DangerOnTheRanger ]>>
-
-Decide on message formatting.
-
-Alternative: offer a CEL expression
-
-```yaml
-- expression: "..."
-  messageExpression: "string(object.int1) + ' is less than ' + string(object.int2)"
-```
-
-Cons:
-
-- CEL requires explicit casts to string
-- Plain string message support is a bit messy. Options:
-  - Use CEL always: `"'this is a simple message'"`
-  - Offer both plain string (`message`) and CEL (`messageExpression`)
-
-Alternative: Inline CEL expressions
-
-Single `message` field but it supports templating, e.g.:
-
-```
-"{{object.int1}} is less than {{object.int2}}"
-```
-
-Cons:
-
-- Must defining escaping rules in string for including `{{` or `}}` as a literal
-- CEL expressions must be properly escaped
-
-Alternative: Inline JSON path
-
-```
-"{{.object.int1}} is less than {{.object.int2}}"
-```
-
-Cons:
-
-- (Same as above "Inline CEL expressions")
-- Author must switch between using CEL and JSON Path in adjacent fields
-- JSON Path is less expressive than CEL (both a pro and a con)
-
-Alternative: CEL expressions, separate args from format string
-
-```yaml
-- expression: "..."
-  message: "{1} is less than {2}"
-  messageArgs: ["object.int1", "object.int2"]
-```
-
-Note "%s is less than %s" is also viable, but CEL can always preformat and emit
-a string for cases where developer needs more control.
-
-Cons:
-
-- Slightly more verbose format (but avoid all the escaping problems)
-
-<<[/UNRESOLVED]>>
-
 Goals:
 
 - Feature parity with `AdmissionReview`
@@ -1171,7 +769,7 @@ High level proposal:
 
 - Each policy may set a `denyReason` and/or `denyCode`
 - Each validation may define a message:
-  - `message` - may contain `{1}` formatted args that are supplied by
+  - `message` - may contain `{1}` format args that are supplied by
     `meesageArgs: [<cel expression>, <cel expressiion>, ...]`
     - If `meesage` is absent, `expression` and `name` will be included in the
       failure message
@@ -1184,7 +782,7 @@ High level proposal:
   - `Audit`
 - Policy definitions identify validation expressions by name so that if the
   enforcement is `Audit` the name can be used as the audit annotation key.
-- Policy configurations set enforcement options
+- Policy bindings set enforcement options
 
 Example policy definition:
 
@@ -1210,14 +808,14 @@ spec:
       message: "name contains 'bad' which is discouraged due to ..."
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
-      messageExpression: "{1} contains 'suspicious'"
+      message: "{1} contains 'suspicious'"
       messageArgs: ["self.name"]
 ```
 
 corresponding policy configuration:
 
 ```yaml
-kind: XyzConfig
+kind: PolicyBinding
 ...
 spec:
   ...
@@ -1278,10 +876,13 @@ enforcement, we will default failure policy to "fail" and allow it to
 be configured on a per-policy basis:
 
 ```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+spec:
+  ...
   failurePolicy: Ignore # The default is "Fail"
   validations:
-    - expression: "object.spec.xyz == configuration.x"
-      
+    - expression: "object.spec.xyz == params.x"  
 ```
 
 #### Safety measures
@@ -1311,14 +912,14 @@ higher level. This could be added later.
 #### Default Validations
 
 A `defaultValidations` field will allow policy definition authors to define
-expressions which are evaluated only if the policy definition matches a
-resource but no policy configurations match a resource.
+expressions which are evaluated when the policy definition matches a resource
+but no policy configurations match that resource.
 
 Behavior:
 
-- `defaultValidations` do not have access to config.
-- `spec.config` is optional only when `defaultValidations` are present
-- (`spec.config` and `spec.validations` must both be either present or absent)
+- `defaultValidations` do not have access to params.
+- `spec.paramSource` is optional only when `defaultValidations` are present
+- (`spec.paramSource` and `spec.validations` must both be either present or absent)
 - When a policy has `defaultValidations`, it must also declare the enforcement
   level of those validations
 
@@ -1343,24 +944,24 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 ...
 spec:
-  config:
+  paramSource:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
   match:
     ...
   validations:
-    expression: "object.spec.replicas <= config.maxReplicas"
+    expression: "object.spec.replicas <= params.maxReplicas"
     name: max-replicas
   defaultValidations:
   - expression: "object.spec.replicas <= 5"
-    enforcement: Deny
+    enforcement: [Deny]
 ```
 
 Reporting/debugging/analysis implications:
 
 - Violations for non-singleton policies will always be reported using a {policy
-  definition, policy configuration} identifier pair. To be consistent with this,
+  definition, policy binding} identifier pair. To be consistent with this,
   singleton policies can be use a {policy definition, policy definition}
   identifier pair. This is a bit verbose but keeps reporting consistent and
   makes tracing a violation back to resources that produced it straight-forward.
@@ -1371,12 +972,13 @@ All these capabilities are required before Beta, but will not be implemented
 in the first alpha release of this enhancement due to the size and complexity
 of this enhancement.
 
-#### Namespace scoped policy configuration
+#### Namespace scoped policy binding
 
-For phase 1, policy configuration resources were only allowed to be cluster
-scoped. We can support namespace scoped policy configuration as follows:
+For phase 1, policy bindings were only allowed to be cluster scoped. We can
+support namespace scoped policy bindings as follows:
 
-- If the configuration resource is namespace scoped, it implicitly matches
+- Add a `NamespacePolicyBinding` resource.
+- If the parameter resource is namespace scoped, it implicitly matches
   resources only in the namespace it is in, but may further constrain what
   resources it matches with additional match criteria.
 
@@ -1385,9 +987,9 @@ namespace. As an example, ResourceQuota works this way.
 
 Details to consider:
 
-- Should a policy support both cluster scoped and namespace scoped
-  configuration? If so how? It would need two different configuration CRDs
-  (since a CRD must either be cluster scoped or namespace scoped, not both).
+- Should a policy support both cluster scoped and namespace scoped binding? If
+  so how? It would need two different parameter CRDs (since a CRD must either be
+  cluster scoped or namespace scoped, not both).
 
 #### CEL Expression Composition
 
@@ -1467,7 +1069,8 @@ For example, to validate all containers:
   validations:
     - scope: "spec.containers[*]"
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "scope.name + 'does not start with 'xyz'"
+      message: "{1} does not start with 'xyz'"
+      messageArgs: ["scope.name"]
 ```
 
 To make it possible to access the path information in the scope, we can offer a
@@ -1481,7 +1084,8 @@ spec.x[xKey].y[yIndex].field
   validations:
     - scope: "x[xKey].y[yIndex].field"
       expression: "scope.startsWith('xyz-')"
-      messageExpression: "scopePath.xKey + ', ' + scopePath.yKey + ': some problem'"
+      message: "{1}, {2}: some problem"
+      messageArgs: ["scopePath.xKey", "scopePath.yIndex"]
 ```
 
 Prior art:
@@ -1502,7 +1106,8 @@ Note: We considered extending to a list of scopes, e.g.:
   validations:
     - scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "scope.name + 'does not start with 'xyz'"
+      message: "{1} does not start with 'xyz'"
+      messageArgs: ["scope.name"]
 ```
 
 But feedback was this is signficantly more difficult to understand.
@@ -1644,21 +1249,81 @@ Plan:
 - Do not offer type checking for aggregated types.
 - Support ValidatingAdmissionPolicy in aggregated API servers.
 
+
+#### Short Circuiting
+
+Matching defined in YAML is not as expressive as CEL functions. Any additional
+filtering of objects that cannot be expressed in the match rules will need to be
+handled as "second pass" match filtering in CEL.
+
+Without any additional support, the approach is:
+
+```yaml
+  validations:
+    - expression: "!(<CEL match expression>) || <actual validation expression 1>"
+    - expression: "!(<CEL match expression>) || <actual validation expression 2>"
+```
+
+But if we were to offer a way for some validations to short-circuit validation
+execution, this could be simpler. E.g.:
+
+```yaml
+  validations:
+    - expression: "<CEL match expression>"
+      failureTreatment: NoMatch # TODO: What's the least bad way to express this?
+    - expression: "<normal validation expression 1>"
+    - expression: "<normal validation expression 2>"
+```
+
+The other use for short-circuiting is to skip any other validations, this can be
+used in a security context (if authz check fails, don't show user any other
+info), or more generally to minimize noise where subsequent validation messages
+are of low value if a particular validation fails.
+
+```yaml
+  validations:
+    - expression: "<CEL precondition check>"
+      failureTreatment: IgnoreOtherValidationFailures
+    - expression: "..."
+    - expression: "..."
+```
+
+`failureTreatment` should support:
+
+- `NoMatch` - The resource is considered "not matched" by this policy check and
+  is allowed to be admitted (at least by this policy) regardless of the outcome
+  of other validations.
+- `IgnoreOtherValidationFailures` - Only this policy failure is enforced. Any
+  other validation failures are ignored. If multiple validations have this
+  `failureTreatment` the first in the list to failure is shown and all others
+  are ignored.
+- unset - Apply the configured enforcement for this validation.
+
+Use case: Match GVK instead of GVR
+
+Possible via: 
+- `resourceRules: { apiGroups: "apps", apiVersions: "v1" }`
+- `{expression: "object.metadata.kind in ['Pod', 'Deployment']", failureTreatment: NoMatch}`
+
+(A system that must map from GVK to GVR could also retain a set of well known
+mappings and then fall back to the above only for entries missing from the
+mapping)
+
 #### Metrics
 
 Goals:
 
 - Parity with admission webhook metrics
   - Should include counter of deny, warn and audit violations
-  - Label by {policy, policy configuration, validation expression} identifiers 
-- Counters for number of policy defintions and policy configurations in cluster
+  - Label by {policy, policy binding, validation expression} identifiers 
+- Counters for number of policy defintions and policy bindings in cluster
   - Label by state (active vs. error), enforcement action (deny, warn)
 
 Granularity:
 
 Latency metrics should be per {policy, validation expression}. The next level of
-granularity would be {policy, configuration, validation expression}, but that
-the number of configurations can become quite large, so let's limit it to
+granularity would be {policy, binding, validation expression}, but that
+the number of biindings can become quite large, so let's limit it to
 {policy, validation expression} for now.
 
 - xref: [Metrics Provided by OPA Gatekeeper](https://open-policy-agent.github.io/gatekeeper/website/docs/metrics/)
@@ -1671,8 +1336,8 @@ known applications and their use case requirements.
 
 #### Use Case: Singleton Policy
 
-User wishes to define a simple policy that required no configuration. They don't
-want to create configuration CRD since what they're doing can be expressed quite
+User wishes to define a simple policy that required no parameters. They don't
+want to create parameter CRD since what they're doing can be expressed quite
 simply in a single CEL expression.
 
 ```yaml
@@ -1692,17 +1357,15 @@ spec:
   - expression: "object.spec.replicas < 100"
 ```
 
-#### Use Case: Shared Configuration
+#### Use Case: Shared Parameter Resource
 
-User wishes to define a configuration for a list of banned words that may not be
-used in any of a wide range of identifiers in the cluster (resource names,
-container names, ...).
+User wishes to define a CRD for a list of banned words that may not be used in
+any of a wide range of identifiers in the cluster (resource names, container
+names, ...).
 
-- Configuration CRD is defined to hold the list of banned words.
+- Parameter CRD is defined to hold the list of banned words.
 - Multiple policies are defined for different resources. The policies all
-  reference the same configuration CRD. 
-- Policy must be able to specify it's own matching rules since the configuration
-  applies cluster wide.
+  reference the same parameter CRD. 
 - A single custom resource is defined with the list of banned words (but has not
   matching rules of its own).
 
@@ -1731,7 +1394,7 @@ spec:
       operations:  ["CREATE", "UPDATE"]
       resources:   ["pods"]
   validations:
-  - expression: "!object.name in config.bannedWords"
+  - expression: "!object.name in params.bannedWords"
 ```
 
 ```yaml
@@ -1747,16 +1410,18 @@ spec:
       operations:  ["CREATE", "UPDATE"]
       resources:   ["pods"]
   validations:
-  - expression: "!object.spec.containers.any(c, c.name in config.bannedNames)"
-  - expression: "!object.spec.initContainers.any(c, c.name in config.bannedNames)"
+  - expression: "!object.spec.containers.any(c, c.name in params.bannedWords)"
+  - expression: "!object.spec.initContainers.any(c, c.name in params.bannedWords)"
 ```
 
+Both policies can use a trivial `PolicyBinding` to enable the same parameter
+resource for both policies.
 
 Similar Use Case: A cluster administrator wishes to use a single policy
 configuration to manage a network policy that must be enforced across multiple
 Kubernetes kinds that contain relevant networking fields. It is possible to
 implement by having multiple `ValidatingAdmissionPolicy` resources that all
-reference the same `spec.config` CRD but that each enforce the policy for a
+reference the same `spec.params` CRD but that each enforce the policy for a
 different Kubernetes network kind.
 
 #### Use Case: Principle of least privilege policy
@@ -1770,14 +1435,14 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 ...
 spec:
-  config:
+  paramSource:
     group: rules.example.com
     kind: ReservedLabels
     version: v1
   match:
     ...
   validations:
-    expression: "['reserved1', ...].exists(r, object.metadata.labels.contains(r) && !config.allowedLabels.contains(r))"
+    expression: "['reserved1', ...].exists(r, object.metadata.labels.contains(r) && !params.allowedLabels.contains(r))"
   defaultValidations:
   - expression: "['reserved1', ...].exists(r, object.metadata.labels.contains(r)"
 ```
@@ -2061,13 +1726,13 @@ We will use a similar approach. The complication here is that for this case we
 must consider up to 3 resources:
 
 - `ValidatingAdmissionPolicy` resource
-- Configuration CRD
+- Parameter CRD
 - The CRD for the kind-under-test, if it is a CRD (and not a built-in type)
 
 In order to be able to know how old the three resources were when the status was
 last written, we must track additional information in the status:
 
-```
+```yaml
 apiVersion: "admissionregisteration/v1alpha1"
 kind: "ValidatingAdmissionPolicy"
 metadata:
@@ -2075,7 +1740,7 @@ metadata:
   generation: 2
   ...
 status:
-  config:
+  paramSource:
     apiVersion: "example.com/v1"
     kind: "fooLimits"
     generation: 5
@@ -2112,22 +1777,22 @@ For referenced CRDs, it is more involved:
 If the controller has observed forward progress it updates the entire status,
 including any conditions and error information:
 
-```
+```yaml
 status:
   ...
   conditions:
     type: "Available" # TODO: pick an appropriate type for broken policies
     status: "False"
     reason: Misconfigured
-    message: "Validation expressions contain errors. Config custom resource definition not found."
+    message: "Validation expressions contain errors. Param custom resource definition not found."
     ...
   validationErrors:
-    - expression: "object.baz > config.min"
+    - expression: "object.baz > params.min"
       errors:
         - "illegal ..."
         - "no such field ..."
-  configCustomResourceDefinitionErrors:
-    - "Config custom resource definition not found"
+  paramSourceErrors:
+    - "paramSource custom resource definition not found"
 ```
 
 Note that write conflicts do not require a retry since the write that caused the
@@ -2150,9 +1815,9 @@ Con:
 
 As a built-in type, `ValidatingAdmissionPolicy` follows Kubernetes API guidelines.
 
-#### Configuration CRD Versioning
+#### Parameter CRD Versioning
 
-A configuration CFD may offer a new version using the existing CRD schema
+A parameter CFD may offer a new version using the existing CRD schema
 versioning and version conversion support. The policy definition can then
 migrate from reading the old version to the new version.
 
@@ -2778,7 +2443,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: "validate-xyz.example.com"
 spec:
-  config:
+  paramSource:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
@@ -2851,6 +2516,342 @@ Pros:
 Cons:
 
 - No opportunity to benefit from type checking.
+
+### Policy definition and configuration separation alternatives
+
+#### Alternative: Duck Typed CRDs
+
+This is the alternative shown in the initial examples of this KEP.
+
+Policy authors write a CRD to define how each policy is configured. E.g.:
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: replicalimit.rules.example.com
+  annotations:
+    admission.kubernetes.io/is-policy-configuration-definition: "true"
+spec:
+  group: example.com
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                config:
+                  type: object
+                    maxReplicas:
+                      type: int
+  scope: Cluster
+  names:
+    kind: ReplicaLimit
+```
+
+The `admission.kubernetes.io/is-policy-configuration-definition` annotation
+means "inject the correct .spec.match during admission and keep it up to date
+with a controller". (Suggested by deads2k). This minimizes version skew if new
+match criteria is added to `spec.match` and also minimizes development effort by
+removing the need to manually declare the fields in CRDs.
+
+The main challenge with this alternative is dealing with mismatches between how
+CRDs declare the `spec.match` schema and what the apiserver expects, even with a
+controller keeping it in sync, it can briefly become out of sync. For this our
+plan is:
+
+- When consuming configuration CRDs OR policy configuration resources used for
+  policy configuration:
+  - If any unrecognized fields, missing required fields, or incorrectly typed
+    fields are found under `spec.match`:
+    - For configuration CRDs:
+      - Set the `ValidatingAdmissionPolicy` state to "misconfigured" in the
+        status (via a Condition, I believe).
+      - Trigger the `FailurePolicy` on all admission validations.
+      - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
+    - For policy configuration resources:
+      - Track in the status of `ValidatingAdmissionPolicy` that some policy
+        configurations are misconfigured. (also via a Condition?).
+      - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
+      - Trigger the `FailurePolicy` on admission for resources that match the
+        policy configuration.
+  - If the CRD is deleted:
+    - Set state to "misconfigured
+    - Trigger `FailurePolicy` on all admission validations
+    - Add a detailed error in the status of the `ValidatingAdmissionPolicy`.
+
+A partial `spec.match` schema (subset of the full schema) is okay so long as
+only optional fields are omitted. But any unrecognized field in the `spec.match`
+would not be allowed. 
+
+Proposed annotation: 
+
+> Example: `admission.kubernetes.io/is-policy-configuration-definition: "true"`
+> 
+> Used on: CustomResourceDefinition
+> 
+> What a CustomResourceDefinition has the annotation set to "true", the
+> OpenAPIv3 schema of all versions of this resource is modified and then
+> kept-in-sync by a controller to always contain the expected schema fields of
+> admission policy configuration resources.
+
+xref: https://kubernetes.io/docs/reference/labels-annotations-taints/
+
+Pros:
+
+- Concise. A single resource configures both match criteria and configuration
+  params.
+- Provides a clear marker on every CRD that is used for policy configuration
+  that it is intended for this purpose, in a machine readable way.
+- If later Kubernetes OpenAPIv3 supports `$ref`, there is a migration path from
+  this approach to the `$ref` approach (below)
+
+Cons:
+
+- A single resource for both configuration params and matching rules is
+  a problem when using the same configuration with multiple polices, each
+  that need different matching rules.
+- API server must check for a wide range of error conditions and define how
+  exactly it handles each of them.
+- If the `spec.match` schema is incorrectly defined, CRD author might not
+  realize it since they need to check the status of the corresponding
+  `ValidatingAdmissionPolicy` for any errors.
+- Changing this schema in the future could be extremely difficult. CRD schemas
+  are atomic from a server-side-apply perspective (spec.versions on down).
+
+
+#### Alternative: OpenAPIv3 `$ref` in CRDs
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: replicalimit.rules.example.com
+spec:
+  group: example.com
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                config:
+                  type: object
+                    maxReplicas:
+                      type: int
+                match:
+                  $ref: "#/components/schemas/matchrules"
+  scope: Cluster
+  names:
+    kind: ReplicaLimit
+```
+
+Pros:
+
+- Match rule schema is owned by Kubernetes, so as it evolves, CRDs automatically
+  pick up changes.
+
+Cons:
+
+- CRDs do not yet support OpenAPIv3 `$ref`s, so support would need to be added,
+  presumably this would require a separate KEP.
+
+#### Alternative: `/matchRules` subresource
+
+The idea of this alternative is to require a configuration CRD to declare that
+it provides match criteria by exposing a `/matchRules` subresource:
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: replicalimit.example.com
+spec:
+  group: example.com
+  versions:
+    ... # configuration schema(s) go here
+  subresources:
+    matchRules:
+      matchRulesPath: .spec.match
+```
+
+Pros:
+
+- CRD explicitly opt-in to providing match criteria in a structured way.
+- Follows pattern used by scale subresource to provide polymorphism across CRDs
+
+Cons:
+
+- One of the primary purposes of subresources is accessing/modifying a portion
+  of a resource independently, which is not what we're trying to achieve.
+- Kubernetes development/maintenance perspective, subresources, particularly for
+  CRDs, are expensive to introduce and maintain.
+
+#### Alternative: `PolicyConfiguration` kind with config embedded
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: PolicyConfiguration
+metadata:
+  name: "replica-limit-prod.example.com"
+spec:
+  match:
+    namespaceSelectors:
+    - key: environment,
+      operator: NotIn,
+      values: ["test"]
+  config:
+    apiVersion: rules.example.com/v1
+    kind: ReplicaLimit
+    spec:
+      maxReplicas: 100
+```
+
+Pros:
+
+- Matching criteria is fully defined and validated in a builtin type
+
+Cons:
+
+- Embedded config needs the same treatment as custom resource, but
+  reimplementing it all on an embedded resource is, at best, highly impractical
+  in the apiserver as it exists today. E.g.. there is not automatic validation
+  of the embedded resource.
+
+#### Alternative: Generate CRDs
+
+The `ValidatingAdmissionPolicy` contains a OpenAPIv3 schema defining how the
+policy is configured. The schema need only contains the policy specific
+configuration (it does not need to contain match rules or anything else that is
+standard).
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "validate-xyz.example.com"
+spec:
+  config:
+    group: rules.example.com
+    kind: ReplicaLimit
+    version: v1
+    openAPIV3Schema:
+      type: object
+      properties:
+        spec:
+          type: object
+          properties:
+            maxReplicas:
+              type: int
+```
+
+This allows the apiserver to combine the configuration schema with the match
+schema and then generate a CRD. The apiserver then can run a control loop to
+always keep the CRD match stanzas in sync with what is expected.
+
+This could alternatively be kept separate from the policy definition by having
+something like:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionConfigurationDefinition
+metadata:
+  name: "validate-configuration-xyz.example.com"
+spec:
+  configSchema:
+    group: rules.example.com
+    kind: ReplicaLimit
+    version: v1
+    openAPIV3Schema:
+      type: object
+      properties:
+        spec:
+          type: object
+          properties:
+            maxReplicas:
+              type: int
+```
+
+Pros:
+
+- Policy author doesn't need to define the CRD. It can instead be generated for
+  them.
+
+Cons:
+
+- Most of the cons of "Duck Typed CRDs" alternative apply, since ultimately a
+  CRD is created and behaves the same.
+- This implies that the policy owns the configuration. But we have use cases
+  where multiple policies share the same configuration. For this model it seems
+  misleading and potentially problematic to have both policies attempting to
+  define the same configuration.
+
+### Message formatting alternatives
+
+Alternative: offer a CEL expression
+
+```yaml
+- expression: "..."
+  messageExpression: "string(object.int1) + ' is less than ' + string(object.int2)"
+```
+
+Cons:
+
+- CEL requires explicit casts to string
+- Plain string message support is a bit messy. Options:
+  - Use CEL always: `"'this is a simple message'"`
+  - Offer both plain string (`message`) and CEL (`messageExpression`)
+
+Alternative: Inline CEL expressions
+
+Single `message` field but it supports templating, e.g.:
+
+```
+"{{object.int1}} is less than {{object.int2}}"
+```
+
+Cons:
+
+- Must defining escaping rules in string for including `{{` or `}}` as a literal
+- CEL expressions must be properly escaped
+
+Alternative: Inline JSON path
+
+```
+"{{.object.int1}} is less than {{.object.int2}}"
+```
+
+Cons:
+
+- (Same as above "Inline CEL expressions")
+- Author must switch between using CEL and JSON Path in adjacent fields
+- JSON Path is less expressive than CEL (both a pro and a con)
+
+Alternative: CEL expressions, separate args from format string
+
+```yaml
+- expression: "..."
+  message: "{1} is less than {2}"
+  messageArgs: ["object.int1", "object.int2"]
+```
+
+Note "%s is less than %s" is also viable, but CEL can always preformat and emit
+a string for cases where developer needs more control.
+
+Cons:
+
+- Slightly more verbose format (but avoid all the escaping problems)
+
 
 ## Infrastructure Needed (Optional)
 
