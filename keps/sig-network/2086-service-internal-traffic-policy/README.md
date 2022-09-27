@@ -19,6 +19,8 @@
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+    - [API Enablement Rollback](#api-enablement-rollback)
+    - [Proxy Enablement Rollback](#proxy-enablement-rollback)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
@@ -229,7 +231,301 @@ Metrics representing Services being black-holed will be added. This metric can i
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-No, but this will be manually tested prior to beta. Automated testing will be done if the test tooling is available.
+#### API Enablement Rollback
+
+API Rollback was manually validated using the following steps:
+
+Create a kind cluster:
+```
+$ kind create cluster
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.25.0) 🖼
+ ✓ Preparing nodes 📦
+ ✓ Writing configuration 📜
+ ✓ Starting control-plane 🕹️
+ ✓ Installing CNI 🔌
+ ✓ Installing StorageClass 💾
+Set kubectl context to "kind-kind"
+You can now use your cluster with:
+kubectl cluster-info --context kind-kind
+Thanks for using kind! 😊
+```
+
+Check that Services set `spec.internalTrafficPolicy`:
+```
+$ kubectl -n kube-system get svc kube-dns -o yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: "9153"
+    prometheus.io/scrape: "true"
+  creationTimestamp: "2022-09-27T14:03:46Z"
+  labels:
+    k8s-app: kube-dns
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: CoreDNS
+  name: kube-dns
+  namespace: kube-system
+  resourceVersion: "219"
+  uid: 9b455b45-ae9f-43d1-98ca-f275b805ab95
+spec:
+  clusterIP: 10.96.0.10
+  clusterIPs:
+  - 10.96.0.10
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: dns
+    port: 53
+    protocol: UDP
+    targetPort: 53
+  - name: dns-tcp
+    port: 53
+    protocol: TCP
+    targetPort: 53
+  - name: metrics
+    port: 9153
+    protocol: TCP
+    targetPort: 9153
+  selector:
+    k8s-app: kube-dns
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+Turn off the `ServiceInternalTrafficPolicy` feature gate in `kube-apiserver`:
+```
+$ docker exec -ti kind-control-plane bash
+$ vim /etc/kubernetes/manifests/kube-apiserver.yaml
+# append --feature-gates=ServiceInternalTrafficPolicy=false to kube-apiserver flags
+```
+
+Validate that the Service still preserves the field. This is expected for backwards compatibility reasons:
+```
+$ kubectl -n kube-system get svc kube-dns -o yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: "9153"
+    prometheus.io/scrape: "true"
+  creationTimestamp: "2022-09-27T14:03:46Z"
+  labels:
+    k8s-app: kube-dns
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: CoreDNS
+  name: kube-dns
+  namespace: kube-system
+  resourceVersion: "219"
+  uid: 9b455b45-ae9f-43d1-98ca-f275b805ab95
+spec:
+  clusterIP: 10.96.0.10
+  clusterIPs:
+  - 10.96.0.10
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: dns
+    port: 53
+    protocol: UDP
+    targetPort: 53
+  - name: dns-tcp
+    port: 53
+    protocol: TCP
+    targetPort: 53
+  - name: metrics
+    port: 9153
+    protocol: TCP
+    targetPort: 9153
+  selector:
+    k8s-app: kube-dns
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+Validate that new Services do not have the field anymore:
+```
+$ cat service.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    protocol: TCP
+$ kubectl apply -f service.yaml
+service/nginx created
+$ kubectl get svc nginx -o yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"nginx"},"name":"nginx","namespace":"default"},"spec":{"ports":[{"port":80,"protocol":"TCP"}],"selector":{"app":"nginx"}}}
+  creationTimestamp: "2022-09-27T14:10:51Z"
+  labels:
+    app: nginx
+  name: nginx
+  namespace: default
+  resourceVersion: "867"
+  uid: e1bf394a-3759-4534-ac44-8cb8e44c1971
+spec:
+  clusterIP: 10.96.55.182
+  clusterIPs:
+  - 10.96.55.182
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: nginx
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+#### Proxy Enablement Rollback
+
+Rolling back kube-proxy behavior was tested manually with the following steps:
+
+Create a Kind cluster with 2 worker nodes:
+```
+$ cat kind.yaml
+# three node (two workers) cluster config
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+
+$ kind create cluster --config kind.yaml
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.25.0) 🖼
+ ✓ Preparing nodes 📦 📦 📦
+ ✓ Writing configuration 📜
+ ✓ Starting control-plane 🕹️
+ ✓ Installing CNI 🔌
+ ✓ Installing StorageClass 💾
+ ✓ Joining worker nodes 🚜
+Set kubectl context to "kind-kind"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-kind
+```
+
+Create a webserver Deployment and Service with `internalTrafficPolicy=Local`:
+```
+$ cat agnhost-webserver.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: agnhost-server
+  template:
+    metadata:
+      labels:
+        app: agnhost-server
+    spec:
+      containers:
+      - name: agnhost
+        image: registry.k8s.io/e2e-test-images/agnhost:2.40
+        args:
+        - serve-hostname
+        - --port=80
+        ports:
+        - containerPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  internalTrafficPolicy: Local
+  selector:
+    app: agnhost-server
+  ports:
+  - port: 80
+    protocol: TCP
+```
+
+Exec into one node and verify that kube-proxy only proxies to the local nodes.
+```kind-worker2
+$ kubectl get svc agnhost-server
+NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+agnhost-server   ClusterIP   10.96.226.141   <none>        80/TCP    7m56s
+$ kubectl get po -o wide
+NAME                              READY   STATUS    RESTARTS   AGE     IP           NODE           NOMINATED NODE   READINESS GATES
+agnhost-server-7d4db667fc-h5m5p   1/1     Running   0          6m2s    10.244.2.3   kind-worker    <none>           <none>
+agnhost-server-7d4db667fc-nrdg4   1/1     Running   0          5m59s   10.244.2.4   kind-worker    <none>           <none>
+agnhost-server-7d4db667fc-tpbpk   1/1     Running   0          6m      10.244.1.4   kind-worker2   <none>           <none>
+
+$ docker exec -ti kind-worker2 bash
+root@kind-worker2:/# iptables-save
+...
+...
+...
+-A KUBE-SVL-VPG43MSD43N5Z7KJ ! -s 10.244.0.0/16 -d 10.96.226.141/32 -p tcp -m comment --comment "default/agnhost-server cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SVL-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.1.4:80" -j KUBE-SEP-MNGWCV7VA4JSYYKU
+COMMIT
+# Completed on Tue Sep 27 14:50:07 2022
+```
+
+Turn off the `ServiceInternalTrafficPolicy` feature gate in kube-proxy by editing the kube-proxy ConfigMap and restarting kube-proxy:
+```
+$ kubectl -n kube-system edit cm kube-proxy
+# set featureGates["ServiceInternalTrafficPolicy"]=false in config.conf
+configmap/kube-proxy edited
+
+$ kubectl -n kube-system delete po -l k8s-app=kube-proxy
+pod "kube-proxy-d6nf2" deleted
+pod "kube-proxy-f89g4" deleted
+pod "kube-proxy-lrk9l" deleted
+```
+
+Exec into the same node as before and check that kube-proxy now proxies to all endpoints even though
+the Service has `internalTrafficPolicy` set to `Local`:
+```
+$ docker exec -ti kind-worker2 bash
+root@kind-worker2:/# iptables-save
+...
+...
+...
+-A KUBE-SVC-VPG43MSD43N5Z7KJ ! -s 10.244.0.0/16 -d 10.96.226.141/32 -p tcp -m comment --comment "default/agnhost-server cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SVC-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.1.4:80" -m statistic --mode random --probability 0.33333333349 -j KUBE-SEP-MNGWCV7VA4JSYYKU
+-A KUBE-SVC-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.2.3:80" -m statistic --mode random --probability 0.50000000000 -j KUBE-SEP-EMZSNZ2TWKTA6UM4
+-A KUBE-SVC-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.2.4:80" -j KUBE-SEP-KTGIEIH27TIG3JO7
+COMMIT
+# Completed on Tue Sep 27 14:55:04 2022
+```
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
