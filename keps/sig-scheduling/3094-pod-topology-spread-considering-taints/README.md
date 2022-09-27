@@ -508,8 +508,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-If we have a `V+1` version of api-server(`V` refers to the kubernetes version we support this feature), and a `V` version scheduler,
-we'll just ignore `NodeInclusionPolicy` with no side effects.
+Kube-scheduler generally has the same version as api-server. So no version skew strategy.
 
 ## Production Readiness Review Questionnaire
 
@@ -620,7 +619,79 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Not yet, but it will be tested manually prior to upgrade.
+Not yet, but it will be tested manually prior to upgrade following below steps:
+
+1. Install kubernetes v1.24 cluster with two workloads via installation tools like Kind.
+2. Let's name these nodes as node1 and node2, both labelled with key `kubernetes.io/hostname`.
+3. Add a taint to node1 like `foo=bar:NoSchedule`
+4. Apply a deployment like:
+
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          foo: bar
+      template:
+        metadata:
+          labels:
+            foo: bar
+        spec:
+          restartPolicy: Always
+          containers:
+          - name: nginx
+            image: nginx:1.14.2
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  foo: bar
+    ```
+
+5. We'll see one pod pending.
+6. Delete the deployment via `kubectl delete -f`.
+7. Configure the api-server with feature-gate `NodeInclusionPolicyInPodTopologySpread` enabled.
+8. Redeploy the deployment with `NodeTaintsPolicy` honored.
+
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          foo: bar
+      template:
+        metadata:
+          labels:
+            foo: bar
+        spec:
+          restartPolicy: Always
+          containers:
+          - name: nginx
+            image: nginx:1.14.2
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              NodeTaintsPolicy: Honor
+              labelSelector:
+                matchLabels:
+                  foo: bar
+    ```
+
+9. All pods will be allocated successfully.
+10. Delete the deployment.
+11. Disable the feature gate with api-server restarted.
+12. Apply the deployment for the third time, we'll see one pending again.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 No
@@ -666,69 +737,8 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Details: -->
 
 - [x] Other (treat as last resort)
-  - Details:
-
-    1. Launch a cluster with two workload nodes, let's say node1 and node2, both has label key `kubernetes.io/hostname`.
-    2. Add a taint to node1 which ready-to-deploy pods will not tolerate.
-    3. Apply a deployment looks like:
-      ```
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: nginx
-      spec:
-        replicas: 2
-        selector:
-          matchLabels:
-            foo: bar
-        template:
-          metadata:
-            labels:
-              foo: bar
-          spec:
-            restartPolicy: Always
-            containers:
-            - name: nginx
-              image: nginx:1.14.2
-            topologySpreadConstraints:
-              - maxSkew: 1
-                topologyKey: kubernetes.io/hostname
-                whenUnsatisfiable: DoNotSchedule
-                labelSelector:
-                  matchLabels:
-                    foo: bar
-      ```
-    4. One pod will be pending.
-    5. Enable the NodeInclusionPolicy and redeploy the deployment:
-      ```
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: nginx
-      spec:
-        replicas: 2
-        selector:
-          matchLabels:
-            foo: bar
-        template:
-          metadata:
-            labels:
-              foo: bar
-          spec:
-            restartPolicy: Always
-            containers:
-            - name: nginx
-              image: nginx:1.14.2
-            topologySpreadConstraints:
-              - maxSkew: 1
-                topologyKey: kubernetes.io/hostname
-                whenUnsatisfiable: DoNotSchedule
-                NodeTaintsPolicy: Honor
-                labelSelector:
-                  matchLabels:
-                    foo: bar
-      ```
-    6. Both pods will be scheduled successfully.
+  - Details: We can only observe the behaviors based on pod scheduling results.
+  We can follow the steps described at [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -779,7 +789,8 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-No.
+Yes, we have a plan to improve observability via metrics [here](https://github.com/kubernetes/kubernetes/issues/110643),
+but still on the way.
 
 ### Dependencies
 
@@ -920,7 +931,9 @@ Configuration errors are logged to stderr.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Check the metrics to see whether it was caused by this feature, if so, disable the feature gate.
+If we see obviously performance degradation or error rate going up with this feature gate enabled,
+we should disable it ASAP, and restart the apiserver. If we have fewer workloads, we can disable the
+policy in `PodTopologySpread` one by one for emergency.
 
 ## Implementation History
 
