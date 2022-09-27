@@ -172,12 +172,14 @@ func getDistance(sysFs sysfs.SysFs, nodeDir string) ([]uint64, error) {
 }
 ```
 
-But before this lands into `cadvisor`, this information would have to be discovered by `kubelet`.
-
 ### Implementation strategy
 
 - Introduce new flag in Kubelet called `topology-manager-policy-options`, which when specified with `prefer-closest-numa-nodes` will modify the behavior of `best-effort` and `restricted` policy to pick NUMA nodes based on average distance between them.
 - The `TopologyManagerPolicyOptions` flag is propagated to `ContainerManager` and later to `TopologyManager`.
+- Enable `TopologyManager` NUMA distances discovery:
+  - Temporarily add distances discovery logic into `kubelet` (similarly to [the introduction](https://github.com/kubernetes/kubernetes/commit/ecc14fe661c22f5da967a7ff50cfb3aead60905b) of `GetNUMANode()`).
+  - Once `cadvisor` exposes the NUMA distance information through `MachineInfo`, remove the logic out of `kubelet` (similarly to [the removal](https://github.com/kubernetes/kubernetes/commit/a047e8aa1b705bb7e5be881fb63cf90a218b60d0) of `GetNUMANode()`).
+  - The removal of the logic `kubelet` is [an Alpha to Beta graduation criteria](#alpha-to-beta-graduation).
 - When `TopologyManager` is being created it discovers distances between NUMA nodes and stores them inside `manager` struct. This is temporary until `distance` information will land into `cadvisor`.
 - Pass `TopologyManagerPolicyOptions` to best-effort and restricted policy. When this is specified best-hint is picked based on average distance between NUMA nodes. This would require modification to `compareHints` function to change how the best hint is calculated:
 
@@ -297,10 +299,12 @@ These cases will be added in the existing e2e tests:
 
 #### Alpha
 - [X] Implement the new policy option.
+- [X] Temporarily include NUMA distances discovery logic in kubelet code.
 - [X] Add proper e2e node tests.
 
 #### Alpha to Beta Graduation
 - [X] Gather feedback from the consumer of the `prefer-closest-numa-nodes` policy option.
+- [X] Remove NUMA distances discovery logic from kubelet in favor of updated cAdvisor.
 - [X] No major bugs reported in the previous cycle.
 
 #### Beta to G.A Graduation
