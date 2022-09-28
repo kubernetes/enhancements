@@ -1,6 +1,0 @@
-# The KEP must have an approver from the
-# "prod-readiness-approvers" group 
-# of http://git.k8s.io/enhancements/OWNERS_ALIASES
-kep-number: 24
-alpha:
-  approver: "@deads2k"
