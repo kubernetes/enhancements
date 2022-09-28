@@ -15,9 +15,10 @@ reviewers:
 approvers:
   - "@ehashman"
 creation-date: 2020-04-15
-last-updated: 2021-02-08
-stage: alpha
+last-updated: 2022-09-28
+stage: beta
 status: implementable
-latest-milestone: "v1.21"
+latest-milestone: "v1.26"
 milestone:
   alpha: "v1.21"
+  beta: "v1.26"
