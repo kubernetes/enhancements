@@ -22,19 +22,19 @@
     - [Informational type checking](#informational-type-checking)
     - [Failure Policy](#failure-policy)
     - [Safety measures](#safety-measures)
-    - [Default Validations](#default-validations)
+    - [Singleton Policies](#singleton-policies)
+    - [Limits](#limits)
   - [Phase 2](#phase-2)
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
       - [Variables](#variables)
-      - [Scopes](#scopes)
     - [Secondary Authz](#secondary-authz)
     - [Access to namespace metadata](#access-to-namespace-metadata)
     - [Transition rules](#transition-rules)
     - [Resource constraints](#resource-constraints)
     - [Safety Features](#safety-features)
     - [Aggregated API servers](#aggregated-api-servers)
-    - [Short Circuiting](#short-circuiting)
+    - [CEL function library](#cel-function-library)
     - [Metrics](#metrics)
   - [User Stories](#user-stories)
     - [Use Case: Singleton Policy](#use-case-singleton-policy)
@@ -46,6 +46,8 @@
     - [Use Case: Migrating from validating webhook to validation policy](#use-case-migrating-from-validating-webhook-to-validation-policy)
     - [Use Case: Rolling out a new validation check to an existing policy](#use-case-rolling-out-a-new-validation-check-to-an-existing-policy)
     - [Use Case: Pre-existing Deployment triggers rollout long after Pod policy is changed](#use-case-pre-existing-deployment-triggers-rollout-long-after-pod-policy-is-changed)
+    - [Use Case: Rollout of a new validation expression to an existing policy](#use-case-rollout-of-a-new-validation-expression-to-an-existing-policy)
+    - [Use Case: Canary-ing a policy](#use-case-canary-ing-a-policy)
   - [Potential Applications](#potential-applications)
     - [Use Case: Build-in admission controllers](#use-case-build-in-admission-controllers)
     - [Use Case: KubeWarden](#use-case-kubewarden)
@@ -78,6 +80,7 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
+- [Future Work](#future-work)
 - [Alternatives](#alternatives)
   - [Type checking alternatives](#type-checking-alternatives)
   - [Policy definition and configuration separation alternatives](#policy-definition-and-configuration-separation-alternatives)
@@ -86,6 +89,8 @@
     - [Alternative: <code>/matchRules</code> subresource](#alternative--subresource)
     - [Alternative: <code>PolicyConfiguration</code> kind with config embedded](#alternative--kind-with-config-embedded)
     - [Alternative: Generate CRDs](#alternative-generate-crds)
+  - [CEL variables alternatives](#cel-variables-alternatives)
+    - [Alternative: Scopes](#alternative-scopes)
   - [Message formatting alternatives](#message-formatting-alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -282,7 +287,10 @@ adopting this enhancement (and sticking with webhooks) or somehow bypassing the
 limitation. One possible approach would be to generate a CEL expression with the
 configuration data embedded as a data literal, but we would strongly prefer not
 to have policy frameworks generating a CEL expression for each possible
-configuration.
+configuration, but CEL is designed for evaluations over structure input, such as
+configuration data, and the alternative of generating a CEL expression for each
+possible configuration would be sub-optimal from an evaluation and maintenance
+standpoint.
 
 ### Migration
 
@@ -294,12 +302,13 @@ and how they are formatted can make a migration far more seamless.
 ### Compliance
 
 In-process admission control has fundamental advantages over webhooks: it is far
-safer to use in a "fail closed" mode. With webhooks, using "fail closed" can
-negatively impact cluster availability. But "fail closed" is very valuable when
-enforcing compliance (and security). We intend to prioritize capabilities that
-make "fail closed" a safe mode of operation. As a concrete example, only
-allowing CEL expressions that pass compilation and type checking significantly
-reduces the opportunities for runtime errors.
+safer to use in a "fail closed" mode because it removes the network as a
+possible failure domain. With webhooks, using "fail closed" can negatively
+impact cluster availability. But "fail closed" is very valuable when enforcing
+compliance (and security). We intend to prioritize capabilities that make "fail
+closed" a safe mode of operation. As a concrete example, only allowing CEL
+expressions that pass compilation and type checking significantly reduces the
+opportunities for runtime errors.
 
 Also, making it possible (and convenient) to declare "zero trust" policies is
 important to compliance. By "zero trust", we mean policy rules that apply the
@@ -360,7 +369,7 @@ spec:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
-  match:
+  matchConstraints:
     resourceRules:
     - apiGroups:   ["apps"]
       apiVersions: ["v1"]
@@ -381,9 +390,12 @@ configured by `ReplicaLimit` custom resources. Note in this example how the CEL
 expression references to the parameters via the CEL `params` variable, e.g.
 `params.maxReplicas`.
 
-`spec.match` specifies what resources this policy is designed to validate. This
-also guides type-checking, see the "Informational type checking" section for
-details.
+`spec.matchConstraints` specifies what resources this policy is designed to
+validate. This also guides type-checking, see the "Informational type checking"
+section for details.
+
+`denyReason` assigns a status code the result of this policy if it evaluates to
+deny.
 
 The `spec.validations` fields contain CEL expressions. If an expression
 evaluates to false, the validation check is enforced (the below `PolicyBinding`
@@ -395,16 +407,29 @@ responsible for providing the `ReplicaLimit` parameter CRD.
 To configure an admission policy for use in a cluster, a binding and parameter
 resource are created. For example:
 
+<<[UNRESOLVED jpbetz ]>>
+Clean up required:
+
+Use `ClusterPolicyBinding` so we can add `PolicyBinding` (namespace scoped) in
+the future?
+
+Use a verb for secondary authz check that policy binding editor has policy
+parameter edit roles? (tallclair suggested this, it has nice properties).
+
+kubectl support for this feature could show information about a policy and how
+it is applied? could be really useful pre-GA to help users
+<<[/UNRESOLVED]>>
+
 ```yaml
 # Policy binding
 apiVersion: admissionregistration.k8s.io/v1
 kind: PolicyBinding
 metadata:
-  name: "xyzlimit-scale.example.com"
+  name: "replicalimit-binding-test.example.com"
 spec:
   policy: "replicalimit-policy.example.com"
   params: "replica-limit-test.example.com"
-  match:
+  matchResources:
     namespaceSelectors:
     - key: environment,
       operator: In,
@@ -431,11 +456,11 @@ environment to have a maxReplicas limit of 100, create another `PolicyBinding`:
 apiVersion: admissionregistration.k8s.io/v1
 kind: PolicyBinding
 metadata:
-  name: "xyzlimit-scale.example.com"
+  name: "replicalimit-binding-nontest"
 spec:
   policy: "replicalimit-policy.example.com"
-  params: "replica-limit-nontest.example.com"
-  match:
+  params: "replica-limit-clusterwide.example.com"
+  matchResources:
     namespaceSelectors:
     - key: environment,
       operator: NotIn,
@@ -447,7 +472,7 @@ spec:
 apiVersion: rules.example.com/v1
 kind: ReplicaLimit
 metadata:
-  name: "replica-limit-nontest.example.com"
+  name: "replica-limit-clusterwide.example.com"
 maxReplicas: 100
 ```
 
@@ -459,11 +484,11 @@ instead have been defined as a global policy:
 apiVersion: admissionregistration.k8s.io/v1
 kind: PolicyBinding
 metadata:
-  name: "xyzlimit-scale.example.com"
+  name: "replicalimit-binding-global"
 spec:
   policy: "replicalimit-policy.example.com"
-  params: "replica-limit-nontest.example.com"
-  match:
+  params: "replica-limit-clusterwide.example.com"
+  matchResources:
     namespaceSelectors:
     - key: environment,
       operator: Exists
@@ -490,18 +515,19 @@ Policy definitions are responsible for:
 - Defining what validations the policy enforces and how violations are reported 
 - Defining how a policy may be configured
 
-Each `ValidatingAdmissionPolicy` resource contains a `spec.match` to declare
-what resources it validates. This field is required.
+Each `ValidatingAdmissionPolicy` resource contains a `spec.matchConstraints` to
+declare what resources it validates. This field is required.
 
-- `spec.match` constrains which resources this policy can be applied to. Policy
-  bindings each have match rules with further narrow this constraint, but cannot
-  expand it. This allows the CEL expressions to make safe assumptions. E.g. a
-  CEL expression that is constrained to CREATES and UPDATES of resources is
-  guaranteed the root `object` variable is never null, but a CEL expression that
-  might need to evaluate a DELETE must handle the root `object` variable being
-  null. See below "Match criteria" section for how match criteria is described.
-- `spec.match` guides CEL expression type checking, see the below "Type safety"
-  section for more details. 
+- `spec.matchConstraints` constrains which resources this policy can be applied
+  to. Policy bindings each have match rules with further narrow this constraint,
+  but cannot expand it. This allows the CEL expressions to make safe
+  assumptions. E.g. a CEL expression that is constrained to CREATES and UPDATES
+  of resources is guaranteed the root `object` variable is never null, but a CEL
+  expression that might need to evaluate a DELETE must handle the root `object`
+  variable being null. See below "Match criteria" section for how match criteria
+  is described.
+- `spec.matchConstraints` guides CEL expression type checking, see the below
+  "Type safety" section for more details. 
 
 CEL expressions have access to the contents of the `AdmissionReview` type,
 organized into CEL variables as well as some other useful variables:
@@ -530,7 +556,8 @@ administrators configure policies for clusters.
 Each `PolicyBinding` contains:
 
 - `spec.policy` - A reference to the policy being configured
-- `spec.match` - Match criteria for which resources the policy should validate
+- `spec.matchResources` - Match criteria for which resources the policy should
+  validate
 - `spec.params` - Reference to the custom resource containing the params to use
   when validating resources 
 - `spec.enforcement` - How validation failures should be enforced
@@ -545,7 +572,7 @@ metadata:
 spec:
   policy: xyzlimit-scale.example.com
   params: xyzlimit-scale-settings.example.com
-  match:
+  matchResources:
     namespaceSelectors:
     - key: environment,
       operator: Exists
@@ -567,8 +594,15 @@ xyz:
   reticulate: true
 ```
 
-Note that for policies that require no parameterization, only the
-`PolicyBinding` is needed.
+We will recommend tag / label / annotation on every CRD that is used for policy
+params, so that the CRDs to be easily identified/queried.
+
+Note that this API design simplifies well to basic cases:
+
+- For policies that require no parameterization, only the `PolicyBinding` is
+needed.
+- For policies that are global, see the below "Default Validations" section
+  and "singleton policies" for how a policy can be created using a single resource.
 
 See "Alternatives considered" section for rejected alternatives. This design was
 selected because:
@@ -578,6 +612,31 @@ selected because:
 - Policy parameterization is separated from the policy binding, allowing for
   well abstracted parameterization types to be used by applied in different ways
   by multiple policies.
+- Make some rollouts easier. E.g. adding a new validation rule to a policy.
+
+Details:
+
+- Namespace Collisions: 
+  - This design is similar to `RoleBindings` which use a `roleRef`. If We are to
+    support both cluster and namespace scoped policy definitions, we need the
+    same structure as `roleRef` for `policyRef`.
+  - To address we will require parameter CR names of the form
+    `<identifier>.<resourceName>.<apiGroup>`
+  - Fix: Require the name to include the parameter type's group and resource.
+- Invalid Configurations:
+  - With 4 different resources involved in each validating admission policy
+    check (policy, binding, parameter CRD, parameter CR), there are many
+    combinations of the states of these resources that are invalid. E.g.:
+    - parameter CRD does not exist
+    - binding refers to policy or parameter resource that does not exist
+    - policy CEL expressions references fields that do not exist in parameter
+      CRD
+  - If a policy binding is in any of these states, it is identified as "invalid"
+    and the failure policy is applied.
+- Privileges to access policy bindings implies control of policy configurations:
+  - To address this, bindings resource will have extra auth check to verify that
+    anyone modifying the binding is also permitted to modify the parameters
+    resource.
 
 ##### Match Criteria
 
@@ -621,15 +680,15 @@ Matching is performed in quite a few systems across Kubernetes:
 
 WH = Admission webhooks, P&F = Priority and Fairness
 
-Match criteria must be declared in the `spec.match` field of `PolicyBinding`
-resources (see `ReplicaLimit` in the above example) and will be declared with
-API types in a format similar to admission webhooks, P&F, RBAC and Audit, but
-with improved support for exclude matching.
+Match criteria must be declared in the `spec.matchResources` field of
+`PolicyBinding` resources (see `ReplicaLimit` in the above example) and will be
+declared with API types in a format similar to admission webhooks, P&F, RBAC and
+Audit, but with improved support for exclude matching.
 
 *Excluding*:
 
-Exclude support make it possible to do things like validate all namespaces
-except `kube-system`. This is difficult to support with out direct exclude
+Exclude support makes it possible to do things like validate all namespaces
+except `kube-system`. This is difficult to support without direct exclude
 support, particularly for 3rd party policy enforcements systems that cannot
 assume permission to set labels on kube-system.
 
@@ -641,7 +700,6 @@ offer exclusion (e.g. via the `NotIn` operator) do not need a corresponding
 E.g.:
 
 ```yaml
-match:
   excludeNamespaces: ["kube-system"] # excludeNamespaces and namespaces are mutually exclusive
   excludePermissions: ["all-the-superpowers"]
   namespaceSelector: # Already has exclude support via NotIn and DoesNotExist
@@ -693,7 +751,7 @@ kind: ValidatingAdmissionPolicy
 ...
 spec:
   paramSource: ...
-  match:
+  matchConstraints:
     resourceRules:
     - apiGroups:   ["apps"]
       apiVersions: ["v1"]
@@ -709,7 +767,7 @@ apiVersion: admissionregistration.k8s.io/v1alpha1
 kind: PolicyBinding
 ...
 spec:
-  match:
+  matchResources:
     namespaceSelectors:
     - key: environment
       operator: Exists
@@ -720,8 +778,11 @@ We can enforce this by requiring:
 
 - Policy definitions match rules are validated to match one or more apiGroup +
   resource + operation.
-- Policy bindings are not required to match apiGroup + resource +
-  operation since the policy definition is already required to do this.
+- Policy bindings are not required to match apiGroup + resource + operation
+  since the policy definition is already required to do this. But they may
+  further narrow down the match. This is useful when rolling out policies. E.g.
+  when transitioning a policy from Warn to Deny, being able to narrow down the
+  resource match allows for more fine grained rollout steps.
 
 This encourages policy definition authors to consider the assumptions that the
 CEL expressions make. If the expressions unconditionally access `object` without
@@ -735,9 +796,7 @@ post-matching checks that could have been handled by matching.
 
 Note that if a policy binding is to be applied as broadly as possible (i.e.
 everywhere allowed by the policy definition) it must do so by using a wildcard
-match rule. An `effect: MatchAll` (only permitted if no other match criteria is
-present) could be offered to make this easy, or an existing match criteria that
-supports wildcards could be used.
+match rule.
 
 Match Policy:
 
@@ -755,6 +814,10 @@ xref:
 
 #### Reporting violations to Clients
 
+<<[UNRESOLVED jpbetz, TristonianJones ]>>
+Use CEL expressions for messages instead of for message args?
+<<[/UNRESOLVED]>>
+
 This section focuses on how information is reported back to clients in
 when validations fail.
 
@@ -770,16 +833,18 @@ High level proposal:
 - Each policy may set a `denyReason` and/or `denyCode`
 - Each validation may define a message:
   - `message` - may contain `{1}` format args that are supplied by
-    `meesageArgs: [<cel expression>, <cel expressiion>, ...]`
-    - If `meesage` is absent, `expression` and `name` will be included in the
+    `messageArgs: [<cel expression>, <cel expression>, ...]`
+    - If `message` is absent, `expression` and `name` will be included in the
       failure message
     - If any of the arg CEL expressions fail: `expression` and `name` will be
       included in the failure message plus the arg evaluation failure
 - allow/deny, warnings, audit annotations will be collectively referred to as
-  `enforcement`, which will have the following levels:
+  `enforcement`, which will have the following options:
   - `Deny`,
   - `Warn`
   - `Audit`
+  - (metrics will be emitted regardless of which enforcement options are set, so
+    `enforcement: []` may be useful)
 - Policy definitions identify validation expressions by name so that if the
   enforcement is `Audit` the name can be used as the audit annotation key.
 - Policy bindings set enforcement options
@@ -826,6 +891,13 @@ spec:
 Note that, in this design, groups of validations that should be enforced
 differently must be split out across multiple policy definitions.
 
+Implementation note: When the same param object is bound multiple times to the
+same policy via different bindings, it is not necessary to evalute the CEL
+expressions for the policy for each of the bindings since the result will always
+be the same. But the bindings may have different enforcement settings, so we
+will need to apply those and attribute all violations to the appropriate
+binding.
+
 xref:
 
 - https://open-policy-agent.github.io/gatekeeper/website/docs/next/violations/
@@ -867,10 +939,6 @@ status:
 
 #### Failure Policy
 
-For in-process validation there is no remote request, so errors should be
-deterministic. We believe this significantly reduces the risk of "fail closed"
-admission control as compared to webhooks.
-
 Because failure policy is most often selected based on the need to guarantee
 enforcement, we will default failure policy to "fail" and allow it to
 be configured on a per-policy basis:
@@ -893,9 +961,10 @@ recoverd from via the API, admission webhooks are not allowed to match
 
 We will extend this approach:
 
-- `ValidatingAdmissionPolicy` cannot match `ValidatingAdmissionPolicy`
-- `ValidatingWebhookConfiguration` cannot match `ValidatingAdmissionPolicy` or
-  `MutatingWebhookConfiguration`.
+- `ValidatingAdmissionPolicy` cannot match
+  `ValidatingAdmissionPolicy`/`PolicyBinding`/param resources.
+- `ValidatingWebhookConfiguration` cannot match `MutatingWebhookConfiguration`
+  or `ValidatingAdmissionPolicy`/`PolicyBinding`/param resources.
 
 Note that this does allow `ValidatingAdmissionPolicy` to match
 `ValidatingWebhookConfiguration`.
@@ -909,19 +978,13 @@ Alternative considered: Each `ValidatingAdmissionPolicy` has a "level", a
 `ValidatingAdmissionPolicy` can match another `ValidatingAdmissionPolicy` of a
 higher level. This could be added later.
 
-#### Default Validations
+#### Singleton Policies
 
-A `defaultValidations` field will allow policy definition authors to define
-expressions which are evaluated when the policy definition matches a resource
-but no policy configurations match that resource.
+For simple policies that apply cluster wide, a policy can be authored using a
+single `ValidatingAdmissionPolicy` resource.
 
-Behavior:
-
-- `defaultValidations` do not have access to params.
-- `spec.paramSource` is optional only when `defaultValidations` are present
-- (`spec.paramSource` and `spec.validations` must both be either present or absent)
-- When a policy has `defaultValidations`, it must also declare the enforcement
-  level of those validations
+This is only available for cases where there is no need to have multiple
+bindings, and where all params can be inlined in CEL.
 
 A "singleton" (aka standalone) policy can be defined as:
 
@@ -930,33 +993,24 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 ...
 spec:
-  match: ...
-  defaultValidations:
-  - expression: "object.spec.replicas < 100"
-    enforcement: Deny
-    
-```
-
-"Principle of least privilege" policies are also possible:
-
-```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicy
-...
-spec:
-  paramSource:
-    group: rules.example.com
-    kind: ReplicaLimit
-    version: v1
-  match:
-    ...
+  matchResources: ...
   validations:
-    expression: "object.spec.replicas <= params.maxReplicas"
-    name: max-replicas
-  defaultValidations:
-  - expression: "object.spec.replicas <= 5"
-    enforcement: [Deny]
+  - expression: "object.spec.replicas < 100"
+  enforcement: [Deny]
 ```
+
+Note that:
+
+- `spec.paramSource` is absent
+- validations do not reference `params` (since there are none)
+- `matchResources` is used instead of `matchConstraints`. This also disables
+  policy binding support.
+- `enforcement` is set. This disabbles policy binding support and must
+  be used in conjunction with `matchConstraints`
+
+<<[UNRESOLVED jpbetz, ?? ]>>
+Is there a better way to indicate a "singleton" policy than `matchResources` + `enforcement`? Neither seem like sufficiently obvious indicators of intent.
+<<[/UNRESOLVED]>>
 
 Reporting/debugging/analysis implications:
 
@@ -965,6 +1019,15 @@ Reporting/debugging/analysis implications:
   singleton policies can be use a {policy definition, policy definition}
   identifier pair. This is a bit verbose but keeps reporting consistent and
   makes tracing a violation back to resources that produced it straight-forward.
+
+#### Limits
+
+We will put limits on:
+
+- Max policy bindings per policy definition
+- Max lengths for all lists in match criteria (resourceRules, namespaceSelectors, labelSelectors, ...)
+- Per expression CEL cost limits
+- Per policy CEL evaluation cost limits
 
 ### Phase 2
 
@@ -995,20 +1058,14 @@ Details to consider:
 
 ##### Variables
 
-<<[UNRESOLVED jpbetz, ?? ]>>
-cel-policy-template "terms" are very convenient. But we don't have consensus on
-if they are sufficiently essential. Need to either agree on something or drop
-this.
-<<[/UNRESOLVED]>>
-
 Each CEL "program" is a single expression. There is no support for vaiable
 assignment. This can result in redundant code to traverse maps/arrays or
 dereference particular fields.
 
-We can support this in much the same way as cel-policy-template if we offer an
-ordered list or variables. These can be lazily evaluated while the validation
-expressions are evaluated (cel-policy-template does this). The results can also
-be memoized to avoid repeated evaluations if they are shared across validations.
+We can support this in much the same way as cel-policy-template `terms`. These
+can be lazily evaluated while the validation expressions are evaluated
+(cel-policy-template does this). The results can also be memoized to avoid
+repeated evaluations if they are shared across validations.
 
 ```yaml
   variables:
@@ -1020,97 +1077,6 @@ be memoized to avoid repeated evaluations if they are shared across validations.
     - expression: "itemMetadataNames.all(name, name.startsWith('xyz-'))"
     - expression: "itemMetadataNames.exists(name, name == 'required')"
 ```
-
-##### Scopes
-
-<<[UNRESOLVED jpbetz, ?? ]>> 
-This is not yet agreed on, and some reviewers have found it more
-difficult to understand validations using this feature than validations that do
-not.
-
-Also, the "bind varables" idea is maybe too ambitious?
-<<[/UNRESOLVED]>>
-
-Imagine that a policy validation uses a CEL expression find an invalid value in
-a list somewhere nested in a resource.  E.g. `spec.initContainers.<listitem>.name`.
-
-How do we:
-
-- Including the invalid value in a message?
-  - Using a second expression to build a message that then must again find the
-    validation error in the list duplicates a lot of code, and is inefficient.
-- Include the field path of the problem field in the message?
-  - It can be hard coded in the message string for basic cases, but for more
-    complex cases (where the are map keys or array indices involved) it becomes
-    messy and complicated to reconstruct.
-- Traverse across fields safely? CEL offers the `all()` macro, so traversals
-  like `spec.initContainers.all(c, c.name)` are possible, but can be subtly
-  incorrect because of optional fields (`initContainers` in this case), which
-  require `has()` checks, e.g.: `!has(spec.initContainers) || spec.initContainers.all(c, c.name)`.
-
-CRD Validation Rules solved these problems by allowing validation rules to
-attached to any schema in the OpenAPIv3. The validation rules are scoped to
-whatever location in the OpenAPIv3 they are attached.
-
-We propose using a simple schema path format. The purpose of the path is to
-uniquely identify a schema from the root of a CRDs OpenAPIv3 schema.
-
-Example:
-
-```
-spec.initContainers         # Schema of initContainers array
-spec.initContainers[*]      # Schema of the items of the initContainers array
-spec.initContainers[*].name # Schema of the name of initContainers
-```
-
-For example, to validate all containers:
-
-```yaml
-  validations:
-    - scope: "spec.containers[*]"
-      expression: "scope.name.startsWith('xyz-')"
-      message: "{1} does not start with 'xyz'"
-      messageArgs: ["scope.name"]
-```
-
-To make it possible to access the path information in the scope, we can offer a
-way to bind varables to the map and list indices in the path, e.g.:
-
-```
-spec.x[xKey].y[yIndex].field
-```
-
-```yaml
-  validations:
-    - scope: "x[xKey].y[yIndex].field"
-      expression: "scope.startsWith('xyz-')"
-      message: "{1}, {2}: some problem"
-      messageArgs: ["scopePath.xKey", "scopePath.yIndex"]
-```
-
-Prior art:
-
-- cel-policy-template's offer a
-  [`range`](https://github.com/google/cel-policy-templates-go/blob/master/test/testdata/map_ranges/template.yaml)
-  feature that allows a CEL expression to be scoped to each entry of a map or
-  item of an array. Multiple ranges can be combined to traverse a complex
-  object.
-- Kyverno [foreach
-  declarations](https://kyverno.io/docs/writing-policies/validate/#foreach), use
-  [JMESPath](https://jmespath.org/) to query for the elements that are then
-  validated.
-
-Note: We considered extending to a list of scopes, e.g.:
-
-```yaml
-  validations:
-    - scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
-      expression: "scope.name.startsWith('xyz-')"
-      message: "{1} does not start with 'xyz'"
-      messageArgs: ["scope.name"]
-```
-
-But feedback was this is signficantly more difficult to understand.
 
 #### Secondary Authz
 
@@ -1249,65 +1215,11 @@ Plan:
 - Do not offer type checking for aggregated types.
 - Support ValidatingAdmissionPolicy in aggregated API servers.
 
+#### CEL function library
 
-#### Short Circuiting
+To consider:
 
-Matching defined in YAML is not as expressive as CEL functions. Any additional
-filtering of objects that cannot be expressed in the match rules will need to be
-handled as "second pass" match filtering in CEL.
-
-Without any additional support, the approach is:
-
-```yaml
-  validations:
-    - expression: "!(<CEL match expression>) || <actual validation expression 1>"
-    - expression: "!(<CEL match expression>) || <actual validation expression 2>"
-```
-
-But if we were to offer a way for some validations to short-circuit validation
-execution, this could be simpler. E.g.:
-
-```yaml
-  validations:
-    - expression: "<CEL match expression>"
-      failureTreatment: NoMatch # TODO: What's the least bad way to express this?
-    - expression: "<normal validation expression 1>"
-    - expression: "<normal validation expression 2>"
-```
-
-The other use for short-circuiting is to skip any other validations, this can be
-used in a security context (if authz check fails, don't show user any other
-info), or more generally to minimize noise where subsequent validation messages
-are of low value if a particular validation fails.
-
-```yaml
-  validations:
-    - expression: "<CEL precondition check>"
-      failureTreatment: IgnoreOtherValidationFailures
-    - expression: "..."
-    - expression: "..."
-```
-
-`failureTreatment` should support:
-
-- `NoMatch` - The resource is considered "not matched" by this policy check and
-  is allowed to be admitted (at least by this policy) regardless of the outcome
-  of other validations.
-- `IgnoreOtherValidationFailures` - Only this policy failure is enforced. Any
-  other validation failures are ignored. If multiple validations have this
-  `failureTreatment` the first in the list to failure is shown and all others
-  are ignored.
-- unset - Apply the configured enforcement for this validation.
-
-Use case: Match GVK instead of GVR
-
-Possible via: 
-- `resourceRules: { apiGroups: "apps", apiVersions: "v1" }`
-- `{expression: "object.metadata.kind in ['Pod', 'Deployment']", failureTreatment: NoMatch}`
-
-(A system that must map from GVK to GVR could also retain a set of well known
-mappings and then fall back to the above only for entries missing from the
-mapping)
+- labelSelector evaluation functions or other match evaluator functions ([original comment thread](https://github.com/kubernetes/enhancements/pull/3492#discussion_r981747317))
 
 #### Metrics
 
@@ -1514,12 +1426,11 @@ metadata:
   name: "policy1.example.com"
 spec:
   match:
-    resourceRules:
+    excludeResourceRules:
     - apiGroups:   ["example.com"]
       apiVersions: ["v1"]
       operations:  ["CREATE", "UPDATE"]
       resources:   ["myCRD"]
-      effect: Exclude
     - apiGroups:   ["example.com"]
       apiVersions: ["*"]
       operations:  ["CREATE", "UPDATE"]
@@ -1537,8 +1448,8 @@ is critical to the cluster.
 
 Let's assume for this example that the namespace is `kube-system`.
 
-The simplest approach would be to require the 1st match rule of a admission
-webhook exclude kube-system:
+One approach would be to require kube-system contain a special label and the 1st
+match rule of a admission webhook use a namespaceSelector:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
@@ -1554,12 +1465,11 @@ spec:
   denyReason: Forbidden
   validations:
   - expression: >
-      object.rules.size() > 0 && 
-      object.rules[0].effect == 'Exclude' && 
-      has(object.rules[0].namespaces) && object.rules[0].namespaces.contains('kube-system') &&
-      !has(... any other match fields, which would be tedious to list out...)
-    
-    message: "ValidatingAdmissionWebhook and MutatingAdmissionWebhook must not match the 'kube-system' namespace"
+      has(object.namespaceSelectors) && object.namespaceSelectors.size() > 0 && 
+      object.namespaceSelectors[0].key = 'webhook-restricted' &&
+      object.namespaceSelectors[0].namespaceSelector.operator = 'In' &&
+      object.namespaceSelectors[0].namespaceSelector.values = ['true']
+    message: "The 1st namespaceSelector or ValidatingAdmissionWebhook and MutatingAdmissionWebhooks must be: {key: webhook-restricted, operator: In, values: ['true']}"
 ```
 
 This approach would pair well with a admission mutation that adds the rule to
@@ -1609,6 +1519,14 @@ is checked. And if the policy is for Pods specifically, there is not automatic
 checking of the PodTemplate.
 
 xref: https://kyverno.io/docs/writing-policies/autogen/
+
+#### Use Case: Rollout of a new validation expression to an existing policy
+
+TODO
+
+#### Use Case: Canary-ing a policy
+
+TODO
 
 ### Potential Applications
 
@@ -2338,6 +2256,11 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
+## Future Work
+
+- cel-policy-template [`range`](https://github.com/google/cel-policy-templates-go/blob/master/test/testdata/map_ranges/template.yaml) or equivalent.
+- Default validations?
+
 ## Alternatives
 
 ### Type checking alternatives
@@ -2606,8 +2529,6 @@ Pros:
 
 - Concise. A single resource configures both match criteria and configuration
   params.
-- Provides a clear marker on every CRD that is used for policy configuration
-  that it is intended for this purpose, in a machine readable way.
 - If later Kubernetes OpenAPIv3 supports `$ref`, there is a migration path from
   this approach to the `$ref` approach (below)
 
@@ -2795,6 +2716,91 @@ Cons:
   where multiple policies share the same configuration. For this model it seems
   misleading and potentially problematic to have both policies attempting to
   define the same configuration.
+
+### CEL variables alternatives
+
+#### Alternative: Scopes
+
+Imagine that a policy validation uses a CEL expression find an invalid value in
+a list somewhere nested in a resource.  E.g. `spec.initContainers.<listitem>.name`.
+
+How do we:
+
+- Including the invalid value in a message?
+  - Using a second expression to build a message that then must again find the
+    validation error in the list duplicates a lot of code, and is inefficient.
+- Include the field path of the problem field in the message?
+  - It can be hard coded in the message string for basic cases, but for more
+    complex cases (where the are map keys or array indices involved) it becomes
+    messy and complicated to reconstruct.
+- Traverse across fields safely? CEL offers the `all()` macro, so traversals
+  like `spec.initContainers.all(c, c.name)` are possible, but can be subtly
+  incorrect because of optional fields (`initContainers` in this case), which
+  require `has()` checks, e.g.: `!has(spec.initContainers) || spec.initContainers.all(c, c.name)`.
+
+CRD Validation Rules solved these problems by allowing validation rules to
+attached to any schema in the OpenAPIv3. The validation rules are scoped to
+whatever location in the OpenAPIv3 they are attached.
+
+We propose using a simple schema path format. The purpose of the path is to
+uniquely identify a schema from the root of a CRDs OpenAPIv3 schema.
+
+Example:
+
+```
+spec.initContainers         # Schema of initContainers array
+spec.initContainers[*]      # Schema of the items of the initContainers array
+spec.initContainers[*].name # Schema of the name of initContainers
+```
+
+For example, to validate all containers:
+
+```yaml
+  validations:
+    - scope: "spec.containers[*]"
+      expression: "scope.name.startsWith('xyz-')"
+      message: "{1} does not start with 'xyz'"
+      messageArgs: ["scope.name"]
+```
+
+To make it possible to access the path information in the scope, we can offer a
+way to bind varables to the map and list indices in the path, e.g.:
+
+```
+spec.x[xKey].y[yIndex].field
+```
+
+```yaml
+  validations:
+    - scope: "x[xKey].y[yIndex].field"
+      expression: "scope.startsWith('xyz-')"
+      message: "{1}, {2}: some problem"
+      messageArgs: ["scopePath.xKey", "scopePath.yIndex"]
+```
+
+Prior art:
+
+- cel-policy-template's offer a
+  [`range`](https://github.com/google/cel-policy-templates-go/blob/master/test/testdata/map_ranges/template.yaml)
+  feature that allows a CEL expression to be scoped to each entry of a map or
+  item of an array. Multiple ranges can be combined to traverse a complex
+  object.
+- Kyverno [foreach
+  declarations](https://kyverno.io/docs/writing-policies/validate/#foreach), use
+  [JMESPath](https://jmespath.org/) to query for the elements that are then
+  validated.
+
+Note: We considered extending to a list of scopes, e.g.:
+
+```yaml
+  validations:
+    - scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
+      expression: "scope.name.startsWith('xyz-')"
+      message: "{1} does not start with 'xyz'"
+      messageArgs: ["scope.name"]
+```
+
+But feedback was this is signficantly more difficult to understand.
 
 ### Message formatting alternatives
 
