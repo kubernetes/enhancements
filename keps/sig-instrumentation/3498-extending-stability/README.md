@@ -208,7 +208,7 @@ As an aside, much of this work has already been done, but is stashed in a local 
 We have static analysis testing for stable metrics, we will extend our test coverage 
 to include metrics which are `ALPHA` and `BETA` while ignoring `INTERNAL` metrics.
 
-[ ] I/we understand the owners of the involved components may require updates to
+[ X ] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
