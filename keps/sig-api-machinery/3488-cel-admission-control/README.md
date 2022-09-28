@@ -832,6 +832,18 @@ xref:
 
 #### Reporting violations to Clients
 
+<<[UNRESOLVED jpbetz, TristonianJones ]>>
+We should consider moving enforcement control into the policy
+and limiting the binding to control over "rollout" capabilities, e.g.
+"DryRun" or "Enabled".
+
+We should also consider making reason (invalid, forbidden, ...) a per validation
+field, this interacts well with other future needs like the ability to only
+message back an authz validation forbidden violation when both an authz
+validation fails as well as some other validations (which may leak information
+in messages).
+<<[/UNRESOLVED]>>
+
 This section focuses on how information is reported back to clients in
 when validations fail.
 
