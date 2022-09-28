@@ -555,30 +555,26 @@ During the alpha/beta implementations of this feature only **Symlink** volume mo
 This implemention did unlock a lot of critical use cases for managing Windows nodes in Kubernets clusters but did have some usability issues
 (such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig not working as expected).
 
-The **bind mount** volume mount behavior gives full access to the host OS's filesystem (an explicit goal of this enhancement) and addreses the usability issues with the initial approach.
-This approach requires the use of Windows OS APIs that were not present in Windows Server 2019 during alpha/beta implmentations of this feature.
+The **bind mount** volume mount behavior gives full access to the host OS's filesystem (an explicit goal of this enhancement) and addresses the usability issues with the initial approach.
+This approach requires the use of Windows OS APIs that were not present in Windows Server 2019 during alpha/beta implementations of this feature.
 These APIs *will* be available in WS2019 beginning in July 2022 with the monthly OS security patches.
 Containerd v1.7+ will be required for this behavior.
 
 - On containerd v1.6 **symlink** volume mount behavior will always be used.
 - On containerd v1.7 **bind** volume mount behavior will always be used.
-  - If users are running nodes with Windows Server 2019 with security patches older than July 2022 the volume mounts for HostProcessContainers will fail.
-
-We are going to use the Kubernetes v1.25 to explore options to make migration from `symlink` volume mount behavior to `bind` volume mount behavior as smooth as possible.
-
-The worst case migration plan is as follows:
-Users who have workloads that depend on the **symlink** mount behavior (ex: are expecting to find mounted volumes under `$CONTAINER_SANDBOX_MOUNT_POINT`) will need to stay on containerd v1.6 releases until their workloads are updated to be compatible with **bind** mount behavior.
+  - Backwards compatibility with volume mount paths has been added into containerd v1.7. This means that existing workloads that used `$CONTAINER_SANDBOX_MOUNT_POINT` to access volume mounts will work without updates.
 
 #### Container Images
 
 - `HostProcess` containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
-- A new Windows container base image will not be introduced for `HostProcess` containers.
-- It is recommended to use nanoserver as the base image for `hostProcess` containers since it has the smallest footprint.
-- `HostProcess` containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to identify `HostProcess` containers and skip OS version checks when pulling/starting these containers in the future.
+- A new Windows container base image has been introduced for `hostProcess` containers. More info is available at (https://github.com/microsoft/windows-host-process-containers-base-image)
+  - Note: `HostProcess` containers do not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective but individual container runtimes may have different image pulling/ platform matching behavior.
 
 #### Container Image Build/Definition
 
-- `HostProcess` container images can be built with Docker.
+- `HostProcess` container images based on nanoserver can be built with Docker.
+- `HostProcess` container images based on the new base image must be built with buildkit.
+  - Example at https://github.com/microsoft/windows-host-process-containers-base-image#build-with-buildkit
 - Only a subset of dockerfile operations will be supported (ADD, COPY, PATH, ENTRYPOINT, etc).
   - Note: The subset of dockerfile operations supported for `HostProcess` containers is very close to the subset of operations supported when building images for other OS's with buildkit (similar to how the [pause image](https://github.com/kubernetes/kubernetes/tree/master/build/pause) is built in kubernetes/kubernetes)
 - Documentation on building `HostProcess` containers will be added at either docs.microsoft.com or a new github repository.
