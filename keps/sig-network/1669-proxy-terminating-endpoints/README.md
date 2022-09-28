@@ -247,9 +247,10 @@ When the rollout happens, workloads may unexpectedly receive traffic when termin
 
 ###### What specific metrics should inform a rollback?
 
-There will be metrics added to publish how many Services/Endpoints are routing to terminating pods. It may be expected that clusters
-route to many terminating pods at once, especially during rolling updates, but users can correlate this metric with other factors to
-gauge if a rollback is necessary.
+`sync_proxy_rules_no_local_endpoints_total` can be used to inform rollback in scenarios where Services are dropping traffic to local endpoints.
+If this metric increases dramatically (especially when there are no rollouts happening), it could mean there is a programming error in kube-proxy.
+In general, we expect this metric to decrease during roll outs when this feature is enabled since nodes that only have terminating endpoints should
+no longer be included in this metric.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -270,7 +271,7 @@ regardless of their termination state. If this is undesired, workloads should be
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name: `sync_proxy_rules_no_endpoints_total`
+  - Metric name: `sync_proxy_rules_no_local_endpoints_total`
   - [Optional] Aggregation method:
   - Components exposing the metric:
     - kube-proxy
