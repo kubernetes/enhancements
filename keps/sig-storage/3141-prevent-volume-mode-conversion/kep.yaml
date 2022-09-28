@@ -39,3 +39,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - persistentvolumeclaim_create_from_snapshot_total
+  - persistentvolumeclaim_create_from_snapshot_failed_total
+  - persistentvolumeclaim_create_from_snapshot_duration_seconds

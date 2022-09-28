@@ -519,6 +519,8 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+- persistentvolumeclaim_create_from_snapshot_failed_total
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -551,7 +553,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-TODO: Include metric in provisioner
+N/A.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -597,14 +599,7 @@ N/A.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
-
-TODO: Include metric in provisioner
+N/A.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -613,7 +608,8 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-TODO: Include metric in provisioner
+There are no metrics for persistentvolumeclaims created from volumesnapshots. This KEP aims to add those metrics to 
+the external-provisioner.
 
 ### Dependencies
 
