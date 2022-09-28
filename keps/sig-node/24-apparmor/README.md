@@ -34,6 +34,7 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -783,3 +784,7 @@ Promoting AppArmor as-is to GA may be seen as "blessing" the current
 functionality, and make it harder to make some of the enhancements listed under
 [Non-Goals](#non-goals). Since the current behavior is unguarded, I think we
 already need to treat the behavior as GA.
+
+## Alternatives
+
+N/A
