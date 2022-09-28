@@ -80,25 +80,24 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-  - [Richer OpenAPI V3 Data](#richer-openapi-v3-data)
+  - [OpenAPI v3 is a richer API description than OpenAPI v2](#openapi-v3-is-a-richer-api-description-than-openapi-v2)
   - [CRD schemas expressed as OpenAPI v2 are lossy](#crd-schemas-expressed-as-openapi-v2-are-lossy)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Basic Usage](#basic-usage)
   - [Built-in Template Options](#built-in-template-options)
-  - [Custom Templates](#custom-templates)
-    - [Example template](#example-template)
+    - [Plaintext](#plaintext)
+    - [Raw](#raw)
+    - [HTML](#html)
+    - [Markdown](#markdown)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [OpenAPI V3 Not Available](#openapi-v3-not-available)
       - [Risk](#risk)
       - [Mitigation](#mitigation)
-    - [Template API Stability](#template-api-stability)
+    - [OpenAPI serialization time](#openapi-serialization-time)
       - [Risk](#risk-1)
       - [Mitigation](#mitigation-1)
-    - [OpenAPI serialization time](#openapi-serialization-time)
-      - [Risk](#risk-2)
-      - [Mitigation](#mitigation-2)
 - [Design Details](#design-details)
     - [Current High-level Approach](#current-high-level-approach)
     - [Proposed High-level Approach](#proposed-high-level-approach)
@@ -125,6 +124,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Implement proto.Models for OpenAPI V3 data](#implement-protomodels-for-openapi-v3-data)
+  - [Custom User Templates](#custom-user-templates)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -783,7 +783,7 @@ Yes, up feature replaces a single GET of `/openapi/v2` which returns a large (me
 openapi document for all types with a more targeted call to `/openapi/v3/<group>/<version>`
 
 The `/openapi/v3/<group>/<version>` endpoint implements E-Tag caching so that if the document has
-not changed the server incurs a cheap, almost neglible cost to serving the request.
+not changed the server incurs a cheap, almost negligible cost to serving the request.
 
 The document returned by calls to `/openapi/v3/...` is expected to be far smaller
 than the megabytes-scale openapi v2 document, since it only includes information
@@ -882,7 +882,7 @@ Why should this KEP _not_ be implemented?
 The current hard-coded printer is capable of printing any objects in `proto.Models` form.
 
 [We already have a way to express OpenAPI v3 data as `proto.Models`, so this can be
-seen as a path of least resistence for plugging OpenAPI v3 into `kubectl explain`.
+seen as a path of least resistance for plugging OpenAPI v3 into `kubectl explain`.
 
 This approach is undesirable for a few different reasons:
 
