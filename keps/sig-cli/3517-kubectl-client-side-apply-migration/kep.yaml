@@ -2,7 +2,7 @@ id: "3517"
 prnumber: ""
 name: kubectl-client-side-apply-migration
 title: Kubectl Client-Side-Apply Migration
-kep-number: draft
+kep-number: 3517
 authors: ['@alexzielenski']
 owning-sig: sig-cli
 participating-sigs: [sig-api-machinery, sig-cli]
