@@ -17,6 +17,7 @@
   - [Failure and Fallback Strategy](#failure-and-fallback-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
     - [Pod Creation](#pod-creation)
+    - [PodSecurityPolicy Support](#pod-security-policy-fields)
     - [Pod Update](#pod-update)
     - [PodTemplates](#podtemplates)
     - [Runtime Profiles](#runtime-profiles)
@@ -274,6 +275,17 @@ mechanism will be used to highlight that support will be dropped in v1.30.
 The mechanisms being considered are audit annotations, annotations on the
 object, events, or a warning as described in [KEP
 #1693](/keps/sig-api-machinery/1693-warnings).
+
+#### PodSecurityPolicy Support
+
+PodSecurityPolicy support has been removed in Kubernetes 1.25. Due to this,
+the equivalent functionality for annotations such as the below will not be supported:
+
+ * `apparmor.security.beta.kubernetes.io/defaultProfileName`
+ * `apparmor.security.beta.kubernetes.io/allowedProfileNames`
+
+To provide this functionality, users will need to implement equivalent rules in admission control,
+by injecting or validating a `LocalHostProfile` field for Pods or individual containers.
 
 #### Pod Update
 
