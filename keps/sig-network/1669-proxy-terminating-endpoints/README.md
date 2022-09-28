@@ -381,7 +381,9 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-
+It is highly recommended that all workloads have a readiness probe configured and handles termination signals from the kubelet appropriately.
+As a last resort, the EndpointSlice resource and proxy rules from kube-proxy can be examined to determine why traffic may not be routing correctly
+to terminating endpoints on a specific node.
 
 ## Implementation History
 
