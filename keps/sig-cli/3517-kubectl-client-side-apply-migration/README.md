@@ -248,7 +248,7 @@ migrate their managed fields to be used with server-side-apply.
 
 ### Goals
 
-This bug prevents users of server-side-apply, which is in GA, from deleting any fields of their objects unless they revert back to using client-side-apply. It especailly poses huge
+This bug prevents users of server-side-apply, which is in GA, from deleting any fields of their objects unless they revert back to using client-side-apply. It especially poses huge
 challenges to cluster operators seeking to upgrade a large collection of resources to server-side-apply. Without an automatic method of preparing objects for use with SSA,
 adoption for server-side-apply is blocked for many users.
 
