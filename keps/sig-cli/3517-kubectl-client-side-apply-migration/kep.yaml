@@ -18,9 +18,6 @@ milestone:
     alpha: ""
     beta: ""
     stable: ""
-feature-gates:
-  - name: ClientSideApplyMigration
-    components:
-      - kubectl
+feature-gates: []
 disable-supported: false
 metrics: []

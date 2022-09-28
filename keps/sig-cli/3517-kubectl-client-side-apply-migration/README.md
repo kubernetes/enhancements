@@ -742,9 +742,16 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ClientSideApplyMigration
-  - Components depending on the feature gate: kubectl
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [x] Other
+  - Describe the mechanism: The environment variable `KUBECTL_ENABLE_CSA_MIGRATION=true`.
+  - Will enabling / disabling the feature require downtime of the control
+    plane? No.
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
 
 ###### Does enabling the feature change any default behavior?
 
