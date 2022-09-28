@@ -648,6 +648,94 @@ This through this both in small and large cases, again with respect to the
 
   NO
 
+### Scalability
+
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
+
+For beta, this section is required: reviewers must answer these questions.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### Will enabling / using this feature result in any new API calls?
+
+<!--
+Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+Focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+-->
+
+No
+
+###### Will enabling / using this feature result in introducing new API types?
+
+<!--
+Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+-->
+
+No, it will only add an `AppArmorProfile` field to existing types.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+<!--
+Describe them, providing:
+  - Which API(s):
+  - Estimated increase:
+-->
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+<!--
+Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+-->
+
+New container-level and pod-level fields.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+<!--
+Look at the [existing SLIs/SLOs].
+
+Think about adding additional work or introducing new steps in between
+(e.g. need to do X to start a container), etc. Please describe the details.
+
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+-->
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+<!--
+Things to keep in mind include: additional in-memory state, additional
+non-trivial computations, excessive access to disks (including increased log
+volume), significant amount of data sent and/or received over network, etc.
+This through this both in small and large cases, again with respect to the
+[supported limits].
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+No
+
 ### Troubleshooting
 
 <!--
