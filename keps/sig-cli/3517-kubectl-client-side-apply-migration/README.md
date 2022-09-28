@@ -174,7 +174,8 @@ migrating](https://kubernetes.io/docs/reference/using-api/server-side-apply/#upg
 
 Unfortunately it is not so simple. By following these instructions you can be
 left in a situation where after migrating to server-side-apply, certain fields
-become un-deletable from the object. Here is a simple reproducing case:
+become un-deletable from the object without a manual update repairing the managed fields. 
+Here is a simple reproducing case:
 
 Create a configmap in the cluster with client-side apply:
 ```shell
