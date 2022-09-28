@@ -18,6 +18,6 @@ milestone:
     alpha: ""
     beta: ""
     stable: ""
-feature-gates: []
+feature-gates: ['ClientSideApplyMigration']
 disable-supported: false
 metrics: []

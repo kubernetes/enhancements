@@ -84,8 +84,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Example Usage](#example-usage)
-  - [Sensible Defaults](#sensible-defaults)
+  - [Transferring Field Ownership](#transferring-field-ownership)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Operation reversion](#operation-reversion)
+    - [last-applied-configuration annotation](#last-applied-configuration-annotation)
 - [Design Details](#design-details)
   - [Approach](#approach)
   - [Test Plan](#test-plan)
@@ -94,6 +96,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Graduation Criteria](#graduation-criteria-1)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -107,7 +111,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Server-Side Solution](#server-side-solution)
-  - [Transparent ManagedFields Patching](#transparent-managedfields-patching)
+  - [Separate Migration Command](#separate-migration-command)
+  - [kubectl Plugin](#kubectl-plugin)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -134,10 +139,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -204,7 +209,7 @@ configmap/test serverside-applied
 ```
 
 Remove one of the values from the configmap, we choose `legacy` key, and apply
-again using server-side apply. You would expect that the field is now removed 
+again using server-side apply. You would expect that the field is now removed
 from the object, but it is not:
 ```shell
 cat <<EOF | kubectl apply --server-side -f -
@@ -248,40 +253,81 @@ challenges to cluster operators seeking to upgrade a large collection of resourc
 adoption for server-side-apply is blocked for many users.
 
 1. The primary goal of this KEP is to provide a pathway for users blocked by this issue to adopt SSA.
-2. Provide a new extra migrate step to convert large collections of resources to server-side apply, especially for automatic systems
+2. Provide an idempotent migration to convert large collections of resources to server-side apply, especially for automatic systems
 3. Keep the number of requests to the apiserver limited on the nominal server-side apply path (no additional writes)
 
 
 ### Non-Goals
 
 1. Provide a server-side fix to this problem (see alternatives considered)
+2. Deprecate the `kubectl/last-applied-configuration` annotation
 
 ## Proposal
 
-Add a new CLI method `migrate`.
+Provide a transparent migration path of client-side-apply field ownership to
+being owned by server-side-apply.
+
+```shell
+kubectl apply -f <path/to/file> --server-side
+```
+
+Today when using server-side-apply, kubectl unconditionally does an initial fetch
+of the object. This is an acknowledged anti-pattern of SSA, and will likely be changed
+in the future. Since it is pre-existing behavior that does not do much harm, the SIG has
+come to consensus that the behavior can remain for a few more releases until client-side-apply
+is out of vogue, especially since SSA is now GA.
+
+The initially fetched object will be tested to check if the migration should be
+performed. If not, SSA proceeds as normal. If the migration is required, then
+a `UPDATE` or JSON PATCH is sent prior to the normal SSA operation. This is a technical requirement:
+managed fields may not be modified within an SSA operation.
 
 ### Example Usage
 
-```shell
-# Migrate fields owned by field manager `mycsamanager` to now be owned by `myssamanager`
-kubectl migrate pod test --from=mycsamanager --to=myssamanager
-```
-
-With this operation, kubectl will migrate all fields owned by `mycsamanager` previously used for client-side-apply to be now be prepared for use with server-side-apply under the field manage `myssamanager`. 
-This process is irreversible.
-
-### Sensible Defaults
-
-For client-side-apply, by default kubectl uses the fieldmanager name `kubectl-client-side-apply`. And for server-side-apply it uses the name `kubectl`.
-
-If`fieldmanager` is omitted from a `merge` operation, `--from` and `--to` can be defaulted to `kubectl-client-side-apply` and `kubectl`, respectively, for easier use:
+The usage should be transparent to the user, so they don't have to learn any new
+interface. Users of server-side-apply will have their fields owned by client-side-apply
+transparently migrated for them.
 
 ```shell
-# Migrate fields owned by 'kubectl-client-side-apply` for use with server-side-apply in the future
-kubectl migrate pod test
+# Migrate fields owned by kubectl-client-side-apply to now be owned by `myssamanager`
+kubectl apply -f <path/to/file> --server-side --fieldmanager=myssamanager
 ```
+
+Before continuing with the apply operation, kubectl will give ownership to all
+fields previously managed through client-side-apply, to server-side-apply.
+And drop client-side-apply's claim on the field.
+
+If client-side-apply does not own any fields, then the behavior is to no-op and
+continue with the `apply` invocation.
+
+### Transferring Field Ownership
+
+The fields previously managed by kubectl-client-side-apply before this operation
+will afterwoards be managed by whatever field manager was provided to the command
+line via the `--fieldmanager` flag.
+
+If a user wishes any specific fields to then be owned by other field managers piecemeal,
+then the user may do so normally using documentation provided about transferring
+field ownership.
 
 ### Risks and Mitigations
+
+#### Operation reversion
+
+If the user reverts to using client-side-apply again, this operation's effect
+will be reverted. Since the future is for everyone to use server-side-apply only
+
+#### last-applied-configuration annotation
+
+There was a concern brought up that the last-applied-configuration would no longer
+be updated although tools still depend upon it.
+
+There should be a separate deprecation plan for this annotation, but this KEP does not
+seek to remove this flag.
+
+Since before SSA went GA, the kube-apiserver will unconditoinally generate a
+last-applied-configuration annotation from managedFields owned by `kubectl`:
+for now these tools will remain working as before.
 
 ## Design Details
 
@@ -382,7 +428,7 @@ metadata:
   namespace: default
 ```
 
-Note that after the `--server-side` command there are now two owners of `key` and `legacy` fields. 
+Note that after the `--server-side` command there are now two owners of `key` and `legacy` fields.
 This is what causes problems for users. When the user removes the
 field `legacy` via server-side-apply, it surprisingly persists within the object:
 
@@ -449,6 +495,9 @@ data:
   key: value
   legacy: unused
 metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"key":"value"},"kind":"ConfigMap","metadata":{"name":"test","namespace":"default"}}
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -457,6 +506,10 @@ metadata:
         .: {}
         f:key: {}
         f:legacy: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
     manager: kubectl
     operation: Apply
   name: test
@@ -464,11 +517,11 @@ metadata:
 ```
 
 The fields of `kubectl` and `kubectl-client-side-apply` have been unioned and merged
-into the single `Apply` entry of `kubectl`. 
+into the single `Apply` entry of `kubectl`.
 
 ### Approach
 
-Whenever the migration is to be performed, kubectl fetches the object and simply 
+Whenever the migration is to be performed, kubectl fetches the object and simply
 calls the recently added client-go library function [`UpgradeManagedFields`](https://github.com/kubernetes/kubernetes/pull/111967/files#diff-4538195db8472f5237db69d0424dfd6fd7a7b0232f67f67dae52f57aea7b1af1R53) to
 migrate the managed fields to their desired form. The changes can then be
 sent as a PATCH or UPDATE to the apiserver to install the change.
@@ -610,6 +663,13 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Graduation Criteria
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -681,15 +741,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: ClientSideApplyMigration
+  - Components depending on the feature gate: kubectl
 
 ###### Does enabling the feature change any default behavior?
 
@@ -794,10 +848,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -1005,20 +1059,15 @@ previously csa'd object.
 
 There are a few problems with this approach:
 
-1.) **The server cannot disambiguate intent**. Server-side-apply is designed to
-keep separate lists of managed fields for Update vs Apply operations: the same 'manager'
-might switch between them.
-
-If server-side-apply automatically converted all managed fields for `Update` operations
-to be for `Apply` operations, then those field managers would now be rejected from
-future `Update` operations: breaking existing clients who rely on this functionality.
-
-2.) **Existing users need a way out**: There are users today which have corrupted
+1.) **Existing users need a way out**: There are users today which have corrupted
 managed fields which are owned by both client-side-apply and server-side-apply. These
 users need a path out of this situation that does not require so much manual effort.
 
+2.) **It can be solved clinet-side**: Since this problem can be solved client-side,
+it is far less risk to implement the solution from kubectl if the solution ended up
+being wrong.
 
-### Transparent ManagedFields Patching
+### Separate Migration Command
 
 It was proposed early on in the design process to make this conversion transparent.
 That is, `kubectl` will unconditionally include a patch of the managed fields with the
