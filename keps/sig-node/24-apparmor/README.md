@@ -1,4 +1,4 @@
-# AppArmor graduation to General Availability (GA)
+# Add AppArmor Support
 
 ## Table of Contents
 
@@ -65,30 +65,17 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 
 ## Summary
 
-This is a proposal to upgrade the AppArmor annotation on pods to a dedicated
-field, and graduate the feature to GA. This proposal aims to do the _bare
-minimum_ to clean up the feature, without blocking future enhancements.
+This is a proposal to add AppArmor support to the Kubernetes API. This proposal aims to do the _bare
+minimum_ to clean up the feature from its beta release, without blocking future enhancements.
 
 ## Motivation
 
-AppArmor support has been added with Kubernetes v1.4 and is already in beta.
-Profiles have to be available on each node whereas the container runtime ensures
-that the profile is loaded when specified at pod level. Profiles can be
-specified per-container via the pod’s metadata annotation:
-
-```
-container.apparmor.security.beta.kubernetes.io/<container_name>: {unconfined,runtime/default,localhost/<profile>}
-```
-
-The feature has been more or less unchanged ever since. The main motivation
-behind this KEP is to promote the AppArmor feature to GA.
-
-_NOTE: Seccomp was in a very similar state, but with some subtle differences.
-Promoting Seccomp to GA was covered in [KEP-135](/keps/sig-node/135-seccomp/README.md)._
+AppArmor can enable users to run a more secure deployment, and/or provide better auditing and
+monitoring of their systems. AppArmor for should be supported to provide users a simpler alternative 
+to SELinux, or to provide an interface for users that are already maintaining a set of AppArmor profiles.
 
 ### Goals
 
-- Declare AppArmor as GA
 - Fully document and formally spec the feature support
 - Add equivalent API fields to replace AppArmor annotations and provide a pod
   level field, which applies to all containers.
@@ -171,7 +158,7 @@ profile cannot be set.
 
 ##### Localhost Profile
 
-This KEP proposes we GA LocalhostProfile as the only source of user-defined
+This KEP proposes LocalhostProfile as the only source of user-defined
 profiles at this point. User-defined profiles are essential for users to realize
 the full benefits out of AppArmor, allowing them to decrease their attack
 surface based on their own workloads. 
@@ -243,7 +230,7 @@ below are the ones we mapped and their outcome once this KEP is implemented:
 | 3) Using custom profile that does not exist on the node.                                           | Pod created          | Containers fail to start. Retry respecting RestartPolicy and back-off delay.                                                                          |
 | 4) Using an unsupported runtime profile (i.e. `runtime/default-audit`).                            | Pod **not** created. | N/A                                                                                                                                                   |
 | 5) Using localhost profile with invalid name                                                       | Pod **not** created. | N/A                                                                                                                                                   |
-| 6) AppArmor is disabled by the host or the build                                                   | Pod **not** created. | Kubelet puts Pod in blocked state.                                                                                                                    |
+| 6) AppArmor is disabled by the host or the build                                                   | Pod created. | Kubelet puts Pod in blocked state.                                                                                                                    |
 
 Scenario 2 is the expected behavior of using AppArmor and it is included here
 for completeness.
@@ -279,7 +266,7 @@ If both AppArmor annotations _and_ fields are specified, the values MUST match.
 This will be enforced in API validation.
 
 If a Pod with a container specifies an AppArmor profile by field/annotation,
-then the container will only apply the Pod level field/annotation if no none
+then the container will only apply the Pod level field/annotation if none
 are set on the container level.
 
 To raise awareness of annotation usage (in case of old automation), a warning
