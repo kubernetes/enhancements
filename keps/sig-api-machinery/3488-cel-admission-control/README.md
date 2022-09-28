@@ -350,7 +350,31 @@ can be completed in a single Kubernetes release cycle.
 Before getting into all the individual fields and capabilities, let's look at the
 general "shape" of the API.
 
-This enhancement introduces a new `ValidatingAdmissionPolicy` kind.
+This API separates policy _definition_ from policy _configuration_ by splitting
+responsibilities across resources. The resources involved are:
+
+- Policy definitions (ValidatingAdmissionPolicy)
+- Policy bindings (PolicyBinding)
+- Policy param resources (custom resources)
+
+![Relatinships between policy resources](erd.png)
+
+This allows for a N:N relationship between policy definitions and the configuration of those policies. This separation has already been
+demonstrated successfully by multiple policy frameworks (see the survey further down in this KEP). It has a few key properties:
+
+- Reduces total amount of resource data needed to manage policies:
+  - Params can be shared across multiple policies instead of copied. E.g.
+    multiple policies can be enforce different aspects of a "no external
+    connections", for example, but can all share the configuration.
+  - Policies can be configured in different ways for different use cases without
+    having to copy the policy.
+  - Rollouts and canary-ing can be managed largely via bindings without having
+    to copy policies or params.
+- Ownership of resources aligns well with typical separation of roles for policy
+  management.
+- Existing policy frameworks can leverage this design far more easily because it
+  aligns with how separation of concerns is expressed in most major policy
+  frameworks.
 
 Each `ValidatingAdmissionPolicy` resource defines a admission control policy.
 The resource contains the CEL expressions to validate the admission policy and
@@ -379,8 +403,7 @@ spec:
   validations:
     - name: max-replicas
       expression: "object.spec.replicas <= params.maxReplicas"
-      message: "object.spec.replicas must be no greater than {1}"
-      messageArgs: ["params.maxReplicas"]
+      messageExpression: "'object.spec.replicas must be no greater than ' + string(params.maxReplicas)"
       # ...other rule related fields here...
 ```
 
@@ -406,19 +429,6 @@ responsible for providing the `ReplicaLimit` parameter CRD.
 
 To configure an admission policy for use in a cluster, a binding and parameter
 resource are created. For example:
-
-<<[UNRESOLVED jpbetz ]>>
-Clean up required:
-
-Use `ClusterPolicyBinding` so we can add `PolicyBinding` (namespace scoped) in
-the future?
-
-Use a verb for secondary authz check that policy binding editor has policy
-parameter edit roles? (tallclair suggested this, it has nice properties).
-
-kubectl support for this feature could show information about a policy and how
-it is applied? could be really useful pre-GA to help users
-<<[/UNRESOLVED]>>
 
 ```yaml
 # Policy binding
@@ -498,15 +508,6 @@ spec:
 With this binding, the test and global policy bindings overlap. Resources
 admitted to test environment would then be checked against both policy
 configurations.
-
-To summarize, this "API Shape" separates admission policy _definition_ from
-_configuration_. This has a couple advantages:
-
-- Access to, and delegation of, policy configuration is more manageable. In
-  particular, Kubernetes RBAC works well with this design.
-- Without the separation, the next most obvious API shape would be to encode
-  everything into a single resource, which could easily become very large and
-  run into resource size limits.
 
 ##### Policy Definitions
 
@@ -607,7 +608,8 @@ needed.
 See "Alternatives considered" section for rejected alternatives. This design was
 selected because:
 
-- Matching criteria is fully defined and validated in a builtin type.
+- The param CRD schema is owned entirely by the policy author.
+- Matching criteria is fully defined and validated in the builtin `PolicyBinding` type.
 - Type checking is straight forward.
 - Policy parameterization is separated from the policy binding, allowing for
   well abstracted parameterization types to be used by applied in different ways
@@ -637,6 +639,14 @@ Details:
   - To address this, bindings resource will have extra auth check to verify that
     anyone modifying the binding is also permitted to modify the parameters
     resource.
+  - We should consider using a verb for secondary authz check that policy
+    binding editor has policy parameter edit roles? (tallclair suggested this,
+    it has nice properties).
+
+API details:
+
+- Name this `ClusterPolicyBinding` so we can add `PolicyBinding` (namespace
+scoped) in the future?
 
 ##### Match Criteria
 
@@ -657,6 +667,14 @@ For CEL expressions, the primary benefits of match criteria are:
   match criteria has filtered out requests that is does not need to consider.
 - Match criteria is available on policy bindings and allows the binding author
   to further constrain what resources the particular binding applies to.
+
+We did consider not having any "YAML matching" for this feature and instead pushing all matching into CEL. The main deciders for me were:
+
+- Kubernetes already has resource matching as a well established concept
+- Match criteria can be built indexed/accelerated/built into decision trees
+- Match criteria can evaluate only to true/false. There is no 'error' case to consider
+- Match criteria can be used to guide static typing. If the match is for
+  v1.Deployment, we know ahead of runtime what type the object variable is
 
 Matching is performed in quite a few systems across Kubernetes:
 
@@ -814,10 +832,6 @@ xref:
 
 #### Reporting violations to Clients
 
-<<[UNRESOLVED jpbetz, TristonianJones ]>>
-Use CEL expressions for messages instead of for message args?
-<<[/UNRESOLVED]>>
-
 This section focuses on how information is reported back to clients in
 when validations fail.
 
@@ -832,12 +846,12 @@ High level proposal:
 
 - Each policy may set a `denyReason` and/or `denyCode`
 - Each validation may define a message:
-  - `message` - may contain `{1}` format args that are supplied by
-    `messageArgs: [<cel expression>, <cel expression>, ...]`
-    - If `message` is absent, `expression` and `name` will be included in the
-      failure message
-    - If any of the arg CEL expressions fail: `expression` and `name` will be
-      included in the failure message plus the arg evaluation failure
+  - `message` - plain string message
+  - `messageExpression: "<cel expression>"` (mutually exclusive with `message`)
+  - If `message` and `messageExpression` are absent, `expression` and `name`
+    will be included in the failure message
+  - If `messageExpression` results in an error: `expression` and `name` will be
+    included in the failure message plus the arg evaluation failure
 - allow/deny, warnings, audit annotations will be collectively referred to as
   `enforcement`, which will have the following options:
   - `Deny`,
@@ -866,15 +880,13 @@ spec:
   validations:
     - expression: "self.name.startsWith('xyz-')"
       name: name-prefix
-      message: "{1} must start with 'xyz-'"
-      messageArgs: ["self.name"]
+      messageExpression: "self.name + ' must start with \'xyz-\''"
     - expression: "self.name.contains('bad')"
       name: bad-name
       message: "name contains 'bad' which is discouraged due to ..."
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
-      message: "{1} contains 'suspicious'"
-      messageArgs: ["self.name"]
+      messageExpression: "self.name + ' contains \'suspicious\''"
 ```
 
 corresponding policy configuration:
@@ -993,24 +1005,25 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 ...
 spec:
-  matchResources: ...
+  matchConstraints: ...
   validations:
   - expression: "object.spec.replicas < 100"
-  enforcement: [Deny]
+  singletonBinding:
+    matchResources: ...
+    enforcement: [Deny]
 ```
 
 Note that:
 
-- `spec.paramSource` is absent
-- validations do not reference `params` (since there are none)
-- `matchResources` is used instead of `matchConstraints`. This also disables
-  policy binding support.
-- `enforcement` is set. This disabbles policy binding support and must
-  be used in conjunction with `matchConstraints`
+- `spec.paramSource` must be absent and validations may not reference `params`
+- If `spec.singletonBinding` is present policy binding support is disabled.
 
-<<[UNRESOLVED jpbetz, ?? ]>>
-Is there a better way to indicate a "singleton" policy than `matchResources` + `enforcement`? Neither seem like sufficiently obvious indicators of intent.
-<<[/UNRESOLVED]>>
+Safety features:
+
+- This field may only be set when the policy is created. it may not be set on
+  existing policies.
+- Any bindings assigned to a singleton policy are considered "misconfigured" and
+  apply the `FailurePolicy`.
 
 Reporting/debugging/analysis implications:
 
@@ -1031,9 +1044,9 @@ We will put limits on:
 
 ### Phase 2
 
-All these capabilities are required before Beta, but will not be implemented
-in the first alpha release of this enhancement due to the size and complexity
-of this enhancement.
+All these capabilities are required before Beta, but will not be implemented in
+the first alpha release of this enhancement due to the size and complexity of
+this enhancement.
 
 #### Namespace scoped policy binding
 
@@ -1220,6 +1233,7 @@ Plan:
 To consider:
 
 - labelSelector evaluation functions or other match evaluator functions ([original comment thread](https://github.com/kubernetes/enhancements/pull/3492#discussion_r981747317))
+- `string.format(string, list(dyn))` to make `messageExpression` more convenient.
 
 #### Metrics
 
@@ -1522,11 +1536,25 @@ xref: https://kyverno.io/docs/writing-policies/autogen/
 
 #### Use Case: Rollout of a new validation expression to an existing policy
 
-TODO
+1. Policy definition A exists in cluster, policy bindings X1..Xn exist
+1. "temporary" policy definition B is created with the new validation, it has
+   the same settings as policy definition A otherwise (e.g. it uses the same
+   param CR)
+1. Policy bindings X1..Xn are replicated as Y1..Yn but modified to use policy
+   definition B and `enforcement: [Audit, Warn]`
+1. Cluster administrators observe violations (via metrics, audit logs or logged warnings)
+1. Cluster administrator determines new validation is safe
+1. Policy definition A is updated to include the new validation
+1. Policy definition B and policy bindings Y1..Yn are deleted
 
 #### Use Case: Canary-ing a policy
 
-TODO
+1. New policy definition is created
+1. Any needed param CRs are created
+1. policy bindings are created and set to `enforcement: [Audit, Warn]`
+1. Cluster administrators observe violations (via metrics, audit logs or logged warnings)
+1. Cluster administrator determines new policy is safe
+1. policy bindings are set to `enforcement: [Deny, Audit, Warn]`
 
 ### Potential Applications
 
@@ -2260,6 +2288,10 @@ Why should this KEP _not_ be implemented?
 
 - cel-policy-template [`range`](https://github.com/google/cel-policy-templates-go/blob/master/test/testdata/map_ranges/template.yaml) or equivalent.
 - Default validations?
+- Short circuiting of validation (right now all are always evaluated)?
+- CEL based matching support?
+- kubectl support for this feature could show information about a policy and how
+  it is applied? could be really useful pre-GA to help users
 
 ## Alternatives
 
@@ -2759,8 +2791,7 @@ For example, to validate all containers:
   validations:
     - scope: "spec.containers[*]"
       expression: "scope.name.startsWith('xyz-')"
-      message: "{1} does not start with 'xyz'"
-      messageArgs: ["scope.name"]
+      messageExpression: "scope.name + 'does not start with \'xyz\''"
 ```
 
 To make it possible to access the path information in the scope, we can offer a
@@ -2774,8 +2805,7 @@ spec.x[xKey].y[yIndex].field
   validations:
     - scope: "x[xKey].y[yIndex].field"
       expression: "scope.startsWith('xyz-')"
-      message: "{1}, {2}: some problem"
-      messageArgs: ["scopePath.xKey", "scopePath.yIndex"]
+      messageExpression: "scopePath.xKey + ', ' + scopePath.yIndex + ': some problem'"
 ```
 
 Prior art:
@@ -2796,27 +2826,26 @@ Note: We considered extending to a list of scopes, e.g.:
   validations:
     - scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
       expression: "scope.name.startsWith('xyz-')"
-      message: "{1} does not start with 'xyz'"
-      messageArgs: ["scope.name"]
+      messageExpression: "scope.name + ' does not start with \'xyz\''"
 ```
 
 But feedback was this is signficantly more difficult to understand.
 
 ### Message formatting alternatives
 
-Alternative: offer a CEL expression
+Alternative: CEL args
 
 ```yaml
 - expression: "..."
-  messageExpression: "string(object.int1) + ' is less than ' + string(object.int2)"
+  message: "{1} is less than {2}"
+  messageArgs: ["spec.value", "spec.max"]
 ```
 
 Cons:
 
-- CEL requires explicit casts to string
-- Plain string message support is a bit messy. Options:
-  - Use CEL always: `"'this is a simple message'"`
-  - Offer both plain string (`message`) and CEL (`messageExpression`)
+- How all types are converted to string becomes the responsibility of this API.
+  Hard to please everyone and may end up needing to reimplementing `fmt.Sprintf`.
+  In which case this is probably best handled from within CEL.
 
 Alternative: Inline CEL expressions
 
@@ -2848,7 +2877,7 @@ Alternative: CEL expressions, separate args from format string
 ```yaml
 - expression: "..."
   message: "{1} is less than {2}"
-  messageArgs: ["object.int1", "object.int2"]
+  messageArgs: ["", "object.int2"]
 ```
 
 Note "%s is less than %s" is also viable, but CEL can always preformat and emit
