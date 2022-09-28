@@ -2,7 +2,7 @@ id: "3515"
 prnumber: ""
 name: kubectl-explain-openapiv3
 title: Kubectl Explain OpenAPIv3
-kep-number: draft
+kep-number: 3515
 authors: ['@alexzielenski']
 owning-sig: sig-cli
 participating-sigs: [sig-api-machinery, sig-cli]
@@ -11,7 +11,7 @@ approvers: ['@TBD']
 prr-approvers: []
 creation-date: "2022-09-14"
 last-updated: v1.19
-status: provisional
+status: implementable
 stage: alpha
 latest-milestone: ""
 milestone:

@@ -253,12 +253,54 @@ information is populated:
 <TODO>
 ```
 
-### Built-in Template Options
+Note: Feature during development will be gated by an experimental flag. The commands
+shown here elide the experimental flag for clarity.
 
-Users should be able to specify built-in templates to use instead of the 
-human-readable plaintext form:
+### Built-in Template Options
+#### Plaintext
+
+
 ```shell
-kubectl explain pods --template md
+kubectl explain pods
+```
+or
+
+```shell
+kubectl explain pods --output plaintext
+```
+
+The plaintext output format is the default and should be crafted to be as close
+as the existing `explain` output in use before this KEP.
+
+#### Raw
+
+```shell
+kubectl explain pods --output raw
+```
+
+To get raw OpenAPI v3 data for a certain resource today involves:
+1.) setting up kubectl proxy
+2.) fetching the correct path at `/openapi/v3/<group>/<version>`
+3.) filtering out unwanted results
+
+This command is useful not only for its convenience, but also other visualizations
+may be built upon the raw output if we opt not to support a first-class custom
+template solution in the future.
+
+#### HTML
+
+```shell
+kubectl explain pods --output html
+```
+
+Similarly to [godoc](https://pkg.go.dev), the we suggest to provide a searchable,
+navigable, generated webpage for the kubernetes types of whatever cluster kubectl
+is talking to.
+
+#### Markdown
+
+```shell
+kubectl explain pods --output md
 ```
 
 When using the `md` template, a markdown document is printed to stdout, so it
@@ -268,18 +310,6 @@ might be saved and used for a documentation website, for example.
 <TODO>
 ```
 
-### Custom Templates
-Users might also like to be able to specify a path to a custom template file for
-the resource information to be written to:
-
-human-readable plaintext form:
-```shell
-kubectl explain pods --template /path/to/template.tmpl
-```
-
-#### Example template Format
-
-TBD
 
 ### Risks and Mitigations
 
@@ -296,21 +326,6 @@ OpenAPI v2 should be used instead. There is another risk that this fallback proc
 takes too long for interactive speed, so timeout should be carefully considered
 to prevent user from waiting too long to see their results. 
 
-#### Template API Stability
-##### Risk
-
-If templates are written to target a specific OpenAPI version, then changes to
-the format would case templates to be broken. It is a goal of this KEP to be more
-maintainable than the current verison. If we risk templates breaking due to format
-changes, that voids the goals of the KEP.
-
-This is only a risk of users are allowed to specify their own templates. If all
-templates are maintained internally, then API stability it is something to consider
-but not necessarily a requirement.
-
-##### Mitigation
-
-TBD
 
 #### OpenAPI serialization time
 ##### Risk
@@ -356,11 +371,6 @@ extension `x-kubernetes-group-version-kind` matching the interested GVK
 ### Template rendering
 
 Go's text/template will be used due to its familiarity, stability, and virtue of being in stdlib.
-
-
-The following library functions will be provided to templates:
-
-TBD
 
 ### Test Plan
 
@@ -441,12 +451,12 @@ Defined using feature gate
 
 #### Alpha
 
-- Feature implemented behind an envar?
+- Feature implemented behind a command line flag `--experimental-openapiv3`
 - Existing explain tests are working or adapted for new implementation
 
 #### Beta
 
-- kube-OpenAPI JSON deserialization is optimized to take less than 150ms on 
+- kube-OpenAPI v3 JSON deserialization is optimized to take less than 150ms on 
   most machines
 
 #### GA
@@ -587,12 +597,12 @@ well as the [existing list] of feature gates.
 - [ ] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name:
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
+- [x] Other
+  - Describe the mechanism: --experimental-openapiv3 flag
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No
 
 ###### Does enabling the feature change any default behavior?
 
@@ -606,10 +616,12 @@ automations, so be extremely careful here.
 Yes. The old hand-written printer for OpenAPI v2 data in use today can be used as
 a fallback.
 
+Until the feature is stable it will only be enabled when the `--experimental-openapiv3` flag is used.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Exactly what you would expect. Since the feature only changes how data is displayed,
-there is no lasting effect from toggling it.
+There is no persistence to using the `--experimental-openapiv3` flag. It is only
+used for viewing data.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -685,10 +697,10 @@ logs or events for this purpose.
 ###### How can someone using this feature know that it is working for their instance?
 
 ```shell
-kubectl explain pods -v
+kubectl explain pods --output raw
 ```
 
-TBD exact output. Should see successful OpenAPI v3 request or something
+TBD exact output. User should see OpenAPI v3 JSON Schema for `pods` type printed to console.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -770,8 +782,12 @@ previous answers based on experience in the field.
 Yes, up feature replaces a single GET of `/openapi/v2` which returns a large (megabytes)
 openapi document for all types with a more targeted call to `/openapi/v3/<group>/<version>`
 
-The `/openapi/v3` endpoing implements E-Tag caching so that if the document has
+The `/openapi/v3/<group>/<version>` endpoint implements E-Tag caching so that if the document has
 not changed the server incurs a cheap, almost neglible cost to serving the request.
+
+The document returned by calls to `/openapi/v3/...` is expected to be far smaller
+than the megabytes-scale openapi v2 document, since it only includes information
+for a single group-version.
 
 <!--
 Describe them, providing:
@@ -877,3 +893,17 @@ the current design makes that time consuming and not maintainable.
 conversion as unnecessary and costly buraucracy, that contributes to high
 OpenAPI overhead. We are seeking to deprecate the type in favor of the
 kube-openapi types for future usage.
+
+### Custom User Templates
+Users might also like to be able to specify a path to a custom template file for
+the resource information to be written to:
+
+human-readable plaintext form:
+```shell
+kubectl explain pods --template /path/to/template.tmpl
+```
+
+Since the API surface for this sort of feature remains very unclear and will likely
+be very unstable, this sort of feature should be delayed until the internal
+templates have proven the API surface to be used. To do otherwise would risk
+breaking user's templates.
