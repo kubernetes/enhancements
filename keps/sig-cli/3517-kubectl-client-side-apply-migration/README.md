@@ -86,6 +86,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Example Usage](#example-usage)
   - [Transferring Field Ownership](#transferring-field-ownership)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Undermining SSA](#undermining-ssa)
     - [Operation reversion](#operation-reversion)
     - [last-applied-configuration annotation](#last-applied-configuration-annotation)
 - [Design Details](#design-details)

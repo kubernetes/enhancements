@@ -1,14 +1,17 @@
 id: "3517"
-prnumber: ""
 name: kubectl-client-side-apply-migration
 title: Kubectl Client-Side-Apply Migration
 kep-number: 3517
 authors: ['@alexzielenski']
 owning-sig: sig-cli
 participating-sigs: [sig-api-machinery, sig-cli]
-reviewers: []
-approvers: ['@TBD']
-prr-approvers: []
+reviewers:
+   - "@KnVerey"
+   - "@seans3"
+   - "@apelisse"
+ approvers:
+   - "@KnVerey"
+   - "@seans3"
 creation-date: "2022-09-08"
 last-updated: v1.19
 status: implementable
