@@ -126,11 +126,18 @@ Response example:
   "apiVersion": "authentication.k8s.io/v1alpha1",
   "kind": "SelfSubjectReview",
   "status": {
-    "name": "jane.doe",
-    "uid": "b6c7cfd4-f166-11ec-8ea0-0242ac120002",
-    "groups": ["viewers", "editors"],
-    "extra": {
-      "provider_id": "token.company.dev"
+    "userInfo": {
+      "name": "jane.doe",
+      "uid": "b6c7cfd4-f166-11ec-8ea0-0242ac120002",
+      "groups": [
+        "viewers",
+        "editors"
+      ],
+      "extra": {
+        "provider_id": [
+          "token.company.dev"
+        ]
+      }
     }
   }
 }
@@ -267,9 +274,9 @@ Pick one of these and delete the rest.
 
 ```go
 FeatureSpec{
-Default: false,
-LockToDefault: false,
-PreRelease: featuregate.Alpha,
+	Default: false,
+	LockToDefault: false,
+	PreRelease: featuregate.Alpha,
 }
 ```
 
