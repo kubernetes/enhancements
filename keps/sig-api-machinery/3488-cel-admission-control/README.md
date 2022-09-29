@@ -1889,7 +1889,7 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
-In the first alpha phrase, the integration tests are expected to be added for:
+In the first alpha phase, the integration tests are expected to be added for:
 - The behavior with feature gate and API turned on/off and mix match
 - The happy path with everything configured and validation proceeded successfully
 - Validation with different enforcement policies
@@ -2057,7 +2057,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ValidatingAdmissionPolicy
+  - Feature gate name: CelValidatingAdmissionExtensibility
   - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
