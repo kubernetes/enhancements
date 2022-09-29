@@ -574,6 +574,20 @@ The policies are respected again.
 ###### Are there any tests for feature enablement/disablement?
 Yes, both unit tests and integration tests are added.
 
+Unit tests:
+
+- pkg/api/pod/util_test.go#TestDropNodeInclusionPolicyFields
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPreFilterState
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestSingleConstraint
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestMultipleConstraints
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPreScoreStateEmptyNodes
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPodTopologySpreadScore
+
+Integration tests:
+
+- test/integration/scheduler/filters/filters_test.go#TestPodTopologySpreadFilter
+- test/integration/scheduler/scoring/priorities_test.go#TestPodTopologySpreadScoring
+
 <!--
 The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
