@@ -175,7 +175,7 @@ migrating](https://kubernetes.io/docs/reference/using-api/server-side-apply/#upg
 
 Unfortunately it is not so simple. By following these instructions you can be
 left in a situation where after migrating to server-side-apply, certain fields
-become un-deletable from the object without a manual update repairing the managed fields. 
+become un-deletable from the object without a manual update repairing the managed fields.
 Here is a simple reproducing case:
 
 Create a configmap in the cluster with client-side apply:
@@ -344,8 +344,7 @@ anymore.
 There was a concern brought up that the last-applied-configuration would no longer
 be updated although tools still depend upon it.
 
-There should be a separate deprecation plan for this annotation, but this KEP does not
-seek to remove this flag.
+There should be a separate deprecation plan for this annotation, but this KEP does not seek to remove this field.
 
 Since before SSA went GA, the kube-apiserver [will generate a
 last-applied-configuration annotation](https://github.com/kubernetes/kubernetes/blob/2e771b8e745c4a3be0d5bae3a6dc94087284c73b/staging/src/k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/lastappliedupdater.go#L60-L69) from managedFields owned by `kubectl`. The annotation
@@ -562,7 +561,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -594,7 +593,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubectl/pkg/explain`:  09/29/2022` - `75.6
 
 ##### Integration tests
 
@@ -606,7 +605,10 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+1. Ensure patch sent when necessary
+  Given an object in need of migration, test that a PATCH is sent with
+  expected contents
+
 
 ##### e2e tests
 
@@ -619,6 +621,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
+
+At a minimum this enhancement requires a test which:
+  1. Creates and updates object with CSA
+  2. Updates same object with SSA
+  3. Attempts to drop a field with SSA
+  4. Ensures the field was successfully dropped
+
 
 - <test>: <link to test coverage>
 
@@ -688,8 +697,13 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature implemented behind a feature flag
+- Feature implemented behind a command line flag (--server-side)
 - Initial e2e tests completed and enabled
+
+#### GA
+
+- Real-world users update to new kubectl version
+- 100000 successful `kubectl apply --server-side` which applied migration
 
 #### Graduation Criteria
 
@@ -769,7 +783,9 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: The environment variable `KUBECTL_ENABLE_CSA_MIGRATION=true`.
+  - Describe the mechanism: There already exists a kubectl flag `--server-side`
+  to gate server-side-apply. This flag is false by default. Since this KEP is
+  a bugfix for all users of server-side-apply, it should be applied to all users. To gate the bugfix itself behind a flag hinders discoverability, and prevents us from gaining information on it through alpha process.
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -777,8 +793,7 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-No this feature proposes a new operation to be added to kubectl, so any
-functionality is strictly "opt-in".
+No, the `--server-side` flag is off by default.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -793,7 +808,14 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, if a user wishes to switch back to client-side-apply this bugfix does not
+pose any risks to that user. This bugfix only applies a change to `managedFields` which are only respected by server-side-apply.
+
+If a user uses client-side-apply after the managed fields have been migrated, their managed field
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+If the user uses client-side-apply to roll back the change, then again uses server-side apply, the managed fields will be migrated again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -809,6 +831,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -828,12 +852,18 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+It cannot fail. Since kubectl is client-side the user just needs to change the
+version of the tool being used.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+`kubectl apply --server-side` failures happening at an unexpectedly high rate.
+If the managed fields patch went awry, they would be visible in field conflicts and other SSA errors.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -843,11 +873,17 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Before GA this path should be tested.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+`kubectl/last-applied-configuration` annotation loses some of its importance
+when users switch to SSA, and tools relying on it should start thinking about
+a migration path.away from it This KEP however does not deprecate the flag.
 
 ### Monitoring Requirements
 
@@ -858,6 +894,8 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
+N/A
+
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -865,6 +903,8 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+N/A
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -882,8 +922,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name:
   - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: This is a behavior-changing bugfix intended to be transparent. Users should know it is working if, after beginning to use SSA, they fields are deleted without issue when they try to remove them.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -901,6 +941,8 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+
+Since this is a bugfix, this KEP is considered a success if it passes all tests, and included in those tests is the prime motivating example of managed fields being orphaned when switching to SSA.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -922,11 +964,15 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+N/A
+
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+
+No
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -945,6 +991,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+There are clusters within kubectl's skew support for which the SSA feature gate is not enabled, since it hasn't even been on by default.
+
+In this case the user is running a misconfigured setup when using the `--server-side` flag. The user will get an error that the server does not understand their `PATCH` type.
+
 ### Scalability
 
 <!--
@@ -956,6 +1006,8 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+N/A
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -972,6 +1024,13 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+There may be a new call to `PATCH` objects which are server-side applied whenever they are appleid for the first time after having used client-side-apply.
+
+After the initial call, it will no longer be necessary until
+client-side-apply is used again.
+
+There are no other additional API calls added.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -981,6 +1040,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -988,6 +1049,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -997,6 +1060,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1009,6 +1074,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+No
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -1020,6 +1087,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+No
 
 ### Troubleshooting
 
@@ -1035,6 +1104,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+kubectl error will be shown to the user
 
 ###### What are other known failure modes?
 
