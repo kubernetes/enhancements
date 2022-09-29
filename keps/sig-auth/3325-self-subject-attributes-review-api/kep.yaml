@@ -21,7 +21,7 @@ milestone:
   beta: "v1.27"
   stable: "v1.28"
 feature-gates:
-- name: SelfSubjectAttributesReview
+- name: APISelfSubjectReview
   components:
   - kube-apiserver
 disable-supported: true
