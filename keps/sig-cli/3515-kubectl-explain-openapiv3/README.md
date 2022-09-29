@@ -385,7 +385,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -417,7 +417,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubectl/pkg/explain`: `09/29/2022`-`75.6`
 
 ##### Integration tests
 
@@ -431,6 +431,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - <test>: <link to test coverage>
 
+Tests should include
+
+- Expected Output tests
+- Show correct OpenAPI v3 endpoints are hit
+- Tests that show default/nullability information is being included in plaintext output
+- Tests that update the backing openapi in between calls to explain
+
 ##### e2e tests
 
 <!--
@@ -443,6 +450,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
+Existing e2e tests should be adapted for the new system.
+E2E test that shows every definition in OpenAPI document can be retrieved via explain
+
+
+
 - <test>: <link to test coverage>
 
 ### Graduation Criteria
@@ -453,10 +465,14 @@ Defined using feature gate
 
 - Feature implemented behind a command line flag `--experimental-openapiv3`
 - Existing explain tests are working or adapted for new implementation
+- Plaintext output roughly matches explain output
+- Raw output implemented
 
 #### Beta
 
-- kube-OpenAPI v3 JSON deserialization is optimized to take less than 150ms on 
+- md output implemented
+- basic html output
+- kube-OpenAPI v3 JSON deserialization is optimized to take less than 150ms on
   most machines
 
 #### GA
