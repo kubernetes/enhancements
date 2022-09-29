@@ -13,6 +13,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -148,13 +152,33 @@ Overlap with topology-aware routing:
 
 ### Test Plan
 
-Unit tests:
-* unit tests validating API strategy/validation for when `internalTrafficPolicy` is set on Service.
-* unit tests exercising kube-proxy behavior when `internalTrafficPolicy` is set to all possible values.
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-E2E test:
-* e2e tests validating default behavior with kube-proxy did not change when `internalTrafficPolicy` defaults to `Cluster`. Existing tests should cover this.
-* e2e tests validating that traffic is only sent to node-local endpoints when `internalTrafficPolicy` is set to `Local`.
+##### Prerequisite testing updates
+
+##### Unit tests
+
+- `pkg/registry/core/service`: `v1.22` - `API strategy tests for feature enablement and upgrade safety (dropping disabled fields)`
+- `pkg/apis/core/v1`: `v1.22` - `API defauting tests`
+- `pkg/proxy/iptables`: `v1.22` - `iptables rules tests + feature enablement`
+- `pkg/proxy/ipvs`: `v1.22` - `ipvs rules tests + feature enablement`
+- `pkg/proxy`: `v1.22` - `generic kube-proxy Service tests`
+
+NOTE: search [ServiceInternalTrafficPolicy](https://github.com/kubernetes/kubernetes/search?q=ServiceInternalTrafficPolicy) in the Kubernetes repo for references to existing tests.
+
+##### Integration tests
+
+- `Test_ExternalNameServiceStopsDefaultingInternalTrafficPolicy`: https://github.com/kubernetes/kubernetes/blob/61b983a66b92142e454c655eb2add866c9b327b0/test/integration/service/service_test.go#L34
+- `Test_ExternalNameServiceDropsInternalTrafficPolicy`: https://github.com/kubernetes/kubernetes/blob/61b983a66b92142e454c655eb2add866c9b327b0/test/integration/service/service_test.go#L78
+- `Test_ConvertingToExternalNameServiceDropsInternalTrafficPolicy`: https://github.com/kubernetes/kubernetes/blob/61b983a66b92142e454c655eb2add866c9b327b0/test/integration/service/service_test.go#L125
+
+##### e2e tests
+
+- `should respect internalTrafficPolicy=Local Pod to Pod`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2520
+- `should respect internalTrafficPolicy=Local Pod (hostNetwork: true) to Pod`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2598
+- `should respect internalTrafficPolicy=Local Pod and Node, to Pod (hostNetwork: true)`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2678
 
 ### Graduation Criteria
 
