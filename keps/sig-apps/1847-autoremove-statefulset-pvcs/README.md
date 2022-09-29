@@ -450,7 +450,7 @@ fields of API types, flags, etc.?**
 Metrics are provided by `kube-state-metrics` unless otherwise noted.
 
 * **How can an operator determine if the feature is in use by workloads?**
-  `kube_statefulset_persistent_volume_claim_retention_policy will have nonzero
+  `kube_statefulset_persistent_volume_claim_retention_policy` will have nonzero
   counts for the `delete` policy fields.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
