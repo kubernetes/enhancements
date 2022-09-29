@@ -12,8 +12,6 @@ reviewers:
   - kensipe
 approvers:
   - TBD
-prr-approvers:
-  - deads2k
 see-also:
   - "/keps/sig-api-machinery/20190426-crd-defaulting.md"
 stage: stable

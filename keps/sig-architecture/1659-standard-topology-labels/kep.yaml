@@ -16,8 +16,6 @@ approvers:
 see-also: []
 replaces: []
 
-prr-approvers:
-  - "@johnbelamaric"
 stage: stable
 feature-gates: []
 disable-supported: false

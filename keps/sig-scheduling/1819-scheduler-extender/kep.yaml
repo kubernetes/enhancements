@@ -11,8 +11,6 @@ reviewers:
 approvers:
   - "@ahg-g"
   - "@Huang-Wei"
-prr-approvers:
-  - "@wojtek-t"
 replaces:
   - "https://github.com/cofyc/community/blob/master/contributors/design-proposals/scheduling/scheduler_extender.md"
 

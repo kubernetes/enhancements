@@ -15,8 +15,6 @@ reviewers:
 approvers:
   - derekwaynecarr
   - liggitt
-prr-approvers:
-  - deads2k
 see-also:
   - "/keps/sig-node/20191205-container-streaming-requests.md"
 

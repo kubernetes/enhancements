@@ -19,6 +19,4 @@ reviewers:
   - "@ehashman"
 approvers:
   - "@dashpole"
-prr-approvers:
-  - "@wojtek-t"
 disable-supported: true
