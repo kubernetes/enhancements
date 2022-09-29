@@ -9,7 +9,6 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -96,13 +95,8 @@ The `internalTrafficPolicy` field will not apply for headless Services or Servic
 
 #### Story 1
 
-As an application owner, I would like traffic to cluster DNS servers to always prefer local endpoints to reduce
-latency in my application.
-
-#### Story 2
-
-As a platform owner, I want to create a Service that always directs traffic to a logging daemon on the same node.
-Traffic should never bounce to a daemon on another node.
+As a platform owner, I want to create a Service that always directs traffic to a logging daemon or metrics agent on the same node.
+Traffic should never bounce to a daemon on another node since the logs would then report an incorrect log source.
 
 ### Risks and Mitigations
 
