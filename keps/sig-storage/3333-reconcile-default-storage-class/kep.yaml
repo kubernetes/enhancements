@@ -15,9 +15,8 @@ approvers:
 see-also:
 replaces:
 
-prr-approvers:
-  - "@deads2k"
-  - "@wojtek-t"
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
