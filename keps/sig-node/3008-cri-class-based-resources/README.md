@@ -246,6 +246,12 @@ support those tehcnologies. This proposal suggests to address the issue above
 in a generalized way by extending the Kubernetes resource model with a new type
 of resources, i.e. QoS-class resources.
 
+This KEP identifies two technologies that can immediately be enabled with
+QoS-class resources. However, these are just two examples  and the proposed
+changes are generic (and not tied to these two QoS-class resource types in any
+way), making it easy to implement new QoS-class resource types in the runtimes
+without any changes in Kubernetes.
+
 [Intel RDT][intel-rdt] implements a class-based mechanism for controlling the
 cache and memory bandwidth QoS of applications. All processes in the same
 hardware class share a portion of cache lines and memory bandwidth. RDT
@@ -267,10 +273,10 @@ enabling class-based network or memory type prioritization of applications.
 
 Currently, there is no mechanism in Kubernetes to use these types of resources.
 CRI-O and containerd runtimes have support for RDT and blockio classes and they
-provide an bridge-gap user interface through special pod annotations. We would
-like to eventually get these types of resources first class citizen and
-properly supported in Kubernetes, providing visibility, a well-defined user
-interface, and permission controls.
+provide an bridge-gap user interface through special pod annotations. The goal
+is to get these types of resources first class citizens and properly supported
+in Kubernetes, providing visibility, a well-defined user interface, and
+permission controls.
 
 It seems necessary to support both container-level and pod-level QoS-class
 resources as independent concepts. Intel RDT (above) is per-container by
