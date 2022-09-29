@@ -365,13 +365,15 @@ enabled for the first time.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests cover feature enablement/disablement.
+There is no new field that needs to be handled in a special way. The feature 
+gate just enables/disables a code path in PV controller which is already covered
+by existing unit tests.
 
-Validation tests:
-https://github.com/RomanBednar/kubernetes/blob/2f533cd572e265e5ad3a244adc9a888534245b89/pkg/apis/core/validation/validation_test.go#L2291
+Validation test:
+https://github.com/kubernetes/kubernetes/blob/42458952616406922ea59e6d0b65c35c94444172/pkg/apis/core/validation/validation_test.go#L2291
 
-PV controller tests:
-https://github.com/RomanBednar/kubernetes/blob/2f533cd572e265e5ad3a244adc9a888534245b89/pkg/controller/volume/persistentvolume/pv_controller_test.go#L794
+PV controller test:
+https://github.com/kubernetes/kubernetes/blob/42458952616406922ea59e6d0b65c35c94444172/pkg/controller/volume/persistentvolume/pv_controller_test.go#L753
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -426,7 +428,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [X] API .spec
     - Condition name:
     - Other field: `pvc.spec.storageClassName` changing from nil to current default StorageClass name after the default is set
-- [X] Other (treat as last resort)
+- [ ] Other (treat as last resort)
     - Details: metric
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
