@@ -572,7 +572,7 @@ Yes, we can just disable the feature gate.
 The policies are respected again.
 
 ###### Are there any tests for feature enablement/disablement?
-No, appropriate unit tests will be added for Alpha.
+Yes, both unit tests and integration tests are added.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
