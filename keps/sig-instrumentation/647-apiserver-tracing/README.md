@@ -17,7 +17,13 @@
   - [APIServer Configuration and EgressSelectors](#apiserver-configuration-and-egressselectors)
   - [Controlling use of the OpenTelemetry library](#controlling-use-of-the-opentelemetry-library)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
 - [Graduation requirements](#graduation-requirements)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -26,6 +32,7 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
 - [Alternatives considered](#alternatives-considered)
   - [Introducing a new EgressSelector type](#introducing-a-new-egressselector-type)
   - [Other OpenTelemetry Exporters](#other-opentelemetry-exporters)
@@ -38,10 +45,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
-- [X] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -162,9 +173,30 @@ As the community found in the [Metrics Stability Framework KEP](https://github.c
 
 ### Test Plan
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 We will test tracing added by this feature with an integration test.  The
 integration test will verify that spans exported by the apiserver match what is
 expected from the request.
+
+##### Prerequisite testing updates
+
+None.
+
+##### Unit tests
+
+- `staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go`: `10/10/2021`
+- `staging/src/k8s.io/component-base/tracing/api/v1/config_test.go`: `10/10/21`
+
+##### Integration tests
+
+- ``test/integration/apiserver/tracing/tracing_test.go`
+
+##### e2e tests
+
+Not Required.
 
 ## Graduation requirements
 
@@ -184,11 +216,20 @@ Beta
 
 GA
 
+
+### Upgrade / Downgrade Strategy
+
+This feature is upgraded or downgraded with the API Server. It is not otherwise impacted.
+
+### Version Skew Strategy
+
+This feature is not impacted by version skew. API Servers of different versions can each prodce traces to provide observability signals independently.
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
 
-* **How can this feature be enabled / disabled in a live cluster?**
+###### How can this feature be enabled / disabled in a live cluster?
   - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: APIServerTracing
     - Components depending on the feature gate: kube-apiserver
@@ -199,62 +240,58 @@ GA
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
 
-* **Does enabling the feature change any default behavior?**
+###### Does enabling the feature change any default behavior?
   No. The feature is disabled unlesss both the feature gate and `--opentelemetry-config-file` flag are set.  When the feature is enabled, it doesn't change behavior from the users' perspective; it only adds tracing telemetry based on API Server requests.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
   Yes.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
   It will start sending traces again.  This will happen regardless of whether it was disabled by removing the `--opentelemetry-config-file` flag, or by disabling via feature gate.
 
-* **Are there any tests for feature enablement/disablement?**
+###### Are there any tests for feature enablement/disablement?
   [Unit tests](https://github.com/kubernetes/kubernetes/blob/5426da8f69c1d5fa99814526c1878aeb99b2456e/test/integration/apiserver/tracing/tracing_test.go) exist which enable the feature gate.
 
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can a rollout fail? Can it impact already running workloads?**
+###### How can a rollout fail? Can it impact already running workloads?
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
    * If APIServer tracing is rolled out with a high sampling rate, it is possible for it to have a performance impact on the api server, which can have a variety of impacts on the cluster.
 
-* **What specific metrics should inform a rollback?**
+###### What specific metrics should inform a rollback?
 
   * API Server [SLOs](https://github.com/kubernetes/community/tree/master/sig-scalability/slos) are the signals that should guide a rollback.  In particular, the [`apiserver_request_duration_seconds` and `apiserver_request_slo_duration_seconds`](apiserver_request_slo_duration_seconds) metrics would surface issues resulting in slower API Server responses.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   Manually enabled the feature-gate and tracing, verified the apiserver in my cluster was reachable, and disabled the feature-gate and tracing in a dev cluster.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
   No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can an operator determine if the feature is in use by workloads?**
+###### How can an operator determine if the feature is in use by workloads?
   This is an operator-facing feature.  Look for traces to see if tracing is enabled.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
   - OpenTelemetry does not currently expose metrics about the number of traces successfully sent: https://github.com/open-telemetry/opentelemetry-go/issues/2547
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
   N/A
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
   N/A
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **Does this feature depend on any specific services running in the cluster?**
+###### Does this feature depend on any specific services running in the cluster?
   The feature itself (tracing in the API Server) does not depend on services running in the cluster.  However, like with other signals (metrics, logs), collecting traces from the API Server requires a trace collection pipeline, which will differ depending on the cluster.  The following is an example, and other OTLP-compatible collection mechanisms may be substituted for it.  The impact of outages are likely to be the same, regardless of collection pipeline.
 
   - [OpenTelemetry Collector (optional)]
@@ -273,31 +310,27 @@ _For beta, this section is required: reviewers must answer these questions._
 _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
-* **Will enabling / using this feature result in any new API calls?**
+###### Will enabling / using this feature result in any new API calls?
   This will not add any additional API calls.
 
-* **Will enabling / using this feature result in introducing new API types?**
+###### Will enabling / using this feature result in introducing new API types?
   This will introduce an API type for the configuration.  This is only for
   loading configuration, users cannot create these objects.
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+###### Will enabling / using this feature result in any new calls to the cloud provider?
   Not directly.  Cloud providers could choose to send traces to their managed
   trace backends, but this requires them to set up a telemetry pipeline as
   described above.
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
   No.
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
+###### Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs]?
   It will increase API Server request latency by a negligible amount (<1 microsecond)
   for encoding and decoding the trace contex from headers, and recording spans
   in memory. Exporting spans is not in the critical path.
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   The tracing client library has a small, in-memory cache for outgoing spans.  Based on current benchmarks, a full cache could use as much as 5 Mb of memory.
 
 ### Troubleshooting
@@ -308,17 +341,17 @@ details). For now, we leave it here.
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
+###### How does this feature react if the API server and/or etcd is unavailable?
   This feature does not have a dependency on the API Server or etcd (it is built into the API Server).
 
-* **What are other known failure modes?**
+###### What are other known failure modes?
   - [Trace endpoint misconfigured, or unavailable]
     - Detection: No traces processed by trace ingestion pipeline
     - Mitigations: None
     - Diagnostics: API Server logs containing: "traces exporter is disconnected from the server"
     - Testing: The feature will simply not work if misconfigured. It doesn't seem worth verifying.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+###### What steps should be taken if SLOs are not being met to determine the problem?
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -331,6 +364,10 @@ _This section must be completed when targeting beta graduation to a release._
 * KEP merged as provisional on 1/8/2020, including controller tracing
 * KEP scoped down to only API Server traces on 5/1/2020
 * Updated PRR section 2/8/2021
+
+## Drawbacks
+
+Depending on the chosen sampling rate, tracing can increase CPU and memory usage by a small amount, and can also add a negligible amount of latency to API Server requests, when enabled.
 
 ## Alternatives considered
 

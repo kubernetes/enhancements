@@ -20,7 +20,7 @@ approvers:
 see-also:
 replaces:
 stage: beta
-last-updated: 2022-09-19
+last-updated: 2022-09-29
 latest-milestone: "v1.26"
 milestone:
   alpha: "v1.22"
