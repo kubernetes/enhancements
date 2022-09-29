@@ -279,9 +279,11 @@ come to consensus that the behavior can remain for a few more releases until cli
 is out of vogue, especially since SSA is now GA.
 
 The initially fetched object will be tested to check if the migration should be
-performed. If not, SSA proceeds as normal. If the migration is required, then
-a `UPDATE` or JSON PATCH is sent prior to the normal SSA operation. This is a technical requirement:
-managed fields may not be modified within an SSA operation.
+performed. This check is done by performing the managed fields migration, which is
+idempotent. If the migration results in a no-op change, then SSA proceeds as normal.
+If the migration is required, then a `UPDATE` or JSON PATCH is sent prior to the
+normal SSA operation. This is a technical requirement: managed fields may not be
+modified within an SSA operation.
 
 ### Example Usage
 
@@ -313,10 +315,28 @@ field ownership.
 
 ### Risks and Mitigations
 
+### Undermining SSA
+
+It can be said that requiring the fetch of an object before applying the object
+is an anti-pattern of using SSA. Since this is the behavior of kubectl today,
+it is seen as relatively low risk. But the question arises, when would it be
+safe to remove the initial fetch and migration step?
+
+THe migration needs only to be applied while kubectl users use client-side-apply.
+Once SSA becomes on-by-default, we can assume there are no more client-side-apply
+users after that version leaves the kubectl support window. At that point this
+migration and extra fetch should be removed from kubectl.
+
 #### Operation reversion
 
 If the user reverts to using client-side-apply again, this operation's effect
-will be reverted. Since the future is for everyone to use server-side-apply only
+will be reverted. Because this transformation is applied before SSA is used
+as a precondition, the bug which motivates this KEP will not resurface despite
+reverting to client-side-apply.
+
+Once all kubectl users have switched to server-side-apply, the migration will be
+stable and it will not be fetch the object and check if it needs to be done
+anymore.
 
 #### last-applied-configuration annotation
 
@@ -326,9 +346,10 @@ be updated although tools still depend upon it.
 There should be a separate deprecation plan for this annotation, but this KEP does not
 seek to remove this flag.
 
-Since before SSA went GA, the kube-apiserver will unconditoinally generate a
-last-applied-configuration annotation from managedFields owned by `kubectl`:
-for now these tools will remain working as before.
+Since before SSA went GA, the kube-apiserver [will generate a
+last-applied-configuration annotation](https://github.com/kubernetes/kubernetes/blob/2e771b8e745c4a3be0d5bae3a6dc94087284c73b/staging/src/k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/lastappliedupdater.go#L60-L69) from managedFields owned by `kubectl`. The annotation
+is generated using the current object state before defaulting/mutating admissions.
+Tools depending upon this annotation will remain working as before.
 
 ## Design Details
 
@@ -486,7 +507,7 @@ Note that the `f:legacy: {}` entry was removed from the `kubectl` `Apply` manage
 but it persists on the `kubectl-client-side-apply` manager. Because the field is
 still owned by at least one manager, it is not removed from the underlying object.
 
-If the user was to now run `kubectl migrate pod test`, the expected fields would
+If the user was to now run `kubectl apply -f <path/to/file> --server-side`, the expected fields would
 look like the following:
 
 ```console
@@ -1077,19 +1098,17 @@ being wrong.
 
 ### Separate Migration Command
 
-It was proposed early on in the design process to make this conversion transparent.
-That is, `kubectl` will unconditionally include a patch of the managed fields with the
-user's own patch whenever server-side-apply is used on the client side.
+It was proposed early in this KEP to provide a separate command such as:
 
-The main problem with this approach is that server-side-apply on the server-side
-will reject any `PATCH` requests sent which include managed fields. Server-side apply is
-not allowed to be used with patches that modify managed fields, so this approach is
-unworkable from the beginning.
+```shell
+kubectl migrate pod <name> --from <csamanager> --to <ssamanager>
+```
 
-Additionally, this violates the main benefits of using server-side-apply: injecting
-a race condition by making SSA now into a read-modify-write operation as opposed to
-an atomic patch request.
+This was decided against during SIG meetings for the following reasons:
 
+1. Users must learn new command
+2. Much more bureuacracy towards adding/deprecating new command
+3. Should not add new top-level CLI for command which is only to be used temporarily
 
 ### kubectl Plugin
 
@@ -1102,7 +1121,7 @@ Pros
 
 Cons
 1. Users must perform extra step to use functionality
-
+2. Low discoverability for something a huge portion of users will need to do
 
 ## Infrastructure Needed (Optional)
 
