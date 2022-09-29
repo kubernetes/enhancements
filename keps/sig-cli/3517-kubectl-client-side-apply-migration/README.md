@@ -1107,7 +1107,7 @@ kubectl migrate pod <name> --from <csamanager> --to <ssamanager>
 This was decided against during SIG meetings for the following reasons:
 
 1. Users must learn new command
-2. Much more bureuacracy towards adding/deprecating new command
+2. Much more bureaucracy towards adding/deprecating new command
 3. Should not add new top-level CLI for command which is only to be used temporarily
 
 ### kubectl Plugin
