@@ -1380,7 +1380,7 @@ type PodSchedulingSpec {
 }
 
 // PodSchedulingStatus is where resource drivers provide
-// information about where the could allocate a resource
+// information about where they could allocate a resource
 // and whether allocation failed.
 type PodSchedulingStatus struct {
 	// Each resource driver is responsible for providing information about
