@@ -214,7 +214,7 @@ need to identify the `VolumeSnapshotContent` mapped to the `VolumeSnapshot`
 from which the `PVC` is being created. 
 
 Either through software or via manual intervention, the annotation 
-`snapshot.storage.kubernetes.io/allowVolumeModeChange: true` needs to be applied
+`snapshot.storage.kubernetes.io/allow-volume-mode-change: true` needs to be applied
 to the `VolumeSnapshotContent`. If the backup software is a privileged user, 
 it will have `Update` and `Patch` permissions on `VolumeSnapshotContents`.
 
@@ -289,7 +289,7 @@ like below after this change:
 kind: VolumeSnapshotContent 
 metadata: 
 	annotations: 
-		- snapshot.storage.kubernetes.io/allowVolumeModeChange: "true"
+		- snapshot.storage.kubernetes.io/allow-volume-mode-change: "true"
 ...
 ```
 
@@ -328,7 +328,7 @@ As part of the preprocessing steps, it will:
    2. Get the `Spec.VolumeMode` of the `PVC` being created.
    If they do not match:
       1. Get all annotations on the `VolumeSnapshotContent` and verify if 
-      `snapshot.storage.kubernetes.io/allowVolumeModeChange: true` exists.
+      `snapshot.storage.kubernetes.io/allow-volume-mode-change: true` exists.
       If it does not exist, block volume provisioning by returning an error.
 4. In all other cases, let volume provisioning continue.
 
@@ -400,9 +400,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 The feature flag will be enabled for e2e tests. The tests will attempt to convert volume 
 mode when creating a `PVC` from a `VolumeSnapshot`:
-  - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
+  - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
     annotation present.
-  - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
+  - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
     annotation.
   - With `Spec.SourceVolumeMode` set to `nil`.
 
@@ -519,7 +519,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-- persistentvolumeclaim_create_from_snapshot_failed_total
+- persistentvolumeclaim_provision_failed_total
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -570,7 +570,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Event Reason: ProvisioningFailed
   - Event Message: ailed to provision volume with StorageClass "csi-hostpath-sc": error getting handle for DataSource Type 
   VolumeSnapshot by Name new-snapshot-demo: requested volume default/hpvc-restore modifies the mode of the source volume 
-  but does not have permission to do so. snapshot.storage.kubernetes.io/allowVolumeModeChange annotation is not present 
+  but does not have permission to do so. snapshot.storage.kubernetes.io/allow-volume-mode-change annotation is not present 
   on snapshotcontent snapcontent-8d709f2e-db04-444f-aae2-e17d6c5398dd
 
 
@@ -679,6 +679,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+No new API calls are introduced as part of this feature.
 
 ###### What are other known failure modes?
 
