@@ -6,6 +6,12 @@
 - [Summary](#summary)
   - [New Feature Gates](#new-feature-gates)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -40,6 +46,36 @@ used as as described in its parent KEP. For all other contents, please refer to 
 
 Please refer to the [CSI Migration Production Readiness Review Questionnaire](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration#production-readiness-review-questionnaire).
 
+## Design Details
+### Test Plan
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+No additional tests are needed, rather the issue is orchestrating CSI driver
+deployment for prow jobs. This has been complicated by the cloud provider
+extraction work, which no longer permits cloud provider specific orchestration
+in the k/k repository. This means that it is not possible to run any test for
+AzureFile in k/k. All such tests have been moved to the [Azure File CSI Driver repo](https://github.com/kubernetes-sigs/azurefile-csi-driver).
+
+##### Unit tests
+
+https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/azure_file_test.go
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
+
+Support for tests after AzureFile migration have been [added to
+azurefile-csi-driver](https://github.com/kubernetes-sigs/azurefile-csi-driver/tree/master/test/e2e).
+
+The e2e tests are now covered in [azurefile-csi-driver-e2e-migration](https://testgrid.k8s.io/provider-azure-azurefile-csi-driver#pr-azurefile-csi-driver-e2e-migration).
+
 ## Implementation History
 
 Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
@@ -56,3 +92,6 @@ Major milestones for Azure File in-tree plugin CSI migration:
 
 - 1.24
   - AzureFile CSI migration to Beta, on by default
+
+- 1.26
+  - AzureFile CSI migration to GA, on by default
