@@ -272,10 +272,10 @@ kubectl explain pods --output plaintext
 The plaintext output format is the default and should be crafted to be as close
 as the existing `explain` output in use before this KEP.
 
-#### Raw
+#### OpenAPIV3 (raw json)
 
 ```shell
-kubectl explain pods --output raw
+kubectl explain pods --output openapiv3
 ```
 
 To get raw OpenAPI v3 data for a certain resource today involves:
@@ -466,7 +466,7 @@ Defined using feature gate
 - Feature implemented behind a command line flag `--experimental-openapiv3`
 - Existing explain tests are working or adapted for new implementation
 - Plaintext output roughly matches explain output
-- Raw output implemented
+- OpenAPIV3 (raw json) output implemented
 
 #### Beta
 
@@ -713,10 +713,10 @@ logs or events for this purpose.
 ###### How can someone using this feature know that it is working for their instance?
 
 ```shell
-kubectl explain pods --output raw
+kubectl explain pods --output openapiv3
 ```
 
-TBD exact output. User should see OpenAPI v3 JSON Schema for `pods` type printed to console.
+User should see OpenAPI v3 JSON Schema for `pods` type printed to console.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
