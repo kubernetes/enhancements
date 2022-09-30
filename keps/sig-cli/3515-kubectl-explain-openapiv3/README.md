@@ -243,7 +243,7 @@ wiping nullable fields.
 The following user experience should be possible with `kubectl explain`
 
 ```shell
-kubectl explain pods
+kubectl explain pods.spec
 ```
 
 Output should be familiar to users of today's `kubectl explain`, except new
@@ -321,7 +321,7 @@ OpenAPI v3 data is not available in the current cluster.
 
 ##### Mitigation
 
-# If the user does not provide an --output argument
+###### If the user does not provide an --output argument
 
 This is a "compatibility mode" where users will see OpenAPI v3 plaintext template
 if the data is available, or fallback to old `kubectl explain` behavior for openapi v2.
@@ -331,14 +331,14 @@ OpenAPI v2 should be used instead. There is another risk that this fallback proc
 takes too long for interactive speed, so timeout should be carefully considered
 to prevent user from waiting too long to see their results.
 
-# If the user does provider an --output argument
+###### If the user does provider an --output argument
 
 If a user specifies an `--output` argument and the server 404's attempting to
 fetch the correct openapi version for the template, a new error message should
 be thrown to the effect of server missing openapi data for version: %v.%v.%v`.
 
 Internal templates should strive to support all OpenAPI versions supported by
-versoins of kubernetes within their skew.
+versions of kubernetes within their skew.
 
 Other network errors should be handled using normal kubectl error handling.
 
@@ -472,7 +472,6 @@ Existing e2e tests should be adapted for the new system.
 E2E test that shows every definition in OpenAPI document can be retrieved via explain
 
 
-
 - <test>: <link to test coverage>
 
 ### Graduation Criteria
@@ -482,15 +481,24 @@ Defined using feature gate
 #### Alpha
 
 - Feature implemented behind a command line flag `--experimental-openapiv3`
+- `--output` flag added
 - Existing explain tests are working or adapted for new implementation
 - Plaintext output roughly matches explain output
 - OpenAPIV3 (raw json) output implemented
+- HTML and MD outputs are not target for alpha
 
 #### Beta
 
-- md output implemented
-- basic html output
-- kube-OpenAPI v3 JSON deserialization is optimized to take less than 150ms on
+- md output implemented (or dropped from design due to continued debate)
+  - Table of contents all GVKs grouped by Group then Version.
+  - Section for each individual GVK
+  - All types hyperlink to specific section
+- basic html output  (or dropped from design due to continued debate)
+  - Table of contents all GVKs grouped by Group then Version.
+  - Page for each individual GVK.
+  - All types hyperlink to their specific page
+  - Searchable by name, description, field name.
+- kube-openAPI v3 JSON deserialization is optimized to take less than 150ms on
   most machines
 
 #### GA
@@ -571,6 +579,8 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+N/A
+
 ### Version Skew Strategy
 
 <!--
@@ -585,6 +595,18 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This feature only requires the target cluster has enabled The OpenAPIV3 feature.
+
+OpenAPIV3 is Beta as of Kubernetes 1.24. This feature should not be on-by-default
+until it is GA.
+
+Users of the `--output` flag who attempt to use it against a cluster for which
+OpenAPI v3 is not enabled will be shown an error informing them of missing openapi
+version upon 404.
+
+Built-in templates supported by kubectl should aim to support any OpenAPI
+version which is GA.
 
 ## Production Readiness Review Questionnaire
 
@@ -645,17 +667,18 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+Enabling the feature changes the data source of `kubectl explain` to use openapiv3.
+The output optimally should be familiar to users, who may be delighted to see new
+information populated.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. The old hand-written printer for OpenAPI v2 data in use today can be used as
-a fallback.
-
 Until the feature is stable it will only be enabled when the `--experimental-openapiv3` flag is used.
+It has no persistent effect on data that is viewewd.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-There is no persistence to using the `--experimental-openapiv3` flag. It is only
-used for viewing data.
+There is no persistence to using the feature. It is only used for viewing data.
 
 ###### Are there any tests for feature enablement/disablement?
 
