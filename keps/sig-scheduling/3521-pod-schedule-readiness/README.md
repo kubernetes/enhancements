@@ -87,6 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -179,7 +180,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This KEP aims to add a `.spec.schedulingPaused` field to Pod's API, to mark a Pod's schedule readiness.
+This KEP aims to add a `.spec.schedulingGates` field to Pod's API, to mark a Pod's schedule readiness.
 Integrators can mutate this field to signal to scheduler when a Pod is ready for scheduling.
 
 ## Motivation
@@ -199,10 +200,14 @@ some Pods may stay in a "miss-essential-resources" state for a long period. Thes
 actually churn the scheduler (and downstream integrators like Cluster AutoScaler) in an
 unnecessary manner.
 
-Lacking the knob to flag Pods as scheduling-ready/unready wastes scheduling cycles on retrying
+Lacking the knob to flag Pods as scheduling-paused/ready wastes scheduling cycles on retrying
 Pods that are determined to be unschedulable. As a result, it delays the scheduling of other Pods,
 and also lowers the overall scheduling throughput. Moreover, it imposes restrictions to vendors to
 develop some in-house features (such as hierarchical quota) natively.
+
+On the other hand, a condition `{type:PodScheduled, reason:Unschedulable}` works as canonical info
+exposed by scheduler to guide downstream integrators (e.g., ClusterAutoscaler) to supplement cluster
+resources. Our solution should not break this contract.
 
 This proposal describes APIs and mechanics to allow users/controllers to control when a pod is
 ready to be considered for scheduling.
@@ -214,8 +219,9 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Define an API to mark Pods as scheduling-paused/unpaused.
+- Define an API to mark Pods as scheduling-paused/ready.
 - Design a new Enqueue extension point to customize Pod's queueing behavior.
+- Not mark scheduling-paused Pods as `Unschedulable` by updating their `PodScheduled` condition.
 - A default enqueue plugin to honor the new API semantics.
 
 ### Non-Goals
@@ -224,7 +230,8 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-- Update the Pod's condition if it carries `.spec.schedulingPaused=true`.
+
+- Enforce updating the Pod's conditions to expose more context for scheduling-paused Pods.
 - Focus on in-house use-cases of the Enqueue extension point.
 
 ## Proposal
@@ -238,13 +245,13 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We propose a new field `.spec.schedulingPaused` to the Pod API. The field is defaulted to `false`.
+We propose a new field `.spec.schedulingGates` to the Pod API. The field is defaulted to nil.
 
-For Pods carrying `.spec.schedulingPaused=true`, they will be "parked" in scheduler's internal
-unschedulablePods pool, and only get tried when the field is set to `false`.
+For Pods carrying non-nil `.spec.schedulingGates`, they will be "parked" in scheduler's internal
+unschedulablePods pool, and only get tried when the field is mutated to nil.
 
-Practically, this field can be initialized to `true` by a MutatingWebhook, and be flipped to `false`
-by external integrators when certain criteria is met.
+Practically, this field can be initialized by a single client and(or) multiple mutating webhooks,
+and afterwards each gate entry can be removed by external integrators when certain criteria is met.
 
 ### User Stories (Optional)
 
@@ -257,7 +264,7 @@ bogged down.
 
 #### Story 1
 
-As an orchestrator developer, such as a dynamic quota manager, I have the full picutre to know when
+As an orchestrator developer, such as a dynamic quota manager, I have the full picture to know when
 Pods are scheduling-ready; therefore, I want an API to signal to kube-scheduler when to consider a
 Pod for scheduling. The pattern for this story would be to use a mutating webhook to force creating
 pods in a "not-ready to schedule" state that the custom orchestrator changes to ready at a later
@@ -276,6 +283,13 @@ to guard the schedulability of my Pods. This enables splitting custom enqueue ad
 several building blocks, and thus offers the most flexibility. Meanwhile, some plugin needs to visit
 the in-memory state (like waiting Pods) that is only accessible via scheduler framework.
 
+#### Story 4
+
+A custom workload orchestrator may wish to modify the pod prior to consideration for scheduling,
+without having to fork or alter the workload controller. The orchestrator may wish to make 
+time-varying (post-creation) decisions on pod scheduling, perhaps to preserve scheduling constraints,
+avoid disruption, or prevent co-existence.
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -285,32 +299,26 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-- **Restricted state transition:** The `schedulingPaused` state can only transit to `true` upon
-Pod's creation, and can transit to `false` afterwards once.
+- **Restricted state transition:** The `schedulingGates` field can be initialized only when a Pod is
+created (either by the client, or mutated during admission). After creation, each `schedulingGate`
+can be removed in arbitrary order, but addition of new `schedulingGate` is disallowed.
+To ensure consistency, scheduled Pod must be always carrying nil schedulingGates.
 
-    | schedulingPaused=true⏸️ | schedulingPaused=false▶️ |
-    |------------------------|-------------------------|
-    | ✅ create<br>❌ update   | ✅ create<br>✅ update    |
+    |                                     | non-nil schedulingGates⏸️ | nil schedulingGates▶️ |
+    |-------------------------------------|-------------------------|-------------------------|
+    | unscheduled Pod<br>(nil nodeName)   | ✅ create<br>❌ update   | ✅ create<br>✅ update    |
+    | scheduled Pod<br>(non-nil nodeName) | ❌ create<br>❌ update   | ✅ create<br>✅ update    |
 
-- **v1 guarantee:** If the feature is enabled and the new field is updated to `true`, it's still
-supported to set the pod's .spec.nodeName without clearing the `schedulingPaused` flag. However,
-scheduled Pods that carry `schedulingPaused=true` is a warning signal revealing one of the
-following reasons:
-    - The feature is not enabled in default scheduler
-    - Default scheduler is at a lower version than API Server
-    - A custom scheduler or administrator may have enforce setting nodeName for the Pod
-Operation-wise, you need to report this behavior to your cluster administrator.
+    > Note: if an administrator or custom controller enforce settings nodeName for a scheduling-paused
+    Pod, API Server will return a 409 conflict / validation error.
 
 - **New field disabled in Alpha but not scheduler extension:** In Alpha, the new Pod field is disabled
 by default. However, the scheduler's extension point is activated no matter the feature gate is enabled
-or not. This enable scheduler plugin developers to tryout the feature even in Alpha, by crafting
+or not. This enables scheduler plugin developers to tryout the feature even in Alpha, by crafting
 different enqueue plugins and wire with custom fields or conditions.
 
-- **New column in kubectl:** As we don't write unschedulable condition to a Pod's status if it carries
-`.spec.schedulingPaused=true`, to provider better UX, we're going to add a column "schedule paused"
-to the output of `kubectl get pod` to indicate whether it's scheduling paused or not.
-    > Mentioned in "v1 guarantee" section, if you notice some scheduling(running) Pod's "schedule paused"
-    column is true, you may need to report to your administrator.
+- **New column in kubectl:** To provider better UX, we're going to add a column "scheduling paused"
+to the output of `kubectl get pod` to indicate whether it's scheduling-paused or not.
 
 ### Risks and Mitigations
 
@@ -326,12 +334,12 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-- Scheduler doesn't actively clear a Pod's `schedulingPaused` state. This means if the controller
-logic is ill-implemented, some Pods may stay in Pending state incorrectly. If you noticed a Pod stays
-in Pending state for a long time and it carries `schedulingPaused=true`, you may find out which component
-updates the state (via `.spec.managedFields`) and report the symptom to the component owner.
+- Scheduler doesn't actively clear a Pod's `schedulingGates` field. This means if some controller
+is ill-implemented, some Pods may stay in Pending state incorrectly. If you noticed a Pod stays
+in Pending state for a long time and it carries non-nil `schedulingGates`, you may find out which
+component owns the gate(s) (via `.spec.managedFields`) and report the symptom to the component owner.
 
-- Faulty controllers may forget to unset the Pod's `schedulingPaused` state, and hence results in
+- Faulty controllers may forget to remove the Pod's `schedulingGates`, and hence results in
 a large number of unschedulable Pods. In Alpha, we don't limit the number of unschedulabe Pods caused
 by potential faulty controllers. We will evaluate necessary options in the future to mitigate
 potential abuse.
@@ -350,20 +358,22 @@ proposal will be implemented, this is the place to discuss them.
 
 ### API
 
-A new API field `schedulingPaused` will be added to Pod's spec:
+A new API field `SchedulingGates` will be added to Pod's spec:
 
 ```go
 type PodSpec struct {
-    <<[UNRESOLVED]>>
-    // Each scheduling gate corresponding with the condition name of .status.conditions.
-    // Gating condition can be updated by different controller, and scheduling is triggered
-    // only when all gating conditions are ready/true.
-    // This option will need to be accompanied with a yet-to-be-implemented fined-grained
+    // Each scheduling gate represents a particular scenario the scheduling is blocked upon.
+    // Scheduling is triggered only when SchedulingGates is empty.
+    // In the future, we may impose permission mechanics to restrict which controller can mutate
+    // which schedulingGate. It's dependent on a yet-to-be-implemented fined-grained
     // permission (https://docs.google.com/document/d/11g9nnoRFcOoeNJDUGAWjlKthowEVM3YGrJA3gLzhpf4)
-    // and consistent with how finalizes/liens work today.
-    SchedulingGates []string
-    <<[/UNRESOLVED]>>
-    SchedulingPaused *bool // <-- New field.
+    // and needs to be consistent with how finalizes/liens work today.
+    SchedulingGates []PodSchedulingGate
+}
+
+type PodSchedulingGate struct {
+    // Name of the SchedulingGate.
+    Name string
 }
 ```
 
@@ -371,9 +381,8 @@ In the scheduler's ComponentConfig API, we'll add a new type of extension point 
 
 ```go
 type Plugins struct {
-    PreFilter PluginSet
     ......
-    Enqueue PluginSet // <-- New field.
+    Enqueue PluginSet
 }
 ```
 
@@ -412,8 +421,8 @@ func RunEnqueuePlugins() *Status {
 }
 ```
 
-To honor the semantics of the new `.spec.schedulingPaused` API, a default Enqueue plugin will be
-introduced. It simply returns `Success` or `Unschedulable` depending on incoming Pod's `scheduledPaused`
+To honor the semantics of the new `.schedulingGates` API, a default Enqueue plugin will be
+introduced. It simply returns `Success` or `Unschedulable` depending on incoming Pod's `schedulingGates`
 field.
 
 This `DefaultEnqueue` plugin will also implement the `EventsToRegister` function to claim it's a
@@ -497,10 +506,10 @@ The following scenarios need to be covered in integration tests:
 
 - Feature gate's enabling/disabling
 - Configure an Enqueue plugin via MultiPoint and Enqueue extension point
-- Pod with `.spec.schedulingPaused=false` functions as before
-- Pod with `.spec.schedulingPaused=true` will be moved to unscheduledPods pool
-- Disable `flushUnschedulablePodsLeftover()`, then verify Pod with `.spec.schedulingPaused=true`
-can be moved back to activeQ when `.spec.schedulingPaused` get flipped to `false`
+- Pod carrying nil `.spec.schedulingGates` functions as before
+- Pod carrying non-nil `.spec.schedulingGates` will be moved to unscheduledPods pool
+- Disable `flushUnschedulablePodsLeftover()`, then verify Pod with non-nil `.spec.schedulingGates`
+can be moved back to activeQ when `.spec.schedulingGates` is all cleared
 - Ensure no significant performance degradation
 
 - `test/integration/scheduler/queue_test.go`: Will add new tests.
@@ -522,11 +531,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 Create a test with the following sequences:
 
-- Provision a cluster with feature gate `PodScheduleReadiness=true` (we may need to setup a testgrid
+- Provision a cluster with feature gate `PodSchedulingReadiness=true` (we may need to setup a testgrid
 for when it's alpha)
-- Create a Pod with `.spec.schedulingPaused=false` request for no resources.
+- Create a Pod with non-nil `.spec.schedulingGates`.
 - Wait for 15 seconds to ensure it's not get scheduled.
-- Update the Pod's `.spec.schedulingPaused` to true.
+- Clear the Pod's `.spec.schedulingGates` field.
 - Wait for 5 seconds for the Pod to be scheduled; otherwise error the e2e test.
 
 ### Graduation Criteria
@@ -602,6 +611,8 @@ in back-to-back releases.
 #### Beta
 
 - Feature enabled by default.
+- Permission control on individual schedulingGate is applicable (via 
+[fine-grained permissions](https://docs.google.com/document/d/11g9nnoRFcOoeNJDUGAWjlKthowEVM3YGrJA3gLzhpf4)) 
 - Gather feedback from developers and out-of-tree plugins.
 - Benchmark tests passed, and there is no performance degradation.
 - Update documents to reflect the changes.
@@ -628,8 +639,8 @@ enhancement:
 
 - Upgrade
   - Enable the feature gate in both API Server and Scheduler, and gate the Pod's scheduling
-  readiness by setting `.spec.schedulingPaused` to true. Next, set it to false when readiness
-  condition is met.
+  readiness by setting non-nil `.spec.schedulingGates`. Next, remove each schedulingGate
+  when readiness criteria is met.
 - Downgrade
   - Disable the feature gate in both API Server and Scheduler, so that previously configured value
   will be ignored.
@@ -701,7 +712,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PodScheduleReadiness
+  - Feature gate name: PodSchedulingReadiness
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -726,11 +737,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. If disabled, kube-apiserver will start rejecting Pod's mutation on `.spec.schedulingPaused`.
+Yes. If disabled, kube-apiserver will start rejecting Pod's mutation on `.spec.schedulingGates`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Mutation on Pod's `.spec.schedulingPaused` will be respected again.
+Mutation on Pod's `.spec.schedulingGates` will be respected again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -822,7 +833,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [x] API .spec
-  - Other field: `schedulingPaused`
+  - Other field: `schedulingGates`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
