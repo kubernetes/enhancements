@@ -331,11 +331,11 @@ OpenAPI v2 should be used instead. There is another risk that this fallback proc
 takes too long for interactive speed, so timeout should be carefully considered
 to prevent user from waiting too long to see their results.
 
-###### If the user does provider an --output argument
+###### If the user does provide an --output argument
 
 If a user specifies an `--output` argument and the server 404's attempting to
 fetch the correct openapi version for the template, a new error message should
-be thrown to the effect of server missing openapi data for version: %v.%v.%v`.
+be thrown to the effect of: `server missing openapi data for version: %v.%v.%v`.
 
 Internal templates should strive to support all OpenAPI versions supported by
 versions of kubernetes within their skew.
@@ -381,7 +381,7 @@ specified by the user's path.
 3. kubectl fetches `/openapi/v3/<group>/<version>`
 4. kubectl parses the result as kube-openapi spec3
 5. kubectl locates the schema of the return type for the Path `/apis/<group>/<version>/<resource>` in kube-openapi
-6. If a field path was used, kubectl traveres the definition's fields to the subschema
+6. If a field path was used, kubectl traverses the definition's fields to the subschema
 specified by the user's path.
 8. kubectl renders the type using its built-in template for human-readable plaintext
 9. If `--recursive` was used, repeat step 8 for the transitive closure of object-typed fields of the top-level object. Concat the results together.
@@ -894,7 +894,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-
+Using kubectl's normal error handling. There is no lasting effect to data or the
+user.
 
 ###### What are other known failure modes?
 
@@ -912,6 +913,8 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
 
 ## Implementation History
 
