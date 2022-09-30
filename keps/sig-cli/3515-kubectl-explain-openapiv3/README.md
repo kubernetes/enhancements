@@ -88,7 +88,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Basic Usage](#basic-usage)
   - [Built-in Template Options](#built-in-template-options)
     - [Plaintext](#plaintext)
-    - [Raw](#raw)
+    - [OpenAPIV3 (raw json)](#openapiv3-raw-json)
     - [HTML](#html)
     - [Markdown](#markdown)
   - [Risks and Mitigations](#risks-and-mitigations)
