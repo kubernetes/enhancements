@@ -75,14 +75,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The Probe struct contains int32 fields that specify seconds for timeouts.
-Some users would like to have timeouts less than one second.
+The Probe struct contains fields that specify seconds for intervals.
+Some users would like to have intervals less than or slightly greater
+than one second.
 
 ## Motivation
 
+Better performance in the form of faster startups, more timely readiness checks...
+
 #### Knative
 
-Knative will create Pods (via Deployment) and wait for them to become `Ready`
+For example, Knative will create Pods (via Deployment) and wait for them to become `Ready`
 when handling an HTTP request from an end-user. In this case, Pod readiness
 latency has a direct impact on HTTP request latency. (In the steady state,
 Knative will re-use an existing Pod, but this situation can happen on scale-up,
@@ -90,8 +93,10 @@ and is guaranteed to happen on scale-from-zero.)
 
 ### Goals
 
-An ability to specify timeouts that are less than one second.
+An ability to specify timeouts that have more granularity, specificity, than just zero,
+one, or n-seconds.
 Add additional tests cases to the timeout test cases.
+Not breaking backwards compatibility with the V1 API.
 
 
 ### Non-Goals
@@ -102,16 +107,18 @@ Converting fields from `int32` to `resource.Quantity`.
 
 ## Proposal
 
-Add three new fields (of type `int32`) to the Probe struct, which would be used to handle time values in milliseconds:
+TLDR:
+Add three new optional fields (of type `*int32`) to the Probe struct, which would be used to offset the second based time values in the Probe struct:
 
-- `periodMilliseconds`
-- `initialDelayMilliseconds`
-- `timeoutMilliseconds`
+- `PeriodMilliseconds`       // How often (in milliseconds) to offset PeriodSeconds when performing the probe.
+- `InitialDelayMilliseconds` // Length of time (in milliseconds) to offset IntialDelaySeconds before health checking is activated.
+- `TimeoutMilliseconds`      // Length of time (in milliseconds) to offset TimeoutMilliseconds before health checking times out.
 
-The seconds and milliseconds fields would be summed to get the appropriate duration. For example,
+The seconds and milliseconds fields (as related) will be summed to get the resulting time duration. For example,
 
-```
+```yaml
 ...
+#yaml
 periodSeconds: 1
 periodMilliseconds: 500
 ...
@@ -121,19 +128,20 @@ would be considered a period value of 1.5s or 1500ms. These values are used as `
 
 A few additional examples:
 
-`periodSeconds: 2` and `periodMilliseconds: -500` would be 0.5s / 500ms.
+`periodSeconds: 2` and `periodMilliseconds: -500` would be 1.5s / 1500ms.
 
 `periodSeconds: 1` and `periodMilliseconds: -900` would be 0.1s / 100ms.
 
-More generally, the effective periodSeconds value would be = `periodSeconds` + `periodMilliseconds`.
+More generally, the effective period value would be = `periodSeconds` + `periodMilliseconds`.
 
-There are a few corner cases around default values:
+There are a few corner cases around default (effective period) values:
 
-`periodSeconds: 0` and `perMilliseconds: 500` would be 10.5s / 10500ms (as 0 => 10 for `periodSeconds` via [defaults.go](https://github.com/kubernetes/kubernetes/blob/3b13e9445a3bf86c94781c898f224e6690399178/pkg/apis/core/v1/defaults.go#L213-L215))
+`periodSeconds: 0` and `periodMilliseconds: 500` would be 10.5s / 10500ms (as 0 => 10 for `periodSeconds` via [defaults.go](https://github.com/kubernetes/kubernetes/blob/3b13e9445a3bf86c94781c898f224e6690399178/pkg/apis/core/v1/defaults.go#L213-L215))
 
 `timeoutSeconds: 0` and `timeoutMilliseconds: 500` would be 1.5s / 1500ms (as 0 => 1 for `timeoutSeconds` via [defaults.go](https://github.com/kubernetes/kubernetes/blob/3b13e9445a3bf86c94781c898f224e6690399178/pkg/apis/core/v1/defaults.go#L210-L212))
 
-Each millisecond field would be restricted to an absolute value less than `1000` (i.e. between -1 second and 1 second), and the adjusted interval would never be allowed to be less than 0 (if it was less than 0, it would get failed at the validation stage).
+Each optional millisecond field will be restricted to [-999,999], and the effective sum will never be allowed
+to be less than 0 (if the effective sum is less than 0, it will fail at the validation stage and block delployments).
 
 
 ### User Stories (Optional)
@@ -146,15 +154,14 @@ See the discussion from the Sept 14, 2021 SIG-Node meeting
 
 ### Notes/Constraints/Caveats (Optional)
 
+Changing defaults is a strict no-go.
 
 ### Risks and Mitigations
 
-Changing defaults is a strict no-go.
-
 Accidentally setting a timeout too low could DOS kubelet if many are used.
-Mitigate by preventing timeout values too small.
+Will mitigate by preventing timeout values that are too small.
 Could be configurable,
-100ms is a first guess, but could be adjusted based on user feedback during alpha and performance testing. Could also implement a scaling repeat to reduce risk of thrashing.
+100ms is a first guess, but will be adjusted based on user feedback during alpha and performance testing. Will also implement a scaling of the periodMilliseconds field to further reduce risk of thrashing.
 
 Benchmarking currently WIP for alpha, will be implemented for beta to determine the ideal floor. Several benchmarking tools are being considered (options include ones developed by Knative, Amazon, Red Hat). Benchmarking tooling will also work for similar areas (such as the PLEG work.)
 
@@ -167,15 +174,11 @@ Question raised of how probes should be charged: charging is an issue for all ex
 
 #### Overriding an existing field
 
-How does the change to overriding a field effect the users of the existing field.
-
-Currently, the time fields in the Probe struct only use values in seconds. Since this KEP proposes allowing a change of the units on those fields, that could be considered an override.
-
-However, this change would be done on a probe by probe basis and would be opt-in. Meaning that the default behavior would not change unless a user specifically added the millisecond fields to their spec. Absent that specific opt-in by using the new fields, existing users should not be impacted.
+However, this change would be done on a probe by probe basis and would be opt-in. Meaning that the default behavior will not change unless a user specifically added the millisecond fields to their spec. Absent that specific opt-in by using the new fields, existing users not being impacted by this change (gate on/off) will be tested.
 
 ## Design Details
 
-Potentially proposed changes as implemented code:
+Draft PR:
 https://github.com/kubernetes/kubernetes/pull/107958/commits
 
 A quick highlighting of key points:
@@ -184,15 +187,15 @@ A quick highlighting of key points:
 
 * Adding three additional, optional fields to the Probe struct type:
 
-```
-PeriodMilliseconds *int32
+```go
+PeriodMilliseconds *int32 //note these are signed offset
 InitialDelayMilliseconds *int32
 TimeoutMilliseconds *int32
 ```
 
 * Adding a utility function to get a single duration from second / millisecond values
 
-```
+```go
 // GetProbeTimeDuration combines second and millisecond time increments into a single time.Duration
 func GetProbeTimeDuration(seconds int32, milliseconds *int32) time.Duration {
 	if milliseconds != nil {
@@ -203,7 +206,7 @@ func GetProbeTimeDuration(seconds int32, milliseconds *int32) time.Duration {
 
 This would be substituted for use in the various places where times are used in `pkg/kubelet/prober`, for example:
 
-```
+```go
 -	timeout := time.Duration(p.TimeoutSeconds) * time.Second                      // existing code, to be replaced
 +	timeout := GetProbeTimeDuration(p.TimeoutSeconds, p.TimeoutMilliseconds)      // new usage, replaces line above
 ```
@@ -213,7 +216,7 @@ https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go
 
 https://github.com/kubernetes/kubernetes/blob/7e7bc6d53b021be6fe3d5a1125a990913b7a9028/pkg/apis/core/types.go#L2062-L2094
 
-```
+```go
 // Probe describes a health check to be performed against a container to determine whether it is
 // alive or ready to receive traffic.
 type Probe struct {
@@ -259,30 +262,29 @@ PeriodSeconds
 #### Defaulting logic
  - InitialDelaySeconds, has no defaulting logic.
    Therefore it would get the golang defaulting logic, and default to 0.
-   There is no particular reason to have an initial delay that is millisecond based.
-   Timing is not a good way to do sequencing.
-   1 second, 2 seconds, etc.
- - TimeoutSeconds, defaults to 1 seconds if unset (which includes the explicitly set to 0 state). This is the last ending time before the timeout fails. Slow Failures.
+ - TimeoutSeconds, defaults to 1 second if unset (which includes the explicitly set to 0 state). This is the last ending time before the timeout fails. Defaulting, thus, results in slow failures (when one considers a full second of time in cpu time).
 https://github.com/kubernetes/kubernetes/blob/e19964183377d0ec2052d1f1fa930c4d7575bd50/pkg/apis/core/v1/defaults.go#L224-L226
-```
+
+```go
  	if obj.TimeoutSeconds == 0 {
 		obj.TimeoutSeconds = 1
 	}
 ```
- - Period Seconds is the biggest hurdle, but also the most useful.
-PeriodSeconds defaults to 10 seconds if unset (which includes the explicitly set to 0 state). Fast Successes.
+
+ - Period Seconds is the biggest hurdle in charging and overall cost to the cluster, but also the most useful if set correctly.
+PeriodSeconds defaults to 10 seconds if unset (which includes the explicitly set to 0 state). Fast failure detections are thus blocked with existing defaults.
 https://github.com/kubernetes/kubernetes/blob/e19964183377d0ec2052d1f1fa930c4d7575bd50/pkg/apis/core/v1/defaults.go#L227-L229
-```
+
+```go
 	if obj.PeriodSeconds == 0 {
 		obj.PeriodSeconds = 10
 	}
 ```
 
-
 #### Validation of fields
 
 Must be non-negative, Zero or greater.
-```
+```go
 	allErrs = append(allErrs, ValidateNonnegativeField(int64(probe.InitialDelaySeconds), fldPath.Child("initialDelaySeconds"))...)
 	allErrs = append(allErrs, ValidateNonnegativeField(int64(probe.TimeoutSeconds), fldPath.Child("timeoutSeconds"))...)
 	allErrs = append(allErrs, ValidateNonnegativeField(int64(probe.PeriodSeconds), fldPath.Child("periodSeconds"))...)
@@ -294,18 +296,18 @@ What fields may be necessary to add?
 
 In pkg/apis/core/types.go
 
-```
+```go
 
 type Probe struct {
     ...
     ...
-    // How often (in milliseconds) to perform the probe.
+    // How often (in milliseconds) to offset PeriodSeconds when performing the probe.
 	// +optional
 	PeriodMilliseconds *int32
-	// Length of time (in milliseconds) before health checking is activated.
+	// Length of time (in milliseconds) to offset IntialDelaySeconds before health checking is activated.
 	// +optional
 	InitialDelayMilliseconds *int32
-	// Length of time (in milliseconds) before health checking times out.
+	// Length of time (in milliseconds) to offset TimeoutMilliseconds before health checking times out.
 	// +optional
 	TimeoutMilliseconds *int32
 }
@@ -314,16 +316,16 @@ type Probe struct {
 #### Logic for Added Fields
 What is the least logic that could be used?
 
-The combined value of `periodSeconds` and `periodMilliseconds` must be greater than 100ms.
-The combined value of `timeoutSeconds` and `timeoutMilliseconds` must be greater than 100ms.
-The combined value of `intialDelaySeconds` and `initialDelayMilliseconds` must be greater than 0ms.
+The combined value of `PeriodSeconds` and `PeriodMilliseconds` must be greater than 100ms (for first period).
+The combined value of `TimeoutSeconds` and `TimeoutMilliseconds` must be greater than 100ms.
+The combined value of `IntialDelaySeconds` and `InitialDelayMilliseconds` must be greater than or equal to zero ms.
 
 
 ### Existing use of Probe struct fields.
 
 #### InitialDelaySeconds
 https://github.com/kubernetes/kubernetes/blob/7c2e6125694e1aadc78a5fed1cf696872af50a5e/pkg/kubelet/prober/worker.go#L246-L249
-```
+```go
 	// Probe disabled for InitialDelaySeconds.
 	if int32(time.Since(c.State.Running.StartedAt.Time).Seconds()) < w.spec.InitialDelaySeconds {
 		return true
@@ -332,13 +334,13 @@ https://github.com/kubernetes/kubernetes/blob/7c2e6125694e1aadc78a5fed1cf696872a
 
 #### TimeoutSeconds
 https://github.com/kubernetes/kubernetes/blob/7c2e6125694e1aadc78a5fed1cf696872af50a5e/pkg/kubelet/prober/prober.go#L160-L213
-```
+```go
 	timeout := time.Duration(p.TimeoutSeconds) * time.Second
 ```
 
 #### ProbeSeconds
 https://github.com/kubernetes/kubernetes/blob/7c2e6125694e1aadc78a5fed1cf696872af50a5e/pkg/kubelet/prober/worker.go#L131-L167
-```
+```go
 func (w *worker) run() {
 	probeTickerPeriod := time.Duration(w.spec.PeriodSeconds) * time.Second
 
@@ -380,15 +382,12 @@ probeLoop:
 
 ### Summary
 
-Depending on the importance of the various Probe settings,
-it may be best to focus on one field.
-
-The Probe.Period looks to be the most effective to focus on.
-Probe.Period describes the 'repeat-rate' for how often a probe will run.
-
-Where Probe.Timeout describes an endpoint for when to stop probing.
-Probe.InitialDelay describes how long to wait before starting,
-but can be set to zero.
+The Kubernetes design for Probes includes a Probe struct containing
+fields that specify seconds for intervals.
+Some users would like to have intervals less than or slightly greater
+than one second.
+This KEP adds sub-second interval capablilities to Kubernetes Liveness,
+Readiness, and Startup Probes.
 
 
 ### Test Plan
@@ -467,144 +466,43 @@ fields of API types, flags, etc.?**
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
-
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
-
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
-
-* **Are there any missing metrics that would be useful to have to improve observability
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
-
+This section will be completed when targeting beta graduation to a release.
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
-
+This section will be completed when targeting beta graduation to a release.
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
+Enabling / using this feature will not result in any new API calls.
+See earlier KEP text regarding limits and scaling (to zero the millisecond offsets)
 
-_For beta, this section is required: reviewers must answer these questions._
+No new scalability API types.
 
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
+No new calls to the cloud provider will be provided.
 
-* **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
 
-No
+Enabling this feature will not necessarily result in increasing size or count of
+the existing API objects. (3 optional omit if nil *int32 fields for each probe)
 
-* **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+Enabling / using this feature will result in changing the time taken (and thus charging) by certain
+operations covered by [existing SLIs/SLOs]. Whether Negatively/Positively will be determined by
+customers and testing in Beta. Thus, this KEP provides for mitigation in the form of larger
+minimums and scaling of the millisecond offsets to zero.
 
-No
+Enabling / using this feature will result in changes to resource usage
+(CPU, RAM, disk, IO, ...) in kubelet and runtime coponents. This KEP provides for
+mitigation of the changes.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
+Reducing the probe frequency to subsecond intervals will result in probes polling much more
+frequently, and that is mitigated through scaling. In a worst case scenario, if all probes
+are set to the minimum value (100ms), through scaling it would result in 3x (configurable)
+as many probe runs compared to the current state.
 
-No
-
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
-
-No
-
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
-
-No
-
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
-
-Reducing the probe frequency to subsecond intervals will result in probes polling much more frequently. In a worst case scenario, if all probes are set to the minimum value (100ms), it would result in 10x as many probe runs compared to the current state.
+In beta consideration will be made for increasing the rate of change for scaling when resource
+pressure is identified.
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
-_This section must be completed when targeting beta graduation to a release._
-
-* **How does this feature react if the API server and/or etcd is unavailable?**
-
-* **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
-
-* **What steps should be taken if SLOs are not being met to determine the problem?**
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+This section will be completed when targeting beta graduation to a release.
 
 ## Implementation History
 
@@ -615,7 +513,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 ### `early*Offset`
 
-(copying directly from [Tim's comment](https://github.com/kubernetes/enhancements/pull/3067#issuecomment-1039311016))
+(copying directly from [@sftim 's comment](https://github.com/kubernetes/enhancements/pull/3067#issuecomment-1039311016))
 
 Add an extra field to specify “early failure”: an integer quantity of milliseconds (or microseconds - we should leave room for that). That early failure offset is something that legacy clients can ignore without a big problem and would fully support round-tripping to a future Pod v2 API that unifies these fields.
 
@@ -683,7 +581,7 @@ While this would reduce the number of new fields one has to add, it is to some d
 
 ### v2 api for probe.
 
-I think this means a v2 API for Container therefore Pod.
+Introduce a v2 API.
 This seems too invasive.
 
 All Seconds fields become resource.Quantity instead of int32. This supports subdivision in a single field.
@@ -732,4 +630,4 @@ Cons:
 
 ## Infrastructure Needed (Optional)
 
-Usual infrastructure depending on the complexity of the test cases needed.
+Usual infrastructure.
