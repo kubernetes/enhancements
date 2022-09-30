@@ -321,11 +321,26 @@ OpenAPI v3 data is not available in the current cluster.
 
 ##### Mitigation
 
+# If the user does not provide an --output argument
+
+This is a "compatibility mode" where users will see OpenAPI v3 plaintext template
+if the data is available, or fallback to old `kubectl explain` behavior for openapi v2.
+
 If the initial request for OpenAPI V3 fails, the old implementation using
 OpenAPI v2 should be used instead. There is another risk that this fallback process
 takes too long for interactive speed, so timeout should be carefully considered
-to prevent user from waiting too long to see their results. 
+to prevent user from waiting too long to see their results.
 
+# If the user does provider an --output argument
+
+If a user specifies an `--output` argument and the server 404's attempting to
+fetch the correct openapi version for the template, a new error message should
+be thrown to the effect of server missing openapi data for version: %v.%v.%v`.
+
+Internal templates should strive to support all OpenAPI versions supported by
+versoins of kubernetes within their skew.
+
+Other network errors should be handled using normal kubectl error handling.
 
 #### OpenAPI serialization time
 ##### Risk
@@ -353,8 +368,10 @@ TODO: fill with links to referred implementation
 6. kubectl converts `gnostic_v2.Document` into `proto.Models`
 7. kubectl searches the document's `Definitions` for a schema with the
 extension `x-kubernetes-group-version-kind` matching the interested GVK
-8. kubectl renders the definition using its hardcoded printer
-9. If `--recursive` was used, repeat step 8 for the transitive closure of
+8. If a field path was used, kubectl traveres the definition's fields to the subschema
+specified by the user's path.
+9. kubectl renders the definition using its hardcoded printer
+10. If `--recursive` was used, repeat step 9 for the transitive closure of
   object-typed fields of the top-level object. Concat the results together.
 
 #### Proposed High-level Approach
@@ -363,10 +380,11 @@ extension `x-kubernetes-group-version-kind` matching the interested GVK
 2. kubectl resolves 'pods' to GVR core v1 pods using cluster discovery information
 3. kubectl fetches `/openapi/v3/<group>/<version>`
 4. kubectl parses the result as kube-openapi spec3
-5. kubectl locates the return type of the `/apis/<group>/<version>/<resource>` OpenAPI Path
-6. kubectl renders the type using its built-in template for human-readable plaintext
-7. If `--recursive` was used, repeat step 6 for the transitive closure of
-  object-typed fields of the top-level object. Concat the results together.
+5. kubectl locates the schema of the return type for the Path `/apis/<group>/<version>/<resource>` in kube-openapi
+6. If a field path was used, kubectl traveres the definition's fields to the subschema
+specified by the user's path.
+8. kubectl renders the type using its built-in template for human-readable plaintext
+9. If `--recursive` was used, repeat step 8 for the transitive closure of object-typed fields of the top-level object. Concat the results together.
 
 ### Template rendering
 
