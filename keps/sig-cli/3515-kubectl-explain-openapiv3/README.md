@@ -368,7 +368,7 @@ TODO: fill with links to referred implementation
 6. kubectl converts `gnostic_v2.Document` into `proto.Models`
 7. kubectl searches the document's `Definitions` for a schema with the
 extension `x-kubernetes-group-version-kind` matching the interested GVK
-8. If a field path was used, kubectl traveres the definition's fields to the subschema
+8. If a field path was used, kubectl traverses the definition's fields to the subschema
 specified by the user's path.
 9. kubectl renders the definition using its hardcoded printer
 10. If `--recursive` was used, repeat step 9 for the transitive closure of
