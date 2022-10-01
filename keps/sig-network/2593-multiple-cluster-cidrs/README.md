@@ -340,12 +340,12 @@ type ClusterCIDRConfigStatus struct {
     {
         NodeSelector: { MatchExpressions: { "node": "n1" } },
         PerNodeHostBits:      4,
-        IPv4CIDR:            "192.168.128.0/17",
+        IPv4CIDR:            "192.168.64.0/20",
     },
     {
         NodeSelector: { MatchExpressions: { "node": "n1" } },
         PerNodeHostBits:      4,
-        IPv4CIDR:            "192.168.64.0/20",
+        IPv4CIDR:            "192.168.128.0/17",
     },
     {
         NodeSelector: nil,
