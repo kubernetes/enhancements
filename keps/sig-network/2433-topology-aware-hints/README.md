@@ -23,10 +23,17 @@
     - [Handling Node Updates](#handling-node-updates)
   - [Future Expansion](#future-expansion)
   - [Test Plan](#test-plan)
-    - [Controller Unit Tests](#controller-unit-tests)
-    - [Kube-Proxy Unit Tests](#kube-proxy-unit-tests)
-  - [e2e Tests](#e2e-tests)
+    - [Unit tests](#unit-tests)
+      - [Controller Unit Tests](#controller-unit-tests)
+      - [Kube-Proxy Unit Tests](#kube-proxy-unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Observability](#observability)
+  - [Events](#events)
+    - [Logic](#logic)
+    - [Sample Events](#sample-events)
+    - [Documentation](#documentation)
+    - [Limitations](#limitations)
   - [Graduation Criteria](#graduation-criteria)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -368,12 +375,18 @@ In the future we may expand this functionality if needed. This could include:
 
 - A new `RequireZone` algorithm that would keep endpoints in EndpointSlices for
   the same zone they are in.
-- A new option to specify a minimum threshold for the `PreferZone` approach.
+- A new option to specify a minimum threshold for the `Auto` (PreferZone)
+  approach.
 - Support for region based hints.
 
 ### Test Plan
 
-#### Controller Unit Tests
+#### Unit tests
+
+- `k8s.io/pkg/controller/endpointslice`: `2022-10-05` - `73.1`
+- `k8s.io/pkg/controller/endpointslice/topologycache`: `2022-10-05` - `75.4`
+
+##### Controller Unit Tests
 | Test Description | Expected Result |
 | :--- | :--- |
 | Feature On, 2+ zones | Hints set |
@@ -393,7 +406,7 @@ In the future we may expand this functionality if needed. This could include:
 | Endpoint additions that require redistribution | Hints updated |
 | Endpoint removals that require redistribution | Hints updated |
 
-#### Kube-Proxy Unit Tests
+##### Kube-Proxy Unit Tests
 | Test Description | Expected Result |
 | :--- | :--- |
 | Feature On, hints matching zone | Endpoints filtered |
@@ -401,23 +414,21 @@ In the future we may expand this functionality if needed. This could include:
 | Feature Off, hints matching zone | Endpoints not filtered |
 | Feature On, no hints matching zone | Endpoints not filtered |
 
-### e2e Tests
-This represents the largest and most uncertain part of the testing effort. We
-need to find a way to run e2e tests on multizone clusters. To limit flakiness,
-those clusters likely need to have a consistent distribution of nodes across
-zones. This will enable us to write predictable tests for topology aware
-routing.
+#### Integration tests
 
-At a minimum, we likely want the following test:
+N/A
 
-- 3 zone cluster, with 1 equivalent node per zone
-- Deploy a single pod to each node with a daemonset
-- Create a Service that targets that daemonset
-- Make requests from each zone and ensure that the request is routed to a pod in
-  the same zone
+#### e2e tests
 
-We'll likely need more tests to properly vet this feature, but this one should
-be straightforward to write and unlikely to be flaky.
+This feature has e2e test coverage with the ["Topology Hints"
+test](https://github.com/kubernetes/kubernetes/blob/fbb6ccc0c62d2431dc3a18a4130d7fbae5c05acd/test/e2e/network/topology_hints.go#L43).
+This is currently limited to a periodic run due to the nature of requiring a
+multizone cluster to run. It has been [remarkably
+stable](https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20multizone)
+with 100% green runs.
+
+As a prerequisite for GA, we will ensure that this test runs as a presubmit
+if any code changes in kube-proxy or the EndpointSlice controller.
 
 ### Observability
 We can reuse some of the metrics of EndpointSlice Controller that we already
@@ -454,12 +465,73 @@ EndpointSliceSyncs = metrics.NewCounterVec(
 
 ```
 
+### Events
+A common point of frustration among initial users of this feature was how
+difficult it was to tell if this feature was enabled and working as intended.
+Due to the nature of this design, even when a user opts in to the `Auto` mode
+that is no guarantee that the controller logic will determine that there are
+a sufficient number of endpoints to allocate them proportionally to each zone
+in the cluster.
+
+To make this feature easier to understand and use, the EndpointSlice controller
+will publish events for a Service to describe if the feature has been enabled,
+and if not, why not.
+
+#### Logic
+
+The EndpointSlice controller will track the known state of this feature for
+each Service. When that state or the reason for it changes, the EndpointSlice
+controller will publish a new Event to reflect the updated status of this
+feature.
+
+#### Sample Events
+
+| Type | Reason | Message | 
+|-|-|-|
+| Normal | TopologyAwareRoutingEnabled | Topology Aware Routing has been enabled |
+| Normal | TopologyAwareRoutingDisabled | Topology Aware Routing configuration was removed |
+| Warning | TopologyAwareRoutingDisabled | Insufficient number of Endpoints (n), impossible to safely allocate proportionally |
+| Warning | TopologyAwareRoutingDisabled | 1 or more Endpoints do not have a Zone specified |
+| Warning | TopologyAwareRoutingDisabled | 1 or more Nodes do not have allocatable CPU specified |
+| Warning | TopologyAwareRoutingDisabled | Nodes only ready in 1 zone |
+
+#### Documentation
+
+The Topology Aware Hints documentation will be updated to describe the reason
+each of these events may have been triggered, along with steps that can be taken
+to recover from that state.
+
+#### Limitations
+
+Although the events described above should dramatically simplify the use of this
+feature, there is a tiny edge case that will not be covered. If any
+EndpointSlices for a Service do not include Hints, Kube-Proxy will not implement
+this feature. This would happen if a user created custom EndpointSlices _and_
+enabled Topology Aware Hints _and_ failed to set Hints on their custom
+EndpointSlices. This seems very unlikely, but is mentioned here for the sake of
+completeness.
+
 ### Graduation Criteria
 **Alpha:**
 - Basic functionality covered with unit tests described above.
 
 **Beta:**
 - Tests expanded to include e2e coverage described above.
+
+**GA:**
+- Feedback from real world usage shows that feature is working as intended
+- Events are triggered on each Service to provide users with clear information
+  on when the feature transitioned between enabled and disabled states.
+- Test coverage in EndpointSlice strategy to ensure that the Hints field is
+  dropped when the feature gate is not enabled.
+- Test coverage in EndpointSlice controller for the transition from enabled to
+  disabled.
+- Ensure that existing Topology Hints e2e test runs as a presubmit if any code
+  changes in kube-proxy or the EndpointSlice controller.
+- Topology Hints e2e tests will graduate to conformance tests.
+- Autoscaling and Scheduling SIGs have a plan to provide zone aware autoscaling
+  (and scheduling) that allows users to proportionally distribute endpoints
+  across zones.
 
 ### Version Skew Strategy
 This KEP requires updates to both the EndpointSlice Controller and kube-proxy.
@@ -499,8 +571,13 @@ enabled even if the annotation has been set on the Service.
   EndpointSlices for Services that have this feature enabled.
 
 * **Are there any tests for feature enablement/disablement?**
-  This feature is not yet implemented but per-Service enablement/disablement is
-  covered in depth as part of the test plan.
+  Per Service enablement and disablement is covered in depth by unit tests. As a
+  prerequisite for graduation to GA, we will also add the following:
+
+  - Test coverage in EndpointSlice strategy to ensure that the Hints field is
+    dropped when the feature gate is not enabled.
+  - Test coverage in EndpointSlice controller for the transition from enabled to
+    disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -517,8 +594,10 @@ enabled even if the annotation has been set on the Service.
   with before the feature was enabled.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  This feature is not yet implemented but per-Service enablement/disablement is
-  covered in depth as part of the test plan.
+  Per-Service enablement/disablement is covered in depth and feature gate
+  enablement and disablement will be covered before the feature graduates to GA.
+  In addition, manual testing covering combinations of
+  upgrade->downgrade->upgrade cycles will be completed prior to GA graduation.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
@@ -567,6 +646,10 @@ enabled even if the annotation has been set on the Service.
   additional calls to the EndpointSlice API, but expect the increase to be
   minimal.
 
+  The EndpointSlice controller will begin publishing Events for each Service
+  that has opted in to this feature when this transitions between enablement
+  states.
+
 * **Will enabling / using this feature result in introducing new API types?**
   No.
 
@@ -612,6 +695,13 @@ enabled even if the annotation has been set on the Service.
 
 - KEP Merged: February 2021
 - Alpha release: Kubernetes 1.21
+- Beta Release: Kubernetes 1.23[^1]
+- Feature Gate on-by default, feature available by default: 1.24
+
+[^1]: This was intended to also flip the feature gate to enabled by default, but
+    unfortunately that part was missed in 1.23. See
+    [#108747](https://github.com/kubernetes/kubernetes/pull/108747) for more
+    information.
 
 ## Drawbacks
 1. Increased complexity in EndpointSlice controller
