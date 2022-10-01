@@ -998,8 +998,8 @@ selector is static and typically will use labels that determine which nodes may
 have resources available.
 
 To gather information about the current state of resource availability and to
-trigger allocation of a claim, the
-scheduler creates a PodScheduling object. That object is owned by the pod and
+trigger allocation of a claim, the scheduler creates one PodScheduling object
+for each pod that uses claims. That object is owned by the pod and
 will either get deleted by the scheduler when it is done with pod scheduling or
 through the garbage collector. In the PodScheduling object, the scheduler posts
 the list of all potential nodes that it was left with after considering all
@@ -1042,7 +1042,7 @@ else changes in the system, like for example deleting objects.
   * if *delayed allocation and resource not allocated yet*:
     * if *at least one node fits pod*:
       * **scheduler** creates or updates a `PodScheduling` object with `podScheduling.spec.potentialNodes=<nodes that fit the pod>`
-      * if *exactly one claim is pending* or *all drivers have provided information*:
+      * if *exactly one claim is pending (see below)* or *all drivers have provided information*:
         * **scheduler** picks one node, sets `podScheduling.spec.selectedNode=<the chosen node>`
         * if *resource is available for this selected node*:
           * **resource driver** adds finalizer to claim to prevent deletion -> allocation in progress
@@ -1074,6 +1074,14 @@ else changes in the system, like for example deleting objects.
   * **resource driver** deallocates resource
   * **resource driver** clears finalizer and `claim.status.allocation`
   * **API server** removes ResourceClaim
+
+When exactly one claim is pending, it is safe to trigger the allocation: if the
+node is suitable, the allocation will succeed and the pod can get scheduled
+without further delays. If the node is not suitable, allocation fails and the
+next attempt can do better because it has more information. The same should not
+be done when there are multiple claims because allocation might succeed for
+some, but not all of them, which would force the scheduler to recover by asking
+for deallocation. It's better to wait for information in this case.
 
 The flow is similar for a ResourceClaim that gets created as a stand-alone
 object by the user. In that case, the Pod reference that ResourceClaim by
@@ -1373,9 +1381,10 @@ type PodSchedulingSpec {
 	// adding nodes here that the driver then would need to
 	// reject through UnsuitableNodes.
 	//
-	// The size of this field is limited to 256. This is large
-	// enough for many clusters. Larger clusters may need more
-	// attempts to find a node that suits all pending resources.
+	// The size of this field is limited to 256 (=
+	// [PodSchedulingNodeListMaxSize]).  This is large enough for many
+	// clusters. Larger clusters may need more attempts to find a node that
+	// suits all pending resources.
 	PotentialNodes []string
 }
 
@@ -1408,22 +1417,35 @@ type ResourceClaimSchedulingStatus struct {
 	// PodResourceClaimName matches the PodResourceClaim.Name field.
 	PodResourceClaimName string
 
-	// A change of the PodSchedulingSpec.PotentialNodes field and/or a failed
-	// allocation attempt trigger a check in the driver
-	// on which of those nodes the resource might be made available. It
-	// then excludes nodes by listing those where that is not the case in
-	// UnsuitableNodes.
-	//
+	// UnsuitableNodes lists nodes that the claim cannot be allocated for.
 	// Nodes listed here will be ignored by the scheduler when selecting a
 	// node for a Pod. All other nodes are potential candidates, either
 	// because no information is available yet or because allocation might
 	// succeed.
 	//
-	// This can change, so the driver must refresh this information
+	// A change of the PodSchedulingSpec.PotentialNodes field and/or a failed
+	// allocation attempt trigger an update of this field: the driver
+	// then checks all nodes listed in PotentialNodes and UnsuitableNodes
+	// and updates UnsuitableNodes.
+	//
+	// It must include the prior UnsuitableNodes in this check because the
+	// scheduler will not list those again in PotentialNodes but they might
+	// still be unsuitable.
+	//
+	// This can change, so the driver also must refresh this information
 	// periodically and/or after changing resource allocation for some
 	// other ResourceClaim until a node gets selected by the scheduler.
+	//
+	// The size of this field is limited to 256 (=
+	// [PodSchedulingNodeListMaxSize]), the same as for
+	// PodSchedulingSpec.PotentialNodes.
 	UnsuitableNodes []string
 }
+
+// PodSchedulingNodeListMaxSize defines the maximum number of entries in the
+// node lists that are stored in PodScheduling objects. This limit is part
+// of the API.
+const PodSchedulingNodeListMaxSize = 256
 
 type PodSpec {
    ...
@@ -1657,32 +1679,54 @@ might attempt to improve this.
 #### Pre-score
 
 This is passed a list of nodes that have passed filtering by the resource
-plugin and the other plugins. The PodScheduling.PotentialNodes field
-gets updated now if the field doesn't
-match the current list already. If no PodScheduling object exists yet,
-it gets created.
+plugin and the other plugins. That list is stored by the plugin and will
+be copied to PodSchedulingSpec.PotentialNodes when the plugin creates or updates
+the object in Reserve.
+
+Pre-score is not called when there is only a single potential node. In that
+case Reserve will store the selected node in PodSchedulingSpec.PotentialNodes.
 
 #### Reserve
 
 A node has been chosen for the Pod.
 
-If using delayed allocation and the resource has not been allocated yet,
-the PodSchedulingSpec.SelectedNode field
-gets set here and the scheduling attempt gets stopped for now. It will be
-retried when the ResourceClaim or PodScheduling statuses change.
+If using delayed allocation and one or more claims have not been allocated yet,
+the plugin now needs to decide whether it wants to trigger allocation by
+setting the PodSchedulingSpec.SelectedNode field. For a single unallocated
+claim that is safe even if no information about unsuitable nodes is available
+because the allocation will either succeed or fail. For multiple such claims
+allocation only gets triggered when that information is available, to minimize
+the risk of getting only some but not all claims allocated.  In both cases the
+PodScheduling object gets created or updated as needed. This is also where the
+PodSchedulingSpec.PotentialNodes field gets set.
 
 If all resources have been allocated already,
-the scheduler adds the Pod to the `claim.status.reservedFor` field of its ResourceClaims to ensure that
-no-one else gets to use those.
+the scheduler ensures that the Pod is listed in the `claim.status.reservedFor` field
+of its ResourceClaims. The driver can and should already have added
+the Pod when specifically allocating the claim for it, so it may
+be possible to skip this update.
 
 If some resources are not allocated yet or reserving an allocated resource
 fails, the scheduling attempt needs to be aborted and retried at a later time
-or when the statuses change (same as above).
+or when the statuses change.
 
 #### Unreserve
 
-The scheduler removes the Pod from the ResourceClaimStatus.ReservedFor field because it cannot be scheduled after
-all.
+The scheduler removes the Pod from the ResourceClaimStatus.ReservedFor field
+because it cannot be scheduled after all.
+
+This is necessary to prevent a deadlock: suppose there are two stand-alone
+claims that only can be used by one pod at a time and two pods which both
+reference them. Both pods will get scheduled independently, perhaps even by
+different schedulers. When each pod manages to allocate and reserve one claim,
+then neither of them can get scheduled because they cannot reserve the other
+claim.
+
+Giving up the reservations in Unreserve means that the next pod scheduling
+attempts have a chance to succeed. It's non-deterministic which pod will win,
+but eventually one of them will. Not giving up the reservations would lead to a
+permanent deadlock that somehow would have to be detected and resolved to make
+progress.
 
 ### Cluster Autoscaler
 
