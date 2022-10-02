@@ -143,7 +143,8 @@ container deployed through the pod mechanism or in bare metal mode.
 
 These servers implement the gRPC interface defined later in this design
 document and once the device plugin makes itself known to kubelet, kubelet
-will interact with the device through two simple functions:
+will interact with the device through simple functions. In v1.8, the two
+functions were introduced:
   1. A `ListAndWatch` function for the kubelet to Discover the devices and
      their properties as well as notify of any status change (device
      became unhealthy).
@@ -151,6 +152,20 @@ will interact with the device through two simple functions:
      consuming any exported devices
 
 ![Process](device-plugin-overview.png)
+
+In the subsequent releases, additional gRPC functions were added:
+  1. `GetDevicePluginOptions` is used by device plugins to communicate
+     options to the `DeviceManager`.
+  1. `GetPreferredAllocation` allows a device plugin to forward allocation
+     preferrence to the `DeviceManager` so it can incorporate this information
+     into its allocation decisions. The `DeviceManager` will call out to a
+     plugin at pod admission time asking for a preferred device allocation
+     of a given size from a list of available devices to make a more informed
+     decision.
+  1. `PreStartContainer` is called before each container start if indicated by
+     device plugins during registeration phase. It allows Device Plugins to run device
+     specific operations on the Devices requested.
+
 
 ### User Stories
 
@@ -165,9 +180,11 @@ Kubernetes provides to vendors a mechanism called device plugins to:
 
 ```go
 service DevicePlugin {
-	// returns a stream of []Device
+  rpc GetDevicePluginOptions(Empty) returns (DevicePluginOptions) {}
 	rpc ListAndWatch(Empty) returns (stream ListAndWatchResponse) {}
 	rpc Allocate(AllocateRequest) returns (AllocateResponse) {}
+  rpc GetPreferredAllocation(PreferredAllocationRequest) returns (PreferredAllocationResponse) {}
+	rpc PreStartContainer(PreStartContainerRequest) returns (PreStartContainerResponse) {}
 }
 ```
 
@@ -306,17 +323,11 @@ service Registration {
 	rpc Register(RegisterRequest) returns (Empty) {}
 }
 
-// DevicePlugin is the service advertised by Device Plugins
-service DevicePlugin {
-	// ListAndWatch returns a stream of List of Devices
-	// Whenever a Device state change or a Device disappears, ListAndWatch
-	// returns the new list
-	rpc ListAndWatch(Empty) returns (stream ListAndWatchResponse) {}
-
-	// Allocate is called during container creation so that the Device
-	// Plugin can run device specific operations and instruct Kubelet
-	// of the steps to make the Device available in the container
-	rpc Allocate(AllocateRequest) returns (AllocateResponse) {}
+message DevicePluginOptions {
+	// Indicates if PreStartContainer call is required before each container start
+	bool pre_start_required = 1;
+	// Indicates if GetPreferredAllocation is implemented and available for calling
+	bool get_preferred_allocation_available = 2;
 }
 
 message RegisterRequest {
@@ -325,27 +336,42 @@ message RegisterRequest {
 	// Name of the unix socket the device plugin is listening on
 	// PATH = path.Join(DevicePluginPath, endpoint)
 	string endpoint = 2;
-	// Schedulable resource name
+	// Schedulable resource name. As of now it's expected to be a DNS Label
 	string resource_name = 3;
+	// Options to be communicated with Device Manager
+	DevicePluginOptions options = 4;
 }
 
-// - Allocate is expected to be called during pod creation since allocation
-//   failures for any container would result in pod startup failure.
-// - Allocate allows kubelet to exposes additional artifacts in a pod's
-//   environment as directed by the plugin.
-// - Allocate allows Device Plugin to run device specific operations on
-//   the Devices requested
-message AllocateRequest {
-	repeated string devicesIDs = 1;
+message Empty {
 }
 
-// Failure Handling:
-// if Kubelet sends an allocation request for dev1 and dev2.
-// Allocation on dev1 succeeds but allocation on dev2 fails.
-// The Device plugin should send a ListAndWatch update and fail the
-// Allocation request
-message AllocateResponse {
-	repeated DeviceRuntimeSpec spec = 1;
+// DevicePlugin is the service advertised by Device Plugins
+service DevicePlugin {
+	// GetDevicePluginOptions returns options to be communicated with Device
+	// Manager
+	rpc GetDevicePluginOptions(Empty) returns (DevicePluginOptions) {}
+
+	// ListAndWatch returns a stream of List of Devices
+	// Whenever a Device state change or a Device disappears, ListAndWatch
+	// returns the new list
+	rpc ListAndWatch(Empty) returns (stream ListAndWatchResponse) {}
+
+	// GetPreferredAllocation returns a preferred set of devices to allocate
+	// from a list of available ones. The resulting preferred allocation is not
+	// guaranteed to be the allocation ultimately performed by the
+	// devicemanager. It is only designed to help the devicemanager make a more
+	// informed allocation decision when possible.
+	rpc GetPreferredAllocation(PreferredAllocationRequest) returns (PreferredAllocationResponse) {}
+
+	// Allocate is called during container creation so that the Device
+	// Plugin can run device specific operations and instruct Kubelet
+	// of the steps to make the Device available in the container
+	rpc Allocate(AllocateRequest) returns (AllocateResponse) {}
+
+	// PreStartContainer is called, if indicated by Device Plugin during registeration phase,
+	// before each container start. Device plugin can run device specific operations
+	// such as resetting the device before making devices available to the container
+	rpc PreStartContainer(PreStartContainerRequest) returns (PreStartContainerResponse) {}
 }
 
 // ListAndWatch returns a stream of List of Devices
@@ -355,52 +381,135 @@ message ListAndWatchResponse {
 	repeated Device devices = 1;
 }
 
-// The list to be added to the CRI spec
-message DeviceRuntimeSpec {
-	string ID = 1;
-
-	// List of environment variable to set in the container.
-	map<string, string> envs = 2;
-	// Mounts for the container.
-	repeated Mount mounts = 3;
-	// Devices for the container
-	repeated DeviceSpec devices = 4;
+message TopologyInfo {
+	repeated NUMANode nodes = 1;
 }
 
-// DeviceSpec specifies a host device to mount into a container.
-message DeviceSpec {
-    // Path of the device within the container.
-    string container_path = 1;
-    // Path of the device on the host.
-    string host_path = 2;
-    // Cgroups permissions of the device, candidates are one or more of
-    // * r - allows container to read from the specified device.
-    // * w - allows container to write to the specified device.
-    // * m - allows container to create device files that do not yet exist.
-    string permissions = 3;
+message NUMANode {
+	int64 ID = 1;
+}
+
+/* E.g:
+* struct Device {
+*    ID: "GPU-fef8089b-4820-abfc-e83e-94318197576e",
+*    Health: "Healthy",
+*    Topology:
+*      Node:
+*        ID: 1
+*} */
+message Device {
+	// A unique ID assigned by the device plugin used
+	// to identify devices during the communication
+	// Max length of this field is 63 characters
+	string ID = 1;
+	// Health of the device, can be healthy or unhealthy, see constants.go
+	string health = 2;
+	// Topology for device
+	TopologyInfo topology = 3;
+}
+
+// - PreStartContainer is expected to be called before each container start if indicated by plugin during registration phase.
+// - PreStartContainer allows kubelet to pass reinitialized devices to containers.
+// - PreStartContainer allows Device Plugin to run device specific operations on
+//   the Devices requested
+message PreStartContainerRequest {
+	repeated string devices_ids = 1 [(gogoproto.customname) = "DevicesIDs"];
+}
+
+// PreStartContainerResponse will be send by plugin in response to PreStartContainerRequest
+message PreStartContainerResponse {
+}
+
+// PreferredAllocationRequest is passed via a call to GetPreferredAllocation()
+// at pod admission time. The device plugin should take the list of
+// `available_deviceIDs` and calculate a preferred allocation of size
+// 'allocation_size' from them, making sure to include the set of devices
+// listed in 'must_include_deviceIDs'.
+message PreferredAllocationRequest {
+	repeated ContainerPreferredAllocationRequest container_requests = 1;
+}
+
+message ContainerPreferredAllocationRequest {
+	// List of available deviceIDs from which to choose a preferred allocation
+	repeated string available_deviceIDs = 1;
+	// List of deviceIDs that must be included in the preferred allocation
+	repeated string must_include_deviceIDs = 2;
+	// Number of devices to include in the preferred allocation
+	int32 allocation_size = 3;
+}
+
+// PreferredAllocationResponse returns a preferred allocation,
+// resulting from a PreferredAllocationRequest.
+message PreferredAllocationResponse {
+	repeated ContainerPreferredAllocationResponse container_responses = 1;
+}
+
+message ContainerPreferredAllocationResponse {
+	repeated string deviceIDs = 1;
+}
+
+// - Allocate is expected to be called during pod creation since allocation
+//   failures for any container would result in pod startup failure.
+// - Allocate allows kubelet to exposes additional artifacts in a pod's
+//   environment as directed by the plugin.
+// - Allocate allows Device Plugin to run device specific operations on
+//   the Devices requested
+message AllocateRequest {
+	repeated ContainerAllocateRequest container_requests = 1;
+}
+
+message ContainerAllocateRequest {
+	repeated string devices_ids = 1 [(gogoproto.customname) = "DevicesIDs"];
+}
+
+// AllocateResponse includes the artifacts that needs to be injected into
+// a container for accessing 'deviceIDs' that were mentioned as part of
+// 'AllocateRequest'.
+// Failure Handling:
+// if Kubelet sends an allocation request for dev1 and dev2.
+// Allocation on dev1 succeeds but allocation on dev2 fails.
+// The Device plugin should send a ListAndWatch update and fail the
+// Allocation request
+message AllocateResponse {
+	repeated ContainerAllocateResponse container_responses = 1;
+}
+
+message ContainerAllocateResponse {
+  	// List of environment variable to be set in the container to access one of more devices.
+	map<string, string> envs = 1;
+	// Mounts for the container.
+	repeated Mount mounts = 2;
+	// Devices for the container.
+	repeated DeviceSpec devices = 3;
+	// Container annotations to pass to the container runtime
+	map<string, string> annotations = 4;
 }
 
 // Mount specifies a host volume to mount into a container.
 // where device library or tools are installed on host and container
 message Mount {
-	// Path of the mount on the host.
-	string host_path = 1;
 	// Path of the mount within the container.
-	string mount_path = 2;
+	string container_path = 1;
+	// Path of the mount on the host.
+	string host_path = 2;
 	// If set, the mount is read-only.
 	bool read_only = 3;
 }
 
-// E.g:
-// struct Device {
-//    ID: "GPU-fef8089b-4820-abfc-e83e-94318197576e",
-//    State: "Healthy",
-//}
-message Device {
-	string ID = 2;
-	string health = 3;
+// DeviceSpec specifies a host device to mount into a container.
+message DeviceSpec {
+	// Path of the device within the container.
+	string container_path = 1;
+	// Path of the device on the host.
+	string host_path = 2;
+	// Cgroups permissions of the device, candidates are one or more of
+	// * r - allows container to read from the specified device.
+	// * w - allows container to write to the specified device.
+	// * m - allows container to create device files that do not yet exist.
+	string permissions = 3;
 }
 ```
+
 ### HealthCheck and Failure Recovery
 
 We want Kubelet as well as the Device Plugins to recover from failures
@@ -575,17 +684,9 @@ protocol and are able to recover from a Kubelet crash.
 Then, as long as the Device Plugin API does not change upgrading Kubelet can be done
 seamlessly through a Kubelet restart.
 
-*Currently:*
-As mentioned in the Versioning section, we currently expect the Device Plugin's
-API version to match exactly the Kubelet's Device Plugin API version.
-Therefore if the Device Plugin API version change then you will have to change
-the Device Plugin too.
-
-*Future:*
-When the Device Plugin API becomes a stable feature, versioning should be
-backward compatible and even if Kubelet has a different Device Plugin API,
-
-it should not require a Device Plugin upgrade.
+Upgrading Kubelet can be done seamlessly through a Kubelet restart and does not
+require deployment of a different version of the device plugin as the API has been
+mostly stable since its graduation to Beta in v1.10.
 
 Refer to the versioning section for versioning scheme compatibility.
 
@@ -603,16 +704,9 @@ the Device Plugins.
 
 ### Version Skew Strategy
 
-Currently we require exact version match between Kubelet and Device Plugin.
-API version is expected to be increased only upon incompatible API changes.
-
-Follow protobuf guidelines on versioning:
-  * Do not change ordering
-  * Do not remove fields or change types
-  * Add optional fields
-  * Introducing new fields with proper default values
-  * Freeze the package name to `apis/device-plugin/v1alpha1`
-  * Have kubelet and the Device Plugin negotiate versions if we do break the API
+Prior to v1.10, the versioning scheme required the Device Plugin's API version to
+match exactly the Kubelet's version. With the graduation of this feature to Beta
+and device plugin API has been stable and this is no longer a hard requirement.
 
 ## Production Readiness Review Questionnaire
 
