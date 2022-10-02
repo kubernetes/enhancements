@@ -61,12 +61,6 @@ SIG Architecture for cross-cutting KEPs).
 # KEP-3521: Pod Schedule Readiness
 
 <!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
 highlighting any additional information provided beyond the standard KEP
 template.
@@ -245,7 +239,8 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We propose a new field `.spec.schedulingGates` to the Pod API. The field is defaulted to nil.
+We propose a new field `.spec.schedulingGates` to the Pod API. The field is defaulted to nil
+(equivalent to an empty map).
 
 For Pods carrying non-nil `.spec.schedulingGates`, they will be "parked" in scheduler's internal
 unschedulablePods pool, and only get tried when the field is mutated to nil.
@@ -285,9 +280,9 @@ the in-memory state (like waiting Pods) that is only accessible via scheduler fr
 
 #### Story 4
 
-A custom workload orchestrator may wish to modify the pod prior to consideration for scheduling,
+A custom workload orchestrator may wish to modify the Pod prior to consideration for scheduling,
 without having to fork or alter the workload controller. The orchestrator may wish to make 
-time-varying (post-creation) decisions on pod scheduling, perhaps to preserve scheduling constraints,
+time-varying (post-creation) decisions on Pod scheduling, perhaps to preserve scheduling constraints,
 avoid disruption, or prevent co-existence.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -301,16 +296,16 @@ This might be a good place to talk about core concepts and how they relate.
 
 - **Restricted state transition:** The `schedulingGates` field can be initialized only when a Pod is
 created (either by the client, or mutated during admission). After creation, each `schedulingGate`
-can be removed in arbitrary order, but addition of new `schedulingGate` is disallowed.
-To ensure consistency, scheduled Pod must be always carrying nil schedulingGates.
+can be removed in arbitrary order, but addition of a new scheduling gate is disallowed.
+To ensure consistency, scheduled Pod must always have empty `schedulingGates`.
+This means that a client (an administrator or custom controller) cannot create a Pod that has
+`schedulingGates` populated in any way, if that Pod also specified a `spec.nodeName`. In this case,
+API Server will return a 409 conflict / validation error.
 
-    |                                     | non-nil schedulingGates⏸️ | nil schedulingGates▶️ |
-    |-------------------------------------|-------------------------|-------------------------|
-    | unscheduled Pod<br>(nil nodeName)   | ✅ create<br>❌ update   | ✅ create<br>✅ update    |
-    | scheduled Pod<br>(non-nil nodeName) | ❌ create<br>❌ update   | ✅ create<br>✅ update    |
-
-    > Note: if an administrator or custom controller enforce settings nodeName for a scheduling-paused
-    Pod, API Server will return a 409 conflict / validation error.
+    |                                              | non-nil schedulingGates⏸️ | nil schedulingGates▶️ |
+    |----------------------------------------------|-------------------------|-------------------------|
+    | unscheduled Pod<br>(nil <tt>nodeName</tt>)   | ✅ create<br>❌ update   | ✅ create<br>✅ update    |
+    | scheduled Pod<br>(non-nil <tt>nodeName</tt>) | ❌ create<br>❌ update   | ✅ create<br>✅ update    |
 
 - **New field disabled in Alpha but not scheduler extension:** In Alpha, the new Pod field is disabled
 by default. However, the scheduler's extension point is activated no matter the feature gate is enabled
@@ -334,7 +329,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-- Scheduler doesn't actively clear a Pod's `schedulingGates` field. This means if some controller
+- The scheduler doesn't actively clear a Pod's `schedulingGates` field. This means if some controller
 is ill-implemented, some Pods may stay in Pending state incorrectly. If you noticed a Pod stays
 in Pending state for a long time and it carries non-nil `schedulingGates`, you may find out which
 component owns the gate(s) (via `.spec.managedFields`) and report the symptom to the component owner.
@@ -365,14 +360,14 @@ type PodSpec struct {
     // Each scheduling gate represents a particular scenario the scheduling is blocked upon.
     // Scheduling is triggered only when SchedulingGates is empty.
     // In the future, we may impose permission mechanics to restrict which controller can mutate
-    // which schedulingGate. It's dependent on a yet-to-be-implemented fined-grained
+    // which scheduling gate. It's dependent on a yet-to-be-implemented fined-grained
     // permission (https://docs.google.com/document/d/11g9nnoRFcOoeNJDUGAWjlKthowEVM3YGrJA3gLzhpf4)
     // and needs to be consistent with how finalizes/liens work today.
     SchedulingGates []PodSchedulingGate
 }
 
 type PodSchedulingGate struct {
-    // Name of the SchedulingGate.
+    // Name of the scheduling gate.
     Name string
 }
 ```
@@ -399,6 +394,8 @@ whether this Pod can be admitted or not:
 ```go
 // EnqueuePlugin is an interface that must be implemented by "EnqueuePlugin" plugins.
 // These plugins are called prior to adding Pods to activeQ.
+// Note: an enqueue plugin is expected to be lightweight and efficient; otherwise it'd block other
+// Pods' enqueuing in event handlers.
 type EnqueuePlugin interface {
     Plugin
     PreEnqueue(ctx context.Context, state *CycleState, p *v1.Pod) *Status
@@ -534,7 +531,7 @@ Create a test with the following sequences:
 - Provision a cluster with feature gate `PodSchedulingReadiness=true` (we may need to setup a testgrid
 for when it's alpha)
 - Create a Pod with non-nil `.spec.schedulingGates`.
-- Wait for 15 seconds to ensure it's not get scheduled.
+- Wait for 15 seconds to ensure (and then verify) it did not get scheduled.
 - Clear the Pod's `.spec.schedulingGates` field.
 - Wait for 5 seconds for the Pod to be scheduled; otherwise error the e2e test.
 
@@ -639,13 +636,13 @@ enhancement:
 
 - Upgrade
   - Enable the feature gate in both API Server and Scheduler, and gate the Pod's scheduling
-  readiness by setting non-nil `.spec.schedulingGates`. Next, remove each schedulingGate
+  readiness by setting non-nil `.spec.schedulingGates`. Next, remove each scheduling gate
   when readiness criteria is met.
 - Downgrade
-  - Disable the feature gate in both API Server and Scheduler, so that previously configured value
-  will be ignored.
-  - The previously configured value of a Pod will be preserved until it's updated for the first time
-  after the feature gate gets disabled.
+  - Disable the feature gate in both API Server and Scheduler, so that previously configured
+  `.spec.schedulingGates` value will be ignored.
+  - However, the `.spec.schedulingGates` value of a Pod is preserved if it's previously configured;
+  otherwise get silently dropped.
 
 ### Version Skew Strategy
 
@@ -1032,12 +1029,20 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+- Define a boolean filed `.spec.schedulingPaused`. Its value is optionally initialized to `True` to
+indicate it's not scheduling-ready, and flipped to `False` (by a controller) afterwards to trigger
+this Pod's scheduling cycle.
+
+  This approach is not chosen is because it cannot support multiple independent controller to control
+specific aspect a Pod's scheduling readiness.
+
 - Instead of proposing a Pod field, leave the field to users (e.g., custom label/annotation)
 and associate with their out-of-tree plugins.
 
-- Define an array of `[]scheduleReadinessGates`. Each gate owner is responsible to fill in an unique
-gate obj and clear it when needed. It enables multiple controllers to focus on implementing their
-own scheduling readiness logic.
+  This approach is supported indeed. Advanced scheduler plugin developers can opt-out the pre-defined
+  API field to develop their own scheduling plugin logic. However, for most users that have limited
+  scheduler knowledge, a pre-defined API field along with a default enqueue plugin would offer the most
+  flexibility with minimum developing efforts.
 
 ## Infrastructure Needed (Optional)
 
