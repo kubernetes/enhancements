@@ -1,31 +1,91 @@
-Device Manager Proposal
-===============
+# KEP-3573: Device Manager Proposal
 
-* [Motivation](#motivation)
-* [Use Cases](#use-cases)
-* [Objectives](#objectives)
-* [Non Objectives](#non-objectives)
-* [Vendor story](#vendor-story)
-* [End User story](#end-user-story)
-* [Device Plugin](#device-plugin)
-    * [Introduction](#introduction)
-    * [Registration](#registration)
-    * [Unix Socket](#unix-socket)
-    * [Protocol Overview](#protocol-overview)
-    * [API specification](#api-specification)
-    * [HealthCheck and Failure Recovery](#healthcheck-and-failure-recovery)
-    * [API Changes](#api-changes)
-* [Upgrading your cluster](#upgrading-your-cluster)
-* [Installation](#installation)
-* [Versioning](#versioning)
-* [References](#references)
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Use Cases](#use-cases)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Vendor story](#vendor-story)
+    - [End User story](#end-user-story)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Introduction](#introduction)
+  - [Registration](#registration)
+  - [Unix Socket](#unix-socket)
+  - [Protocol Overview](#protocol-overview)
+  - [API Specification](#api-specification)
+  - [HealthCheck and Failure Recovery](#healthcheck-and-failure-recovery)
+  - [API Changes](#api-changes)
+  - [Installation](#installation)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrading your cluster](#upgrading-your-cluster)
+      - [Upgrading Kubelet](#upgrading-kubelet)
+      - [Upgrading Device Plugins](#upgrading-device-plugins)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [References](#references)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+<!-- /toc -->
 
-_Authors:_
+## Release Signoff Checklist
 
-* @RenaudWasTaken - Renaud Gaubert &lt;rgaubert@NVIDIA.com&gt;
-* @jiayingz - Jiaying Zhang &lt;jiayingz@google.com&gt;
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-# Motivation
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
+
+## Summary
+
+Device Manager Proposal is for a user to be able to enable vendor devices (e.g: GPUs) through
+the following simple steps:
+  * `kubectl create -f http://vendor.com/device-plugin-daemonset.yaml`
+  * When launching `kubectl describe nodes`, the devices appear in the node
+    status as `vendor-domain/vendor-device`. Note: naming
+    convention is discussed in PR [#844](https://github.com/kubernetes/community/pull/844)
+
+## Motivation
 
 Kubernetes currently supports discovery of CPU and Memory primarily to a
 minimal extent. Very few devices are handled natively by Kubelet.
@@ -52,14 +112,7 @@ The targeted devices include GPUs, High-performance NICs, FPGAs, InfiniBand,
 Storage devices, and other similar computing resources that require vendor
 specific initialization and setup.
 
-The goal is for a user to be able to enable vendor devices (e.g: GPUs) through
-the following simple steps:
-  * `kubectl create -f http://vendor.com/device-plugin-daemonset.yaml`
-  * When launching `kubectl describe nodes`, the devices appear in the node
-    status as `vendor-domain/vendor-device`. Note: naming
-    convention is discussed in PR [#844](https://github.com/kubernetes/community/pull/844)
-
-# Use Cases
+### Use Cases
 
  * I want to use a particular device type (GPU, InfiniBand, FPGA, etc.)
    in my pod.
@@ -67,23 +120,23 @@ the following simple steps:
  * I want a consistent and portable solution to consume hardware devices
    across k8s clusters.
 
-# Objectives
+### Goals
 
 1. Add support for vendor specific Devices in kubelet:
     * Through an extension mechanism.
     * Which allows discovery and health check of devices.
     * Which allows hooking the runtime to make devices available in containers
       and cleaning them up.
-2. Define a deployment mechanism for this new API.
-3. Define a versioning mechanism for this new API.
+1. Define a deployment mechanism for this new API.
+1. Define a versioning mechanism for this new API.
 
-# Non Objectives
+### Non-Goals
 
 1. Handling heterogeneous nodes and topology related problems
-2. Collecting metrics is not part of this proposal. We will only solve
+1. Collecting metrics is not part of this proposal. We will only solve
    Health Check.
 
-# TLDR
+## Proposal
 
 At their core, device plugins are simple gRPC servers that may run in a
 container deployed through the pod mechanism or in bare metal mode.
@@ -99,7 +152,9 @@ will interact with the device through two simple functions:
 
 ![Process](device-plugin-overview.png)
 
-# Vendor story
+### User Stories
+
+#### Vendor story
 
 Kubernetes provides to vendors a mechanism called device plugins to:
   * advertise devices.
@@ -126,7 +181,7 @@ own gRPC server.
 Only then will kubelet start interacting with the vendor's device plugin
 through the gRPC apis.
 
-# End User story
+#### End User story
 
 When setting up the cluster the admin knows what kind of devices are present
 on the different machines and therefore can select what devices to enable.
@@ -163,9 +218,21 @@ When receiving a pod which requests Devices kubelet is in charge of:
 The scheduler is still in charge of filtering the nodes which cannot
 satisfy the resource requests.
 
-# Device Plugin
+### Notes/Constraints/Caveats (Optional)
 
-## Introduction
+N/A
+
+### Risks and Mitigations
+
+ In case of upgrades, bugs in the `DeviceManager` or device plugin can
+ prevent new pods from starting and/or already running pods from restarting.
+ This can be mitigated by comprehensive testing both in `DeviceManager`
+ and device plugin where the latter being the responsiblility of the device
+ plugin vendor.
+
+## Design Details
+
+### Introduction
 
 The device plugin is structured in 3 parts:
 1. Registration: The device plugin advertises its presence to Kubelet
@@ -176,7 +243,7 @@ The device plugin is structured in 3 parts:
     cleanup, QRNG initialization, ...) and instruct Kubelet how to make the
     device available in the container.
 
-## Registration
+### Registration
 
 When starting the device plugin is expected to make a (client) gRPC call
 to the `Register` function that Kubelet exposes.
@@ -190,7 +257,7 @@ sockets and follow this simple pattern:
 3. The device plugin start its gRPC server if it did not receive an
    error
 
-## Unix Socket
+### Unix Socket
 
 Device Plugins are expected to communicate with Kubelet through gRPC
 on an Unix socket.
@@ -204,7 +271,7 @@ Device plugins can expect to find the socket to register themselves on
 the host at the following path:
 `/var/lib/kubelet/device-plugins/kubelet.sock`.
 
-## Protocol Overview
+### Protocol Overview
 
 When first registering themselves against Kubelet, the device plugin
 will send:
@@ -226,7 +293,7 @@ the following functions:
 ![Process](device-plugin.png)
 
 
-## API Specification
+### API Specification
 
 ```go
 // Registration is the service advertised by the Kubelet
@@ -334,7 +401,6 @@ message Device {
 	string health = 3;
 }
 ```
-
 ### HealthCheck and Failure Recovery
 
 We want Kubelet as well as the Device Plugins to recover from failures
@@ -372,7 +438,7 @@ We are expecting to implement this through a checkpointing mechanism that Kubele
 would write and read from.
 
 
-## API Changes
+### API Changes
 
 When discovering the devices, Kubelet will be in charge of advertising those
 resources to the API server as part of the kubelet node update current protocol.
@@ -385,56 +451,8 @@ updated to advertise 2 `vendor-domain/foo-device`.
 If a user wants to trigger the device plugin he only needs to request this
 through the same mechanism as OIRs in his Pod Spec.
 
-# Upgrading your cluster
 
-*TLDR:* 
-Given that we cannot guarantee that the Device Plugins are not running
-a daemon providing a critical service to Devices and when stopped will
-crash the running containers, it is up to the vendor to specify the
-upgrading scheme of their device plugin.
-
-However, If you are upgrading either Kubelet or any device plugin the safest way
-is to drain the node of all pods and upgrade.
-
-Depending on what you are upgrading and what changes happened then it
-is completely possible to only restart just Kubelet or just the device plugin.
-
-## Upgrading Kubelet
-
-This assumes that the Device Plugins running on the nodes fully implement the
-protocol and are able to recover from a Kubelet crash.
-
-Then, as long as the Device Plugin API does not change upgrading Kubelet can be done
-seamlessly through a Kubelet restart.
-
-*Currently:*
-As mentioned in the Versioning section, we currently expect the Device Plugin's
-API version to match exactly the Kubelet's Device Plugin API version.
-Therefore if the Device Plugin API version change then you will have to change
-the Device Plugin too.
-
-
-*Future:*
-When the Device Plugin API becomes a stable feature, versioning should be
-backward compatible and even if Kubelet has a different Device Plugin API,
-
-it should not require a Device Plugin upgrade.
-
-Refer to the versioning section for versioning scheme compatibility.
-
-## Upgrading Device Plugins
-
-Because we cannot enforce what the different Device Plugins will do, we cannot
-say for certain that upgrading a device plugin will not crash any containers
-on the node.
-
-It is therefore up to the Device Plugin vendors to specify if the Device Plugins
-can be upgraded without impacting any running containers.
-
-As mentioned earlier, the safest way is to drain the node before upgrading
-the Device Plugins.
-
-# Installation
+### Installation
 
 The installation process should be straightforward to the user, transparent
 and similar to other regular Kubernetes actions.
@@ -480,7 +498,110 @@ spec:
                    path: /var/lib/kubelet/device-plugins
 ```
 
-# Versioning
+
+### Test Plan
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/kubelet/cm/devicemanager`: `<20221002>` - `83.5%`
+
+##### Integration tests
+
+Not Applicable.
+
+##### e2e tests
+
+Device Manager and Device plugin node e2e tests:
+* https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/device_manager_test.go
+* https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/device_plugin_test.go
+
+### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
+
+#### Deprecation
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+
+### Upgrade / Downgrade Strategy
+
+#### Upgrading your cluster
+
+*TLDR:* 
+Given that we cannot guarantee that the Device Plugins are not running
+a daemon providing a critical service to Devices and when stopped will
+crash the running containers, it is up to the vendor to specify the
+upgrading scheme of their device plugin.
+
+However, If you are upgrading either Kubelet or any device plugin the safest way
+is to drain the node of all pods and upgrade.
+
+Depending on what you are upgrading and what changes happened then it
+is completely possible to only restart just Kubelet or just the device plugin.
+
+##### Upgrading Kubelet
+
+This assumes that the Device Plugins running on the nodes fully implement the
+protocol and are able to recover from a Kubelet crash.
+
+Then, as long as the Device Plugin API does not change upgrading Kubelet can be done
+seamlessly through a Kubelet restart.
+
+*Currently:*
+As mentioned in the Versioning section, we currently expect the Device Plugin's
+API version to match exactly the Kubelet's Device Plugin API version.
+Therefore if the Device Plugin API version change then you will have to change
+the Device Plugin too.
+
+*Future:*
+When the Device Plugin API becomes a stable feature, versioning should be
+backward compatible and even if Kubelet has a different Device Plugin API,
+
+it should not require a Device Plugin upgrade.
+
+Refer to the versioning section for versioning scheme compatibility.
+
+##### Upgrading Device Plugins
+
+Because we cannot enforce what the different Device Plugins will do, we cannot
+say for certain that upgrading a device plugin will not crash any containers
+on the node.
+
+It is therefore up to the Device Plugin vendors to specify if the Device Plugins
+can be upgraded without impacting any running containers.
+
+As mentioned earlier, the safest way is to drain the node before upgrading
+the Device Plugins.
+
+### Version Skew Strategy
 
 Currently we require exact version match between Kubelet and Device Plugin.
 API version is expected to be increased only upon incompatible API changes.
@@ -493,8 +614,171 @@ Follow protobuf guidelines on versioning:
   * Freeze the package name to `apis/device-plugin/v1alpha1`
   * Have kubelet and the Device Plugin negotiate versions if we do break the API
 
-# References
+## Production Readiness Review Questionnaire
 
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `DevicePlugins`
+  - Components depending on the feature gate: Device Manager
+
+###### Does enabling the feature change any default behavior?
+
+No, in order to tap into this feature device plugins have to be deployed on the cluster.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, using `DevicePlugins` feature gate this feature can be disabled.
+Note that disabling the feature gate requires kubelet restart for the changes
+to take effect. In case no device plugin daemonset pods or pods consuming
+devices are running on the node, disabling feature gate shouldn't cause any issue.
+
+If the feature gate is being disabled on a node where such pods are running,
+it is the responsibliity of the cluster admin to ensure that the node is
+appropriately drained.
+
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+No impact on running pods in the cluster.
+When enabled, this feature provides the ability to expose and consume custom
+devices in a Kubernetes cluster. These device plugins are typically deployed
+as daemonset. Refer to [Installation](#installation) section for more details.
+
+Even when this feature is enabled, cluster admin needs to provision device plugins
+(typically deployed as a daemonset) on the cluster which subsequently be requested
+by the users. 
+
+###### Are there any tests for feature enablement/disablement?
+
+Yes, covered by node e2e tests:
+* https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/device_manager_test.go
+* https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/device_plugin_test.go
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+* A rollout can fail in case a bug is introduced either in device manager or device
+  plugin preventing already running pods from restarting or new pods to start.
+
+###### What specific metrics should inform a rollback?
+
+TBD
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Yes
+
+When upgrading device plugins, it is recommended that the cluster admin drain workloads
+requesting devices and conform to the device plugin API.
+
+This has been validated by several device plugins. Here is an example: https://github.com/NVIDIA/k8s-device-plugin#upgrading-kubernetes-with-the-device-plugin. 
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+1. Kubelet PodResource API endpoints (`List` and `GetAllocatableResources`) can be used
+   to obtain information on devices allocated to running pods. Refer to
+   [keps/sig-node/606-compute-device-assignment]([keps/sig-node/606-compute-device-assignment]).
+1. Status of the nodes  specifically device `capacity` and `allocatable` can be inspected
+   to see if device plugins were successfully deployed and are available to be allocated
+   on the node.
+   In addition to that, status of the running pods can be inspected to determine if the
+   pod requesting device(s) was running successfully and allocated device(s) as per its
+   request.
+1. Typically, device allocation to a workload is accompanied by creation of environment
+   variable capturing device specification identification information e.g. PCI address
+   information which can be inspected, creation of device files and device specific
+   volume mount points.This varies depending on the device plugin implementation. 
+
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [X] API .status
+  - Field: Node.status
+    - Property: [capacity,allocatable]
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+Not Applicable, refer to Kubelet SLOs.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [X] Other (treat as last resort)
+  - Details:
+    1. Device `capacity` and `allocatable` in the node status is an indicator of
+       successful registration of device plugins to Kubelet.
+    1. Inspecting Pod status or device plugin specific environment variables, device
+       files and mount points to determine if it was successfully allocatated devices.
+    1. Querying Kubelet podresource API `List` and `GetAllocatableResources` endpoints.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No.
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+Yes, node status is updated to reflect the device capacity and allocatable.
+At a node level, device plugins and device Manager communicate over gRPC.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No, devices are exposed as extended resources.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No reported or known increase in resource usage.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+If Kubernetes control plane is down, no new Pods including device plugin
+daemonset pods can be deployed.
+
+
+###### What are other known failure modes?
+
+No known failure modes.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+## Implementation History
+- **2020-10-02:** KEP ported to the most recent template and GA graduation.
+
+
+## References
+
+  * [Extension to support new compute resources](https://github.com/kubernetes/enhancements/issues/368)
+  * [Device Plugin Design Proposal](https://github.com/kubernetes/community/pull/695)
   * [Adding a proposal for hardware accelerators](https://github.com/kubernetes/community/pull/844)
   * [Enable "kick the tires" support for NVIDIA GPUs in COS](https://github.com/kubernetes/kubernetes/pull/45136)
   * [Extend experimental support to multiple NVIDIA GPUs](https://github.com/kubernetes/kubernetes/pull/42116)
@@ -502,3 +786,16 @@ Follow protobuf guidelines on versioning:
   * [Better Abstraction for Compute Resources in Kubernetes](https://docs.google.com/document/d/1666PPUs4Lz56TqKygcy6mXkNazde-vwA7q4e5H92sUc)
   * [Extensible support for hardware devices in Kubernetes (join Kubernetes-dev@googlegroups.com for access)](https://docs.google.com/document/d/1LHeTPx_fWA1PdZkHuALPzYxR0AYXUiiXdo3S0g2VSlo/edit)
 
+
+## Drawbacks
+
+Not Applicable.
+
+## Alternatives
+
+In Kubernetes v1.25, [Dynamic Resource Allocation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3063-dynamic-resource-allocation) enhancement proposal was approved for development as an alpha feature. This feature was primarility designed for **dynamic** allocation of resources and is expected to co-exist with the device plugin API. 
+
+
+## Infrastructure Needed (Optional)
+
+Not Applicable.
