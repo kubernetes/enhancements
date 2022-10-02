@@ -19,8 +19,10 @@
   - [Additions to EndpointSlice](#additions-to-endpointslice)
   - [kube-proxy](#kube-proxy)
   - [Test Plan](#test-plan)
-    - [Unit Tests](#unit-tests)
-    - [E2E Tests](#e2e-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -156,21 +158,38 @@ In addition, kube-proxy's node port health check should fail if there are only `
 
 ### Test Plan
 
-#### Unit Tests
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-kube-proxy unit tests:
+##### Prerequisite testing updates
 
-* Unit tests will validate the correct behavior when there are only local terminating endpoints.
-* Unit tests will validate the changein behavior against the matrix of possible Service configurations using both internalTrafficPolicy and externalTrafficPolicy.
-* Existing unit tests will validate that terminating endpoints are only used when there are no ready endpoints, otherwise ready && !terminating endpoints are used.
-* Unit tests will validate health check node port succeeds only when there are ready && !terminating endpoints.
+##### Unit tests
 
-#### E2E Tests
+- `pkg/proxy`: `07/2021` - Validating behavior in iptables and ipvs proxier. Also tests feature gate enablement.
+- `pkg/proxy`: `03/2022` - All tests updated to cover all traffic policies (not just Local)
+
+Links to added tests:
+- https://github.com/kubernetes/kubernetes/blob/d436f5d0b7eb87f78eb31c12466e2591c24eef59/pkg/proxy/iptables/proxier_test.go#L5373
+- https://github.com/kubernetes/kubernetes/blob/d436f5d0b7eb87f78eb31c12466e2591c24eef59/pkg/proxy/iptables/proxier_test.go#L6158
+- https://github.com/kubernetes/kubernetes/blob/6e9845f766e4d34620835aaa1e5f864211471a50/pkg/proxy/ipvs/proxier_test.go#L4964
+- https://github.com/kubernetes/kubernetes/blob/6e9845f766e4d34620835aaa1e5f864211471a50/pkg/proxy/ipvs/proxier_test.go#L5316
+- https://github.com/kubernetes/kubernetes/blob/f2e5c16545027fbe04cc33d4ef59cd01de6b9967/pkg/proxy/topology_test.go#L48
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
 
 E2E tests will be added to validate that no traffic is dropped during a rolling update for a Service. E2E tests should cover all permutations of externalTrafficPolicy
 and internalTrafficPolicy.
 
-All existing E2E tests for Services should continue to pass.
+- E2E test validating health check node port behavior: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2790
+- E2E test validating fallback behavior for terminating endpoints when `externalTrafficPolicy: Cluster`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L3060
+- E2E test validating fallback behavior for terminating endpoints when `externalTrafficPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L3145
+- E2E test validating fallback behaviro for terminating endpoints when `internalTrafficPolicy: Cluster`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2889
+- E2E test validating fallback behaviro for terminating endpoints when `internalTrafficPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2972
 
 ### Graduation Criteria
 
@@ -179,12 +198,13 @@ All existing E2E tests for Services should continue to pass.
 * kube-proxy internally tracks the `terminating` and `serving` condition from EndpointSlice
 * kube-proxy falls back to terminating endpoints if and only if they are the only available endpoints.
 * feature is only enabled if the feature gate `ProxyTerminatingEndpoints` is on.
-* unit tests in kube-proxy.
+* unit tests in kube-proxy (see [Test Plan](#test-plan) section)
 
 #### Beta
 
-* E2E tests are in place, exercising all permutations of internalTrafficPolicy and externalTrafficPolicy.
+* E2E tests are in place, exercising all permutations of internalTrafficPolicy and externalTrafficPolicy (see [Test Plan](#test-plan) section)
 * Metrics to publish how many Services/Endpoints are routing traffic to terminating endpoints.
+* Manual or automated rollback testing (see [Test Plan](#test-plan) section)
 
 ### Upgrade / Downgrade Strategy
 
@@ -246,13 +266,14 @@ When the rollout happens, workloads may unexpectedly receive traffic when termin
 
 ###### What specific metrics should inform a rollback?
 
-There will be metrics added to publish how many Services/Endpoints are routing to terminating pods. It may be expected that clusters
-route to many terminating pods at once, especially during rolling updates, but users can correlate this metric with other factors to
-gauge if a rollback is necessary.
+`sync_proxy_rules_no_local_endpoints_total` can be used to inform rollback in scenarios where Services are dropping traffic to local endpoints.
+If this metric increases dramatically (especially when there are no rollouts happening), it could mean there is a programming error in kube-proxy.
+In general, we expect this metric to decrease during roll outs when this feature is enabled since nodes that only have terminating endpoints should
+no longer be included in this metric.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade->downgrade->upgrade path has not been tested yet. We may want to require this for beta or GA.
+Upgrade->downgrade->upgrade testing (manual or automated) will be required for Beta. If tested manually, the steps will be documented in this KEP.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -269,7 +290,7 @@ regardless of their termination state. If this is undesired, workloads should be
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name: TBD
+  - Metric name: `sync_proxy_rules_no_local_endpoints_total`
   - [Optional] Aggregation method:
   - Components exposing the metric:
     - kube-proxy
@@ -360,10 +381,15 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+It is highly recommended that all workloads have a readiness probe configured and handles termination signals from the kubelet appropriately.
+As a last resort, the EndpointSlice resource and proxy rules from kube-proxy can be examined to determine why traffic may not be routing correctly
+to terminating endpoints on a specific node.
+
 ## Implementation History
 
 - [x] 2020-04-23: KEP accepted as implementable for v1.19
 - [x] 2021-01-21: KEP scope expanded to include both internal and external traffic.
+- [x] 1.24: implementation updated to handle all types of traffic policies.
 
 ## Drawbacks
 
