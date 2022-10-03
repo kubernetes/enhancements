@@ -225,6 +225,8 @@ wiping nullable fields.
     * maybe others
 5. (Optional?) Allow users to specify their own templates for use with kubectl
   explain (there may be interesting use cases for this)
+6. Improve discoverability of API Resources and endpoints, and provide a platform
+for richer information to be included in the future.
 
 ### Non-Goals
 
@@ -289,9 +291,15 @@ template solution in the future.
 kubectl explain pods --output html
 ```
 
-Similarly to [godoc](https://pkg.go.dev), the we suggest to provide a searchable,
+Similarly to [godoc](https://pkg.go.dev), we suggest to provide a searchable,
 navigable, generated webpage for the kubernetes types of whatever cluster kubectl
 is talking to.
+
+Only the fields selected in the command line (and their subfields' types, etc) 
+will be included in the resultant page.
+
+If user types `kubectl explain --output html` with no specific target, then all types
+in the cluster are included.
 
 #### Markdown
 
@@ -301,6 +309,12 @@ kubectl explain pods --output md
 
 When using the `md` template, a markdown document is printed to stdout, so it
 might be saved and used for a documentation website, for example.
+
+Similary to `html` output, only the fields selected in the command line 
+(and their subfields' types, etc) will be included in the resultant page.
+
+If user types `kubectl explain --output md` with no specific target, then all types
+in the cluster are included.
 
 ### Risks and Mitigations
 
@@ -334,8 +348,6 @@ will always render with the latest spec-version of the data, if it is available.
 
 Other network errors should be handled using normal kubectl error handling.
 
-During the experimental phase, specifying `--output` implies `--experimental-openapiv3`,
-so if OpenAPIv3 is unavailable, the fallback will not be tried. (fallback case is only in 'compatibility mode').
 
 #### OpenAPI serialization time
 ##### Risk
@@ -473,8 +485,8 @@ Defined using feature gate
 
 #### Alpha
 
-- Feature implemented behind a command line flag `--experimental-openapiv3`
-- `--output` flag added
+- Feature implemented behind a command line flag `--experimental-output`
+- `--experimental-output` flag added
 - Existing explain tests are working or adapted for new implementation
 - Plaintext output roughly matches explain output
 - OpenAPIV3 (raw json) output implemented
@@ -500,6 +512,7 @@ Defined using feature gate
 
 #### GA
 
+- `--experimental-output` renamed to `--output`
 - All kube-apiserver releases within version skew of kubectl should have OpenAPIV3 on by default
 - Old `kubectl explain` implementation is removed, as is support for OpenAPIV2-backed `kubectl explain`
 
@@ -654,7 +667,8 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: --experimental-openapiv3 flag
+  - Describe the mechanism: --experimental-output flag usage
+    (to be renamed to --output when feature is no longer experimental)
   - Will enabling / disabling the feature require downtime of the control
     plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -673,7 +687,7 @@ information populated.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Until the feature is stable it will only be enabled when the `--experimental-openapiv3` flag is used.
+Until the feature is stable it will only be enabled when the `--experimental-output` flag is used.
 It has no persistent effect on data that is viewewd.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
