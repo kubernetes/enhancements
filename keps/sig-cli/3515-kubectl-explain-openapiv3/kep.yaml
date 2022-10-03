@@ -13,7 +13,7 @@ approvers:
   - "@KnVerey"
   - "@seans3"
 creation-date: "2022-09-14"
-last-updated: v1.19
+last-updated: v1.26
 status: implementable
 stage: alpha
 latest-milestone: "1.26"
@@ -22,5 +22,5 @@ milestone:
     beta: "1.28"
     stable: "1.29"
 feature-gates: []
-disable-supported: false
+disable-supported: true
 metrics: []

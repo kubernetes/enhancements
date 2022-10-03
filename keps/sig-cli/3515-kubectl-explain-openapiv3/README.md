@@ -328,10 +328,14 @@ If a user specifies an `--output` argument and the server 404's attempting to
 fetch the correct openapi version for the template, a new error message should
 be thrown to the effect of: `server missing openapi data for version: %v.%v.%v`.
 
-Internal templates should strive to support all OpenAPI versions supported by
-versions of kubernetes within their skew.
+Internal templates should strive to support the latest OpenAPI version enabled
+by default by versions of kubernetes within their skew. With that policy, templates
+will always render with the latest spec-version of the data, if it is available.
 
 Other network errors should be handled using normal kubectl error handling.
+
+During the experimental phase, specifying `--output` implies `--experimental-openapiv3`,
+so if OpenAPIv3 is unavailable, the fallback will not be tried. (fallback case is only in 'compatibility mode').
 
 #### OpenAPI serialization time
 ##### Risk
@@ -489,8 +493,15 @@ Defined using feature gate
   - Searchable by name, description, field name.
 - kube-openAPI v3 JSON deserialization is optimized to take less than 150ms on
   most machines
+- OpenAPI V3 is enabled by default on at least one version within kubectl's support window
+- Experimental flag is removed/made on by default (thus openapi v3 will always be tried first)
+- Old `kubectl explain` implementation for OpenAPI v2 remains as a fallback if v3 is unavailable
+(this policy should stand only until kubectl's version skew includes apiserver versions which enabled OpenAPI V3 by default). 
 
 #### GA
+
+- All kube-apiserver releases within version skew of kubectl should have OpenAPIV3 on by default
+- Old `kubectl explain` implementation is removed, as is support for OpenAPIV2-backed `kubectl explain`
 
 <!--
 **Note:** *Not required until targeted at a release.*
