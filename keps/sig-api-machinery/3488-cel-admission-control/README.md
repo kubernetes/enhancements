@@ -2129,6 +2129,9 @@ The existing workload could potentially fail the validation and cause unexpected
 While rollout, the cluster administrator could configure the feature with `enforcement: [Warn, Audit]` or similar,
 and wait until being comfortable to switch the enforcement level to `Deny`. In this way it will minimize the effect on the running workloads.
 
+Note that if the request was in while the feature is off, when the feature is turned back on, 
+the validation policy might prevent it from editing if validation rules applied.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
