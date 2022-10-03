@@ -1,5 +1,5 @@
 title: CPU Manager
-kep-number: 375
+kep-number: 3570
 authors:
   - "@ConnorDoyle"
   - "@flyingcougar"
@@ -14,11 +14,12 @@ approvers:
   - "@derekwaynecarr"
 editor: Connor Doyle, Francesco Romani (only for the GA graduation)
 creation-date: 2017-05-23
-last-updated: 2017-05-23
+last-updated: 2022-10-03
 status: implementable
 see-also:
 replaces:
-  - " kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
+  - "kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
+  - "kubernetes/enhancements/keps/sig-node/375-cpumanager/README.md"
 superseded-by:
 
 # The target maturity stage in the current dev cycle for this KEP.

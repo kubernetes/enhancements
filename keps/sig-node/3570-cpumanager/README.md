@@ -104,6 +104,7 @@ This new method is invoked from two places in the CPU manager: during each
 call to `AddContainer` and also periodically from a separate
 reconciliation loop.
 
+This KEP supersedes and replaces `kubernetes/enhancements/keps/sig-node/375-cpumanager/README.md`.
 
 ## Motivation
 
