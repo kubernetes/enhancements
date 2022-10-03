@@ -6,15 +6,21 @@ authors:
   - "@tallclair"
   - "@maxsmythe"
   - "@soorena776"
-owning-sig: sig-xyz
+owning-sig: sig-api-machinery
 participating-sigs:
-  - sig-api-machinery
+  - sig-auth
 status: provisional
 creation-date: 2022-09-02
 reviewers:
-  - TBD
+  - "@TristonianJones"
+  - "@liggitt"
+  - "@ritazh"
+  - "@brendandburns"
+  - "@DangerOnTheRanger"
+  - "@benluddy"
 approvers:
-  - TBD
+  - "@deads2k"
+  - "@lavalamp"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location

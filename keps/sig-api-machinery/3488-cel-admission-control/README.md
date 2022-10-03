@@ -18,7 +18,7 @@
       - [Policy Definitions](#policy-definitions)
       - [Policy Configuration](#policy-configuration)
       - [Match Criteria](#match-criteria)
-    - [Reporting violations to Clients](#reporting-violations-to-clients)
+    - [Decisions and Enforcement](#decisions-and-enforcement)
     - [Informational type checking](#informational-type-checking)
     - [Failure Policy](#failure-policy)
     - [Safety measures](#safety-measures)
@@ -35,6 +35,8 @@
     - [Safety Features](#safety-features)
     - [Aggregated API servers](#aggregated-api-servers)
     - [CEL function library](#cel-function-library)
+    - [Audit Annotations](#audit-annotations)
+    - [Client visibility](#client-visibility)
     - [Metrics](#metrics)
   - [User Stories](#user-stories)
     - [Use Case: Singleton Policy](#use-case-singleton-policy)
@@ -43,8 +45,8 @@
     - [Use Case: Validating native type with new field (version skew case)](#use-case-validating-native-type-with-new-field-version-skew-case)
     - [Use Case: Multiple policy definitions for different versions of CRD](#use-case-multiple-policy-definitions-for-different-versions-of-crd)
     - [Use Case: Prevent admission webhooks from matching a reserved namespace](#use-case-prevent-admission-webhooks-from-matching-a-reserved-namespace)
+    - [Use Case: Fine grained control of enforcement](#use-case-fine-grained-control-of-enforcement)
     - [Use Case: Migrating from validating webhook to validation policy](#use-case-migrating-from-validating-webhook-to-validation-policy)
-    - [Use Case: Rolling out a new validation check to an existing policy](#use-case-rolling-out-a-new-validation-check-to-an-existing-policy)
     - [Use Case: Pre-existing Deployment triggers rollout long after Pod policy is changed](#use-case-pre-existing-deployment-triggers-rollout-long-after-pod-policy-is-changed)
     - [Use Case: Rollout of a new validation expression to an existing policy](#use-case-rollout-of-a-new-validation-expression-to-an-existing-policy)
     - [Use Case: Canary-ing a policy](#use-case-canary-ing-a-policy)
@@ -359,22 +361,22 @@ responsibilities across resources. The resources involved are:
 
 ![Relatinships between policy resources](erd.png)
 
-This allows for a N:N relationship between policy definitions and the configuration of those policies. This separation has already been
-demonstrated successfully by multiple policy frameworks (see the survey further down in this KEP). It has a few key properties:
+This separation has already been demonstrated successfully by multiple policy
+frameworks (see the survey further down in this KEP). It has a few key
+properties:
 
 - Reduces total amount of resource data needed to manage policies:
-  - Params can be shared across multiple policies instead of copied. E.g.
-    multiple policies can be enforce different aspects of a "no external
-    connections", for example, but can all share the configuration.
+  - Params can be shared across multiple policies instead of copied. Multiple
+    policies can be enforcing different aspects of a "no external connections",
+    for example, but can all share the configuration.
   - Policies can be configured in different ways for different use cases without
-    having to copy the policy.
+    having to copy the policy definition.
   - Rollouts and canary-ing can be managed largely via bindings without having
-    to copy policies or params.
+    to copy policy definitions or params.
 - Ownership of resources aligns well with typical separation of roles for policy
   management.
 - Existing policy frameworks can leverage this design far more easily because it
-  aligns with how separation of concerns is expressed in most major policy
-  frameworks.
+  aligns with how separation of concerns is expressed by most policy frameworks.
 
 Each `ValidatingAdmissionPolicy` resource defines a admission control policy.
 The resource contains the CEL expressions to validate the admission policy and
@@ -399,11 +401,13 @@ spec:
       apiVersions: ["v1"]
       operations:  ["CREATE", "UPDATE"]
       resources:   ["deployments"]
-  denyReason: Invalid
   validations:
     - name: max-replicas
       expression: "object.spec.replicas <= params.maxReplicas"
       messageExpression: "'object.spec.replicas must be no greater than ' + string(params.maxReplicas)"
+      enforcement:
+        deny:
+          reason: Invalid
       # ...other rule related fields here...
 ```
 
@@ -417,12 +421,9 @@ expression references to the parameters via the CEL `params` variable, e.g.
 validate. This also guides type-checking, see the "Informational type checking"
 section for details.
 
-`denyReason` assigns a status code the result of this policy if it evaluates to
-deny.
-
 The `spec.validations` fields contain CEL expressions. If an expression
-evaluates to false, the validation check is enforced (the below `PolicyBinding`
-configures the enforcement).
+evaluates to false, the validation check is enforced according to the
+`enforcement` field.
 
 This is a "Bring Your Own CRD" design. The admission policy definition author is
 responsible for providing the `ReplicaLimit` parameter CRD.
@@ -444,7 +445,6 @@ spec:
     - key: environment,
       operator: In,
       values: ["test"]
-  enforcement: [Deny]
 ```
 
 ```yaml
@@ -475,7 +475,7 @@ spec:
     - key: environment,
       operator: NotIn,
       values: ["test"]
-  enforcement: [Deny]
+  mode: Enabled
 ```
 
 ```yaml
@@ -502,7 +502,7 @@ spec:
     namespaceSelectors:
     - key: environment,
       operator: Exists
-  enforcement: [Deny]
+  mode: Enabled
 ```
 
 With this binding, the test and global policy bindings overlap. Resources
@@ -546,7 +546,7 @@ organized into CEL variables as well as some other useful variables:
   - 'options'
 - 'config' - configuration data of the policy configuration being validated
 
-See below "Reporting violations to Clients" for more detail about how the
+See below "Decisions and Enforcement" for more detail about how the
 `spec.validations` field works and how violations are reported.
 
 ##### Policy Configuration
@@ -561,7 +561,7 @@ Each `PolicyBinding` contains:
   validate
 - `spec.params` - Reference to the custom resource containing the params to use
   when validating resources 
-- `spec.enforcement` - How validation failures should be enforced
+- `spec.mode` - See "Decisions and Enforcement" for details.
 
 Example:
 
@@ -577,7 +577,7 @@ spec:
     namespaceSelectors:
     - key: environment,
       operator: Exists
-  enforcement: [Deny, Audit]
+  mode: DryRun
 ```
 
 Each parameter CRD defines the custom resources that are referenced by the
@@ -830,22 +830,10 @@ xref:
 - https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#resourcepolicyrule-v1beta1-flowcontrol-apiserver-k8s-io
 - https://github.com/open-policy-agent/gatekeeper/blob/a1add93b0beb5c48eb92a6a2eb5ee7d21551a1b6/pkg/mutation/match/match.go#L22-L56
 
-#### Reporting violations to Clients
+#### Decisions and Enforcement
 
-<<[UNRESOLVED jpbetz, TristonianJones ]>>
-We should consider moving enforcement control into the policy
-and limiting the binding to control over "rollout" capabilities, e.g.
-"DryRun" or "Enabled".
-
-We should also consider making reason (invalid, forbidden, ...) a per validation
-field, this interacts well with other future needs like the ability to only
-message back an authz validation forbidden violation when both an authz
-validation fails as well as some other validations (which may leak information
-in messages).
-<<[/UNRESOLVED]>>
-
-This section focuses on how information is reported back to clients in
-when validations fail.
+This section focuses on how policies make decisions, how those decisions are
+enforced, and how decisions are reported back to the client.
 
 Goals:
 
@@ -854,9 +842,8 @@ Goals:
   - Support for reasons/codes
 - Ability to format message strings
 
-High level proposal:
+Policy definitions:
 
-- Each policy may set a `denyReason` and/or `denyCode`
 - Each validation may define a message:
   - `message` - plain string message
   - `messageExpression: "<cel expression>"` (mutually exclusive with `message`)
@@ -864,16 +851,16 @@ High level proposal:
     will be included in the failure message
   - If `messageExpression` results in an error: `expression` and `name` will be
     included in the failure message plus the arg evaluation failure
-- allow/deny, warnings, audit annotations will be collectively referred to as
-  `enforcement`, which will have the following options:
-  - `Deny`,
-  - `Warn`
-  - `Audit`
-  - (metrics will be emitted regardless of which enforcement options are set, so
-    `enforcement: []` may be useful)
-- Policy definitions identify validation expressions by name so that if the
-  enforcement is `Audit` the name can be used as the audit annotation key.
-- Policy bindings set enforcement options
+- Each validation may set a `reason` or `code` 
+
+- Each validation may select `enforcement` options:
+  - `deny { reason: ..., code: ... }`
+    - If `reason` or `code` is provided, they use the same semantics as
+      admission review. The reason clarifies the code but does not override it.
+  - `warn {}` - Included as a warning in the response to the client AND logged.
+  - Note: audit annotations is deferred until phase 2, see below "Audit
+    Annotations" section for details.
+  - (metrics will be emitted regardless of which enforcement options are set)
 
 Example policy definition:
 
@@ -885,21 +872,36 @@ metadata:
   name: "validate-xyz.example.com"
 spec:
   ...
-  denyReason: Invalid
-  vars: # MUST BE A REAL LIST WITH ORDERING
-    - containers: "self.containers + self.initContainers"
-    - foo: "container.size()"
   validations:
     - expression: "self.name.startsWith('xyz-')"
       name: name-prefix
-      messageExpression: "self.name + ' must start with \'xyz-\''"
+      messageExpression: "self.name + ' must start with xyz-'"
+      enforcement:
+        deny:
+          code: 401
+          reason: Unauthorized
     - expression: "self.name.contains('bad')"
       name: bad-name
       message: "name contains 'bad' which is discouraged due to ..."
+      enforcement:
+        deny:
+          code: 400
+          reason: Invalid
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
-      messageExpression: "self.name + ' contains \'suspicious\''"
+      messageExpression: "self.name + ' contains suspicious'"
+      enforcement:
+        warn: {}
 ```
+
+Policy bindings:
+
+- `mode` may be set to one of:
+  - `Enforce` (default) - the policy validation enforcements apply.
+  - `DryRun` - for testing out a new binding during rollout, no failures or
+    violations of any kind result in a deny, but are instead redirected to logs.
+    This is a good mode for cluster administrators to use to check the potential
+    impact of a policy before enabling it fully.
 
 corresponding policy configuration:
 
@@ -908,12 +910,9 @@ kind: PolicyBinding
 ...
 spec:
   ...
-  enforcement: [Deny, Audit] # Multiple enforcements are allowed
+  mode: DryRun
   ...
 ```
-
-Note that, in this design, groups of validations that should be enforced
-differently must be split out across multiple policy definitions.
 
 Implementation note: When the same param object is bound multiple times to the
 same policy via different bindings, it is not necessary to evalute the CEL
@@ -1022,7 +1021,7 @@ spec:
   - expression: "object.spec.replicas < 100"
   singletonBinding:
     matchResources: ...
-    enforcement: [Deny]
+    mode: Enabled
 ```
 
 Note that:
@@ -1246,6 +1245,32 @@ To consider:
 
 - labelSelector evaluation functions or other match evaluator functions ([original comment thread](https://github.com/kubernetes/enhancements/pull/3492#discussion_r981747317))
 - `string.format(string, list(dyn))` to make `messageExpression` more convenient.
+
+#### Audit Annotations
+
+<<[UNRESOLVED ]>>
+Would audit support in this enhancement become redundant if [Audit](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/) were also extended to support CEL?
+If so, which should we invest in?
+<<[/UNRESOLVED]>>
+
+Admission webhooks are able to include an associative array of audit annotations
+in a review response. If we intend to provide parity with webhooks we would
+also want to support audit.
+
+Rough plan:
+
+- Each validation has a `name`. If the enforcement is `Audit` the name can be
+  used as the audit annotation key.
+- Can add an `audit` option next to the `deny` and `warn` enforcement options.
+
+#### Client visibility
+
+In order to make `DryRun` more visible to clients we will add a client
+visibility option to policy bindings.
+
+This is largely focused at making deployment/rollout more manageable.
+
+It _might_ be generalized to control visibility of enforced violations.
 
 #### Metrics
 
@@ -1488,7 +1513,6 @@ spec:
     - apiGroups:   ["admissionregistration"]
       operations:  ["CREATE", "UPDATE"]
       resources:   ["ValidatingAdmissionWebhook", "MutatingAdmissionWebhook"]
-  denyReason: Forbidden
   validations:
   - expression: >
       has(object.namespaceSelectors) && object.namespaceSelectors.size() > 0 && 
@@ -1496,6 +1520,9 @@ spec:
       object.namespaceSelectors[0].namespaceSelector.operator = 'In' &&
       object.namespaceSelectors[0].namespaceSelector.values = ['true']
     message: "The 1st namespaceSelector or ValidatingAdmissionWebhook and MutatingAdmissionWebhooks must be: {key: webhook-restricted, operator: In, values: ['true']}"
+    enforcement:
+      deny:
+        reason: Forbidden
 ```
 
 This approach would pair well with a admission mutation that adds the rule to
@@ -1504,6 +1531,38 @@ admission support.
 
 More general types of validations like this would benefit from CEL support for
 functions like `labelSelector.match()`.
+
+#### Use Case: Fine grained control of enforcement
+
+Policy author wishes to define a policy where the cluster administrator is able
+to configure how a policy is enforced by defining a series of progressively
+stricter levels.
+
+Multiple copies of the same expression can be used, each guarded by a params
+check:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "policy1.example.com"
+spec:
+  match: ...
+  validations:
+  - expression: "!(params.enforceLevel > 2) || <cel expression>"
+    enforcement:
+      deny:
+        reason: Invalid
+  - expression: "!(params.enforceLevel > 1) || <cel expression>"
+    enforcement:
+      deny:
+        reason: Invalid
+  - expression: "<cel expression>"
+    enforcement:
+      deny:
+        reason: Invalid
+```
+
 
 #### Use Case: Migrating from validating webhook to validation policy
 
@@ -1518,15 +1577,6 @@ Steps:
    webhooks are called.
 6. Webhook is configured with `FailPolicy: Ignore` (optional)
 7. Webhook configuration is deleted
-
-#### Use Case: Rolling out a new validation check to an existing policy
-
-This is probably best handled by a layer above this feature where initially the
-new check is created in a different policy which can configured with
-`enforcement: [Warn, Audit]` or similar, and then when the cluster administrator
-is confident about it, they can change the enforcement level to `Deny`, at which
-point it becomes safe to merge the validation into a larger policy definitions
-already set to `Deny`.
 
 #### Use Case: Pre-existing Deployment triggers rollout long after Pod policy is changed
 
@@ -1548,14 +1598,16 @@ xref: https://kyverno.io/docs/writing-policies/autogen/
 
 #### Use Case: Rollout of a new validation expression to an existing policy
 
-1. Policy definition A exists in cluster, policy bindings X1..Xn exist
+1. Policy definition A exists in cluster with policy bindings X1..Xn
 1. "temporary" policy definition B is created with the new validation, it has
    the same settings as policy definition A otherwise (e.g. it uses the same
    param CR)
 1. Policy bindings X1..Xn are replicated as Y1..Yn but modified to use policy
-   definition B and `enforcement: [Audit, Warn]`
+   definition B and `mode: DryRun`
 1. Cluster administrators observe violations (via metrics, audit logs or logged warnings)
 1. Cluster administrator determines new validation is safe
+1. Policy bindings X1..Xn are set to `mode: Enabled`
+1. If anything goes wrong, revert mode back to `DryRun`
 1. Policy definition A is updated to include the new validation
 1. Policy definition B and policy bindings Y1..Yn are deleted
 
@@ -1563,10 +1615,10 @@ xref: https://kyverno.io/docs/writing-policies/autogen/
 
 1. New policy definition is created
 1. Any needed param CRs are created
-1. policy bindings are created and set to `enforcement: [Audit, Warn]`
+1. policy bindings are created and set to `mode: DryRun`
 1. Cluster administrators observe violations (via metrics, audit logs or logged warnings)
 1. Cluster administrator determines new policy is safe
-1. policy bindings are set to `enforcement: [Deny, Audit, Warn]`
+1. policy bindings are set to `mode: Enabled`
 
 ### Potential Applications
 
