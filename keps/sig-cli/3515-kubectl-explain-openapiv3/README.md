@@ -328,13 +328,12 @@ OpenAPI v3 data is not available in the current cluster.
 
 ###### If the user does not provide an --output argument
 
-This is a "compatibility mode" where users will see OpenAPI v3 plaintext template
-if the data is available, or fallback to old `kubectl explain` behavior for openapi v2.
+While this feature is not GA, this case should fallback to the old OpenAPI v2
+`kubectl explain` implementation if the server responds with `404` for OpenAPIV3 data.
 
-If the initial request for OpenAPI V3 fails, the old implementation using
-OpenAPI v2 should be used instead. There is another risk that this fallback process
-takes too long for interactive speed, so timeout should be carefully considered
-to prevent user from waiting too long to see their results.
+Once this feature is GA, then `OpenAPIV3` should be available everywhere
+so this is not a concern. If a user uses the feature against such a cluster without
+OpenAPIV3 after this KEP is GA, an error will be shown.
 
 ###### If the user does provide an --output argument
 
