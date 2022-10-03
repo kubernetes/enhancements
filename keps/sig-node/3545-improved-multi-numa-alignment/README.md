@@ -36,6 +36,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Alpha](#alpha)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
     - [Beta to G.A Graduation](#beta-to-ga-graduation)
+  - [Graduation Criteria of Options](#graduation-criteria-of-options)
+    - [Graduation of Options to <code>Beta-quality</code> (non-hidden)](#graduation-of-options-to--non-hidden)
+    - [Graduation of Options from <code>Beta-quality</code> to <code>G.A-quality</code>](#graduation-of-options-from--to-)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -122,7 +125,7 @@ This limitation surfaces in multi socket, as well as single socket multi NUMA sy
 ### Proposed Change
  
 We propose to
-- add a new flag in Kubelet called `TopologyManagerPolicyOptions` in the kubelet config or command line argument called `topology-manager-policy-options` which allows the user to specify the Topology Manager policy option.
+- add a new flag in Kubelet called `TopologyManagerPolicyAlphaOptions` in the kubelet config or command line argument called `topology-manager-policy-options` which allows the user to specify the Topology Manager policy option.
 - add a new topology manager option called `prefer-closest-numa-nodes`; if present, this option will enable further refinements of the existing `restricted` and `best-effort` policies, this option has no effect for `none` and `single-numa-node` policies.
 
 Best-effort or restricted policy chooses resources that will fit into the smallest number of NUMA nodes.
@@ -175,13 +178,13 @@ func getDistance(sysFs sysfs.SysFs, nodeDir string) ([]uint64, error) {
 ### Implementation strategy
 
 - Introduce new flag in Kubelet called `topology-manager-policy-options`, which when specified with `prefer-closest-numa-nodes` will modify the behavior of `best-effort` and `restricted` policy to pick NUMA nodes based on average distance between them.
-- The `TopologyManagerPolicyOptions` flag is propagated to `ContainerManager` and later to `TopologyManager`.
+- The `TopologyManagerPolicyAlphaOptions` flag is propagated to `ContainerManager` and later to `TopologyManager`.
 - Enable `TopologyManager` NUMA distances discovery:
   - Temporarily add distances discovery logic into `kubelet` (similarly to [the introduction](https://github.com/kubernetes/kubernetes/commit/ecc14fe661c22f5da967a7ff50cfb3aead60905b) of `GetNUMANode()`).
   - Once `cadvisor` exposes the NUMA distance information through `MachineInfo`, remove the logic out of `kubelet` (similarly to [the removal](https://github.com/kubernetes/kubernetes/commit/a047e8aa1b705bb7e5be881fb63cf90a218b60d0) of `GetNUMANode()`).
   - The removal of the logic `kubelet` is [an Alpha to Beta graduation criteria](#alpha-to-beta-graduation).
 - When `TopologyManager` is being created it discovers distances between NUMA nodes and stores them inside `manager` struct. This is temporary until `distance` information will land into `cadvisor`.
-- Pass `TopologyManagerPolicyOptions` to best-effort and restricted policy. When this is specified best-hint is picked based on average distance between NUMA nodes. This would require modification to `compareHints` function to change how the best hint is calculated:
+- Pass `TopologyManagerPolicyAlphaOptions` to best-effort and restricted policy. When this is specified best-hint is picked based on average distance between NUMA nodes. This would require modification to `compareHints` function to change how the best hint is calculated:
 
 ```go 
 
@@ -311,6 +314,32 @@ These cases will be added in the existing e2e tests:
 - [X] Allowing time for feedback (1 year).
 - [X] Risks have been addressed.
 
+### Graduation Criteria of Options
+
+In 1.26 we are releasing this feature to Alpha. We propose the following management of TopologyManager policy options graduation:
+- `TopologyManagerPolicyAlphaOptions` is not enabled by default. Topology Manager alpha options (only one as of 1.26), are hidden by default
+ and only when `TopologyManagerPolicyAlphaOptions` feature gate is enabled user is able to use alpha options.
+  `TopologyManagerPolicyAlphaOptions` will not exist if there are no options in alpha stage.
+- `TopologyManagerPolicyBetaOptions` is not enabled by default. Topology Manager beta options (none as of 1.26), are hidden by default
+ and only when `TopologyManagerPolicyBetaOptions` feature gate is enabled user is able to use beta options.
+`TopologyManagerPolicyBetaOptions` will not exist if there are no options in beta stage (true for 1.26 release).
+- `TopologyManagerPolicyOptions` is enabled by default. Topology Manager stable options (none as of 1.26), are visible by default
+ and user does not have to enable any feature gates to use them.
+ `TopologyManagerPolicyAlphaOptions` will not exist if there are no options in GA stage (true for 1.26 release).
+
+When an option graduates, its visibility should be moved to be controlled by the corresponding feature-flag.
+The introduction of these feature gates gives us the ability to move the option to beta and later stable without implying that all available options stable.
+
+The graduation Criteria of options is described below:
+
+#### Graduation of Options to `Beta-quality` (non-hidden)
+- [X] Gather feedback from the consumer of the policy option.
+- [X] No major bugs reported in the previous cycle.
+
+#### Graduation of Options from `Beta-quality` to `G.A-quality`
+- [X] Allowing time for feedback (1 year) on the policy option.
+- [X] Risks have been addressed.
+
 
 ### Upgrade / Downgrade Strategy
 
@@ -327,9 +356,9 @@ No changes needed
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `TopologyManagerPolicyOptions`
+  - Feature gate name: `TopologyManagerPolicyAlphaOptions`
   - Components depending on the feature gate: kubelet
-- [x] Change the kubelet configuration to set a `TopologyManager` policy to `restricted` or `best-effort` and a `TopologyManagerPolicyOptions` to `prefer-closest-numa-nodes`
+- [x] Change the kubelet configuration to set a `TopologyManager` policy to `restricted` or `best-effort` and a `TopologyManagerPolicyAlphaOptions` to `prefer-closest-numa-nodes`
   - Will enabling / disabling the feature require downtime of the control
     plane? 
     No.
