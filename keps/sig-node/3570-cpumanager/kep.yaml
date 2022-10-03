@@ -4,6 +4,7 @@ authors:
   - "@ConnorDoyle"
   - "@flyingcougar"
   - "@sjenning"
+  - "@fromanirh" # ONLY for GA graduation and PRR review
 owning-sig: sig-node
 participating-sigs:
   - sig-node
@@ -12,7 +13,7 @@ reviewers:
 approvers:
   - "@dawnchen"
   - "@derekwaynecarr"
-editor: Connor Doyle, Francesco Romani (only for the GA graduation)
+editor: Connor Doyle
 creation-date: 2017-05-23
 last-updated: 2022-10-03
 status: implementable
@@ -28,7 +29,7 @@ stage: stable
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.10"
+latest-milestone: "v1.26"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:

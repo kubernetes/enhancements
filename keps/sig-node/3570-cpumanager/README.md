@@ -18,6 +18,7 @@
   - [Configuring the CPU Manager](#configuring-the-cpu-manager)
     - [Policy 1: &quot;none&quot; cpuset control [default]](#policy-1-none-cpuset-control-default)
     - [Policy 2: &quot;static&quot; cpuset control](#policy-2-static-cpuset-control)
+    - [CPU Manager options](#cpu-manager-options)
       - [Implementation sketch](#implementation-sketch)
       - [Example pod specs and interpretation](#example-pod-specs-and-interpretation)
       - [Example scenarios and interactions](#example-scenarios-and-interactions)
@@ -70,12 +71,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -113,7 +114,7 @@ This KEP supersedes and replaces `kubernetes/enhancements/keps/sig-node/375-cpum
    throughput compared to VMs due to cpu quota being fulfilled across all
    cores, rather than exclusive cores, which results in fewer context
    switches and higher cache affinity.
-2. Unacceptable latency attributed to the OS process scheduler, especially
+1. Unacceptable latency attributed to the OS process scheduler, especially
    for “fast” virtual network functions (want to approach line rate on
    modern server NICs.)
 
@@ -123,12 +124,12 @@ This KEP supersedes and replaces `kubernetes/enhancements/keps/sig-node/375-cpum
    Guaranteed pod with 1 or more cores of cpu, the system will try to make
    sure that the pod gets its cpu quota primarily from reserved core(s),
    resulting in fewer context switches and higher cache affinity".
-2. Support the case where in a given pod, one container is latency-critical
+1. Support the case where in a given pod, one container is latency-critical
    and another is not (e.g. auxiliary side-car containers responsible for
    log forwarding, metrics collection and the like.)
-3. Do not cap CPU quota for guaranteed containers that are granted
+1. Do not cap CPU quota for guaranteed containers that are granted
    exclusive cores, since that would be antithetical to (1) above.
-4. Take physical processor topology into account in the CPU affinity policy.
+1. Take physical processor topology into account in the CPU affinity policy.
 
 ### Non-Goals
 
@@ -289,6 +290,16 @@ application-level CPU affinity of their own, as those settings may be
 overwritten without notice (whenever exclusive cores are
 allocated or deallocated.)
 
+#### CPU Manager options
+
+`CPUManagerPolicyOptions` allow to fine-tune the behavior of the `static` policy.
+The details of each option are described in their own KEP.
+As for kubernetes 1.26, the following options are available:
+
+- [full-pcpus-only](https://github.com/fromanirh/enhancements/blob/master/keps/sig-node/2625-cpumanager-policies-thread-placement/README.md)
+- [distribute-cpus-across-numa](https://github.com/fromanirh/enhancements/blob/master/keps/sig-node/2902-cpumanager-distribute-cpus-policy-option/README.md)
+- [align-by-socket](https://github.com/fromanirh/enhancements/blob/master/keps/sig-node/3327-align-by-socket/README.md)
+
 ##### Implementation sketch
 
 The static policy maintains the following sets of logical CPUs:
@@ -429,11 +440,11 @@ extending the production code to implement this enhancement.
 
 ##### Integration tests
 
-- TBD
+- N/A
 
 ##### e2e tests
 
-- TBD
+- `k8s.io/kubernetes/test/e2e_node/cpu_manager_test.go`
 
 ### Graduation Criteria
 
@@ -470,7 +481,6 @@ in back-to-back releases.
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
--->
 
 ### Upgrade / Downgrade Strategy
 
@@ -486,19 +496,16 @@ Not relevant
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `CPUManager`
+  - Components depending on the feature gate: kubelet
+
+NOTE: in order to enable the feature, the cluster admin needs also to enable
+the `static` cpu manager policy.
 
 ###### Does enabling the feature change any default behavior?
 
-No, unless the non-none policy is explicitly configured.
+No, unless the non-none policy (`static`) is explicitly configured.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -523,7 +530,7 @@ Already running workload will not be affected if the node state is steady
 
 ###### What specific metrics should inform a rollback?
 
-Pod creation errors o a node-by-node basis.
+Pod creation errors on a node-by-node basis.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -608,7 +615,7 @@ No
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-No
+No impact. The behavior of the feature does not change when API Server and/or etcd is unavailable since the feature is node local.
 
 ###### What are other known failure modes?
 
