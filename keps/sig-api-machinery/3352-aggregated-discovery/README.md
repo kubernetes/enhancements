@@ -188,9 +188,9 @@ group-version in order to "discover" the available APIs. This causes a
 storm of requests for clusters and is a source of latency and
 throttling. When new types are added to the API, types will need to be
 fetched again and adds an additional storm of requests. This KEP
-proposes centralizing the "discovery" mechanism into one document so
-that clients only need to make one request to the API server to
-retrieve all the operations available.
+proposes centralizing the "discovery" mechanism into two aggregated
+documents so clients do not need to send a storm of requests to the
+API server to retrieve all the operations available.
 
 ## Motivation
 
