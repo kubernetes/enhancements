@@ -186,9 +186,11 @@ through a collection of small documents partitioned by group-version.
 All clients of Kubernetes APIs must send a request to every
 group-version in order to "discover" the available APIs. This causes a
 storm of requests for clusters and is a source of latency and
-throttling. This KEP proposes centralizing the "discovery" mechanism
-into one document so that clients only need to make one request to the
-API server to retrieve all the operations available.
+throttling. When new types are added to the API, types will need to be
+fetched again and adds an additional storm of requests. This KEP
+proposes centralizing the "discovery" mechanism into one document so
+that clients only need to make one request to the API server to
+retrieve all the operations available.
 
 ## Motivation
 
@@ -244,16 +246,17 @@ removal of the endpoint will not be attempted. There are still use
 cases for publishing the discovery document per group-version and this
 KEP will solely focus on introducing the new aggregated endpoint.
 
-Watchable discovery is also outside the scope of this KEP.
+Watchable discovery is also outside the scope of this KEP. Polling
+with ETag support is sufficient for most users.
 
 ## Proposal
 
-We are proposing a new endpoint `/discovery/v1` as an aggregated
-endpoint for all discovery documents. Discovery documents can
-currently be found under `apis/<group>/<version>` and `/api/v1` for
-the legacy group version. This discovery endpoint will support
-publishing an ETag so clients who already have the latest version of
-the aggregated discovery can avoid redownloading the document.
+We are proposing augmenting the current discovery endpoints at `/api`
+and `/apis` with an new content negotiation accept type. This endpoint
+will serve an aggregated discovery document that c ontains the
+resources for all group versions. ETag support will be provided so
+clients who already have the latest version of the aggregated
+discovery can avoid redownloading the document.
 
 We will add a new controller responsible for aggregating the discovery
 documents when a resource on the cluster changes. There will be no
@@ -266,6 +269,34 @@ self-contained.
 details that didn't come across above? Go in to as much detail as
 necessary here. This might be a good place to talk about core concepts
 and how they relate. -->
+
+This is an important design note around selecting the group version for the new discovery types to be `meta/v1beta1`. [Link to the full comment](https://github.com/kubernetes/kubernetes/pull/111978#discussion_r979015557)
+
+1. Discovery is a non-resource API class
+2. As a non-resource API class, once the feature gate is
+   "on-by-default" the API is required to be stable (only additive
+   features)
+3. Non-resource APIs that are "off-by-default" do not promise
+   stability
+4. A non-resource APIs that has to change before promotion to
+   "on-by-default" must represent incompatible changes somehow to
+   clients (if the version is "v1" and then we find a bug, we would
+   have to rev to "v2" before "on-by-default", which means "v1" might
+   not ever be exposed to end users)
+5. Unversioned net new endpoints (/healthz) are effectively v1 even if
+   they are "off-by-default"
+6. We don't want to have multiple endpoints for discovery because it's
+   confusing for users and defeats the purpose of making discovery
+   more efficient, and we have a way to do that with negotiation
+7. We think there is value in a new API type (APIGroupDiscovery) which
+   simplifies client logic, but it comes with a small risk of not
+   being correct
+8. We have a good idea of what the API looks like due to a previous
+   v1, so we are evolving an existing API and are not "completely
+   flying blind" (i.e. implying this is really an alpha api)
+9. While we aren't exactly like an unversioned new endpoint (v1 from
+   start), we want to deliver the feature (improves clients) without
+   giving the perception that the API is perfect
 
 ### Risks and Mitigations
 
@@ -288,18 +319,25 @@ not always required) or even code snippets. If there's any ambiguity
 about HOW your proposal will be implemented, this is the place to
 discuss them. -->
 
-We will expose a endpoint `/discovery` that will support JSON, and
-protobuf and gzip compression. The endpoint will serve the aggregated
-discovery document for all types that a Kubernetes cluster supports.
+The current discovery endpoints `/api` and `/apis` will accept a new
+content negotiation type `Accept: as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io` that represents an
+aggregated discovery document, with support for both JSON and
+Protocol Buffers.
 
 ### API
 
-The contents of this endpoint will be an `APIGroupDiscoveryList`, containing a list of `APIGroupDiscovery`, with each group include a list of versions (`APIVersionDiscovery`). Each `APIVersionDiscovery` will include a list of `APIResourcesForDiscovery`. There are a couple minor changes for the `APIResourceForDiscovery` compared to the current `APIResource` object, but all states expressible with the current API will be representable in the new API.
+The contents of this endpoint will be an `APIGroupDiscoveryList`,
+containing a list of `APIGroupDiscovery`, with each group include a
+list of versions (`APIVersionDiscovery`). Each `APIVersionDiscovery`
+will include a list of `APIResourcesForDiscovery`. There are a couple
+minor changes for the `APIResourceForDiscovery` compared to the
+current `APIResource` object, but all states expressible with the
+current API will be representable in the new API.
 
 The endpoint will also publish an ETag calculated based on a hash of
 the data for clients.
 
-These types will live in a new group version `apidiscovery/v2`
+These types will live in the `meta/v1beta1` group version.
 
 This is what the new API will look like.
 
@@ -555,7 +593,8 @@ Below are some examples to consider, in addition to the aforementioned
 - At least one client (kubectl) has an implementation to use the
   aggregated discovery feature
 
-We want all clients to benefit from this feature, but for alpha our main focus will be on kubectl and golang clients.
+We want all clients to benefit from this feature, but for alpha our
+main focus will be on kubectl and golang clients.
 
 #### Beta
 
@@ -681,10 +720,9 @@ enablement/disablement will rollout across nodes. -->
 is young that might indicate a serious problem? -->
 
 High latency or failure of a metric in the newly added discovery
-aggregation controller. If the `/discovery/v1` endpoint is not
-reachable or if there are errors from the endpoint, that could be a
-sign of rollback as well.
-
+aggregation controller. If the `/api` and `/apis` endpoint returns an
+error or is unreachable with the `APIGroupDiscoveryList` accept type,
+that could be a sign of rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -721,7 +759,9 @@ so that they can verify correct enablement and operation of this
 feature. Recall that end users cannot usually observe component logs
 or access metrics. -->
 
-`/discovery/v1` endpoint is populated with discovery information, and all expected group-versions are present.
+`/api` and `/apis` endpoints are populated with discovery information
+when the aggregated content negotiation type accept header is passed,
+and all expected group-versions are present.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -915,6 +955,19 @@ cache control headers. Clients can then recognize if the names have
 changed or stayed the same, and re-use files that have kept the same
 name without downloading them again.
 
-Aggregated Discovery was selected because of the amount of requests that are saved both on startup and on changes involving multiple group versions. For a full comparison between Discovery Cache Busting and Aggregated Discovery, please refer to the [Google Doc](https://docs.google.com/document/d/1sdf8nz5iTi86ErQy9OVxvQh_0RWfeU3Vyu0nlA10LNM).
+Aggregated Discovery was selected because of the amount of requests
+that are saved both on startup and on changes involving multiple group
+versions. For a full comparison between Discovery Cache Busting and
+Aggregated Discovery, please refer to the [Google
+Doc](https://docs.google.com/document/d/1sdf8nz5iTi86ErQy9OVxvQh_0RWfeU3Vyu0nlA10LNM).
 
-An additional alternative that we considered is watchable discovery. After diving into the use cases, polling with ETag support is sufficient for most clients and adding support for watch changes the scope of this proposal.
+An additional alternative that we considered is watchable discovery.
+After diving into the use cases, polling with ETag support is
+sufficient for most clients and adding support for watch drastically
+changes the scope of this proposal.
+
+Finally, another alternative that was explored was creating a new URL
+endpoint `/discovery/<version>`. The additional of a new URL endpoint
+per serialization version creates burden for clients as the API
+evolves, as they may need to check multiple endpoints to determine the
+state of the feature.
