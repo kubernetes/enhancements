@@ -310,7 +310,7 @@ kubectl explain pods --output md
 When using the `md` template, a markdown document is printed to stdout, so it
 might be saved and used for a documentation website, for example.
 
-Similary to `html` output, only the fields selected in the command line 
+Similarly to `html` output, only the fields selected in the command line 
 (and their subfields' types, etc) will be included in the resultant page.
 
 If user types `kubectl explain --output md` with no specific target, then all types
