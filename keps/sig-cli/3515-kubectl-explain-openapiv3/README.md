@@ -247,11 +247,7 @@ kubectl explain pods.spec
 ```
 
 Output should be familiar to users of today's `kubectl explain`, except new
-information is populated:
-
-```console
-<TODO>
-```
+information from the OpenAPI v3 spec is now populated.
 
 Note: Feature during development will be gated by an experimental flag. The commands
 shown here elide the experimental flag for clarity.
@@ -306,11 +302,6 @@ kubectl explain pods --output md
 When using the `md` template, a markdown document is printed to stdout, so it
 might be saved and used for a documentation website, for example.
 
-```console
-<TODO>
-```
-
-
 ### Risks and Mitigations
 
 #### OpenAPI V3 Not Available
@@ -357,8 +348,6 @@ should be blocked on the merging of this optimization.
 ## Design Details
 
 #### Current High-level Approach
-
-TODO: fill with links to referred implementation
 
 1. User types `kubectl explain pods`
 2. kubectl resolves 'pods' to GVR core v1 pods using cluster discovery information
