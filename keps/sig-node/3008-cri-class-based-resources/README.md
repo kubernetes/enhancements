@@ -212,19 +212,14 @@ Main characteristics of the new resource type (and the technologies they are
 aimed at enabling) are:
 
 - multiple containers can be assigned to the same class of a certain type of
-  resource
-- resources are represented by a limited set of class identifiers
-- each type of resource has its own set of class identifiers
+  QoS-class resource
+- QoS-class resources are represented by an enumerable set of class identifiers
+- each type of QoS-class resource has an independent set of class identifiers
 
-With QoS-class resources, Pods and their containers can request
-opaque QoS-class identifiers (classes) for some particular mechanism
-(QoS-class resource type), such as block I/O bandwidth. Kubelet relays this
-information to the container runtime which is responsible for enforcing the
-request in the underlying system.
-
-A prime example of a QoS-class resource is Intel RDT (Resource Director
-Technology). RDT is a technology for controlling the cache lines and memory
-bandwidth available to applications.
+With QoS-class resources, Pods and their containers can request opaque
+QoS-class identifiers (classes) of certain QoS mechanism (QoS-class resource
+type). Kubelet relays this information to the container runtime which is
+responsible for enforcing the request in the underlying system.
 
 ## Motivation
 
@@ -249,8 +244,7 @@ of resources, i.e. QoS-class resources.
 This KEP identifies two technologies that can immediately be enabled with
 QoS-class resources. However, these are just two examples  and the proposed
 changes are generic (and not tied to these two QoS-class resource types in any
-way), making it easy to implement new QoS-class resource types in the runtimes
-without any changes in Kubernetes.
+way), making it easier to implement new QoS-class resource types.
 
 [Intel RDT][intel-rdt] implements a class-based mechanism for controlling the
 cache and memory bandwidth QoS of applications. All processes in the same
