@@ -331,9 +331,13 @@ hopefully resulting in a better overall end result. However, we also outline
 all the future steps to not lose the overall big picture.
 
 The figure below illustrates the design of the full implementation (less quota)
-and the part the first implementation phase covers. This KEP (the
-[Proposal](#proposal)) in its current form implements this first phase – the
-KEP will evolve and be supplemented with future phases getting implemented.
+and the division of implementation phases. The first implementation phase
+basically covers the communication between kubelet and the container runtime
+(i.e. CRI API). All changes to the Kubernetes API and its control plane
+components are left to future work. This KEP (the [Proposal](#proposal) and
+[Design Details](#design-details)) in its current form implements this first
+phase – the KEP will evolve and be supplemented with future phases getting
+implemented.
 
 ![design](./design.svg)
 
@@ -358,13 +362,15 @@ and start experimenting with them in Kubernetes:
 This section sheds light on the end goal of this work in order to better
 evaluate this KEP in a broader context. What a fully working solution would
 consists of and what the (next) steps to accomplish that would be. These topics
-are currently out of the scope of this KEP and were listed under
-[Non-goals](#non-goals).
+are currently listed as "future work" in [Goals](#goals).
+
+In practice, the future work mostly consists of changes to the Kubernetes API
+and control plane components.
 
 #### Pod Spec
 
-This future step will replace pod annotations with proper user interface via
-the Pod spec. Below, one possible option is presented.
+This future step will replace pod annotations with proper user interface in the
+Kubernetes API, i.e. PodSpec. Below, one possible option is presented.
 
 Introduce a new field (e.g. class) into ResourceRequirements of Container.
 
