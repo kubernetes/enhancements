@@ -708,6 +708,21 @@ existing systems will be more continuous if we keep the meaning of
 "total shares" for the existing field.  In the next version we should
 rename the `AssuredConcurrencyShares` to `NominalConcurrencyShares`.
 
+The limits on borrowing are two-sided: a given priority level has a
+limit on how much it may borrow and a limit on how much may be
+borrowed from it.  The latter is a matter of protection, the former is
+a matter of restraint.  Introducing just the protection side is not
+enough.  If APF gained borrowing without giving the cluster
+administrators a way to limit how much a given priority level borrows
+then the administrators would not be able to do something they could
+do before the introduction of borrowing: use a priority level as a
+deliberate jail for some class of traffic that APF is not limiting
+well.  APF dispatches requests based on approximate estimates of how
+much work they involve.  We have been improving these estimates, and
+may continue to do so, but there will always remain the possibility
+that some class of requests is much "heavier" than the APF code
+estimates; for those, a deliberate jail is useful.
+
 The following table shows the current default non-exempt priority
 levels and a proposal for their new configuration.
 
