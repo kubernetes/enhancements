@@ -320,9 +320,21 @@ about HOW your proposal will be implemented, this is the place to
 discuss them. -->
 
 The current discovery endpoints `/api` and `/apis` will accept a new
-content negotiation type `Accept: as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io` that represents an
-aggregated discovery document, with support for both JSON and
-Protocol Buffers.
+content negotiation type `Accept:
+application/json;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io` for
+JSON and `Accept:
+application/vnd.kubernetes.protobuf;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io`
+for protocol buffers. This type represents an aggregated discovery
+document with the `APIGroupDiscoveryList` type.
+
+When the feature graduates to GA, the accept type's version will
+change to `v1` (Eg: `Accept:
+application/json;as=APIGroupDiscoveryList;v=v1;g=meta.k8s.io`)
+
+The default accept type will not be changed and a request to `/api` or
+`/apis` without any content negotiation types will default to the
+unaggregated `APIGroupList` type defined in meta/v1.
+
 
 ### API
 
