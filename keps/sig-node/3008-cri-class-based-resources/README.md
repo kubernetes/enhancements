@@ -537,6 +537,10 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+This section currently covers [implementation phase 1](#phase-1) (see
+[implementation phases](#implementation-phases) for an outline of the complete
+implementation).
+
 We extend the CRI protocol to contain information about the QoS-class
 resource assignment of containers and pods. Resource assignment requests will
 be simple key-value pairs (*resource-type=class-name*)
@@ -652,6 +656,10 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+The detailed design presented here covers [implementation phase 1](#phase-1)
+(see [implementation phases](#implementation-phases) for an outline of all
+planned changes).
 
 Configuration and management of the QoS-class resources is fully handled by the
 underlying container runtime and is invisible to kubelet. An error to the CRI
