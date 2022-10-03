@@ -300,7 +300,7 @@ can be removed in arbitrary order, but addition of a new scheduling gate is disa
 To ensure consistency, scheduled Pod must always have empty `schedulingGates`.
 This means that a client (an administrator or custom controller) cannot create a Pod that has
 `schedulingGates` populated in any way, if that Pod also specified a `spec.nodeName`. In this case,
-API Server will return a 409 conflict / validation error.
+API Server will return a validation error.
 
     |                                              | non-nil schedulingGates⏸️ | nil schedulingGates▶️ |
     |----------------------------------------------|-------------------------|-------------------------|
@@ -312,7 +312,7 @@ by default. However, the scheduler's extension point is activated no matter the 
 or not. This enables scheduler plugin developers to tryout the feature even in Alpha, by crafting
 different enqueue plugins and wire with custom fields or conditions.
 
-- **New column in kubectl:** To provider better UX, we're going to add a column "scheduling paused"
+- **New column in kubectl:** To provide better UX, we're going to add a column "scheduling paused"
 to the output of `kubectl get pod` to indicate whether it's scheduling-paused or not.
 
 ### Risks and Mitigations
@@ -394,7 +394,8 @@ whether this Pod can be admitted or not:
 ```go
 // EnqueuePlugin is an interface that must be implemented by "EnqueuePlugin" plugins.
 // These plugins are called prior to adding Pods to activeQ.
-// Note: an enqueue plugin is expected to be lightweight and efficient; otherwise it'd block other
+// Note: an enqueue plugin is expected to be lightweight and efficient, so it's not expected to
+// involve expensive calls like accessing external endpoints; otherwise it'd block other
 // Pods' enqueuing in event handlers.
 type EnqueuePlugin interface {
     Plugin
@@ -480,14 +481,23 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-All core changes must be covered by unit tests. In particular, update existing UTs or add new UTs
+All core changes must be covered by unit tests, in both API and scheduler sides:
+
+- **API:** API validation and strategy tests (`pkg/registry/core/pod`) to verify disabled fields
+when the feature gate is on/off.
+
+- **Scheduler:** Core scheduling changes which includes Enqueue config API's validation, defaulting,
+integration and its implementation.
+
+In particular, update existing UTs or add new UTs
 in the following packages:
 
-- `pkg/api/pod`: `9/15/2022` - `70.1%`
-- `pkg/apis/core/validation`: `9/15/2022` - `82.3%`
-- `cmd/kube-scheduler/app`: `9/15/2022` - ``
-- `pkg/scheduler`: `9/15/2022` - `75.9%`
-- `pkg/scheduler/framework/runtime`: `9/15/2022` - `81.9%`
+- `pkg/api/pod`: `10/3/2022` - `70.1%`
+- `pkg/apis/core/validation`: `10/3/2022` - `82.3%`
+- `pkg/registry/core/pod`: `10/3/2022` - `60.4%`
+- `cmd/kube-scheduler/app`: `10/3/2022` - `32.9`
+- `pkg/scheduler`: `10/3/2022` - `75.9%`
+- `pkg/scheduler/framework/runtime`: `10/3/2022` - `81.9%`
 
 ##### Integration tests
 
@@ -603,6 +613,7 @@ in back-to-back releases.
 
 - Feature disabled by default.
 - Unit and integration tests completed and passed.
+- API strategy test (`pkg/registry/*`) to verify disabled fields when the feature gate is on/off.
 - Additional tests are in Testgrid and linked in KEP
 
 #### Beta
@@ -755,7 +766,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes, there are tests at unit and integration level.
+Appropriate tests will be added in Alpha. See [Test Plan](#test-plan) for more details.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -804,6 +815,11 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+Add a label `notReady` to the existing metric `pending_pods` to distinguish unschedulable Pods:
+
+- `unschedulable` (existing): scheduler tried but cannot find any Node to host the Pod
+- `notReady` (new): scheduler respect the Pod's present `schedulingGates` and hence not schedule it 
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1033,16 +1049,8 @@ information to express the idea and why it was not acceptable.
 indicate it's not scheduling-ready, and flipped to `False` (by a controller) afterwards to trigger
 this Pod's scheduling cycle.
 
-  This approach is not chosen is because it cannot support multiple independent controller to control
+  This approach is not chosen because it cannot support multiple independent controllers to control
 specific aspect a Pod's scheduling readiness.
-
-- Instead of proposing a Pod field, leave the field to users (e.g., custom label/annotation)
-and associate with their out-of-tree plugins.
-
-  This approach is supported indeed. Advanced scheduler plugin developers can opt-out the pre-defined
-  API field to develop their own scheduling plugin logic. However, for most users that have limited
-  scheduler knowledge, a pre-defined API field along with a default enqueue plugin would offer the most
-  flexibility with minimum developing efforts.
 
 ## Infrastructure Needed (Optional)
 
