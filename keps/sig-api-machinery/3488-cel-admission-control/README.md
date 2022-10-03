@@ -361,8 +361,9 @@ responsibilities across resources. The resources involved are:
 
 ![Relatinships between policy resources](erd.png)
 
-This allows for a N:N relationship between policy definitions and the configuration of those policies. This separation has already been
-demonstrated successfully by multiple policy frameworks (see the survey further down in this KEP). It has a few key properties:
+This separation has already been demonstrated successfully by multiple policy
+frameworks (see the survey further down in this KEP). It has a few key
+properties:
 
 - Reduces total amount of resource data needed to manage policies:
   - Params can be shared across multiple policies instead of copied. Multiple
@@ -474,6 +475,7 @@ spec:
     - key: environment,
       operator: NotIn,
       values: ["test"]
+  mode: Enabled
 ```
 
 ```yaml
@@ -500,6 +502,7 @@ spec:
     namespaceSelectors:
     - key: environment,
       operator: Exists
+  mode: Enabled
 ```
 
 With this binding, the test and global policy bindings overlap. Resources
@@ -1018,7 +1021,7 @@ spec:
   - expression: "object.spec.replicas < 100"
   singletonBinding:
     matchResources: ...
-    enablement: Enabled
+    mode: Enabled
 ```
 
 Note that:
@@ -1532,8 +1535,8 @@ functions like `labelSelector.match()`.
 #### Use Case: Fine grained control of enforcement
 
 Policy author wishes to define a policy where the cluster administrator is able
-to configure if the policy is enforced by a deny or if it is only ever used to
-emit a warning.
+to configure how a policy is enforced by defining a series of progressively
+stricter levels.
 
 Multiple copies of the same expression can be used, each guarded by a params
 check:
