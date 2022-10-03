@@ -366,7 +366,7 @@ demonstrated successfully by multiple policy frameworks (see the survey further 
 
 - Reduces total amount of resource data needed to manage policies:
   - Params can be shared across multiple policies instead of copied. Multiple
-    policies can be enforce different aspects of a "no external connections",
+    policies can be enforcing different aspects of a "no external connections",
     for example, but can all share the configuration.
   - Policies can be configured in different ways for different use cases without
     having to copy the policy definition.
@@ -898,7 +898,7 @@ Policy bindings:
   - `DryRun` - for testing out a new binding during rollout, no failures or
     violations of any kind result in a deny, but are instead redirected to logs.
     This is a good mode for cluster administrators to use to check the potential
-    impact of a policy before enableing it fully.
+    impact of a policy before enabling it fully.
 
 corresponding policy configuration:
 
@@ -1262,7 +1262,7 @@ Rough plan:
 
 #### Client visibility
 
-In order to make `DryRun` more visibility to clients we will add a client
+In order to make `DryRun` more visible to clients we will add a client
 visibility option to policy bindings.
 
 This is largely focused at making deployment/rollout more manageable.
