@@ -140,40 +140,8 @@ When `prefer-closest-numa-nodes` policy is enabled, we need to retrieve informat
 Right now Topology manager discovers Node layout using [CAdvisor API](https://github.com/google/cadvisor/blob/master/info/v1/machine.go#L40).
 
 We will need to extend the `MachineInfo` struct with a `Distances` field which will describe the distance between a given NUMA node and other NUMA nodes in the system.
-This information can be read from sysfs:
-
-```go 
-const     distanceFile = "distance"
-
-func (fs *realSysFs) GetDistance(nodePath string) (string, error) {
-    distancePath := fmt.Sprintf("%s/%s", nodePath, distanceFile)
-    distance, err := ioutil.ReadFile(distancePath)
-    if err != nil {
-        return "", err
-    }
-    return strings.TrimSpace(string(distance)), err
-}
-
-func getDistance(sysFs sysfs.SysFs, nodeDir string) ([]uint64, error) {
-    rawDistance, err := sysFs.GetDistance(nodeDir)
-    if err != nil {
-        //Ignore if per-node info is not available.
-        klog.Warningf("Found node without distance information, nodeDir: %s", nodeDir)
-        return nil, nil
-    }
-
-    distances := []uint64{}
-    for _, distance := range strings.Split(rawDistance, " ") {
-        distanceInt, err := strconv.ParseUint(distance, 10, 64)
-        if err != nil {
-            return nil, fmt.Errorf("cannot convert %s to int", distance)
-        }
-        distances = append(distances, distanceInt)
-    }
-
-    return distances, nil
-}
-```
+This is already implemented in `cadvisor` by this [patch](https://github.com/google/cadvisor/pull/3179) but it is not yet present in any of the released versions. 
+Before new release of `cadvisor` includes this patch we will need to replicate this logic in `kubelet`.
 
 ### Implementation strategy
 
@@ -181,7 +149,7 @@ func getDistance(sysFs sysfs.SysFs, nodeDir string) ([]uint64, error) {
 - The `TopologyManagerPolicyOptions` flag is propagated to `ContainerManager` and later to `TopologyManager`.
 - Enable `TopologyManager` NUMA distances discovery:
   - Temporarily add distances discovery logic into `kubelet` (similarly to [the introduction](https://github.com/kubernetes/kubernetes/commit/ecc14fe661c22f5da967a7ff50cfb3aead60905b) of `GetNUMANode()`).
-  - Once `cadvisor` exposes the NUMA distance information through `MachineInfo`, remove the logic out of `kubelet` (similarly to [the removal](https://github.com/kubernetes/kubernetes/commit/a047e8aa1b705bb7e5be881fb63cf90a218b60d0) of `GetNUMANode()`).
+  - Once `cadvisor` exposes the NUMA distance information through `MachineInfo` ([PR](https://github.com/google/cadvisor/pull/3179) exposing distance in `cadvisor` is merged, waiting for it to be released), remove the logic out of `kubelet` (similarly to [the removal](https://github.com/kubernetes/kubernetes/commit/a047e8aa1b705bb7e5be881fb63cf90a218b60d0) of `GetNUMANode()`).
   - The removal of the logic `kubelet` is [an Alpha to Beta graduation criteria](#alpha-to-beta-graduation).
 - When `TopologyManager` is being created it discovers distances between NUMA nodes and stores them inside `manager` struct. This is temporary until `distance` information lands in `cadvisor`.
 - Pass `TopologyManagerPolicyOptions` to best-effort and restricted policy. When this is specified best-hint is picked based on average distance between NUMA nodes. This would require modification to `compareHints` function to change how the best hint is calculated:
