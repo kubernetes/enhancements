@@ -9,7 +9,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-auth
-status: provisional
+status: implementable
 creation-date: 2022-09-02
 reviewers:
   - "@TristonianJones"
