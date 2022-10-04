@@ -108,6 +108,7 @@ This limitation surfaces in multi-socket, as well as single-socket multi NUMA sy
 
 ### Goals
 
+* Introduce a new kubelet flag `topology-manager-policy-options` for passing options to a TopologyManager policy to modify its behaviour.
 * Enable `TopologyManager` to prefer sets of NUMA nodes with shorter NUMA distances for all TopologyManager policies
 * Preserve all other properties of all policies
 
@@ -141,7 +142,7 @@ Right now Topology manager discovers Node layout using [CAdvisor API](https://gi
 
 We will need to extend the `MachineInfo` struct with a `Distances` field which will describe the distance between a given NUMA node and other NUMA nodes in the system.
 This is already implemented in `cadvisor` by this [patch](https://github.com/google/cadvisor/pull/3179) but it is not yet present in any of the released versions. 
-Before new release of `cadvisor` includes this patch we will need to replicate this logic in `kubelet`.
+Until a new release of `cadvisor` includes this patch (and it gets vendored into the `kubelet`) we will need to replicate this logic in the `kubelet` code itself.
 
 ### Implementation strategy
 
@@ -287,19 +288,19 @@ These cases will be added in the existing e2e tests:
 
 In 1.26 we are releasing this feature to Alpha. We propose the following management of TopologyManager policy options graduation:
 
+- `TopologyManagerPolicyOptions` for enabling/disabling the entire feature. As this is an alpha feature, this feature gate would be disabled by default. 
+  Explicitly enabling `TopologyManagerPolicyOptions` feature gate provides us the ability to supply `TopologyManagerPolicyOptions` or `topology-manager-policy-options` flag in Kubelet.
+
 - `TopologyManagerPolicyAlphaOptions` is not enabled by default. Topology Manager alpha options (only one as of 1.26), are hidden by default
- and only when `TopologyManagerPolicyAlphaOptions` feature gate is enabled user is able to use alpha options.
-  `TopologyManagerPolicyAlphaOptions` will not exist if there are no options in alpha stage.
+   and only when both the `TopologyManagerPolicyOptions` and the `TopologyManagerPolicyAlphaOptions` feature gates are enabled will the user be able to use alpha options.
 
 - `TopologyManagerPolicyBetaOptions` is not enabled by default. Topology Manager beta options (none as of 1.26), are hidden by default
- and only when `TopologyManagerPolicyBetaOptions` feature gate is enabled user is able to use beta options.
-`TopologyManagerPolicyBetaOptions` will not exist if there are no options in beta stage (true for 1.26 release).
+  and only when both the `TopologyManagerPolicyOptions`and the `TopologyManagerPolicyBetaOptions` feature gates are enabled will the user be able to use beta options.
 
-- `TopologyManagerPolicyOptions` for enabling/disabling the entire feature. As this is an alpha feature, this feature gate would be disabled by default.
-Explicitly enabling `TopologyManagerPolicyOptions` feature gate provides us the ability to supply `TopologyManagerPolicyOptions` or `topology-manager-policy-options` flag in Kubelet.
 
 When an option graduates, its visibility should be moved to be controlled by the corresponding feature-flag.
 The introduction of these feature gates gives us the ability to move the option to beta and later stable without implying that all available options are stable.
+This approach is similliar to graduation criteria for `CPUManagerPolicyOptions` introduced [here](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2625-cpumanager-policies-thread-placement#graduation-criteria-of-options).
 
 The graduation Criteria of options is described below:
 
@@ -342,7 +343,7 @@ No changes needed
 
 ###### Does enabling the feature change any default behavior?
 
-- Yes, it makes the behaviour of the TopologyManager restricted and best-effort policies to choose NUMA nodes based on distance.
+- No, it makes the behaviour of the TopologyManager restricted and best-effort policies to choose NUMA nodes based on distance only if proper `kubelet` flag is provided.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
