@@ -1266,9 +1266,10 @@ type ResourceClaimStatus struct {
 	// doesn't support dynamic resource allocation or the feature was
 	// disabled.
 	//
-	// The maximum size is 32. This is an artificial limit to prevent
+	// The maximum size is 32 (= [ResourceClaimReservedForMaxSize]).
+	// This is an artificial limit to prevent
 	// a completely unbounded field in the API.
-	ReservedFor []metav1.OwnerReference
+	ReservedFor []ResourceClaimUserReference
 
 	<<[UNRESOLVED pohly]>>
 	We will have to discuss use cases and real resource drivers that
@@ -1280,6 +1281,10 @@ type ResourceClaimStatus struct {
 	be very careful about race conditions.
 	<<[/UNRESOLVED]>>
 }
+
+// ReservedForMaxSize is maximum number of entries in
+// [ResourceClaimStatus.ReservedFor].
+const ResourceClaimReservedForMaxSize = 32
 
 // AllocationResult contains attributed of an allocated resource.
 type AllocationResult struct {
@@ -1578,6 +1583,22 @@ type ResourceClaimParametersReference struct {
 	Kind string
 	// Name is the name of resource being referenced
 	Name string
+}
+
+// ResourceClaimParametersReference contains enough information to let you
+// locate the user of a ResourceClaim. The user must be a resource in the same
+// namespace as the ResourceClaim.
+type ResourceClaimUserReference struct {
+	// APIGroup is the API group for the resource being referenced.
+	// If Group is empty, the specified Kind must be in the core API group.
+	// For any other third-party types, APIGroup is required.
+	APIGroup string
+	// Resource is the type of resource being referenced, for example "pods".
+	Resource string
+	// Name is the name of resource being referenced.
+	Name string
+	// UID identifies exactly one incarnation of the resource.
+	UID types.UID
 }
 ```
 
