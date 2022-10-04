@@ -495,6 +495,10 @@ Defined using feature gate
 - OpenAPIV3 (raw json) output implemented
 
 #### Alpha 2
+
+If we decide to move ahead with the `md` and `html` outputs, an Alpha 2 may
+be required.
+
 - `md` output implemented (or dropped from design due to continued debate)
   - Table of contents all GVKs grouped by Group then Version.
   - Section for each individual GVK
