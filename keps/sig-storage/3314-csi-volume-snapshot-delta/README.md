@@ -269,7 +269,10 @@ logs][13] served by these two API servers.
 The `DriverDiscovery` resource is implemented as a [Custom Resource Definition
 (CRD)][2], owned and handled by a new custom resource controller. The aggregated
 API server uses this resource to discover CSI drivers that support CBT
-functionalities.
+functionalities. This new resource is introduced and preferred over the existing
+`CSIDriver` resource because the latter is used mainly for volume properties
+needed by the Kubelet, at the node level. Also, since CBT is an out-of-tree
+feature,  it makes sense to not coupled it to the in-tree `CSIDriver` resource.
 
 ### Risks and Mitigations
 
