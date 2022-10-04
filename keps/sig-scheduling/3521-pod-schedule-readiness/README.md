@@ -335,7 +335,7 @@ in Pending state for a long time and it carries non-nil `schedulingGates`, you m
 component owns the gate(s) (via `.spec.managedFields`) and report the symptom to the component owner.
 
 - Faulty controllers may forget to remove the Pod's `schedulingGates`, and hence results in
-a large number of unschedulable Pods. In Alpha, we don't limit the number of unschedulabe Pods caused
+a large number of unschedulable Pods. In Alpha, we don't limit the number of unschedulable Pods caused
 by potential faulty controllers. We will evaluate necessary options in the future to mitigate
 potential abuse.
 
@@ -819,7 +819,10 @@ previous answers based on experience in the field.
 Add a label `notReady` to the existing metric `pending_pods` to distinguish unschedulable Pods:
 
 - `unschedulable` (existing): scheduler tried but cannot find any Node to host the Pod
-- `notReady` (new): scheduler respect the Pod's present `schedulingGates` and hence not schedule it 
+- `notReady` (new): scheduler respect the Pod's present `schedulingGates` and hence not schedule it
+
+Moreover, to explicitly indicate a Pod's scheduling-unready state, a condition
+`{type:PodScheduled, reason:WaitingForGates}` is introduced.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
