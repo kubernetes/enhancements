@@ -760,7 +760,20 @@ Yes, covered by node e2e tests:
 
 ###### What specific metrics should inform a rollback?
 
-TBD
+`device_plugin_registration_total` and `device_plugin_alloc_duration_seconds` metrics can
+determine the heath of the feature and can be be used to detrmine if a rollback needs to
+be performed.
+
+`device_plugin_registration_total` is an indicator of number of device plugin
+registrations. This metric can be observed both before and after an upgrade. If the
+number of device plugin registrations remain the same, it can be assumed that
+the upgrade process was successful. If however, the number of registrations are not
+same, upgrade process hasn't been successful and a rollback is required.
+
+`device_plugin_alloc_duration_seconds` can be used as an indicator to determine
+whether or not device plugin allocations are taking place successfully. If devices
+were being allocated before upgrade and are not after an update a rollback is
+required.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -779,6 +792,8 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
+1. The operator can look at `device_plugin_registration_total` and `device_plugin_alloc_duration_seconds`
+   metrics.
 1. Kubelet PodResource API endpoints (`List` and `GetAllocatableResources`) can be used
    to obtain information on devices allocated to running pods. Refer to
    [keps/sig-node/606-compute-device-assignment]([keps/sig-node/606-compute-device-assignment]).
@@ -806,13 +821,10 @@ Not Applicable, refer to Kubelet SLOs.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [X] Other (treat as last resort)
-  - Details:
-    1. Device `capacity` and `allocatable` in the node status is an indicator of
-       successful registration of device plugins to Kubelet.
-    1. Inspecting Pod status or device plugin specific environment variables, device
-       files and mount points to determine if it was successfully allocatated devices.
-    1. Querying Kubelet podresource API `List` and `GetAllocatableResources` endpoints.
+- [X] Metrics
+  - Metric name:
+    - device_plugin_registration_total
+    - device_plugin_alloc_duration_seconds
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -867,6 +879,7 @@ No known failure modes.
 
 ## Implementation History
 - **2020-10-02:** KEP ported to the most recent template and GA graduation.
+- **2020-10-04:** Updates based on review comments, added device plugin metrics.
 
 
 ## References

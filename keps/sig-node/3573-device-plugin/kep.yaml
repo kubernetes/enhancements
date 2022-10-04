@@ -22,7 +22,7 @@ stage: stable
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.10"
+latest-milestone: "v1.26"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -40,4 +40,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - N/A
+  - device_plugin_registration_total
