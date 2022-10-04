@@ -30,7 +30,13 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
+  - name: "TopologyManagerPolicyOptions"
+    components:
+      - kubelet
   - name: "TopologyManagerPolicyAlphaOptions"
+    components:
+      - kubelet
+  - name: "TopologyManagerPolicyBetaOptions"
     components:
       - kubelet
 disable-supported: true

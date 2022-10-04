@@ -95,20 +95,20 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We propose an enhancement to TopologyManager that enables it to favor sets of NUMA nodes with shorter distance between the nodes, when making admission decision. The proposed enhancement is only applicable when comparing sets of NUMA nodes equal in size.
+We propose an enhancement to the `TopologyManager` that allows it to favor sets of NUMA nodes with shorter distance between nodes when making admission decisions. The proposed enhancement is only applicable when comparing sets of NUMA nodes that are equal in size.
 
 ## Motivation
 
-To support latency-critical execution and high-throughput applications (including those running on Kubernetes), NUMA locality(topology) of resources assigned to the workloads is crucial. THe best NUMA locality can be achieved by minimizing number of NUMA nodes required to execute the workload, and minimizing the NUMA distance between the nodes. NUMA distance is a metric which exposes relative physical distance between NUMA cells which relates to latency that is introduced when a CPU needs to access resources from different NUMA nodes. The distance is always within range 10-254 and for a local access its value is 10.
+To support latency-critical execution and high-throughput applications (including those running on Kubernetes), NUMA locality (topology) of resources assigned to the workloads is crucial. The best NUMA locality can be achieved by minimizing the number of NUMA nodes required to execute the workload, and minimizing the NUMA distance between those nodes. NUMA distance is a metric which exposes relative physical distance between NUMA cells which relates to latency that is introduced when a CPU needs to access resources from different NUMA nodes. The distance is always within range 10-254 and for a local access its value is 10.
 
-As of now, TopologyManager provides policies to either provide resources from only single numa node or the smallest number of NUMA nodes. TopologyManager is not aware of the NUMA distances and does not take it into consideration during admission decisions. 
+At present, the `TopologyManager` provides policies to align resources on either a single NUMA node or the minimum number of NUMA nodes (in cases where more than one NUMA node is required). However, the `TopologyManager` is not aware of NUMA distances and does not take them into account when making admission decisions.
 
-This limitation surfaces in multi socket, as well as single socket multi NUMA systems (commonly present in AMD hardware), and might cause a significant performance degradation for latency-critical execution and high-throughput applications, in a case when the Topology Manager schedules a pod on non-adjacent numa nodes.
+This limitation surfaces in multi-socket, as well as single-socket multi NUMA systems (commonly present in AMD hardware), and can cause significant performance degradation in latency-critical execution and high-throughput applications if the `TopologyManager` decides to align resources on non-adjacent NUMA nodes.
 
 
 ### Goals
 
-* Enable TopologyManager to prefer sets of NUMA nodes with shorter NUMA distances for all TopologyManager policies
+* Enable `TopologyManager` to prefer sets of NUMA nodes with shorter NUMA distances for all TopologyManager policies
 * Preserve all other properties of all policies
 
 ## Proposal
@@ -125,7 +125,7 @@ This limitation surfaces in multi socket, as well as single socket multi NUMA sy
 ### Proposed Change
  
 We propose to
-- add a new flag in Kubelet called `TopologyManagerPolicyAlphaOptions` in the kubelet config or command line argument called `topology-manager-policy-options` which allows the user to specify the Topology Manager policy option.
+- add a new flag in Kubelet called `TopologyManagerPolicyOptions` in the kubelet config or command line argument called `topology-manager-policy-options` which allows the user to specify the Topology Manager policy option.
 - add a new topology manager option called `prefer-closest-numa-nodes`; if present, this option will enable further refinements of the existing `restricted` and `best-effort` policies, this option has no effect for `none` and `single-numa-node` policies.
 
 Best-effort or restricted policy chooses resources that will fit into the smallest number of NUMA nodes.
@@ -139,7 +139,7 @@ To summarize properties of `prefer-closest-numa-nodes` policy:
 When `prefer-closest-numa-nodes` policy is enabled, we need to retrieve information regarding distances between NUMA nodes.
 Right now Topology manager discovers Node layout using [CAdvisor API](https://github.com/google/cadvisor/blob/master/info/v1/machine.go#L40).
 
-We would need to extend the `MachineInfo` struct with Distances field which would be an array of uint64 which will describe the distance between a given node and other nodes in the system.
+We will need to extend the `MachineInfo` struct with a `Distances` field which will describe the distance between a given NUMA node and other NUMA nodes in the system.
 This information can be read from sysfs:
 
 ```go 
@@ -178,13 +178,13 @@ func getDistance(sysFs sysfs.SysFs, nodeDir string) ([]uint64, error) {
 ### Implementation strategy
 
 - Introduce new flag in Kubelet called `topology-manager-policy-options`, which when specified with `prefer-closest-numa-nodes` will modify the behavior of `best-effort` and `restricted` policy to pick NUMA nodes based on average distance between them.
-- The `TopologyManagerPolicyAlphaOptions` flag is propagated to `ContainerManager` and later to `TopologyManager`.
+- The `TopologyManagerPolicyOptions` flag is propagated to `ContainerManager` and later to `TopologyManager`.
 - Enable `TopologyManager` NUMA distances discovery:
   - Temporarily add distances discovery logic into `kubelet` (similarly to [the introduction](https://github.com/kubernetes/kubernetes/commit/ecc14fe661c22f5da967a7ff50cfb3aead60905b) of `GetNUMANode()`).
   - Once `cadvisor` exposes the NUMA distance information through `MachineInfo`, remove the logic out of `kubelet` (similarly to [the removal](https://github.com/kubernetes/kubernetes/commit/a047e8aa1b705bb7e5be881fb63cf90a218b60d0) of `GetNUMANode()`).
   - The removal of the logic `kubelet` is [an Alpha to Beta graduation criteria](#alpha-to-beta-graduation).
-- When `TopologyManager` is being created it discovers distances between NUMA nodes and stores them inside `manager` struct. This is temporary until `distance` information will land into `cadvisor`.
-- Pass `TopologyManagerPolicyAlphaOptions` to best-effort and restricted policy. When this is specified best-hint is picked based on average distance between NUMA nodes. This would require modification to `compareHints` function to change how the best hint is calculated:
+- When `TopologyManager` is being created it discovers distances between NUMA nodes and stores them inside `manager` struct. This is temporary until `distance` information lands in `cadvisor`.
+- Pass `TopologyManagerPolicyOptions` to best-effort and restricted policy. When this is specified best-hint is picked based on average distance between NUMA nodes. This would require modification to `compareHints` function to change how the best hint is calculated:
 
 ```go 
 
@@ -206,7 +206,7 @@ func compareHints(bestNonPreferredAffinityCount int, current *TopologyHint, cand
     ...
     */
 
-	if current.Preferred && candidate.Preferred {
+    if current.Preferred && candidate.Preferred {
         if candidate.NUMANodeAffinity.IsNarrowerThan(current.NUMANodeAffinity) {
             return candidate
         } 
@@ -220,7 +220,7 @@ func compareHints(bestNonPreferredAffinityCount int, current *TopologyHint, cand
 
             return current 
         }
-	}
+    }
 
     /*
     ...
@@ -241,7 +241,7 @@ Let's consider following distance table:
 | node3      | 12    | 12    | 11    | 10    |
 
 
-If resources cannot be fitted into one NUMA node the new policy option will prefer hints with bitmasks that have lower average distance between NUMA nodes. Such bitmasks:
+If resources cannot fit onto one NUMA node, the new policy option will prefer hints with bitmasks that have lower average distance between NUMA nodes. Such bitmasks include:
 
 * 1100 -> (10 + 11 + 11 + 10) /4 = 10.5
 * 1010 -> (10 + 12 + 10 + 12) /4 = 11
@@ -249,9 +249,9 @@ If resources cannot be fitted into one NUMA node the new policy option will pref
 * 0011 -> (10 + 11 + 10 + 11 ) /4 = 10.5
 * 0110 -> (10 + 12 + 10 + 12 ) /4 = 11
 
-So the bitmasks 1100 and 0011 has the lowest average distance between NUMA nodes.
+So the bitmasks 1100 and 0011 have the lowest average distance between NUMA nodes.
 
-If we consider system with 8 NUMA nodes:
+If we consider a system with 8 NUMA nodes:
 
 |  node/node | node0 | node1 | node2 | node3 | node4 | node5 | node6 | node7 |
 | ---------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
@@ -264,12 +264,12 @@ If we consider system with 8 NUMA nodes:
 | node6      | 30    | 30    | 30    | 30    | 12    | 12    | 10    | 11    |
 | node7      | 30    | 30    | 30    | 30    | 12    | 12    | 11    | 10    |
 
-And following bitmasks:
+And the following bitmasks:
 
 * 10001000 -> (10 + 30 + 10 +30) /4 = 20
 * 11100000 -> (10 + 11 + 12 + 10 + 11 + 12 + 12 + 12 + 10) / 6 = 16.7
 
-In second case even though the average distance is lower but the bitmask width is bigger and that is why the first case should be preffered.
+In the second case, even though the average distance is lower, the number of NUMA nodes is larger (meaning that the first case should always be preferred).
 
 ### Test Plan
 
@@ -313,22 +313,25 @@ These cases will be added in the existing e2e tests:
 #### Beta to G.A Graduation
 - [X] Allowing time for feedback (1 year).
 - [X] Risks have been addressed.
+- [X] Presence of E2E test validating the described behavior on 4+ NUMA nodes system.
 
 ### Graduation Criteria of Options
 
 In 1.26 we are releasing this feature to Alpha. We propose the following management of TopologyManager policy options graduation:
+
 - `TopologyManagerPolicyAlphaOptions` is not enabled by default. Topology Manager alpha options (only one as of 1.26), are hidden by default
  and only when `TopologyManagerPolicyAlphaOptions` feature gate is enabled user is able to use alpha options.
   `TopologyManagerPolicyAlphaOptions` will not exist if there are no options in alpha stage.
+
 - `TopologyManagerPolicyBetaOptions` is not enabled by default. Topology Manager beta options (none as of 1.26), are hidden by default
  and only when `TopologyManagerPolicyBetaOptions` feature gate is enabled user is able to use beta options.
 `TopologyManagerPolicyBetaOptions` will not exist if there are no options in beta stage (true for 1.26 release).
-- `TopologyManagerPolicyOptions` is enabled by default. Topology Manager stable options (none as of 1.26), are visible by default
- and user does not have to enable any feature gates to use them.
- `TopologyManagerPolicyAlphaOptions` will not exist if there are no options in GA stage (true for 1.26 release).
+
+- `TopologyManagerPolicyOptions` for enabling/disabling the entire feature. As this is an alpha feature, this feature gate would be disabled by default.
+Explicitly enabling `TopologyManagerPolicyOptions` feature gate provides us the ability to supply `TopologyManagerPolicyOptions` or `topology-manager-policy-options` flag in Kubelet.
 
 When an option graduates, its visibility should be moved to be controlled by the corresponding feature-flag.
-The introduction of these feature gates gives us the ability to move the option to beta and later stable without implying that all available options stable.
+The introduction of these feature gates gives us the ability to move the option to beta and later stable without implying that all available options are stable.
 
 The graduation Criteria of options is described below:
 
@@ -356,9 +359,12 @@ No changes needed
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `TopologyManagerPolicyAlphaOptions`
+  - Feature gate names:
+    - `TopologyManagerPolicyAlphaOptions`
+    - `TopologyManagerPolicyBetaOptions`
+    - `TopologyManagerPolicyOptions`
   - Components depending on the feature gate: kubelet
-- [x] Change the kubelet configuration to set a `TopologyManager` policy to `restricted` or `best-effort` and a `TopologyManagerPolicyAlphaOptions` to `prefer-closest-numa-nodes`
+- [x] Change the kubelet configuration to set a `TopologyManager` policy to `restricted` or `best-effort` and a `TopologyManagerPolicyOptions` to `prefer-closest-numa-nodes`
   - Will enabling / disabling the feature require downtime of the control
     plane? 
     No.
@@ -372,7 +378,7 @@ No changes needed
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-- Yes, disabling the feature gate shuts down the feature completely.
+- Yes, disabling the `TopologyManagerPolicyOptions` feature gate shuts down the feature completely.
 - Yes, through kubelet configuration - disable given policy option.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
