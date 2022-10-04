@@ -312,8 +312,9 @@ by default. However, the scheduler's extension point is activated no matter the 
 or not. This enables scheduler plugin developers to tryout the feature even in Alpha, by crafting
 different enqueue plugins and wire with custom fields or conditions.
 
-- **New column in kubectl:** To provide better UX, we're going to add a column "scheduling paused"
-to the output of `kubectl get pod` to indicate whether it's scheduling-paused or not.
+- **New phase literal in kubectl:** To provide better UX, we're going to add a new phase literal
+`SchedulingPaused` to the "phase" column of `kubectl get pod`. This new literal indicates whether it's
+scheduling-paused or not.
 
 ### Risks and Mitigations
 
@@ -368,6 +369,7 @@ type PodSpec struct {
 
 type PodSchedulingGate struct {
     // Name of the scheduling gate.
+    // Each scheduling gate must have a unique name field.
     Name string
 }
 ```
