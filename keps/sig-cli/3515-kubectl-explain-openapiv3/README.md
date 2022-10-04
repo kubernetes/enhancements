@@ -520,8 +520,9 @@ As of Kubernetes 1.24 OpenAPIV3 entered beta and become enabled by default, ther
 
 - OpenAPIV3 is GA and has been since at least the minimum supported apiserver version
 by kubectl.
-- All kube-apiserver releases within version skew of kubectl should have OpenAPIV3 on by default. This is true as of Kubernetes 1.24
+- All kube-apiserver releases within version skew of kubectl should have OpenAPIV3 on by default. This is true as of kubectl for Kubernetes 1.25
 - Old `kubectl explain` implementation is removed, as is support for OpenAPIV2-backed `kubectl explain`
+- `--output plaintext-openapiv2` has been deprecated for at least one release
 
 <!--
 **Note:** *Not required until targeted at a release.*
