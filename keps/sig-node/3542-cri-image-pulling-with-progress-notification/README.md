@@ -292,6 +292,32 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+Following new CRI streaming API call is proposed:
+
+    // PullImageWithStatus pulls an image with authentication config.
+    // It returns periodically amount of image pulled so far.
+    rpc PullImageWithStatus(PullImageRequest) returns (stream PullImageWithStatusResponse) {}
+
+The PullImageWithStatus() API call will connect and send a normal PullImageRequest message to
+runtime CRI image service server. If the connection succeeds, the PullImageWithStatus() will
+return the stream to the caller and let it to start to receive the status messages via the stream.
+The image server will initiate a image pull, and it will start to send status reports to the CRI client.
+The status reports will contain information how much image has been downloaded so far for
+each layer which are identified by the digest field.
+
+    message PullImageWithStatusResponse {
+        // Reference to the image in use.
+        string image_ref = 1;
+        // Image digest
+        string digest = 2;
+        // Amount of data received.
+        UInt64Value offset = 3;
+        // Total size of the image.
+        UInt64Value total = 4;
+    }
+
+After the full image is downloaded, the gRPC connection is closed and success status is returned to the caller.
+
 ### Test Plan
 
 <!--
@@ -308,6 +334,8 @@ when drafting this test plan.
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
+
+The implementation PR adds a suite of unit and E2E tests to the new proposed PullImageWithStatus API.
 
 ##### Prerequisite testing updates
 
