@@ -1086,6 +1086,9 @@ repeated evaluations if they are shared across validations.
 
 #### Secondary Authz
 
+We have general agreement to include this as a feature, but need to provide to
+agree on a concrete design.
+
 kube-apiserver authorizer checks (aka Secondary-authz checks) have been proposed
 as a way of doing things like:
 
@@ -1130,6 +1133,9 @@ currently planning to support in this KEP, but the use case is interesting and
 we should investigate with sig-auth.
 
 #### Access to namespace metadata
+
+We have general agreement to include this as a feature, but need to provide to
+agree on a concrete design.
 
 - Namespace labels and annotations are the most commonly needed fields not
   already available in the resource being validated. Note that
