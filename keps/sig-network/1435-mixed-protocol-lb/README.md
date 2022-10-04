@@ -476,6 +476,20 @@ Kube-proxy will not block traffic based on the port status information from `Ser
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+Proper unit tests are in place for the affected code parts.
+
+##### Integration tests
+
+##### e2e tests
+
 There must be e2e cases that test whether CPI implementations handle Service definitions with mixed protocol configuration on a consistent way. I.e. either the cloud LB is set up properly or the Service is rejected by the CPI implementation.
 The e2e tests shall check that
 - a multi-protocol Service triggers the creation of a multi-protocol cloud load balancer 
@@ -500,7 +514,7 @@ Graduating to GA means, that the feature flag checking is removed from the code.
 
 #### Beta -> GA Graduation
 
-TBD
+- All major cloud providers support this or indicate non-support properly
 
 #### Removing a Deprecated Flag
 
