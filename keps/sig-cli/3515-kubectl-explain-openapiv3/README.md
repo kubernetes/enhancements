@@ -108,7 +108,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
+    - [Alpha 1](#alpha-1)
+    - [Alpha 2](#alpha-2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -287,6 +288,8 @@ template solution in the future.
 
 #### HTML
 
+> PROVISIONAL SECTION
+
 ```shell
 kubectl explain pods --output html
 ```
@@ -298,10 +301,11 @@ is talking to.
 Only the fields selected in the command line (and their subfields' types, etc) 
 will be included in the resultant page.
 
-If user types `kubectl explain --output html` with no specific target, then all types
-in the cluster are included.
+Possible idea: If user types `kubectl explain --output html` with no specific target, 
+then all types in the cluster are included.
 
 #### Markdown
+> PROVISIONAL SECTION
 
 ```shell
 kubectl explain pods --output md
@@ -313,8 +317,8 @@ might be saved and used for a documentation website, for example.
 Similarly to `html` output, only the fields selected in the command line 
 (and their subfields' types, etc) will be included in the resultant page.
 
-If user types `kubectl explain --output md` with no specific target, then all types
-in the cluster are included.
+Possible idea: If user types `kubectl explain --output md` with no specific target,
+then all types in the cluster are included.
 
 ### Risks and Mitigations
 
@@ -482,37 +486,39 @@ E2E test that shows every definition in OpenAPI document can be retrieved via ex
 
 Defined using feature gate
 
-#### Alpha
+#### Alpha 1
 
 - Feature implemented behind a command line flag `--experimental-output`
 - `--experimental-output` flag added
 - Existing explain tests are working or adapted for new implementation
 - Plaintext output roughly matches explain output
 - OpenAPIV3 (raw json) output implemented
-- HTML and MD outputs are not target for alpha
 
-#### Beta
-
-- md output implemented (or dropped from design due to continued debate)
+#### Alpha 2
+- `md` output implemented (or dropped from design due to continued debate)
   - Table of contents all GVKs grouped by Group then Version.
   - Section for each individual GVK
   - All types hyperlink to specific section
-- basic html output  (or dropped from design due to continued debate)
+-  basic `html` output  (or dropped from design due to continued debate)
   - Table of contents all GVKs grouped by Group then Version.
   - Page for each individual GVK.
   - All types hyperlink to their specific page
   - Searchable by name, description, field name.
+
+#### Beta
+
 - kube-openAPI v3 JSON deserialization is optimized to take less than 150ms on
   most machines
-- OpenAPI V3 is enabled by default on at least one version within kubectl's support window
-- Experimental flag is removed/made on by default (thus openapi v3 will always be tried first)
-- Old `kubectl explain` implementation for OpenAPI v2 remains as a fallback if v3 is unavailable
-(this policy should stand only until kubectl's version skew includes apiserver versions which enabled OpenAPI V3 by default). 
+- OpenAPI V3 is enabled by default on at least one version within kubectl's support window.
+As of Kubernetes 1.24 OpenAPIV3 entered beta and become enabled by default, therefore meeting this requirement.
+- `--experimental-output` flag is renamed to `--output`, and `--output plaintext` is on-by-default.
+- `--output plaintext-openapiv2` added as a name for the old `explain` implementation, so the feature may be positively disabled.
 
 #### GA
 
-- `--experimental-output` renamed to `--output`
-- All kube-apiserver releases within version skew of kubectl should have OpenAPIV3 on by default
+- OpenAPIV3 is GA and has been since at least the minimum supported apiserver version
+by kubectl.
+- All kube-apiserver releases within version skew of kubectl should have OpenAPIV3 on by default. This is true as of Kubernetes 1.24
 - Old `kubectl explain` implementation is removed, as is support for OpenAPIV2-backed `kubectl explain`
 
 <!--
@@ -617,8 +623,10 @@ Users of the `--output` flag who attempt to use it against a cluster for which
 OpenAPI v3 is not enabled will be shown an error informing them of missing openapi
 version upon 404.
 
-Built-in templates supported by kubectl should aim to support any OpenAPI
-version which is GA.
+Built-in templates supported by kubectl should aim to support at least one OpenAPI
+version which is GA for an apiserver version within the support window.
+`kubectl` will support trying to fetch each of these versions, so one is guaranteed
+to be able to render.
 
 ## Production Readiness Review Questionnaire
 
