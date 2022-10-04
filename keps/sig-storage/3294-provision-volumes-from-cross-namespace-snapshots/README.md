@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [<code>Secret</code> Handling](#-handling)
     - [Security](#security)
     - [Conflict on installing <code>VolumePopulator</code> CR for <code>VolumeSnapshotLink</code> across CSI drivers](#conflict-on-installing--cr-for--across-csi-drivers)
+    - [ReferenceGrant API change](#referencegrant-api-change)
 - [Design Details](#design-details)
   - [Example flow of how this proposal works](#example-flow-of-how-this-proposal-works)
   - [API](#api)
@@ -320,6 +321,14 @@ As a result, there may be a conflict in creating it for each driver, if there ar
 To avoid this issue, it should be avoided to manage `VolumePopulator` CR for `VolumeSnapshotLink` in each CSI driver's repository.
 It should be managed in another single repository and the same CR should be used per cluster basis.
 
+#### ReferenceGrant API change
+
+Currently, `ReferenceGrant` exists in `gateway.networking.k8s.io` API, so users may be confused by using networking API for storage purpose.
+To avoid it, `ReferenceGrant` is planned to be moved to more generic place.
+As a result, `ReferenceGrant` API will be changed in the future, so `VolumeSnapshotLink` API will also need to be changed.
+
+Changes in `VolumeSnapshotLink` API related to `ReferenceGrant` API changes will be a beta blocker.
+
 ## Design Details
 
 <!--
@@ -420,6 +429,9 @@ type VolumeSnapshotLinkSpec struct {
 // VolumeSnapshotLinkSource specifies a reference to VolumeSnapshot.
 type VolumeSnapshotLinkSource struct {
 	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+	// Namespace is the namespace of the snapshot. When unspecified, the local namespace is inferred.
+	// Note that when a namespace is specified, a ReferenceGrant object is required in the referent namespace to allow that namespace's owner to accept the reference. See the ReferenceGrant documentation for details.
+	// +optional
 	Namespace string `json:"namespace" protobuf:"bytes,2,opt,name=namespace"`
 }
 ```
@@ -448,10 +460,14 @@ sourceKind:
 #### (a) inside the existing CSI external-provisioner
 
 Once populator is implemented inside the existing CSI external-provisioner, the CSI external provisioner:
-- Handles `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD,
-- Checks if `VolumeSnapshotLink` is specified as `DataSourceRef`:
-  - If specified, check if the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferenceGrant`s:
-    - If allowed, use the `VolumeSnapshot` as a SnapshotSource to pass to the CSI driver for provision.
+1. Handles `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD,
+2. Datasource is handled in the below reconciler loop:
+  - If `VolumeSnapshotLink` isn't specified as `DataSourceRef`: Do the existing provisioner behavior.
+  - Otherwise:
+    - If namespace isn't specified in `VolumeSnapshotLink`: use the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` as a SnapshotSource to pass to the CSI driver for provision.
+    - Otherwise:
+      - If the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferenceGrant`s: Use the `VolumeSnapshot` as a SnapshotSource to pass to the CSI driver for provision.
+      - Otherwise: Do nothing (the `ReferenceGrant` check above will be repeated in the loop).
 
 To enable this feature in CSI external provisioner, `--cross-namespace-snapshot=true`
 command line flag needs to be passed to the provisioner for each CSI plugin.
@@ -494,15 +510,19 @@ However, this behavior may be changed and provisioners may offload provisioning 
 The implementation of provisioner and populator of this approach will be as follows:
 
 - Provisioner:
-  - Handles `VolumeSnapshotLink` CRD,
-  - Checks if `VolumeSnapshotLink` is specified as `DataSourceRef`:
-    - If specified, skip provisioning  the volume
+  1. Handles `VolumeSnapshotLink` CRD,
+  2. Checks if `VolumeSnapshotLink` is specified as `DataSourceRef`:
+    - If specified, skip provisioning the volume
 
 - Populator:
-  - Handles `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD,
-  - Checks if `VolumeSnapshotLink` is specified as `DataSourceRef`:
-    - If specified, check if the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferenceGrant`s:
-      - If allowed, use the `VolumeSnapshot` as a SnapshotSource to pass to the CSI driver for provision.
+  1. Handles `VolumeSnapshotLink` CRD and `ReferenceGrant` CRD,
+  2. Datasource is handled in the below reconciler loop:
+    - If `VolumeSnapshotLink` isn't specified as `DataSourceRef`: Skip handling the Datasource.
+    - Otherwise:
+      - If namespace isn't specified in `VolumeSnapshotLink`: use the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` as a SnapshotSource to pass to the CSI driver for provision.
+      - Otherwise:
+        - If the access to the `VolumeSnapshot` referenced by the `VolumeSnapshotLink` is allowed by any `ReferenceGrant`s: Use the `VolumeSnapshot` as a SnapshotSource to pass to the CSI driver for provision.
+        - Otherwise: Do nothing (the `ReferenceGrant` check above will be repeated in the loop).
 
 The above implementation is just separating the logics in approach (a) to two components, and it won't help improve efficiency nor simplify implementations.
 Therefore, the description in this section is just for discussion purpose and won't be implemented.
@@ -1095,6 +1115,13 @@ information to express the idea and why it was not acceptable.
   - Cons:
     - Need to handle [race conditions](https://github.com/kubernetes/enhancements/pull/2849#discussion_r682057570)
     - Need to consider [referenced Secrets](https://github.com/kubernetes/enhancements/pull/2849#discussion_r692459041) from snapshot after transferred
+
+- Change `PersistentVolumeClaimSpec` in core API to take namespace as a data source, instead of introducing a new `VolumeSnapshotLink` API:
+  - Pros:
+    - Can provide a simple API, which will provide a better UX
+  - Cons:
+    - Requires a core API change
+    - Needs to handle compatibility issues
 
 ## Infrastructure Needed (Optional)
 
