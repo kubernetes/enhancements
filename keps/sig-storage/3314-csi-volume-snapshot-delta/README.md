@@ -1433,13 +1433,24 @@ Another alternative that allows user to provide the callback URL to send the
 CBT response payload to has also been rejected due to concerns around the lack
 of control over the authenticity of the remote URLs.
 
-Some consideration was given to associating the initialization of CBT requests
-to the `LIST` action, instead of the `CREATE` action, to match the "retrieve a
-list of CBT entries" semantics. This KEP decided to implement the `CREATE`
-action as its allows us to encapsulate the CBT request parameters as the
-structured `VolumeSnapshotDelta` resources. The proposed API also ensures that
-the `CREATE` action provides user with the pagination control over the amount of
-data returned.
+Some consideration was given to associating the CBT requests with the [`LIST`
+verb][17] to match the "collection of CBT entries" semantic, without introducing
+the `VolumeSnapshotDelta` resource. Since this approach doesn't provide the kind
+of structured request that the [`CREATE` verb][18] does, it is rejected. This
+KEP proposes the introduction of the `VolumeSnapshotDelta` custom resources to
+allow for cleaner encapsulation and extension of the supported CBT request
+parameters.
+
+Another alternative which involves implementing the the CBT entry response as a
+subresource of the `VolumeSnapshotDelta` resource is also discussed. In this
+scenario, a CBT request is initiated through the creation of a
+`VolumeSnapshotDelta` resource. A second `GET` request can then be issued to
+retrieve the list of CBT entries. A non-empty response list will be appended to
+the `VolumeSnaphotDelta` resource's `blocks` subresource. For this to work, the
+`VolumeSnapshotDelta` resource must first be persisted in the K8s etcd before
+the `GET` request can be issued. Depending on the setup of K8s, the CBT
+aggregated API server may not have direct access or sufficient permissions to
+write to the K8s etcd. Hence, this approach is also rejected.
 
 ## Infrastructure Needed (Optional)
 
@@ -1466,3 +1477,5 @@ SIG to get the process for these resources started right away.
 [14]: https://github.com/kubernetes-csi/csi-driver-host-path
 [15]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/e2e-tests.md#building-kubernetes-and-running-the-tests
 [16]: https://github.com/kubernetes-csi/external-snapshotter
+[17]: https://kubernetes.io/docs/reference/using-api/api-concepts/#collections
+[18]: https://kubernetes.io/docs/reference/using-api/api-concepts/#api-verbs
