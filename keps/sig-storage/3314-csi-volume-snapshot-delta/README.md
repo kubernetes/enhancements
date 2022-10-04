@@ -757,28 +757,55 @@ type DriverDiscoverySpec struct {
 // ClientConfig contains the service endpoint configuration of the CBT CSI
 // driver. The CBT aggregated API server sends the CBT request to this service.
 type ClientConfig struct {
-  // Service that fronts the CSI driver.
-  Service Service `json:"service"`
+  // `url` gives the location of the CBT-enabled CSI driver, in standard URL
+  // form (`scheme://host:port/path`). Exactly one of `url` or `service`
+  // must be specified.
+  //
+  // The `host` should not refer to a service running in the cluster; use
+  // the `service` field instead. The host might be resolved via external
+  // DNS in some apiservers (e.g., `kube-apiserver` cannot resolve
+  // in-cluster DNS as that would be a layering violation). `host` may
+  // also be an IP address.
+  //
+  // The scheme must be "https"; the URL must begin with "https://".
+  // +optional
+  URL *string `json:"url,omitempty"`
 
-  // PEM CA bundle used to establish TLS trust between the aggregated API server
-  // and the CSI driver.
-  CABundle string `json:"caBundle"`
+  // `service` is a reference to the service of the CSI driver. Either `service`
+  // or `url` must be specified.
+  //
+  // If the webhook is running within the cluster, then you should use `service`.
+  // +optional
+  Service *ServiceReference `json:"service,omitempty"`
+
+  // `caBundle` is a PEM encoded CA bundle which will be used to validate the
+  // CSI driver's server certificate.
+  // +optional
+  CABundle []byte `json:"caBundle"`
 }
 
-// Service is an in-cluster Kubernetes Service resource that fronts the CSI
-// driver.
-type Service struct {
-  // Name of the service.
-  Name string `json:"name"`
 
-  // Namespace of the service.
+// ServiceReference holds a reference to the Service resource that fronts the
+// CSI driver.
+type ServiceReference struct {
+  // `namespace` is the namespace of the service.
+  // Required
   Namespace string `json:"namespace"`
 
-  // Path of the endpoint.
-  Path string `json:"path"`
+  // `name` is the name of the service.
+  // Required
+  Name string `json:"name"`
 
-  // Port that the service listens at.
-  Port uint32 `json:"port"`
+  // `path` is an optional URL path which will be sent in any request to
+  // this service.
+  // +optional
+  Path *string `json:"path,omitempty"`
+
+  // If specified, the port on the service that hosting webhook.
+  // Default to 443 for backward compatibility.
+  // `port` should be a valid port number (1-65535, inclusive).
+  // +optional
+  Port *int32 `json:"port,omitempty"`
 }
 ```
 
