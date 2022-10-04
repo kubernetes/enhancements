@@ -395,8 +395,8 @@ see the aggregated API server authentication flow [documentation][10].
 To fulfill the CBT request associated to this new `VolumeSnapshotDelta` resource
 , the `cbt-aggapi` will need to retrieve:
 
-* The `VolumeSnaphot` resources referenced by the `spec.baseVolumeSnapshotName` and
-`spec.targetVolumeSnapshotName` properties,
+* The `VolumeSnaphot` resources referenced by the `spec.fromVolumeSnapshotName` and
+`spec.toVolumeSnapshotName` properties,
 * The bounded `VolumeSnapshotContent` resources referenced by the
 `status.BoundVolumeSnapshotContentName` properties of the `VolumeSnapshot`
 resources,
@@ -444,19 +444,19 @@ The CBT entries are appended to the `status` of the original
     "creationTimestamp": null
   },
   "spec": {
-    "baseVolumeSnapshotName": "vol-snap-base",
-    "targetVolumeSnapshotName": "vol-snap-target",
+    "fromVolumeSnapshotName": "vol-snap-base",
+    "toVolumeSnapshotName": "vol-snap-target",
     "limit": 256,
     "mode": "block",
-    "offset": 0
+    "offset_bytes": 0
   },
   "status": {
     "limit": 256,
-    "offset": 0,
+    "offset_bytes": 0,
     "continue": 3,
     "changedBlockDeltas": [
       {
-        "offset": 0,
+        "offset_bytes": 0,
         "blockSizeBytes": 524288,
         "dataToken": {
           "token": "ieEEQ9Bj7E6XR",
@@ -465,7 +465,7 @@ The CBT entries are appended to the `status` of the original
         }
       },
       {
-        "offset": 1,
+        "offset_bytes": 524288,
         "blockSizeBytes": 524288,
         "dataToken": {
           "token": "widvSdPYZCyLB",
@@ -474,7 +474,7 @@ The CBT entries are appended to the `status` of the original
         }
       },
       {
-        "offset": 2,
+        "offset_bytes": 1048576,
         "blockSizeBytes": 524288,
         "dataToken": {
           "token": "VtSebH83xYzvB",
@@ -533,11 +533,11 @@ type VolumeSnapshotDeltaSpec struct {
   // The name of the base CSI volume snapshot to use for comparison.
   // If not specified, return all changed blocks.
   // +optional
-  BaseVolumeSnapshotName string `json:"baseVolumeSnapshotName,omitempty"`
+  FromVolumeSnapshotName string `json:"fromVolumeSnapshotName,omitempty"`
 
   // The name of the target CSI volume snapshot to use for comparison.
   // Required.
-  TargetVolumeSnapshotName string `json:"targetVolumeSnapshotName"`
+  ToVolumeSnapshotName string `json:"toVolumeSnapshotName"`
 
   // VolumeSnapshotDeltaRef is a reference to the secret object containing
   // sensitive information to pass to the CSI driver to complete the CSI
@@ -550,8 +550,8 @@ type VolumeSnapshotDeltaSpec struct {
   // Define the maximum number of entries to return in the response.
   Limit uint64 `json:"limit"`
 
-  // Defines the start of the block index in the response.
-  Offset uint64 `json:"offset"`
+  // Defines the start of the block index (in bytes).
+  OffsetBytes uint64 `json:"offsetBytes"`
 }
 
 // VolumeSnapshotDeltaStatus is the status for a VolumeSnapshotDelta resource
@@ -569,8 +569,8 @@ type VolumeSnapshotDeltaStatus struct {
   // The limit defined in the request.
   Limit uint64 `json:"limit"`
 
-  // The offset defined in the request.
-  Offset uint64 `json:"offset"`
+  // The offset (in bytes) defined in the request.
+  OffsetBytes uint64 `json:"offsetBytes"`
 
   // The starting block index of the next request.
   Continue uint64 `json:"continue"`
@@ -578,8 +578,8 @@ type VolumeSnapshotDeltaStatus struct {
 
 // ChangedBlock represents a CBT entry returned by the storage provider.
 type ChangedBlock struct {
-  // Offset defines the start of the block index in the response.
-  Offset uint64 `json:"offset"`
+  // OffsetBytes defines the start of the block index in the response.
+  OffsetBytes uint64 `json:"offsetBytes"`
 
   // The size of the blocks.
   BlockSizeBytes unit64 `json:"blockSizeBytes"`
@@ -692,7 +692,7 @@ message BlockSnapshotChangedBlock {
   option (alpha_message) = true;
 
   // The block logical offset on the volume. This field is REQUIRED.
-  uint64 offset = 1;
+  uint64 offset_bytes = 1;
 
   // The size of the block in bytes. This field is REQUIRED.
   uint64 block_size_bytes = 2;
