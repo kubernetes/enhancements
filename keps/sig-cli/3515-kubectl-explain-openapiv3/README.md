@@ -332,12 +332,10 @@ OpenAPI v3 data is not available in the current cluster.
 
 ###### If the user does not provide an --output argument
 
-While this feature is not GA, this case should fallback to the old OpenAPI v2
-`kubectl explain` implementation if the server responds with `404` for OpenAPIV3 data.
+In alpha in particular, if `--output` is not specified, the old `explain` behavior
+using openapi v2 deta will be used.
 
-Once this feature is GA, then `OpenAPIV3` should be available everywhere
-so this is not a concern. If a user uses the feature against such a cluster without
-OpenAPIV3 after this KEP is GA, an error will be shown.
+After beta, `--output plaintext` will be assumed and behave as below.
 
 ###### If the user does provide an --output argument
 
