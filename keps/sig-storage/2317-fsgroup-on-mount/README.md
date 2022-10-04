@@ -12,6 +12,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -33,19 +37,23 @@
 ## Release Signoff Checklist
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
-Currently for most volume plugins kubelet applies fsgroup ownership and permission based changes by recursively `chown`ing and `chmod`ing the files and directories inside a volume. For certain CSI drivers this may not be possible because `chown` and `chmod` are unix primitives and underlying CSI driver
+Currently for most volume plugins kubelet applies fsgroup ownership and permission-based changes by recursively `chown`ing and `chmod`ing the files and directories inside a volume. For certain CSI drivers this may not be possible because `chown` and `chmod` are unix primitives and underlying CSI driver
 may not support them. This enhancement proposes providing the CSI driver with fsgroup as an explicit field so as CSI driver can apply this on mount time.
 
 ## Motivation
@@ -62,7 +70,7 @@ This feature hence becomes a prerequisite of CSI migration of Azure file driver 
 
 ### Non-Goals
 
-- We are not supplying `fsGroup` as a generic ownerhip and permission handle to the CSI driver. We do not expect CSI drivers to `chown` or `chmod` files.
+- We are not supplying `fsGroup` as a generic ownership and permission handle to the CSI driver. We do not expect CSI drivers to `chown` or `chmod` files.
 
 ## Proposal
 
@@ -84,8 +92,13 @@ It should be noted that if a CSI driver advertises `VOLUME_MOUNT_GROUP` node cap
 
 ### Test Plan
 
-Unit test:
-1. Test that whenever supported pod's `fsGroup` should be passed to CSI driver via `volume_mount_group` field.
+#### Prerequisite testing updates
+
+N/A.
+
+#### Unit tests
+
+Test that whenever supported pod's `fsGroup` should be passed to CSI driver via `volume_mount_group` field.
 
 For alpha feature:
 1. Update Azure File CSI driver to support supplying `fsGroup` via `NodeStageVolume` and `NodePublishVolume`.
@@ -95,9 +108,14 @@ For beta:
 1. E2E tests that verify volume readability/writability using azurefile CSI driver.
 2. E2E tests using CSI mock driver.
 
-We already have quite a few e2e tests that verify generic fsgroup functionality for existing drivers - https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/testsuites/fsgroupchangepolicy.go . This should give us a reasonable
-confidence that we won't break any existing drivers.
+#### Integration tests
 
+No integration tests are required. This feature is better tested with e2e tests.
+
+#### e2e tests
+
+We already have quite a few e2e tests that verify generic fsgroup functionality for existing drivers - https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/testsuites/fsgroupchangepolicy.go. This should give us a reasonable
+confidence that we won't break any existing drivers.
 
 ### Graduation Criteria
 
@@ -306,12 +324,8 @@ the existing API objects?**
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
-  
-  Depending on the driver implementation of applying FSGroup, latency for the following SLI may increase:
-  
-  "Startup latency of schedulable stateful pods, excluding time to pull images, run init containers, provision volumes (in delayed binding mode) and unmount/detach volumes (from previous pod if needed), measured from pod creation timestamp to when all its containers are reported as started and observed via watch, measured as 99th percentile over last 5 minutes"
-  
-  Comparing to the existing recursive `chown` and `chmod` strategy, this operation will likely improve pod startup latency in the most common case.
+
+  This feature does not have any impact on scalability.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -366,6 +380,7 @@ The CSI driver log should be inspected to look for `NodeStageVolume` and/or `Nod
 ## Implementation History
 
 - Feb 2 2021: KEP merged into kubernetes/enhancements repo
+- Sep 26 2022: Use latest template
 
 ## Drawbacks
 
