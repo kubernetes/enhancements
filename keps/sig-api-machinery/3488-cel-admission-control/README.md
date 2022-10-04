@@ -25,6 +25,7 @@
     - [Singleton Policies](#singleton-policies)
     - [Limits](#limits)
   - [Phase 2](#phase-2)
+    - [Enforcement Actions](#enforcement-actions)
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
       - [Variables](#variables)
@@ -405,9 +406,7 @@ spec:
     - name: max-replicas
       expression: "object.spec.replicas <= params.maxReplicas"
       messageExpression: "'object.spec.replicas must be no greater than ' + string(params.maxReplicas)"
-      enforcement:
-        deny:
-          reason: Invalid
+      reason: Invalid
       # ...other rule related fields here...
 ```
 
@@ -851,16 +850,9 @@ Policy definitions:
     will be included in the failure message
   - If `messageExpression` results in an error: `expression` and `name` will be
     included in the failure message plus the arg evaluation failure
-- Each validation may set a `reason` or `code` 
-
-- Each validation may select `enforcement` options:
-  - `deny { reason: ..., code: ... }`
-    - If `reason` or `code` is provided, they use the same semantics as
-      admission review. The reason clarifies the code but does not override it.
-  - `warn {}` - Included as a warning in the response to the client AND logged.
-  - Note: audit annotations is deferred until phase 2, see below "Audit
-    Annotations" section for details.
-  - (metrics will be emitted regardless of which enforcement options are set)
+  - `reason` and/or `code` - these fields have same semantics as admission
+      review; the reason clarifies the code but does not override it. If
+      `reason` is well known (.e.g "Unauthorizied" is well known to be `code` 401), then the code will be inferred from the `reason` and use of a different code will not be allowed.
 
 Example policy definition:
 
@@ -876,50 +868,18 @@ spec:
     - expression: "self.name.startsWith('xyz-')"
       name: name-prefix
       messageExpression: "self.name + ' must start with xyz-'"
-      enforcement:
-        deny:
-          code: 401
-          reason: Unauthorized
+      reason: Unauthorized
     - expression: "self.name.contains('bad')"
       name: bad-name
       message: "name contains 'bad' which is discouraged due to ..."
-      enforcement:
-        deny:
-          code: 400
-          reason: Invalid
+      code: 400
+      reason: Invalid
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
       messageExpression: "self.name + ' contains suspicious'"
-      enforcement:
-        warn: {}
+      code: 400
+      reason: Invalid
 ```
-
-Policy bindings:
-
-- `mode` may be set to one of:
-  - `Enforce` (default) - the policy validation enforcements apply.
-  - `DryRun` - for testing out a new binding during rollout, no failures or
-    violations of any kind result in a deny, but are instead redirected to logs.
-    This is a good mode for cluster administrators to use to check the potential
-    impact of a policy before enabling it fully.
-
-corresponding policy configuration:
-
-```yaml
-kind: PolicyBinding
-...
-spec:
-  ...
-  mode: DryRun
-  ...
-```
-
-Implementation note: When the same param object is bound multiple times to the
-same policy via different bindings, it is not necessary to evalute the CEL
-expressions for the policy for each of the bindings since the result will always
-be the same. But the bindings may have different enforcement settings, so we
-will need to apply those and attribute all violations to the appropriate
-binding.
 
 xref:
 
@@ -1021,7 +981,6 @@ spec:
   - expression: "object.spec.replicas < 100"
   singletonBinding:
     matchResources: ...
-    mode: Enabled
 ```
 
 Note that:
@@ -1058,6 +1017,29 @@ We will put limits on:
 All these capabilities are required before Beta, but will not be implemented in
 the first alpha release of this enhancement due to the size and complexity of
 this enhancement.
+
+#### Enforcement Actions
+
+For phase 1, all violations implicitly result in a `deny` enforcement action.
+
+For phase 2, we intend to support multiple enforcement actions.
+
+Use cases:
+
+- Cluster admin would like to rollout a policies, sometimes in bulk, without
+  knowing all the details of the policies. During rollout the cluster admin
+  needs a state where the policies being rolled out cannot result in admission
+  rejection.
+- A policy framework needs different enforcement actions at different
+  enforcement points.
+- Cluster admin would like to set specific enforcement actions for policy
+  violations.
+
+We also intend to support multiple enforcement actions:
+
+- Deny
+- Audit annotation
+- Client warnings
 
 #### Namespace scoped policy binding
 
@@ -1104,10 +1086,8 @@ repeated evaluations if they are shared across validations.
 
 #### Secondary Authz
 
-<<[UNRESOLVED jpbetz, deads2k, tallclair, ?? ]>>
-We have general agreement to include this as a feature, but need to provide a
-more concrete design.
-<<[/UNRESOLVED]>>
+We have general agreement to include this as a feature, but need to provide
+a concrete design.
 
 kube-apiserver authorizer checks (aka Secondary-authz checks) have been proposed
 as a way of doing things like:
@@ -1154,10 +1134,8 @@ we should investigate with sig-auth.
 
 #### Access to namespace metadata
 
-<<[UNRESOLVED jpbetz]>>
-This needs a concrete proposal and discussion before we commit to implementing
-it (or not).
-<<[/UNRESOLVED]>>
+We have general agreement to include this as a feature, but need to provide
+a concrete design.
 
 - Namespace labels and annotations are the most commonly needed fields not
   already available in the resource being validated. Note that
@@ -1209,9 +1187,7 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
 
 #### Safety Features
 
-<<[UNRESOLVED jpbetz, ?? ]>>
-Decide exactly what we are willing to commit to here.
-<<[/UNRESOLVED]>>
+Additional safety features we should consider:
 
 - Configurable admission blocking write requests made internally in
   kube-apiserver during server startup (like RBAC default policy reconciliation)
@@ -1248,10 +1224,9 @@ To consider:
 
 #### Audit Annotations
 
-<<[UNRESOLVED ]>>
-Would audit support in this enhancement become redundant if [Audit](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/) were also extended to support CEL?
-If so, which should we invest in?
-<<[/UNRESOLVED]>>
+To consider: Would audit support in this enhancement become redundant if
+[Audit](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/) were also
+extended to support CEL? If so, which should we invest in?
 
 Admission webhooks are able to include an associative array of audit annotations
 in a review response. If we intend to provide parity with webhooks we would
@@ -1520,9 +1495,7 @@ spec:
       object.namespaceSelectors[0].namespaceSelector.operator = 'In' &&
       object.namespaceSelectors[0].namespaceSelector.values = ['true']
     message: "The 1st namespaceSelector or ValidatingAdmissionWebhook and MutatingAdmissionWebhooks must be: {key: webhook-restricted, operator: In, values: ['true']}"
-    enforcement:
-      deny:
-        reason: Forbidden
+    reason: Forbidden
 ```
 
 This approach would pair well with a admission mutation that adds the rule to
@@ -1550,17 +1523,11 @@ spec:
   match: ...
   validations:
   - expression: "!(params.enforceLevel > 2) || <cel expression>"
-    enforcement:
-      deny:
-        reason: Invalid
+    reason: Invalid
   - expression: "!(params.enforceLevel > 1) || <cel expression>"
-    enforcement:
-      deny:
-        reason: Invalid
+    reason: Invalid
   - expression: "<cel expression>"
-    enforcement:
-      deny:
-        reason: Invalid
+    reason: Invalid
 ```
 
 
