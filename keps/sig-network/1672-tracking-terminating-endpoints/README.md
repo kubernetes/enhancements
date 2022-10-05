@@ -13,6 +13,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -141,15 +145,29 @@ Updates to endpointslice controller:
 
 ### Test Plan
 
-Unit tests:
-* endpointslice controller unit tests will validate pods with a deletion timestamp are included with condition.teriminating=true
-* endpointslice controller unit tests will validate that the ready condition can change for terminating endpoints
-* endpointslice controller unit tests will validate that terminating condition is not set when feature gate is disabled.
-* API strategy unit tests to validate that terminating condition field cannot be set when feature gate is disabled.
-* API strategy unit tests to validate terminating condition is preserved if existing EndpointSlice has it set.
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-E2E tests:
-* e2e test checking that terminating pods (deletionTimestamp != nil) result in terminating=true condition in EndpointSlice
+##### Prerequisite testing updates
+
+##### Unit tests
+
+- `pkg/registry/discovery/endpointslice` (check tests that set the `EndpointSliceTerminatingCondition` feature gate)
+    - API strategy unit tests to validate that terminating condition field cannot be set when feature gate is disabled.
+    - API strategy unit tests to validate terminating condition is preserved if existing EndpointSlice has it set.
+- `pkg/controller/endpointslice` (check tests that set the `EndpointSliceTerminatingCondition` feature gate)
+    - endpointslice controller unit tests will validate pods with a deletion timestamp are included with condition.teriminating=true
+    - endpointslice controller unit tests will validate that the ready condition can change for terminating endpoints
+    - endpointslice controller unit tests will validate that terminating condition is not set when feature gate is disabled.
+
+##### Integration tests
+
+- `TestEndpointSliceTerminating`: https://github.com/kubernetes/kubernetes/blob/61b983a66b92142e454c655eb2add866c9b327b0/test/integration/endpointslice/endpointsliceterminating_test.go#L44
+
+##### e2e tests
+
+N/A - integation tests were sufficient
 
 ### Graduation Criteria
 
