@@ -616,16 +616,18 @@ in back-to-back releases.
 - Feature disabled by default.
 - Unit and integration tests completed and passed.
 - API strategy test (`pkg/registry/*`) to verify disabled fields when the feature gate is on/off.
-- Additional tests are in Testgrid and linked in KEP
+- Additional tests are in Testgrid and linked in KEP.
+- Determine whether any additional state is required per gate.
 
 #### Beta
 
 - Feature enabled by default.
 - Permission control on individual schedulingGate is applicable (via 
-[fine-grained permissions](https://docs.google.com/document/d/11g9nnoRFcOoeNJDUGAWjlKthowEVM3YGrJA3gLzhpf4)) 
+[fine-grained permissions](https://docs.google.com/document/d/11g9nnoRFcOoeNJDUGAWjlKthowEVM3YGrJA3gLzhpf4)).
 - Gather feedback from developers and out-of-tree plugins.
 - Benchmark tests passed, and there is no performance degradation.
 - Update documents to reflect the changes.
+- Identify whether gates can be added post-creation.
 
 #### GA
 
