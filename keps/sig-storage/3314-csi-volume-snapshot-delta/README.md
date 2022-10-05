@@ -595,19 +595,19 @@ type ChangedBlock struct {
   DataToken *DataToken `json:"dataToken,omitempty"`
 }
 
-type VolumeSnaphotDeltaState int
+type VolumeSnapshotDeltaState string
 
 const (
   // Successfully retrieved chunks of CBT entries starting at offset, and ending
   // at offset + limit, with no more data left.
-  Completed VolumeSnapshotDeltaState = iota
+  Completed VolumeSnapshotDeltaState = "completed"
 
   // Similar to `Completed`, but with more data available.
-  Continue
+  Continue VolumeSnapshotDeltaState = "continue"
 
   // Something went wrong while retrieving the CBT entries.
   // `status.error` should have the error message.
-  Failed
+  Failed VolumeSnapshotDeltaFailed = "failed"
 )
 
 // VolumeSnapshotDeltaList is a list of VolumeSnapshotDelta resources
