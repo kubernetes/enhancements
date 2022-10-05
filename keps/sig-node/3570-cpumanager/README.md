@@ -164,7 +164,17 @@ N/A
 
 ### Risks and Mitigations
 
-TBD
+Bugs in cpumanager can cause the kubelet to crash, or workloads to start with incorrect pinning.
+This can be mitigated with comprehensive testing and improving the observability of the system
+(see metrics).
+
+While the cpumanager core policy has seen no changes except for bugfixes since a while,
+we introduced the [cpumanager options policy framework](https://github.com/fromanirh/enhancements/blob/master/keps/sig-node/2625-cpumanager-policies-thread-placement/README.md)
+to enable the fine tuning of the static policy.
+This area is more active, so bugs introduced with policy options can cause the kubelet to crash.
+To mitigate this risk, we can make sure each policy option can be disabled independently, and
+is not coupled with others, avoiding cascading failures or unnecessary coupling.
+Graduation and testing criteria are deferred to the KEPs tracking the implementation of these features.
 
 ## Design Details
 
@@ -530,7 +540,11 @@ Already running workload will not be affected if the node state is steady
 
 ###### What specific metrics should inform a rollback?
 
-Pod creation errors on a node-by-node basis.
+"cpu_manager_pinning_errors_total". It must be noted that even in fully healthy system there are known benign condition
+that can cause CPU allocation failures. Few selected examples are:
+
+- requesting odd numbered cores (not a full physical core) when the cpumanager is configured with the `full-pcpus-only` option
+- requesting NUMA-aligned cores, with Topology Manager enabled.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -545,37 +559,53 @@ No
 
 ### Monitoring Requirements
 
-Monitor the pod admission counter
-Monitor the pods not going running after successful schedule
+Monitor the metrics
+- "cpu_manager_pinning_requests_total"
+- "cpu_manager_pinning_errors_total"
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-The operator need to inspect the node and verify the cpu pinning assignment either checking the cgroups on the node
-or accessing the podresources API of the kubelet.
+In order for pods to request exclusive CPUs allocation and pinning, they need to match
+all the following criteria:
+- the pod QoS must be "guaranteed"
+- the resources request of CPU (`pod.spec.containers[].resources.limits.cpu`) must be integral.
+
+On top of that, at kubelet level
+- the cpumanager policy must be `static`.
+
+If all the criteria are met, then the feature is in use by workloads.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-
 - [X] Other (treat as last resort)
-  - Details: the containers need to check the cpu set they are allowed to run; in addition, node agents (e.g. node_exporter)
-    can report the CPU assignment
+  - Details: check the kubelet metric `cpu_manager_pinning_requests_total`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-- N/A
+"cpu_manager_pinning_requests_total" and "cpu_manager_pinning_errors_total"
+We need to find a careful balance here because we don't want to leak hardware details, or in general informations
+dependent on the worker node hardware configuration (example, even if arguable extreme, is the processor core layout).
+
+It is possible to infer which pod would trigger a CPU pinning from the
+[pod resources request](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#static-policy)
+but adding these two metrics is both very cheap and helping for the observability of the system.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Other (treat as last resort)
-  - Details:
-     a operator should check that pods go running correctly and the cpu pinning is performed. The latter can
-     be checked by inspecting the cgroups at node level.
+- [X] Metrics
+  - Metric name:
+    - cpu_manager_pinning_requests_total
+    - cpu_manager_pinning_errors_total
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No, because all the metrics we were aware of leaked hardware details.
-All of the metrics experimented by consumers of the feature so far require to expose hardware details of the
-worker nodes, and are dependent on the worker node hardware configuration (e.g. processor core layout).
+- "cpu_manager_pinning_requests_total"
+- "cpu_manager_pinning_errors_total"
+
+The addition of these metrics will be done before moving to GA
+([issue](https://github.com/kubernetes/kubernetes/issues/112854),
+ [PR](https://github.com/kubernetes/kubernetes/pull/112855)).
+
 
 ### Dependencies
 
