@@ -818,7 +818,7 @@ _This section must be completed when targeting beta graduation to a release._
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
-  Manual testing will be done to upgrade from 1.25 to 1.26 and downgrade from 1.26 back to 1.25.
+  Manual testing will be done to upgrade from 1.26 to 1.27 and downgrade from 1.27 back to 1.26.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
