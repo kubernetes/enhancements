@@ -647,7 +647,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-No.
+- [external-provisioner]
+    - Usage description: Failure events are emitted as events by the external-provisioner.
+        - Impact of its outage on the feature: Outage of this component will prevent error reporting to users. 
+        - Impact of its degraded performance or high-error rates on the feature: Outage of this component will prevent error reporting to users.
 
 ### Scalability
 
