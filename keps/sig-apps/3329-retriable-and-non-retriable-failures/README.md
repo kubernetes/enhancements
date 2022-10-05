@@ -86,6 +86,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Job-level vs. pod-level spec](#job-level-vs-pod-level-spec)
     - [Relationship with Pod.spec.restartPolicy](#relationship-with-podspecrestartpolicy)
@@ -94,7 +95,10 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Taint-based eviction](#taint-based-eviction)
       - [Node drain](#node-drain)
       - [Node-pressure eviction](#node-pressure-eviction)
-      - [OOM kill](#oom-kill)
+      - [Container memory limit exceeded](#container-memory-limit-exceeded)
+      - [Container ephemeral-storage limit exceeded](#container-ephemeral-storage-limit-exceeded)
+      - [Graceful node shutdown](#graceful-node-shutdown)
+      - [Pod admission error](#pod-admission-error)
       - [Disconnected node](#disconnected-node)
       - [Disconnected node when taint-manager is disabled](#disconnected-node-when-taint-manager-is-disabled)
       - [Direct container kill](#direct-container-kill)
@@ -105,9 +109,13 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Garbage collected pods](#garbage-collected-pods)
     - [Evolving condition types](#evolving-condition-types)
+    - [Stale DisruptionTarget condition which is not cleaned up](#stale-disruptiontarget-condition-which-is-not-cleaned-up)
+    - [OOM killer invoked when memory limits are not exceeded](#oom-killer-invoked-when-memory-limits-are-not-exceeded)
+    - [Broken compatibility of communicating OOM kills between container runtime and kubelet](#broken-compatibility-of-communicating-oom-kills-between-container-runtime-and-kubelet)
 - [Design Details](#design-details)
   - [New PodConditions](#new-podconditions)
-  - [Interim FailureTarget condition](#interim-failuretarget-condition)
+  - [Detection and handling of exceeded limits](#detection-and-handling-of-exceeded-limits)
+  - [Interim FailureTarget Job condition](#interim-failuretarget-job-condition)
   - [JobSpec API](#jobspec-api)
   - [Evaluation](#evaluation)
   - [Test Plan](#test-plan)
@@ -171,7 +179,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -277,6 +285,11 @@ know that this has succeeded?
 - Handling of Pod configuration errors resulting in pods stuck in the `Pending`
   state (value of `status.phase`) rather than `Failed` (such as incorrect image
   name, non-matching configMap references, incorrect PVC references).
+- Adding of `ResourceExhausted` condition for Windows containers due to
+  excessive memory consumption.
+- Adding of the disruption condition for graceful node shutdown on Windows, as
+  there is some ground work required first to support Pod eviction due to
+  graceful node shutdown on Windows.
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
@@ -297,8 +310,10 @@ internal kubernetes component. Moreover, we modify the internal kubernetes
 components to send an API call to append the dedicated Pod condition along with
 sending the associated Pod delete request. In particluar, the following
 kubernetes components will be modified:
-- kube-controller-manager (taint manager performing pod eviction)
-- kube-scheduler (when performing `Preemption`)
+- kube-controller-manager (Pod deletion by Taint Manager or PodGC)
+- kube-scheduler (Pod deletion due to `Preemption`)
+- kube-apiserver (API-initiated eviction)
+- kubelet (Pod eviction due to exceeded resource limits, node shutdown, node pressure etc.)
 
 We use the job controller's main loop to detect and categorize the pod failures
 with respect to the configuration. For each failed pod, one of the following
@@ -362,7 +377,7 @@ spec:
   backoffLimit: 6
   podFailurePolicy:
     rules:
-    - action: Terminate
+    - action: FailJob
       onExitCodes:
         operator: NotIn
         values: [40,41,42]
@@ -381,6 +396,9 @@ but allows infinite retries for pod failures caused by cluster-management
 events (such as preemption). I do not have knowledge or influence over the executable that researchers run,
 so I don't know beforehand which exit codes they might return.
 
+Additionally, I would like to avoid unnecessary retries of Pods which exceed the
+configured memory or ephemeral-storage limits.
+
 The following Job configuration could be a good starting point to satisfy
 my needs:
 
@@ -394,12 +412,19 @@ spec:
       - name: main-job-container
         image: job-image
         command: ["./program"]
-      - name: monitoring-job-container
-        image: job-monitoring
-        command: ["./monitoring"]
+        resources:
+          requests:
+            memory: "10Gi"
+            ephemeral-storage: "10Gi"
+          limits:
+            memory: "10Gi"
+            ephemeral-storage: "100Gi"
   backoffLimit: 3
   podFailurePolicy:
     rules:
+    - action: FailJob
+      onPodConditions:
+      - type: ResourceExhausted
     - action: Ignore
       onPodConditions:
       - type: DisruptionTarget
@@ -408,6 +433,52 @@ spec:
 Note that, in this case the user supplies a list of Pod condition type values.
 This approach is likely to require an iterative process to review and extend of
 the list.
+
+#### Story 3
+
+As a service provider, similarly as in [Story 2](#story-2), I would like to
+have a mechanism which terminates jobs for which pods are failing due to user
+errors. However, I'm concerned that jobs running on a cluster with a broken
+configuration might result in costly never-ending Pod retries.
+
+The following Job configuration could be a good starting point to satisfy
+my needs:
+
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  template:
+    spec:
+      containers:
+      - name: main-job-container
+        image: job-image
+        command: ["./program"]
+        resources:
+          requests:
+            memory: "10Gi"
+            ephemeral-storage: "10Gi"
+          limits:
+            memory: "10Gi"
+            ephemeral-storage: "100Gi"
+  backoffLimit: 3
+  podFailurePolicy:
+    rules:
+    - action: FailJob
+      onPodConditions:
+      - type: ResourceExhausted
+    - action: Count
+      onPodConditions:
+      - type: DisruptionTarget
+    - action: FailJob
+      onExitCodes:
+        operator: NotIn
+        values: [0]
+```
+
+Here we count all disruptions in the counter towards `.spec.backoffLimit`. All
+Pod failures caused by exceeding the configured limits or with non-zero exit code
+are categorized as user errors and result in termination of the entire job.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -436,14 +507,18 @@ will be allowed to be used at a time.
 
 #### Relationship with Pod.spec.restartPolicy
 
-For Alpha we may limit this feature by disallowing the use of `onExitCodes` when
-`restartPolicy=OnFailure`. This is in order to avoid the problematic
-race-conditions between Kubelet and Job controller. For example, Kubelet
-could restart a failed container before the Job controller decides to terminate
-the corresponding job due to a rule using `onExitCodes`. On the other hand,
-the unnecessary container restart may not be too much of an issue. We are going
-to re-evaluate if we want to support `onExitCodes` combined with
-`restartPolicy=OnFailure` in Beta.
+We limit this feature by disallowing the use of `restartPolicy=OnFailure` when
+the pod failure policy is specified by the `podFailurePolicy` field. Since the
+Job controller only supports `restartPolicy=Never` and `restartPolicy=OnFailure`,
+it effectively means that the use of job's pod failure policy requires
+`restartPolicy=Never`.
+
+This is in order to avoid the problematic race-conditions between Kubelet and
+Job controller. For example, Kubelet could restart a failed container before the
+Job controller decides to terminate the corresponding job due to a rule using
+`onExitCodes`. Also, Kubelet could restart a failed container due to exceeded
+resource limits before the Job controller decides to terminate the job due
+to a rule using `onPodConditions` to match the `ResourceExhausted` condition.
 
 #### Current state review
 
@@ -469,10 +544,9 @@ be retried from those which should not be retried.
   - `reason=`
   - `message=`
 - Container status:
-  - `state=Ternminated`
+  - `state=Terminated`
   - `exitCode=137`
   - `reason=Error`
-- Retriable: Yes
 
 ##### Taint-based eviction
 
@@ -484,10 +558,9 @@ be retried from those which should not be retried.
   - `reason=`
   - `message=`
 - Container status:
-  - `state=Ternminated`
+  - `state=Terminated`
   - `exitCode=137`
   - `reason=Error`
-- Retriable: Yes
 
 ##### Node drain
 
@@ -500,10 +573,9 @@ be retried from those which should not be retried.
   - `reason=`
   - `message=`
 - Container status:
-  - `state=Ternminated`
+  - `state=Terminated`
   - `exitCode=137`
   - `reason=Error`
-- Retriable: Yes
 
 ##### Node-pressure eviction
 
@@ -518,11 +590,9 @@ Memory-pressure eviction:
   - `reason=Evicted`
   - `message=The node was low on resource: memory. (...)`
 - Container status:
-  - `state=Ternminated`
+  - `state=Terminated`
   - `exitCode=137`
   - `reason=ContainerStatusUnknown`
-- Retriable: Unclear, excessive memory usage suggests a bug or misconfiguration.
-  However, a restart on another node may succeed
 
 Disk-pressure eviction:
 
@@ -535,33 +605,114 @@ Disk-pressure eviction:
   - `reason=Evicted`
   - `message=The node was low on resource: ephemeral-storage. (...)`
 - Container status:
-  - `state=Ternminated`
+  - `state=Terminated`
   - `exitCode=137`
   - `reason=Error`
-- Retriable: Unclear, excessive disk usage suggests a bug or misconfiguration.
-  However, a restart on another node may succeed
 
-##### OOM kill
+##### Container memory limit exceeded
+
+Linux:
 
 - Reproduction: We run a job with a pod which attempts to allocate more
   memory than constrained in the container spec by `resources.limits.memory`
-- Comments: handled by kubelet
+- Comments: handled by kubelet in `kubelet/kubelet_pods.go` which merges-in the status update (setting of the reason field) by the container runtime
 - Pod status:
   - status: OOMKilled
   - `phase=Failed`
   - `reason=`
   - `message=`
 - Container status:
-  - `state=Ternminated`
+  - `state=Terminated`
   - `exitCode=137`
   - `reason=OOMKilled`
-- Retriable: Unclear, but if occurs when
-  `resources.requests.memory=resources.limits.memory` it strongly suggests
-  a software bug.
+
+Windows:
+
+- Reproduction: We run a job with a pod which attempts to allocate more
+  memory than constrained in the container spec by `resources.limits.memory`
+- Comments: there is not clear indication that the container failed due to exceeding memory limit
+- Pod status:
+  - status: Error
+  - `phase=Failed`
+  - `reason=`
+  - `message=`
+- Container status:
+  - `state=Terminated`
+  - `exitCode=1`
+  - `reason=Error`
+
+##### Container ephemeral-storage limit exceeded
+
+- Reproduction: We run a job with a pod which attempts to consume more disk space
+  than constrained in the container spec by `resources.limits.ephemeral-storage`
+- Comments: handled by kubelet in `kubelet/eviction/eviction_manager.go`
+- Pod status:
+  - status: Error
+  - `phase=Failed`
+  - `reason=Evicted`
+  - `message=Pod ephemeral local storage usage exceeds the total limit of containers 1Gi.`
+- Container status:
+  - `state=Terminated`
+  - `exitCode=137`
+  - `reason=Error`
+
+##### Graceful node shutdown
+
+Container does not have a dedicated SIGTERM handling and exits with status 137:
+
+- Reproduction: The node needs to be started with positive `shutdownGracePeriod`,
+  for example `shutdownGracePeriod=30s`. We run a job with a long-running pod,
+  then we prepare the node for shutdown by the command:
+  `dbus-send --system --type=signal /org/freedesktop/login1 org.freedesktop.login1.Manager.PrepareForShutdown boolean:"true"`,
+  which similulates graceful nodes shutdown for maintenance purposes.
+- Comments: handled by kubelet in `kubelet/nodeshutdown/nodeshutdown_manager_linux.go`
+- Pod status:
+  - status: Error
+  - `phase=Failed`
+  - `reason=Terminated`
+  - `message=Pod was terminated in response to imminent node shutdown.`
+- Container status:
+  - `state=Terminated`
+  - `exitCode=137`
+  - `reason=Error`
+
+Container handles SIGTERM and exits with status 0:
+
+- Reproduction: As above, but the container handles SIGTERM and exits with status 0.
+- Comments: handled by kubelet in `kubelet/nodeshutdown/nodeshutdown_manager_linux.go`
+- Pod status:
+  - status: Completed
+  - `phase=Succeeded`
+  - `reason=`
+  - `message=`
+- Container status:
+  - `state=Terminated`
+  - `exitCode=0`
+
+##### Pod admission error
+
+Admission error due to disk pressure:
+
+- Reproduction: We run a pod on a node which is under disk pressure
+  (tainted with `node.kubernetes.io/disk-pressure:NoSchedule`). In order to
+  schedule the pod we untaint the node by command line. The Pod is scheduled
+  but fails admission by Kubelet as the taint is re-added shortly after its
+  manual removal.
+- Comments: controlled by kubelet in `kubelet/kubelet.go`
+- Pod status:
+  - status: Evicted
+  - `phase=Failed`
+  - `reason=Evicted`
+  - `message=Pod The node had condition: [DiskPressure].`
+- No containers created
+
+Note that, admission errors may occur due to various other reasons, resulting
+in different messages for pods.
 
 ##### Disconnected node
 
-- Reproduction: We run a job with a long-running pod, then disconnect the node
+- Reproduction: We run a job with a long-running pod with finalizer (for example
+  created by the Job controller), then disconnect the node
   and delete it by the `kubectl delete` command
 - Comments: handled by Pod Garbage collector in: `controller/podgc/gc_controller.go`.
   However, the pod phase remains `Running`.
@@ -574,7 +725,6 @@ Disk-pressure eviction:
   - `state=Running`
   - `exitCode=`
   - `reason=`
-- Retriable: Yes
 
 ##### Disconnected node when taint-manager is disabled
 
@@ -592,7 +742,6 @@ Disk-pressure eviction:
   - `state=Running`
   - `exitCode=`
   - `reason=`
-- Retriable: Yes
 
 ##### Direct container kill
 
@@ -605,21 +754,31 @@ by the `crictl stop` command
   - `reason=`
   - `message=`
 - Container status:
-  - `state=Ternminated`
+  - `state=Terminated`
   - `exitCode=137`
   - `reason=Error`
-- Retriable: Yes
 
 #### Termination initiated by Kubelet
 
-For Alpha, we limit this feature by not recognizing Pod failures initiated
-by Kubelet. This is because it is hard to determine in some scenarios of
-Pod failures initiated by Kubelet if they should be retried or should not.
-For example, when Kubelet evicts a pod due to node pressure it might mean either
-software bug (then it might be better to terminate the entire job) or the node
-being low on memory due to other processes (in which case it is sensible to retry).
-We are going to re-evaluate for Beta if we want to add support for recognizing
-pod terminations initiated by Kubelet.
+In Alpha, there is no support for Pod conditions for failures or disruptions initiated by kubelet.
+
+For Beta we introduce handling of Pod failures initiated by Kubelet by adding
+dedicated Pod conditions. In particular, we add the condition in case a pod is
+evicted due to exceeded memory (only Linux) or ephemeral-storage limits.
+Additionally, we add the disruption condition (introduced in Alpha) in case of
+disruptions initiated by kubetlet (see [Design details](#design-details)).
+
+Kubelet can also evict a pod due to exceeded active deadline timeout (configured
+by pod's `.spec.activeDeadlineSeconds` field). On one hand, exceeding the timeout,
+may suggest a software bug due to which the pod executes longer than expected.
+On the other hand, it might be due node CPU pressure caused by other processes
+on the node. Thus, in order to give users freedom of handling this situation we
+should introduce a dedicated pod condition type, such as `ActiveDeadlineExceeded`.
+However, as the feature focuses on scenarios which can be naturally interpreted
+in terms of retriability and evolving Pod condition types
+(see [evolving condition types](#evolving-condition-types)) are a concern we decide
+to do not add any pod condition in this case. It should be re-considered in the
+future if there is a good motivating use-case.
 
 #### JobSpec API alternatives
 
@@ -645,8 +804,8 @@ a different pod the next time (or none). This would leave a pod with a
 condition that it was preempted, when it actually wasn't. This in turn
 could lead to inproper handling of the pod by the job controller.
 
-As a solution we are going to implement a worker, added to the disruption
-controller which clears the pod condition added if `DeletionTimestamp` is
+As a solution we implement a worker, part of the disruption
+controller, which clears the pod condition added if `DeletionTimestamp` is
 not added to the pod for a long enough time (for example 2 minutes).
 
 #### Marking pods as Failed
@@ -663,9 +822,20 @@ is disabled [Disconnected node when taint-manager is disabled](#disconnected-nod
 However, as disabling taint-manager is deprecated it is not a concern for this
 KEP.
 
-For Alpha, we implement a fix for this issue by setting the pod phase as `Failed`
-in podgc. For Beta, we are going to simplify the code in job controller
-responsible for detecting pod failures.
+For Alpha, we implemented a fix for this issue by setting the pod phase as `Failed`
+in podgc.
+
+For Beta, we are going to simplify the code in job controller responsible for
+detecting pod failures. For this purpose we need to make sure that pods stuck
+in the pending phase which are terminating (with set deletionTimestamp) are
+eventually marked as failed. Such pods may either be not scheduled
+(for example when they are unschedulable due to node affinity configuration for
+which no node exists in the cluster) or scheduled (for example when they fail
+to pull the the docker image). In case of non-scheduled pods they will be moved
+to the `Failed` phase by the PodGC controller as it marks as failed all
+non-scheduled terminating pods (after the Alpha changes for this feature, see
+above). We plan to extend the PodGC controller to also move to the failed phase
+(and delete) scheduled pods in the pending state which are terminating.
 
 ### Risks and Mitigations
 
@@ -680,9 +850,9 @@ by using the feature of [job tracking with finalizers](https://kubernetes.io/doc
 
 #### Evolving condition types
 
-The list of available PodCondition types field will be evolving with new
+The list of available pod condition types field will be evolving with new
 values being added and potentially some values becoming obsolete. This can make
-it difficult to maintain a valid list of PodCondition types enumerated in
+it difficult to maintain a valid list of pod condition types enumerated in
 the Job configuration.
 
 In order to mitigate this risk we are going to define (along with
@@ -691,11 +861,97 @@ defined in the k8s.io/apis/core/v1 package. Thus, every addition of a new
 condition type will require an API review. The constants will allow users of the
 package to reduce the risk of typing mistakes.
 
-Additionally, for Beta, we will re-evaluate an idea of a generic opinionated condition
-type indicating that a pod can be retried, for example `DisruptionTarget`.
+Additionally, we introduce a pair of generic condition types:
+- `DisruptionTarget`: indicates pod disruption (due to e.g. preemption,
+API-initiated eviction or taint-based eviction).
+- `ResourceExhausted`: indicates the pod is evicted due to exceeding
+ephemeral-storage limits or due to being terminated by OOM killer.
+
+A more detailed information about the condition (containing the kubernetes
+component name which initiated the disruption or the resource name for the
+exceeded resource limit) is conveyed by the `reason` and `message` fields of
+the added pod condition.
 
 Finally, we are going to cover the handling of pod failures associated with the
-new PodCondition types in integration tests.
+new pod condition types in integration tests.
+
+#### Stale DisruptionTarget condition which is not cleaned up
+
+It is possible that a stale disruption condition
+(see: [Failing delete after a condition is added](#failing-delete-after-a-condition-is-added))
+is not clean up by the disruption controller before the Pod completes. The stale
+Pod condition can misguide the Job controller.
+
+First, the scenario is unlikely as it requires that a Pod deletion call fails
+right after the Pod status update succeeded, and that conditions in the cluster
+change (for example the `NoExecute` taint is removed or kube-scheduler decides
+to preempt another Pod) so that the deletion is not re-attempted. Additionally,
+the Pod needs to fail within 2min (before the disruption controller cleans it
+up) for a reason which would not result in adding `DisruptionTarget`, so the
+stale condition is inaccurate when inspected by the Job controller.
+
+Second, the negative consequence of the scenario is limited. For jobs which
+are configured to ignore the disruption errors it results in an unnecessary
+Pod retry.
+
+Given the factors above we assess this is an acceptable risk.
+
+#### OOM killer invoked when memory limits are not exceeded
+
+Currently, it is not possible to recognize if a pod's container terminated by
+OOM killer exceeded its configured limits or was terminated due the node running
+very low on memory (the container runtime would annotate the terminated container
+with the `OOMKiller` reason in both cases). As a consequence, the
+`ResourceExhausted` condition might be added to a terminated pod even if the
+pod's containers didn't exceed their configured limits. This in turn, may lead
+to invoking the `FailJob` action if a user configures the job's pod failure
+policy to interpret the presence of `ResourceExhausted` as a non-retriable failure.
+
+In order to mitigate this risk we are going to describe the scenario and the
+risk clearly in the documentation. Further, in order to minimize the risk we
+recommend:
+- configuring `requests.memory`=`limits.memory` for all pod containers
+- leaving enough available memory and enough memory reserved for the system, see:
+[best practices for node-pressure eviction configuration](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#node-pressure-eviction-good-practices).
+
+Additionally, we are going to introduce a validation step to check if the job
+configuration contains a container for which `requests.memory`!=`limits.memory`
+and there is a pod failure policy rule on the `ResourceExhausted` pod condition
+type with action `FailJob`.
+
+In the future, if there is a motivating user feedback, we might consider
+introducing, aside of the `ResourceExhausted` condition, a pair of specific
+conditions (`OOMKiller` and `EphemeralStorageLimitExceeded`) added to a pod to
+indicate if it is being terminated by OOM killer or by Kubelet due to exceeding
+its ephemeral-storage limits.
+
+#### Broken compatibility of communicating OOM kills between container runtime and kubelet
+
+For Beta, the implementation of detecting if a container was OOM killed will
+rely on the `reason` field set to `OOMKilled`. This is currently done by the
+leading container runtime implementations (containerd and CRI-O), but is not
+standardized and thus could break in the future
+(see [here](#detection-and-handling-of-exceeded-limits)).
+
+If the compatibility is broken, then OOM kill events will not be detected by the
+new Kubelet code and the `ResourceExhausted` Pod condition will not be added.
+As a consequence a Pod might be unnecessarily restarted in a scenario when
+a user configures the job's pod failure policy to interpret the presence of
+`ResourceExhausted` as a non-retriable failure.
+
+First, we expect the change of the behaviour of the implementations unlikely
+because the behaviour was introduced a long time ago (about 5 years ago for both
+containerd and CRI-O) and probably many systems depend on the behaviour already.
+
+Second, in order to mitigate this risk for Beta we are going to describe the
+risk in the user-facing documentation.
+
+Finally, we are going to discuss the standardization of the CRI API for
+communication between container runtime and kubelet for the OOM kill events.
+A kick-off the discussion is posted as a message to the CNFC Tag Runtime mailing
+list (see: [Standardization of the OOM kill communication between container runtime and kubelet](https://lists.cncf.io/g/cncf-tag-runtime/topic/standardization_of_the_oom/94093173?p=,,,20,0,0,0::recentpostdate/sticky,,,20,2,0,94093173,previd%3D1664810761326460953,nextid%3D1637210209940337491&previd=1664810761326460953&nextid=1637210209940337491)).
+The discussion and review of the implementation is added to graduation criteria
+for [GA](#ga).
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -727,21 +983,106 @@ condition makes it easier to determine if a failed pod should be restarted):
 - DeletionByTaintManager (Pod evicted by kube-controller-manager due to taints)
 - EvictionByEvictionAPI (Pod deleted by Eviction API)
 - DeletionByPodGC (an orphaned Pod deleted by pod GC)
+- DeletionByKubelet (Pod deleted due to graceful node shutdown, node pressure or Pod admission errors).
+
+We introduce a Pod condition type, called `ResourceExhausted`, used by Kubelet
+to indicate that a Pod failure is caused by exhausting pod's (or container's)
+resource (memory or ephemeral-storage). We set the `reason` field to indicate
+the reason to one of the values:
+- OOMKilled (Pod is terminated by OOM killer)
+- EphemeralStorageLimitExceeded (a limit on the Pod's emphemeral-storage is exceeded).
 
 The already existing `status.conditions` field in Pod will be used by kubernetes
-control plane components (kube-scheduler and kube-controller-manager) to append
-a dedicated condition when they send the delete operation.
+components to append a dedicated condition.
 
 The API call to append the condition will be issued as a pod status update call
-before the Pod delete request. This way the Job controller will already see the
-condition when handling a failed pod.
+before the Pod delete request (not necessarily as the last update request before
+the actual delete). This way the Job controller will be able to see the
+condition, and match it against the pod failure policy, when handling a failed pod.
 
 During the implementation process we are going to review the places where the
 pod delete requests are issued to modify the code to also append a meaningful
-condition with dedicated `Type`, `Reason` and `Message` fields based on the
+condition with dedicated `type`, `reason` and `message` fields based on the
 invocation context.
 
-### Interim FailureTarget condition
+We list the reason constants above in order to gain the community consensus on
+informative names, but they are purely informational. It is not supported to use the `reason` or `message` fields
+when defining a pod failure policy (see `PodFailurePolicyOnPodConditionsPattern`
+in [JobSpec API](#jobspec-api)). Supporting of matching by the `reason` field
+is a possible extension of the feature which can be implemented once there is
+use case to motivate it. However, it may create a risk of breaking compatibility
+with evolving set of reasons in use, similar to the risk of
+[evolving condition types](#evolving-condition-types).
+
+### Detection and handling of exceeded limits
+
+We modify kubelet to add the `ResourceExhausted` condition if ephemeral-storage
+limits are exceeded or the Pod is terminated by Out-Of-Memory (OOM) killer.
+
+For detection of the ephemeral-storage limits being exceeded we reuse the pre-existing
+Kubelet code responsible for detection and eviction of Pods exceeding the limits (the code
+includes detection of both exceeding of the `emptyDir` size limit and pod's
+ephemeral-storage limits defined for containers). We extend the
+eviction-triggering code to add the `ResourceExhausted` condition.
+
+In case when a pod is evicted by Kubelet due to disk pressure, but
+the storage limits are not exceeded the `DisruptionTarget` condition is added,
+but not `ResourceExhausted`.
+
+We detect that a pod was terminated due to OOM killer based on the
+container's `reason` field being equal to `OOMKilled`. This value is set on
+Linux by the leading container runtime implementations: containerd (see
+[here](https://github.com/containerd/containerd/blob/23f66ece59654ea431700576b6020baffe1a4e49/pkg/cri/server/events.go#L344)
+for event handling and
+[here](https://github.com/containerd/containerd/blob/36d0cfd0fddb3f2ca4301533a7e7dcf6853dc92c/pkg/cri/server/helpers.go#L62)
+for the constant definition)
+and CRI-O (see
+[here](https://github.com/cri-o/cri-o/blob/edf889bd277ae9a8aa699c354f12baaef3d9b71d/server/container_status.go#L88-L89)).
+However, conveying of the OOM kills is not standardized which creates a risk
+of breaking compatibility in the future (see
+[Broken compatibility of communicating OOM kills between container runtime and kubelet](#broken-compatibility-of-communicating-oom-kills-between-container-runtime-and-kubelet)).
+In particular, the `reason` field is not constrained by CRI API for OOM killing
+(see [here](https://github.com/kubernetes/cri-api/blob/c75ef5b473bbe2d0a4fc92f82235efd665ea8e9f/pkg/apis/runtime/v1/api.proto#L1098)).
+
+Note that, the OOM Killer terminates a pod if one of the Pods containers
+exceeeds its configured limit. However, a pod may also be terminated if the
+node's memory is exhausted. This creates a risk of OOM killer terminating a
+pod's container event if its limits are not exceeded. As a consequence users
+should be careful when configuring the job's pod failure policy using the
+`ResourceExhausted` condition
+(see: [OOM killer invoked when memory limits are not exceeded](#oom-killer-invoked-when-memory-limits-are-not-exceeded)).
+
+Additionally, it would require a preparatory work in container runtime
+implementations and CRI API to enable discrimination if the OOM kill was invoked
+due to a pod's container exceeding its memory limit or due to the system running
+low on memory. Discussion on the API and review of the implementation based on
+the outcome of the discusson is planned as a graduation criteria for [GA](#ga).
+
+Also note, there is no analogous indication of exceeded memory limits on Windows
+(see: [Container memory limit exceeded](#container-memory-limit-exceeded)).
+Thus, the condition `ResourceExhausted` will not be added on Windows. We leave
+it as a limitation (see: [Non-Goals](non-goals)).
+
+Similarly as in case of disk pressure, when a pod is evicted by kubelet due to
+memory pressure on the node, but it is not OOM killed, then the `DisruptionTarget`
+condition is added only, but not `ResourceExhausted`.
+
+We have performed a review of the Kubelet code and implemented a prototype
+before Beta for adding the `ResourceExhausted` condition. In particular, we
+checked that:
+- in case of OOM-killed pods, the `generateAPIPodStatus` method in `kubelet_pods.go`
+  (see [here](https://github.com/kubernetes/kubernetes/blob/c5ab06f4c7ebe7e3b921ee9af24ef5c8db479942/pkg/kubelet/kubelet_pods.go#L1445))
+  is a good place for extending the Kubelet code as `reason` field set by the
+  container runtime is available in this context and if a pod condition is added
+  based on its presence then it is send to the kube-apiserver.
+- in case of storage-based eviction, the `localStorageEviction`
+  method in `eviction_manager.go` (including the methods it invokes, see
+  [here](https://github.com/kubernetes/kubernetes/blob/c5ab06f4c7ebe7e3b921ee9af24ef5c8db479942/pkg/kubelet/eviction/eviction_manager.go#L455)) is a good
+  place for extending the Kubelet code as the storage-limit is checked here and
+  pod condition added to the pod status structure in this place is propagated to
+  the kube-apiserver.
+
+### Interim FailureTarget Job condition
 
 There is a risk of losing the Pod status information due to PodGC, which could
 prevent Job Controller to react to a pod failure with respect to the configured
@@ -897,10 +1238,6 @@ type JobSpec struct {
   ...
 ```
 
-Note that, we do not introduce the `NotIn` operator in
-`PodFailurePolicyOnPodConditionsOperator` as its usage could make job
-configurations error-prone and hard to maintain.
-
 Additionally, we validate the following constraints for each instance of
 PodFailurePolicyRule:
 - exactly one of the fields `onExitCodes` and `OnPodConditions` is specified
@@ -919,21 +1256,39 @@ spec:
       - name: main-job-container
         image: job-image
         command: ["./program"]
+        resources:
+          limits:
+            memory: "128Mi"
+            ephemeral-storage: "1Gi"
       - name: monitoring-job-container
         image: job-monitoring
         command: ["./monitoring"]
+        resources:
+          limits:
+            memory: "128Mi"
+            ephemeral-storage: "1Gi"
   backoffLimit: 3
   podFailurePolicy:
     rules:
-    - action: Terminate
+    - action: FailJob
       onExitCodes:
         containerName: main-job-container
         operator: In
         values: [1,2,3]
+    - action: FailJob
+      onPodConditions:
+      - type: ResourceExhausted
     - action: Ignore
       onPodConditions:
       - type: DisruptionTarget
 ```
+
+
+Note that, it may happen that both the `DisruptionTarget` condition and
+`ResourceExhausted` conditions are both added to the failed Pod status. This
+may happen when different components (for example `kube-apiserver` and `kubelet`)
+update the Pod status. The priority of handling of the conditions can be
+expressed by the order of rules configured in the `podFailurePolicy` field.
 
 ### Evaluation
 
@@ -1006,7 +1361,13 @@ the following scenarios will be covered with unit tests:
   when the failure is associated with
   - a failed container with non-zero exit code,
   - a dedicated Pod condition indicating termmination originated by a kubernetes component
-
+- adding of the `DisruptionTarget` by Kubelet in case of:
+  - admission errors
+  - eviciton due to graceful node shutdown
+  - eviction due to node pressure
+- adding of the `ResourceExhausted` by Kubelet:
+  - in response to OOMKilled reason
+  - due to exceeding ephemeral-storage limits
 <!--
 Additionally, for Alpha try to enumerate the core package you will be touching
 to implement this enhancement and provide the current unit coverage for those
@@ -1022,6 +1383,11 @@ The core packages (with their unit test coverage) which are going to be modified
 - `k8s.io/kubernetes/pkg/controller/job`: `13 June 2022` - `88%`  <!--(handling of failed pods with regards to the configured podFailurePolicy)-->
 - `k8s.io/kubernetes/pkg/apis/batch/validation`: `13 June 2022` - `94.4%` <!--(validation of the job configuration with regards to the podFailurePolicy)-->
 - `k8s.io/kubernetes/pkg/apis/batch/v1`: `13 June 2022` - `83.6%`  <!--(extension of JobSpec)-->
+
+The kubelet packages (with their unit test coverage) which are going to be modified during implementation:
+- `k8s.io/kubernetes/pkg/kubelet/nodeshutdown`: `13 Sep 2022` - `74.9%`  <!--(handling of nodeshutdown)-->
+- `k8s.io/kubernetes/pkg/kubelet/eviction`: `13 Sep 2022` - `67.7%`  <!--(handling of node-pressure eviction)-->
+- `k8s.io/kubernetes/pkg/kubelet`: `13 Sep 2022` - `65.1%`  <!--(handling of admission errors and exceeding resource limits)-->
 
 ##### Integration tests
 
@@ -1109,21 +1475,17 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 - Address reviews and bug reports from Alpha users
 - E2e tests are in Testgrid and linked in KEP
-- A scalability test to demonstrate the limited impact of the additional API call
-  when terminating a Pod
-- Re-evaluate modification to kubelet to send a dedicated condition when
-  terminating a Pod, based on user feedback (see: [Termination initiated by Kubelet](#termination-initiated-by-kubelet))
-- Re-evaluate supporting of `onExitCodes` when `restartPolicy=OnFailure` (see: [Relationship with Pod.spec.restartPolicy](#relationship-with-podspecrestartpolicy))
-- Re-evaluate introduction of a generic opinionated condition type
-  indicating that a pod should be retried (see: [Evolving condition types](#evolving-condition-types))
-- Simplify the code in job controller responsible for detection of failed pods
-  based on the fix for pods stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed)).
-  Also, introduce a worker in the disruption controller to mark pods
-  stuck in the pending phase, with set deletionTimestamp, as failed.
+- implementation of extending the existing Job controller's metrics:
+  `job_finished_total` by the `reason` field; and `job_pods_finished_total`
+  by the `failure_policy_action` field (see also
+  [here](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads))
+- implementation of adding pod failure conditions (`DisruptionTarget` or
+  `ResourceExhausted` depending on the scenario) by Kubelet when terminating a
+  Pod (see: [Termination initiated by Kubelet](#termination-initiated-by-kubelet))
 - Commonize the code for appending pod conditions between components
 - Do not update the pod disruption condition (with type=`DisruptionTarget`) if
   it is already present with `status=True`
-- Review and implement if feasible adding of pod conditions with the use of
+- Refactor adding of pod conditions with the use of
   [SSA](https://kubernetes.io/docs/reference/using-api/server-side-apply/) client.
 - The feature flag enabled by default
 
@@ -1131,6 +1493,18 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 - Address reviews and bug reports from Beta users
 - The feature is unconditionally enabled
+- Simplify the code in job controller responsible for detection of failed pods
+  based on the fix for pods stuck in the running phase (see: [Marking pods as Failed](marking-pods-as-failed)).
+  Also, extend PodGC to mark as failed (and delete) terminating pods
+  (with set deletionTimestamp) which stuck in the pending.
+- Discuss within the community (involving CNCF Technical Advisory Group for
+  Runtime, SIG-node, container runtime implementations) the standarization of
+  the CRI API to communicate an OOM kill occurrence by contatiner runtime to
+  Kubelet. In particular, suggest that the API should allow to convey the reason
+  for OOM killer being invoked (to distinguish if the container was killed due
+  to exceeding its limits or due to system running low on memory).
+- Review of the implementation of hanling OOM kill events by Kubelet depending
+  on the outcome of the discussions and the standardized API.
 
 <!--
 **Note:** Generally we also wait at least two releases between beta and
@@ -1249,6 +1623,7 @@ well as the [existing list] of feature gates.
       - kube-apiserver
       - kube-controller-manager
       - kube-scheduler
+      - kubelet
   - Feature gate name: JobPodFailurePolicy
     - Components depending on the feature gate:
       - kube-apiserver
@@ -1262,8 +1637,9 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. The kubernetes components (kube-scheduler and kube-controller-manager) will
-append a Pod Condition along with the request pod delete request.
+Yes. The kubernetes components (kubelet, kube-apiserver, kube-scheduler and
+kube-controller-manager) will append a pod condition along with the request pod
+delete request.
 
 However, the part of the feature responsible for handling of the failed pods
 is opt-in with `.spec.podFailurePolicy`.
@@ -1321,6 +1697,10 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+If any component has not yet rolled out, or fails to rollout, the existing
+default behavior will continue to apply, but there is no downtime during partial
+rollout or rollback.
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -1333,12 +1713,42 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
+A substantial increase in the `job_sync_duration_seconds` metric may suggest the
+processing of the configured job pod failure policy rules consumes too much time.
+
+An operator can also observe `job_pods_finished_total` to check if the reason count
+of taken actions (`FailJob`, `Count` or `Ignore`) correlates with the expected
+changes based on the Job workload specificity.
+
+Additionally, an operator should check if the terminated pods (due to reasons
+listed in [design details](#design-details)) have the appropriate pod condition
+added. The addition of the pod conditions can be checked by standard tools such
+as the `kubectl describe` command or a watch
+`kubectl get pods -o yaml -w --output-watch-events`.
+
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Manual test performed to simulate the upgrade->downgrade->upgrade scenario:
+
+1. Deploy k8s 1.25 with `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates disabled
+1. Enable the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates for the control plane components
+1. Test the scenarios (described in [Handling retriable and non-retriable pod failures with Pod failure policy](https://kubernetes.io/docs/tasks/job/pod-failure-policy/)):
+  - Scenario 1:
+    - Create a job with container failing with `42` exit code. The job has `backoffLimit>0` and pod failure policy with a `FailJob` rule matching the exit codes.
+    - Verify that the job fails fast without retries.
+  - Scenario 2:
+    - Create a job with a long running containers and `backoffLimit=0`.
+    - Verify that the job continues after the node in uncordoned
+1. Disable the feature gates. Verify that the above scenarios result in default behaviour:
+  - In scenario 1: the job restarts pods failed with exit code `42`
+  - In scenario 2: the job is failed due to exceeding the `backoffLimit` as the failed pod failed during the draining
+1. Re-enable the feature gates
+1. Verify the above described scenarios work as after the first enablement
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -1347,6 +1757,8 @@ are missing a bunch of machinery and tooling and can't do that now.
 -->
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No.
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
@@ -1367,15 +1779,17 @@ We use the metrics-based approach based on the following metrics (exposed by
 kube-controller-manager):
   - `job_finished_total` (existing, extended by a label): the new `reason`
 label indicates the reason for the job termination. Possible values are
-`PodFailurePolicyRule`, `BackoffLimitExceeded` and`DeadlineExceeded`.
+`PodFailurePolicy`, `BackoffLimitExceeded` and`DeadlineExceeded`.
 It can be used to determine what is the relative frequency of job terminations
 due to different reasons. For example, if jobs are terminated often due to
 `BackoffLimitExceeded` it may suggest that the pod failure policy should be extended
 with new rules to terminate jobs early more often
-  - `job_pod_failure_total` (new): tracks the handling of failed pods. It will
-have the `action` label indicating how a pod failure was handled. Possible
-values are:`JobTerminated`, `Ignored` and `Counted`. This metric can be used to
-assess the coverage of pod failure scenarios with `spec.podFailurePolicy` rules.
+  - `job_pods_finished_total` (existing, extended by a label): the new
+`failure_policy_action` label tracks the number of failed pods that are handled
+by a specific failure policy action. Possible values are: `JobFailed`, `Ignored`
+and `Counted`. If a pod failure does not match the pod failure policy then
+the value for the label is left empty. This metric can be used to assess the
+coverage of pod failure scenarios with `spec.podFailurePolicy` rules.
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -1394,15 +1808,14 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Pod .status
+  - Condition type: `DisruptionTarget` or `ResourceExhausted` when a Pod is terminated due to a reason listed in [design details](#design-details).
+- [x] Job .status
+  - Condition reason: `PodFailurePolicy` for the job `Failed` condition if the job was terminated due to the matching `FailJob` rule.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+- 99% percentile over day for Job syncs is <= 15s for a client-side 50 QPS limit.
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -1438,6 +1851,8 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+No.
+
 ### Dependencies
 
 <!--
@@ -1445,6 +1860,8 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+No.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -1511,7 +1928,31 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+Yes.
+
+When the feature is enabled, Pods will be added a new Pod condition on termination.
+- API type: Pod
+- Estimated increase in size: 100B
+- No new Pod objects
+
+The size of the new Pod condition we estimate by adding the estimated sizes of the fields (in bytes):
+- `type`: 20
+- `status`: 5
+- `reason`: 30
+- `message`: 50
+- `lastProbeTime`: 8
+- `LastTransitionTime`: 8.
+
+When the feature is enabled users will be able to configure the Job's pod failure policy.
+- API type: Job
+- Estimated increase in size: 22KB
+- No new Job objects
+
+We estimate the size of the new `podFailurePolicy` field in Job as `max_number_of_rules * max(est_onExitCodes_size, est_onPodConditions_size)`, where (in bytes):
+- `max_number_of_rules`: 20
+- `est_onExitCodes_size`: 1120 (255*4 for exit code values + 100 for `containerName`)
+- `est_onPodConditions_size`: 500 (max 20 patterns * (5 for `status` + 20 for `type`)).
+
 <!--
 Describe them, providing:
   - API type(s):
@@ -1562,7 +2003,16 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No change from existing behavior of the Job controller.
+
 ###### What are other known failure modes?
+
+  - When `PodDisruptionConditions` enabled pods are not terminated based on the NoExecute taint
+    - Known bug in 1.25.x (fixed in master)
+    - Bugs: [Fix handling of NoExecute taint when PodDisruptionConditions is enabled](https://github.com/kubernetes/kubernetes/pull/112518)
+    - Detection: Observe that the pods are not deleted when a node is tainted with `NoExecute`
+    - Mitigations: disable `PodDisruptionConditions`
+    - Testing: Discovered bugs are covered by unit and integration tests.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -1579,6 +2029,27 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+If pods terminate without the expected pod failure conditions (this part of the
+feature does not depend on the Job controller, the standard troubleshooting
+technics apply):
+- Check reachability between kubernetes components.
+- Consider increasing the logging level to trace when the issue occurs.
+
+If a job failure policy isn't respected (this part of the feature depends
+on the Job controller, the standard and Job controller-specific troubleshooting
+technics apply):
+- Inspect manually if the job's terminated pods have containers with exit codes matching the configured rules.
+- Inspect manually if the job's terminated pods have conditions expected according to the [design details](#design-details).
+- Inspect the Job controller's `job_sync_duration_seconds` metric to see if there
+  is an increase of the Job controller processing time.
+- Inspect the Job controller's `job_pods_finished_total` metric for the
+  to check if the numbers of pod failures handled by specific actions (counted
+  by the `failure_policy_action` label) agree with the expetations.
+  For example, if a user configures job failure policy with `Ignore` action for
+  the `DisruptionTarget` condition, then a node drain is expected to increase
+  the metric for `failure_policy_action=Ignore`.
+- Consider increasing the logging level of kube-controller-manager to trace the job_controller logs.
+
 ## Implementation History
 
 - 2022-06-23: Initial KEP merged
@@ -1590,6 +2061,23 @@ For each of them, fill in the following information by copying the below templat
 - 2022-08-02: PR "Append new pod conditions when deleting pods to indicate the reason for pod deletion" merged
 - 2022-08-02: PR "Add worker to clean up stale DisruptionTarget condition" merged
 - 2022-08-04: PR "Support handling of pod failures with respect to the configured rules" merged
+- 2022-09-09: Bugfix PR for test "Fix the TestRoundTripTypes by adding default to the fuzzer" merged
+- 2022-09-26: Prepared PR for KEP Beta update. Summary of the changes:
+  - propsal to extend kubelet to add the following pod conditions when evicting a pod (see [Design details](#design-details)):
+    - DisruptionTarget for evictions due graceful node shutdown, admission errors, node pressure or Pod admission errors
+    - ResourceExhausted for evictions due to OOM killer and exceeding Pod's ephemeral-storage limits
+  - extended the review of pod eviction scenarios by kubelet-initiated pod evictions:
+    - [Container memory limit exceeded](#container-memory-limit-exceeded)
+    - [Container ephemeral-storage limit exceeded](#container-ephemeral-storage-limit-exceeded)
+    - [Graceful node shutdown](#graceful-node-shutdown)
+    - [Pod admission error](#pod-admission-error)
+  - added a Risk and Mitigations sections:
+    - [OOM killer invoked when memory limits are not exceeded](#oom-killer-invoked-when-memory-limits-are-not-exceeded)
+    - [Stale DisruptionTarget condition which is not cleaned up](#stale-disruptiontarget-condition-which-is-not-cleaned-up)
+  - updated names of the proposed metrics fields: `PodFailurePolicyRule` -> `PodFailurePolicy` and `JobTerminated` -> `JobFailed` (see [here](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads))
+  - added [Story 3](#story-3) to demonstrate how to use the API to ensure there are no infinite Pod retries
+  - updated [Graduation Criteria for Beta](#beta)
+  - updated of kep.yaml and [PRR questionnaire](#production-readiness-review-questionnaire) to prepare the KEP for Beta
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
