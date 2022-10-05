@@ -475,7 +475,6 @@ spec:
     - key: environment,
       operator: NotIn,
       values: ["test"]
-  mode: Enabled
 ```
 
 ```yaml
@@ -502,7 +501,6 @@ spec:
     namespaceSelectors:
     - key: environment,
       operator: Exists
-  mode: Enabled
 ```
 
 With this binding, the test and global policy bindings overlap. Resources
@@ -577,7 +575,6 @@ spec:
     namespaceSelectors:
     - key: environment,
       operator: Exists
-  mode: DryRun
 ```
 
 Each parameter CRD defines the custom resources that are referenced by the
@@ -1571,11 +1568,11 @@ xref: https://kyverno.io/docs/writing-policies/autogen/
    the same settings as policy definition A otherwise (e.g. it uses the same
    param CR)
 1. Policy bindings X1..Xn are replicated as Y1..Yn but modified to use policy
-   definition B and `mode: DryRun`
+   definition B and set enforcement to warning only
 1. Cluster administrators observe violations (via metrics, audit logs or logged warnings)
 1. Cluster administrator determines new validation is safe
-1. Policy bindings X1..Xn are set to `mode: Enabled`
-1. If anything goes wrong, revert mode back to `DryRun`
+1. Policy bindings X1..Xn are set enforcement to deny
+1. If anything goes wrong, revert enforcement back to warning only
 1. Policy definition A is updated to include the new validation
 1. Policy definition B and policy bindings Y1..Yn are deleted
 
@@ -1583,10 +1580,10 @@ xref: https://kyverno.io/docs/writing-policies/autogen/
 
 1. New policy definition is created
 1. Any needed param CRs are created
-1. policy bindings are created and set to `mode: DryRun`
+1. policy bindings are created and set enforcement to warning only
 1. Cluster administrators observe violations (via metrics, audit logs or logged warnings)
 1. Cluster administrator determines new policy is safe
-1. policy bindings are set to `mode: Enabled`
+1. policy bindings are set enforcement to deny
 
 ### Potential Applications
 
