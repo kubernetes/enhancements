@@ -23,6 +23,20 @@
     - [Pre-provisioned VolumeGroupSnapshot](#pre-provisioned-volumegroupsnapshot)
   - [Delete VolumeGroupSnapshot](#delete-volumegroupsnapshot)
   - [Restore](#restore)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Alpha -&gt; Beta](#alpha---beta)
+    - [Beta -&gt; GA](#beta---ga)
+    - [Deprecation](#deprecation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
   - [API Definitions](#api-definitions)
     - [VolumeGroupClass](#volumegroupclass)
     - [VolumeGroup](#volumegroup)
@@ -53,13 +67,6 @@
   - [Alternatives](#alternatives)
     - [Immutable VolumeGroup](#immutable-volumegroup)
     - [ModifyVolume](#modifyvolume)
-- [Graduation Criteria](#graduation-criteria)
-  - [Alpha](#alpha)
-  - [Alpha -&gt; Beta](#alpha---beta)
-  - [Beta -&gt; GA](#beta---ga)
-- [Test Plan](#test-plan)
-  - [Unit tests](#unit-tests)
-  - [E2E tests](#e2e-tests)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -281,6 +288,84 @@ Phase 2:
 
 * A VolumeGroup can be created from a VolumeGroupSnapshot or VolumeGroup source in one step. This is the same as what is described in the section `Create VolumeGroup from VolumeGroupSnapshot or another VolumeGroup`.
 
+### Risks and Mitigations
+
+This feature requires coordination between several controllers including the newly proposed volume group and group snapshot controller and existing external-provisioner and external-snapshotter components. We will introduce this feature as alpha and add tests to make sure it works properly.
+
+## Design Details
+
+### Test Plan
+
+##### Prerequisite testing updates
+N/A
+
+##### Unit tests
+* Unit tests for external volume group and group snapshot controller.
+* Unit tests for modified code path of external-provisioner and external-snapshotter.
+
+##### Integration tests
+Integration tests are not needed.
+
+##### e2e tests
+* e2e tests for external volume group and group snapshot controller.
+* e2e tests for modified code path of external-provisioner and external-snapshotter.
+* Add stress and scale tests before moving from beta to GA.
+
+### Graduation Criteria
+#### Alpha
+* Initial feature implementation, including:
+  * Volume group.
+  * Volume group snapshot.
+* Sample implementation in the csi-driver-host-path.
+* Reviews from vendors whose storage systems can support this feature.
+* Add basic unit tests.
+
+#### Alpha -> Beta
+* Unit tests and e2e tests outlined in design proposal implemented.
+
+#### Beta -> GA
+* Volume group and group snapshot support is added to multiple CSI drivers.
+* Volume group and group snapshot feature deployed in production and have gone through at least one K8s upgrade.
+
+#### Deprecation
+<!--
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+-->
+No deprecation plan.
+
+### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
+External controllers handling volume group and group snapshot are additional sidecars deployed with the CSI driver. External-snapshotter and external-provisioner components will be updated to use the newer version that supports this feature. Upgrade should be fine as long as all the components are updated accordingly. Before downgrade, newly created volume groups and group snapshots which depend on the new CRDs should be deleted.
+
+### Version Skew Strategy
+
+<!--
+If applicable, how will the component handle version skew with other
+components? What are the guarantees? Make sure this is in the test plan.
+
+Consider the following in developing a version skew strategy for this
+enhancement:
+- Does this enhancement involve coordinating behavior in the control plane and
+  in the kubelet? How does an n-2 kubelet without this feature available behave
+  when this feature is used?
+- Will any other components on the node change? For example, changes to CSI,
+  CRI or CNI may require updating that component before the kubelet.
+-->
+The enhancement only affects the control plane but there are multiple components involved. If the controllers are updated to support this feature but the CSI driver itself does not support it, the `Ready` status of a new VolumeGroup API object will stay `false`.
 
 ### API Definitions
 
@@ -1376,32 +1461,6 @@ message ModifyVolumeRequest {
 }
 ```
 External-provisioner will be modified so that modifying PVC by adding VolumeGroupName will trigger a ModifyVolume call (a new CSI controller RPC) to CSI driver.
-
-## Graduation Criteria
-### Alpha
-* Initial feature implementation, including:
-  * Volume group.
-  * Volume group snapshot.
-* Sample implementation in the csi-driver-host-path.
-* Reviews from vendors whose storage systems can support this feature.
-* Add basic unit tests.
-
-### Alpha -> Beta
-* Unit tests and e2e tests outlined in design proposal implemented.
-
-### Beta -> GA
-* Volume group and group snapshot support is added to multiple CSI drivers.
-* Volume group and group snapshot feature deployed in production and have gone through at least one K8s upgrade.
-
-## Test Plan
-### Unit tests
-* Unit tests for external volume group and group snapshot controller.
-* Unit tests for modified code path of external-provisioner and external-snapshotter.
-
-### E2E tests
-* e2e tests for external volume group and group snapshot controller.
-* e2e tests for modified code path of external-provisioner and external-snapshotter.
-* Add stress and scale tests before moving from beta to GA.
 
 ## Production Readiness Review Questionnaire
 
