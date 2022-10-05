@@ -820,7 +820,8 @@ No
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Not Applicable, refer to Kubelet SLOs.
+The metric `device_plugin_alloc_duration_seconds` can be used to determine if device allocation
+is taking longer than expected.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
