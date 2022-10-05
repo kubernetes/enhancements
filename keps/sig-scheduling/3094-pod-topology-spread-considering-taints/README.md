@@ -572,7 +572,8 @@ Yes, we can just disable the feature gate.
 The policies are respected again.
 
 ###### Are there any tests for feature enablement/disablement?
-Yes, both unit tests and integration tests are added.
+
+In the scheduler, this is in-memory feature, so tests checking both feature enabled or disabled were added:
 
 Unit tests:
 
@@ -587,6 +588,8 @@ Integration tests:
 
 - test/integration/scheduler/filters/filters_test.go#TestPodTopologySpreadFilter
 - test/integration/scheduler/scoring/priorities_test.go#TestPodTopologySpreadScoring
+
+However, this KEP also introduces API changes, the tests will be added later, refer to the [PR](https://github.com/kubernetes/kubernetes/pull/112805). I'll update the description once the PR is merged.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
