@@ -512,7 +512,10 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-N/A.
+Due to the feature gate on the external-provisioner, rolling out this feature
+does not affect existing Pods that use PVCs. It also does not affect 
+VolumeSnapshots that are created prior to rolling out the feature, ie, the
+volume mode of an existing VolumeSnapshot can be modified while creating a PVC.
 
 ###### What specific metrics should inform a rollback?
 
@@ -555,7 +558,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-N/A.
+If the feature gate is enabled in the external-provisioner and snapshot-controller,
+this feature will always be in use when creating a PVC from a VolumeSnapshot.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -570,7 +574,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [x] Events
   - Event Reason: ProvisioningFailed
-  - Event Message: ailed to provision volume with StorageClass "csi-hostpath-sc": error getting handle for DataSource Type 
+  - Event Message: Failed to provision volume with StorageClass "csi-hostpath-sc": error getting handle for DataSource Type 
   VolumeSnapshot by Name new-snapshot-demo: requested volume default/hpvc-restore modifies the mode of the source volume 
   but does not have permission to do so. snapshot.storage.kubernetes.io/allow-volume-mode-change annotation is not present 
   on snapshotcontent snapcontent-8d709f2e-db04-444f-aae2-e17d6c5398dd
@@ -642,7 +646,7 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-This feature does not add any new API calls. 
+This feature adds an event write to the API server when PVC creation is blocked.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -682,7 +686,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-No new API calls are introduced as part of this feature.
+In case PVC creation is blocked due to this feature, the failure event will not be emitted
+due to the unavailability of the API server. Users will need to refer to the external-provisioner
+logs to determine why PVC creation is failing.
 
 ###### What are other known failure modes?
 
@@ -700,6 +706,9 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+The user needs to read the logs of the external-provisioner to determine the reason
+behind why PVC creation is failing.
 
 ## Implementation History
 
