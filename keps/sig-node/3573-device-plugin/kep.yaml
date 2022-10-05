@@ -1,0 +1,43 @@
+title: Device Manager Proposal
+kep-number: 3573
+authors:
+  - "@RenaudWasTaken"
+  - "@jiayingz"
+  - "@swatisehgal" # for translation to latest KEP template, PRR questionnaire and GA graduation
+owning-sig: sig-node
+status: implementable
+creation-date: 2022-10-02
+approvers:
+  - "@dawnchen"
+  - "@derekwaynecarr"
+
+see-also:
+  - "keps/sig-node/606-compute-device-assignment"
+replaces:
+  - "kubernetes/design-proposals-archive/blob/main/resource-management/device-plugin.md"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.8"
+  beta: "v1.10"
+  stable: "v1.26"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: DevicePlugins
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - device_plugin_registration_total
