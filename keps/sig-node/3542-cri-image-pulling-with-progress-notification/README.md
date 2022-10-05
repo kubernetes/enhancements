@@ -128,9 +128,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -229,6 +229,25 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
+We propose introducing new (additional, not replacing old one) API for requesting image pull,
+that will return stream with periodic updates sent through it to the client. The image pull
+request parameters will contain the type of update the client wants to receive aobut the progress:
+- time-based
+- percentage-based
+- size-based
+
+and the frequency of the updates:
+- every N seconds
+- every N percents of total image size being downloaded
+- every N bytes of the total image size being downloaded
+respectively to the type
+
+If the client did not specify the preferred notification granularity, default values can be used.
+
+This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
+progress and publish events to the Pod object
+
+See design detail below.
 
 ### User Stories (Optional)
 
