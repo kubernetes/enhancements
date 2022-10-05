@@ -600,7 +600,7 @@ question.
 We will add new labels to the existing persistentvolumeclaim_provision_failed_total metric 
 for the volume data source and status code.
 The per-day percentage of calls with error status code <= 1. 
-However the failover will always happen as long as the feature is correctly enabled and the
+However the failure will always happen as long as the feature is correctly enabled and the
 annotations are not applied correctly to VolumeSnapshotContent objects. 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
