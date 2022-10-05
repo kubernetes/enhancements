@@ -2163,6 +2163,9 @@ For beta:
 - Positive acknowledgment from 3 would-be implementors of a resource driver,
   from a diversity of companies or projects
 - Tests are in Testgrid and linked in KEP
+- At least one scalability test for a likely scenario (for example,
+  several pods each using different claims that get created from
+  inline templates)
 - Documentation for users and resource driver developers published
 - In addition to the basic features, we also handle:
   - reuse of network-attached resources after unexpected node shutdown
@@ -2171,7 +2174,9 @@ For beta:
 
 - 3 examples of real-world usage
 - Agreement that quota management is sufficient
-- Conformance, downgrade tests and scalability tests
+- Conformance and downgrade tests
+- Scalability tests that mirror real-world usage as
+  determined by user feedback
 - Allowing time for feedback
 
 
