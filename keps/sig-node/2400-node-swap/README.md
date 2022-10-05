@@ -25,6 +25,7 @@
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Alpha2](#alpha2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -401,14 +402,17 @@ For alpha:
   and further development efforts.
   - Focus should be on supported user stories as listed above.
 
-For beta:
+For alpha2:
 
 - Add e2e tests that exercise all available swap configurations via the CRI.
+- Verify MemoryPressure behavior with swap enabled and document any changes
+  for configuring eviction.
+- Verify new system-reserved settings for swap memory.
+
+For beta:
+
 - Add e2e tests that verify pod-level control of swap utilization.
 - Add e2e tests that verify swap performance with pods using a tmpfs.
-- Verify new system-reserved settings for swap memory.
-- Verify MemoryPressure behaviour with swap enabled and document any changes
-  for configuring eviction.
 
 ### Graduation Criteria
 
@@ -420,21 +424,45 @@ For beta:
   default, workloads will not be allocated any swap.
 - e2e test jobs are configured for Linux systems with swap enabled.
 
-#### Beta
+#### Alpha2
 
-- Add support for controlling swap consumption at the pod level [via cgroups].
-  - Handle usage of swap during container restart boundaries for writes to tmpfs
-    (which may require pod cgroup change beyond what container runtime will do at
-    container cgroup boundary).
+In alpha2 the focus will be on making sure that the feature can be used on
+subset of production scenarios to collect more feedback before entering beta.
+Specifically, security and test coverage will be increased. As well as the new
+setting that will split swap between kubelet and workload will be introduced.
+
+Once functionality part is resolved while in alpha, beta will be more about
+performance and feedback on wider range of scenarios.
+
+This will allow to collect feedback from the following scenarios reasonably safe:
+
+- on cgroupv2: allow host system processes to use swap to increase
+  system reliability under memory pressure.
+- enable swap for the workload in "single large pod per node" scenarios.
+
+Here are specific improvements to be made:
+
+- Address swap impact on memory-backed volumes: https://github.com/kubernetes/kubernetes/issues/105978.
+- Investigate swap security when enabling on system processes on the node.
+- Improve coverage for appropriate scenarios in testgrid.
 - Add the ability to set a system-reserved quantity of swap from what kubelet
   detects on the host.
 - Consider introducing new configuration modes for swap, such as a node-wide
   swap limit for workloads.
+- Investigate eviction behavior with swap enabled.
+
+
+#### Beta
+
+- Add support for controlling swap consumption at the pod level [via cgroups].
+- Handle usage of swap during container restart boundaries for writes to tmpfs
+  (which may require pod cgroup change beyond what container runtime will do at
+  container cgroup boundary).
 - Add swap memory to the Kubelet stats api.
 - Determine a set of metrics for node QoS in order to evaluate the performance
   of nodes with and without swap enabled.
-  - Better understand relationship of swap with memory QoS in cgroup v2
-    (particularly `memory.high` usage).
+- Better understand relationship of swap with memory QoS in cgroup v2
+  (particularly `memory.high` usage).
 - Collect feedback from test user cases.
 - Improve coverage for appropriate scenarios in testgrid.
 
@@ -871,6 +899,7 @@ nodes that do not use swap memory.
 - **2017-10-06:** Discussed in [#53533](https://github.com/kubernetes/kubernetes/issues/53533).
 - **2021-01-05:** Initial design discussion document for swap support and use cases.
 - **2021-04-05:** Alpha KEP drafted for initial node-level swap support and implementation (KEP-2400).
+- **2021-08-09:** New in Kubernetes v1.22: alpha support for using swap memory: https://kubernetes.io/blog/2021/08/09/run-nodes-with-swap-alpha/
 
 ## Drawbacks
 
