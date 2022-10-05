@@ -253,7 +253,7 @@ with ETag support is sufficient for most users.
 
 We are proposing augmenting the current discovery endpoints at `/api`
 and `/apis` with an new content negotiation accept type. This endpoint
-will serve an aggregated discovery document that c ontains the
+will serve an aggregated discovery document that contains the
 resources for all group versions. ETag support will be provided so
 clients who already have the latest version of the aggregated
 discovery can avoid redownloading the document.
@@ -320,21 +320,26 @@ about HOW your proposal will be implemented, this is the place to
 discuss them. -->
 
 The current discovery endpoints `/api` and `/apis` will accept a new
-content negotiation type `Accept:
-application/json;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io` for
-JSON and `Accept:
-application/vnd.kubernetes.protobuf;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io`
-for protocol buffers. This type represents an aggregated discovery
-document with the `APIGroupDiscoveryList` type.
+content negotiation type `APIGroupDiscoveryList`, representing an
+aggregated discovery document.
 
-When the feature graduates to GA, the accept type's version will
-change to `v1` (Eg: `Accept:
-application/json;as=APIGroupDiscoveryList;v=v1;g=meta.k8s.io`)
+Clients requesting the aggregated document will send a request with
+`as` (kind), `v` (version), and `g` (group) set as part of the
+`Accept` header. For example, a client requesting the `v1beta1`
+version will send `Accept:
+application/json;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io`.
 
-The default accept type will not be changed and a request to `/api` or
-`/apis` without any content negotiation types will default to the
-unaggregated `APIGroupList` type defined in meta/v1.
-
+Clients should send an accept header with all the acceptable responses
+in preferred order. This is to avoid sending additional requests to the same endpoint if the initial preferred version is unavailable. The default accept type will not be changed and
+omitting the content negotiation type will default to the unaggregated
+`APIGroupList` type. Requests should have `application/json` or
+`application/vnd.kubernetes.protobuf` as a fallback option in case the
+server does not support the aggregated type (eg: Different version,
+feature disabled, etc) For instance, `Accept:
+application/json;as=APIGroupDiscoveryList;v=v1;g=meta.k8s.io,application/json;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io,application/json`
+will request for the aggregated discovery v1 type, aggregated
+discovery v1beta1 type, and unaggregated v1 type in that order. The
+server will return the first option that is supported.
 
 ### API
 
