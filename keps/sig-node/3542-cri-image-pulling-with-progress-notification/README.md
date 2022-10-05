@@ -294,29 +294,48 @@ proposal will be implemented, this is the place to discuss them.
 
 Following new CRI streaming API call is proposed:
 
-    // PullImageWithStatus pulls an image with authentication config.
+    // PullImageWithProgress pulls an image with authentication config.
     // It returns periodically amount of image pulled so far.
-    rpc PullImageWithStatus(PullImageRequest) returns (stream PullImageWithStatusResponse) {}
+    rpc PullImageWithProgress(PullImageWithProgressRequest) returns (stream PullImageWithProgressResponse) {}
 
-The PullImageWithStatus() API call will connect and send a normal PullImageRequest message to
-runtime CRI image service server. If the connection succeeds, the PullImageWithStatus() will
-return the stream to the caller and let it to start to receive the status messages via the stream.
-The image server will initiate a image pull, and it will start to send status reports to the CRI client.
-The status reports will contain information how much image has been downloaded so far for
-each layer which are identified by the digest field.
+The PullImageWithProgress() API call will connect and send a PullImageWithProgressRequest message to
+runtime CRI image service server.
 
-    message PullImageWithStatusResponse {
-        // Reference to the image in use.
-        string image_ref = 1;
-        // Image digest
-        string digest = 2;
-        // Amount of data received.
-        UInt64Value offset = 3;
-        // Total size of the image.
-        UInt64Value total = 4;
+The PullImageWithProgressRequest contains base information needed to do the image pull (image name, auth config
+and sandbox information), and it will also contain information how often the server should send progress reports.
+The CRI client can restrict the progress reporting to be time based (once every n. seconds), percent based (after
+every n. percent) or the amount of bytes downloaded which is the default one.
+
+    message PullImageWithProgressRequest {
+        // Spec of the image.
+        ImageSpec image = 1;
+        // Authentication configuration for pulling the image.
+        AuthConfig auth = 2;
+        // Config of the PodSandbox, which is used to pull image in PodSandbox context.
+        PodSandboxConfig sandbox_config = 3;
+        // Granularity type of the progress reports
+        PullImageProgressGranularity granularity_type = 4;
+        // The interval value of the choosen granularity.
+        // For time based granularity, this is the number of seconds between reports. If time interval is 0, then report is done every 60s.
+        // For percent based granularity, this is the number of percent value between reports. If percent interval is 0, then report is done every 10%
+        // For the default byte based granularity, this is the number of bytes received between reports. If set to 0, then runtime will report progress as image is downloaded.
+        uint32 interval = 5;
     }
 
-After the full image is downloaded, the gRPC connection is closed and success status is returned to the caller.
+If the connection succeeds, the PullImageWithProgress() will return a gRPC stream to the caller and let it
+to start to receive the progress messages via the stream. The image server will initiate an image pull, and
+it will start to send progress reports to the CRI client. The progress reports will contain information how
+much image has been downloaded so far.
+
+    message PullImageWithProgressResponse {
+        // Reference to the image in use.
+        string image_ref = 1;
+        // Amount of data received.
+        UInt64Value offset = 2;
+        // Total size of the image.
+        UInt64Value total = 3;
+    }
+
 
 ### Test Plan
 
@@ -335,7 +354,7 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-The implementation PR adds a suite of unit and E2E tests to the new proposed PullImageWithStatus API.
+The implementation PR adds a suite of unit and E2E tests to the new proposed PullImageWithProgress API.
 
 ##### Prerequisite testing updates
 
