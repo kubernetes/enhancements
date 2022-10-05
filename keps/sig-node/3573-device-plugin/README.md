@@ -688,6 +688,9 @@ Upgrading Kubelet can be done seamlessly through a Kubelet restart and does not
 require deployment of a different version of the device plugin as the API has been
 mostly stable since its graduation to Beta in v1.10.
 
+Note that graduation of Device Plugin API to GA is out of scope of this KEP and
+will be covered in a separate KEP in the future.
+
 Refer to the versioning section for versioning scheme compatibility.
 
 ##### Upgrading Device Plugins
@@ -720,7 +723,10 @@ and device plugin API has been stable and this is no longer a hard requirement.
 
 ###### Does enabling the feature change any default behavior?
 
-No, in order to tap into this feature device plugins have to be deployed on the cluster.
+No, in order to tap into this feature and for a container to be allocated devices as resources:
+* feature gate has to be enabled
+* device plugin must be deployed
+* the container needs to explicitly request resources provided by plugins
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -739,11 +745,8 @@ appropriately drained.
 No impact on running pods in the cluster.
 When enabled, this feature provides the ability to expose and consume custom
 devices in a Kubernetes cluster. These device plugins are typically deployed
-as daemonset. Refer to [Installation](#installation) section for more details.
-
-Even when this feature is enabled, cluster admin needs to provision device plugins
-(typically deployed as a daemonset) on the cluster which subsequently be requested
-by the users. 
+as daemonset which can be subsequently requested by the users. Refer to
+[Installation](#installation) section for more details.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -755,8 +758,8 @@ Yes, covered by node e2e tests:
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-* A rollout can fail in case a bug is introduced either in device manager or device
-  plugin preventing already running pods from restarting or new pods to start.
+* A rollout can fail in case a bug is introduced in device manager preventing already
+  running pods from restarting or new pods to start.
 
 ###### What specific metrics should inform a rollback?
 
@@ -793,7 +796,8 @@ No
 ###### How can an operator determine if the feature is in use by workloads?
 
 1. The operator can look at `device_plugin_registration_total` and `device_plugin_alloc_duration_seconds`
-   metrics.
+   metrics to gather information about successful device plugin registrations and device
+   allocations to pods respectively.
 1. Kubelet PodResource API endpoints (`List` and `GetAllocatableResources`) can be used
    to obtain information on devices allocated to running pods. Refer to
    [keps/sig-node/606-compute-device-assignment]([keps/sig-node/606-compute-device-assignment]).
@@ -803,10 +807,9 @@ No
    In addition to that, status of the running pods can be inspected to determine if the
    pod requesting device(s) was running successfully and allocated device(s) as per its
    request.
-1. Typically, device allocation to a workload is accompanied by creation of environment
-   variable capturing device specification identification information e.g. PCI address
-   information which can be inspected, creation of device files and device specific
-   volume mount points.This varies depending on the device plugin implementation. 
+1. Checking that the pod spec contains request for resources provided by plugins which
+   can be identified as non-native resources (i.e resources other than cpu, memory,
+   hugepages).
 
 
 ###### How can someone using this feature know that it is working for their instance?
