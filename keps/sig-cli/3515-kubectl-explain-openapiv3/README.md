@@ -486,8 +486,7 @@ Defined using feature gate
 
 #### Alpha 1
 
-- Feature implemented behind a command line flag `--experimental-output`
-- `--experimental-output` flag added
+- Feature implemented behind a command line flag `--output` and environment variable
 - Existing explain tests are working or adapted for new implementation
 - Plaintext output roughly matches explain output
 - OpenAPIV3 (raw json) output implemented
@@ -513,7 +512,7 @@ be required.
   most machines
 - OpenAPI V3 is enabled by default on at least one version within kubectl's support window.
 As of Kubernetes 1.24 OpenAPIV3 entered beta and become enabled by default, therefore meeting this requirement.
-- `--experimental-output` flag is renamed to `--output`, and `--output plaintext` is on-by-default.
+- `--output plaintext` is on-by-default and environment variable is removed/on by default
 - `--output plaintext-openapiv2` added as a name for the old `explain` implementation, so the feature may be positively disabled.
 
 #### GA
@@ -677,7 +676,7 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: --experimental-output flag usage
+  - Describe the mechanism: Environment variable `ENABLE_EXPLAIN_OPENAPIV3` which toggles validity of `--output` flag
     (to be renamed to --output when feature is no longer experimental)
   - Will enabling / disabling the feature require downtime of the control
     plane? No
@@ -697,7 +696,7 @@ information populated.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Until the feature is stable it will only be enabled when the `--experimental-output` flag is used.
+Until the feature is stable it will only be enabled when the environment variable is used.
 It has no persistent effect on data that is viewewd.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
