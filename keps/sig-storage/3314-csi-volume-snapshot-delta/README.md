@@ -79,11 +79,11 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Aggregated API Server - denial of service](#aggregated-api-server---denial-of-service)
     - [APIService Resource - CA bundle expiry](#apiservice-resource---ca-bundle-expiry)
 - [Design Details](#design-details)
-  - [CBT Datapath Worklow](#cbt-datapath-worklow)
+  - [CBT Request/Response Flow](#cbt-requestresponse-flow)
   - [High Availability Mode](#high-availability-mode)
   - [API Specification](#api-specification)
     - [VolumeSnapshotDelta Resource](#volumesnapshotdelta-resource)
-    - [DriverDiscovery Resource](#driverdiscovery-resource)
+    - [VolumeSnapshotDeltaServiceConfiguration Resource](#volumesnapshotdeltaserviceconfiguration-resource)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -125,7 +125,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -133,7 +133,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -241,7 +241,7 @@ nitty-gritty.
 -->
 
 This KEP introduces two new custom resources called `VolumeSnapshotDelta` and
-`DriverDiscovery` to the CSI framework.
+`VolumeSnapshotDeltaServiceConfiguration` to the CSI framework.
 
 The `VolumeSnapshotDelta` resource abstracts away the details around interacting
 with the storage providers' CBT endpoints. Essentially, this new API allows a
@@ -266,13 +266,14 @@ implementations that inspired this aggregated extension design, recognizing that
 the CBT payloads are no worse (in size and bandwidth) than the metrics or [pod
 logs][13] served by these two API servers.
 
-The `DriverDiscovery` resource is implemented as a [Custom Resource Definition
-(CRD)][2], owned and handled by a new custom resource controller. The aggregated
-API server uses this resource to discover CSI drivers that support CBT
-functionalities. This new resource is introduced and preferred over the existing
-`CSIDriver` resource because the latter is used mainly for volume properties
-needed by the Kubelet, at the node level. Also, since CBT is an out-of-tree
-feature,  it makes sense to not coupled it to the in-tree `CSIDriver` resource.
+The `VolumeSnapshotDeltaServiceConfiguration` resource is implemented as a
+[Custom Resource Definition (CRD)][2], owned and handled by a new custom
+resource controller. The aggregated API server uses this resource to discover
+CSI drivers that support CBT functionalities. This new resource is introduced
+and preferred over the existing `CSIDriver` resource because the latter is used
+mainly for volume properties needed by the Kubelet, at the node level. Also,
+since CBT is an out-of-tree feature, it makes sense to not coupled it to the
+in-tree `CSIDriver` resource.
 
 ### Risks and Mitigations
 
@@ -347,24 +348,25 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 The proposed design involves extending CSI with the `VolumeSnapshotDelta` and
-`DriverDiscovery` custom resources. Storage providers can opt in to support this
-feature by implementing the `LIST_BLOCK_SNAPSHOT_DELTAS` capability in their
-CSI drivers.
+`VolumeSnapshotDeltaServiceConfiguration` custom resources. Storage providers
+can opt in to support this feature by implementing the
+`LIST_BLOCK_SNAPSHOT_DELTAS` capability in their CSI drivers.
 
 The `VolumeSnapshotDelta` resource is a namespace-scoped resource. It must be
 created in the same namespace as the base and target CSI `VolumeSnapshot`s. On
-the other hand, the `DriverDiscovery` resource will be implemented as a
-cluster-scoped resource.
+the other hand, the `VolumeSnapshotDeltaServiceConfiguration` resource will be
+implemented as a cluster-scoped resource.
 
-### CBT Datapath Worklow
+### CBT Request/Response Flow
 
 The CSI CBT is made up of three components:
 
 * An aggregated API server to serve CBT requests, initiated by the creation of
 `VolumeSnapshotDelta` resources
-* A CRD controller that watches and reconciles `DriverDiscovery` resources
-* A [CSI CBT sidecar][9] that makes a CSI driver discoverable by the aggregated
-API server
+* A CRD controller that watches and reconciles
+`VolumeSnapshotDeltaServiceConfiguration` resources
+* A [CSI CBT sidecar][9] that accepts and converts CBT requests from the CBT
+aggregated API server into CSI RPC calls
 
 ![CBT Step 1](./img/cbt-step-01.png)
 
@@ -373,21 +375,22 @@ API server registers itself with the `kube-aggregator` to claim the URL path
 of the `v1alpha1.cbt.storage.k8s.io` group version, as defined in the
 `APIService` resource.
 
-The `driver-discovery` CRD controller starts a reconciler to watch and
-reconcile `DriverDiscovery` resources.
+The `svc-cfg` CRD controller starts a reconciler to watch and reconcile
+`VolumeSnapshotDeltaServiceConfiguration` resources. When installing CSI CBT,
+the installation artifacts (Helm charts, Kustomize manifests etc.) will include
+the YAML manifests of the `VolumeSnaphotDeltaServiceConfiguration` as well as
+the `Service` resource that it references.
 
-A storage provider that supports CBT functionalities needs to embeds the
-`cbt-http` sidecar in its CSI driver. As the CSI driver initializes, the
-`cbt-http` sidecar publishes itself by creating a `DriverDiscovery` resource
-with information on where the CSI driver's `cbt-http` endpoint is.
+A CBT-enabled CSI driver needs to embed the `cbt-svc` sidecar in its pod to be
+able to accept and convert CBT requests from `cbt-aggapi` to CSI RPC calls.
 
-With CSI CBT in-place, a user can initiate the datapath workflow by creating a
+With CSI CBT in-place, a user can initiate the CBT workflow by creating a
 new `VolumeSnapshotDelta` resource:
 
 ![CBT Step 2](./img/cbt-step-02.png)
 
 Following the [storage implementation pattern][3] of the `authorization.k8s.io`
-group, the `VolumeSnapshotDelta` is treated as "virtual resource" (like
+group, a `VolumeSnapshotDelta` resource is treated as a "virtual resource" (like
 `SubjectAccessReview`), where it is created without being persisted in the
 Kubernetes etcd.
 
@@ -403,8 +406,8 @@ To fulfill the CBT request associated to this new `VolumeSnapshotDelta` resource
 * The bounded `VolumeSnapshotContent` resources referenced by the
 `status.BoundVolumeSnapshotContentName` properties of the `VolumeSnapshot`
 resources,
-* The `DriverDiscovery` resource corresponds to the `spec.driverName` of the
-`VolumeSnapshot` resources
+* The `VolumeSnapshotDeltaServiceConfiguration` resource defined by the
+`spec.driverName` of the `VolumeSnapshot` resources
 
 ![CBT Step 3](./img/cbt-step-03.png)
 
@@ -413,16 +416,16 @@ fails the request.
 
 The snapshot handles (i.e. snapshot IDs) from the `VolumeSnapshotContent`
 resources along with the pagination parameters found in the
-`VolumeSnapshotDelta` resources are sent to the `cbt-http` sidecar in the CSI
+`VolumeSnapshotDelta` resources are sent to the `cbt-svc` sidecar in the CSI
 driver as JSON payload over HTTP:
 
 ![CBT Step 4](./img/cbt-step-04.png)
 
-The `DriverDiscovery` resource has the endpoint information of the `Service`
-resource that fronts the `cbt-http` sidecar in its `spec.clientConfig`
-property.
+The `VolumeSnapshotDeltaServiceConfiguration` resource has the endpoint
+information of the `Service` resource that fronts the `cbt-svc` sidecar in its
+`clientConfig` property.
 
-The `cbt-http` sidecar then issues a GRPC call to the storage provider's
+The `cbt-svc` sidecar then issues a GRPC call to the storage provider's
 `csi-plugin` container, over the host's local Unix socket.
 
 The `csi-plugin` is responsible for invoking the storage provider's
@@ -431,7 +434,7 @@ authentication with the storage provider's backend, freeing CSI CBT from this
 concern.
 
 The CBT entries are then returned to the user, as JSON payload, through the
-`cbt-http` sidecar and then the `cbt-aggapi` aggregated API server, without
+`cbt-svc` sidecar and then the `cbt-aggapi` aggregated API server, without
 persisting any of them in the Kubernetes etcd.
 
 The CBT entries are appended to the `status` of the original
@@ -450,16 +453,15 @@ The CBT entries are appended to the `status` of the original
     "fromVolumeSnapshotName": "vol-snap-base",
     "toVolumeSnapshotName": "vol-snap-target",
     "limit": 256,
-    "mode": "block",
-    "offset_bytes": 0
+    "offsetBytes": 0
   },
   "status": {
     "limit": 256,
-    "offset_bytes": 0,
+    "offsetBytes": 0,
     "continue": 3,
     "changedBlockDeltas": [
       {
-        "offset_bytes": 0,
+        "offsetBytes": 0,
         "blockSizeBytes": 524288,
         "dataToken": {
           "token": "ieEEQ9Bj7E6XR",
@@ -468,7 +470,7 @@ The CBT entries are appended to the `status` of the original
         }
       },
       {
-        "offset_bytes": 524288,
+        "offsetBytes": 524288,
         "blockSizeBytes": 524288,
         "dataToken": {
           "token": "widvSdPYZCyLB",
@@ -477,7 +479,7 @@ The CBT entries are appended to the `status` of the original
         }
       },
       {
-        "offset_bytes": 1048576,
+        "offsetBytes": 1048576,
         "blockSizeBytes": 524288,
         "dataToken": {
           "token": "VtSebH83xYzvB",
@@ -502,7 +504,7 @@ the `cbt-aggapi` aggregated API server.
 
 In setup where there may be multiple replicas of the CSI driver, an active/
 passive leader election process will be used to elect a single leader instance
-of the `cbt-http` sidecar, while idling other non-leader instances. Non-leader
+of the `cbt-svc` sidecar, while idling other non-leader instances. Non-leader
 instances will voluntarily fail their readiness probe to remove themselves from
 the `Service`'s request path.
 
@@ -534,7 +536,8 @@ type VolumeSnapshotDelta struct {
 // VolumeSnapshotDeltaSpec is the spec of a VolumeSnapshotDelta resource.
 type VolumeSnapshotDeltaSpec struct {
   // The name of the base CSI volume snapshot to use for comparison.
-  // If not specified, return all changed blocks.
+  // If not specified, return the delta between the first snapshot
+  // since volume creation and the target snapshot.
   // +optional
   FromVolumeSnapshotName string `json:"fromVolumeSnapshotName,omitempty"`
 
@@ -604,7 +607,7 @@ const (
 
   // Something went wrong while retrieving the CBT entries.
   // `status.error` should have the error message.
-  Failed VolumeSnapshotDeltaState = iota
+  Failed
 )
 
 // VolumeSnapshotDeltaList is a list of VolumeSnapshotDelta resources
@@ -724,13 +727,15 @@ message BlockSnapshotChangedBlockToken {
 }
 ```
 
-#### DriverDiscovery Resource
+#### VolumeSnapshotDeltaServiceConfiguration Resource
 
-The section describes the specification of `DriverDiscovery` resource:
+The section describes the specification of
+`VolumeSnapshotDeltaServiceConfiguration` resource:
 
 ```go
-// DriverDiscovery represents a DriverDiscovery resource.
-type DriverDiscovery struct {
+// VolumeSnapshotDeltaServiceConfiguration represents the CBT service
+// configuration resource.
+type VolumeSnapshotDeltaServiceConfiguration struct {
   metav1.TypeMeta `json:",inline"`
 
   // Standard object's metadata.
@@ -738,17 +743,6 @@ type DriverDiscovery struct {
   // +optional
   metav1.ObjectMeta `json:"metadata,omitempty"`
 
-  // spec defines the desired characteristics of the driver discovery resource.
-  // Required.
-  Spec DriverDiscoverySpec `json:"spec"`
-
-  // status represents the current information of a snapshot delta.
-  // +optional
-  Status DriverDiscoveryStatus `json:"status,omitempty"`
-}
-
-// DriverDiscoverySpec is the spec of a DriverDiscovery resource.
-type DriverDiscoverySpec struct {
   // Name of the CSI driver.
   DriverName string `json: "driverName"`
 
@@ -786,7 +780,6 @@ type ClientConfig struct {
   // +optional
   CABundle []byte `json:"caBundle"`
 }
-
 
 // ServiceReference holds a reference to the Service resource that fronts the
 // CSI driver.
@@ -871,14 +864,15 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 The integration tests will cover the lifecycle of the `VolumeSnapshotDelta` and
-`DriverDiscovery` resources. Test cases will be included to ensure that the
-`VolumeSnapshotDelta` resource works only with the `CREATE` operation. The
-typical CRUD operations of a CRD will work with the `DriverDiscovery` resource.
+`VolumeSnapshotDeltaServiceConfiguration` resources. Test cases will be included
+to ensure that the `VolumeSnapshotDelta` resource works only with the `CREATE`
+operation. The typical CRUD operations of a CRD will work with the
+`VolumeSnapshotDeltaServiceConfiguration` resource.
 
 The validation logic of the `VolumeSnapshotDelta` resource will also be covered,
 to ensure the aggregated API server serves the CBT request only if the required
-`VolumeSnapshot` and `DriverDiscovery` resources exist. If they don't, the
-request will fail.
+`VolumeSnapshot` and `VolumeSnapshotDeltaServiceConfiguration` resources exist.
+If they don't, the request will fail.
 
 The integration tests setup will require the following fixtures:
 
@@ -905,10 +899,10 @@ documentation][15].
 
 A sample client will be used to create a `VolumeSnapshotDelta` resource to
 initiate the CBT request to the aggregated API server. The aggregated API server
-discovers the mock CSI driver using its `DriverDiscovery` resource. The CBT
-request is then forwarded to the mock CSI driver where the CSI GRPC invocation
-happens. The mock response payload is then returned to the sample client for
-verification.
+discovers the mock CSI driver using its `VolumeSnapshotDeltaServiceConfiguration`
+resource. The CBT request is then forwarded to the mock CSI driver where the CSI
+GRPC invocation happens. The mock response payload is then returned to the
+sample client for verification.
 
 The e2e tests setup will require the following fixtures:
 
@@ -983,11 +977,13 @@ in back-to-back releases.
 
 #### Alpha
 
-- Approved specification of the `VolumeSnapshotDelta` and `DriverDiscovery`
+- Approved specification of the `VolumeSnapshotDelta` and
+`VolumeSnapshotDeltaServiceConfiguration`
 custom resources
 - Approved specification of the CSI CBT GRPC services and messages
 - Can create `VolumeSnapshotDelta` resource and return CBT payload to user
-- Can discover opt-in CSI drivers using the `DriverDiscovery` resources
+- Can discover opt-in CSI drivers using the
+`VolumeSnapshotDeltaServiceConfiguration` resources
 - Initial e2e tests completed and enabled
 
 Since this is an out-of-tree CSI component, no feature flag is required.
@@ -1296,7 +1292,7 @@ with these GVRs:
   resources: ["volumesnapshotdeltas"]
   verbs: ["create"]
 - apiGroups: ["cbt.storage.k8s.io"]
-  resources: ["driverdiscovery"]
+  resources: ["volumesnapshotdeltaserviceconfiguration"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["snapshot.storage.k8s.io"]
   resources: ["volumesnapshotcontents", "volumesnapshots", "volumesnapshotclasses"]
@@ -1312,8 +1308,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-The `VolumeSnapshotDelta` and `DriverDiscovery` custom resources will be added
-to the CSI `cbt.storage.k8s.io` group.
+The `VolumeSnapshotDelta` and `VolumeSnapshotDeltaServiceConfiguration` custom
+resources will be added to the CSI `cbt.storage.k8s.io` group.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
