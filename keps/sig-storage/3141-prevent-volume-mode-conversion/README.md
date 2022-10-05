@@ -597,7 +597,11 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-N/A.
+We will add new labels to the existing persistentvolumeclaim_provision_failed_total metric 
+for the volume data source and status code.
+The per-day percentage of calls with error status code <= 1. 
+However the failover will always happen as long as the feature is correctly enabled and the
+annotations are not applied correctly to VolumeSnapshotContent objects. 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -605,7 +609,10 @@ N/A.
 Pick one more of these and delete the rest.
 -->
 
-N/A.
+- [x] Metrics
+    - Metric name: persistentvolumeclaim_provision_failed_total
+    - [Optional] Aggregation method:
+    - Components exposing the metric: external-provisioner
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
