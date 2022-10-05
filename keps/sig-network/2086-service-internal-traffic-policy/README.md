@@ -245,7 +245,7 @@ Rollout should have minimal impact because the default value of `internalTraffic
 
 * **What specific metrics should inform a rollback?**
 
-Metrics representing Services being black-holed will be added. This metric can inform rollback.
+The `sync_proxy_rules_no_local_endpoints_total` metric will inform users whether a Service is dropping local traffic.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
@@ -557,12 +557,12 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can an operator determine if the feature is in use by workloads?**
 
 * Check Service to see if `internalTrafficPolicy` is set to `Local`.
-* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules_no_endpoints_total` (subject to rename).
+* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules_no_local_endpoints_total` (subject to rename).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
-They can check the `kubeproxy/sync_proxy_rules_no_endpoints_total` metric when internalTrafficPolicy=Local and there are no endpoints.
+They can check the `kubeproxy/sync_proxy_rules_no_local_endpoints_total` metric when internalTrafficPolicy=Local and there are no endpoints.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
@@ -571,7 +571,7 @@ This will depend on Service topology and whether `internalTrafficPolicy=Local` i
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-A new metric will be added to represent Services that are being "blackholed" (internalTrafficPolicy=Local and no endpoints).
+The `sync_proxy_rules_no_local_endpoints_total` metric was added to inform users on whether a Service is dropping local traffic.
 
 ### Dependencies
 
