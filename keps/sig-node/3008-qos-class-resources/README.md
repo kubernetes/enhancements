@@ -237,7 +237,7 @@ applications in Kubernetes by introducing a new type of resource control
 mechanism. Certain types of resources are inherently shared by application (e.g.
 cache, memory bandwidth and disk I/O) and while there are technologies for
 controlling these, there is currently no meaningful way in Kubernetes to
-support those tehcnologies. This proposal suggests to address the issue above
+support those technologies. This proposal suggests to address the issue above
 in a generalized way by extending the Kubernetes resource model with a new type
 of resources, i.e. QoS-class resources.
 
@@ -320,7 +320,7 @@ and make progress.
 This proposal splits the full implementation of QoS-class resources into
 multiple phases, building functionality gradually, step-by-step. The goal is to
 make the discussions more focused and easier. We may also learn on the way,
-insights from earlier phases affecting design choises made in the later phases,
+insights from earlier phases affecting design choices made in the later phases,
 hopefully resulting in a better overall end result. However, we also outline
 all the future steps to not lose the overall big picture.
 
@@ -423,7 +423,7 @@ in the key is allowed, similar to labels, e.g. `vendor/resource`.
 
 #### Update sandbox-level QoS-class resources
 
-This future step would be a second extesion to the CRI API.
+This future step would be a second extension to the CRI API.
 
 Currently there is no endpoint in the CRI API to update the configuration of
 pod sandboxes. In contrast, container-level resources can be updated with the
@@ -1134,6 +1134,7 @@ well as the [existing list] of feature gates.
   - Components depending on the feature gate:
     - Implementation Phase 1:
         - kubelet
+        - kube-apiserver (validation of annotations)
     - Future phases (with updated pod spec and scheduler and quota support):
         - kubelet
         - kube-apiserver
