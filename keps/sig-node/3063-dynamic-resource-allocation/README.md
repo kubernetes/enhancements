@@ -1038,7 +1038,8 @@ else changes in the system, like for example deleting objects.
   * **resource driver** adds finalizer to claim to prevent deletion -> allocation in progress
   * **resource driver** finishes allocation, sets `claim.status.allocation` -> claim ready for use by any pod
 * if *pod is pending*:
-  * **scheduler** filters nodes
+  * **scheduler** filters nodes based on built-in resources and the filter callback of plugins,
+    which includes constraints imposed by already allocated resources
   * if *delayed allocation and resource not allocated yet*:
     * if *at least one node fits pod*:
       * **scheduler** creates or updates a `PodScheduling` object with `podScheduling.spec.potentialNodes=<nodes that fit the pod>`
