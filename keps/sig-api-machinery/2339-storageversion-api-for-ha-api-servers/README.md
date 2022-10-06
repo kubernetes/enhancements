@@ -3,8 +3,14 @@
 ## Table of Contents
 
 <!-- toc -->
-- [Overview](#overview)
-- [API changes](#api-changes)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
   - [Resource Version API](#resource-version-api)
 - [Changes to API servers](#changes-to-api-servers)
   - [Curating a list of participating API servers in HA master](#curating-a-list-of-participating-api-servers-in-ha-master)
@@ -15,8 +21,27 @@
 - [Consuming the StorageVersion API](#consuming-the-storageversion-api)
 - [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
 - [Backwards Compatibility](#backwards-compatibility)
-- [Graduation Plan](#graduation-plan)
-- [FAQ](#faq)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshootin](#troubleshootin)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Letting API servers vote on the storage version](#letting-api-servers-vote-on-the-storage-version)
   - [Letting the storage migrator detect if API server instances are in agreement](#letting-the-storage-migrator-detect-if-api-server-instances-are-in-agreement)
@@ -34,10 +59,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -465,335 +490,175 @@ enhancement:
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: StorageVersionAPI
+  - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+Enabling the feature will enable a new API in the apiserver, but this should not change
+any behaviors for existing workloads in the cluster.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes, like any other alpha API, it can be disabled with runtime config.
+Cluster admins should be mindful of any existing consumers of this API before rolling back.
+Given this is an internal API, we don't anticipate many external consumers though.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+Such like any alpha API, disabling the feature will prevent kube-apiserver from serving the API,
+but will not remove objects from etcd. Re-enabling the feature will allow apiserver to serve the
+API again. If the feature is re-enabled against a newer API version, it should be converted after a roundtrip.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
+There are several tests that require the feature gate to be enabled [test/integration/storageversion/storage_version_filter_test.go](https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/test/integration/storageversion/storage_version_filter_test.go)
+and [test/integration/storageversion/gc_test.go](https://github.com/kubernetes/kubernetes/blob/0a7f45d5baa88dbe4d71102abe3a751a829d87a2/test/integration/storageversion/gc_test.go).
 
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+However, there are no tests that test feature enablement/disablement based on the gate, these should be added prior to Beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+Some potential rollout/rollback failures:
+* bugs in conversion code could make re-enabling the API on newer versions unsafe
+* bugs in the API / controllers could falsely report the desired storage version of an API, causing undesired storage migration from external consumers (e.g. kube-storage-version-migrator).
+* a paused/stuck upgrade could block writes to resources where the agreed encoding version has not reached consensus.
+* rolling back the feature and disabling the API could break clients of a cluster that depended on the API
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Recently added [apiserver health check metrics](https://github.com/kubernetes/kubernetes/pull/112741) would be useful here:
+  - kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater",type="healthz"}
+  - kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater",type="readyz"}
+  - kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater",type="livez"}
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Not yet, but manual validation should be complete prior to Beta. Steps for manual validation should be reported in this section of the KEP before Beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Operators can check the existence of the StorageVersion API, as well as apiserver
+health check metrics to check that the feature is working as expected.
+Operations against the StorageVersion API can be checked to see if the API is in use by any controllers in the cluster.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
 - [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+  - Event Reason:
+- [X] API .status
+  - Condition name:
+  - Other field: `.status.storageVersions`, `.status.commonEncodingVersion`
+- [X] Other (treat as last resort)
+  - Details: audit logs showing operations against StorageVersion API
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+Regarding availablility/latency of serving the new API, this should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos)
+for serving mutating or read-only API calls.
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+Reasonable SLOs specific to the StorageVersion API could be:
+- storageVersion.status.serverStorageVersions is accurately updated for an apiserver within 1 minute of start-up.
+- storageVersion.status.agreedEncodingVersion is accurately updated for the cluster within 1 minute of completing an upgrade.
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+1 minute seems reasonable since this feature depends on the `APIServerIdentity` feature, that relies on a heart beat from each apiserver
+to create a new Lease object obtaining an ID that will be used in the `storageVersion.status.serverStorageVersions[*].apiServerID` field.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: `kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater"}`
+  - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+The following metrics could be useful, but are likely not practical due to cardinality issues or complexity of the implementation:
+- The latency for a single apiserver to update it's encoding version after start-up
+- The latency for all apiservers to reach a consensus on the agreed encoding version for a storage version
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No, but it does depend on the `APIServerIdentity` feature in kube-apiserver.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Yes, there would be new API calls for the StorageVersion API. We don't anticipate
+a lot of traffic for this API since the only anticipated consumer would be controllers
+such as [kube-storage-version-migrator](https://github.com/kubernetes-sigs/kube-storage-version-migrator).
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+Yes, the StorageVersion API. There will be 1 object per API group.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+SLIs/SLOs for API calls could be impacted in cases where kube-apiservers have not reached consensus on the encoding version for a resource
+for a long duration of time. This could be possible during version skew of kube-apiservers or other reasons that pause an upgrade.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+The API will not be served if kube-apiserver or etcd is unavailable.
+Since this feature is tightly coupled to kube-apiserver and etcd already,
+unavailability of either component would make the feature inaccessible.
+
+In some cases where only etcd is unavailable, the desired storage version reported
+by apiserver could be stale. However this should not be a big concern since
+objects during this time would not be receiving writes anyways and the storage version would
+be updated eventually when etcd is available again. In no situation can the agreed
+encoding version flip back to an old version when etcd is unavailable, since this
+would only happen once all kube-apiserver's have succesfully reported the new version.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- [StorageVersion API is not being updated]
+  - Detection: `kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater",type="healthz"}`
+      indicates that the storage version updater is not running.
+  - Mitigations: Check kube-apiserver logs for specific errors. Restarting may be helpful.
+  - Diagnostics: Errors from the [storage version hanndler chain](https://github.com/kubernetes/kubernetes/blob/e11f23eb9712c9b4bebf8dd85dcb04441b4fb705/staging/src/k8s.io/apiserver/pkg/endpoints/filters/storageversion.go#L110)
+  - Testing: There can be many reasons for why kube-apiserver can't update an API that are hard to reproduce in a test.
+
+- [Pending storage migrations can block writes to resources]
+  - Detection: kube-apiserver returns 503 on writes with error `wait for storage version registration to complete for resource: <resource>`
+  - Mitigations: Check kube-apiserver logs for specific errors and check etcd health
+  - Diagnostics: Errors from the [storage version hanndler chain](https://github.com/kubernetes/kubernetes/blob/e11f23eb9712c9b4bebf8dd85dcb04441b4fb705/staging/src/k8s.io/apiserver/pkg/endpoints/filters/storageversion.go#L110)
+  - Testing: Updates to storage version can fail for many reasons (e.g. connectivity to etcd) that are hard to reproduce in a test.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+As a last resort, cluster admins can check kube-apiserver logs for errors that may indicate
+why the StorageVersion is not being updated. In many cases when there are issues with StorageVersion,
+operators should check the health of etcd in their clusters.
 
 ## Implementation History
 
