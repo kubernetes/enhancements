@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-auth
 participating-sigs:
   - sig-auth
-status: provisional
+status: implementable
 creation-date: 2022-02-16
 reviewers:
   - TBD

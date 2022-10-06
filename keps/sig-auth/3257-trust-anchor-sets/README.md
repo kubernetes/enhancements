@@ -79,16 +79,13 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Trust Anchor Distribution for Private CAs](#trust-anchor-distribution-for-private-cas)
-    - [Trust Anchor Configuration for Webhook Backends](#trust-anchor-configuration-for-webhook-backends)
-    - [Trust Anchor Configuration for Aggregated API Server Backends](#trust-anchor-configuration-for-aggregated-api-server-backends)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [ClusterTrustBundle Object](#clustertrustbundle-object)
     - [API Object Definition](#api-object-definition)
     - [Access Control](#access-control)
-    - [Admission Webhook Integration](#admission-webhook-integration)
-    - [Aggregated API Server Integration](#aggregated-api-server-integration)
-  - [trustAnchors Projected Volume Source](#trustanchors-projected-volume-source)
+    - [Well-known ClusterTrustBundles](#well-known-clustertrustbundles)
+  - [pemTrustAnchors Projected Volume Source](#pemtrustanchors-projected-volume-source)
     - [Configuration Object Definition](#configuration-object-definition)
     - [Volume Content Generation and Refresh](#volume-content-generation-and-refresh)
   - [Canarying Changes to a ClusterTrustBundle](#canarying-changes-to-a-clustertrustbundle)
@@ -98,6 +95,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -110,6 +108,9 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Do nothing in-tree; solve trust distribution with CRD/CSI driver](#do-nothing-in-tree-solve-trust-distribution-with-crdcsi-driver)
+  - [Use a ConfigMap rather than defining a new type](#use-a-configmap-rather-than-defining-a-new-type)
+  - [Support for other certificate formats beyond PEM-wrapped DER-formatted X.509](#support-for-other-certificate-formats-beyond-pem-wrapped-der-formatted-x509)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -188,7 +189,7 @@ approaches have emerged:
 * Kubernetes webhooks and aggregated API servers are configured with a static
   trust anchor set embedded in their config (which complicates rotation).
 
-* * At least one signer implementation uses a [cluster-scoped
+* At least one signer implementation uses a [cluster-scoped
   CRD](https://cloud.google.com/traffic-director/docs/security-proxyless-setup#:~:text=Save%20the%20following%20TrustConfig%20YAML%20configuration%20to%20tell%20your%20cluster%20how%20to%20trust%20the%20issued%20certificates%3A)
   to distribute trust anchors to workloads.
 
@@ -217,9 +218,6 @@ distributing trust anchor sets.
 * Make it easy for workloads that need access to the trust anchors that back a
   particular certificates/v1 signer to access them within the container
   filesystem.
-
-* Allow cluster operators to configure webhook and aggregated API server
-  backends that use trust anchor objects instead of inline PEM data.
 
 ### Non-Goals
 
@@ -253,10 +251,6 @@ To enable consumption by workloads, the new `pemTrustAnchors` Kubelet projected
 volume source writes the certificates from a ClusterTrustBundle into the
 container filesystem, with the contents of the projected files updating as the
 corresponding trust anchor sets are updated.
-
-In general, ClusterTrustBundle objects are considered publicly-readable within
-the cluster.  Read permissions will be granted cluster-wide to the
-`system:authenticated` group.
 
 ### User Stories
 
@@ -323,66 +317,6 @@ I ensure that my client application notices changes to `ca_certificates.pem`
 (using inotify or periodic polling), and properly updates its TLS stack when
 that happens.
 
-#### Trust Anchor Configuration for Webhook Backends
-
-In my cluster, I operate a collection of validating and mutating admission
-webhooks that use a server TLS certificate issued from my company's private CA.
-Today, when my private CA introduces a new root as part of a scheduled rotation
-(or incident response), I need to track down and adjust all
-ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects in my
-cluster that refer to my private CA, and update their
-`.webhooks[].clientConfig.caBundle` fields.
-
-ClusterTrustBundle objects let me centralize the management of my private CA's
-roots within my cluster.
-
-To use it, I create a new ClusterTrustBundle containing the current roots of my
-private CA.
-
-```yaml
-apiVersion: v1alpha
-kind: ClusterTrustBunddle
-metadata:
-  name: example-com-private-ca
-spec:
-  signerName: "" # This ClusterTrustBundle isn't associated with a signer, so I
-                 # leave this empty.
-  pemTrustAnchors: "<... PEM DATA ...>"
-```
-
-Then, I update each ValidatingWebhookConfiguration and
-MutatingWebhookConfiguration object that currently refer to my private CA,
-removing the CABundle field and adding a reference to the ClusterTrustBundle
-object I created.
-
-```diff
-apiVersion: admissionregistration/v1
-kind: ValidatingWebhookConfiguration
-metadata:
-  name: my-validating-webhook
-webhooks:
-  name: frobnicator.example.com
-  clientConfig:
-    url: https://webhooks.example.com/frobnicator
--    caBundle: "< long base64 data>"
-+    trustAnchors:
-+      clusterTrustBundleName: example-com-private-ca
-
-```
-
-Once I do so, kube-apiserver will use the root certificates it loads from the
-designated trust anchor set in order to validate the certificate presented by
-the webhook backend.
-
-When I need to perform a root rotation, I only need to modify my single
-`example-com-private-ca` ClusterTrustBundle to introduce the new root and retire
-the old root.
-
-#### Trust Anchor Configuration for Aggregated API Server Backends
-
-This is the same as for webhook backends, but I use the new alpha `trustAnchors`
-field in the APIServiceSpec object.
-
 ### Risks and Mitigations
 
 Scalability: In the limit, ClusterTrustBundle objects will be used by
@@ -393,7 +327,8 @@ of trust anchors for a private CA.
 
 Security: Should individual trust anchor set entries designate an OSCP endpoint
 to check for certificate revociation?  Or should we require the URL to be
-embedded in the issued certificates?
+embedded in the issued certificates?  Note: This question has been deferred from
+the 1.26 alpha scope.
 
 ## Design Details
 
@@ -461,14 +396,12 @@ All ClusterTrustBundle objects are assumed to be publicly-readable within the
 cluster, due to the fact that the kubelet trustAnchors volume type will allow
 any pod to mount any ClusterTrustBundle.  This will be backed up by a built-in
 grant of get, list, and watch for ClusterTrustBundle objects to
-`system:authenticated`.
+`system:serviceaccounts` and `system:nodes`.
 
 For ClusterTrustBundle objects without `.spec.signerName` specified, no
-nonstandard access control is applied.  Typically, a controller (or human
-operator) who creates such a bundle will grant read access to the
-ClusterTrustBundle to the `system:authenticated` group (tighter grants are
-possible, but are defeated by `pemTrustAnchors` Kubelet volume type, which
-allows any pod in the cluster to read any ClusterTrustBundle).
+nonstandard access control is applied.  Due to the `pemTrustAnchors` projected
+volume, any workload in the cluster will be able to load the contents of any
+ClusterTrustBundle.
 
 For ClusterTrustBundle objects with `.spec.signerName` specified, some
 additional admission checks (similar to those on CertificateSigningRequest
@@ -510,84 +443,6 @@ future use by the Kubernetes project.
 When moving the ClusterTrustBundles feature to beta, we will figure out the
 semantics for exporting the trust anchors used by the built-in signers under
 this prefix.
-
-#### Trust Anchor Configuration for Admission and Conversion Webhook Backends
-
-The `admissionregistration.k8s.io/v1` and `apiextensions.k8s.io/v1`
-WebhookClientConfig objects will be extended with an optional reference to a
-single trust anchor set within a single ClusterTrustBundle object.  If
-ClusterTrustBundleName is non-empty and the ClusterTrustBundle feature gate is
-set, ClusterTrustBundleName takes precedence over CABundle.
-
-When TrustAnchors is specified, kube-apiserver will load the certificates from
-the named trust anchor set of the named ClusterTrustBundle object, and use those
-for validating the certificate presented by the webhook backend.  kube-apiserver
-will follow updates to the ClusterTrustBundle object, and use the updated
-certificates within a few seconds.
-
-```diff
-type WebhookClientConfig struct {
-    // ...
-
-    // `caBundle` is a PEM encoded CA bundle which will be used to validate the webhook's server certificate.
-    // If unspecified, system trust roots on the apiserver are used.
-    // +optional
-    CABundle []byte `json:"caBundle,omitempty" protobuf:"bytes,2,opt,name=caBundle"`
-
-+	// A reference to a ClusterTrustBundle that will be used to validate
-+	// the webhook's server certificate.
-+	//
-+	// If set (and the ClusterTrustBundle feature gate is enabled.), takes precedence
-+ // over CABundle.
-+	//
-+	// This field is alpha.  Using it requires setting the ClusterTrustBundle
-+	// feature gate.
-+	//
-+	// +optional
-+	ClusterTrustBundleName string `json:"clusterTrustBundleName,omitempty"`
-}
-```
-
-#### Trust Anchor Configuration for Aggregated API Server Backends
-
-The `apiregistration.k8s.io` v1 APIServiceSpec object will be extended with a
-new optional field ClusterTrustBundleName that references a single trust anchor
-set within a single ClusterTrustBundle object.  If ClusterTrustBundleName is
-non-empty and the ClusterTrustBundle feature gate is set, ClusterTrustBundleName
-takes precendence over the CABundle and InsecureSkipTLSVerify fields.
-
-When `TrustAnchors` is specified, kube-apiserver will load the certificates from
-the named trust anchor set of the named ClusterTrustBundle object, an use those
-for validating the certificate presented by the aggregated API server.
-kube-apiserver will follow updates to the ClusterTrustBundle object, and use the
-updated certificates within a few seconds.
-
-```diff
-type APIServiceSpec struct {
-    // ...
-
-    // InsecureSkipTLSVerify disables TLS certificate verification when communicating with this server.
-    // This is strongly discouraged.  You should use the CABundle instead.
-    InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty" protobuf:"varint,4,opt,name=insecureSkipTLSVerify"`
-    // CABundle is a PEM encoded CA bundle which will be used to validate an API server's serving certificate.
-    // If unspecified, system trust roots on the apiserver are used.
-    // +listType=atomic
-    // +optional
-    CABundle []byte `json:"caBundle,omitempty" protobuf:"bytes,5,opt,name=caBundle"`
-+	// A reference to a ClusterTrustBundle that will be used to validate
-+	// the webhook's server certificate.
-+	//
-+	// Takes precendence over the InsecureSkipTLSVerify and CABundle fields.
-+	//
-+	// This field is alpha.  Using it requires setting the ClusterTrustBundle
-+	// feature gate.
-+	//
-+	// +optional
-+	ClusterTrustBundleName string `json:"clusterTrustBundleName,omitempty"`
-
-    // ...
-}
-```
 
 ### pemTrustAnchors Projected Volume Source
 
@@ -695,14 +550,8 @@ The following scenarios will need to be tested using integration tests:
 * kube-apiserver forbids creation and update of a ClusterTrustBundle targeted if
   the requester doesn't have the `entrust` verb on the corresponding signer.
 
-* kube-apiserver correctly connects to validating, mutating, and conversion
-  webhook backends that use a ClusterTrustBundle for managing their trust
-  anchors, and can follow a CA rotation in the corresponding ClusterTrustBundle.
-
-* kube-apiserver correctl connects to aggregated API server backends that use a
-  ClusterTrustBundle for managing their trust anchors.
-
-Additionally, it would be nice to test the following kubelet behavior in integration tests if feasible:
+Additionally, it would be nice to test the following kubelet behavior in
+integration tests if feasible:
 
 * Kubelet correctly writes (and updates) the content of a ClusterTrustBundle
   named in the pod spec into the container fileystem.
@@ -840,13 +689,11 @@ you need any help or guidance.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-This feature is gated by the ClusterTrustBundle feature gate.  The feature gate controls:
+This feature is gated by the ClusterTrustBundle feature gate.  The feature gate
+controls:
 
 * Whether or not kube-apiserver will accept operations on ClusterTrustBundle
   objects.
-
-* Whether or not kube-apiserver will accept webhook and aggregated API server
-  backend configs that refer to ClusterTrustBundle objects.
 
 * Whether or not kubelet will accept pemTrustAnchors projected volume sources in
   pod specs.
@@ -864,13 +711,6 @@ Any pods that specify a pemTrustAnchors projected volume source will encounter
 errors as kubelet will no longer process their spec.  Existing pods will stop
 seeing updates to their PEM files, and new pods will be rejected.
 
-Any webhook or aggregated API server configuration objects that specify trust
-using a ClusterTrustBundle object will revert back to the behavior specified by
-their CABundle and InsecureTLSSkipVerify fields, since the
-ClusterTrustBundleName field is no longer set.  This is safe, because users are
-not required to change those fields when setting the ClusterTrustBundleName
-field; instead, ClusterTrustBundleName takes precedence.
-
 Any ClusterTrustBundle objects in the cluster will stop being served, but be
 retained in etcd storage.
 
@@ -880,9 +720,6 @@ Existing ClusterTrustBundle objects that are still in etcd will reappear.
 
 Any pods that use pemTrustAnchors projected volume sources will stop being
 rejected by kubelet.
-
-Any webhook or aggregated API server configs that refer to a ClusterTrustBundle
-object will start working again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -960,14 +797,17 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Operations on ClusterTrustBundle objects are covered by the existing [API call latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md).
+Operations on ClusterTrustBundle objects are covered by the existing [API call
+latency
+SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md).
 
-Usage of pemTrustAnchors projected volumes are covered by the existing [pod startup latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md).
+Usage of pemTrustAnchors projected volumes are covered by the existing [pod
+startup latency
+SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md).
 
-We may need a new SLO to govern the latency between an update to a ClusterTrustBundle's certificate set and that change being made available to pods using pemTrustAnchors volumes.
-
-We may need a new SLO to govern the latency between an update to a ClusterTrustBundle's certificate set and that change being made respected by webhook and aggregated API server connections.
-
+We may need a new SLO to govern the latency between an update to a
+ClusterTrustBundle's certificate set and that change being made available to
+pods using pemTrustAnchors volumes.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1021,11 +861,6 @@ Similar to the existing kubelet watches on secrets and configmaps, special care
 will need to be taken to ensure that kube-apiserver can efficiently choose which
 single-ClusterTrustBundle watches to update for a given etcd update.
 
-A webhook or aggregrated API server config that refers to a ClusterTrustBundle
-object will result in an additional (kube-apiserver local?) watch on the named
-ClustertrustBundle object, originating from kube-apiserver.  This watch will be
-low-throughput.
-
 ###### Will enabling / using this feature result in introducing new API types?
 
 ClusterTrustBundle (no per-cluster limit enforced)
@@ -1036,11 +871,8 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No, except for the additional pod, webhook, and aggregated API server fields
-that the user sets to make use of the feature.
-
-5 new ClusterTrustBundle objects will be automatically created, corresponding to
-the built-in Kubernetes signers.
+No, except for the additional pod fields that the user sets to make use of the
+feature.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1061,9 +893,6 @@ arbitrary startup latency for my pod and cause an SLO breach.)
 
 Use of the ClusterTrustBundle objects by themselves should have negligible
 resource impact.
-
-Use of ClusterTrustBundle objects in webhook and aggregated API server configs
-should have negligible resource impact.
 
 Use of the pemTrustAnchors projected volume type will result in an additional
 watch on kube-apiserver for each unique (Node, ClusterTrustBundle) tuple in the
@@ -1143,7 +972,9 @@ for:
 2. Making progress towards a future where pods are issued identity certificates,
    just like they are issued identity tokens today.
 
-Item 1 requires a core object to describe trust anchors.  Item 2 could be accomplished using CRDs and CSI drivers, but we eventually want these to be standardized features.
+Item 1 requires a core object to describe trust anchors.  Item 2 could be
+accomplished using CRDs and CSI drivers, but we eventually want these to be
+standardized features.
 
 ### Use a ConfigMap rather than defining a new type
 
@@ -1153,37 +984,6 @@ ConfigMaps have two problems in this application:
 * They have poor human factors.  They are not often considered to contain
   security-critical data, and so may have wide update permissions assigned to
   them.
-
-### Use a TrustAnchorSet (singular) object
-
-One possible alternative would be for the new object type to be TrustAnchorSet
-(singular), and have each signer correspond to multiple TrustAnchorSet objects
-(using a label selector).
-
-There are two problems with this approach.
-
-First: Modification of trust anchors is security-critical.  It must be possible
-to restrict a particular signer's controller using RBAC so that it only has
-permission to update the trust anchors it is responsible for.  RBAC
-ClusterRoleBindings do not have the ability to grant update to objects based on
-a label selector, only based on the object name.  This implies that it must be
-possible to name all of the TrustAnchorSet objects that correspond to the signer
-at the time you write the ClusterRoleBinding.  This removes the flexibility that
-label selectors are meant to provide.
-
-Second: When multiple mutual TLS meshes are federating, pods in mesh A
-connecting to pods in mesh B will need to be able to look up the appropriate
-roots to establish trust.  This requires an efficient mechanism for the pod to
-find the correct TrustAnchorSet (singular) object.  The only workable mechanism
-I'm aware of is to encode the signer name (to prevent collisions) and the
-context-specific trust anchor set name into the name of the TrustAnchorSet
-object.
-
-For example, assume I operate pods in a an mTLS mesh corresponding to my company
-`a.com`, using certificate issuance machinery implemented by the signer
-`example.com/my-mtls-signer`.  If I want to federate my pods with another
-company, `b.com`, my pods need to be able to quickly look up the trust anchor
-set corresponding to `example.com/my-mtls-signer` and `b.com`.
 
 ### Support for other certificate formats beyond PEM-wrapped DER-formatted X.509
 
