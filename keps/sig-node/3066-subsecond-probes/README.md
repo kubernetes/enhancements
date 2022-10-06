@@ -94,8 +94,9 @@ and is guaranteed to happen on scale-from-zero.)
 ### Goals
 
 An ability to specify probe durations that have more granularity, more specificity, than just zero,
-one, or n-seconds. Focus is on possibly faster first readiness probes, and more granular use beyond
-existing defaults, for example 1.5 second duration instead of picking between 1 or 2 second duration.
+one, or n-seconds. Focus is on possibly faster readiness probes, for example every .5 seconds until succss
+and more granular use beyond existing defaults, for example 1.5 second duration instead of picking
+between 1 or 2 second duration.
 Add additional tests cases to the timeout test cases.
 Not breaking backwards compatibility with the V1 API.
 
@@ -111,9 +112,8 @@ Converting fields from `int32` to `resource.Quantity`.
 TLDR:
 Add two new optional fields (of type `*int32`) to the Probe struct, which would be used to offset the second based time values in the Probe struct:
 
-- `PeriodMilliseconds`       // How often (in milliseconds) to offset PeriodSeconds when performing the probe.
+- `PeriodMilliseconds`       // How often (in milliseconds) to offset PeriodSeconds when performing the probe (*** to reduce un-necessary resource usage, when periodMilliseconds is used to reduce the period to less than a second the offset is only used until success is reached then no longer).
 - `InitialDelayMilliseconds` // Length of time (in milliseconds) to offset IntialDelaySeconds before health checking is activated.
-- `TimeoutMilliseconds`      // Length of time (in milliseconds) to offset TimeoutMilliseconds before health checking times out. (*** timeout not in alpha)
 
 The seconds and milliseconds fields (as related) will be summed to get the resulting time duration. For example,
 
@@ -131,7 +131,7 @@ A few additional examples:
 
 `periodSeconds: 2` and `periodMilliseconds: -500` would be 1.5s / 1500ms.
 
-`periodSeconds: 1` and `periodMilliseconds: -900` would be 0.1s / 100ms.
+`periodSeconds: 1` and `periodMilliseconds: -500` would be 0.5s / 500ms. (*** To reduce un-necessary resource usage, because periodMilliseconds is used to reduce the period to less than a second the offset is only used until success is reached then no longer becoming 1second after success.)
 
 More generally, the effective period value would be = `periodSeconds` + `periodMilliseconds`.
 
@@ -140,7 +140,7 @@ There are a few corner cases around default (effective period) values:
 `periodSeconds: 0` and `periodMilliseconds: 500` would be 10.5s / 10500ms (as 0 => 10 for `periodSeconds` via [defaults.go](https://github.com/kubernetes/kubernetes/blob/3b13e9445a3bf86c94781c898f224e6690399178/pkg/apis/core/v1/defaults.go#L213-L215))
 
 Each optional millisecond field will be restricted to [-999,999], and the effective sum will never be allowed
-to be less than 0 (if the effective sum is less than 0, it will fail at the validation stage and block delployments).
+to be less than 0 (if the effective sum is less than 0, it will fail at the validation stage and block deployments).
 
 
 ### User Stories (Optional)
@@ -320,9 +320,6 @@ type Probe struct {
 	// Length of time (in milliseconds) to offset IntialDelaySeconds before health checking is activated.
 	// +optional
 	InitialDelayMilliseconds *int32
-	// Length of time (in milliseconds) to offset TimeoutMilliseconds before health checking times out.
-	// +optional
-	TimeoutMilliseconds *int32 (*** removed from alpha)
 }
 
 ```
