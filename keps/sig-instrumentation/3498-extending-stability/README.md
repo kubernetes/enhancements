@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Extending Metrics Stability
+# KEP-3498: Extending Metrics Stability
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -242,10 +242,10 @@ The statis analysis tooling runs in a precommit pipeline and is therefore exempt
 
 - Kubernetes metrics framework will be enhanced to support additional stability classes
 - The static analysis pipeline of the metrics framework will be enhanced to understand how to parse more things (these are listed above)
-- All instances of `Alpha` metrics will be converted to `Internal`
 
 #### Beta
 
+- All instances of `Alpha` metrics will be converted to `Internal`
 - Kubernetes metrics framework will be enhanced to support marking `Alpha` and `Beta` metrics with a date. The semantics of this are yet to be determined. This date will be used to statically determine whether or not that metric should be decrepated automatically or promoted.
 - Kubernetes metrics framework will be enhanced with a script to auto-deprecate metrics which have passed their window of existence as an `Alpha` or `Beta` metric
 - We will determine the semantics for `Alpha` and `Beta` metrics
