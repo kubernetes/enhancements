@@ -12,6 +12,7 @@
   - [Non Goals](#non-goals)
 - [Proposal for VolumeGroup and VolumeGroupSnapshot](#proposal-for-volumegroup-and-volumegroupsnapshot)
   - [Create VolumeGroup](#create-volumegroup)
+  - [Delete VolumeGroup and PVC](#delete-volumegroup-and-pvc)
   - [Modify VolumeGroup](#modify-volumegroup)
   - [Create and Modify VolumeGroup](#create-and-modify-volumegroup)
     - [Create new PVC and add to the VolumeGroup](#create-new-pvc-and-add-to-the-volumegroup)
@@ -130,7 +131,7 @@ While there is already a KEP (https://github.com/kubernetes/enhancements/pull/10
 
 * For some storage systems, volumes are always managed in a group. For these storage systems, they will have to create a group for a single volume if they need to implement a create volume function in Kubernetes. Volume snapshotting, cloning, expansion, and deletion, etc. are all performed at a group level. Providing a VolumeGroup API will be very convenient for them.
 
-* Instead of taking individual snapshots one after another, VolumeGroup can be used as a source for taking a snapshot of all the volumes in the same volume group. This may be a storage level consistent group snapshot if the storage system supports it. In any case, when used together with quiesce hooks, this group snapshot can be application consistent. For this use case, we will introduce another CRD VolumeGroupSnapshot.
+* Instead of taking individual snapshots one after another, VolumeGroup can be used as a source for taking a snapshot of all the volumes in the same volume group. This may be a storage level consistent group snapshot if the storage system supports it. For this use case, we will introduce another CRD VolumeGroupSnapshot.
 
 * VolumeGroup can also be used together with application snapshot. It can be a resource managed by the ApplicationSnapshot CRD.
 
@@ -173,7 +174,14 @@ Phase 1 (Note: only Phase 1 will be covered in this KEP which is targeting Alpha
 Phase 2 (After v1.26):
 1. Create a new volume group by querying a label on existing persistent volume claims and adding them to the volume group.
 2. Create a new volume group from an existing group snapshot or another volume group in one step. Design details will be added in a future KEP.
-2. Non-goal: Create a new empty group and in the same time create new empty PVCs and add to the new group.
+
+Non-goal: Create a new empty group and in the same time create new empty PVCs and add to the new group.
+
+### Delete VolumeGroup and PVC
+
+Deleting a volume group will delete the volume group along with all the PVCs in the group.
+
+An individual PVC needs to be removed from the group first before it can be deleted. A finalizer or webhook will be added that prevents an individual PVC in a group from being deleted.
 
 ### Modify VolumeGroup
 
@@ -204,7 +212,7 @@ We can add an existing PVC to the group or remove a PVC from the group without d
 
 * Admin creates a VolumeGroupClass, with the SupportVolumeGroupSnapshot boolean flag set to true.
 * User creates a new empty VolumeGroup, specifying the above VolumeGroupClass. A new empty VolumeGroupContent will also be created and bound to the VolumeGroup.
-* Add an existing PVC to an existing VolumeGroup (VolumeGroup can be empty to start with or it can have other PVCs already) by adding VolumeGroup name as a label to the PVC.
+* Add an existing PVC to an existing VolumeGroup (VolumeGroup can be empty to start with or it can have other PVCs already) by adding a label specified by the labelSelector in the VolumeGroup to the PVC.
   * The VolumeGroup name is added by user to each PVC, not by the VolumeGroup controller. The VolumeGroup controller watches PVCs and reacts to the PVC updated with a VolumeGroup name event as described in the following step.
 * VolumeGroup is modified so the existing PVC is added to the PVCList in the Status. VolumeGroupContent is also modified so the PV is added to the PVList in the Status.
   * Note: The VolumeGroup controller will be implemented to have a desired state
@@ -439,31 +447,38 @@ Type VolumeGroupSpec struct {
         // +optional
         VolumeGroupClassName *string
 
-        // VolumeGroupContentName is the binding reference to the VolumeGroupContent
-        // backing this VolumeGroup
-        // +optional
-        VolumeGroupContentName *string
-
-        // Phase 2
-        // +optional
-        // VolumeGroupSource *VolumeGroupSource
+        // Source has the information about where the group is created from.
+        // Required.
+        Source VolumeGroupSource
 }
 
-// Phase 2: VolumeGroupSource will be in Phase 2
-// VolumeGroupSource contains 2 options. If VolumeGroupSource is not nil,
-// one of the 2 options must be defined.
+// VolumeGroupSource contains several options.
+// OneOf the options must be defined.
 Type VolumeGroupSource struct {
-        // A label query over existing persistent volume claims to be added to the volume group.
         // +optional
+        // Pre-provisioned VolumeGroup
+        VolumeGroupContentName *string
+
+        // +optional
+        // Dynamically provisioned VolumeGroup
+        // A label query over persistent volume claims to be added to the volume group.
+	// This labelSelector will be used to match the label added to a PVC.
+	// In Phase 1, when the label is added to PVC, the PVC will be added to the matching group.
+	// In Phase 2, this labelSelector will be used to find all PVCs with matching label and add them to the group when the group is being created.
         Selector *metav1.LabelSelector
 
+	// Phase 2
+        // +optional
+        // Dynamically provisioned VolumeGroup
         // This field specifies the source of a volume group. (this is for restore)
         // Supported Kind is VolumeGroupSnapshot or VolumeGroup
-        // +optional
-        GroupDataSource *TypedLocalObjectReference
+        // GroupDataSource *TypedLocalObjectReference
  }
 
 type VolumeGroupStatus struct {
+        // +optional
+        BoundVolumeGroupContentName *string
+
         // +optional
         GroupCreationTime *metav1.Time
 
@@ -761,7 +776,7 @@ Type VolumeGroupSnapshotContentStatus struct {
 
 #### PersistentVolumeClaim and PersistentVolume
 
-For PersistentVolumeClaim, the user can request it to be added to a VolumeGroup by adding a label with the VolumeGroup name, i.e., volumegroup.storage.k8s.io/volumegroup:volumeGroup1. In the initial phase, no changes will be proposed to PersistentVolumeClaim and PersistentVolume API objects. Before moving to Beta, we will re-evaluate this.
+For PersistentVolumeClaim, the user can request it to be added to a VolumeGroup by adding the same label specified by the labelSelector in the VolumeGroup. In the initial phase, no changes will be proposed to PersistentVolumeClaim and PersistentVolume API objects. Before moving to Beta, we will re-evaluate this.
 
 #### VolumeSnapshot and VolumeSnapshotContent
 
@@ -820,7 +835,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: pvc1
   labels:
-    volumegroup.storage.k8s.io/volumegroup:volumeGroup1
+    volumegroup:myApp
 spec:
   accessModes:
   - ReadWriteOnce
@@ -967,8 +982,8 @@ CSI Plugins MAY create the following types of volume groups:
 * At restore time, create a single volume from individual snapshot and then join an existing group.
  * Create an empty group.
  * Create a volume from snapshot, specifying the group name in the volume.
+* Phase 2: Create a new volume group and add a list of existing volumes to the group by querying a label on PVCs. The label is specified by the labelSelector in the volume group.
 * Phase 2: Create a new volume group from a source group snapshot or another group.
-* Phase 2: Create a new volume group and add a list of existing volumes to the group by querying a label on PVCs.
 
 The following is non-goal:
 * Non goal: Create a new group and at the same time create a list of new volumes in the group.
