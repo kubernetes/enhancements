@@ -22,7 +22,7 @@
     - [PodTemplates](#podtemplates)
     - [Runtime Profiles](#runtime-profiles)
     - [Kubelet Backwards compatibility](#kubelet-backwards-compatibility)
-    - [Upgrade / Downgrade](#upgrade--downgrade)
+    - [Upgrade / Downgrade](#upgrade-downgrade)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
