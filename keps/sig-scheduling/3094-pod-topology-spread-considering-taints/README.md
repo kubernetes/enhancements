@@ -494,7 +494,6 @@ enhancement:
   - Previously configured values will be ignored.
 
 ### Version Skew Strategy
-N/A
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -508,6 +507,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Kube-scheduler generally has the same version as api-server. So no version skew strategy.
 
 ## Production Readiness Review Questionnaire
 
@@ -555,7 +556,7 @@ Pick one of these and delete the rest.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-No.
+No, it's backwards compatible.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -565,13 +566,30 @@ feature, can it break the existing applications?).
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes.
+Yes, we can just disable the feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 The policies are respected again.
 
 ###### Are there any tests for feature enablement/disablement?
-No, appropriate unit tests will be added for Alpha.
+
+In the scheduler, this is in-memory feature, so tests checking both feature enabled or disabled were added:
+
+Unit tests:
+
+- pkg/api/pod/util_test.go#TestDropNodeInclusionPolicyFields
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPreFilterState
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestSingleConstraint
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestMultipleConstraints
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPreScoreStateEmptyNodes
+- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPodTopologySpreadScore
+
+Integration tests:
+
+- test/integration/scheduler/filters/filters_test.go#TestPodTopologySpreadFilter
+- test/integration/scheduler/scoring/priorities_test.go#TestPodTopologySpreadScoring
+
+However, this KEP also introduces API changes, the tests will be added later, refer to the [PR](https://github.com/kubernetes/kubernetes/pull/112805). I'll update the description once the PR is merged.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -611,13 +629,86 @@ that might indicate a serious problem?
 - A spike on failure events with keyword "failed spreadConstraint" in scheduler log.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-No. This will be tested upon beta graduation.
 
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+Not yet, but it will be tested manually prior to upgrade following below steps:
+
+1. Install kubernetes v1.24 cluster with two workloads via installation tools like Kind.
+2. Let's name these nodes as node1 and node2, both labelled with key `kubernetes.io/hostname`.
+3. Add a taint to node1 like `foo=bar:NoSchedule`
+4. Apply a deployment like:
+
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          foo: bar
+      template:
+        metadata:
+          labels:
+            foo: bar
+        spec:
+          restartPolicy: Always
+          containers:
+          - name: nginx
+            image: nginx:1.14.2
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  foo: bar
+    ```
+
+5. We'll see one pod pending.
+6. Delete the deployment via `kubectl delete -f`.
+7. Configure the api-server with feature-gate `NodeInclusionPolicyInPodTopologySpread` enabled.
+8. Redeploy the deployment with `NodeTaintsPolicy` honored.
+
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          foo: bar
+      template:
+        metadata:
+          labels:
+            foo: bar
+        spec:
+          restartPolicy: Always
+          containers:
+          - name: nginx
+            image: nginx:1.14.2
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              NodeTaintsPolicy: Honor
+              labelSelector:
+                matchLabels:
+                  foo: bar
+    ```
+
+9. All pods will be allocated successfully.
+10. Delete the deployment.
+11. Disable the feature gate with api-server restarted.
+12. Apply the deployment for the third time, we'll see one pending again.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 No
@@ -661,7 +752,9 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field:
 - [ ] Other (treat as last resort)
   - Details: -->
-N/A
+
+- [x] Other (treat as last resort)
+  - Details: We can only observe the behaviors based on pod scheduling results.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -711,7 +804,9 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-N/A
+
+Yes, we have a plan to improve observability via metrics [here](https://github.com/kubernetes/kubernetes/issues/110643),
+but still on the way.
 
 ### Dependencies
 
@@ -748,7 +843,6 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
-No
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -831,7 +925,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-N/A
+
+It only works in pod scheduling, but if the API server or etcd down, pods will not be scheduled successfully.
 
 ###### What are other known failure modes?
 
@@ -851,7 +946,10 @@ For each of them, fill in the following information by copying the below templat
 Configuration errors are logged to stderr.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-N/A
+
+If we see obviously performance degradation or error rate going up with this feature gate enabled,
+we should disable it ASAP, and restart the apiserver. If we have fewer workloads, we can disable the
+policy in `PodTopologySpread` one by one for emergency.
 
 ## Implementation History
 
@@ -868,13 +966,15 @@ Major milestones might include:
 
 - 2021.01.12: KEP proposed for review, including motivation, proposal, risks,
 test plan and graduation criteria.
+- 2022.09.22: Graduate to Beta in v1.26.
 
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
-N/A
+
+None, it's a backward compatible feature, if users don't want it, no need to configure anything.
 
 ## Alternatives
 
@@ -896,4 +996,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
-N/A
+
+No

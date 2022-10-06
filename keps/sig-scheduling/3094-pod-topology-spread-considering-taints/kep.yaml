@@ -3,7 +3,6 @@ kep-number: 3094
 authors:
   - "@kerthcet"
 owning-sig: sig-scheduling
-participating-sigs:
 status: implementable
 creation-date: 2021-12-30
 reviewers:
@@ -18,7 +17,7 @@ see-also:
   - "/keps/sig-scheduling/1258-default-pod-topology-spread"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
