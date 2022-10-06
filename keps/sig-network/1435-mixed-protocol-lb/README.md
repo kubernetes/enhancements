@@ -497,7 +497,8 @@ There shall be integration tests that verify that the API server accepts Service
 
 ##### e2e tests
 
-The change described in this KEP affects provider specific implementations (CPIs) when considering the e2e aspect. Integration tests should cover the core k8s API part, while provider specific tests should cover the provider specific changes.
+The change described in this KEP affects provider specific implementations (CPIs) when considering the e2e aspect. 
+Within the k8s e2e test set we shall check whether the kube-proxy works well with a Service that has type=LoadBalancer and has different protocols defined.
 
 ### Graduation Criteria
 
