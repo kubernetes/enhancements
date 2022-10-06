@@ -30,6 +30,10 @@
   - [The selected solution for the option control](#the-selected-solution-for-the-option-control)
   - [Kube-proxy](#kube-proxy)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha Graduation](#alpha-graduation)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -476,11 +480,29 @@ Kube-proxy will not block traffic based on the port status information from `Ser
 
 ### Test Plan
 
-There must be e2e cases that test whether CPI implementations handle Service definitions with mixed protocol configuration on a consistent way. I.e. either the cloud LB is set up properly or the Service is rejected by the CPI implementation.
-The e2e tests shall check that
-- a multi-protocol Service triggers the creation of a multi-protocol cloud load balancer 
-Optionally, if the CPI supports that:
-- the CPI sets the new Conditions and or Port Status in the Load Balancer Service after creating the cloud load balancer
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+Proper unit tests are in place for the affected code parts.
+
+See:
+https://github.com/kubernetes/kubernetes/blob/867b5cc31b376c9f5d04cf9278112368b0337104/pkg/registry/core/service/strategy_test.go#L315
+https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/pkg/apis/core/validation/conditional_validation_test.go#L29
+
+##### Integration tests
+
+There shall be integration tests that verify that the API server accepts Services with mixed protocols.
+
+
+##### e2e tests
+
+The change described in this KEP affects provider specific implementations (CPIs) when considering the e2e aspect. 
+Within the k8s e2e test set we shall check whether the kube-proxy works well with a Service that has type=LoadBalancer and has different protocols defined.
 
 ### Graduation Criteria
 
@@ -500,7 +522,7 @@ Graduating to GA means, that the feature flag checking is removed from the code.
 
 #### Beta -> GA Graduation
 
-TBD
+- All major cloud providers support this or indicate non-support properly
 
 #### Removing a Deprecated Flag
 
@@ -583,12 +605,11 @@ Optionally, if the CPI supports that:
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - [x] Metrics
+    - Metric name: kube-state-metrics/kube_service_status_load_balancer_ingress
+      - Reference: https://github.com/kubernetes/kube-state-metrics/blob/12402a564cbf4557763079ab8e6e995d9afb4db9/docs/service-metrics.md   
+      - Components exposing the metric: Service via the kube-state-metrics add-on
+      - If the LoadBalancer Service has neither IP address nor Hostname the Service is not healthy  
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
@@ -598,7 +619,7 @@ Before this KEP, expectations of performance for this specific feature were cons
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
 
-  N/A
+Once this feature becomes stable kuber-state-metrics could be enhanced to support the new Service.Status.Condition "LoadBalancerPortsError". If that condition is true for the Service the load balancer ports of the Service could not be allocated successfully.
 
 ### Dependencies
 
