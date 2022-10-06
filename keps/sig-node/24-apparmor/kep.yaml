@@ -2,7 +2,7 @@ title: Add AppArmor Support
 kep-number: 24
 authors:
   - "@saschagrunert"
-  - "@tallclair"
+  - "@jan0ski"
 owning-sig: sig-node
 participating-sigs:
   - sig-api-machinery
@@ -13,6 +13,7 @@ creation-date: 2020-01-10
 reviewers:
   - "@liggitt"
   - "@pjbgf"
+  - "@tallclair"
 approvers:
   - TBD
 
