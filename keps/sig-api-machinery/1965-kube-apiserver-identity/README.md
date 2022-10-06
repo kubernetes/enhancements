@@ -201,11 +201,12 @@ N/A
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: APIServerIdentity
-  - Components depending on the feature gate: kube-apiserver
+  - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-A namespace "kube-apiserver-lease" will be used to store kube-apiserver identity Leases.
+A namespace `kube-apiserver-lease` will be created to store kube-apiserver identity Leases.
+Old leases will be actively garbage collected by kube-controller-manager.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -217,7 +218,8 @@ Stale Lease objects will be garbage collected.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, see [apiserver_identity_test.go](https://github.com/kubernetes/kubernetes/blob/24238425492227fdbb55c687fd4e94c8b58c1ee3/test/integration/controlplane/apiserver_identity_test.go).
+There are some tests that require enabling the feature gate in [apiserver_identity_test.go](https://github.com/kubernetes/kubernetes/blob/24238425492227fdbb55c687fd4e94c8b58c1ee3/test/integration/controlplane/apiserver_identity_test.go).
+However, there are no tests validating feature enablement/disablement based on the gate. These tests should be added prior to Beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -253,14 +255,14 @@ the Lease object to see if workloads or other controllers are relying on this fe
   - Event Reason:
 - [X] API .status
   - Condition name:
-  - Other field:
+  - Other field: `.spec.holderIdentity`, `.spec.acquireTime`, `.spec.renewTime`, `.spec.leaseTransitions`
 - [X] Other (treat as last resort)
   - Details: audit logs for clients that are reading the Lease objects
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-A rough SLO here is that kube-apiserver updates leases at the same frequency as kubelet node heart beats,
-since the same mechanism is being used.
+A rough SLO here is that healthy kube-apiservers has a lease which is not older than 2 times the frequency of
+the lease heart beat 95% of time.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -271,7 +273,8 @@ since the same mechanism is being used.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes, heart beat latency could be useful.
+A metric measuring the last updated time for a lease could be useful, but it could introduce cardinality problems
+since the lease is changed on every restart of kube-apiserver.
 
 ### Dependencies
 
