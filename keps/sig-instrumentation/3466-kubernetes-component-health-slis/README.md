@@ -250,13 +250,13 @@ without any issues.
 
 ##### Integration tests
 
-- [ ] ensure existence of healthcheck endpoint
+- [ ] ensure existence of healthcheck endpoint (beta requirement)
 
 - <test>: <link to test coverage>
 
 ##### e2e tests
 
-- [ ] ensure existence of healthcheck endpoint
+- [ ] ensure existence of healthcheck endpoint (beta requirement)
 
 - <test>: <link to test coverage>
 
@@ -295,11 +295,12 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
 - Feature implemented for apiserver
+- unit tests covering aspects of the feature
 
 #### Beta
 
+- e2e tests completed and enabled (this needs to be beta due to feature flag enablement)
 - Gather feedback from developers 
 - Feature implemented for other Kubernetes Components
 
