@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3521: Pod Schedule Readiness
+# KEP-3521: Pod Scheduling Readiness
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
