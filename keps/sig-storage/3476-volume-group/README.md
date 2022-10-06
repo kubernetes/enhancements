@@ -1387,6 +1387,12 @@ _This section must be completed when targeting alpha to a release._
   the enablement)?**
   Yes. In order to disable this feature once it has been enabled, we first need to make sure that all VolumeGroup and VolumeGroupSnapshot API objects are deleted. Then the new controllers for VolumeGroup and VolumeGroupSnapshot can be stopped/removed, and external-provisioner sidecar and external-snapshotter controller/sidecar can be downgraded to a version without this feature.
 
+If we don't delete the VolumeGroup and VolumeGroupSnapshot API objects and CRDs but just uninstall the VolumeGroup and VolumeGroupSnapshot controllers and downgrade the other sidecars, the API objects continue to exist in the API server. User may delete an individual PVC that is part of a VolumeGroup or delete an individual VolumeSnapshot that is associated with a VolumeGroupSnapshot. After that if the user starts the controllers/sidecars again and try to use the pre-existing VolumeGroup and VolumeGroupSnapshot, they are no longer in sync with the storage system.
+
+If the API objects and VolumeGroup and GroupSnapshot controllers are running, but the provisioner/snapshotter sidecars are downgraded to a lower version that does not support this feature, creating a PVC and adding it to the group will not work as one step. Basically the provisioner sidecar will create a new PV but ignoring the part that adds it to the group. If the CSI driver also supports VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME capability, the VolumeGroup controller will detect an existing PVC with a matching label and will try to add the PVC to the group. If the CSI driver does not support VOLUME_GROUP_ADD_REMOVE_EXISTING_VOLUME capability, the PVC will not be added to the group.
+
+If the external-provisioner and external-snapshotter sidecars which support this feature are running but VolumeGroup/GroupSnapshot controllers are not (CRDs are still installed), creating VolumeGroup or creating VolumeGroupSnapshot will not be successfully. Ready status in VolumeGroup or VolumeGroupSnapshot API objects  will be false until those controllers are running again.
+
 * **What happens if we reenable the feature if it was previously rolled back?**
   We will be able to create new VolumeGroup and VolumeGroupSnapshot API objects again.
 
