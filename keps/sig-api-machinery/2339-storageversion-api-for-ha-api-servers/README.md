@@ -77,27 +77,22 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 During the rolling upgrade of an HA master, the API server instances may
-use different storage versions encoding a resource. The [storageVersionHash][]
+use different storage versions encoding a resource. The [storageVersionHash]
 in the discovery document does not expose this disagreement. As a result, the
 storage migrator may proceed with migration with the false belief that all API
 server instances are encoding objects using the same storage version, resulting
-in polluted migration.  ([details][]).
+in polluted migration.  ([details]).
 
 [storageVersionHash]:https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L979
 [details]:https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/35-storage-version-hash.md#ha-masters
 
 ## Motivation
 
-==TODO==
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+The lack of automated storage migration creates unfixable technical debt in the
+Kubernetes project as we are unable to drop old versions of APIs, even after the
+associated REST endpoints have been disabled.  This also blocks more nuanced
+use cases of storage migration such as encryption key rotation, which also needs
+a reliable mechanism for understanding when API servers are in agreement.
 
 ### Goals
 
@@ -115,19 +110,11 @@ reached.
 
 ### Risks and Mitigations
 
-==TODO==
-
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+Writes to most Kubernetes resources must be prevented until the API server has
+had a chance to emit its encoding versions for all resources.  This requires us to
+have a carefully written handler that only lets a very specific set of requests through.
+Mistakes in this code could easily prevent the API server from functioning.  This
+handler will be carefully tested via unit and integration tests.
 
 ## Design Details
 
@@ -136,75 +123,97 @@ Consider including folks who also work outside the SIG or subproject.
 We introduce a new API `StorageVersion`, in a new API group
 `internal.apiserver.k8s.io/v1alpha1`.
 
-```golang
-//  Storage version of a specific resource.
+```go
+// Storage version of a specific resource.
 type StorageVersion struct {
-  TypeMeta
+  metav1.TypeMeta `json:",inline"`
   // The name is <group>.<resource>.
-  ObjectMeta
+  metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-  // Spec is omitted because there is no spec field.
-  // Spec StorageVersionSpec
+  // Spec is an empty spec. It is here to comply with Kubernetes API style.
+  Spec StorageVersionSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
   // API server instances report the version they can decode and the version they
   // encode objects to when persisting objects in the backend.
-  Status StorageVersionStatus
+  Status StorageVersionStatus `json:"status" protobuf:"bytes,3,opt,name=status"`
 }
 
-// API server instances report the version they can decode and the version they
+// StorageVersionSpec is an empty spec.
+type StorageVersionSpec struct{}
+
+// API server instances report the versions they can decode and the version they
 // encode objects to when persisting objects in the backend.
 type StorageVersionStatus struct {
   // The reported versions per API server instance.
   // +optional
-  ServerStorageVersions []ServerStorageVersion
+  // +listType=map
+  // +listMapKey=apiServerID
+  StorageVersions []ServerStorageVersion `json:"storageVersions,omitempty" protobuf:"bytes,1,opt,name=storageVersions"`
   // If all API server instances agree on the same encoding storage version,
   // then this field is set to that version. Otherwise this field is left empty.
+  // API servers should finish updating its storageVersionStatus entry before
+  // serving write operations, so that this field will be in sync with the reality.
   // +optional
-  AgreedEncodingVersion string
+  CommonEncodingVersion *string `json:"commonEncodingVersion,omitempty" protobuf:"bytes,2,opt,name=commonEncodingVersion"`
 
   // The latest available observations of the storageVersion's state.
   // +optional
-  Conditions []StorageVersionCondition
-
+  // +listType=map
+  // +listMapKey=type
+  Conditions []StorageVersionCondition `json:"conditions,omitempty" protobuf:"bytes,3,opt,name=conditions"`
 }
 
 // An API server instance reports the version it can decode and the version it
 // encodes objects to when persisting objects in the backend.
 type ServerStorageVersion struct {
   // The ID of the reporting API server.
-  // For a kube-apiserver, the ID is configured via a flag.
-  APIServerID string
+  APIServerID string `json:"apiServerID,omitempty" protobuf:"bytes,1,opt,name=apiServerID"`
 
   // The API server encodes the object to this version when persisting it in
   // the backend (e.g., etcd).
-  EncodingVersion string
+  EncodingVersion string `json:"encodingVersion,omitempty" protobuf:"bytes,2,opt,name=encodingVersion"`
 
   // The API server can decode objects encoded in these versions.
   // The encodingVersion must be included in the decodableVersions.
-  DecodableVersions []string
+  // +listType=set
+  DecodableVersions []string `json:"decodableVersions,omitempty" protobuf:"bytes,3,opt,name=decodableVersions"`
 }
 
+type StorageVersionConditionType string
 
 const (
-  // Indicates that storage versions reported by all servers are equal.
-  AllEncondingVersionsEqual StorageVersionConditionType = "AllEncodingVersionsEqual"
+  // Indicates that encoding storage versions reported by all servers are equal.
+  AllEncodingVersionsEqual StorageVersionConditionType = "AllEncodingVersionsEqual"
+)
+
+type ConditionStatus string
+
+const (
+  ConditionTrue    ConditionStatus = "True"
+  ConditionFalse   ConditionStatus = "False"
+  ConditionUnknown ConditionStatus = "Unknown"
 )
 
 // Describes the state of the storageVersion at a certain point.
 type StorageVersionCondition struct {
-	// Type of the condition.
-	Type StorageVersionConditionType
-	// Status of the condition, one of True, False, Unknown.
-	Status corev1.ConditionStatus
-	// The last time this condition was updated.
-	// +optional
-	LastUpdateTime metav1.Time
-	// The reason for the condition's last transition.
-	// +optional
-	Reason string
-	// A human readable message indicating details about the transition.
-	// +optional
-	Message string
+  // Type of the condition.
+  // +required
+  Type StorageVersionConditionType `json:"type" protobuf:"bytes,1,opt,name=type"`
+  // Status of the condition, one of True, False, Unknown.
+  // +required
+  Status ConditionStatus `json:"status" protobuf:"bytes,2,opt,name=status"`
+  // If set, this represents the .metadata.generation that the condition was set based upon.
+  // +optional
+  ObservedGeneration int64 `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
+  // Last time the condition transitioned from one status to another.
+  // +required
+  LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty" protobuf:"bytes,4,opt,name=lastTransitionTime"`
+  // The reason for the condition's last transition.
+  // +required
+  Reason string `json:"reason" protobuf:"bytes,5,opt,name=reason"`
+  // A human readable message indicating details about the transition.
+  // +required
+  Message string `json:"message,omitempty" protobuf:"bytes,6,opt,name=message"`
 }
 ```
 
@@ -215,10 +224,10 @@ In this section, we describe how to update and consume the StorageVersion API.
 ### Curating a list of participating API servers in HA master
 
 API servers need such a list when updating the StorageVersion API. Currently,
-such a list is already maintained in the "kubernetes" endpoints, though it is not
-working in all flavors of Kubernetes deployments.
+such a list is already maintained in the "kubernetes" endpoints, though it does
+not work in all flavors of Kubernetes deployments.
 
-We will inherit the existing [mechanism][], but formalize the API and process in
+We will inherit the existing [mechanism], but formalize the API and process in
 another KEP. In this KEP, we assume all API servers have access to the list of
 all participating API servers via some API.
 
@@ -250,7 +259,7 @@ write request encoded in an obsoleted version, then it crashes before it can
 update the storageVersion. The storage migrator has no way to detect this write.
 
 For the cmd/kube-apiserver binary, we plan to enforce this order by adding a new
-filter to the [handler chain][]. Before kube-aggregator, kube-apiserver, and
+filter to the [handler chain]. Before kube-aggregator, kube-apiserver, and
 apiextension-apiserver have registered the storage version of the built-in
 resources they host, this filter only allows the following requests to pass:
 1. a request sent by the loopbackClient and is destined to the storageVersion
@@ -314,8 +323,8 @@ server as a stale entry.
 
 ### CRDs
 
-Today, the [storageVersionHash][] in the discovery document in HA setup can
-diverge from the actual storage version being used. See the [appendix][] for
+Today, the [storageVersionHash] in the discovery document in HA setup can
+diverge from the actual storage version being used. See the [appendix] for
 details.
 
 [appendix]:#appendix
@@ -323,8 +332,8 @@ details.
 
 To ensure that the storageVersion.status always shows the actual encoding
 versions, the apiextension-apiserver must update the storageVersion.status
-before it [enables][] the custom resource handler. This way it does not require
-the [filter][] mechanism that is used by the kube-apiserver to ensure the
+before it [enables] the custom resource handler. This way it does not require
+the [filter] mechanism that is used by the kube-apiserver to ensure the
 correct order.
 
 [enables]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L703
@@ -343,7 +352,7 @@ not manage its API.
 The consumer of the StorageVersion API is the storage migrator. The storage
 migrator
 * starts migration if the storageVersion.status.agreedEncodingVersion differs
-  from the storageState.status.[persistedStorageVersionHashes][],
+  from the storageState.status.[persistedStorageVersionHashes],
 * aborts ongoing migration if the storageVersion.status.agreedEncodingVersion is
   empty.
 
@@ -372,52 +381,44 @@ to implement this enhancement.
 
 ##### Unit tests
 
-- `<package>`: `<date>` - `<test coverage>`
+The code related to this change is mostly new:
+
+- `k8s.io/apiserver/pkg/storageversion`
+- `k8s.io/kubernetes/pkg/controller/storageversiongc`
+- `k8s.io/apiserver/pkg/endpoints/filters/storageversion.go`
 
 ##### Integration tests
+
+The wiring of the new code into existing code paths will be tested via:
 
 - `TestStorageVersionBootstrap`: https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/test/integration/storageversion/storage_version_filter_test.go#L148
 - `TestStorageVersionGarbageCollection`: https://github.com/kubernetes/kubernetes/blob/0a7f45d5baa88dbe4d71102abe3a751a829d87a2/test/integration/storageversion/gc_test.go#L50
 
 ##### e2e tests
 
-- `<test>: <link to test coverage>`
+No E2E tests are required for this enhancement as the functionality can be completely
+tested via unit and integration tests (the kubelet is not relevant to this change).
 
 ### Graduation Criteria
 
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Initial unit and integration tests completed and enabled
+- Storage version support for Kuberentes API server and aggregated API servers
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
+- Storage version support for API extensions API server (custom resources)
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+- ==TODO==
 
 #### Deprecation
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
+- See discussion regarding `StorageVersionHash` above.
 
 ### Upgrade / Downgrade Strategy
 
@@ -433,10 +434,12 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+==TODO==
+
 ### Version Skew Strategy
 
 1. Q: if an API server is rolled back when the migrator is in the middle of
-   migration, how to prevent corruption? ([original question][])
+   migration, how to prevent corruption? ([original question])
 
    A: Unlike the discovery document, the new StorageVersion API is persisted in
    etcd and has the resourceVersion(RV) field, so the migrator can determine if
@@ -632,11 +635,15 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+==TODO==
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+==TODO==
 
 ## Alternatives
 
@@ -657,7 +664,7 @@ Cons:
 
 See [#920](https://github.com/kubernetes/enhancements/pull/920)
 
-Cons: it has many assumptions, see [cons][].
+Cons: it has many assumptions, see [cons].
 [cons]:https://github.com/kubernetes/enhancements/pull/920/files#diff-a1d206b4bbac708bf71ef85ad7fb5264R339
 
 ## Appendix
@@ -668,16 +675,16 @@ Today, the storageVersionHash listed in the discovery document "almost"
 accurately reflects the actual storage version used by the apiextension-apiserver.
 
 Upon storage version changes in the CRD spec,
-* [one controller][] deletes the existing resource handler of the CRD, so that
+* [one controller] deletes the existing resource handler of the CRD, so that
   a new resource handler is created with the latest cached CRD spec is created
   upon the next custom resource request.
-* [another controller][] enqueues the CRD, waiting for the worker to updates the
+* [another controller] enqueues the CRD, waiting for the worker to updates the
   discovery document.
 
 [one controller]:https://github.com/kubernetes/kubernetes/blob/1a53325550f6d5d3c48b9eecdd123fd84deee879/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L478
 [another controller]:https://github.com/kubernetes/kubernetes/blob/1a53325550f6d5d3c48b9eecdd123fd84deee879/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_discovery_controller.go#L258
 
-These two controllers are driven by the [same informer][], so the lag between
+These two controllers are driven by the [same informer], so the lag between
 when the server starts to apply the new storage version and when the discovery
 document is updated is just the difference between when the respective
 goroutines finish.
