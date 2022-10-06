@@ -207,7 +207,7 @@ See the previous section and definition [here](https://github.com/kubernetes/com
 The use of these labels in tests today is indicative of the labels' different
 meaning. Looking at tests configuration, wildcard `[NodeFeature:*`
 label is always used as focus and individual `NodeFeatures` are used in skip.
-It is opposite for the `Feature` label. The whildcard `[Feature:*` is always
+It is opposite for the `Feature` label. The wildcard `[Feature:*` is always
 used to skip tests, while individual tests are present in focus.
 
 The reason for this difference is that runtimes that are being tested support
