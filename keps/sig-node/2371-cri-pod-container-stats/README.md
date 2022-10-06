@@ -22,6 +22,7 @@
       - [CRI Implementation](#cri-implementation)
         - [ContainerStats additions](#containerstats-additions)
         - [PodStats CRI additions](#podstats-cri-additions)
+        - [ContainerMetrics additions](#containermetrics-additions)
       - [Kubelet](#kubelet)
       - [cAdvisor](#cadvisor)
     - [cAdvisor Metrics Endpoint](#cadvisor-metrics-endpoint)
@@ -103,82 +104,82 @@ Summary API has two interfaces:
 #### Current Fulfiller of Metrics Endpoints & Future Proposal 
 
 Below is a table describing which stats come from what source now, as well a proposal of which should come from where in the future. It also includes which fields roughly correspond to fields in the `/metrics/cadvisor` endpoint, some of which will not come from the CRI for the first iteration of this KEP. See more below.
-
-|Top level object              |`/stats/summary` Field|`/metrics/cadvisor` field                       |Level Needed in `/stats/summary`|Currently provided by:|Proposed to be provided by:|
-|------------------------------|----------------------|------------------------------------------------|--------------------------------|----------------------|---------------------------|
-|InterfaceStats (Network)      |RxBytes               |container_network_receive_bytes_total           |Pod                             |cAdvisor              |CRI                        |
-|                              |RxErrors              |container_network_receive_errors_total          |Pod                             |cAdvisor              |CRI                        |
-|                              |TxBytes               |container_network_transmit_bytes_total          |Pod                             |cAdvisor              |CRI                        |
-|                              |TxErrors              |container_network_transmit_errors_total         |Pod                             |cAdvisor              |CRI                        |
-|                              |N/A                   |container_network_receive_packets_dropped_total |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_network_receive_packets_total         |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_network_transmit_packets_dropped_total|N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_network_transmit_packets_total        |N/A                             |cAdvisor              |CRI or N/A                 |
+   
+|Top level object              |`/stats/summary` Field|`/metrics/cadvisor` field                       |Level Needed in `/stats/summary`|Currently provided by:|Proposed to be provided by:|Cgroup v1 stat:                         |Cgroup v2 stat:              |
+|------------------------------|----------------------|------------------------------------------------|--------------------------------|----------------------|---------------------------|----------------------------------------|---------------------------|
+|InterfaceStats (Network)      |RxBytes               |container_network_receive_bytes_total           |Pod                             |cAdvisor              |CRI                        |/sys/class/net/eth0/statistics/rx_bytes |/sys/class/net/eth0/statistics/rx_bytes
+|                              |RxErrors              |container_network_receive_errors_total          |Pod                             |cAdvisor              |CRI                        |/sys/class/net/eth0/statistics/rx_errors|/sys/class/net/eth0/statistics/rx_errors
+|                              |TxBytes               |container_network_transmit_bytes_total          |Pod                             |cAdvisor              |CRI                        |/sys/class/net/eth0/statistics/tx_bytes| /sys/class/net/eth0/statistics/tx_bytes
+|                              |TxErrors              |container_network_transmit_errors_total         |Pod                             |cAdvisor              |CRI                        |/sys/class/net/eth0/statistics/tx_errors|/sys/class/net/eth0/statistics/tx_errors
+|                              |N/A                   |container_network_receive_packets_dropped_total |N/A                             |cAdvisor              |CRI or N/A                 |/sys/class/net/eth0/statistics/rx_dropped|/sys/class/net/eth0/statistics/rx_dropped
+|                              |N/A                   |container_network_receive_packets_total         |N/A                             |cAdvisor              |CRI or N/A                 |/sys/class/net/eth0/statistics/rx_packets|/sys/class/net/eth0/statistics/rx_packets
+|                              |N/A                   |container_network_transmit_packets_dropped_total|N/A                             |cAdvisor              |CRI or N/A                 |/sys/class/net/eth0/statistics/tx_dropped|/sys/class/net/eth0/statistics/tx_dropped
+|                              |N/A                   |container_network_transmit_packets_total        |N/A                             |cAdvisor              |CRI or N/A                 |/sys/class/net/eth0/statistics/tx_packets|/sys/class/net/eth0/statistics/tx_packets
 |CPUStats                      |UsageNanoCores        |N/A                                             |Pod and Container               |cAdvisor              |CRI or Kubelet             |
 |                              |UsageCoreNanoSeconds  |N/A                                             |Pod and Container               |CRI                   |CRI                        |
-|                              |N/A                   |container_cpu_cfs_periods_total                 |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_cpu_cfs_throttled_periods_total       |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_cpu_cfs_throttled_seconds_total       |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_cpu_load_average_10s                  |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_cpu_system_seconds_total              |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_cpu_usage_seconds_total               |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_cpu_user_seconds_total                |N/A                             |cAdvisor              |CRI or N/A                 |
-|MemoryStats                   |AvailableBytes        |N/A                                             |Pod and Container               |cAdvisor              |CRI                        |
-|                              |UsageBytes            |container_memory_usage_bytes                    |Pod and Container               |cAdvisor              |CRI                        |
-|                              |WorkingSetBytes       |container_memory_working_set_bytes              |Pod and Container               |CRI                   |CRI                        |
-|                              |RSSBytes              |container_memory_rss                            |Pod and Container               |cAdvisor              |CRI                        |
-|                              |PageFaults            |N/A                                             |Pod and Container               |cAdvisor              |CRI                        |
-|                              |MajorPageFaults       |N/A                                             |Pod and Container               |cAdvisor              |CRI                        |
-|                              |N/A                   |container_memory_cache                          |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_memory_failcnt                        |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_memory_failures_total                 |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_memory_mapped_file                    |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_memory_max_usage_bytes                |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_memory_swap                           |N/A                             |cAdvisor              |CRI or N/A                 |
-|ProcessStats                  |ProcessCount          |container_processes                             |Pod                             |cAdvisor              |CRI                        |
-|AcceleratorStats              |Make                  |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |
-|                              |Model                 |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |
-|                              |ID                    |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |
-|                              |MemoryTotal           |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |
-|                              |MemoryUsed            |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |
-|                              |DutyCycle             |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |
+|                              |N/A                   |container_cpu_cfs_periods_total                 |N/A                             |cAdvisor              |CRI or N/A                 | (cpu.stat) nr_periods      |  (cpu.stat) nr_periods
+|                              |N/A                   |container_cpu_cfs_throttled_periods_total       |N/A                             |cAdvisor              |CRI or N/A                 | (cpu.stat) nr_throttled    |  (cpu.stat) nr_throttled
+|                              |N/A                   |container_cpu_cfs_throttled_seconds_total       |N/A                             |cAdvisor              |CRI or N/A                 | (cpu.stat) throttled_time  |  (cpu.stat) throttled_usec
+|                              |N/A                   |container_cpu_load_average_10s                  |N/A                             |cAdvisor              |Removing this metric (not in v2)
+|                              |N/A                   |container_cpu_system_seconds_total              |N/A                             |cAdvisor              |CRI or N/A                 | (cpuacct.stat) system      |  (cpu.stat) system_usec
+|                              |N/A                   |container_cpu_usage_seconds_total               |N/A                             |cAdvisor              |CRI or N/A                 | (cpuacct.usage)            |  (cpu.stat) usage_usec
+|                              |N/A                   |container_cpu_user_seconds_total                |N/A                             |cAdvisor              |CRI or N/A                 | (cpuacct.stat) user        |  (cpu.stat) user_usec
+|MemoryStats                   |AvailableBytes        |N/A                                             |Pod and Container               |cAdvisor              |CRI                        | 
+|                              |UsageBytes            |container_memory_usage_bytes                    |Pod and Container               |cAdvisor              |CRI                        |  memory.usage_in_bytes     |  memory.current
+|                              |WorkingSetBytes       |container_memory_working_set_bytes              |Pod and Container               |CRI                   |CRI                        |  memory.usage_in_bytes (extra if logic) | memory.usage_in_bytes (extra if logic)
+|                              |RSSBytes              |container_memory_rss                            |Pod and Container               |cAdvisor              |CRI                        | (memory.stat) total_rss    |  (memory.stat) anon
+|                              |PageFaults            |N/A                                             |Pod and Container               |cAdvisor              |CRI                        | (memory.stat) pgfault      |  (memory.stat) pgfault 
+|                              |MajorPageFaults       |N/A                                             |Pod and Container               |cAdvisor              |CRI                        | (memory.stat) pgmajfault   |  (memory.stat) pgmajfault
+|                              |N/A                   |container_memory_cache                          |N/A                             |cAdvisor              |CRI or N/A                 | (memory.stat) cache        |  (memory.stat) file
+|                              |N/A                   |container_memory_failcnt                        |N/A                             |cAdvisor              |CRI or N/A                 |  memory.failcnt                N/A
+|                              |N/A                   |container_memory_failures_total                 |N/A                             |cAdvisor              |CRI or N/A                 | (memory.stat) pg_fault && pg_maj_fault |
+|                              |N/A                   |container_memory_mapped_file                    |N/A                             |cAdvisor              |CRI or N/A                 | (memory.stat) mapped_file  |  (memory.stat) file_mapped
+|                              |N/A                   |container_memory_max_usage_bytes                |N/A                             |cAdvisor              |CRI or N/A                 | memory.max_usage_in_bytes  |  memory.max
+|                              |N/A                   |container_memory_swap                           |N/A                             |cAdvisor              |CRI or N/A                 | (memory.stat) swap  |  memory.swap.current - memory.current
+|ProcessStats                  |ProcessCount          |container_processes                             |Pod                             |cAdvisor              |CRI                        |  Process
+|AcceleratorStats              |Make                  |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |  accelerators/nvidia.go    | accelerators/nvidia.go
+|                              |Model                 |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |  accelerators/nvidia.go    | accelerators/nvidia.go
+|                              |ID                    |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |  accelerators/nvidia.go      |accelerators/nvidia.go
+|                              |MemoryTotal           |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |  accelerators/nvidia.go      |accelerators/nvidia.go
+|                              |MemoryUsed            |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |  accelerators/nvidia.go      |accelerators/nvidia.go 
+|                              |DutyCycle             |N/A (too lazy to find the mapping)              |Container                       |cAdvisor              |cAdvisor or N/A            |  accelerators/nvidia.go      |accelerators/nvidia.go 
 |VolumeStats                   |All Fields            |N/A                                             |Pod                             |Kubelet               |Kubelet                    |
 |Ephemeral Storage             |All Fields            |N/A                                             |Pod                             |Kubelet               |Kubelet                    |
 |Rootfs.FsStats                |AvailableBytes        |N/A                                             |Container                       |cAdvisor or N/A       |CRI or N/A                 |
-|                              |CapacityBytes         |container_fs_limit_bytes                        |Container                       |cAdvisor or N/A       |CRI or N/A                 |
-|                              |UsedBytes             |container_fs_usage_bytes                        |Container                       |CRI                   |CRI                        |
-|                              |InodesFree            |container_fs_inodes_free                        |Container                       |cAdvisor or N/A       |CRI or N/A                 |
-|                              |Inodes                |container_fs_inodes_total                       |Container                       |cAdvisor or N/A       |CRI or N/A                 |
+|                              |CapacityBytes         |container_fs_limit_bytes                        |Container                       |cAdvisor or N/A       |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |UsedBytes             |container_fs_usage_bytes                        |Container                       |CRI                   |CRI                        |/proc/diskstats | /proc/diskstats
+|                              |InodesFree            |container_fs_inodes_free                        |Container                       |cAdvisor or N/A       |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |Inodes                |container_fs_inodes_total                       |Container                       |cAdvisor or N/A       |CRI or N/A                 |/proc/diskstats | /proc/diskstats
 |                              |InodesUsed            |N/A                                             |Container                       |CRI                   |CRI                        |
-|                              |N/A                   |container_fs_io_current                         |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_io_time_seconds_total              |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_io_time_weighted_seconds_total     |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_read_seconds_total                 |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_reads_bytes_total                  |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_reads_merged_total                 |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_reads_total                        |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_sector_reads_total                 |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_sector_writes_total                |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_write_seconds_total                |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_writes_bytes_total                 |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_writes_merged_total                |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_fs_writes_total                       |N/A                             |cAdvisor              |CRI or N/A                 |
+|                              |N/A                   |container_fs_io_current                         |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_io_time_seconds_total              |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_io_time_weighted_seconds_total     |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_read_seconds_total                 |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_reads_bytes_total                  |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_reads_merged_total                 |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_reads_total                        |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_sector_reads_total                 |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_sector_writes_total                |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_write_seconds_total                |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_writes_bytes_total                 |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_writes_merged_total                |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
+|                              |N/A                   |container_fs_writes_total                       |N/A                             |cAdvisor              |CRI or N/A                 |/proc/diskstats | /proc/diskstats
 |UserDefinedMetrics            |All Fields            |N/A                                             |Container                       |cAdvisor              |CRI or N/A                 |
-|No Equivalent in Stats Summary|N/A                   |container_scrape_error                          |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_sockets                               |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_spec_cpu_period                       |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_spec_cpu_quota                        |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_spec_cpu_shares                       |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_spec_memory_limit_bytes               |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_spec_memory_reservation_limit_bytes   |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_spec_memory_swap_limit_bytes          |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_start_time_seconds                    |N/A                             |cAdvisor              |CRI or N/A                 |
+|No Equivalent in Stats Summary|N/A                   |container_scrape_error                          |N/A                             |cAdvisor              |CRI or N/A                 | error returning metrics | error returning metrics
+|                              |N/A                   |container_sockets                               |N/A                             |cAdvisor              |CRI or N/A                 | cgroup.procs manipulation | cgroup.procs manipulation
+|                              |N/A                   |container_spec_cpu_period                       |N/A                             |cAdvisor              |CRI or N/A                 | N/A                         |            cpu.max (2nd val)
+|                              |N/A                   |container_spec_cpu_quota                        |N/A                             |cAdvisor              |CRI or N/A                 | N/A                         |         cpu.max (1st val)
+|                              |N/A                   |container_spec_cpu_shares                       |N/A                             |cAdvisor              |CRI or N/A                 |                              |         cpu.weight
+|                              |N/A                   |container_spec_memory_limit_bytes               |N/A                             |cAdvisor              |CRI or N/A                 | memory.        limit_in_bytes                                      memory.max
+|                              |N/A                   |container_spec_memory_reservation_limit_bytes   |N/A                             |cAdvisor              |CRI or N/A                 | memory.soft_limit_in_bytes |                                     memory.high
+|                              |N/A                   |container_spec_memory_swap_limit_bytes          |N/A                             |cAdvisor              |CRI or N/A                 | memory.memsw.limit_in_bytes  |                                    memory.swap.max
+|                              |N/A                   |container_start_time_seconds                    |N/A                             |cAdvisor              |CRI or N/A                 | creation time of container | creation time of container
 |                              |N/A                   |container_tasks_state                           |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_threads                               |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_threads_max                           |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_file_descriptors                      |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |N/A                   |container_last_seen                             |N/A                             |cAdvisor              |CRI or N/A                 |
-|                              |                      |                                                |                                |cAdvisor              |CRI or N/A                 |
+|                              |N/A                   |container_threads                               |N/A                             |cAdvisor              |CRI or N/A                 | pids.curent | pids.curent
+|                              |N/A                   |container_threads_max                           |N/A                             |cAdvisor              |CRI or N/A                 | pids.max | pids.max
+|                              |N/A                   |container_file_descriptors                      |N/A                             |cAdvisor              |CRI or N/A                 | cgroup.procs manipulation | cgroup.procs manipulation
+|                              |N/A                   |container_last_seen                             |N/A                             |cAdvisor              |CRI or N/A                 | now.Now().Unix()             | now.Now().Unix()
+|                              |                      |                                                |                                |cAdvisor              |CRI or N/A                 | 
 
 
 ## Motivation
@@ -286,8 +287,7 @@ as cAdvisor is fine tuned to perform in an adequate manner.
 ### Stats Summary API
 
 #### CRI Implementation
-The CRI implementation will need to be extended to support reporting the full set of container-level from the [Summary API](#summary-container-stats-object).
-
+The CRI implementation will need to be extended to support reporting the full set of container-level from the [Summary API](#summary-container-stats-object). A new gRPC call will also be added to the CRI that allows reporting for metrics currently exported by cAdvisor, but are outside the scope of the Summary API. This new gRPC call will return a Prometheus metric based response which Kubelet can export. Additionally, `PodAndContainerStatsFromCRI` feature gate support will be added to only report Prometheus based metrics from the CRI when calling `/metrics/cadvisor` endpoint when the feature gate is enabled. The additional metrics we support will need to be added to the individual container runtimes.
 ##### ContainerStats additions
 Currently, the CRI endpoints `{,List}ContainerStats` report the following fields for each container:
 - CPU
@@ -466,6 +466,49 @@ message ProcessUsage {
     int64 timestamp = 1;
     // Number of processes.
     UInt64Value process_count = 2;
+}
+```
+
+##### ContainerMetrics additions
+For stats that are outside the scope of `/stats/summary` but are still reported by cAdvisor, we will return these as unstructured metrics in Prometheus format. The Kubelet will then implement collect methods and descriptors to fetch these metrics from the CRI and export them in Prometheus format. This is done via `ListPodSandboxMetrics` RPC call.
+
+```
+// ListPodSandboxMetrics gets pod sandbox metrics from CRI Runtime
+rpc ListPodSandboxMetrics(ListPodSandboxMetricsRequest) returns (ListPodSandboxMetricsResponse) {}
+
+message ListPodSandboxMetricsRequest {} 
+
+message ListPodSandboxMetricsResponse {
+    repeated PodSandboxMetrics pod_metrics = 1;
+}
+
+message PodSandboxMetrics {
+    string pod_sandbox_id = 1;
+    repeated Metric metrics = 2;
+    repeated ContainerMetrics container_metrics = 3;
+}
+
+message ContainerMetrics {
+    string container_id = 1;
+    repeated Metric metrics = 2;
+}
+
+message Metric {
+    //timestamp=0 indicates the metrics returned are cached
+    int64 timestamp = 1;
+    repeated LabelPair labels = 2;
+    MetricType metric_type = 3;
+    Int64Value value = 4;
+}
+
+message LabelPair {
+    string name = 1;
+    string value = 2;
+}
+
+enum MetricType {
+    COUNTER = 0;
+    GAUGE = 1;
 }
 ```
 
@@ -869,6 +912,10 @@ _This section must be completed when targeting beta graduation to a release._
 
 CRI runtimes will each have to implement additional interface to support full stats, rather than all metric collection being unified by cAdvisor.
 Note: This is by design as this will enable to decouple runtime implementation details further from Kubelet.
+
+Support for full /metrics/cadvisor endpoint is not enforced, and individual container runtimes can return different metrics as they see fit.
+
+Greater complexity as opposed to adding these unstructured metrics directly into the CRI, and additional overhead with RPC call and converting between Prometheus, CRI, and back. 
 
 ## Alternatives
 
