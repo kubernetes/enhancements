@@ -64,9 +64,6 @@
     - [DeleteVolumeGroupSnapshot](#deletevolumegroupsnapshot)
     - [ControllerGetVolumeGroupSnapshot](#controllergetvolumegroupsnapshot)
     - [ListVolumeGroupSnapshots](#listvolumegroupsnapshots)
-  - [Alternatives](#alternatives)
-    - [Immutable VolumeGroup](#immutable-volumegroup)
-    - [ModifyVolume](#modifyvolume)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -75,6 +72,10 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [Immutable VolumeGroup](#immutable-volumegroup)
+  - [ModifyVolume](#modifyvolume)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -295,6 +296,8 @@ This feature requires coordination between several controllers including the new
 ## Design Details
 
 ### Test Plan
+
+[X] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 N/A
@@ -1343,125 +1346,6 @@ message ListVolumeGroupSnapshotsResponse {
 }
 ```
 
-### Alternatives
-
-#### Immutable VolumeGroup
-
-During the design discussions, an immutable VolumeGroup was considered but was removed because this would add lots of complexity to the design without much gain. It would also make it impossible to support the current way PVCs are provisioned in a Statefulset.
-
-Immutable VolumeGroup - PVCList or PVC Selector in the ImmutableSource field in the Spec (optional field); PVCList is in the Status.
-* Create a new VolumeGroup with existing PVCs by PVCList or PVC Selector in the Spec. The PVCList will be in the VolumeGroup Status as well.
-* VolumeGroup Status has a boolean Mutable set to false.
-
-```
-ImmutableSource struct {
-    PVCList
-    Selector
-}
-```
-
-```
-// VolumeGroupSpec describes the common attributes of group storage devices
-// and allows a Source for provider-specific attributes
-Type VolumeGroupSpec struct {
-        // +optional
-        VolumeGroupClassName *string
-
-        // If ImmutableSource is nil, an empty volume group will be created.
-        // Otherwise, a volume group will be created with PVCs (if PVCList or Select is set)
-        // If ImmutableSource is not nil, it indicates the VolumeGroup is immutable
-        // +optional
-        ImmutableSource *VolumeGroupSource
-}
-
-// VolumeGroupSource contains 3 options. If VolumeGroupSource is not nil,
-// one of the 3 options must be defined.
-Type VolumeGroupSource struct {
-        // A list of existing persistent volume claims
-        // +optional
-        PVCList []PersistentVolumeClaim
-
-        // A label query over existing persistent volume claims to be added to the volume group.
-        // +optional
-        Selector *metav1.LabelSelector
- }
-
-type VolumeGroupStatus struct {
-        // VolumeGroupId is a unique id returned by the CSI driver
-        // to identify the VolumeGroup on the storage system.
-        // If a storage system does not provide such an id, the
-        // CSI driver can choose to return the VolumeGroup name.
-        VolumeGroupId *string
-
-        GroupCreationTime *metav1.Time
-
-        // A list of persistent volume claims
-        // +optional
-        PVCList []PersistentVolumeClaim
-
-        Ready *bool
-
-        // Mutable indicates if a VolumeGroup can be modified
-        // after it is created. If false, it indicates it cannot be
-        // modified once created. If ImmutableSource is not nil
-        // in VolumeGroupSpec, Mutable must be false; otherwise
-        // it means the driver does not support ImmutableSource.
-        // VOLUMEGROUP_IMMUTABLE and VOLUMEGROUP_MUTABLE capability
-        // will be added to the CSI spec.
-        Mutable *bool
-
-        // If true, it indicates the CSI driver supports adding
-        // an existing volume to the VolumeGroup and removing a
-        // volume from the VolumeGroup without deleting it.
-        // Only mutable VolumeGroup can support AddRemoveExistingPVC.
-        // A corresponding VOLUMEGROUP_ADD_REMOVE_EXISTING_VOLUME
-        // capability will be added to the CSI spec.
-        AddRemoveExistingPVC *bool
-
-        // Last error encountered during group creation
-        Error *VolumeGroupError
-}
-```
-
-VOLUMEGROUP_IMMUTABLE and VOLUMEGROUP_MUTABLE capability will be added to the CSI spec.
-If VOLUMEGROUP_IMMUTABLE is supported, a VolumeGroup with an ImmutableSource can be created. Mutable will be false, PVCList will be set, and Ready will be true in the Status.
-Otherwise, a VolumeGroup with an ImmutableSource will not be created successfully.
-
-#### ModifyVolume
-
-ModifyVolume CSI RPC was considered earlier to add/remove one volume to/from a group at a time but it was removed because ModifyVolumeGroup CSI RPC was added.
-
-A new MODIFY_VOLUME capability will be added to support this.
-It indicates that the controller plugin supports modifying a volume.
-
-```
-  rpc ModifyVolume(ModifyVolumeRequest)
-    returns (ModifyVolumeResponse) {
-        option (alpha_method) = true;
-    }
-```
-
-This RPC is called when an existing volume is added to an existing volume group or when a volume is removed from the volume group.
-A volume group id parameter will be in the ModifyVolumeRequest for an add request.
-A volume group id parameter will not be in the ModifyVolumeRequest for a delete request.
-If user requests to add an existing volume to a consistency group, but the CSI driver cannot fulfill the request because the existing volume is placed on a different storage pool from the consistency group, then the CSI driver MUST return failure.
-This RPC MUST be idempotent.
-
-```
-message ModifyVolumeRequest {
-      string volume_id = 1;
-
-      // This field is OPTIONAL.
-      repeated string volume_group_id = 2 [(alpha_field) = true];
-
-      // Secrets required by plugin to complete modify volume request.
-      // This field is OPTIONAL. Refer to the `Secrets Requirements`
-      // section on how to use this field.
-      map<string, string> secrets = 3 [(csi_secret) = true];
-}
-```
-External-provisioner will be modified so that modifying PVC by adding VolumeGroupName will trigger a ModifyVolume call (a new CSI controller RPC) to CSI driver.
-
 ## Production Readiness Review Questionnaire
 
 ### Feature enablement and rollback
@@ -1492,7 +1376,6 @@ _This section must be completed when targeting alpha to a release._
   We will be able to create new VolumeGroup and VolumeGroupSnapshot API objects again.
 
 * **Are there any tests for feature enablement/disablement?**
-  Unit tests will be added for the in-tree feature enable/disablement.
   Since there is no feature gate for this feature on the external controller side and the only way to
   enable or disable this feature is to install or unistall the sidecar, we cannot write
   tests for feature enablement/disablement.
@@ -1645,3 +1528,128 @@ _This section must be completed when targeting beta graduation to a release._
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
+
+N/A
+
+## Drawbacks
+
+Adding more new APIs and more complexities.
+
+## Alternatives
+
+### Immutable VolumeGroup
+
+During the design discussions, an immutable VolumeGroup was considered but was removed because this would add lots of complexity to the design without much gain. It would also make it impossible to support the current way PVCs are provisioned in a Statefulset.
+
+Immutable VolumeGroup - PVCList or PVC Selector in the ImmutableSource field in the Spec (optional field); PVCList is in the Status.
+* Create a new VolumeGroup with existing PVCs by PVCList or PVC Selector in the Spec. The PVCList will be in the VolumeGroup Status as well.
+* VolumeGroup Status has a boolean Mutable set to false.
+
+```
+ImmutableSource struct {
+    PVCList
+    Selector
+}
+```
+
+```
+// VolumeGroupSpec describes the common attributes of group storage devices
+// and allows a Source for provider-specific attributes
+Type VolumeGroupSpec struct {
+        // +optional
+        VolumeGroupClassName *string
+
+        // If ImmutableSource is nil, an empty volume group will be created.
+        // Otherwise, a volume group will be created with PVCs (if PVCList or Select is set)
+        // If ImmutableSource is not nil, it indicates the VolumeGroup is immutable
+        // +optional
+        ImmutableSource *VolumeGroupSource
+}
+
+// VolumeGroupSource contains 3 options. If VolumeGroupSource is not nil,
+// one of the 3 options must be defined.
+Type VolumeGroupSource struct {
+        // A list of existing persistent volume claims
+        // +optional
+        PVCList []PersistentVolumeClaim
+
+        // A label query over existing persistent volume claims to be added to the volume group.
+        // +optional
+        Selector *metav1.LabelSelector
+ }
+
+type VolumeGroupStatus struct {
+        // VolumeGroupId is a unique id returned by the CSI driver
+        // to identify the VolumeGroup on the storage system.
+        // If a storage system does not provide such an id, the
+        // CSI driver can choose to return the VolumeGroup name.
+        VolumeGroupId *string
+
+        GroupCreationTime *metav1.Time
+
+        // A list of persistent volume claims
+        // +optional
+        PVCList []PersistentVolumeClaim
+
+        Ready *bool
+
+        // Mutable indicates if a VolumeGroup can be modified
+        // after it is created. If false, it indicates it cannot be
+        // modified once created. If ImmutableSource is not nil
+        // in VolumeGroupSpec, Mutable must be false; otherwise
+        // it means the driver does not support ImmutableSource.
+        // VOLUMEGROUP_IMMUTABLE and VOLUMEGROUP_MUTABLE capability
+        // will be added to the CSI spec.
+        Mutable *bool
+
+        // If true, it indicates the CSI driver supports adding
+        // an existing volume to the VolumeGroup and removing a
+        // volume from the VolumeGroup without deleting it.
+        // Only mutable VolumeGroup can support AddRemoveExistingPVC.
+        // A corresponding VOLUMEGROUP_ADD_REMOVE_EXISTING_VOLUME
+        // capability will be added to the CSI spec.
+        AddRemoveExistingPVC *bool
+
+        // Last error encountered during group creation
+        Error *VolumeGroupError
+}
+```
+
+VOLUMEGROUP_IMMUTABLE and VOLUMEGROUP_MUTABLE capability will be added to the CSI spec.
+If VOLUMEGROUP_IMMUTABLE is supported, a VolumeGroup with an ImmutableSource can be created. Mutable will be false, PVCList will be set, and Ready will be true in the Status.
+Otherwise, a VolumeGroup with an ImmutableSource will not be created successfully.
+
+### ModifyVolume
+
+ModifyVolume CSI RPC was considered earlier to add/remove one volume to/from a group at a time but it was removed because ModifyVolumeGroup CSI RPC was added.
+
+A new MODIFY_VOLUME capability will be added to support this.
+It indicates that the controller plugin supports modifying a volume.
+
+```
+  rpc ModifyVolume(ModifyVolumeRequest)
+    returns (ModifyVolumeResponse) {
+        option (alpha_method) = true;
+    }
+```
+
+This RPC is called when an existing volume is added to an existing volume group or when a volume is removed from the volume group.
+A volume group id parameter will be in the ModifyVolumeRequest for an add request.
+A volume group id parameter will not be in the ModifyVolumeRequest for a delete request.
+If user requests to add an existing volume to a consistency group, but the CSI driver cannot fulfill the request because the existing volume is placed on a different storage pool from the consistency group, then the CSI driver MUST return failure.
+This RPC MUST be idempotent.
+
+```
+message ModifyVolumeRequest {
+      string volume_id = 1;
+
+      // This field is OPTIONAL.
+      repeated string volume_group_id = 2 [(alpha_field) = true];
+
+      // Secrets required by plugin to complete modify volume request.
+      // This field is OPTIONAL. Refer to the `Secrets Requirements`
+      // section on how to use this field.
+      map<string, string> secrets = 3 [(csi_secret) = true];
+}
+```
+External-provisioner will be modified so that modifying PVC by adding VolumeGroupName will trigger a ModifyVolume call (a new CSI controller RPC) to CSI driver.
