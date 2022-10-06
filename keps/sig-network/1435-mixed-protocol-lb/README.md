@@ -486,15 +486,18 @@ to implement this enhancement.
 
 Proper unit tests are in place for the affected code parts.
 
+See:
+https://github.com/kubernetes/kubernetes/blob/867b5cc31b376c9f5d04cf9278112368b0337104/pkg/registry/core/service/strategy_test.go#L315
+https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/pkg/apis/core/validation/conditional_validation_test.go#L29
+
 ##### Integration tests
+
+There shall be integration tests that verify that the API server accepts Services with mixed protocols.
+
 
 ##### e2e tests
 
-There must be e2e cases that test whether CPI implementations handle Service definitions with mixed protocol configuration on a consistent way. I.e. either the cloud LB is set up properly or the Service is rejected by the CPI implementation.
-The e2e tests shall check that
-- a multi-protocol Service triggers the creation of a multi-protocol cloud load balancer 
-Optionally, if the CPI supports that:
-- the CPI sets the new Conditions and or Port Status in the Load Balancer Service after creating the cloud load balancer
+The change described in this KEP affects provider specific implementations (CPIs) when considering the e2e aspect. Integration tests should cover the core k8s API part, while provider specific tests should cover the provider specific changes.
 
 ### Graduation Criteria
 
