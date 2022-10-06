@@ -601,12 +601,11 @@ Optionally, if the CPI supports that:
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - [x] Metrics
+    - Metric name: kube-state-metrics/kube_service_status_load_balancer_ingress
+      - Reference: https://github.com/kubernetes/kube-state-metrics/blob/12402a564cbf4557763079ab8e6e995d9afb4db9/docs/service-metrics.md   
+      - Components exposing the metric: Service via the kube-state-metrics add-on
+      - If the LoadBalancer Service has neither IP address nor Hostname the Service is not healthy  
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
@@ -616,7 +615,7 @@ Before this KEP, expectations of performance for this specific feature were cons
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
 
-  N/A
+Once this feature becomes stable kuber-state-metrics could be enhanced to support the new Service.Status.Condition "LoadBalancerPortsError". If that condition is true for the Service the load balancer ports of the Service could not be allocated successfully.
 
 ### Dependencies
 
