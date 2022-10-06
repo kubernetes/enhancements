@@ -15,8 +15,10 @@ reviewers:
   - "@pjbgf"
   - "@tallclair"
 approvers:
-  - TBD
-
+  - "@tallclair"
+  - "@liggitt"
+prr-approvers:
+  - "@deads2k"
 see-also:
   - "/keps/sig-node/20190717-seccomp-ga.md"
 

@@ -41,7 +41,7 @@
 
 Items marked with (R) are required _prior to targeting to a milestone / release_.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in
       [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
@@ -50,7 +50,7 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 - [ ] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
 - [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for
       publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to
@@ -163,7 +163,9 @@ profile cannot be set.
 This KEP proposes LocalhostProfile as the only source of user-defined
 profiles at this point. User-defined profiles are essential for users to realize
 the full benefits out of AppArmor, allowing them to decrease their attack
-surface based on their own workloads. 
+surface based on their own workloads. Only profiles with a specified prefix will be 
+available to Localhost profiles. This prevents profiles meant for other system
+daemons to be utilized by Kubernetes and will be configurable by the kubelet.
 
 ###### Updating AppArmor profiles
 
@@ -227,7 +229,7 @@ below are the ones we mapped and their outcome once this KEP is implemented:
 
 | Scenario                                                                                           | API Server Result    | Kubelet Result                                                                                                                                        |
 | -------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1) Using custom or `runtime/default` profile when container runtime does not support AppArmor.     | Pod created          | The outcome is container runtime dependent. In this scenario containers may 1) fail to start or 2) run normally without having its policies enforced. |
+| 1) Using localhost or `runtime/default` profile when container runtime does not support AppArmor.     | Pod created          | The outcome is container runtime dependent. In this scenario containers may 1) fail to start or 2) run normally without having its policies enforced. |
 | 2) Using custom or `runtime/default` profile that restricts actions a container is trying to make. | Pod created          | The outcome is workload and AppArmor dependent. In this scenario containers may 1) fail to start, 2) misbehave or 3) log violations.                  |
 | 3) Using custom profile that does not exist on the node.                                           | Pod created          | Containers fail to start. Retry respecting RestartPolicy and back-off delay.                                                                          |
 | 4) Using an unsupported runtime profile (i.e. `runtime/default-audit`).                            | Pod **not** created. | N/A                                                                                                                                                   |
@@ -252,9 +254,10 @@ If no AppArmor annotations or fields are specified, no action is necessary.
 If the `AppArmor` feature is disabled per feature gate, then the annotations and
 fields are cleared (current behavior).
 
-If _only_ AppArmor fields are specified, add the corresponding annotations. This
-ensures that the fields are enforced even if the node version trails the API
-version (see [Version Skew Strategy](##version-skew-strategy)).
+If _only_ AppArmor fields are specified, add the corresponding annotations. If these 
+are specified at the Pod level, copy the annotations to each container that does
+not have annotations already specified. This ensures that the fields are enforced 
+even if the node version trails the API version (see [Version Skew Strategy](##version-skew-strategy)).
 
 If _only_ AppArmor annotations are specified, copy the values into the
 corresponding fields. This ensures that existing applications continue to
@@ -331,7 +334,7 @@ Therefore, the AppArmor profiles will be applied following the priority order:
 2. Container-specific annotation.
 3. Pod-wide field.
 
-In case annotations and fields at either container or pod level exist, the
+In case both annotations and fields at the container level exist, the
 kubelet will ignore the annotations and will only apply the profile defined on
 the relevant field.
 
@@ -472,7 +475,10 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
-  N/A - the feature is already enabled by default since Kubernetes v1.4.
+  Clusters upgrading while using beta AppArmor annotations will want to ensure 
+  that profiles on upgraded nodes are loaded at the Kubelet's specified path prefix.
+  Containers of Pods loading AppArmor profiles will fail to start if they attempt to 
+  load non-Kubernetes profiles.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 <!--
@@ -523,13 +529,9 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Pod events will provide details of profiles being successfully applied to specific containers.
 
+- [X] Events - Event Reason: `AppArmor` 
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 <!--
