@@ -4,10 +4,16 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Caveats](#caveats)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -18,6 +24,7 @@
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
   - [Alternative 1: new API + storage TTL](#alternative-1-new-api--storage-ttl)
@@ -30,16 +37,24 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [x] (R) Graduation criteria is in place
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -65,14 +80,24 @@ load balancer for the cluster, where the advertise IP address is set to the IP
 address of the load balancer, all three kube-apiservers will have the same
 advertise IP address.
 
+### Goals
+
+* Provide a mechanism in which controllers can uniquely identify kube-apiserver's in a cluster.
+
+### Non-Goals
+
+* improving the availability of kube-apiserver
+
 ## Proposal
 
 We will use “hostname+PID+random suffix (e.g. 6 base58 digits)” as the ID.
 
-Similar to the [node heartbeat](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/0009-node-heartbeat.md),
+Similar to the [node heartbeats](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/589-efficient-node-heartbeats),
 a kube-apiserver will store its ID in a Lease object. All kube-apiserver Leases
-will be stored in a special namespace “kube-apiserver-lease”. A controller will
-garbage collect expired Leases.
+will be stored in a special namespace `kube-apiserver-lease`. The Lease creation
+and heart beat will be managed by a controller that is started in kube-apiserver's
+post startup hook. A separate controller in kube-controller-manager will be responsible
+for garbaging collecting expired Leases.
 
 ### Caveats
 
@@ -95,20 +120,21 @@ will only delay the storage migration for the same period of time.
 
 ## Design Details
 
-The [kubelet heartbeat](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/0009-node-heartbeat.md)
+The [kubelet heartbeat](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/589-efficient-node-heartbeats)
 logic [already written](https://github.com/kubernetes/kubernetes/tree/master/pkg/kubelet/nodelease)
 will be re-used. The heartbeat controller will be added to kube-apiserver in a
 post-start hook.
 
-Each kube-apiserver will refresh its Lease every 10s by default. A GC controller
-will watch the Lease API using an informer, and periodically resync its local
-cache. On processing an item, the controller will delete the Lease if the last
-`renewTime` was more than `leaseDurationSeconds` ago (default to 1h). The
-default `leaseDurationSeconds` is chosen to be way longer than the default
+Each kube-apiserver will run a lease controller in a post-start-hook to refresh
+its Lease every 10s by default. A separate controller named [storageversiongc](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/storageversiongc/gc_controller.go)
+running in kube-controller-manager will watch the Lease API using an informer, and
+periodically resync its local cache. On processing an item, the `storageversiongc` controller
+will delete the Lease if the last `renewTime` was more than `leaseDurationSeconds` ago (default to 1h).
+The default `leaseDurationSeconds` is chosen to be way longer than the default
 refresh period, to tolerate clock skew and/or accidental refresh failure. The
 default resync period is 1h. By default, assuming negligible clock skew, a Lease
 will be deleted if the kube-apiserver fails to refresh its Lease for one to two
-hours. The GC controller will run in kube-controller-manager, to leverage leader
+hours. The `storageversiongc` controller will run in kube-controller-manager, to leverage leader
 election and reduce conflicts.
 
 The refresh rate, lease duration will be configurable through kube-apiserver
@@ -117,12 +143,30 @@ flag.
 
 ### Test Plan
 
-  - integration test for creating the Namespace and the Lease on kube-apiserver
-    startup
-  - integration test for not creating the StorageVersions after creating the
-    Lease
-  - integration test for garbage collecting a Lease that isn't refreshed
-  - integration test for not garbage collecting a Lease that is refreshed
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+- `staging/src/k8s.io/apiserver/pkg/endpoints`
+
+##### Integration tests
+
+[apiserver_identity_test.go](https://github.com/kubernetes/kubernetes/blob/24238425492227fdbb55c687fd4e94c8b58c1ee3/test/integration/controlplane/apiserver_identity_test.go)
+- integration test for creating the Namespace and the Lease on kube-apiserver startup
+- integration test for not creating the StorageVersions after creating the Lease
+- integration test for garbage collecting a Lease that isn't refreshed
+- integration test for not garbage collecting a Lease that is refreshed
+
+##### e2e tests
+
+Proposed e2e tests:
+- an e2e test that validates the existence of the Lease objects per kube-apiserver
+- an e2e test that restarts a kube-apiserver and validates that a new Lease is created
+  with a newly generated ID and the old lease is garbage collected
 
 ### Graduation Criteria
 
@@ -131,14 +175,16 @@ Alpha should provide basic functionality covered with tests described above.
 #### Alpha -> Beta Graduation
 
   - Appropriate metrics are agreed on and implemented
-  - An e2e test plan is agreed and implemented (e.g. chaosmonkey in a regional
-    cluster)
+  - Sufficient integration tests covering basic functionality of this enhancement.
+  - e2e tests outlined in the test plan are implemented
 
 #### Beta -> GA Graduation
 
-  - Conformance tests are agreed on and implemented
+  - SIG consensus on whether Lease names should be unique per process (i.e. uuid) or persist across restarts (i.e. hostname)
+  - SIG consensus on whether Lease names should include a hostname identifier (via label) if they do NOT persist across restarts.
+  - SIG consensus on where the storageversiongc controller should run (kube-apiserver vs kube-controller-manager).
 
-**For non-optional features moving to GA, the graduation criteria must include 
+**For non-optional features moving to GA, the graduation criteria must include
 [conformance tests].**
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
@@ -154,64 +200,138 @@ Alpha should provide basic functionality covered with tests described above.
 
 ### Feature Enablement and Rollback
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: APIServerIdentity
-    - Components depending on the feature gate: kube-apiserver
+###### How can this feature be enabled / disabled in a live cluster?
 
-* **Does enabling the feature change any default behavior?**
-  A namespace "kube-apiserver-lease" will be used to store kube-apiserver
-  identity Leases.
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: APIServerIdentity
+  - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Yes. Stale Lease objects will remain stale (`renewTime` won't get updated)
+###### Does enabling the feature change any default behavior?
 
-* **What happens if we reenable the feature if it was previously rolled back?**
-  Stale Lease objects will be garbage collected.
+A namespace `kube-apiserver-lease` will be created to store kube-apiserver identity Leases.
+Old leases will be actively garbage collected by kube-controller-manager.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes. Stale Lease objects will remain stale (renewTime won't get updated)
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Stale Lease objects will be garbage collected.
+
+###### Are there any tests for feature enablement/disablement?
+
+There are some tests that require enabling the feature gate in [apiserver_identity_test.go](https://github.com/kubernetes/kubernetes/blob/24238425492227fdbb55c687fd4e94c8b58c1ee3/test/integration/controlplane/apiserver_identity_test.go).
+However, there are no tests validating feature enablement/disablement based on the gate. These tests should be added prior to Beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+Existing workloads should not be impacteded by this feature, unless they were
+looking for Lease objects in the `kube-apiserver-lease` namespace.
+
+###### What specific metrics should inform a rollback?
+
+Recently added [healthcheck metrics for apiserver](https://github.com/kubernetes/kubernetes/pull/112741), which includes
+the health of the post start hook can be used to inform rollback, specifically `kubernetes_healthcheck{poststarthook/start-kube-apiserver-identity-lease-controller}`
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Manual testing for upgrade/rollback will be done prior to Beta. Steps taken for manual tests will be updated here.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No.
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can an operator determine if the feature is in use by workloads?
+
+The existence of the `kube-apiserver-lease` namespace and Lease objects in the namespace
+will determine if the feature is working. Operators can check for clients that are accessing
+the Lease object to see if workloads or other controllers are relying on this feature.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [ ] Events
+  - Event Reason:
+- [X] API .status
+  - Condition name:
+  - Other field: `.spec.holderIdentity`, `.spec.acquireTime`, `.spec.renewTime`, `.spec.leaseTransitions`
+- [X] Other (treat as last resort)
+  - Details: audit logs for clients that are reading the Lease objects
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+Some reasonable SLOs could be:
+* Number of (non-expired) Leases in `kube-apiserver-leases` is equal to the number of expected kube-apiservers 95% of the time.
+* kube-apiservers hold a lease which is not older than 2 times the frequency of the lease heart beat 95% of time.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [X] Metrics
+  - Metric name: kubernetes_healthcheck
+  - [Optional] Aggregation method: name="poststarthook/start-kube-apiserver-identity-lease-controller"
+  - Components exposing the metric: kube-apiserver
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+A metric measuring the last updated time for a lease could be useful, but it could introduce cardinality problems
+since the lease is changed on every restart of kube-apiserver.
+
+We may consider adding a metric exposing the count of leases in `kube-apiserver-lease`.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
+###### Does this feature depend on any specific services running in the cluster?
+
+No
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods): UPDATE leases
-  - estimated throughput:
-  - originating component(s) (e.g. Kubelet, Feature-X-controller):
-    kube-apiserver
+###### Will enabling / using this feature result in any new API calls?
 
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before:
-    kube-controller-manager
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.): kube-apiserver heartbeat every 10s
+Yes, kube-apiserver will be making new API calls as part of the lease controller.
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
-  Describe them, providing:
-  - API type(s): leases
-  - Estimated amount of new objects: one per living kube-apiserver
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
-  No.
+No, the feature will use the existing Lease API.
 
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+Yes, it will increase the number of Leases in a cluster by the number of control plane VMs.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+The lease controller may use additional resources in kube-apiserver, but it is likely negligible.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+Lease objects for a given kube-apiserver may become stale if the kube-apiserver or etcd is non-responsive. Clients should
+be able to respond accordingly by checking the lease expiration.
+
+###### What are other known failure modes?
+
+* lease objects can become stale if etcd is unavailable and clients do not check lease expiration.
+* kube-apiserver heart beats consuming too many resources (unlikely but possible)
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
 - 2020-09-18: KEP introduced
+- 2022-10-05: KEP updated with Beta criteria and all PRR questions answered.
 
 ## Alternatives
 
