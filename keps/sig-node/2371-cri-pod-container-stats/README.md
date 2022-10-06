@@ -28,6 +28,7 @@
     - [cAdvisor Metrics Endpoint](#cadvisor-metrics-endpoint)
       - [CRI implementations](#cri-implementations)
       - [cAdvisor](#cadvisor-1)
+      - [Windows](#windows)
     - [Test Plan](#test-plan)
         - [Prerequisite testing updates](#prerequisite-testing-updates)
         - [Unit tests](#unit-tests)
@@ -273,6 +274,32 @@ Thus, this KEP largely the plan described [here](#plan), with some changes:
 
 #### Open Questions
 1. For the newly introduced CRI API fields, should there be Windows and Linux specific fields?
+    For the alpha implementation, [PR #102789](https://github.com/kubernetes/kubernetes/pull/102789) added a Linux specific field
+    `LinuxPodSandboxStats`. It also added Windows Specific field called  `WindowsPodSandboxStats` but left it blank.  
+
+    Using the `WindowsPodSandboxStats` stats struct we will create new Windows specific fields that make sense for Windows stats.  The
+    motivation behind this is Windows has differences in stats that are specific to its OS and doesn't currently fill certain fields (in some
+    cases cannot such as `rss_bytes`). By adopting a Windows Specific set of stats it will allow for flexibity and customization in the
+    future. 
+    
+    A challenge with new `WindowsPodSandboxStats` with custom fields is that the current calls to CRI endpoint `ListContainerStats` use the
+    exiting `ContainerStats` object which is not Windows/Linux specific.  In the case of the CRI call `ListPodSandboxStats` it would
+    currently return the new Windows specific stats propose here.  There will be a miss match in names of the fields but the underlying
+    values will be the same.  The biggest difference initially will be that fields that were left blank in `ContainerStats` will not be on
+    the new Windows specific structs.
+
+    Making changes to `ListContainerStats` in backwards compatible way to use the Windows Specific stat structs is not in scope for this KEP.
+
+    Alternatives include:
+
+    - Add fields to `PodSandboxStats` which will be used by both Linux and Windows.  Windows and
+    Linux would both use this field filling in stats that make most sense for them.  Windows is currently missing several stats but can
+    reasonably fill in many of the missing fields (see the [Windows](#windows) section below).  This would be similar approach that is use
+    today for the current CRI `ListContainerStats` call and this would make logic in kubelet more straight forward. This may have made sense
+    if `LinuxPodSandboxStats` wasn't already created but would require re-work in kubelet and doesn't provide the flexibility for future customization based on OS.  
+    - Leave the two fields `LinuxPodSandboxStats` and `WindowsPodSandboxStats` but use same fields.  This might be the easiest but is counter-intuitive and still adds complexity to the Kubelet implementation.  We also end up with Linux specific fields in the `WindowsPodSandboxStats`.
+
+    See more information in the [ContainerStats](#containerstats-additions) and [Windows](#windows) sections below which gives details on proposal and Windows stats differences.
 
 ### Risks and Mitigations
 
@@ -433,7 +460,16 @@ message LinuxPodSandboxStats {
 
 // WindowsPodSandboxStats provides the resource usage statistics for a pod sandbox on windows
 message WindowsPodSandboxStats {
-    // TODO: Add stats relevant to windows.
+  // CPU usage gathered for the pod sandbox.
+  WindowsCpuUsage cpu = 1;
+  // Memory usage gathered for the pod sandbox.
+  WindowsMemoryUsage memory = 2;
+  // Network usage gathered for the pod sandbox
+  WindowsNetworkUsage network = 3;
+  // Stats pertaining to processes in the pod sandbox.
+  WindowsProcessUsage process = 4;
+  // Stats of containers in the measured pod sandbox.
+  repeated WindowsContainerStats containers = 5;
 }
 
 // NetworkUsage contains data about network resources.
@@ -467,6 +503,58 @@ message ProcessUsage {
     // Number of processes.
     UInt64Value process_count = 2;
 }
+
+// Windows specific fields. Many of these will look the same initially 
+// this leave the ability to customize between Linux and Windows in the future
+// Adding only fields we currently populate
+message WindowsCpuUsage {
+    int64 timestamp = 1;
+    UInt64Value usage_core_nano_seconds = 2;
+    UInt64Value usage_nano_cores = 3;
+}
+
+// MemoryUsage provides the memory usage information.
+message WindowsMemoryUsage {
+    int64 timestamp = 1;
+    // The amount of working set memory in bytes.
+    UInt64Value working_set_bytes = 2;
+    UInt64Value available_bytes = 3;
+    UInt64Value page_faults = 6;
+}
+
+message WindowsNetworkUsage {
+    // The time at which these stats were updated.
+    int64 timestamp = 1;
+    WindowsNetworkInterfaceUsage default_interface = 2;
+    repeated WindowsNetworkInterfaceUsage interfaces = 3;
+}
+
+message WindowsNetworkInterfaceUsage {
+    string name = 1;
+    UInt64Value rx_bytes = 2;
+    UInt64Value rx_packets_dropped = 3;
+    UInt64Value tx_bytes = 4;
+    UInt64Value tx_packets_dropped = 5;
+}
+
+message WindowsProcessUsage {
+    int64 timestamp = 1;
+    UInt64Value process_count = 2;
+}
+
+message WindowsContainerStats {
+    ContainerAttributes attributes = 1;
+    WindowsCpuUsage cpu = 2;
+    WindowsMemoryUsage memory = 3;
+    WindowsFilesystemUsage writable_layer = 4;
+}
+
+message WindowsFilesystemUsage {
+    int64 timestamp = 1;
+    FilesystemIdentifier fs_id = 2;
+    UInt64Value used_bytes = 3;
+}
+
 ```
 
 ##### ContainerMetrics additions
@@ -573,6 +661,66 @@ Below is the proposed strategy for doing so:
 #### cAdvisor
 
 As a requirement for the Beta stage, cAdvisor must support optionally collecting and broadcasting these metrics, similarly to the changes needed for summary API.
+
+#### Windows
+
+Windows currently does a best effort at filling out the stats in `/stats/summary` and misses some stats either because those are not exposed or they are not supported. 
+
+Another aspect for Windows to consider is that work is being done to create [Hyper-v containers](https://github.com/containerd/containerd/issues/6862). We will want to make sure we have an intersection of stats that support Hyper-v as well.
+It was [discussed](https://github.com/kubernetes/kubernetes/pull/110754#issuecomment-1176531055) if we want a separate set of stats specific for Window Hyper-v vs process isolated but decided that 
+these stats should be generic and not expose implementation details of the pod sandbox.  
+More detailed stats could be collected by external tools if required.
+
+The current set of stats that are used by windows in the `ListContainerStats` API:
+
+**cpu usage** - https://github.com/microsoft/hcsshim/blob/master/cmd/containerd-shim-runhcs-v1/stats/stats.proto			
+
+| field                      | type   | process isolated field | hyperv filed     | notes                                                                                                                                                                                                                |
+| -------------------------- | ------ | ---------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| timestamp                  | int64  | ✅                      | ✅                |                                                                                                                                                                                                                      |
+| usage\_core\_nano\_seconds | uint64 | TotalRuntimeNS         | TotalRuntimeNS   | // Cumulative CPU usage (sum across all cores) since object creation.                                                                                                                                                |
+| usage\_nano\_cores         | uint64 | calculated value       | calculated value | calculated value done runtime (containerd or kubelet)<br><br> // Total CPU usage (sum of all cores) averaged over the sample window.  <br> // The "core" unit can be interpreted as CPU core-nanoseconds per second. |
+
+**Memory usage** - https://github.com/microsoft/hcsshim/blob/master/cmd/containerd-shim-runhcs-v1/stats/stats.proto			
+
+| field               | type   | process isolated field                      | hyperv filed         | notes                                                                                                                                                               |
+| ------------------- | ------ | ------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| timestamp           | int64  | ✅                                           | ✅                    |                                                                                                                                                                     |
+| working\_set\_bytes | uint64 | memory\_usage\_private\_working\_set\_bytes | working\_set\_bytes? | // The amount of working set memory in bytes.<br><br>Is hyper-v working\_set\_bytes same as private\_working\_set\_bytes                                            |
+| available\_bytes    | uint64 |                                             | available\_memory    |   We should be able to return this. It is the limit set on the job object.  https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information <br><br>  // Available memory for use. This is defined as the memory limit - workingSetBytes.<br><br> |
+| usage\_bytes        | uint65 | ?                                           | ?                    | // Total memory in use. This includes all memory regardless of when it was accessed. Is this cumultive memory usage?   |
+| rss\_bytes          | uint66 | n/a                                         | n/a                  | windows doesn't have rss. Cannot report rss                                                                                                                                              |
+| page\_faults        | uint67 |                                             |                      | not reported. It may be possible use `TotalPageFaultCount` from https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_accounting_information                            |
+| major\_page\_faults | uint68 |                                             |                      | not reported. Windows does not make a distinction here                                                                                                          |
+
+**Process isolated** also has
+
+- memory_usage_commit_bytes
+- memory_usage_commit_peak_bytes 
+
+**Hyperv** also has 
+
+- virtual_node_count
+- available_memory_buffer
+- reserved_memory 
+- assigned_memory 
+- slp_active 
+- balancing_enabled
+- dm_operation_in_progress 
+
+These are not used currently but are be very specific to each implementation and could be collected by specialized tools on a as needed basis.
+
+**Network stats**
+| field      | type   | process isolated field | hyperv filed | notes                                                                                                                                                 |
+| ---------- | ------ | ---------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| timestamp  | int64  | ✅                      | ✅            |                                                                                                                                                       |
+|  name      | uint64 |      EndpointID                  |              | same values can be used for hyperv                                                                                                                                                    |
+| rx\_bytes  | uint65 | BytesReceived          |              |   same values can be used for hyperv                                                                                                                                                   |
+| rx\_errors | uint66 |                        |              | can we use DroppedPacketsIncoming. https://github.com/microsoft/hcsshim/blob/949e46a1260a6aca39c1b813a1ead2344ffe6199/internal/hns/hnsendpoint.go#L65 |
+| tx\_bytes  | uint67 | BytesSent              |              |  same values can be used for hyperv                                                                                            |
+| tx\_errors | uint68 |                        |              | should use DroppedPacketsOutgoing                                                                                                                                |
+
+Based on the above settings, we should stay conservative and expose the existing set of working overlapping stats.  This is what is proposed in the [changes cri](#cri-implementation)
 
 ### Test Plan
 
