@@ -331,13 +331,13 @@ We do not plan to modify these metrics, so it should be safe for version skew.
 
 ### Feature Enablement and Rollback
 
-We will target this feature behind a flag `ComponentHealthSLIsFeatureGate`
+We will target this feature behind a flag `ComponentSLIs`
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ComponentSLIsFeatureGate`
+  - Feature gate name: `ComponentSLIs`
   - Components depending on the feature gate:
     + apiserver
     + kubelet
