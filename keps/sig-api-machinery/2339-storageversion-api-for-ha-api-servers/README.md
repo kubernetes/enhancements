@@ -460,8 +460,9 @@ it has reported ready.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, like any other alpha API, it can be disabled with runtime config.
+The storage version API can be disabled with runtime config.
 Cluster admins should be mindful of any existing consumers of this API before rolling back.
+When disabled, the cluster admin should delete the stale resources.
 Given this is an internal API, we don't anticipate many external consumers though.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -543,7 +544,9 @@ to create a new Lease object obtaining an ID that will be used in the `storageVe
 
 The following metrics could be useful, but are likely not practical due to cardinality issues or complexity of the implementation:
 - The latency for a single apiserver to update it's encoding version after start-up
-- The latency for all apiservers to reach a consensus on the agreed encoding version for a storage version
+- The latency for all apiservers to reach a consensus on the agreed encoding version for a storage version.
+  It is unclear at this point if such a metric is necessary, so we will use the beta phase of this change to see
+  this is actually needed or if we just need to have the independent API servers properly reflect their status.
 
 ### Dependencies
 
@@ -558,10 +561,12 @@ No, but it does depend on the `APIServerIdentity` feature in kube-apiserver.
 Yes, there would be new API calls for the StorageVersion API. We don't anticipate
 a lot of traffic for this API since the only anticipated consumer would be controllers
 such as [kube-storage-version-migrator](https://github.com/kubernetes-sigs/kube-storage-version-migrator).
+Writes to the StorageVersion API are contained to API server startup and when
+CRDs are mutated.  Both of these are uncommon events.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes, the StorageVersion API. There will be 1 object per API group.
+Yes, the StorageVersion API. There will be one object per group resource.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -575,6 +580,7 @@ No.
 
 SLIs/SLOs for API calls could be impacted in cases where kube-apiservers have not reached consensus on the encoding version for a resource
 for a long duration of time. This could be possible during version skew of kube-apiservers or other reasons that pause an upgrade.
+This has the potential to impact startup time of the API server, but the difference is expected to be negligible.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
