@@ -6,7 +6,7 @@ owning-sig: sig-storage
 participating-sigs:
 status: implementable
 creation-date: 2021-05-05
-last-updated: 2022-01-24
+last-updated: 2022-10-05
 reviewers:
   - "@xing-yang"
   - "@jsafrane"
@@ -16,14 +16,14 @@ approvers:
 see-also:
 replaces:
 
-stage: beta
+stage: alpha
 
-latest-milestone: "v1.24"
+latest-milestone: "v1.26"
 
 milestone:
   alpha: "v1.23"
-  beta: "v1.24"
-  stable: "v1.25"
+  beta: "v1.27"
+  stable: "v1.28"
 
 feature-gates:
   - name: HonorPVReclaimPolicy

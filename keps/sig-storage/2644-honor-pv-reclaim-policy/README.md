@@ -151,7 +151,7 @@ func (ctrl *ProvisionController) shouldDelete(ctx context.Context, volume *v1.Pe
     // Please refer sig-storage-lib-external-provisioner/controller/controller.go for the full code.
 ```
 
-The fix applies to both csi driver volumes and in-tree plugin volumes.
+The fix applies to both csi driver volumes and in-tree plugin volumes each either statically or dynamically provisioned.
 
 The main approach in fixing the issue for csi driver volumes involves using an existing finalizer already implemented in sig-storage-lib-external-provisioner. It is `external-provisioner.volume.kubernetes.io/finalizer` which is added on the Persistent Volume. Currently, it is applied only during provisioning if the feature is enabled. The proposal is to not only add this finalizer to newly provisioned PVs, but also to extend the library to add the finalizer to existing PVs. Adding the finalizer prevents the PV from being removed from the API server. The finalizer will be removed only after the physical volume on the storage system is deleted.
 
@@ -160,12 +160,17 @@ The main approach in fixing the issue for in-tree volumes involves introducing a
 When the PVC is deleted, the PV is moved into `Released` state and following checks are made:
 
 1. In-Tree Volumes:
-   `DeletionTimestamp` checks can be ignored, instead volume being in a `Released` state is sufficient criteria. The existing `DeletionTimestamp` check incorrectly assumes that the PV cannot be deleted prior to deleting the PVC. On deleting a PV, a `DeletionTimestamp` is set on the PV, when the PVC is deleted, an explicit sync on the PV is triggered, the existing `DeletionTimestamp` check assumes that the volume is already under deletion and skips calling the plugin to delete the volume from underlying storage.
+`DeletionTimestamp` checks can be ignored, instead volume being in a `Released` state is sufficient criteria. The existing `DeletionTimestamp` check incorrectly assumes that the PV cannot be deleted prior to deleting the PVC. On deleting a PV, a `DeletionTimestamp` is set on the PV, when the PVC is deleted, an explicit sync on the PV is triggered, the existing `DeletionTimestamp` check assumes that the volume is already under deletion and skips calling the plugin to delete the volume from underlying storage.
 
 2. CSI driver
 
 If when processing the PV update it is observed that it has `external-provisioner.volume.kubernetes.io/finalizer` finalizer and
 `DeletionTimestamp` set, then the volume deletion request is forwarded to the driver, provided other pre-defined conditions are met.
+
+When a PV with `Delete` reclaim policy is not associated with a PVC:
+
+Under the event that the PV is not associated with a PVC, either finalizers `kubernetes.io/pv-controller` or `external-provisioner.volume.kubernetes.io/finalizer` are not added to the PV. 
+If such a PV is deleted the reclaim workflow is not executed, this is the current behavior and will be retained.
 
 ### Risks and Mitigations
 
@@ -196,6 +201,10 @@ When the `shouldDelete` checks succeed, a delete volume request is initiated on 
 Once the volume is deleted from the backend, the finalizer can be removed. This allows the pv to be removed from the api server.
 
 Note: This feature should work with CSI Migration disabled or enabled.
+
+Statically provisioned volumes would behave the same as dynamically provisioned volumes except in cases where the PV is not associated with a PVC, in such cases finalizer `external-provisioner.volume.kubernetes.io/finalizer` is not added.
+
+If at any point a statically provisioned PV is `Bound` to a PVC, then the finalizer `external-provisioner.volume.kubernetes.io/finalizer` gets added by the external-provisioner.
 
 ### In-Tree Plugin volumes
 
@@ -248,6 +257,11 @@ The pv-controller is also expected to add the finalizer to all existing in-tree 
 
 The pv-controller would also be responsible to add or remove the finalizer based on CSI Migration being disabled or enabled respectively.
 
+
+Statically provisioned volumes would behave the same as dynamically provisioned volumes except in cases where the PV is not associated with a PVC, in such cases finalizer `kubernetes.io/pv-controller` is not added.
+
+If at any point a statically provisioned PV is `Bound` to a PVC, then the finalizer `kubernetes.io/pv-controller` gets added by the pv-controller.
+
 ### Test Plan
 
 #### E2E tests
@@ -268,22 +282,15 @@ An e2e test to exercise deletion of PV prior to deletion of PVC for a `Bound` PV
 * Deployed in production and have gone through at least one K8s upgrade.
 
 ### Upgrade / Downgrade Strategy
-* Upgrade from old Kubernetes(1.22) to new Kubernetes(1.23) with `HonorPVReclaimPolicy` flag enabled
+
+* Upgrade from old Kubernetes(1.25) to new Kubernetes(1.26) with `HonorPVReclaimPolicy` flag enabled
 
 In the above scenario, the upgrade will cause change in default behavior as described in the current KEP. Additionally,
 if there are PVs that have a valid associated PVC and deletion timestamp set, then a finalizer is added to the PV.
 
-* Downgrade from new Kubernetes(1.23) to old Kubernetes(1.22).
+* Downgrade from new Kubernetes(1.26) to old Kubernetes(1.25).
 
 In this case, there may be PVs with the deletion finalizer that the older Kubernetes does not remove. Such PVs will be in the API server forever unless if the user manually removes them.
-
-* Upgrade from old Kubernetes(1.23) to new Kubernetes(1.24) with `HonorPVReclaimPolicy` flag enabled
-
-On Kubernetes(1.23) with `HonorPVReclaimPolicy` flag enabled, in-tree plugin volumes still exhibited the issue described in the kep. On upgrading to Kubernetes(1.24) with `HonorPVReclaimPolicy` flag enabled, the in-tree plugin volumes will exhibit the new behavior described in this kep.
-
-* Downgrade from new Kubernetes(1.24) to old Kubernetes(1.23).
-
-In this case, the in-tree plugin volume PVs will have the newly introduced finalizer, such PVs cannot be removed from the API server unless the user manually removes the finalizer.
 
 ### Version Skew Strategy
 The fix is part of `kube-controller-manager` and `external-provisioner`.
@@ -382,8 +389,7 @@ No.
 
 ## Implementation History
 
-1.23: Alpha
-1.24: Beta
+1.26: Alpha
 
 ## Drawbacks
 None. The current behavior could be considered as a drawback, the KEP presents the fix to the drawback. The current
