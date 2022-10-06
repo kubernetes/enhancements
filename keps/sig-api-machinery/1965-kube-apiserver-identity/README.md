@@ -125,15 +125,16 @@ logic [already written](https://github.com/kubernetes/kubernetes/tree/master/pkg
 will be re-used. The heartbeat controller will be added to kube-apiserver in a
 post-start hook.
 
-Each kube-apiserver will refresh its Lease every 10s by default. A GC controller
-will watch the Lease API using an informer, and periodically resync its local
-cache. On processing an item, the controller will delete the Lease if the last
-`renewTime` was more than `leaseDurationSeconds` ago (default to 1h). The
-default `leaseDurationSeconds` is chosen to be way longer than the default
+Each kube-apiserver will run a lease controller in a post-start-hook to refresh
+its Lease every 10s by default. A separate controller named [storageversiongc](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/storageversiongc/gc_controller.go)
+running in kube-controller-manager will watch the Lease API using an informer, and
+periodically resync its local cache. On processing an item, the `storageversiongc` controller
+will delete the Lease if the last `renewTime` was more than `leaseDurationSeconds` ago (default to 1h).
+The default `leaseDurationSeconds` is chosen to be way longer than the default
 refresh period, to tolerate clock skew and/or accidental refresh failure. The
 default resync period is 1h. By default, assuming negligible clock skew, a Lease
 will be deleted if the kube-apiserver fails to refresh its Lease for one to two
-hours. The GC controller will run in kube-controller-manager, to leverage leader
+hours. The `storageversiongc` controller will run in kube-controller-manager, to leverage leader
 election and reduce conflicts.
 
 The refresh rate, lease duration will be configurable through kube-apiserver
