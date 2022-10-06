@@ -1625,7 +1625,8 @@ get deallocated as soon as possible once they are not needed anymore.
 
 ### kube-scheduler
 
-The scheduler plugin needs to implement several extension points. It handles
+The scheduler plugin for ResourceClaims ("claim plugin" in this section)
+needs to implement several extension points. It handles
 communication with a resource driver through the apiserver. The [volume
 binder
 plugin](https://github.com/kubernetes/kubernetes/tree/master/pkg/scheduler/framework/plugins/volumebinding)
@@ -1637,7 +1638,7 @@ notices this, the current scheduling attempt for the pod must stop and the pod
 needs to be put back into the work queue. It then gets retried whenever a
 ResourceClaim gets added or modified.
 
-The following extension points are implemented in the new plugin:
+The following extension points are implemented in the new claim plugin:
 
 #### Pre-filter
 
@@ -1667,7 +1668,7 @@ reasons why such a deny list is more suitable than an allow list:
   times. Forcing such drivers to set an allow list would cause unnecessary
   work.
 
-In its state for the Pod the scheduler plugin must remember when it rejected a
+In its state for the Pod the claim plugin must remember when it rejected a
 node because of UnsuitableNodes. That information will be used in Post-filter
 to deallocate resources.
 
@@ -1693,15 +1694,15 @@ ResourceClaim, if there is one. To prevent deallocating all resources merely
 because the scheduler happens to check quickly, the next deallocation will only
 requested when there is none currently pending.
 
-At the moment, the scheduler has no information that might enable it to
+At the moment, the claim plugin has no information that might enable it to
 prioritize which resource to deallocate first. Future extensions of this KEP
 might attempt to improve this.
 
 #### Pre-score
 
-This is passed a list of nodes that have passed filtering by the resource
-plugin and the other plugins. That list is stored by the plugin and will
-be copied to PodSchedulingSpec.PotentialNodes when the plugin creates or updates
+This is passed a list of nodes that have passed filtering by the claim
+plugin and the other plugins. That list is stored by the claim plugin and will
+be copied to PodSchedulingSpec.PotentialNodes when the claim plugin creates or updates
 the object in Reserve.
 
 Pre-score is not called when there is only a single potential node. In that
@@ -1712,7 +1713,7 @@ case Reserve will store the selected node in PodSchedulingSpec.PotentialNodes.
 A node has been chosen for the Pod.
 
 If using delayed allocation and one or more claims have not been allocated yet,
-the plugin now needs to decide whether it wants to trigger allocation by
+the claim plugin now needs to decide whether it wants to trigger allocation by
 setting the PodSchedulingSpec.SelectedNode field. For a single unallocated
 claim that is safe even if no information about unsuitable nodes is available
 because the allocation will either succeed or fail. For multiple such claims
@@ -1722,7 +1723,7 @@ PodScheduling object gets created or updated as needed. This is also where the
 PodSchedulingSpec.PotentialNodes field gets set.
 
 If all resources have been allocated already,
-the scheduler ensures that the Pod is listed in the `claim.status.reservedFor` field
+the claim plugin ensures that the Pod is listed in the `claim.status.reservedFor` field
 of its ResourceClaims. The driver can and should already have added
 the Pod when specifically allocating the claim for it, so it may
 be possible to skip this update.
@@ -1733,7 +1734,7 @@ or when the statuses change.
 
 #### Unreserve
 
-The scheduler removes the Pod from the ResourceClaimStatus.ReservedFor field
+The claim plugin removes the Pod from the `claim.status.reservedFor` field
 because it cannot be scheduled after all.
 
 This is necessary to prevent a deadlock: suppose there are two stand-alone
