@@ -39,7 +39,7 @@
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
-  - [Troubleshootin](#troubleshootin)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -410,7 +410,7 @@ tested via unit and integration tests (the kubelet is not relevant to this chang
 #### Beta
 
 - Storage version support for API extensions API server (custom resources)
-- Additional tests are in Testgrid and linked in KEP
+- Add tests for feature enablement/disablement based on the feature flag
 
 #### GA
 
@@ -422,19 +422,10 @@ tested via unit and integration tests (the kubelet is not relevant to this chang
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-
-==TODO==
+No specific changes to upgrade and downgrade strategies are required with regards to this
+feature (see enablement and rollback section below).  Once this feature is widely available
+and deployed, it will make future upgrades easier because it enables fully automated storage
+migration without the risk of polluted migrations.
 
 ### Version Skew Strategy
 
@@ -463,7 +454,9 @@ enhancement:
 ###### Does enabling the feature change any default behavior?
 
 Enabling the feature will enable a new API in the apiserver, but this should not change
-any behaviors for existing workloads in the cluster.
+any behaviors for existing workloads in the cluster.  The new filter on the API server's
+handler chain may result in failed requests if traffic is routed to the API server before
+it has reported ready.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -515,7 +508,8 @@ No
 
 Operators can check the existence of the StorageVersion API, as well as apiserver
 health check metrics to check that the feature is working as expected.
-Operations against the StorageVersion API can be checked to see if the API is in use by any controllers in the cluster.
+Operations against the StorageVersion API can be checked via audit logs to see
+if the API is in use by any controllers in the cluster.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -529,7 +523,7 @@ Operations against the StorageVersion API can be checked to see if the API is in
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Regarding availablility/latency of serving the new API, this should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos)
+Regarding availability/latency of serving the new API, this should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos)
 for serving mutating or read-only API calls.
 
 Reasonable SLOs specific to the StorageVersion API could be:
@@ -599,7 +593,7 @@ by apiserver could be stale. However this should not be a big concern since
 objects during this time would not be receiving writes anyways and the storage version would
 be updated eventually when etcd is available again. In no situation can the agreed
 encoding version flip back to an old version when etcd is unavailable, since this
-would only happen once all kube-apiserver's have succesfully reported the new version.
+would only happen once all kube-apiserver's have successfully reported the new version.
 
 ###### What are other known failure modes?
 
