@@ -114,7 +114,9 @@ Writes to most Kubernetes resources must be prevented until the API server has
 had a chance to emit its encoding versions for all resources.  This requires us to
 have a carefully written handler that only lets a very specific set of requests through.
 Mistakes in this code could easily prevent the API server from functioning.  This
-handler will be carefully tested via unit and integration tests.
+handler will be carefully tested via unit and integration tests.  Readiness checks
+will return false until this process is complete to inform external load balancers to
+not send traffic to the API server.
 
 ## Design Details
 
@@ -124,7 +126,8 @@ We introduce a new API `StorageVersion`, in a new API group
 `internal.apiserver.k8s.io/v1alpha1`.
 
 ```go
-// Storage version of a specific resource.
+// Storage version of a specific group resource.
+// There is one instance of this resource per group resource.
 type StorageVersion struct {
   metav1.TypeMeta `json:",inline"`
   // The name is <group>.<resource>.
@@ -396,8 +399,10 @@ The wiring of the new code into existing code paths will be tested via:
 
 ##### e2e tests
 
-No E2E tests are required for this enhancement as the functionality can be completely
-tested via unit and integration tests (the kubelet is not relevant to this change).
+CRDs exercise the bulk of the Kubernetes storage layer at runtime.  In particular,
+CRDs allow runtime changes to the preferred encoding version.  Thus we will
+write an E2E test to exercise this feature and demonstrate its functionality using
+CRDs.  In the future, this E2E could serve as part of a conformance test.
 
 ### Graduation Criteria
 
@@ -544,6 +549,8 @@ to create a new Lease object obtaining an ID that will be used in the `storageVe
 
 The following metrics could be useful, but are likely not practical due to cardinality issues or complexity of the implementation:
 - The latency for a single apiserver to update it's encoding version after start-up
+  Note that this latency can be indirectly observed by scraping the `poststarthook` metric at a short interval
+  (by checking how long and often the metric is false)
 - The latency for all apiservers to reach a consensus on the agreed encoding version for a storage version.
   It is unclear at this point if such a metric is necessary, so we will use the beta phase of this change to see
   this is actually needed or if we just need to have the independent API servers properly reflect their status.
