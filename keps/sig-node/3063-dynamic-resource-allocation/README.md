@@ -960,7 +960,17 @@ resource is already allocated and determines the nodes on which the
 Pod may run. The downside is that pod scheduling is less flexible.
 
 For delayed allocation, a node is selected tentatively by the scheduler
-and driver(s) try to allocate their resources for that node. If that
+in an iterative process where the scheduler suggests some potential nodes
+that fit the other resource requirements of a Pod and resource drivers
+respond with information about whether they can allocate claims for those
+nodes. This exchange of information happens through the `PodScheduling`
+object for a Pod. The scheduler has to involve the drivers because it
+doesn't know what claim parameters mean and where suitable resources are
+currently available.
+
+Once the scheduler is confident that it has enough information to select
+a node that will probably work for all claims, it asks the driver(s) to
+allocate their resources for that node. If that
 succeeds, the Pod can get scheduled. If it fails, the scheduler must
 determine whether some other node fits the requirements and if so,
 request allocation again. If no node fits because some resources were
