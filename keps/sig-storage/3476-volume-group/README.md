@@ -1370,7 +1370,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Yes. All VolumeGroup and VolumeGroupSnapshot API objects need to be deleted before this feature can be truly disabled.
+  Yes. In order to disable this feature once it has been enabled, we first need to make sure that all VolumeGroup and VolumeGroupSnapshot API objects are deleted. Then the new controllers for VolumeGroup and VolumeGroupSnapshot can be stopped/removed, and external-provisioner sidecar and external-snapshotter controller/sidecar can be downgraded to a version without this feature.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   We will be able to create new VolumeGroup and VolumeGroupSnapshot API objects again.
