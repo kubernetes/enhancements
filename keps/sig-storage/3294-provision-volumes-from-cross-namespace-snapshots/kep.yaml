@@ -3,9 +3,11 @@ kep-number: 3294
 authors:
   - "@Elbehery"
   - "@mkimuram"
+  - "@ttakahashi21"
 owning-sig: sig-storage
 participating-sigs:
   - sig-network
+  - sig-auth
 status: implementable
 creation-date: 2022-04-06
 reviewers:
@@ -44,11 +46,11 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-#feature-gates:
-#  - name: MyFeature
-#    components:
-#      - kube-apiserver
-#      - kube-controller-manager
+feature-gates:
+  - name: CrossNamespaceSourceProvisioning
+    components:
+      - kube-apiserver
+      - csi-external-provisioner
 disable-supported: true
 
 # The following PRR answers are required at beta release
