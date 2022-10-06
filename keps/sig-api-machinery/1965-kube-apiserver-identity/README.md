@@ -180,7 +180,9 @@ Alpha should provide basic functionality covered with tests described above.
 
 #### Beta -> GA Graduation
 
-N/A
+  - SIG consensus on whether Lease names should be unique per process (i.e. uuid) or persist across restarts (i.e. hostname)
+  - SIG consensus on whether Lease names should include a hostname identifier (via label) if they do NOT persist across restarts.
+  - SIG consensus on where the storageversiongc controller should run (kube-apiserver vs kube-controller-manager).
 
 **For non-optional features moving to GA, the graduation criteria must include
 [conformance tests].**
