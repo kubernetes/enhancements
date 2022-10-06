@@ -381,6 +381,10 @@ In the future we may expand this functionality if needed. This could include:
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 #### Unit tests
 
 - `k8s.io/pkg/controller/endpointslice`: `2022-10-05` - `73.1`
