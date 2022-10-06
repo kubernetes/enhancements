@@ -290,6 +290,9 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
+The risks are minimal, introduction of new API is not affecting any other APIs. Implementation of
+kubelet taking in use the new API to monitor and publish image pulling progress events to Pod
+object are out of scope of this KEP, although kept in mind during design.
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
 For example, consider both security and how this will impact the larger
@@ -373,7 +376,7 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-The implementation PR adds a suite of unit and E2E tests to the new proposed PullImageWithProgress API.
+The implementation PR adds a suite of unit tests.
 
 ##### Prerequisite testing updates
 
