@@ -1,0 +1,45 @@
+title: Improved multi-numa alignment in Topology Manager
+kep-number: 3545
+authors:
+  - "@PiotrProkop"
+  - "@knopt"
+owning-sig: sig-node
+participating-sigs: []
+status: implementable
+creation-date: "2022-09-26"
+reviewers: []
+approvers:
+  - "@sig-node-leads"
+see-also: []
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.28"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: "TopologyManagerPolicyOptions"
+    components:
+      - kubelet
+  - name: "TopologyManagerPolicyAlphaOptions"
+    components:
+      - kubelet
+  - name: "TopologyManagerPolicyBetaOptions"
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
