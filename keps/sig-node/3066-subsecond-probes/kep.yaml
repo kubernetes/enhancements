@@ -7,7 +7,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: implementable
+status: provisional
 creation-date: 2021-11-30
 reviewers:
   - "@mrunalp"
@@ -15,8 +15,6 @@ reviewers:
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
-prr-approvers:
-  - "@johnbelarmic"
 stage: alpha
 latest-milestone: "v1.26"
 milestone:
@@ -27,5 +25,6 @@ feature-gates:
   - name: SubSecondProbes
     components:
       - kubelet
+      - kube-apiserver
 disable-supported: true
 metrics:

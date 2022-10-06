@@ -93,8 +93,9 @@ and is guaranteed to happen on scale-from-zero.)
 
 ### Goals
 
-An ability to specify timeouts that have more granularity, specificity, than just zero,
-one, or n-seconds.
+An ability to specify probe durations that have more granularity, more specificity, than just zero,
+one, or n-seconds. Focus is on possibly faster first readiness probes, and more granular use beyond
+existing defaults, for example 1.5 second duration instead of picking between 1 or 2 second duration.
 Add additional tests cases to the timeout test cases.
 Not breaking backwards compatibility with the V1 API.
 
@@ -108,11 +109,11 @@ Converting fields from `int32` to `resource.Quantity`.
 ## Proposal
 
 TLDR:
-Add three new optional fields (of type `*int32`) to the Probe struct, which would be used to offset the second based time values in the Probe struct:
+Add two new optional fields (of type `*int32`) to the Probe struct, which would be used to offset the second based time values in the Probe struct:
 
 - `PeriodMilliseconds`       // How often (in milliseconds) to offset PeriodSeconds when performing the probe.
 - `InitialDelayMilliseconds` // Length of time (in milliseconds) to offset IntialDelaySeconds before health checking is activated.
-- `TimeoutMilliseconds`      // Length of time (in milliseconds) to offset TimeoutMilliseconds before health checking times out.
+- `TimeoutMilliseconds`      // Length of time (in milliseconds) to offset TimeoutMilliseconds before health checking times out. (*** timeout not in alpha)
 
 The seconds and milliseconds fields (as related) will be summed to get the resulting time duration. For example,
 
@@ -138,8 +139,6 @@ There are a few corner cases around default (effective period) values:
 
 `periodSeconds: 0` and `periodMilliseconds: 500` would be 10.5s / 10500ms (as 0 => 10 for `periodSeconds` via [defaults.go](https://github.com/kubernetes/kubernetes/blob/3b13e9445a3bf86c94781c898f224e6690399178/pkg/apis/core/v1/defaults.go#L213-L215))
 
-`timeoutSeconds: 0` and `timeoutMilliseconds: 500` would be 1.5s / 1500ms (as 0 => 1 for `timeoutSeconds` via [defaults.go](https://github.com/kubernetes/kubernetes/blob/3b13e9445a3bf86c94781c898f224e6690399178/pkg/apis/core/v1/defaults.go#L210-L212))
-
 Each optional millisecond field will be restricted to [-999,999], and the effective sum will never be allowed
 to be less than 0 (if the effective sum is less than 0, it will fail at the validation stage and block delployments).
 
@@ -159,11 +158,25 @@ Changing defaults is a strict no-go.
 ### Risks and Mitigations
 
 Accidentally setting a timeout too low could DOS kubelet if many are used.
-Will mitigate by preventing timeout values that are too small.
-Could be configurable,
-100ms is a first guess, but will be adjusted based on user feedback during alpha and performance testing. Will also implement a scaling of the periodMilliseconds field to further reduce risk of thrashing.
+Thus will mitigate by preventing timeout values that are too small or to often:
+exec(500ms minimum periodSeconds until success, then drop back to the original second range/value)
+grpc(200ms minimum until success, then drop back to the original second range)
+http(200ms minimum until success, then drop back to the original second range)
 
-Benchmarking currently WIP for alpha, will be implemented for beta to determine the ideal floor. Several benchmarking tools are being considered (options include ones developed by Knative, Amazon, Red Hat). Benchmarking tooling will also work for similar areas (such as the PLEG work.)
+note for exec, grpc, http .. for startup and readiness we will support the millisecond range sum to be greater than zero..
+in other words if they know 1.4 seconds is the right range and 1s just will not work they can ask for 1second plus 400mills
+vs having to go pick one of 1second where the first is known to fail or 2 where they know it's 600mills slower than it should
+be because 99% of runs will be less than 1.4s.
+
+Keep initialDelayMilliseconds where initialDelay is supported because zero is the current minimum initialDelay in seconds..
+thus no mitigation is necessary.
+
+The periodMilliseconds option for periodSeconds is mitigated to only being valid until success and with appropriate minimums
+specified above
+
+timeoutMilliseconds will not be implemented in alpha.. may investigate for possible inclusion in a subsequent KEP.
+
+Benchmarking currently WIP for alpha, will be implemented for beta to determine the ideal floor values. Several benchmarking tools are being considered (options include ones developed by Knative, Amazon, Red Hat). Benchmarking tooling will also work for similar areas (such as the PLEG work.)
 
 As @aojea notes sig-scalability is already measuring pod latency on startup,
 http://perf-dash.k8s.io/#/?jobname=gce-100Nodes-master&metriccategoryname=E2E&metricname=LoadHighThroughputPodStartup&Metric=pod_startup and adding a new metric
@@ -309,15 +322,14 @@ type Probe struct {
 	InitialDelayMilliseconds *int32
 	// Length of time (in milliseconds) to offset TimeoutMilliseconds before health checking times out.
 	// +optional
-	TimeoutMilliseconds *int32
+	TimeoutMilliseconds *int32 (*** removed from alpha)
 }
 
 ```
 #### Logic for Added Fields
 What is the least logic that could be used?
 
-The combined value of `PeriodSeconds` and `PeriodMilliseconds` must be greater than 100ms (for first period).
-The combined value of `TimeoutSeconds` and `TimeoutMilliseconds` must be greater than 100ms.
+The combined value of `PeriodSeconds` and `PeriodMilliseconds` must be greater than 200ms and greater than 500ms for exec probe. And after success falls back to original seconds value.
 The combined value of `IntialDelaySeconds` and `InitialDelayMilliseconds` must be greater than or equal to zero ms.
 
 
@@ -386,8 +398,8 @@ The Kubernetes design for Probes includes a Probe struct containing
 fields that specify seconds for intervals.
 Some users would like to have intervals less than or slightly greater
 than one second.
-This KEP adds sub-second interval capablilities to Kubernetes Liveness,
-Readiness, and Startup Probes.
+This KEP adds sub-second interval capablilities to Kubernetes Readiness, and Startup Probes with described mitigation limitations.
+Liveness probes and more granular timeouts may be investigated in a followup KEP.
 
 
 ### Test Plan
@@ -416,6 +428,7 @@ _This section must be completed when targeting alpha to a release._
   - [ X ] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: SubSecondProbes
     - Components depending on the feature gate:
+		kube-apiserver and kubelet
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
@@ -492,13 +505,12 @@ Enabling / using this feature will result in changes to resource usage
 (CPU, RAM, disk, IO, ...) in kubelet and runtime coponents. This KEP provides for
 mitigation of the changes.
 
-Reducing the probe frequency to subsecond intervals will result in probes polling much more
-frequently, and that is mitigated through scaling. In a worst case scenario, if all probes
-are set to the minimum value (100ms), through scaling it would result in 3x (configurable)
-as many probe runs compared to the current state.
+Reducing the probe frequency to subsecond intervals will result in probes polling slightly more
+frequently until success, as mitigated for exec probes and restricting to startup and readyness.
 
-In beta consideration will be made for increasing the rate of change for scaling when resource
-pressure is identified.
+In a follow up KEP further mitigations and allowances may be considered based on resource
+pressure, use cases for liveness probes, and if exec probe costs can be reduced via
+architecual changes.
 
 ### Troubleshooting
 
