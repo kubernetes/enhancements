@@ -23,11 +23,11 @@ latest-milestone: "v1.25"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.25"
-  beta: "v1.26"
-  stable: "v1.28"
+  beta: "v1.27"
+  stable: "v1.29"
 
 feature-gates:
-  - name: ClusterCIDRConfig
+  - name: MultiCIDRRangeAllocator
     components:
       - kube-controller-manager
 disable-supported: true
