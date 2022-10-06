@@ -2057,7 +2057,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: CelValidatingAdmissionExtensibility
+  - Feature gate name: CELValidatingAdmission
   - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
