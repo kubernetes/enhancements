@@ -262,8 +262,9 @@ the Lease object to see if workloads or other controllers are relying on this fe
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-A rough SLO here is that healthy kube-apiservers has a lease which is not older than 2 times the frequency of
-the lease heart beat 95% of time.
+Some reasonable SLOs could be:
+* Number of (non-expired) Leases in `kube-apiserver-leases` is equal to the number of expected kube-apiservers 95% of the time.
+* kube-apiservers hold a lease which is not older than 2 times the frequency of the lease heart beat 95% of time.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -276,6 +277,8 @@ the lease heart beat 95% of time.
 
 A metric measuring the last updated time for a lease could be useful, but it could introduce cardinality problems
 since the lease is changed on every restart of kube-apiserver.
+
+We may consider adding a metric exposing the count of leases in `kube-apiserver-lease`.
 
 ### Dependencies
 
