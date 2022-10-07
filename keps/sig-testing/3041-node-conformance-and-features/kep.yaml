@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-testing
 participating-sigs:
 - sig-node
-status: provisional
+status: implementable
 creation-date: 2021-11-08
 reviewers:
   - danielle
@@ -15,5 +15,5 @@ approvers:
   - BenTheElder
   - aojea
   - dchen1107
-stage: stable
+stage: beta
 latest-milestone: "v1.26"

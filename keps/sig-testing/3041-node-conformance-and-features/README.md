@@ -17,6 +17,7 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+  - [Notes](#notes)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Existing test definitions](#existing-test-definitions)
@@ -291,12 +292,17 @@ Decision making tree for the test labels:
 - Is test only works when underlying container runtime has a specific feature enabled or specific node configuration is set? Apply `[Feature:Foo]` to describe this feature or configuration.
 - Can test only run on the "default" test infra node? If not, apply `[Environment:Foo]` to describe the specific environment that needs to be pre-configured.
 
+### Notes
+
+PRR and test plan sections are not applicable to this KEP.
+
+See https://kubernetes.slack.com/archives/CPNHUMN74/p1665177817264029
+
 <!--
 
 STANDARD TEMPLATE AFTER THIS LINE, NO MEANINGFUL CONTENT
 
 -->
-
 
 
 ### Notes/Constraints/Caveats (Optional)
