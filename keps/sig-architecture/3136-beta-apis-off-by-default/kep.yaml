@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-architecture
 participating-sigs:
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2022-01-13
 reviewers:
 approvers:
