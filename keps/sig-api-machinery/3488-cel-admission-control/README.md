@@ -1809,7 +1809,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -2021,7 +2021,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: CelValidatingAdmissionExtensibility
+  - Feature gate name: CELValidatingAdmission
   - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
