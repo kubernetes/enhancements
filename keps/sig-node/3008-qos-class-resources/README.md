@@ -218,8 +218,8 @@ aimed at enabling) are:
 
 With QoS-class resources, Pods and their containers can request opaque
 QoS-class identifiers (classes) of certain QoS mechanism (QoS-class resource
-type). Kubelet relays this information to the container runtime which is
-responsible for enforcing the request in the underlying system.
+type). Kubelet relays this information to the container runtime, without
+directing how the request is enforced in the underlying system.
 
 ## Motivation
 
@@ -233,13 +233,14 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 -->
 
 This enhancement proposal aims at improving the quality of service of
-applications in Kubernetes by introducing a new type of resource control
-mechanism. Certain types of resources are inherently shared by application (e.g.
-cache, memory bandwidth and disk I/O) and while there are technologies for
-controlling these, there is currently no meaningful way in Kubernetes to
-support those technologies. This proposal suggests to address the issue above
-in a generalized way by extending the Kubernetes resource model with a new type
-of resources, i.e. QoS-class resources.
+applications by implementing a new type of resource control mechanism in
+Kubernetes. Certain types of resources are inherently shared by applications,
+e.g. cache, memory bandwidth and disk I/O. While there are technologies for
+controlling how these resources are shared between applications, there is
+currently no meaningful way to support these technologies in Kubernetes. This
+proposal suggests to address the issue above in a generalized way by extending
+the Kubernetes resource model with a new type of resources, i.e. QoS-class
+resources.
 
 This KEP identifies two technologies that can immediately be enabled with
 QoS-class resources. However, these are just two examples  and the proposed
@@ -553,6 +554,14 @@ QoS-class resources from the runtime to the client. This information includes:
 - Whether the resource type is immutable or if it supports in-place updates.
   In-place updates of resoures might not be possible because of runtime
   limitations or the underlying technology, for example.
+
+QoS-class resources are unbounded in the way that any number of applications
+can request the same class (of the same QoS-class resource). QoS-class
+resources typically represent some throttling mechanism - in this case for
+example, if all (or most of) applications request the highest-tier class all of
+these applications get the same level of service.
+Future work on [access control(#access-control) will provide mechanisms to
+limit what QoS-class resources (or classes) are available to users.
 
 Pod-level and container-level QoS-class resources are completely independent
 resource types. E.g. specifying something in the pod-level request does not
