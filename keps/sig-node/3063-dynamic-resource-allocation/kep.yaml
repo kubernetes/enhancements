@@ -28,9 +28,9 @@ latest-milestone: "v1.25"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.25"
-  beta: "v1.28"
-  stable: "v1.30"
+  alpha: "v1.26"
+  beta: "v1.29"
+  stable: "v1.31"
 
 feature-gates:
   - name: DynamicResourceAllocation
