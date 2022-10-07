@@ -377,6 +377,10 @@ As a developer I'd like to implement a backend proxy implementation without bein
 
 As a user of Kubernetes at large scales, I want more ways to offload APIServer strain, then simply reducing the amount of Endpoints allowed in an EndpointSlice.
 
+#### Story 7
+
+As a developer I'd like to write a kube proxy implementation in a new language like C or Rust, which doesn't require a active connection to the Kubernetes APIServer.
+
 ### Notes/Constraints/Caveats (Optional)
 
 - sending the full-state could be resource consuming on big clusters, but it should still be O(1) to
