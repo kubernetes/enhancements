@@ -373,6 +373,10 @@ As an end user, I'd like to be able to easily test a Kubernetes backend's networ
 
 As a developer I'd like to implement a backend proxy implementation without being dependent on the K8s API, and without creating any load on the Kubernetes API - either in edge networking scenarios, or in high scale scenarios.
 
+#### Story 6
+
+As a user of Kubernetes at large scales, I want more ways to offload APIServer strain, then simply reducing the amount of Endpoints allowed in an EndpointSlice.
+
 ### Notes/Constraints/Caveats (Optional)
 
 - sending the full-state could be resource consuming on big clusters, but it should still be O(1) to
