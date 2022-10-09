@@ -43,8 +43,8 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in
       [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
       SIG Testing input
 - [ ] (R) Graduation criteria is in place
@@ -116,7 +116,7 @@ type PodSecurityContext struct {
     ...
     // The AppArmor options to use by the containers in this pod.
     // +optional
-    AppArmor  *AppArmorProfile
+    AppArmorProfile  *AppArmorProfile
     ...
 }
 
@@ -126,7 +126,7 @@ type SecurityContext struct {
     // provided at both the pod & container level, the container options
     // override the pod options.
     // +optional
-    AppArmor  *AppArmorProfile
+    AppArmorProfile  *AppArmorProfile
     ...
 }
 
@@ -254,6 +254,9 @@ If no AppArmor annotations or fields are specified, no action is necessary.
 If the `AppArmor` feature is disabled per feature gate, then the annotations and
 fields are cleared (current behavior).
 
+If the pod's OS is `windows`, fields are forbidden to be set and annotations
+are not copied to the corresponding fields. 
+
 If _only_ AppArmor fields are specified, add the corresponding annotations. If these 
 are specified at the Pod level, copy the annotations to each container that does
 not have annotations already specified. This ensures that the fields are enforced 
@@ -333,10 +336,6 @@ Therefore, the AppArmor profiles will be applied following the priority order:
 1. Container-specific field.
 2. Container-specific annotation.
 3. Pod-wide field.
-
-In case both annotations and fields at the container level exist, the
-kubelet will ignore the annotations and will only apply the profile defined on
-the relevant field.
 
 #### Upgrade / Downgrade
 
