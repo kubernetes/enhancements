@@ -233,7 +233,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 -->
 
 This enhancement proposal aims at improving the quality of service of
-applications by implementing a new type of resource control mechanism in
+applications by making available a new type of resource control mechanism in
 Kubernetes. Certain types of resources are inherently shared by applications,
 e.g. cache, memory bandwidth and disk I/O. While there are technologies for
 controlling how these resources are shared between applications, there is
