@@ -217,7 +217,8 @@ N/A
 - 1.9 Incremental improvements working towards 1.10 goals
 - 1.11 Beta release
 - 1.21 Feature is marked for deprecation
-- 1.24 Featuer is removed from kubelet. It will be removed from control plane in 1.26 to support version skew.
+- 1.24 Feature is removed from kubelet. It will be removed from control plane in 1.26 to support version skew.
+- 1.26 Fully removed from kubernetes
 
 ## Drawbacks
 
