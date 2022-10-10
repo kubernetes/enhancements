@@ -465,18 +465,36 @@ Some alternatives for presenting this information:
             // Defaults to Capacity.
             // +optional
             Allocatable ResourceList `json:"allocatable,omitempty" protobuf:"bytes,2,rep,name=allocatable,casttype=ResourceList,castkey=ResourceName"`
-   +        // PodClassResrouces lists the available class resources available for pod sandboxes.
-   +        PodClassResources []ClassResourceList
-   +        // ContainerClassResrouces lists the available class resources available for containers.
-   +        ContainerClassResources []ClassResourceList
-   +
-   +type ClassResourceList {
-   +        // Name of the resource
+   +        // ClassResources contains information about the class resources that are
+   +        // available on the node.
+   +        // +optional
+   +        ClassResources ClassResourceStatus
+   ...
+
+   +// ClassResourceStatus describes class resources available on the node.
+   +type ClassResourceStatus struct {
+   +        // PodClassResources contains the class resources that are available for
+   +        // pods to be assigned to.
+   +        PodClassResources []ClassResourceInfo
+   +        // ContainerClassResources contains the class resources that are available
+   +        // for containers to be assigned to.
+   +        ContainerClassResources []ClassResourceInfo
+   +}
+
+   +// ClassResourceInfo contains information about one class resource type.
+   +type ClassResourceInfo struct {
+   +        // Name of the resource.
    +        Name ClassResourceName
-   +        // Classes available in the resource
-   +        Classes []string
-   +        // Immutable is set to true if the resource type does not support in-place updates
-   +        Immutable bool
+   +        // Mutable is set to true if the resource supports in-place updates.
+   +        Mutable bool
+   +        // Classes available for assignment.
+   +        Classes []ClassResourceClassInfo
+   +}
+
+   +// ClassResourceClassInfo contains information about single class of one
+   +// QoS-class resource.
+   +type ClassResourceClassInfo struct {
+   +        Name string
    +}
    ```
 1. Separate API objects (e.g. something like `RuntimeClass`). Doesn't
@@ -507,11 +525,30 @@ would implement restrictions based on the namespace.
      // object tracked by a quota but expressed using ScopeSelectorOperator in combination
      // with possible values.
      ScopeSelector *ScopeSelector
-+    // PodClassResources contains the allowed pod-level class resources.
-+    PodClassResources []ClassResourceInfo
-+    // ContainerClassResources contains the allowed container-level class resources.
-+    ContainerClassResources []ClassResourceInfo
++    // ClassResources contains the desired set of allowed class resources.
++    // +featureGate=ClassResources
++    // +optional
++    ClassResources ClassResourceQuota
  }
+
++// ClassResourceQuota contains the allowed class resources.
++type ClassResourceQuota struct {
++       // Pod contains the allowed class resources for pods.
++       // +optional
++       Pod []AllowedClassResource
++       // Container contains the allowed class resources for pods.
++       // +optional
++       Container []AllowedClassResource
++}
+
++// AllowedClassResource specifies access to one QoS-class resources type.
++type AllowedClassResource struct {
++       // Name of the resource.
++       Name ClassResourceName
++       // Allowed classes.
++       Classes []string
++}
+
 
  // ResourceQuotaStatus defines the enforced hard limits and observed use.
  type ResourceQuotaStatus struct {
@@ -519,10 +556,10 @@ would implement restrictions based on the namespace.
         // Used is the current observed total usage of the resource in the namespace
         // +optional
         Used ResourceList
-+       // PodClassResources contains the enforced set of pod-level class resources available.
-+       PodClassResources []ClassResourceInfo
-+       // ContainerClassResources contains the enforced set of container class resources available.
-+       ContainerClassResources []ClassResourceInfo
++       // ClassResources contains the enforced set of available class resources.
++       // +featureGate=ClassResources
++       // +optional
++       ClassResources ClassResourceQuota
  }
 
 
@@ -713,7 +750,7 @@ Similar to `CreateContainerRequest`, the `UpdateContainerResourcesRequest`
 message will extended to allow updating of QoS-class resource configuration of
 a running container.  Depending on runtime-level support of a particular
 resource (and possibly the type of resource) UpdateContainerResourcesRequest
-might fail. Resource discovery (see [Runtime status](#runtime-status) the has
+might fail. Resource discovery (see [Runtime status](#runtime-status)) has
 the capability to distinguish immutable resource types.
 
 Note that neither of the existing QoS-class resource types (RDT or blockio)
@@ -782,10 +819,14 @@ this information into node status.
 +    repeated ClassResourceInfo container_class_resources = 2;
 +}
 
-+// ClassResourceInfo contains information about one type of QoS-class resource.
++// ClassResourceInfo contains information about one type of class resource.
 +message ClassResourceInfo {
++    // Name of the QoS-class resources.
 +    string Name = 1;
-+    repeated ClassResourceClassInfo classes = 2;
++    // Mutable is set to true if this resource sypports dynamic updates.
++    bool Mutable = 2;
++    // List of classes of this resource.
++    repeated ClassResourceClassInfo classes = 3;
 +}
 
 +// ClassResourceClassInfo contains information about single class of one
