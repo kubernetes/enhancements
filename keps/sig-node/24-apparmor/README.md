@@ -17,12 +17,12 @@
   - [Failure and Fallback Strategy](#failure-and-fallback-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
     - [Pod Creation](#pod-creation)
-    - [PodSecurityPolicy Support](#pod-security-policy-fields)
+    - [PodSecurityPolicy Support](#podsecuritypolicy-support)
     - [Pod Update](#pod-update)
     - [PodTemplates](#podtemplates)
     - [Runtime Profiles](#runtime-profiles)
-    - [Kubelet Backwards compatibility](#kubelet-backwards-compatibility)
-    - [Upgrade / Downgrade](#upgrade--downgrade)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+      - [Kubelet Backwards compatibility](#kubelet-backwards-compatibility)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -327,17 +327,7 @@ Violations would lead to the error message:
 Invalid value: "runtime/profile-name": must be a valid AppArmor profile
 ```
 
-#### Kubelet Backwards compatibility
-
-The changes brought to the Kubelet by this KEP will ensure backwards
-compatibility in a similar way the changes above define it at API Server level.
-Therefore, the AppArmor profiles will be applied following the priority order:
-
-1. Container-specific field.
-2. Container-specific annotation.
-3. Pod-wide field.
-
-#### Upgrade / Downgrade
+#### Upgrade / Downgrade Strategy
 
 Nodes do not currently support in-place upgrades, so pods will be recreated on
 node upgrade and downgrade. No special handling or consideration is needed to
@@ -355,6 +345,16 @@ target for removal of the old behavior. Specifically, annotation support will be
 in the kubelet after this period, and fields will no longer be copied to annotations for older kubelet 
 versions. However, annotations submitted to the API server will continue to be copied to fields at the 
 kubelet indefinitely, as was done with Seccomp.
+
+##### Kubelet Backwards compatibility
+
+The changes brought to the Kubelet by this KEP will ensure backwards
+compatibility in a similar way the changes above define it at API Server level.
+Therefore, the AppArmor profiles will be applied following the priority order:
+
+1. Container-specific field.
+2. Container-specific annotation.
+3. Pod-wide field.
 
 ### Test Plan
 
