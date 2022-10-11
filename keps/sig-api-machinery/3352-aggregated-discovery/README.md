@@ -270,7 +270,7 @@ details that didn't come across above? Go in to as much detail as
 necessary here. This might be a good place to talk about core concepts
 and how they relate. -->
 
-This is an important design note around selecting the group version for the new discovery types to be `meta/v1beta1`. [Link to the full comment](https://github.com/kubernetes/kubernetes/pull/111978#discussion_r979015557)
+This is an important design note around selecting the group version for the new discovery types to be `apidiscovery/v2beta1`. [Link to the full comment](https://github.com/kubernetes/kubernetes/pull/111978#discussion_r979015557)
 
 1. Discovery is a non-resource API class
 2. As a non-resource API class, once the feature gate is
@@ -325,9 +325,9 @@ aggregated discovery document.
 
 Clients requesting the aggregated document will send a request with
 `as` (kind), `v` (version), and `g` (group) set as part of the
-`Accept` header. For example, a client requesting the `v1beta1`
+`Accept` header. For example, a client requesting the `v2beta1`
 version will send `Accept:
-application/json;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io`.
+application/json;as=APIGroupDiscoveryList;v=v2beta1;g=apidiscovery.k8s.io`.
 
 Clients should send an accept header with all the acceptable responses
 in preferred order. This is to avoid sending additional requests to the same endpoint if the initial preferred version is unavailable. The default accept type will not be changed and
@@ -336,9 +336,9 @@ omitting the content negotiation type will default to the unaggregated
 `application/vnd.kubernetes.protobuf` as a fallback option in case the
 server does not support the aggregated type (eg: Different version,
 feature disabled, etc) For instance, `Accept:
-application/json;as=APIGroupDiscoveryList;v=v1;g=meta.k8s.io,application/json;as=APIGroupDiscoveryList;v=v1beta1;g=meta.k8s.io,application/json`
-will request for the aggregated discovery v1 type, aggregated
-discovery v1beta1 type, and unaggregated v1 type in that order. The
+application/json;as=APIGroupDiscoveryList;v=v1;g=apidiscovery.k8s.io,application/json;as=APIGroupDiscoveryList;v=v2beta1;g=apidiscovery.k8s.io,application/json`
+will request for the aggregated discovery v2 type, aggregated
+discovery v2beta1 type, and unaggregated v1 type in that order. The
 server will return the first option that is supported.
 
 ### API
@@ -354,7 +354,7 @@ current API will be representable in the new API.
 The endpoint will also publish an ETag calculated based on a hash of
 the data for clients.
 
-These types will live in the `meta/v1beta1` group version.
+These types will live in the `apidiscovery/v2beta1` group version.
 
 This is what the new API will look like.
 
