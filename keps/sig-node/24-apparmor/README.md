@@ -22,7 +22,7 @@
     - [PodTemplates](#podtemplates)
     - [Runtime Profiles](#runtime-profiles)
     - [Kubelet Backwards compatibility](#kubelet-backwards-compatibility)
-    - [Upgrade / Downgrade](#upgrade-downgrade)
+    - [Upgrade / Downgrade](#upgrade--downgrade)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -478,6 +478,10 @@ will rollout across nodes.
   that profiles on upgraded nodes are loaded at the Kubelet's specified path prefix.
   Containers of Pods loading AppArmor profiles will fail to start if they attempt to 
   load non-Kubernetes profiles.
+
+  Monitoring the below metrics can help identify these issues:
+  * `started_containers_errors_total`
+  * `started_pods_errors_total`
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 <!--
