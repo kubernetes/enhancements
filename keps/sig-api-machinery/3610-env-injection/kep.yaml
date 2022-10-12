@@ -1,0 +1,19 @@
+title: Env Injection
+kep-number: 3610
+authors:
+  - "@pacoxu"
+owning-sig: sig-api-machinery
+participating-sigs:
+- sig-auth
+status: implementable
+creation-date: 2022-10-10
+reviewers:
+approvers:
+prr-approvers:
+  - "@deads2k"
+stage: alpha
+latest-milestone: "v1.27"
+milestone:
+  alpha: "v1.27"
+feature-gates:
+disable-supported: true
