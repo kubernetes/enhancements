@@ -75,8 +75,10 @@ SIG Architecture for cross-cutting KEPs).
   - [Proxy Shutdown](#proxy-shutdown)
   - [API](#api)
   - [Test Plan](#test-plan)
-    - [Integration](#integration)
-    - [E2E](#e2e)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -427,40 +429,76 @@ type ProxyConfig struct {
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing
-guidelines][testing-guidelines] when drafting this test plan.
-
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-Both integration and e2e tests will be required in addition to unit tests.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-#### Integration
+##### Prerequisite testing updates
 
-Integration tests will cover:
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
 
-* Authentication between client and proxy.
-* Connection from client to apiserver through proxy.
-* Proxy use with kubectl (possible test location: [command-line integration
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/kubernetes/vendor/k8s.io/client-go/tools/auth/exec`: `2022-10-12` - `75`
+- `k8s.io/kubernetes/vendor/k8s.io/client-go/transport`: `2022-10-12` - `57.6`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- Authentication between client and proxy: <link to test coverage>
+- Connection from client to apiserver through proxy: <link to test coverage>
+- Proxy use with kubectl (possible test location: [command-line integration
   test
-  suite](https://github.com/kubernetes/kubernetes/tree/ec560b9737537be8c688776461bc700e8ddedb9d/test/cmd)).
-* UDS connections from the client to the proxy will be tested.
+  suite](https://github.com/kubernetes/kubernetes/tree/ec560b9737537be8c688776461bc700e8ddedb9d/test/cmd)): <link to test coverage>
+- UDS connections from the client to the proxy will be tested: <link to test coverage>
 
-#### E2E
+##### e2e tests
 
-The e2e tests will test communication from client to apiserver through proxy in
-a real cluster. The e2e tests will require a proxy implementation and
-apiserver, etcd, and a client.
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- Communication from client to apiserver through proxy in
+a real cluster.  The e2e tests will require a proxy implementation and
+apiserver, etcd, and a client: <link to test coverage>
 
 ### Graduation Criteria
 
