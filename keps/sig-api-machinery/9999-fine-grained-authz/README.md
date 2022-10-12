@@ -330,9 +330,9 @@ logic for mutating operations. This means that when it is doing the authz check,
 it knows the *object* that is being changed, but nothing about *which fields*
 are changing.
 
-We will introduce a new permission, "checkindvidualfields". This permission
+We will introduce a new permission, "granular". This permission
 means that although the caller doesn't have generic update permissions, it may
-still change some fields.
+still change some fields if it has the specific permissions required.
 
 API Server already maintains schema information for all resource types. This
 will be watched to also maintain field <-> permission mappings.
@@ -343,7 +343,7 @@ On any mutating call,
 
 1. Check the "PUT" / "PATCH" / "CREATE" permission. If the actor has this,
    proceed to step 3.
-2. Otherwise, check the "checkindividualfields" permission. If yes, place a
+2. Otherwise, check the "granular" permission. If yes, place a
    marker in the request context and proceed to step 3, otherwise, fail the
    request with a forbidden error.
 3. Compute the change (patch logic, SSA logic, defaulting etc). Compute a list
@@ -355,6 +355,9 @@ On any mutating call,
 6. Otherwise (no marker) ONLY fields having "excluded" permissions need to be
    checked; if such fields are modified, check their permissions as in step 5.
 7. If all checks pass, perform the rest of the needed operation.
+8. If any check fails, fail the request. The error message will not list ALL
+   permissions that are lacked, because it is possible to craft a request that
+   requires a large number of authz requests.
 
 When fine-grained field permissions need to be checked, they will be checked
 in the order of most general to most specific. When we describe the
@@ -368,6 +371,17 @@ system administrator has made use of the general permission).
 This is a complex design. See the alternatives for why we propose it anyway.
 
 ### Risks and Mitigations
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
 
 This design avoids the "grant an overly broad permission and then restrict it
 later" pattern, which has undesirable failure / misconfiguration patterns.
@@ -378,6 +392,13 @@ fields.
 A risk is that it would be possible to configure permissions which result in a
 large number of authz checks. Specifically CRD authors could craft a CRD with
 many checks required to do anything.
+
+A runtime risk is an actor with the "granular" permission could make requests
+changing many fields it doesn't have permission for, with the aim of driving
+many authz checks to overload the authz system. To mitigate this we (a) have the
+"granular" permission at all, to reduce the number of actors that could attempt
+this, and (b) we will not check all special permissions for a request once we
+know at least one has failed.
 
 ## Design Details
 
@@ -413,20 +434,28 @@ On CRDs schemas:
 "x-kubernetes-permission-verb": "specification"
 ```
 
-The authz system will see the verb "field:specfication".
+The authz system will see the verb "granular:specfication".
 
 #### Pod's nodeName
 
-
+TODO
 
 #### All Labels
 
-#### Specific labels
+TODO
 
-#### Specific finalizers
+#### Specific Labels
 
-#### Specific conditions
+TODO. Choice: Use CEL expression to extract parameter (everything before / in
+the key) or provide built-in mechanism for this?
 
+#### Specific Finalizers
+
+TODO (similar choice).
+
+#### Specific Conditions
+
+TODO (similar choice).
 
 <!--
 This section should contain enough information that the specifics of your
@@ -954,11 +983,50 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+### Subresources
+
+Subresources have some use already, but adding additional ones to cover all the
+desired fields was rejected for the following reasons:
+
+* Each one is a lot of work (this KEP is a lot of work too, but it solves the
+  whole problem at once).
+* Subresources don't solve goal #2 in this KEP.
+* Controllers have to be specially written to use a subresource.
+  .In contrast, with this KEP, if a particular controller only ever wrote
+  .metadata.labels, we could grant it a special permission on just that field and
+  remove its existing overly-broad "write on everything" permission, all
+  __without changing the controller__.
+* Subresources don't compose; if you want to make changes to N fields you have
+  to make N API requests.
+* Subresources make the client experience much less clear, adding a set of
+  Get|Apply|Update|Create|etc functions for every type for every general
+  subresource. E.g. 5 new metadata-based subresources times 50 (?) built-in
+  types times 6 verbs means 1500 functions that would be added to the generated
+  clients.
+
+### Automatically produce permissions from field names
+
+The problem with this approach is around version changes. It is too hard for
+system administrators to ensure that users have the same permissions no matter
+which API version of an object they access.
+
+Additionally describing the exact parameterization needed for each field still
+requires manual attention.
+
+OTOH, the chosen solution is likely to end up with some inconsistent permissions
+between different CRs.
+
+### Hard-code permissions instead of putting them in the schema
+
+This is not significantly easier than the given solution, and leaves us with the
+problem of how to configure the permissions, and especially how to sustainably
+document them.
+
+### Wait for CEL-based admission
+
+This solution is likely 1.5 years or more away from landing. Additionally this
+doesn't meet the requirement of being universally available (it might not be
+enabled).
 
 ## Infrastructure Needed (Optional)
 
