@@ -508,7 +508,7 @@ of this type. This is one way to make this work:
 .
 .
 
-// LabelKey is a value in a label; it is a string.
+// LabelKey is a key for a label; it is a string.
 // +permission-parameter-source:"label-key"
 type LabelKey string
 
