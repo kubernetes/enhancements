@@ -1,5 +1,5 @@
 title: KEP Template
-kep-number: NNNN
+kep-number: 3617
 authors:
   - "@lavalamp"
 owning-sig: sig-api-machinery
@@ -8,15 +8,16 @@ participating-sigs:
 status: provisional
 creation-date: 2022-10-07
 reviewers:
-  - TBD
+  - "@thockin"
 approvers:
-  - TBD
+  - "@deads2k"
+  - "@mo"
 
 see-also:
-  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
+  - "/keps/sig-api-machinery/2839-in-use-protection"
+  - "/keps/sig-scheduling/3521-pod-schedule-readiness"
 replaces:
-  - "/keps/sig-ccc/3456-replaced-kep"
+  - "/keps/sig-api-machinery/3285-subresource-finalizers"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
