@@ -45,10 +45,10 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
       [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and
       SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for
