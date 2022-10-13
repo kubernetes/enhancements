@@ -85,6 +85,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -124,11 +128,11 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -157,96 +161,99 @@ need to be customized for particular cloud providers.
 
 ## Motivation
 
-The Cloud Controller Manager (CCM) is the binary into which the Cloud
-Provider places all the controllers needed to make a Kubernetes cluster work
-correctly on their Cloud. There are also occasions when it makes sense for a Cloud
-Provider to want these customizations to be applied synchronously, during API 
-server request handling, rather than asynchronously after a change has already 
-been applied. 
+The Cloud Controller Manager (CCM) is the binary into which the Cloud Provider
+places all the controllers needed to make a Kubernetes cluster work correctly
+on their Cloud. There are also occasions when it makes sense for a Cloud
+Provider to want these customizations to be applied synchronously, during API
+server request handling, rather than asynchronously after a change has already
+been applied.
 
-Our initial example of this is from SIG Storage. These would like the functionality 
-from the PersistentVolumeLabel (PVL) admission controller 
-(https://github.com/kubernetes/kubernetes/issues/52617).
-This needs to be completed for cloud provider extraction to complete. Several
-Cloud Providers have indicated that this should be done in-line, especially as the
-existing deprecated solution is implemented in an API server admission plugin, 
-which is in-line in the request path.
+Our initial example of this is from SIG Storage. These would like the
+functionality from the PersistentVolumeLabel (PVL) admission controller
+(https://github.com/kubernetes/kubernetes/issues/52617).  This needs to be
+completed for cloud provider extraction to complete. Several Cloud Providers
+have indicated that this should be done in-line, especially as the existing
+deprecated solution is implemented in an API server admission plugin, which is
+in-line in the request path.
 
 ### Goals
 
-Our immediate goal is to allow in tree Cloud Providers to stop using the 
-existing PVL admission controller and do so using the framework. However we want to
-build a framework which wil be usable by similar solutions to problems. This KEP is
-about the framework needed to support the PVL webhook and not the webhook itself.
-The frameworks default listener for the webhook should use existing Kubernetes 
-mechanism (secure serving, authz, authn) to secure itself and validate the client.
-It should be possible to then easily change that configuration to any other Kubernetes
-supported options for a webhook.
+Our immediate goal is to allow in tree Cloud Providers to stop using the
+existing PVL admission controller and do so using the framework. However we
+want to build a framework which wil be usable by similar solutions to problems.
+This KEP is about the framework needed to support the PVL webhook and not the
+webhook itself.  The frameworks default listener for the webhook should use
+existing Kubernetes mechanism (secure serving, authz, authn) to secure itself
+and validate the client.  It should be possible to then easily change that
+configuration to any other Kubernetes supported options for a webhook.
 
 ### Non-Goals
 
-We are not intending to create a [general admission webhook solution](https://book.kubebuilder.io/cronjob-tutorial/webhook-implementation.html). This is just
-intended to host Cloud Provider specific webhooks as part of the Control Plane.
+We are not intending to create a [general admission webhook
+solution](https://book.kubebuilder.io/cronjob-tutorial/webhook-implementation.html).
+This is just intended to host Cloud Provider specific webhooks as part of the
+Control Plane.
 
 ## Proposal
 
-We will start by adding extension hooks which can be registered in the 
-cmd/cloud-controller-manager/main.go. This would be similar to the mechanism
-we already use to register new controllers. The existing sample shows this with
-a sample of registering the nodeipamcontroller which is not a normally installed
-controller in the cloud controller manager. In a similar way we will have a 
-sample of integrating a PVL mutating webhook into the sample CCM. We will also 
+We will start by adding extension hooks which can be registered in the
+cmd/cloud-controller-manager/main.go. This would be similar to the mechanism we
+already use to register new controllers. The existing sample shows this with a
+sample of registering the nodeipamcontroller which is not a normally installed
+controller in the cloud controller manager. In a similar way we will have a
+sample of integrating a PVL mutating webhook into the sample CCM. We will also
 have the system automatically detect if there are both controllers and webhooks
-registered in the binary. If both are registered it will automatically add 
-command line flags allowing webhooks and/or controllers to be disabled. There will
-be two separate flags, the controller flag and the webhook flag. The 
+registered in the binary. If both are registered it will automatically add
+command line flags allowing webhooks and/or controllers to be disabled. There
+will be two separate flags, the controller flag and the webhook flag. The
 controller flag will default to the controllers being enabled. The webhook flag
-will default to the webhooks being disabled. We would also like to provide a 
+will default to the webhooks being disabled. We would also like to provide a
 builder pattern for registering both the controller and webhook extensions.
 
-Another issue to consider is how the mutating/admission webhook configuration is
-written into the cluster. This may be somewhat dependent on if the Cloud Provider
-intends to run the webhook server on the Control Plane or on the Cluster. We would 
-recommend running the webhook server on the Control Plane. However for some Cloud 
-Providers that can lead to special issues with the configuration. As such we will 
-provide a flag which enables the service to automatically register the webhooks as 
-part of startup.  However that functionality can be disabled, allowing the Cloud 
-Provider to do their own custom registration, as part of cluster setup.
+Another issue to consider is how the mutating/admission webhook configuration
+is written into the cluster. This may be somewhat dependent on if the Cloud
+Provider intends to run the webhook server on the Control Plane or on the
+Cluster. We would recommend running the webhook server on the Control Plane.
+However for some Cloud Providers that can lead to special issues with the
+configuration. As such we will provide a flag which enables the service to
+automatically register the webhooks as part of startup.  However that
+functionality can be disabled, allowing the Cloud Provider to do their own
+custom registration, as part of cluster setup.
 
-There are a few parts to this issue. If the webhook server is run on the control 
-plane it may be possible to do things like assume it will be collocated with the
-KAS, hence allowing the webhook server to be reference via localhost. It also means
-that the webhook server could be instantiated from a static manifest. If the 
-webhook server is run in the cluster, then resources such as the Node, Pod, PVs, 
-and AdmissionController which are needed to start the webhook server, must all be
-creatable prior to the webhook server coming up. In addition the template code for
-the webhook server, should not be written such that having all the webhook servers
-crash will not wedge the cluster from being able to get the webhook server started
-again.
+There are a few parts to this issue. If the webhook server is run on the
+control plane it may be possible to do things like assume it will be collocated
+with the KAS, hence allowing the webhook server to be reference via localhost.
+It also means that the webhook server could be instantiated from a static
+manifest. If the webhook server is run in the cluster, then resources such as
+the Node, Pod, PVs, and AdmissionController which are needed to start the
+webhook server, must all be creatable prior to the webhook server coming up. In
+addition the template code for the webhook server, should not be written such
+that having all the webhook servers crash will not wedge the cluster from being
+able to get the webhook server started again.
 
 ### User Stories (Optional)
 
-The users of this KEP are Cloud Providers and feature developers whose code 
-impacts Cloud Providers. The intent is to make it easy for them both develop 
-features and to maintain the CCM controllers and webhooks across multiple versions. 
-At the same time we are attempting to make it easy for the SIGs to make 
-controllers or webhooks which can do what they know needs to be done and integrated 
-into Cloud Provider specific processes. We would like to do that in a way which 
-makes merging upgrades relatively painless.
+The users of this KEP are Cloud Providers and feature developers whose code
+impacts Cloud Providers. The intent is to make it easy for them both develop
+features and to maintain the CCM controllers and webhooks across multiple
+versions.  At the same time we are attempting to make it easy for the SIGs to
+make controllers or webhooks which can do what they know needs to be done and
+integrated into Cloud Provider specific processes. We would like to do that in
+a way which makes merging upgrades relatively painless.
 
 #### Story 1 - Full control, separation of concerns
 
-Some Cloud Providers would prefer to keep controllers and webhooks in different 
-processses. They have concerns about attempting to run batch controllers in the 
-same process as webhooks which are "in-line" and time sensitive. For these users
-it is easy to either build two different binaries or have the same binary act
-as two different binaries based on command line flags.
+Some Cloud Providers would prefer to keep controllers and webhooks in different
+processses. They have concerns about attempting to run batch controllers in the
+same process as webhooks which are "in-line" and time sensitive. For these
+users it is easy to either build two different binaries or have the same binary
+act as two different binaries based on command line flags.
 
 #### Story 2 - Fast and simple
 
 For Cloud Providers who would like to keep things simple, it is easy to create
-a single process which handles both controllers and webhooks. While this KEP 
-does not deployment, this is a simple deployment, being fewer processes. It 
+a single process which handles both controllers and webhooks. While this KEP
+does not deployment, this is a simple deployment, being fewer processes. It
 does not stop the Cloud Provider from converting to Story 1 later. This system
 should make our part of this simple. Obviously the Cloud Provider would have to
 change their deployment setup.
@@ -258,7 +265,7 @@ workload to Kubernetes. That workload uses an existing persistent volume. To
 get that workload migrated the end user needs to be able to link the existing
 PV into the cluster. However this requires an association which requires calls
 out to the cloud provider for certain kinds of storage. Ideally the lookup and
-label of the PV to that pre-existing storage happens in-line when the PV is 
+label of the PV to that pre-existing storage happens in-line when the PV is
 written. That ensures the write volume is attached to the Node/Pod when it is
 scheduled and there are no race conditions.
 
@@ -267,50 +274,49 @@ scheduled and there are no race conditions.
 
 ### Risks and Mitigations
 
-Potentially there could be problems running webhooks and controller in the same
-process. Delays of 10 seconds or more can cause webhooks to fail. It is important 
-to understand that irrespective of failure mode on the webhook coniguration, 
-timeouts will always turn a webhook call into a FAIL. As such we are making it
-easy to easily turn the CCM into two processses to mitigate this. It will be upto
-the Cloud Provider to determine if they want the webhook policy to be FAIL or 
-IGNORE. We will have the sample set the configuration to IGNORE as its the safe option. 
-Incorrectly setting FAIL can quickly lead to a non functional cluster. Having a FAIL 
-policy on Pods for example can prevent the system from allocating the webhook service, 
-which prevents the webhook from ever passing.
+There could be potential problems running webhooks and controller in the same
+process. Irrespective of failure mode on the webhook configuration, timeouts
+will always cause a webhook call to fail. As such we are making it easy to
+turn the CCM into two processses to mitigate this.  It will be upto the Cloud
+Provider to determine if they want the webhook policy to be FAIL or IGNORE. We
+will have the sample set the configuration to IGNORE as its the safe option.
+Incorrectly setting FAIL can quickly lead to a non functional cluster. Having a
+FAIL policy on Pods for example can prevent the system from allocating the
+webhook service, which prevents the webhook from ever passing.
 
-Webhooks are configured by a runtime resource. As a consequence this configuration
-can be modified to deleted at runtime. That means that an admin on the cluster can
-disable or alter the functionality. This potentially makes it harder for a cloud 
-provider to enforce that this logic is being applied. It also means that there 
-needs to be a deployment mechanism for the webhook. It is left to the Cloud 
-Provider to determine if the need for an in-line request is sufficient to override
-these concerns. The Cloud Provider can alternatively use the controller route which 
-is not in-line or use [an admission controller](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/), 
+Webhooks are configured by a runtime resource. As a consequence this
+configuration can be modified to deleted at runtime. That means that an admin
+on the cluster can disable or alter the functionality. This potentially makes
+it harder for a cloud provider to enforce that this logic is being applied. It
+also means that there needs to be a deployment mechanism for the webhook. It is
+left to the Cloud Provider to determine if the need for an in-line request is
+sufficient to override these concerns. The Cloud Provider can alternatively use
+a standalone controller which is not in-line or use [an admission
+controller](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/),
 built into the APIServer.
 
-We are actually changing the framework which generates the CCM and not the CCM
-itself. It has been pointed out that it is not the role of the controller
-manager to run webhooks. Controller managers should run controllers and webhooks
-are not controllers. As we are modifying the framework, we should consider this
-as we can create two processes. The CCM which just has controllers in it. We
-can also create a Cloud Webhook Manager. That is being left as homework for the 
-Cloud Provider. However the sample CCM which demonstrates how this will be done
-will have both in the same sample to make it easy.
+The change outlined in this KEP affects the framework which generates the CCM and not the CCM
+itself. The Cloud Provider may wish to run webhooks separately from the
+controllers in the CCM, therefore the framework will support that usecase. In
+this mode, the CCM will just have controllers in it. A "Cloud Webhook Manager"
+can be run separately and host the webhooks. That is being left as homework for
+the Cloud Provider. However the sample CCM which demonstrates how this will be
+done will have both in the same sample to make it easy.
 
-It is wroth being aware that the CCM derives from the KCM. The KCM (and the CCM)
-predate efforts like controller runtime. The controller runtime is a good 
+It is noteworthy that the CCM derives from the KCM. The KCM (and the CCM)
+predate efforts like controller runtime. The controller runtime is a good
 reference as it is demonstrates that operators and webhooks can be successfully
-run inside the same binary. It further demonstrates that this is a pattern 
+run inside the same binary. It further demonstrates that this is a pattern
 which is understood and followed by a significant portion of the Kubernetes
-community. Having said that, we consider it more important to unify the KCM
-and CCM code bases, then to build on top controller runtime. We are not saying
-not to use anything from controller runtime. We are saying that if need to choose
-between unifying the KCM & CCM code and building with controller runtime, we will
-choose unifying the KCM & CCM code base.
+community. Having said that, we consider it more important to unify the KCM and
+CCM code bases, then to build on top controller runtime. We are not saying not
+to use anything from controller runtime. We are saying that if need to choose
+between unifying the KCM & CCM code and building with controller runtime, we
+will choose unifying the KCM & CCM code base.
 
 ## Design Details
 
-A sample  of how the Builder pattern might look is:
+A sample of how the Builder pattern might look is:
 
 ```
 cmOptions, err := options.NewCloudManagerOptions()
@@ -330,10 +336,10 @@ klog.Fatalf("unable to construct cloud manager: %v", err)
 err := command.start()
 ```
 
-This will not alter the existing extension hooks in the controller manager 
-framework, as they are critical for backward compatibility. The builders
-are meant to be an abstraction layer on top to make the extensions easier to 
-use. So for the existing controller manager code you might see changes like:
+This will not alter the existing extension hooks in the controller manager
+framework, as they are critical for backward compatibility. The builders are
+meant to be an abstraction layer on top to make the extensions easier to use.
+So for the existing controller manager code you might see changes like:
 
 ```
 cloudControllerManagerBuilder.registerController("nodeipamcontroller", handler)
@@ -346,14 +352,7 @@ The handler in this case is likely to be of type ControllerInitFuncConstructor.
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -362,16 +361,80 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-There will be no e2e tests in K/K as we do not build a deployable CCM in K/K.
-There will be integration tests for the builder patterns.
-In addition we will rely on K/cloud-provider-gcp to demonstrate that the PVL mutating webhook comes up.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `k8s.io/kubernetes/vendor/k8s.io/cloud-provider/options`: `2022-10-12` -
+  `34.2`
+- `k8s.io/kubernetes/vendor/k8s.io/cloud-provider/config/v1alpha1`:
+  `2022-10-12` - `38.5`
+- `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider/app/`: There is
+  currently no published coverage on this because its not vendored by
+  Kubernetes itself and for some reason staging does not seem to be included in
+  the metrics.
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- Integration test for builder pattern exercising the case of building a CCM with a webhook: <link to test coverage>
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- None, this feature is consumed by cloud provider repositories for the final
+  binary so it will not be used in e2e tests in K/K.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Have the sample CCM come up and able to serve PVL mutating webhook.
-- Requires that we get a PVL mutating webhook written for at least 1 Cloud Provider.
+- Reference implementation of the PVL mutating webhook served from the sample CCM.
+- Impementation of the PVL mutating webhook for at least 1 Cloud Provider.
 
 #### Beta
 
