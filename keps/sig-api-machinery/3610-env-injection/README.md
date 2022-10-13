@@ -83,6 +83,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Other Proposals and Concerns](#other-proposals-and-concerns)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -318,14 +319,14 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-##### Prerequisite testing updates
+#### Prerequisite testing updates
 
 <!--
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-##### Unit tests
+#### Unit tests
 
 <!--
 In principle every added code should have complete unit test coverage, so providing
@@ -350,7 +351,7 @@ extending the production code to implement this enhancement.
 
 as this is a new package
 
-##### Integration tests
+#### Integration tests
 
 <!--
 This question should be filled when targeting a release.
@@ -362,7 +363,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - <test>: <link to test coverage>
 
-##### e2e tests
+#### e2e tests
 
 <!--
 This question should be filled when targeting a release.
