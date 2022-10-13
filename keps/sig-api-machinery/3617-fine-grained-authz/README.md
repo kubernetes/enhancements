@@ -237,9 +237,9 @@ in a number of different ways. RBAC is the most obvious choice, since it is
 provided along with Kubernetes, but many clusters are integrated with external
 authz systems (using plugins).
 
-People offering reasonably dangerous extenstions / new fields need assurances
+People offering reasonably dangerous extensions / new fields need assurances
 that these things can be secured in any environment, and that they can offer
-instructions on doing so mostly independantly of the backend authz system
+instructions on doing so mostly independently of the backend authz system
 (because they may not even be able to identify all implementations).
 
 Therefore, __modifying a single authz system can't solve the problem__.
