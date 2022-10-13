@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Fine-Grained Authorization
+# KEP-3617: Fine-Grained Authorization
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -371,17 +371,6 @@ system administrator has made use of the general permission).
 This is a complex design. See the alternatives for why we propose it anyway.
 
 ### Risks and Mitigations
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
 
 This design avoids the "grant an overly broad permission and then restrict it
 later" pattern, which has undesirable failure / misconfiguration patterns.
@@ -436,18 +425,110 @@ On CRDs schemas:
 
 The authz system will see the verb "granular:specfication".
 
+This illustrates that the granular permissions can be made hirearchical;
+granting "granular" and "granular:specification" to some actor permits it to
+modify anything in .spec. API Server will check the permissions from most
+general to most specific, so that a single general permission can let it avoid
+checking many specific permissions.
+
 #### Pod's nodeName
 
-TODO
+Given where this appears in Pod, this permission will only be checked for pods
+if the agent doesn't have the "specification" permission.
+
+This must be set on the field declaration, since nodeName is a string and not a
+struct:
+
+```go
+  ...
+  // +permission-verb:"nodeAssignment"
+  NodeName string
+  ...
+```
+
+On CRDs schemas (pod is not a CRD, but if a CRD has a field that is the same
+concept, you could add to that field this):
+
+```
+"x-kubernetes-permission-verb": "nodeAssignment"
+```
+
+The authz system will see the verb "granular:nodeAssignment".
+
+##### Everything in metadata
+
+Configured the same as everything in spec, but the verb will be (CHOICE NEEDED)
+"metadata" or "objectmeta".
 
 #### All Labels
 
-TODO
+This permission will only be checked if the agent doesn't have the everything in
+metadata permission.
+
+This is set on the field declaration, since it is a map and we are granting
+permission on any item in the map.
+
+```go
+  ...
+  // +permission-verb:"labels"
+  Labels map[string]string
+  ...
+```
+
+The authz system will see the verb "granular:labels".
 
 #### Specific Labels
 
-TODO. Choice: Use CEL expression to extract parameter (everything before / in
-the key) or provide built-in mechanism for this?
+This permission will only be checked if the agent has neither the general
+metadata permission nor the "granular:labels" permission.
+
+This field is currently in ObjectMeta, declared like this:
+
+```go
+	...
+	// Map of string keys and values that can be used to organize and categorize
+	// (scope and select) objects. May match selectors of replication controllers
+	// and services.
+	// More info: http://kubernetes.io/docs/user-guide/labels
+	// +optional
+	Labels map[string]string `json:"labels,omitempty" protobuf:"bytes,11,rep,name=labels"`
+	...
+```
+
+This is very inconvenient as it leaves only one place to declare things in the
+schema. Note that we must not make any incompatible changes to the serialization
+of this type. This is one way to make this work:
+
+```go
+	...
+	Labels map[LabelKey]LabelValue `json:"labels,omitempty" protobuf:"bytes,11,rep,name=labels"`
+	...
+}
+.
+.
+.
+
+// LabelKey is a value in a label; it is a string.
+// +permission-parameter-source:"label-key"
+type LabelKey string
+
+// LabelValue is a value in a label; it is a string.
+// +permission-verb:"label"
+// +permission-parameterized-by:"label-key"
+// +permission-parameter-treatment:slash-delimited-prefix
+type LabelValue string
+```
+
+This says to the permission system that in order to change a LabelValue, there
+must be something in the field path emitting a "label-key" parameter; that that
+value needs to be massaged by a "slash-delimited-prefix" function; and that the
+permission should then be checked with that parameter.
+
+Supposing the key is "mycompany.example.com/FooLabel", The authz system will see
+the verb "granular:label(mycompany.example.com)".
+
+DECISION NEEDED: would it be better to use a CEL expression to process the
+parameter?
 
 #### Specific Finalizers
 
@@ -457,12 +538,39 @@ TODO (similar choice).
 
 TODO (similar choice).
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+#### Complete List of parameter treatments
+
+* None (omit the tag completely). The referenced field is used verbatim as the parameter.
+* `slash-delimited-prefix`. The referenced field is split by '/' characters and
+  the first segment is used as the parameter.
+* (in progress)
+
+#### Style Guide / Consistency Help
+
+Rules for making up a permission:
+
+* The permission name SHOULD be a noun.
+* The permission name MUST be in lowerCamelCase.
+* The permission name SHOULD refer to a conceptual attribute, not a field name.
+  This helps the permission be reusable in other contexts with different
+  enclosing parent fields.
+* The permission MUST NOT reference ancestor fields ("nodeAssigment" not
+  "pod.nodeAssignment")
+
+We will update the documentation generation to list the permissions both with
+the fields / types they guard, as well as in a standalone list for easy
+browsing. This list will help API reviewers keep the permissions on built-in
+resources coherent.
+
+DECISION NEEDED:
+
+Option A: we will put a registry file in the kubernetes repository so that 3rd
+party extension authors can register their custom permissions and dedup/reuse
+rather than create new ones, if possible.
+
+Option B: we will require 3rd party authors to prefix their custom permissions
+with the string "ext" (TODO: "mycompany.example.com" if there is likely to be
+space).
 
 ### Test Plan
 
@@ -603,32 +711,20 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+Turning on this feature (via upgrade) should have no effect to an existing cluster.
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Turning off this feature (via downgrade) will have no effect unless the feature
+is in use (admin has configured some fine-grained permissions); in that case,
+fine-grained permissions will stop working (users/groups assigned them will not
+be able to use them). Fields marked exclusive would also stop being exclusive
+(general permissions would be sufficient to write them). That's a problem, so we
+will not add any such fields (and advise CRD authors not to) until this feature
+has defaulted on for at least one release.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+There are no version skew issues, since the design makes permissions independent
+from API version, and since the implementation is completely server-side.
 
 ## Production Readiness Review Questionnaire
 
@@ -684,10 +780,9 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No default behavior will be directly changed as a result of this KEP. Marking
+fields exclusive would be a significant default behavior change and we won't do
+it as part of this KEP (and perhaps never).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -769,30 +864,22 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Scan the audit logs to see if any authz checks have been done for any verb with
+the prefix "granular".
+
+(Workloads don't use this feature directly, but if configured, they may be
+getting permission to do what they want to do via this feature.)
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
+Users can send a SelfSubjectAccessReview request (or a
+SubjectAccessReviewRequest if the query is about a service account they don't
+have keys for) to see if they have a given granular permission. (Merely being
+able to make a change isn't sufficient, because they might have the general
+permission.)
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+But mostly, there is little reason for anyone not the cluster administrator to
+want to do this.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -892,31 +979,24 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+Potentially; authz calls will increase in cases where the feature applies; heavy
+usage of the feature could worst-case-plausibly 3-4x the number of authz calls
+on mutating requests. Many clusters check RBAC first before calling the authz
+plugin, in such clusters the cloud provider might not see much load. Authz
+checks are already cached, so in practice we don't expect this to be too
+significant.
+
+The authz path is already intended to have heavy load.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+None by default. (If RBAC is used to configure this, then there will be a small
+increase in Roles, RoleBindings, etc.)
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+Yes, mutating API requests will do extra work to see if additional permissions
+need to be checked, and perform additional authz checks if needed.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -944,6 +1024,9 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+This feature won't make the resulting unavailability worse nor add new failure
+modes.
 
 ###### What are other known failure modes?
 
@@ -977,9 +1060,10 @@ Major milestones might include:
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+This KEP is rather complex. Unfortunately simpler designs are all ruled out by
+some criteria (see next section). The best alternative, if we don't want to
+implement this, is to wait for CEL based admission to land and just not worry
+about that not being enabled universally. (@deads2k will disagree with this.)
 
 ## Alternatives
 

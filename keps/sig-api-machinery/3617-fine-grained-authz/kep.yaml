@@ -16,6 +16,7 @@ approvers:
 see-also:
   - "/keps/sig-api-machinery/2839-in-use-protection"
   - "/keps/sig-scheduling/3521-pod-schedule-readiness"
+  - "/keps/sig-api-machinery/3488-cel-admission-control"
 replaces:
   - "/keps/sig-api-machinery/3285-subresource-finalizers"
 
