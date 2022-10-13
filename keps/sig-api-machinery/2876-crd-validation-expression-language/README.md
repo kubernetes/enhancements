@@ -58,10 +58,9 @@
   - [Rego](#rego)
   - [Expr](#expr)
   - [WebAssembly](#webassembly)
-  - [Starlark (formeraly known as Skylark)](#starlark-formeraly-known-as-skylark)
+  - [Starlark (formerly known as Skylark)](#starlark-formerly-known-as-skylark)
   - [Build our own](#build-our-own)
   - [Make it easier to validate CRDs using webhooks](#make-it-easier-to-validate-crds-using-webhooks)
-  - [Starlark](#starlark)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -1319,7 +1318,11 @@ The biggest problems with WebAssembly are:
 
 See also github.com/chimera-kube/chimera-admission
 
-### Starlark (formeraly known as Skylark)
+### Starlark (formerly known as Skylark)
+
+See https://github.com/google/starlark-go/.
+Starlark is an untyped dynamic language with high-level data types, first-class functions with lexical scope, and automatic memory management or garbage collection.
+It is mostly used in build system and has been added as a dependency in k/k.
 
 Python dialect designed for scripts embedded in the Bazel build system. It is designed to allow for
 determinstic and hermetic execution. Implementations exist in Go, Java and Rust. It is used
@@ -1352,12 +1355,6 @@ is a time consuming way to solve what should be a simple problem.
 
 For cluster operators, regardless of what extensions they install in their cluster,
 it is to their advantage to install the fewest webhooks possible since.
-
-### Starlark
-
-See https://github.com/google/starlark-go/. 
-Starlark is an untyped dynamic language with high-level data types, first-class functions with lexical scope, and automatic memory management or garbage collection.
-It is mostly used in build system and has been added as a dependency in k/k.
 
 ## Infrastructure Needed (Optional)
 
