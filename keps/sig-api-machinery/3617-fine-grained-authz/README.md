@@ -245,16 +245,16 @@ instructions on doing so mostly independently of the backend authz system
 Therefore, __modifying a single authz system can't solve the problem__.
 
 An authz check can be thought of as sending structured data to an opaque system
-which answers yes or no. Essentially we can't change things about the system
-("opaque") because the system could comprise any number of implementations, many
-not even open-source. The data we can give the system includes:
-
-(TODO: I'm sure sig auth will want to correct my wording here)
+which answers yes or no (individual pieces of the authorizor chain may also have
+no opinion, but the chain as a whole answers yes or no). Essentially we can't
+change things about the system ("opaque") because the system could comprise any
+number of implementations, many not even open-source. The data we can give the
+system includes:
 
 * The resource type (group, version, resource)
-* The object's locator (namespace if any, name, uid)
-* The actor's identity (username, group)
-* The verb...
+* The object's locator (namespace if any, name)
+* The actor's identity (username, group, user.Extra, user.UID)
+* The verb, which is a free-form string with some known values
 
 The verb is typically literally the HTTP verb being used, but we have in the
 past made up logical verbs for more specific checks. Importantly, all authz
