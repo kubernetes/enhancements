@@ -180,7 +180,15 @@ logic to a simpler, more stable API.
 ## Motivation
 
 There have been several presentations and issues regarding the motivation for a new kube-proxy implementation.
-This is a complex subject so we'll be adding this iteratively.
+
+- *Scaling* the kube proxy requires scaling the number of watches on the APIServer, and having customizable deployments around this benefits niche use cases for larger scale / small nodes.
+- *Extending* the kube-proxy is difficult because it needs to be "copied", and code needs to be written against a non-explicit data model. 
+- *Testing* the kube-proxy is difficult because of the way it is coupled to the APIServer and the internal, in-memory data model of the kube-proxy codebase. 
+- *Coupling* of kube-proxy logic to CNI provider implementation is difficult because of the inability to easily extend and test the kube-proxy.
+- *Choosing* the data model for how service proxying is implemented (i.e. via events vs network state) isn't easy.
+
+We thus propose a modular implementation of the kube proxy which can be implemented in different ways, but which is backwards compatible with
+the Kube proxies which exist in-tree.  
 
 ### Goals
 
