@@ -272,7 +272,8 @@ who donot set this flag are not surprised at all.
 ## Graduation Criteria
 
 - Alpha: Initial support for maxUnavailable in StatefulSets added. Disabled by default with default value of 1.
-- Beta:  Enabled by default with default value of 1 with upgrade downgrade testedd at least manually.
+- Beta:  Enabled by default with default value of 1 with upgrade downgrade tested at least manually. E2E tests
+         coverage and any bug fixes will be done. Old tests reviewed and missing tests added.
 
 
 ## Production Readiness Review Questionnaire
