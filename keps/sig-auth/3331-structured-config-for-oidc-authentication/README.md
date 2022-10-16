@@ -409,7 +409,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Add metrics
 - Add a full documentation with examples for the most popular providers, e.g., Okta, Dex, Auth0
 - Migration guide
-- Deprecation warnings for non-stuctured OIDC provider configuration
+- Deprecation warnings for non-structured OIDC provider configuration
 
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
