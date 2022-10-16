@@ -6,14 +6,14 @@ owning-sig: sig-auth
 participating-sigs: [sig-auth]
 reviewers: ['@enj', '@TBD']
 approvers: ['@TBD']
-prr-approvers: []
+prr-approvers: ['@deads2k']
 creation-date: "2022-06-02"
 status: provisional
 stage: alpha
-latest-milestone: "v1.26"
+latest-milestone: "v1.27"
 milestone:
-    alpha: "v1.26"
-    beta: "v1.27"
+    alpha: "v1.27"
+    beta: "v1.28"
     stable: "v1.30"
 feature-gates: []
 disable-supported: false
