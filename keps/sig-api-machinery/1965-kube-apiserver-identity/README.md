@@ -234,6 +234,7 @@ found using the `k8s.io/component=kube-apiserver` label.
 
 Recently added [healthcheck metrics for apiserver](https://github.com/kubernetes/kubernetes/pull/112741), which includes
 the health of the post start hook can be used to inform rollback, specifically `kubernetes_healthcheck{poststarthook/start-kube-apiserver-identity-lease-controller}`
+and `kubernetes_healthcheck{poststarthook/start-kube-apiserver-identity-lease-garbage-collector}`
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -273,7 +274,7 @@ All leases owned by kube-apiservers can be found using the `k8s.io/component=kub
 
 - [X] Metrics
   - Metric name: kubernetes_healthcheck
-  - [Optional] Aggregation method: name="poststarthook/start-kube-apiserver-identity-lease-controller"
+  - [Optional] Aggregation method: name="poststarthook/start-kube-apiserver-identity-lease-controller", name="poststarthook/start-kube-apiserver-identity-lease-garbage-collector"
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
