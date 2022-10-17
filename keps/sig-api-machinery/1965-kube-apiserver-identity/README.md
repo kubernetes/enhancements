@@ -90,14 +90,14 @@ advertise IP address.
 
 ## Proposal
 
-We will use “hostname+PID+random suffix (e.g. 6 base58 digits)” as the ID.
-
 Similar to the [node heartbeats](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/589-efficient-node-heartbeats),
 a kube-apiserver will store its ID in a Lease object. All kube-apiserver Leases
-will be stored in a special namespace `kube-apiserver-lease`. The Lease creation
-and heart beat will be managed by a controller that is started in kube-apiserver's
-post startup hook. A separate controller in kube-controller-manager will be responsible
-for garbaging collecting expired Leases.
+will be stored in the `kube-system` namespace.
+
+The lease creation and heart beat
+will be managed by the `start-kube-apiserver-identity-lease-controller` post start hook
+and expired leases will be garbage collected by the `start-kube-apiserver-identity-lease-garbage-collector`
+post start hook in kube-apiserver.
 
 ### Caveats
 
@@ -122,24 +122,22 @@ will only delay the storage migration for the same period of time.
 
 The [kubelet heartbeat](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/589-efficient-node-heartbeats)
 logic [already written](https://github.com/kubernetes/kubernetes/tree/master/pkg/kubelet/nodelease)
-will be re-used. The heartbeat controller will be added to kube-apiserver in a
-post-start hook.
+will be re-used. The lease creation and heart beat will be managed by the `start-kube-apiserver-identity-lease-controller`
+post-start-hook and expired leases will be garbage collected by the `start-kube-apiserver-identity-lease-garbage-collector`
+post-start-hook in kube-apiserver. The refresh rate, lease duration will be configurable through kube-apiserver
+flags
 
-Each kube-apiserver will run a lease controller in a post-start-hook to refresh
-its Lease every 10s by default. A separate controller named [storageversiongc](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/storageversiongc/gc_controller.go)
-running in kube-controller-manager will watch the Lease API using an informer, and
-periodically resync its local cache. On processing an item, the `storageversiongc` controller
-will delete the Lease if the last `renewTime` was more than `leaseDurationSeconds` ago (default to 1h).
-The default `leaseDurationSeconds` is chosen to be way longer than the default
-refresh period, to tolerate clock skew and/or accidental refresh failure. The
-default resync period is 1h. By default, assuming negligible clock skew, a Lease
-will be deleted if the kube-apiserver fails to refresh its Lease for one to two
-hours. The `storageversiongc` controller will run in kube-controller-manager, to leverage leader
-election and reduce conflicts.
+The format of the lease ID will be `kube-apiserver-<UUID>`. The UUID is newly generated on every start-up. This ID format is preferred
+for the following reasons:
+* No two kube-apiservers on the same host can share the same lease identity.
+* Revealing the hostname of kube-apiserver may not be desirable for some Kubernetes platforms.
+* The kube-apiserver version may change between restarts, which can trigger a storage version migration (see KEP on StorageVersionAPI)
 
-The refresh rate, lease duration will be configurable through kube-apiserver
-flags. The resync period will be configurable through a kube-controller-manager
-flag.
+In some cases it can be desirable to use a predictable ID format (e.g. kube-apiserver-<hostname>). We may consider providing
+a flag in `kube-apiserver` to override the lease identity.
+
+All kube-apiserver leases will also have a component label `k8s.io/component=kube-apiserver`.
+
 
 ### Test Plan
 
@@ -208,8 +206,8 @@ Alpha should provide basic functionality covered with tests described above.
 
 ###### Does enabling the feature change any default behavior?
 
-A namespace `kube-apiserver-lease` will be created to store kube-apiserver identity Leases.
-Old leases will be actively garbage collected by kube-controller-manager.
+kube-apiserver will store identity Leases in the `kube-system` namespace.
+Expired leases will be actively garbage collected by a post-start-hook in kube-apiserver.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -229,12 +227,14 @@ However, there are no tests validating feature enablement/disablement based on t
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 Existing workloads should not be impacteded by this feature, unless they were
-looking for Lease objects in the `kube-apiserver-lease` namespace.
+looking for kube-apiserver Lease objects in the `kube-system` namespace, which can be
+found using the `k8s.io/component=kube-apiserver` label.
 
 ###### What specific metrics should inform a rollback?
 
 Recently added [healthcheck metrics for apiserver](https://github.com/kubernetes/kubernetes/pull/112741), which includes
 the health of the post start hook can be used to inform rollback, specifically `kubernetes_healthcheck{poststarthook/start-kube-apiserver-identity-lease-controller}`
+and `kubernetes_healthcheck{poststarthook/start-kube-apiserver-identity-lease-garbage-collector}`
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -248,7 +248,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-The existence of the `kube-apiserver-lease` namespace and Lease objects in the namespace
+The existence of kube-apiserver Lease objects in the `kube-system` namespace
 will determine if the feature is working. Operators can check for clients that are accessing
 the Lease object to see if workloads or other controllers are relying on this feature.
 
@@ -265,14 +265,16 @@ the Lease object to see if workloads or other controllers are relying on this fe
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 Some reasonable SLOs could be:
-* Number of (non-expired) Leases in `kube-apiserver-leases` is equal to the number of expected kube-apiservers 95% of the time.
+* Number of (non-expired) Leases in `kube-system` is equal to the number of expected kube-apiservers 95% of the time.
 * kube-apiservers hold a lease which is not older than 2 times the frequency of the lease heart beat 95% of time.
+
+All leases owned by kube-apiservers can be found using the `k8s.io/component=kube-apiserver` label.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
   - Metric name: kubernetes_healthcheck
-  - [Optional] Aggregation method: name="poststarthook/start-kube-apiserver-identity-lease-controller"
+  - [Optional] Aggregation method: name="poststarthook/start-kube-apiserver-identity-lease-controller", name="poststarthook/start-kube-apiserver-identity-lease-garbage-collector"
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -280,7 +282,7 @@ Some reasonable SLOs could be:
 A metric measuring the last updated time for a lease could be useful, but it could introduce cardinality problems
 since the lease is changed on every restart of kube-apiserver.
 
-We may consider adding a metric exposing the count of leases in `kube-apiserver-lease`.
+We may consider adding a metric exposing the count of leases in `kube-system`.
 
 ### Dependencies
 
