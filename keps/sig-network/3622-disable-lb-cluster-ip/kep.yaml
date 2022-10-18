@@ -1,0 +1,33 @@
+title: Optionally Disable ClusterIP for Service Type=LoadBalancer
+kep-number: 3622
+authors:
+  - "@xiaonancc77"
+owning-sig: sig-network
+participating-sigs:
+  - sig-cloud-provider
+status: implementable
+creation-date: 2022-10-18
+reviewers:
+  - sig-network-leads
+approvers:
+  - sig-network-leads
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.26"
+  beta:
+  stable:
+
+feature-gates:
+  - name: ServiceLBClusterIPControl
+    components:
+      - kube-apiserver
+disable-supported: true
