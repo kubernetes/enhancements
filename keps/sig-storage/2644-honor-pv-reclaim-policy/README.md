@@ -257,10 +257,7 @@ The pv-controller is also expected to add the finalizer to all existing in-tree 
 
 The pv-controller would also be responsible to add or remove the finalizer based on CSI Migration being disabled or enabled respectively.
 
-
-Statically provisioned volumes would behave the same as dynamically provisioned volumes except in cases where the PV is not associated with a PVC, in such cases finalizer `kubernetes.io/pv-controller` is not added.
-
-If at any point a statically provisioned PV is `Bound` to a PVC, then the finalizer `kubernetes.io/pv-controller` gets added by the pv-controller.
+The finalizer `kubernetes.io/pv-controller` will not be added on statically provisioned in-tree volumes.
 
 ### Test Plan
 
