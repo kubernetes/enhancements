@@ -19,6 +19,9 @@ Enhancement tracking repo for Kubernetes releases. Owned by [SIG Architecture](h
 
 This repo contains issues and [KEPs](https://git.k8s.io/enhancements/keps). These issues are umbrellas for new enhancements to be added to Kubernetes. An enhancement usually takes multiple releases to complete. And an enhancement can be tracked as backlog items before work begins. An enhancement may be filed once there is consensus in at least one [Kubernetes SIG](https://git.k8s.io/community/sig-list.md).
 
+You can browse or search the online
+[list of enhancements](https://www.k8s.dev/resources/keps/).
+
 ## Is My Thing an Enhancement?
 
 We are trying to figure out the exact shape of an enhancement. Until then, here are a few rough heuristics.
