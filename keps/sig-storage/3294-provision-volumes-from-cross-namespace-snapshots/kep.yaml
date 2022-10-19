@@ -15,10 +15,12 @@ reviewers:
   - "@mhenriks"
   - "@jsafrane"
   - "@bswartz"
+  - "@msau42"
 approvers:
   - "@xing-yang"
   - "@jsafrane"
   - "@saad-ali"
+  - "@msau42"
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
