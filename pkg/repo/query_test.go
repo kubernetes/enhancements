@@ -209,33 +209,6 @@ func TestQuery(t *testing.T) {
 				skip: true,
 			},
 		},
-		"prr-approver": {
-			{
-				name: "results",
-				queryOpts: repo.QueryOpts{
-					PRRApprover: []string{"@dorothy"},
-				},
-				kepNames: []string{
-					"404-question-not-found",
-					"42-the-answer",
-					"13-keps-as-crds",
-				},
-			},
-			{
-				name: "no results",
-				queryOpts: repo.QueryOpts{
-					PRRApprover: []string{"prr-approves-nothing"},
-				},
-			},
-			{
-				name: "TODO: invalid should error but instead returns nothing",
-				queryOpts: repo.QueryOpts{
-					PRRApprover: []string{"prr-approver-does-not-exist"},
-				},
-				err:  fmt.Errorf("something about invalid prr-approver"),
-				skip: true,
-			},
-		},
 		"author": {
 			{
 				name: "results",
