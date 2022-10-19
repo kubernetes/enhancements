@@ -2,9 +2,9 @@ title: Env Injection
 kep-number: 3610
 authors:
   - "@pacoxu"
-owning-sig: sig-api-machinery
+owning-sig: sig-node
 participating-sigs:
-- sig-auth
+- sig-api-machinery
 status: implementable
 creation-date: 2022-10-10
 reviewers:

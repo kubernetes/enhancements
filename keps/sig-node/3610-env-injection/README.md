@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3610: env injection into every containers in namespace or cluster
+# KEP-3610: env injection into every containers in namespace
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -83,6 +83,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Proposal 1: the initial proposal using annotations](#proposal-1-the-initial-proposal-using-annotations)
+  - [Proposal 2: the second/final proposal using API Object](#proposal-2-the-secondfinal-proposal-using-api-object)
   - [Other Proposals and Concerns](#other-proposals-and-concerns)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -173,7 +175,13 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This KEP defines a new annotation `glabel.env` and introduces a mechanism that can override current environment variables on pods.
+This KEP defines two proposals:
+
+1. The initial proposal (will be removed once we confirmed that we will use the second proposal) a new annotation `glabel.env` and introduces a mechanism that can override current environment variables on pods.
+
+2. The second proposal is using a new API Object named GlobalEnv like `LimitRange` or `ResourceQuota`.
+
+- In the spec, we can define a list of env using `EnvVar`, so that we can support both `value` and `valueFrom` in the spec.
 
 ## Motivation
 
@@ -186,7 +194,24 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-This seems to be a common requirement.
+The idea came from <https://github.com/kubernetes/kubernetes/issues/48180>.
+
+1. Indicate what environment or location we are in, e.g. ENVIRONMENT=dev or ENVIRONMENT=prod. 
+The cluster administrator should be able to say, "define the following environment vars that are injected into every container in the cluster (or, at best, limited by namespace).
+
+2. Enabling features. E.g.
+I might want APM enabled on many of my app containers, but only when run in a kube cluster (as opposed to just running the image on my laptop), or perhaps only in certain environments. Cluster manager should be able to set a global env var of ENABLE_APM=true that then causes any container that consumes it to know, "I must enable APM now."
+
+3. Inject namespace into env
+Automatically inject the kubernetes namespace into an environment variable for me. With dozens of different kube templates people sometimes forget to expose it manually (<https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/>)
+
+4. Have compute nodes have special knowledge about themselves that can be injected into environment variables. We have a odd/even compute node concept for upgrading openshift and this information may come in handy
+
+5. Be able to specify system wide environment variables. We have multiple openshift instances (different environments and different datacenters). It would be great if that data could be made automatically available without having to deal with custom env sections in configs.
+
+6. `http_proxy`: We have a proxy in our datacenter and we need to set `http_proxy` for all containers. <https://github.com/kubernetes/kubernetes/issues/48180#issuecomment-356866173>
+
+7. `KUBERNETES_SERVICE_HOST`: Being able to set KUBERNETES_SERVICE_HOST cluster wide makes it possible to use an external hostname (with a publicly signed SSL certificate) without any issues. <https://github.com/kubernetes/kubernetes/issues/48180#issuecomment-375111483>
 
 ### Goals
 
@@ -194,8 +219,8 @@ This seems to be a common requirement.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- inject env to all containers in namespace
-- skip the env if container already has set
+- if the env is not set in container, inject env to all containers in namespace
+- if it is already set in container, override some env and not override for others
 
 ### Non-Goals
 
@@ -203,6 +228,9 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+- inject env to all containers in cluster
+- checking if configmap/secret in `valueFrom` is valid or not
+- when `GlobalEnv` is created or changed, recreate pods to inject those envs in the namespace.
 
 ## Proposal
 
@@ -215,16 +243,36 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 Add a new Admission Controller: GlobalEnv. Users can enable or disable it on the apiserver side.
+
+### Proposal 1: the initial proposal using annotations
+
 If enabled, the admission controller will add env according to namespace annotation to every pod's containers in the namespace wide.
 A namespace annotation named `global.env`, works for pods in the namespace.
 
+1. If a pod has already set the env, skip it. Overwriting is too aggressive.
+If users want to overwrite the env, `global.env/overwrite: true` should be set in namespace annotation.
+
+2. Env injection only for pod creation. Not for update(The behavior that a pod update may change its env, is odd).
+
+3. If the annotation is not set properly, skip it. A warning log or event will be helpful.
+This is mentioned in the risks as we have no valition for annotation by default.
+
+
+### Proposal 2: the second/final proposal using API Object
+
+If enabled, the admission controller will add env according to the API Object to every pod's containers in the namespace wide.
+We support both `defaultEnv` and `forceEnv` in the spec.
+
+- `defaultEnv` will be added to the container if the env is not set in the container.
+- `forceEnv` will override the env in the container.
+
 ### Other Proposals and Concerns
 
-**annotation vs configmap**
-Annotation is simpler, So I choose to use an annotation here.
+**API Object vs annotation vs configmap**
+API Object can handle the validation better. And we already have `LimitRange` and `ResourceQuota` as API Objects, so it is more consistent to use API Object.
+Annotation is simpler, So I choosed to use an annotation to implement at first.
 
 - For annotation, we should divide the string by `,` and get the key and value by `=`, for instance, "key1=value1,key2=value2".
-
 - A configmap named `global.env`. Then we can use the configmap key as env key, and value as env value.
 
 **cluster wide VS namespace wide**
@@ -233,6 +281,11 @@ For namespace-wide, it would be a problem to make an env to all namespaces. Ther
 For cluster-wide: all pods in the cluster will get the envs according to the configmap or env of `kube-system` namespace.
 
 - for cluster-wide, name of the annotaiton or configmap can be `cluster-wide-envs`.
+
+**overwrite-or-not option support VS just overwrite**
+
+I defined `forceEnv` and `defaultEnv` in the API Object, so that we can choose to overwrite or not.
+If we want to just overwrite it, we may use just one like `env` or `defaultEnv`.
 
 ### User Stories (Optional)
 
@@ -268,7 +321,7 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
-Annotation in namespace cannot fit the cluster-wide case.
+The design cannot fit the cluster-wide case.
 
 ### Risks and Mitigations
 
@@ -283,7 +336,8 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-As there is no validation for the key value in annotation or configmap, users will get errors util they create a new pod.
+For initial design with annotations, as there is no validation for the key value in annotation or configmap, users will get errors util they create a new pod.
+For API Object, we can validate the key value in the API Object.
 
 ## Design Details
 
@@ -293,14 +347,26 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+The API Object can be like below:
 
-1. If a pod has already set the env, skip it. Overwriting is too aggressive.
-If users want to overwrite the env, `global.env/overwrite: true` should be set in namespace annotation.
-
-2. Env injection only for pod creation. Not for update(The behavior that a pod update may change its env, is odd).
-
-3. If the annotation is not set properly, skip it. A warning log or event will be helpful.
-This is mentioned in the risks as we have no valition for annotation by default.
+```yaml
+apiVersion: v1
+kind: GlobalEnv
+metadata:
+  name: foo
+  namespace: example-ns
+spec:
+  defaultEnv:
+  - name: SERVICE_PORT
+    value: "80"
+  - name: MY_NODE_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+  forceEnv:
+  - name: SERVICE
+    value: test
+```
 
 ### Test Plan
 
@@ -740,7 +806,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
-No.
+Yes. `GlobalEnv`
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -759,7 +825,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-No.
+Yes. At most one more API object `GlobalEnv` per namespace
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
