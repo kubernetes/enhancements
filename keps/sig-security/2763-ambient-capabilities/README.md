@@ -1,4 +1,4 @@
-# KEP-2763: Support Ambient Capabilities in Kubernetes.
+# KEP-2763: Support Ambient Capabilities in Kubernetes
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
