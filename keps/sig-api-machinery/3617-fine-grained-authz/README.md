@@ -294,11 +294,11 @@ The system for specifying custom verbs needs to permit:
 * Verbs which cover specific leaf fields, for example all labels in .metadata.labels.
 * Verbs which are parameterized in some way, examples given earlier. The schema
   needs to state how the verb is parameterized.
-* Whether the verb is excluded from or included in the generic privilege. This
-  is needed to achieve our second goal. Exclusion is expected to be very rare --
-  only new fields will be supported. Marking existing fields this way would
-  break existing clients unless the corresponding permission is added, which we
-  can't universally do (see authz section above).
+* Whether the verb is uncovered (not included by) the generic privilege. This
+  is needed to achieve our second goal. Uncovered permissions are expected to be
+  very rare -- only new fields will be supported. Marking existing fields this
+  way would break existing clients unless the corresponding permission is added,
+  which we can't universally do (see authz section above).
 * If a field name changes between versions of an object, the permission verb
   should not. Otherwise it will be extremely laborious to configure the system
   to ensure permissions don't change when objects are accessed via different
@@ -342,20 +342,21 @@ Now we can describe the modifications to API Server:
 On any mutating call,
 
 1. Check the "PUT" / "PATCH" / "CREATE" permission. If the actor has this,
-   proceed to step 3.
+   place a marker=regular in the request context and proceed to step 3.
 2. Otherwise, check the "granular" permission. If yes, place a
-   marker in the request context and proceed to step 3, otherwise, fail the
-   request with a forbidden error.
+   marker=granular in the request context and proceed to step 3, otherwise, fail
+   the request with a forbidden error.
 3. Compute the change (patch logic, SSA logic, defaulting etc). Compute a list
    of fields which changed. (SSA logic makes this easy.)
 4. Pre- or post- (DECISION NEEDED) webhooks, check the list of fields:
-5. If the marker is present, every field needs to be covered by some permission.
+5. If the marker=granular, every field needs to be covered by some permission.
    Check permissions, stop and fail if some field is not covered. (The order is
    described below.)
-6. Otherwise (no marker) ONLY fields having "excluded" permissions need to be
+6. If the marker=regular ONLY fields having "excluded" permissions need to be
    checked; if such fields are modified, check their permissions as in step 5.
-7. If all checks pass, perform the rest of the needed operation.
-8. If any check fails, fail the request. The error message will not list ALL
+7. (If the marker is absent or has some other value, fail with a 5xx error.)
+8. If all checks pass, perform the rest of the needed operation.
+9. If any check fails, fail the request. The error message will not list ALL
    permissions that are lacked, because it is possible to craft a request that
    requires a large number of authz requests.
 
@@ -716,7 +717,7 @@ Turning on this feature (via upgrade) should have no effect to an existing clust
 Turning off this feature (via downgrade) will have no effect unless the feature
 is in use (admin has configured some fine-grained permissions); in that case,
 fine-grained permissions will stop working (users/groups assigned them will not
-be able to use them). Fields marked exclusive would also stop being exclusive
+be able to use them). Fields marked uncovered would also stop being uncovered
 (general permissions would be sufficient to write them). That's a problem, so we
 will not add any such fields (and advise CRD authors not to) until this feature
 has defaulted on for at least one release.
@@ -781,7 +782,7 @@ well as the [existing list] of feature gates.
 ###### Does enabling the feature change any default behavior?
 
 No default behavior will be directly changed as a result of this KEP. Marking
-fields exclusive would be a significant default behavior change and we won't do
+fields uncovered would be a significant default behavior change and we won't do
 it as part of this KEP (and perhaps never).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
