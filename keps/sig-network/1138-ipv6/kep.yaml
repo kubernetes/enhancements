@@ -1,5 +1,5 @@
-title: graduate-ipv6-to-beta
-kep-number: 506
+title: Graduate IPv6 to beta
+kep-number: 1138
 authors:
   - "@aojea"
 owning-sig: sig-network
@@ -20,4 +20,4 @@ replaces:
 superseded-by:
 
 latest-milestone: "0.0"
-stage: "alpha"
+stage: "beta"
