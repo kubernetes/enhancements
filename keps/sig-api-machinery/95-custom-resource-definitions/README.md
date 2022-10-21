@@ -74,12 +74,12 @@ See [Post-GA tasks](#post-ga-tasks) for decided out-of-scope features.
 Both defaulting and pruning and also read-only validation are blocked by the
 OpenAPI subset definition (next point). 
 
-See the [Pruning for CustomResources KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20180731-crd-pruning.md)
-and the [Defaulting for Custom Resources KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190426-crd-defaulting.md).
+See the [Pruning for CustomResources KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2332-pruning-for-custom-resources)
+and the [Defaulting for Custom Resources KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/575-crd-defaulting).
 
 ### CRD v1 schemas are restricted to a subset of the OpenAPI specification
 
-See [OpenAPI Subset KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190425-structural-openapi.md)
+See [OpenAPI Subset KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2335-vanilla-crd-openapi-subset-structural-schemas)
 
 ### Generator exists for CRD Validation Schema v3 (Kubebuilder)
 
@@ -92,7 +92,7 @@ to be integrated into kubebuidler’s controller-tools.
 ### CustomResourceWebhookConversion API is GA ready
 
 Currently CRD webhook conversion is alpha. We plan to take this to v1beta1 according to the
-[CustomResourceDefinition Conversion Webhook's Graduation Criteria](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190425-crd-conversion-webhook.md#graduation-criteria).
+[CustomResourceDefinition Conversion Webhook's Graduation Criteria](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/598-crd-conversion-webhook).
 We plan to then graduate this to GA as part of the CRD to GA graduation.
 
 ### CustomResourceSubresources API is GA ready
@@ -122,9 +122,9 @@ The CRD `v1` API will be the same as the `v1beta1` but with all changes to the A
   * Ensure illegal inputs result in sensible errors, not panics, and that the system recovers appropriately
     * CRD mutation operations: invalid schemas, misconfigured webhooks, scope changes, ...
     * webhook conversion responses: conversion responses that do not align with request (uuid, list size and elements, ..)
-* See also [Pruning for Custom Resources KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20180731-crd-pruning.md)
-* See also [Vanilla OpenAPI Subset: structural schemas KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190425-structural-openapi.md)
-* See also [Defaulting for Custom Resources KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190426-crd-defaulting.md)
+* See also [Pruning for Custom Resources KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2332-pruning-for-custom-resources)
+* See also [Vanilla OpenAPI Subset: structural schemas KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2335-vanilla-crd-openapi-subset-structural-schemas)
+* See also [Defaulting for Custom Resources KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/575-crd-defaulting)
 
 ### e2e tests for GA
 
