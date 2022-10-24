@@ -23,6 +23,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Required kubelet changes](#required-kubelet-changes)
+    - [Volume Reconstruction](#volume-reconstruction)
   - [Implementation phases](#implementation-phases)
     - [Phase 1](#phase-1)
     - [Phase 2](#phase-2)
@@ -332,8 +333,7 @@ Apart from the obvious API change and behavior described above, kubelet + volume
 * Kubelet's VolumeManager needs to track which SELinux label should get a volume in global mount (to call `MountDevice()` with the right mount options).
   * It must call `UnmountDevice()` even when another pod wants to re-use a mounted volume, but it has a different SELinux context.
   * After kubelet restart, kubelet must reconstruct the original SELinux label it used to SetUp and MountDevice of each volume.
-    * Volume reconstruction must be updated to get the SELinux label from mount (in-tree volume plugins) or stored json file (CSI).
-      This label must be updated in VolumeManager's ActualStateOfWorld after reconstruction.
+    See Volume Reconstruction below.
   * Reconciler must check also SELinux context used to mount a volume (both mounted devices and volumes) before considering what operation to take on a volume (`MountVolume` or `UnmountVolume`/`UnmountDevice` or nothing).
     It must throw proper error message telling that a Pod can't start because its volume is used by another Pod with a different SELinux context.
     * This is a good point to capture any metrics proposed below.
@@ -346,6 +346,40 @@ Apart from the obvious API change and behavior described above, kubelet + volume
   All pods that use such a volume will be ContainerCreating until the CSI driver fixes the mount (i.e., probably forever), with a message that it's CSI driver fault.
   This error is already part of generic `storage_operation_duration_seconds` metric (with a label for failures).
   * Note that kubelet can't check mount options after `NodeStage`, because a CSI driver does not need to mount during NodeStage or it may choose to mount to another directory than the staging one.
+
+#### Volume Reconstruction
+
+Today, volume reconstruction works in this way:
+
+1. When kubelet starts, it starts populating the volume manager's Desired State of World (DSW) immediately (e.g. with static pods),
+   and it starts running Pods and mounting volumes for them. Kubelet depends on volume plugin / CSI driver idempotency if a volume
+   is already mounted. At this point, the Actual State of World (ASW) is empty and it is getting populated with volumes
+   mounted for Pods that are getting started.
+2. When kubelet establishes connection to the API server and DSW is fully populated, it reconstructs volumes from disk only for volumes not
+   present in DSW. This should cover only volumes that don't have a Pod in the API server and need to be unmounted. Kubelet adds the
+   volumes to the ASW and lets regular reconciler to unmount them.
+
+This approach does not work for SELinux, because at step 1. above, the volume manager needs to know *if* a volume is mounted and with
+*what SELinux context mount option*. If the required and existing SELinux contexts of a volume match, the volume manager can continue
+mounting the volume. If they don't, volume manager needs to unmount the volume with the wrong SELinux context first and mount it again
+with the right one.
+
+We need to populate the ASW as soon as possible after kubelet starts. Suggested changes:
+
+1. When kubelet starts, the volume manager will reconstruct all volumes incl. their SELinux contexts and put them to the DSW as *uncertain*.
+   At this point, kubelet may not have connection to the API server yet, hence this phase of volume reconstruction must work without it.
+   Kubelet will store all reconstructed volumes in a separate array, to finish the reconstruction when the API server is available.
+   * This implies that volume plugins can't expect that the API server is available in `ConstructVolumeSpec`, `ConstructBlockVolumeSpec`,
+     `NewMounter`, `NewBlockVolumeMapper`, and `NewDeviceMounter` calls. Especially all `CSIDriver` checks in the CSI volume plugin must
+     be moved to `SetUpAt` or `TearDownAt`, and their block volume counterparts.
+2. Only after the initial ASW is populated, kubelet starts running pods and mounting volumes for them. Since the existing volumes are marked
+   as *uncertain*, volume manager will re-mount them (depending on volume plugin / CSI driver idempotency). Note that only mounting
+   is allowed at this point, the volume manager can't unmount anything, because the DSW is not yet populated.
+3. When kubelet establishes a connection to the API server, it populates the DSW as usual.
+4. When the DSW is fully populated, the volume manager will finish reconstruction of volumes, i.e. file devicePaths from the
+   `node.status.volumesInUse` field.
+5. Only after the second phase of volume reconstruction is done, i.e. the DSW is fully populated and volumes are fully reconstructed,
+   the volume manager starts unmounting volumes that are not in the ASW.
 
 ### Implementation phases
 
