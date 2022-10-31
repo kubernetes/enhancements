@@ -127,16 +127,17 @@ post-start-hook and expired leases will be garbage collected by the `start-kube-
 post-start-hook in kube-apiserver. The refresh rate, lease duration will be configurable through kube-apiserver
 flags
 
-The format of the lease ID will be `kube-apiserver-<UUID>`. The UUID is newly generated on every start-up. This ID format is preferred
-for the following reasons:
-* No two kube-apiservers on the same host can share the same lease identity.
-* Revealing the hostname of kube-apiserver may not be desirable for some Kubernetes platforms.
-* The kube-apiserver version may change between restarts, which can trigger a storage version migration (see KEP on StorageVersionAPI)
+The format of the lease will be `kube-apiserver-<hash-using-hostname>`. A hash based on the hostname is used for two reasons:
+1. To ensure that a `kube-apiserver` that is restarting will attempt to obtain its previous lease, avoiding system churn when a kube-apiserver Lease is garbage collected.
+2. Avoiding the need to truncate the lease name when using longer hostnames that exceed the 64 character limit for object names, which can lead to naming conflicts.
 
-In some cases it can be desirable to use a predictable ID format (e.g. kube-apiserver-<hostname>). We may consider providing
-a flag in `kube-apiserver` to override the lease identity.
+Each lease will have a `kubernetes.io/hostname` label with the actual hostname seen by kube-apiserver which cluster admins
+can use to determine which kube-apiserver owns a Lease object. However, the holder identity of the
+lease (`lease.spec.holderIdentity`) will be uniquely generated per start-up, which can be used as an indicator for
+ownership churn of the lease. All kube-apiserver leases will also have a component label `k8s.io/component=kube-apiserver`.
 
-All kube-apiserver leases will also have a component label `k8s.io/component=kube-apiserver`.
+In the future, we may consider providing a flag in `kube-apiserver` to override the lease name, but we don't anticipate
+needing this today.
 
 
 ### Test Plan
@@ -178,9 +179,7 @@ Alpha should provide basic functionality covered with tests described above.
 
 #### Beta -> GA Graduation
 
-  - SIG consensus on whether Lease names should be unique per process (i.e. uuid) or persist across restarts (i.e. hostname)
-  - SIG consensus on whether Lease names should include a hostname identifier (via label) if they do NOT persist across restarts.
-  - SIG consensus on where the storageversiongc controller should run (kube-apiserver vs kube-controller-manager).
+==TODO==
 
 **For non-optional features moving to GA, the graduation criteria must include
 [conformance tests].**
