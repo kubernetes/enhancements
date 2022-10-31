@@ -378,21 +378,19 @@ to be broached with service restarts and node additions/removals within zones.
 There are a number of use cases however where the proposed algorithm for automatic
 assignments of zone hints is not suitable:
 
-1. Small multi-region clusters with a low number of zones and endpoints. For 
+1. Small multi-zone clusters with a low number of zones and endpoints. For 
 example a rolling restart with a service in a 3 zone cluster with 2-2-2 
 endpoint distribution will cause the proposed algorithm to remove hints for the 
 service during the restart, this could have severe impact for high latency 
 environments.
-2. Multi-region clusters that deploy applications in a subset of regions. Unless 
-all regions in a cluster contain an endpoint then Topology Hints will not be 
+2. Multi-zone clusters that deploy applications in a subset of zones. Unless 
+all zones in a cluster contain an endpoint then Topology Hints will not be 
 applied.
 
 As such we should ensure that service owners have a way to enforce traffic is
 sent to endpoints in the same zone, regardless of node/endpoint distribution.
-If there is no endpoint in the zone, endpoints in the region should be
-preferred. If there is no endpoint in the zone nor region, then the default 
-service load balancing strategy should be used on all endpoints for the service 
-regardless of topology.
+If there is no endpoint in the zone, then the default service load balancing
+strategy should be used on all endpoints for the service regardless of topology.
 
 This option value can be added to the previously defined "Auto" and "Disabled"
 as a new "Always" value. The caveats and risks described in previous sections 
