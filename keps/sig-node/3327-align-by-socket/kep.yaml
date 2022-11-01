@@ -28,13 +28,15 @@ latest-milestone: "v1.25"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.25"
-  beta: "v1.26"
-  stable: "v1.27"
+  beta: "v1.27"
+  stable: "v1.28"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: "CPUManagerPolicyAlphaOptions"
+  - name: "CPUManagerPolicyBetaOptions"
+  - name: "CPUManagerPolicyOptions"
     components:
       - kubelet
 disable-supported: true
