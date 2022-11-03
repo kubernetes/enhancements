@@ -21,7 +21,8 @@
     - [Example](#example)
     - [Overload](#overload)
     - [Handling Node Updates](#handling-node-updates)
-  - [Manual enforcement of Topology Aware Routing](#manual-enforcement-of-topology-aware-routing)
+  - [Manual enforcement of Topology Aware Routing by zone](#manual-enforcement-of-topology-aware-routing-by-zone)
+  - [Manual enforcement of Topology Aware Routing by multiple metrics](#manual-enforcement-of-topology-aware-routing-by-multiple-metrics)
   - [Future Expansion](#future-expansion)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
@@ -370,7 +371,7 @@ of the following scenarios:
 2. A new Node results in a Service that is able to achieve an endpoint
    distribution below 20% for the first time.
 
-### Manual enforcement of Topology Aware Routing
+### Manual enforcement of Topology Aware Routing by zone
 
 The algorithm proposed for mitigating the risk of overload works best with large
 numbers of endpoints and nodes, such that the percentage thresholds are unlikely
@@ -392,9 +393,20 @@ sent to endpoints in the same zone, regardless of node/endpoint distribution.
 If there is no endpoint in the zone, then the default service load balancing
 strategy should be used on all endpoints for the service regardless of topology.
 
-This option value can be added to the previously defined "Auto" and "Disabled"
-as a new "Always" value. The caveats and risks described in previous sections 
-should be highlighted in the documentation around this feature.
+### Manual enforcement of Topology Aware Routing by multiple metrics
+
+The above proposal also ties in nicely to KEP: 3015. As such we could combine both 
+zonal and node based topology routing preferences into a new annotation 
+`topology-aware-routing` with the values option of `[node, zone, region, auto]`.
+
+The first 3 values would make routing decisions preferring the given metric, for
+example `topology-aware-routing=zone` would implement the previously described
+behaviour. `topology-aware-routing=node` would send traffic to the local node if
+an endpoint exists on it as described in KEP 3015.
+
+The `auto` option would combine these metrics such that it would prefer endpoints
+by node, if none present then by zone, and if none present by zone then by region, 
+finally falling back to the default behaviour if there are no endpoints.
 
 ### Future Expansion
 
