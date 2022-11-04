@@ -1955,7 +1955,7 @@ and ensures they get intercepted and work properly with a CEL validation policy(
 that watches all instances of that object using a new unstructured informer which is inefficient([comment](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013331221))
 - switch to a lock-free implementation to address lock having to wait for all existing admission evaluations 
 to complete and blocking all new admission evaluations until this completes.([comment1](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013318103),[comment2](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013305167))
-- 
+- authz check to the specific resource referenced in the policy's paramKind. ([comment](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013135860))
 
 ### Upgrade / Downgrade Strategy
 
