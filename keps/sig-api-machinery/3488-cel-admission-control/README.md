@@ -1946,6 +1946,16 @@ in back-to-back releases.
 - Feature implemented behind a feature flag
 - Ensure proper tests are in place.
 
+#### Beta
+
+- add tests which registers a validation policy for everything and iterates through all groups/versions/resources/subresources 
+and ensures they get intercepted and work properly with a CEL validation policy([comment](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013596456))
+- set `paramKind` in a ValidatingAdmissionPolicy results in starting a new informer 
+that watches all instances of that object using a new unstructured informer which is inefficient([comment](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013331221))
+- switch to a lock-free implementation to address lock having to wait for all existing admission evaluations 
+to complete and blocking all new admission evaluations until this completes.([comment1](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013318103),[comment2](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013305167))
+- 
+
 ### Upgrade / Downgrade Strategy
 
 <!--
