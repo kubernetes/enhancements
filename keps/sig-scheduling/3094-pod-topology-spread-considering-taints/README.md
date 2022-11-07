@@ -573,23 +573,10 @@ The policies are respected again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-In the scheduler, this is in-memory feature, so tests checking both feature enabled or disabled were added:
+We have tests here:
 
-Unit tests:
-
-- pkg/api/pod/util_test.go#TestDropNodeInclusionPolicyFields
-- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPreFilterState
-- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestSingleConstraint
-- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestMultipleConstraints
-- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPreScoreStateEmptyNodes
-- pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go#TestPodTopologySpreadScore
-
-Integration tests:
-
-- test/integration/scheduler/filters/filters_test.go#TestPodTopologySpreadFilter
-- test/integration/scheduler/scoring/priorities_test.go#TestPodTopologySpreadScoring
-
-However, this KEP also introduces API changes, the tests will be added later, refer to the [PR](https://github.com/kubernetes/kubernetes/pull/112805). I'll update the description once the PR is merged.
+- pkg/registry/core/pod/strategy_test.go#TestNodeInclusionPolicyEnablementInCreating
+- pkg/registry/core/pod/strategy_test.go#TestNodeInclusionPolicyEnablementInUpdating
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -636,7 +623,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Not yet, but it will be tested manually prior to upgrade following below steps:
+Yes, it was tested manually prior to upgrade following below steps, and behaved as expected.
 
 1. Install kubernetes v1.24 cluster with two workloads via installation tools like Kind.
 2. Let's name these nodes as node1 and node2, both labelled with key `kubernetes.io/hostname`.
@@ -699,7 +686,7 @@ Not yet, but it will be tested manually prior to upgrade following below steps:
             - maxSkew: 1
               topologyKey: kubernetes.io/hostname
               whenUnsatisfiable: DoNotSchedule
-              NodeTaintsPolicy: Honor
+              nodeTaintsPolicy: Honor
               labelSelector:
                 matchLabels:
                   foo: bar
