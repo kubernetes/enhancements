@@ -1,4 +1,4 @@
-# KEP-3325: Self subject attributes review API
+# KEP-3325: Self subject review API
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -39,10 +39,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -77,7 +77,7 @@ The motivation for this KEP is to reduce obscurity and help users with debugging
 
 ## Proposal
 
-Add a new API endpoint to the `authentication.k8s.io` group - `SelfSubjectAttributesReview`.
+Add a new API endpoint to the `authentication.k8s.io` group - `SelfSubjectReview`.
 The user will hit the endpoint after authentication happens, so all attributes will be available to return.
 
 ## Design Details
@@ -89,18 +89,18 @@ The endpoint has no input parameters or a `spec` field because only the authenti
 
 The structure for building a request:
 ```go
-type SelfSubjectAttributesReview struct {
+type SelfSubjectReview struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// Status is filled in by the server with the user attributes.
-	Status SelfSubjectAttributesReviewStatus `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
+	Status SelfSubjectReviewStatus `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
 }
 ```
 ```go
-type SelfSubjectAttributesReviewStatus struct {
+type SelfSubjectReviewStatus struct {
 	// User attributes of the current user.
 	// +optional
 	UserInfo authenticationv1.UserInfo `json:"userInfo,omitempty" protobuf:"bytes,1,opt,name=userInfo"`
@@ -109,14 +109,14 @@ type SelfSubjectAttributesReviewStatus struct {
 
 On receiving a request, the Kubernetes API server fills the status with the user attributes and returns it to the user.
 
-Request example (the body would be a `SelfSubjectAttributesReview` object):
+Request example (the body would be a `SelfSubjectReview` object):
 ```
-POST /apis/authentication.k8s.io/v1alpha1/selfsubjectattributesreview
+POST /apis/authentication.k8s.io/v1alpha1/selfsubjectreviews
 ```
 ```json
 {
   "apiVersion": "authentication.k8s.io/v1alpha1",
-  "kind": "SelfSubjectAttributesReview"
+  "kind": "SelfSubjectReview"
 }
 ```
 Response example:
@@ -124,13 +124,20 @@ Response example:
 ```json
 {
   "apiVersion": "authentication.k8s.io/v1alpha1",
-  "kind": "SelfSubjectAttributesReview",
+  "kind": "SelfSubjectReview",
   "status": {
-    "name": "jane.doe",
-    "uid": "b6c7cfd4-f166-11ec-8ea0-0242ac120002",
-    "groups": ["viewers", "editors"],
-    "extra": {
-      "provider_id": "token.company.dev"
+    "userInfo": {
+      "name": "jane.doe",
+      "uid": "b6c7cfd4-f166-11ec-8ea0-0242ac120002",
+      "groups": [
+        "viewers",
+        "editors"
+      ],
+      "extra": {
+        "provider_id": [
+          "token.company.dev"
+        ]
+      }
     }
   }
 }
@@ -138,8 +145,8 @@ Response example:
 
 User attributes are known at the moment of accessing the rest API endpoint and can be extracted from the request context.
 
-NOTE: Unlike the TokenReview, there are no audiences in requests and responses since 
-the SelfSubjectAttributesReview API can only be accessed using valid credentials against the API server, 
+NOTE: Unlike the TokenReview, there are no audiences in requests and responses since
+the SelfSubjectReview API can only be accessed using valid credentials against the API server,
 meaning that the audience must always be that of the API server. Thus learning this value is not practical.
 
 ### RBAC
@@ -166,31 +173,24 @@ rules:
 - apiGroups:
   - authentication.k8s.io
   resources:
-  - selfsubjectattributesreviews
+  - selfsubjectreviews
   verbs:
   - create
 ```
 
-After reaching GA, the SelfSubjectAttributesReview API will be enabled by default. 
+After reaching GA, the SelfSubjectReview API will be enabled by default.
 If necessary, it will be possible to disable this API by using the following kube-apiserver flag:
 ```
---runtime-config=authentication.k8s.io/v1alpha1/selfsubjectattributesreviews=false
+--runtime-config=authentication.k8s.io/v1alpha1/selfsubjectreviews=false
 ```
 
 ### Test Plan
 
-[X] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
-N/A
 
 ##### Unit tests
 
@@ -212,18 +212,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-The plan to test the SelfSubjectAttributesReview API is:
-
-1. Request returns all user attributes
-2. Request returns some user attributes
-3. Request with a status returns overridden fields
-
-Command line interface tests covering:
-1. How successful responses are rendered in the terminal with various output modes.
-2. How errors are rendered.
-
-Given that a new API package is introduced as part of this feature there is
-no existing test coverage to link to.
+- `k8s.io/kubectl/pkg/cmd/auth/whoami.go`: `23.09.2022` - [`44%`](https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-kubernetes-coverage-unit/1573199873317015552)
 
 ##### Integration tests
 
@@ -234,9 +223,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-1. Successful authentication through a simple authenticator, e.g., token or certificate authenticator
-2. Successful authentication through a complicated authenticator, e.g., webhook or authentication proxy authenticator
-3. Failed authentication
+- `k8s.io/kubernetes/test/integration/auth/selfsubjectreview_test.go`
 
 ##### e2e tests
 
@@ -248,7 +235,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-There are no e2e tests planned for the alpha milestone.
+- `k8s.io/kubernetes/test/e2e/auth/selfsubjectreview.go`
 
 ### Graduation Criteria
 
@@ -281,7 +268,7 @@ Pick one of these and delete the rest.
 -->
 
 - Feature gate
-  - Feature gate name: `SelfSubjectAttributesReview`
+  - Feature gate name: `APISelfSubjectReview`
   - Components depending on the feature gate:
     - kube-apiserver
 
@@ -349,7 +336,7 @@ The feature utilizes core mechanisms of the Kubernetes API server, so the maximu
 
 The apiserver_request_* metrics family is helpful to be aware of how many requests to the endpoint are in your cluster and how many of them failed.
 ```
-{__name__=~"apiserver_request_.*", group="authentication.k8s.io", resource="selfsubjectattributesreview"}
+{__name__=~"apiserver_request_.*", group="authentication.k8s.io", resource="selfsubjectreviews"}
 ```
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -372,7 +359,7 @@ No.
 
 ```
 Group: authentication.k8s.io
-Kind: SelfSubjectAttributesReview
+Kind: SelfSubjectReview
 ```
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?

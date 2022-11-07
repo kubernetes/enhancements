@@ -14,8 +14,6 @@ reviewers:
   - "@alculquicondor"
 approvers:
   - "@janetkuo"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/45509
   - https://github.com/kubernetes/kubernetes/issues/4301

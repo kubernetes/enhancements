@@ -13,6 +13,10 @@
   - [Changes to the disruption controller](#changes-to-the-disruption-controller)
   - [Changes to the eviction API](#changes-to-the-eviction-api)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -183,12 +187,96 @@ a `podHealthyPolicy`, and will not require the actual API to change.
 
 ### Test Plan
 
-- Unit and integration tests covering:
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+We assess that the disruption controller has adequate test coverage for places which might be impacted by
+this enhancement. Thus, no additional tests prior implementing this enhancement
+are needed.
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+Unit tests covering:
   - The current behavior stays unchanged when the policy is not specified.
   - Correct behavior for both policies in both the disruption controller and
     the eviction API.
   - Feature gate disablement.
-- Verify passing existing E2E and conformance tests for PDBs and Eviction.
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+The core packages (with their unit test coverage) which are going to be modified during the implementation:
+- `k8s.io/kubernetes/pkg/controller/disruption`: `5 October 2022` - `77.7%` <!--(computing allowedDisruptions according to the podHealthyPolicy)-->
+- `k8s.io/kubernetes/pkg/apis/policy/validation`: `5 October 2022` - `93%`  <!--(validation of the PodDisruptionBudget configuration with regard to the PodHealthyPolicy)-->
+- `k8s.io/kubernetes/pkg/apis/policy/v1`: `5 October 2022` - `60%` <!--(extension of PodDisruptionBudgetSpec)-->
+
+##### Integration tests
+
+Integration tests covering:
+  - The current behavior stays unchanged when the policy is not specified.
+  - Correct behavior for both policies in both the disruption controller and
+    the eviction API.
+  - Feature gate disablement.
+
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+- <test>: <link to test coverage>
+-->
+
+
+##### e2e tests
+
+Verify passing existing E2E and conformance tests for PDBs and Eviction.
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+
+
+- <test>: <link to test coverage>
+-->
+
+
 
 ### Graduation Criteria
 

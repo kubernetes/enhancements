@@ -9,8 +9,6 @@ reviewers:
   - "@giuseppe"
 approvers:
   - "@derekwaynecarr"
-prr-approvers:
-  - "@johnbelamaric"
 owning-sig: sig-node
 status: implementable
 editor: TBD

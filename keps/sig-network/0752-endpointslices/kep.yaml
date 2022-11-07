@@ -13,8 +13,6 @@ reviewers:
 approvers:
   - "@bowei"
   - "@thockin"
-prr-approvers:
-  - "@wojtek-t"
 creation-date: 2019-06-01
 last-updated: 2021-08-19
 status: implemented

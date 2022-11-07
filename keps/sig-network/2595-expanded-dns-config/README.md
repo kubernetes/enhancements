@@ -14,10 +14,14 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -44,8 +48,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -103,6 +107,14 @@ DNS search path list to an arbitrary number
 
 ### Notes/Constraints/Caveats (Optional)
 
+Some container runtimes of older versions have their own restrictions on the
+number of DNS search paths. For the container runtimes which are older than
+- containerd v1.5.6
+- CRI-O v1.22
+
+, pods with expanded DNS configuration may get stuck in the pending state. (see
+    [kubernetes#104352](https://github.com/kubernetes/kubernetes/issues/104352))
+
 This enhancement relaxes the validation of `Pod` and `PodTemplate`. Once the
 feature is activated, it must be carefully disabled. Otherwise, the objects left
 over from the previous version which have the expanded DNS configuration can be
@@ -126,7 +138,28 @@ DNS configuration
 
 ### Test Plan
 
-- Add unit tests of validating expanded DNS config
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+N/A
+
+##### Unit tests
+
+Verified that the API server accepts the pod or podTemplate with the expanded
+DNS config and the kubelet accepts the resolv.conf or pod with the expanded DNS
+config.
+
+##### Integration tests
+
+No integration tests are planned.
+
+##### e2e tests
+
+Will add an e2e test to ensure that the pod with the expanded DNS config can be
+created and run successfully.
 
 ### Graduation Criteria
 
@@ -135,12 +168,13 @@ DNS configuration
 - Implement the feature
 - Add appropriate unit tests
 
-#### Alpha -> Beta Graduation
+#### Beta
 
 - Address feedback from alpha
-- Sufficient testing
+- Add e2e tests
+- All major container runtimes supported versions allows this feature
 
-#### Beta -> GA Graduation
+#### GA
 
 - Address feedback from beta
 - Sufficient number of users using the feature
@@ -169,6 +203,8 @@ or disable the expanded DNS configuration feature.
     - Components depending on the feature gate:
       - `kubelet`
       - `kube-apiserver`
+    - This feature is not compatible with some older container runtimes (see
+        [Notes/Constraints/Caveats](#notesconstraintscaveats-optional))
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
@@ -185,9 +221,45 @@ the expanded DNS configuration.
 
 Yes, the feature can be disabled by disabling the feature gate.
 
-Once the feature is disabled, kube-apiserver will reject the pod having expanded
-DNS configuration and kubelet will create a resolver configuration excluding the
-overage.
+Before disabling the feature gate, is is recommended to remove objects
+containing podsTemplate with the expanded DNS config as newly created pods will
+be rejected by the apiserver.
+
+```sh
+$ cat << \EOF > get-expanded-dns-config-objects.tpl
+{{- range $_, $objects := .items}}
+  {{- with $searches := .spec.template.spec.dnsConfig}}
+    {{- $length := len .searches }}
+    {{- if gt $length 6 }}
+      {{- $objects.metadata.name }}
+      {{- printf " " }}
+      {{- continue }}
+    {{- end}}
+
+    {{- $searchStr := "" }}
+    {{- range $search := .searches}}
+      {{- $searchStr = printf "%s %s" $searchStr $search }}
+    {{- end}}
+    {{- $searchLen := len $searchStr }}
+    {{- if gt $searchLen 256}}
+      {{- $objects.metadata.name }}
+      {{- printf " " }}
+      {{- continue }}
+    {{- end }}
+  {{- end}}
+{{- end}}
+EOF
+
+# get deployments having the expanded DNS configuration
+$ kubectl get deployments.apps --all-namespaces -o go-template-file=get-expanded-dns-config-objects.tpl
+```
+
+Once the feature is disabled, kube-apiserver will reject the newly requested pod
+having expanded DNS configuration and kubelet will create a resolver
+configuration excluding the overage.
+
+If there is a problem with an object that already has expanded DNS
+configuration, the object should be removed manually.
 
 - **What happens if we reenable the feature if it was previously rolled back?**
 
@@ -196,7 +268,15 @@ and new Pods with expanded configuration will be created by the kubelet.
 
 - **Are there any tests for feature enablement/disablement?**
 
-We will add unit tests.
+Yes.
+
+We verified in unit tests that existing pods work with the feature enabled and
+already created pods with the expanded DNS config work fine with the feature
+disabled.
+
+When this feature is disabled, objects containing podTemplate with the expanded
+DNS config cannot create new pods until that podTemplate is fixed to have the
+non-expanded DNS config.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -213,7 +293,7 @@ enablement.
 
 - **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-We will do test.
+Yes
 
 - **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
 
@@ -247,7 +327,8 @@ TBD
 
 - **Does this feature depend on any specific services running in the cluster?**
 
-No
+This feature requires container runtime support. See
+[Notes/Constraints/Caveats](#notesconstraintscaveats-optional).
 
 ### Scalability
 
@@ -293,8 +374,16 @@ they are too old.
 
 ## Implementation History
 
-- 2021-03-26: [Initial
-discussion at #100583](https://github.com/kubernetes/kubernetes/pull/100583)
+- 2021-03-26: [Initial discussion at
+#100583](https://github.com/kubernetes/kubernetes/pull/100583)
+- 2021-05-11: [Initial KEP
+approved](https://github.com/kubernetes/enhancements/pull/2596)
+- 2021-05-27: [Initial alpha implementations
+merged](https://github.com/kubernetes/kubernetes/pull/100651)
+- 2021-06-05: [Initial docs
+merged](https://github.com/kubernetes/website/pull/28096)
+- 2022-01-12: [Docs updated to add requirements for the
+feature](https://github.com/kubernetes/website/pull/31305)
 
 ## Drawbacks
 

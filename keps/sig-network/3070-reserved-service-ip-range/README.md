@@ -358,8 +358,8 @@ This only affects the creation of new Services without an IP specified, there is
 
 ###### What specific metrics should inform a rollback?
 
-The allocation logic already has the following metrics, that will be expanded with a new label containing information about the
-type of allocation requested (dynamic or static):
+The allocation logic already has the following metrics, [some metrics have been extended with a
+new label to contain information about the allocation scope requested](#monitoring-requirements):
 
   - allocated_ips
   - available_ips
@@ -370,11 +370,12 @@ The increase of the errors metrics or the trend of the allocated_ips and availab
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+Since it is a purely in-memory feature the upgrade or downgrande doesn't have any impact.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 ### Monitoring Requirements
 
-Following allocator metrics will be expanded with a new label to each metric containing information about the
+Following allocator metrics have been expanded with a new label to each metric containing information about the
 type of allocation requested (dynamic or static):
 
   - allocation_total
@@ -387,20 +388,7 @@ The other allocator the metrics can not use the additional label because, when a
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-A new metric will be added containing the information of the range configuration in the allocator.
-
-```go
-	allocatorInfo = metrics.NewGaugeVec(
-		&metrics.GaugeOpts{
-			Name:           "allocator_info",
-			Help:           "A metric with a constant '1' value labeled by Service CIDR, ",
-			StabilityLevel: metrics.ALPHA,
-		},
-		[]string{"cidr", "allocator_size", "dynamic_range_offset"},
-	)
-```
-
-The allocator using this feature will have a `dynamic_range_offset` value different than 0.
+An operator will only observe that the change in behavior described for dynamically assigned ClusterIP for Services.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -409,14 +397,14 @@ The allocator using this feature will have a `dynamic_range_offset` value differ
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
+- [X] Other (treat as last resort)
   - Details:
   - Create services without setting the ClusterIP and observe that all the services IPs allocated belong the upper band of the range,
     and once the upper band is exhausted it keep assigning IPs on the lower band until the whole range is exhausted.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-
+N/A
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 
@@ -428,6 +416,9 @@ The allocator using this feature will have a `dynamic_range_offset` value differ
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+We could have a metric exposing the configuration parameters of the allocator, but that will collide
+and is incompatible with a new KEP that expand the Service allocators to make the dynamically configurable.
 
 ### Dependencies
 

@@ -13,8 +13,6 @@ reviewers:
 approvers:
   - "@dchen1107"
   - "@liggitt"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
   - "/keps/sig-cli/1441-kubectl-debug"
 

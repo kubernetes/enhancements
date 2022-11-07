@@ -8,6 +8,7 @@
 - [When to Create a New Enhancement Issue](#when-to-create-a-new-enhancement-issue)
 - [Why Are Enhancements Tracked](#why-are-enhancements-tracked)
 - [When to Comment on an Enhancement Issue](#when-to-comment-on-an-enhancement-issue)
+- [Enhancements Tracking Board](#enhancements-tracking-board)
 - [Enhancements Tracking Spreadsheet](#enhancements-tracking-spreadsheet)
 - [Current Release Cycle](#current-release-cycle)
 - [Exceptions to Enhancement Milestone Dates](#exceptions-to-enhancement-milestone-dates)
@@ -32,7 +33,7 @@ An enhancement is anything that:
 - users will notice and come to rely on
 
 It is unlikely an enhancement if it is:
-- implemented using `CustomResourceDefinition` and/or in https://github.com/kubernetes/contrib
+- implemented using a `CustomResourceDefinition`
 - fixing a flaky test
 - refactoring code
 - performance improvements, which are only visible to users as faster API operations, or faster control loops
@@ -69,27 +70,20 @@ Please comment on the enhancement issue to:
 Please do not comment on the enhancement issue to:
 - discuss a detail of the design, code or docs. Use a linked-to-issue or PR for that
 
-## Enhancements Tracking Spreadsheet
+## Enhancements Tracking Board
 
-All the enhancements from this repo are visualized in the Enhancements Tracking Spreadsheets.
+As of the 1.26 release, enhancements from this repo are visualized in the Enhancements Tracking Boards.
 
 Links:
 
-- [1.25 Milestone](https://bit.ly/k8s125-enhancements)
-- [1.24 Milestone](https://bit.ly/k8s124-enhancements)
-- [1.23 Milestone](https://bit.ly/k8s123-enhancements)
-- [1.22 Milestone](https://bit.ly/k8s122-enhancements)
-- [1.21 Milestone](https://bit.ly/k8s121-enhancements)
-- [1.20 Milestone](https://bit.ly/k8s-1-20-enhancements)
-- [1.19 Milestone](https://bit.ly/k8s-1-19-enhancements)
-- [1.18 Milestone](https://bit.ly/k8s-1-18-enhancements)
-- [1.17 Milestone](https://bit.ly/k8s117-enhancement-tracking)
-- [1.16 Milestone](https://bit.ly/k8s116-enhancement-tracking)
-- [1.15 Milestone](https://bit.ly/115-enhancements)
-- [1.14 Milestone](https://bit.ly/k8s114-enhancements)
-- [1.13 Milestone](https://bit.ly/k8s113-features)
-- [1.12 Milestone](https://bit.ly/k8s112-features)
-- [1.11 Milestone](https://bit.ly/k8s-features-111)
+- [1.26 Milestone](http://bit.ly/k8s126-enhancements)
+
+## Enhancements Tracking Spreadsheet
+
+Prior to the 1.26 release, enhancements from this repo were visualized using Enhancements Tracking Spreadsheets.
+
+Please refer to the [Enhancements Tracking Spreadsheet Archive](docs/archived-tracking-sheets.md) for links to 
+these sheets.
 
 Procedure:
 *TBA*
@@ -109,9 +103,9 @@ The Exceptions Process is handled by the Release Team, please see their [documen
 | `sig/foo` | Denotes the SIG(s) which owns this enhancement—e.g., `SIG Foo` | Set the label using the comment `/sig foo` (on a separate line) | Anyone |
 | `kind/feature` | Denotes that the issue should be tracked as an enhancement (all enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
 | `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
-| `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and will not actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
+| `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and will not be actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
 | `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
 
 ## Glossary
 
-Please refer to the [Glossary](docs/glossary.md) for definition of any terminology and acronyms used in Enhancements subproject.
+Please refer to the [Glossary](docs/glossary.md) for the definition of any terminology and acronyms used in the Enhancements subproject.

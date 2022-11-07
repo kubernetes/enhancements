@@ -18,6 +18,6 @@ stage: beta
 latest-milestone: "v1.25"
 milestone:
   alpha: "v1.24"
-  beta: "v1.25"
+  beta: "v1.26"
   # stable: "v1.22"
 disable-supported: true

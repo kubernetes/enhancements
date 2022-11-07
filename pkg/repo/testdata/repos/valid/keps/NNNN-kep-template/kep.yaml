@@ -14,9 +14,6 @@ reviewers:
 approvers:
   - TBD
   - "@oscar.doe"
-prr-approvers:
-  - TBD
-  - "@bob.doe"
 see-also:
   - "/keps/sig-aaa/1234-we-heard-you-like-keps"
   - "/keps/sig-bbb/2345-everyone-gets-a-kep"

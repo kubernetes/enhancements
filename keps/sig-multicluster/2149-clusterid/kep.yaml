@@ -13,8 +13,6 @@ reviewers:
   - "@mikedanese"
 approvers:
   - "@pmorie"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
   - "/keps/sig-multicluster/1645-multi-cluster-services-api"
 #replaces:

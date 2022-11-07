@@ -5,15 +5,13 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-architecture
-status: implementable
+status: implemented
 creation-date: 2020-05-08
 reviewers:
   - "@Huang-Wei"
 approvers:
   - "@ahg-g"
   - "@liggitt"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
   - "/keps/sig-scheduling/1451-multi-scheduling-profiles"
   - "/keps/sig-scheduling/2458-node-resource-score-strategy"

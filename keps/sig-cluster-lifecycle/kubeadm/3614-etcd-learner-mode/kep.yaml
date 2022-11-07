@@ -1,0 +1,17 @@
+title: Use etcd's learner mode in kubeadm
+kep-number: 3614
+authors:
+  - "@neolit123"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+status: provisional
+creation-date: 2022-10-12
+last-updated: 2022-10-12
+reviewers:
+  - "@fabriziopandini"
+  - "@pacoxu"
+approvers:
+  - "@fabriziopandini"
+latest-milestone: "0.0"
+stage: "alpha"

@@ -12,8 +12,6 @@ reviewers:
   - "@klueska"
 approvers:
   - "@sig-node-leads"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
 - "keps/sig-node/2902-cpumanager-distribute-cpus-policy-option/"
 replaces: []

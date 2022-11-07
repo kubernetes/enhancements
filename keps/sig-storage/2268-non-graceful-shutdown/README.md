@@ -16,8 +16,10 @@ This includes the Summary and Motivation sections.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-  - [Unit tests](#unit-tests)
-  - [E2E tests](#e2e-tests)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [E2E tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -81,7 +83,7 @@ Similarly, this approach can also be applied to the case when a node is in a non
 ### Use Cases
 
 * If user wants to intentionally shutdown a node, he/she can validate whether graceful node shutdown feature works. If Kubelet is able to detect node is shutting down, it will gracefully delete pods, and new pods will be created on another running node.
-* If graceful shutdown is not working or node is in non-recoverable state due to hardware failure or broken OS, etc., user now can enable this feature, and add `out-of-service=nodeshutdown:NoExecute` taint which will be explained in detail below to trigger non-graceful shutdown behavior.
+* If graceful shutdown is not working or node is in non-recoverable state due to hardware failure or broken OS, etc., user now can enable this feature, and add `node.kubernetes.io/out-of-service=nodeshutdown:NoExecute` taint which will be explained in detail below to trigger non-graceful shutdown behavior.
 
 ### Goals
 
@@ -112,7 +114,7 @@ Proposed logic change:
 1. [Proposed change] This proposal requires a user to apply a `out-of-service` taint on a node when the user has confirmed that this node is shutdown or in a non-recoverable state due to the hardware failure or broken OS. Note that user should only add this taint if the node is not coming back at least for some time. If the node is in the middle of restarting, this taint should not be used.
 
 1. [Proposed change] In the Pod GC Controller, part of the kube-controller-manager, add a new function called gcTerminating. This function would need to go through all the Pods in terminating state, verify that the node the pod scheduled on is NotReady. If so, do the following:
-  1.  Upon seeing the `out-of-service` taint, the Pod GC Controller will forcefully delete the pods on the node if there are no matching tolation on the pods. This new `out-of-service` taint has `NoExecute` effect, meaning the pod will be evicted and a new pod will not schedule on the shutdown node unless it has a matching toleration. For example, `out-of-service=nodeshutdown:NoExecute` or `out-of-service=hardwarefailure:NoExecute`. We suggest to use `NoExecute` effect in taint to make sure pods will be evicted (deleted) and fail over to other nodes.
+  1.  Upon seeing the `out-of-service` taint, the Pod GC Controller will forcefully delete the pods on the node if there are no matching tolation on the pods. This new `out-of-service` taint has `NoExecute` effect, meaning the pod will be evicted and a new pod will not schedule on the shutdown node unless it has a matching toleration. For example, `node.kubernetes.io/out-of-service=out-of-service=nodeshutdown:NoExecute` or `node.kubernetes.io/out-of-service=out-of-service=hardwarefailure:NoExecute`. We suggest to use `NoExecute` effect in taint to make sure pods will be evicted (deleted) and fail over to other nodes.
   1. We'll follow taint and toleration policy. If a pod is set to tolerate all taints and effects, that means user does NOT want to evict pods when node is not ready. So GC controller will filter out those pods and only forcefully delete pods that do not have a matching toleration. If your pod tolerates the `out-of-service` taint, then it will not be terminated by the taint logic, therefore none of this applies.
 
 1. [Proposed change] Once pods are selected and forcefully deleted, the attachdetach reconciler should check the `out-of-service` taint on the node. If the taint is present, the attachdetach reconciler will not wait for 6 minutes to do force detach. Instead it will force detach right away and allow `volumeAttachment` to be deleted.
@@ -144,15 +146,32 @@ To mitigate this we plan to have a high test coverage and to introduce this enha
 
 ### Test Plan
 
-### Unit tests
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+#### Prerequisite testing updates
+
+There are existing tests for Pod GC controller: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/node/pod_gc.go
+
+There are existing tests for attach detach controller. Creating a pod that uses PVCs which will test attach: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/framework/pod/create.go
+Deleting a pod will trigger PVC to be detached: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/framework/pod/delete.go
+
+#### Unit tests
+
 * Add unit tests to affected components in kube-controller-manager:
   * Add tests in Pod GC Controller for the new logic to clean up pods and the `out-of-service` taint.
   * Add tests in Attachdetach Controller for the changed logic that allow volumes to be forcefully detached without wait.
 
-### E2E tests
-*   New E2E tests to validate workloads move successfully to another running node when a node is shutdown.
-    * Feature gate for `NonGracefulFailover` is disabled, feature is not active.
-    * Feature gate for `NonGracefulFailover` is enabled. Add `out-of-service` taint after node is shutdown:
+#### Integration tests
+
+After reviewing the tests, we decided that the best place to add a test for this feature is under test/e2e/storage:
+https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/non_graceful_node_shutdown.go
+
+#### E2E tests
+
+*   Added E2E tests to validate workloads move successfully to another running node when a node is shutdown: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/non_graceful_node_shutdown.go
+    * Feature gate for `NodeOutOfServiceVolumeDetach` is enabled. Add `out-of-service` taint after node is shutdown:
       * Verify workloads are moved to another node successfully.
       * Verify the `out-of-service` taint is removed after the shutdown node is cleaned up.
 * Add stress and scale tests before moving from beta to GA.
@@ -161,7 +180,7 @@ We also plan to test this with different version Skews.
 
 ### Graduation Criteria
 
-This KEP will be treated as a new feature, and will be introduced with a new feature gate, `NonGracefulFailover`.
+This KEP will be treated as a new feature, and will be introduced with a new feature gate, `NodeOutOfServiceVolumeDetach`.
 
 This enhancement will go through the following maturity levels: alpha, beta and stable.
 
@@ -217,7 +236,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: NonGracefulFailover
+    - Feature gate name: NodeOutOfServiceVolumeDetach
     - Components depending on the feature gate: kube-controller-manager
   - [ ] Other
     - Describe the mechanism:
@@ -266,17 +285,35 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
+  The rollout should not fail. Feature gate only needs to be enabled on `kube-controller-manager`. So it is either enabled or disabled.
+  In an HA cluster, assume a 1.N kube-controller-manager has feature gate enabled
+  and takes the lease first, and the GC Controller has already forcefully deleted
+  the pods. Then it loses it to a 1.N-1 kube-controller-manager which as feature gate
+  disabled. In this case, the Attach Detach Controller won't have the new behavior
+  so it will wait for 6 minutes before force detach the volume.
+  If the 1.N kube-controller-manager has feature gate disabled while the 1.N-1
+  kube-controller-manager has feature gate enabled, the GC Controller will not
+  forcefully delete the pods. So the Attach Detach Controller will not be triggered
+  to force detach. In the later case, it will still keep the old behavior.
 
 * **What specific metrics should inform a rollback?**
+  If for some reason, the user does not want the workload to failover to a
+  different running node after the original node is shutdown and the `out-of-service`  taint is applied, a rollback can be done. I don't see why it is needed though as
+  user can prevent the failover from happening by not applying the `out-of-service`
+  taint.
+  Since use of this feature requires applying a taint manually by the user,
+  it should not specifically require rollback.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
+  We will manually test upgrade from 1.25 to 1.26 and rollback from 1.26 to 1.25.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
+  No.
 
 ### Monitoring Requirements
 
@@ -286,15 +323,26 @@ _This section must be completed when targeting beta graduation to a release._
   Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
+  An operator, the person who operates the cluster, can check if the
+  `NodeOutOfServiceVolumeDetach` feature gate is enabled and if there is an
+  `out-of-service` taint on the shutdown node.
+  The usage of this feature requires the manual step of applying a taint
+  so the operator should be the one applying it.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [ ] Metrics
-    - Metric name:
+    - Metric name: We can add new metrics deleting_pods_total, deleting_pods_error_total
+      in Pod GC Controller.
+      For Attach Detach Controller, there's already a metric:
+      attachdetach_controller_forced_detaches
+      It is also useful to know how many nodes have taints. We can explore with [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) which generates metrics about the state of the objects.
     - [Optional] Aggregation method:
     - Components exposing the metric:
   - [ ] Other (treat as last resort)
-    - Details:
+    - Details: Check whether the workload moved to a different running node
+      after the original node is shutdown and the `out-of-service` taint
+      is applied on the shutdown node.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   At a high level, this usually will be in the form of "high percentile of SLI
@@ -304,6 +352,12 @@ the health of the service?**
   - 99% percentile over day of absolute value from (job creation time minus expected
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
+  The failover should always happen if the feature gate is enabled, the taint
+  is applied, and there are other running nodes.
+  We can also check the deleting_pods_total, deleting_pods_error_total metrics
+  in Pod GC Controller and the attachdetach_controller_forced_detaches and
+  attachdetach_controller_forced_detaches_taint metric in the Attach Detach
+  Controller.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
@@ -320,13 +374,18 @@ _This section must be completed when targeting beta graduation to a release._
   optional services that are needed. For example, if this feature depends on
   a cloud provider API, or upon an external software-defined storage or network
   control plane.
+  This feature relies on the kube-controller-manager being running. If the
+  workload is running on a StatefulSet, it also depends on the CSI driver.
 
   For each of these, fill in the following—thinking about running existing user workloads
   and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
+  - [Dependency name] CSI driver
     - Usage description:
-      - Impact of its outage on the feature:
+      - Impact of its outage on the feature: If the CSI driver is not running,
+        the pod cannot use the persistent volume any more so the workload will
+        not be running properly.
       - Impact of its degraded performance or high-error rates on the feature:
+        Workload does not work properly if the CSI driver is down.
 
 ### Scalability
 
@@ -345,19 +404,25 @@ previous answers based on experience in the field._
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
   focusing mostly on:
   - components listing and/or watching resources they didn't before
+  Nothing new.
   - API calls that may be triggered by changes of some Kubernetes resources
     (e.g. update of object X triggers new updates of object Y)
+  This feature will trigger pods deletion, volume detachment, new pods
+  creation, and volume attachment calls if the new taint is applied.
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
+  Nothing new.
 
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them, providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
+  No.
 
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
+  Volume detach/attach could trigger cloud provider calls.
 
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
@@ -365,11 +430,13 @@ the existing API objects?**
   - API type(s):
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  No.
 
 * **Will enabling / using this feature result in increasing time taken by any
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
+  No.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -378,6 +445,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   volume), significant amount of data sent and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits].
+  No.
 
 ### Troubleshooting
 
@@ -388,20 +456,50 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  If API server or etcd is not available, we can't get accurate status of node or pod.
+  However the usage of this feature is very manual so an operator can verify
+  before applying the taint.
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
     - Detection: How can it be detected via metrics? Stated another way:
       how can an operator troubleshoot without logging into a master or worker node?
+      After applying the `out-of-service` taint, if the workload does not move
+      to a different running node, that is an indicator something might be wrong.
+      Note that since we removed the 6 minute wait in the Attach Detach controller,
+      force detach will happen if the feature gate is enabled and the taint is
+      applied without delay.
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
+      So if the workload does not failover, it behaves the same as when this
+      feature is not enabled. The operator should try to find out why the
+      failover didn't happen. Check messages from GC Controller and Attach Detach
+      Controller in the kube-controller-manager logs.
+      Check if there are following messages from GC Controller:
+      "failed to get node <node name>: <error>"
+      "Garbage collecting <number> pods that are terminating on node tainted with node.kubernetes.io/out-of-service".
+      Check if there is the following message from Attach Detach Controller:
+      "failed to get taint specs for node <node name>: <error>"
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue?
       Not required until feature graduated to beta.
+      Set log level to at least 2.
+      For example, the following message is in GC Controller if the feature is
+      enabled and `out-of-service` taint is applied. If the pods are forcefully
+      deleted by the GC Controller, this message should show up.
+      klog.V(2).Infof("garbage collecting pod %s that is terminating. Phase [%v]", pod.Name, pod.Status.Phase)
+      There is also a message in Attach Detach Controller that checks the taint.
+      If the taint is applied and feature gate is enabled, it force detaches the
+      volume without waiting for 6 minutes.
+      klog.V(2).Infof("node %q has out-of-service taint", attachedVolume.NodeName)
     - Testing: Are there any tests for failure mode? If not, describe why.
+      We have unit tests that cover different combination of pod and node statuses.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+  In that case, we need to go through the logs and find out the root cause.
+  Check messages from GC Controller and Attach Detach Controller in the
+  kube-controller-manager logs as described in the above section.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos

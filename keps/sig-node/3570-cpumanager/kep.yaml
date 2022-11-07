@@ -1,0 +1,51 @@
+title: CPU Manager
+kep-number: 3570
+authors:
+  - "@ConnorDoyle"
+  - "@flyingcougar"
+  - "@sjenning"
+  - "@fromanirh" # ONLY for GA graduation and PRR review
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+reviewers:
+  - "@derekwaynecarr"
+approvers:
+  - "@dawnchen"
+  - "@derekwaynecarr"
+editor: Connor Doyle
+creation-date: 2017-05-23
+last-updated: 2022-10-03
+status: implementable
+see-also:
+replaces:
+  - "kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
+  - "kubernetes/enhancements/keps/sig-node/375-cpumanager/README.md"
+superseded-by:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.8"
+  beta: "v1.10"
+  stable: "v1.26"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CPUManager
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - cpu_manager_pinning_requests_total
+  - cpu_manager_pinning_errors_total

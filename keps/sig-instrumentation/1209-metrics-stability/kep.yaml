@@ -28,8 +28,6 @@ reviewers:
   - "@andrewsykim" # cloud-provider
 approvers:
   - "@brancz"
-prr-approvers:
-  - "@johnbelamaric" # PRR-reviewer
 see-also:
   - "/keps/sig-instrumentation/1206-metrics-overhaul"
 

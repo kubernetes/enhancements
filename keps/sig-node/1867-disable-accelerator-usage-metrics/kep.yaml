@@ -14,10 +14,6 @@ approvers:
   - "dashpole"
   - "derekwaynecarr"
   - "dawnchen"
-prr-approvers:
-  - "deads2k"
-  - "johnbelamaric"
-  - "wojtek-t"
 see-also:
   - "/keps/sig-node/606-compute-device-assignment"
 replaces: []

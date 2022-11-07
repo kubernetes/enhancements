@@ -76,7 +76,7 @@ scheduler have a hard time catching up and integrating new changes. The current
 Kubernetes scheduler provides [webhooks to extend][] its functionality. However,
 these are limited in a few ways:
 
-[webhooks to extend]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/scheduler_extender.md
+[webhooks to extend]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/1819-scheduler-extender/README.md
 
 1.  The number of extension points are limited: "Filter" extenders are called
     after default predicate functions. "Prioritize" extenders are called after

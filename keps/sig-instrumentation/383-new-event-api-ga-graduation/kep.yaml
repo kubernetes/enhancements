@@ -13,8 +13,6 @@ reviewers:
   - "@wojtek-t"
 approvers:
   - "@brancz"
-prr-approvers:
-  - "@wojtek-t"
 creation-date: 2019-01-31
 last-updated: 2021-02-03
 status: implementable

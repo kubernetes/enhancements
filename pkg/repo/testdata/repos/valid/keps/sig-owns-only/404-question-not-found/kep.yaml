@@ -12,8 +12,6 @@ reviewers:
   - "@beth"
 approvers:
   - "@carolyn"
-prr-approvers:
-  - "@dorothy"
 stage: beta
 latest-milestone: v1.4
 milestone:

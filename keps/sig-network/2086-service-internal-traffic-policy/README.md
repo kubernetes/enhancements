@@ -9,16 +9,21 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+    - [API Enablement Rollback](#api-enablement-rollback)
+    - [Proxy Enablement Rollback](#proxy-enablement-rollback)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
@@ -90,13 +95,8 @@ The `internalTrafficPolicy` field will not apply for headless Services or Servic
 
 #### Story 1
 
-As an application owner, I would like traffic to cluster DNS servers to always prefer local endpoints to reduce
-latency in my application.
-
-#### Story 2
-
-As a platform owner, I want to create a Service that always directs traffic to a logging daemon on the same node.
-Traffic should never bounce to a daemon on another node.
+As a platform owner, I want to create a Service that always directs traffic to a logging daemon or metrics agent on the same node.
+Traffic should never bounce to a daemon on another node since the logs would then report an incorrect log source.
 
 ### Risks and Mitigations
 
@@ -146,13 +146,33 @@ Overlap with topology-aware routing:
 
 ### Test Plan
 
-Unit tests:
-* unit tests validating API strategy/validation for when `internalTrafficPolicy` is set on Service.
-* unit tests exercising kube-proxy behavior when `internalTrafficPolicy` is set to all possible values.
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-E2E test:
-* e2e tests validating default behavior with kube-proxy did not change when `internalTrafficPolicy` defaults to `Cluster`. Existing tests should cover this.
-* e2e tests validating that traffic is only sent to node-local endpoints when `internalTrafficPolicy` is set to `Local`.
+##### Prerequisite testing updates
+
+##### Unit tests
+
+- `pkg/registry/core/service`: `v1.22` - `API strategy tests for feature enablement and upgrade safety (dropping disabled fields)`
+- `pkg/apis/core/v1`: `v1.22` - `API defauting tests`
+- `pkg/proxy/iptables`: `v1.22` - `iptables rules tests + feature enablement`
+- `pkg/proxy/ipvs`: `v1.22` - `ipvs rules tests + feature enablement`
+- `pkg/proxy`: `v1.22` - `generic kube-proxy Service tests`
+
+NOTE: search [ServiceInternalTrafficPolicy](https://github.com/kubernetes/kubernetes/search?q=ServiceInternalTrafficPolicy) in the Kubernetes repo for references to existing tests.
+
+##### Integration tests
+
+- `Test_ExternalNameServiceStopsDefaultingInternalTrafficPolicy`: https://github.com/kubernetes/kubernetes/blob/61b983a66b92142e454c655eb2add866c9b327b0/test/integration/service/service_test.go#L34
+- `Test_ExternalNameServiceDropsInternalTrafficPolicy`: https://github.com/kubernetes/kubernetes/blob/61b983a66b92142e454c655eb2add866c9b327b0/test/integration/service/service_test.go#L78
+- `Test_ConvertingToExternalNameServiceDropsInternalTrafficPolicy`: https://github.com/kubernetes/kubernetes/blob/61b983a66b92142e454c655eb2add866c9b327b0/test/integration/service/service_test.go#L125
+
+##### e2e tests
+
+- `should respect internalTrafficPolicy=Local Pod to Pod`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2520
+- `should respect internalTrafficPolicy=Local Pod (hostNetwork: true) to Pod`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2598
+- `should respect internalTrafficPolicy=Local Pod and Node, to Pod (hostNetwork: true)`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2678
 
 ### Graduation Criteria
 
@@ -169,13 +189,14 @@ Beta:
 
 GA:
 * metrics for total number of Services that have no endpoints (kubeproxy/sync_proxy_rules_no_endpoints_total) with additional labels for internal/external and local/cluster policies.
-* consensus on whether or not "PreferLocal" should be included as a new policy type
+* Fix a bug where internalTrafficPolicy=Local would force externalTrafficPolicy=Local (https://github.com/kubernetes/kubernetes/pull/106497).
+* Sufficient integration/e2e tests (many were already added for Beta, but we'll want to revisit tests based on changes that landed during Beta).
 
 ### Upgrade / Downgrade Strategy
 
-* The `trafficPolicy` field will be off by default during the alpha stage but can handle any existing Services that has the field already set.
+* The `internalTrafficPolicy` field will be off by default during the alpha stage but can handle any existing Services that has the field already set.
 This ensures n-1 apiservers can handle the new field on downgrade.
-* On upgrade, if the feature gate is enabled there should be no changes in the behavior since the default value for `trafficPolicy` is `Cluster`.
+* On upgrade, if the feature gate is enabled there should be no changes in the behavior since the default value for `internalTrafficPolicy` is `Cluster`.
 
 ### Version Skew Strategy
 
@@ -224,11 +245,305 @@ Rollout should have minimal impact because the default value of `internalTraffic
 
 * **What specific metrics should inform a rollback?**
 
-Metrics representing Services being black-holed will be added. This metric can inform rollback.
+The `sync_proxy_rules_no_local_endpoints_total` metric will inform users whether a Service is dropping local traffic.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-No, but this will be manually tested prior to beta. Automated testing will be done if the test tooling is available.
+#### API Enablement Rollback
+
+API Rollback was manually validated using the following steps:
+
+Create a kind cluster:
+```
+$ kind create cluster
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.25.0) 🖼
+ ✓ Preparing nodes 📦
+ ✓ Writing configuration 📜
+ ✓ Starting control-plane 🕹️
+ ✓ Installing CNI 🔌
+ ✓ Installing StorageClass 💾
+Set kubectl context to "kind-kind"
+You can now use your cluster with:
+kubectl cluster-info --context kind-kind
+Thanks for using kind! 😊
+```
+
+Check that Services set `spec.internalTrafficPolicy`:
+```
+$ kubectl -n kube-system get svc kube-dns -o yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: "9153"
+    prometheus.io/scrape: "true"
+  creationTimestamp: "2022-09-27T14:03:46Z"
+  labels:
+    k8s-app: kube-dns
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: CoreDNS
+  name: kube-dns
+  namespace: kube-system
+  resourceVersion: "219"
+  uid: 9b455b45-ae9f-43d1-98ca-f275b805ab95
+spec:
+  clusterIP: 10.96.0.10
+  clusterIPs:
+  - 10.96.0.10
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: dns
+    port: 53
+    protocol: UDP
+    targetPort: 53
+  - name: dns-tcp
+    port: 53
+    protocol: TCP
+    targetPort: 53
+  - name: metrics
+    port: 9153
+    protocol: TCP
+    targetPort: 9153
+  selector:
+    k8s-app: kube-dns
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+Turn off the `ServiceInternalTrafficPolicy` feature gate in `kube-apiserver`:
+```
+$ docker exec -ti kind-control-plane bash
+$ vim /etc/kubernetes/manifests/kube-apiserver.yaml
+# append --feature-gates=ServiceInternalTrafficPolicy=false to kube-apiserver flags
+```
+
+Validate that the Service still preserves the field. This is expected for backwards compatibility reasons:
+```
+$ kubectl -n kube-system get svc kube-dns -o yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: "9153"
+    prometheus.io/scrape: "true"
+  creationTimestamp: "2022-09-27T14:03:46Z"
+  labels:
+    k8s-app: kube-dns
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: CoreDNS
+  name: kube-dns
+  namespace: kube-system
+  resourceVersion: "219"
+  uid: 9b455b45-ae9f-43d1-98ca-f275b805ab95
+spec:
+  clusterIP: 10.96.0.10
+  clusterIPs:
+  - 10.96.0.10
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: dns
+    port: 53
+    protocol: UDP
+    targetPort: 53
+  - name: dns-tcp
+    port: 53
+    protocol: TCP
+    targetPort: 53
+  - name: metrics
+    port: 9153
+    protocol: TCP
+    targetPort: 9153
+  selector:
+    k8s-app: kube-dns
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+Validate that new Services do not have the field anymore:
+```
+$ cat service.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    protocol: TCP
+$ kubectl apply -f service.yaml
+service/nginx created
+$ kubectl get svc nginx -o yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"nginx"},"name":"nginx","namespace":"default"},"spec":{"ports":[{"port":80,"protocol":"TCP"}],"selector":{"app":"nginx"}}}
+  creationTimestamp: "2022-09-27T14:10:51Z"
+  labels:
+    app: nginx
+  name: nginx
+  namespace: default
+  resourceVersion: "867"
+  uid: e1bf394a-3759-4534-ac44-8cb8e44c1971
+spec:
+  clusterIP: 10.96.55.182
+  clusterIPs:
+  - 10.96.55.182
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: nginx
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+#### Proxy Enablement Rollback
+
+Rolling back kube-proxy behavior was tested manually with the following steps:
+
+Create a Kind cluster with 2 worker nodes:
+```
+$ cat kind.yaml
+# three node (two workers) cluster config
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+
+$ kind create cluster --config kind.yaml
+Creating cluster "kind" ...
+ ✓ Ensuring node image (kindest/node:v1.25.0) 🖼
+ ✓ Preparing nodes 📦 📦 📦
+ ✓ Writing configuration 📜
+ ✓ Starting control-plane 🕹️
+ ✓ Installing CNI 🔌
+ ✓ Installing StorageClass 💾
+ ✓ Joining worker nodes 🚜
+Set kubectl context to "kind-kind"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-kind
+```
+
+Create a webserver Deployment and Service with `internalTrafficPolicy=Local`:
+```
+$ cat agnhost-webserver.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: agnhost-server
+  template:
+    metadata:
+      labels:
+        app: agnhost-server
+    spec:
+      containers:
+      - name: agnhost
+        image: registry.k8s.io/e2e-test-images/agnhost:2.40
+        args:
+        - serve-hostname
+        - --port=80
+        ports:
+        - containerPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  internalTrafficPolicy: Local
+  selector:
+    app: agnhost-server
+  ports:
+  - port: 80
+    protocol: TCP
+```
+
+Exec into one node and verify that kube-proxy only proxies to the local nodes.
+```kind-worker2
+$ kubectl get svc agnhost-server
+NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+agnhost-server   ClusterIP   10.96.226.141   <none>        80/TCP    7m56s
+$ kubectl get po -o wide
+NAME                              READY   STATUS    RESTARTS   AGE     IP           NODE           NOMINATED NODE   READINESS GATES
+agnhost-server-7d4db667fc-h5m5p   1/1     Running   0          6m2s    10.244.2.3   kind-worker    <none>           <none>
+agnhost-server-7d4db667fc-nrdg4   1/1     Running   0          5m59s   10.244.2.4   kind-worker    <none>           <none>
+agnhost-server-7d4db667fc-tpbpk   1/1     Running   0          6m      10.244.1.4   kind-worker2   <none>           <none>
+
+$ docker exec -ti kind-worker2 bash
+root@kind-worker2:/# iptables-save
+...
+...
+...
+-A KUBE-SVL-VPG43MSD43N5Z7KJ ! -s 10.244.0.0/16 -d 10.96.226.141/32 -p tcp -m comment --comment "default/agnhost-server cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SVL-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.1.4:80" -j KUBE-SEP-MNGWCV7VA4JSYYKU
+COMMIT
+# Completed on Tue Sep 27 14:50:07 2022
+```
+
+Turn off the `ServiceInternalTrafficPolicy` feature gate in kube-proxy by editing the kube-proxy ConfigMap and restarting kube-proxy:
+```
+$ kubectl -n kube-system edit cm kube-proxy
+# set featureGates["ServiceInternalTrafficPolicy"]=false in config.conf
+configmap/kube-proxy edited
+
+$ kubectl -n kube-system delete po -l k8s-app=kube-proxy
+pod "kube-proxy-d6nf2" deleted
+pod "kube-proxy-f89g4" deleted
+pod "kube-proxy-lrk9l" deleted
+```
+
+Exec into the same node as before and check that kube-proxy now proxies to all endpoints even though
+the Service has `internalTrafficPolicy` set to `Local`:
+```
+$ docker exec -ti kind-worker2 bash
+root@kind-worker2:/# iptables-save
+...
+...
+...
+-A KUBE-SVC-VPG43MSD43N5Z7KJ ! -s 10.244.0.0/16 -d 10.96.226.141/32 -p tcp -m comment --comment "default/agnhost-server cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SVC-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.1.4:80" -m statistic --mode random --probability 0.33333333349 -j KUBE-SEP-MNGWCV7VA4JSYYKU
+-A KUBE-SVC-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.2.3:80" -m statistic --mode random --probability 0.50000000000 -j KUBE-SEP-EMZSNZ2TWKTA6UM4
+-A KUBE-SVC-VPG43MSD43N5Z7KJ -m comment --comment "default/agnhost-server -> 10.244.2.4:80" -j KUBE-SEP-KTGIEIH27TIG3JO7
+COMMIT
+# Completed on Tue Sep 27 14:55:04 2022
+```
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
@@ -242,12 +557,12 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can an operator determine if the feature is in use by workloads?**
 
 * Check Service to see if `internalTrafficPolicy` is set to `Local`.
-* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules/blackhole_total` (subject to rename).
+* A per-node "blackhole" metric will be added to kube-proxy which represent Services that are being intentionally dropped (internalTrafficPolicy=Local and no endpoints). The metric will be named `kubeproxy/sync_proxy_rules_no_local_endpoints_total` (subject to rename).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
-They can check the "blackhole" metric when internalTrafficPolicy=Local and there are no endpoints.
+They can check the `kubeproxy/sync_proxy_rules_no_local_endpoints_total` metric when internalTrafficPolicy=Local and there are no endpoints.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
@@ -256,7 +571,7 @@ This will depend on Service topology and whether `internalTrafficPolicy=Local` i
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-A new metric will be added to represent Services that are being "blackholed" (internalTrafficPolicy=Local and no endpoints).
+The `sync_proxy_rules_no_local_endpoints_total` metric was added to inform users on whether a Service is dropping local traffic.
 
 ### Dependencies
 
@@ -314,8 +629,8 @@ already have many checks like this for `externalTrafficPolicy: Local`.
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 Any increase in CPU usage by kube-proxy to calculate node-local topology will likely
-be offset by reduced iptable rules it needs to sync when using `PreferLocal` or `Local`
-traffic policies.
+be offset by reduced iptable rules it needs to sync when using the `Local`
+traffic policy.
 
 ### Troubleshooting
 

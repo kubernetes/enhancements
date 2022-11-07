@@ -199,7 +199,7 @@ None
 
 | Alpha | Beta | GA   |
 | ----- | ---- | ---- |
-| -     | 1.24 | 1.25 |
+| -     | 1.24 | 1.26 |
 
 Since in 1.24, all pods should be admitted in 1.22+ and they should be using
 bound tokens. One release ahead to enable this features would help to reduce
@@ -207,16 +207,16 @@ legacy tokens for security practices.
 
 #### Beta -> GA Graduation
 
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
-- [ ] Tests passing
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
 
 #### Alpha -> Beta Graduation
 
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
-- [ ] Tests passing
-- [ ] Document and communicate the available actions that consumers of
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
+- [x] Document and communicate the available actions that consumers of
       auto-generated secret-based tokens should take. (migrate to either use
       tokenrequest or explicitly request secret-based tokens)
 
@@ -224,7 +224,7 @@ legacy tokens for security practices.
 
 | Alpha | Beta | GA   |
 | ----- | ---- | ---- |
-| 1.24  | 1.25 | 1.26 |
+| 1.26  | 1.27 | 1.28 |
 
 #### Beta -> GA Graduation
 
@@ -244,7 +244,7 @@ legacy tokens for security practices.
 
 | Alpha | Beta | GA   |
 | ----- | ---- | ---- |
-| 1.24  | 1.25 | 1.26 |
+| 1.27  | 1.28 | 1.29 |
 
 #### Beta -> GA Graduation
 

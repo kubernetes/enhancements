@@ -18,8 +18,6 @@ reviewers:
   - "@jsturtevant"
 approvers:
   - "@marosset"
-prr-approvers:
-  - "@deads2k"
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
 

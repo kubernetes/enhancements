@@ -2,6 +2,8 @@ title: StorageVersion API for HA API servers
 kep-number: 2339
 authors:
   - "@xuchao"
+  - "@enj"
+  - "@andrewsykim"
 owning-sig: sig-api-machinery
 reviewers:
   - "@deads2k"
@@ -11,8 +13,29 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 creation-date: 2019-08-22
-last-updated: 2019-08-22
+last-updated: 2022-10-05
 status: implementable
 
-latest-milestone: "1.17"
-stage: "alpha"
+latest-milestone: "1.26"
+stage: "beta"
+
+milestone:
+  alpha: "v1.20"
+  beta: "v1.26"
+  stable: "v1.27"
+
+feature-gates:
+  - name: StorageVersionAPI
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+  - name: APIServerIdentity
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater",type="healthz"}
+  - kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater",type="readyz"}
+  - kubernetes_healthcheck{name="poststarthook/built-in-resources-storage-version-updater",type="livez"}

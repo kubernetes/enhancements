@@ -16,8 +16,6 @@ reviewers:
   - "@SergeyKanzhelev" # sig-node and CRI API
 approvers:
   - "@tabbysable"
-prr-approvers:
-  - "@ehashman"
 see-also:
   - TBD
 replaces:

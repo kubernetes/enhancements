@@ -82,5 +82,5 @@ Major milestones in the life cycle of a KEP should be tracked in `Implementation
 
 Major milestones for Ceph Cephfs in-tree plugin CSI migration:
 
-- 1.25
+- 1.26
   - Ceph Cephfs CSI migration to Alpha

@@ -5,19 +5,15 @@ authors:
   - "@agamdua"
 owning-sig: sig-node
 participating-sigs:
+  - sig-network
 status: implementable
 creation-date: 2021-12-14
 reviewers:
   - "@ehashman"
+  - "@dcbw"
 approvers:
   - "@derekwaynecarr"
-
-##### WARNING !!! ######
-# prr-approvers has been moved to its own location
-# You should create your own in keps/prod-readiness
-# Please make a copy of keps/prod-readiness/template/nnnn.yaml
-# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
-#prr-approvers:
+  - "@aojea"
 
 see-also:
   - none

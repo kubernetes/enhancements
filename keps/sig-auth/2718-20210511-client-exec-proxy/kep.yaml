@@ -1,0 +1,52 @@
+title: Client Executable Proxy
+kep-number: 2718
+authors:
+  - "@nckturner"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-cli
+  - sig-api-machinery
+status: provisional
+creation-date: 2021-05-11
+reviewers:
+  - "@mikedanese"
+  - "@enj"
+  - "@liggitt"
+approvers:
+  - "@mikedanese"
+  - "@enj"
+  - "@liggitt"
+
+see-also:
+  - https://github.com/kubernetes/enhancements/issues/541
+replaces:
+  - https://github.com/kubernetes/enhancements/pull/1749
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.26"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.28"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ClientExecProxy
+    components:
+      - kubelet
+      - kube-controller-manager
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  # Represents failures returned from executing the binary
+  - client_exec_proxy_errors

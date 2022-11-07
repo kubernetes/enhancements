@@ -12,6 +12,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -33,19 +37,23 @@
 ## Release Signoff Checklist
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
-Currently for most volume plugins kubelet applies fsgroup ownership and permission based changes by recursively `chown`ing and `chmod`ing the files and directories inside a volume. For certain CSI drivers this may not be possible because `chown` and `chmod` are unix primitives and underlying CSI driver
+Currently for most volume plugins kubelet applies fsgroup ownership and permission-based changes by recursively `chown`ing and `chmod`ing the files and directories inside a volume. For certain CSI drivers this may not be possible because `chown` and `chmod` are unix primitives and underlying CSI driver
 may not support them. This enhancement proposes providing the CSI driver with fsgroup as an explicit field so as CSI driver can apply this on mount time.
 
 ## Motivation
@@ -62,7 +70,7 @@ This feature hence becomes a prerequisite of CSI migration of Azure file driver 
 
 ### Non-Goals
 
-- We are not supplying `fsGroup` as a generic ownerhip and permission handle to the CSI driver. We do not expect CSI drivers to `chown` or `chmod` files.
+- We are not supplying `fsGroup` as a generic ownership and permission handle to the CSI driver. We do not expect CSI drivers to `chown` or `chmod` files.
 
 ## Proposal
 
@@ -84,19 +92,38 @@ It should be noted that if a CSI driver advertises `VOLUME_MOUNT_GROUP` node cap
 
 ### Test Plan
 
-Unit test:
-1. Test that whenever supported pod's `fsGroup` should be passed to CSI driver via `volume_mount_group` field.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-For alpha feature:
-1. Update Azure File CSI driver to support supplying `fsGroup` via `NodeStageVolume` and `NodePublishVolume`.
-1. Run manual tests against azurefile CSI driver.
+##### Prerequisite testing updates
 
-For beta:
-1. E2E tests that verify volume readability/writability using azurefile CSI driver.
-2. E2E tests using CSI mock driver.
+N/A.
 
-We already have quite a few e2e tests that verify generic fsgroup functionality for existing drivers - https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/testsuites/fsgroupchangepolicy.go . This should give us a reasonable
+##### Unit tests
+
+The new coded added should have complete test coverage, even though the module does not:
+
+- `pkg/volume/csi`: `<Thu 06 Oct 2022>` - `76.2`
+
+##### Integration tests
+
+No integration tests are required. This feature is better tested with e2e tests.
+
+##### e2e tests
+
+We already have quite a few e2e tests that verify generic fsgroup functionality for existing drivers - https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/testsuites/fsgroupchangepolicy.go. This should give us a reasonable
 confidence that we won't break any existing drivers.
+
+
+- [[sig-storage] CSI mock volume Delegate FSGroup to CSI driver [LinuxOnly] should pass FSGroup to CSI driver if it is set in pod and driver supports VOLUME_MOUNT_GROUP [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=CSI%20mock%20volume%20Delegate%20FSGroup%20to%20CSI%20driver%20%5BLinuxOnly%5D%20should%20pass%20FSGroup%20to%20CSI%20driver%20if%20it%20is%20set%20in%20pod%20and%20driver%20supports%20VOLUME_MOUNT_GROUP)
+- [[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (default fs)] fsgroupchangepolicy (Always)[LinuxOnly], pod created with an initial fsgroup, new pod fsgroup applied to volume contents [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=%5Bsig-storage%5D%20In-tree%20Volumes%20%5BDriver%3A%20azure-file%5D%20%5BTestpattern%3A%20Dynamic%20PV%20(default%20fs)%5D%20fsgroupchangepolicy%20(Always)%5BLinuxOnly%5D%2C%20pod%20created%20with%20an%20initial%20fsgroup%2C%20new%20pod%20fsgroup%20applied%20to%20volume%20contents%20)
+- [[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (default fs)] fsgroupchangepolicy (Always)[LinuxOnly], pod created with an initial fsgroup, volume contents ownership changed via chgrp in first pod, new pod with different fsgroup applied to the volume contents [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=%5Bsig-storage%5D%20In-tree%20Volumes%20%5BDriver%3A%20azure-file%5D%20%5BTestpattern%3A%20Dynamic%20PV%20(default%20fs)%5D%20fsgroupchangepolicy%20(Always)%5BLinuxOnly%5D%2C%20pod%20created%20with%20an%20initial%20fsgroup%2C%20volume%20contents%20ownership%20changed%20via%20chgrp%20in%20first%20pod%2C%20new%20pod%20with%20different%20fsgroup%20applied%20to%20the%20volume%20contents)
+- [[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (default fs)] fsgroupchangepolicy (Always)[LinuxOnly], pod created with an initial fsgroup, volume contents ownership changed via chgrp in first pod, new pod with same fsgroup applied to the volume contents [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=%5Bsig-storage%5D%20In-tree%20Volumes%20%5BDriver%3A%20azure-file%5D%20%5BTestpattern%3A%20Dynamic%20PV%20(default%20fs)%5D%20fsgroupchangepolicy%20(Always)%5BLinuxOnly%5D%2C%20pod%20created%20with%20an%20initial%20fsgroup%2C%20volume%20contents%20ownership%20changed%20via%20chgrp%20in%20first%20pod%2C%20new%20pod%20with%20same%20fsgroup%20applied%20to%20the%20volume%20contents%20)
+- [[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (default fs)] fsgroupchangepolicy (OnRootMismatch)[LinuxOnly], pod created with an initial fsgroup, new pod fsgroup applied to volume contents [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=%5Bsig-storage%5D%20In-tree%20Volumes%20%5BDriver%3A%20azure-file%5D%20%5BTestpattern%3A%20Dynamic%20PV%20(default%20fs)%5D%20fsgroupchangepolicy%20(OnRootMismatch)%5BLinuxOnly%5D%2C%20pod%20created%20with%20an%20initial%20fsgroup%2C%20new%20pod%20fsgroup%20applied%20to%20volume%20contents%20)
+- [[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (default fs)] fsgroupchangepolicy (OnRootMismatch)[LinuxOnly], pod created with an initial fsgroup, volume contents ownership changed via chgrp in first pod, new pod with different fsgroup applied to the volume contents [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=%5Bsig-storage%5D%20In-tree%20Volumes%20%5BDriver%3A%20azure-file%5D%20%5BTestpattern%3A%20Dynamic%20PV%20(default%20fs)%5D%20fsgroupchangepolicy%20(OnRootMismatch)%5BLinuxOnly%5D%2C%20pod%20created%20with%20an%20initial%20fsgroup%2C%20volume%20contents%20ownership%20changed%20via%20chgrp%20in%20first%20pod%2C%20new%20pod%20with%20different%20fsgroup%20applied%20to%20the%20volume%20contents%20)
+- [[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (default fs)] fsgroupchangepolicy (OnRootMismatch)[LinuxOnly], pod created with an initial fsgroup, volume contents ownership changed via chgrp in first pod, new pod with same fsgroup skips ownership changes to the volume contents [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=%5Bsig-storage%5D%20In-tree%20Volumes%20%5BDriver%3A%20azure-file%5D%20%5BTestpattern%3A%20Dynamic%20PV%20(default%20fs)%5D%20fsgroupchangepolicy%20(OnRootMismatch)%5BLinuxOnly%5D%2C%20pod%20created%20with%20an%20initial%20fsgroup%2C%20volume%20contents%20ownership%20changed%20via%20chgrp%20in%20first%20pod%2C%20new%20pod%20with%20same%20fsgroup%20skips%20ownership%20changes%20to%20the%20volume%20contents)
+- [[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (default fs)] provisioning should provision storage with mount options [Suite:openshift/conformance/parallel] [Suite:k8s]](https://storage.googleapis.com/k8s-triage/index.html?test=%5Bsig-storage%5D%20In-tree%20Volumes%20%5BDriver%3A%20azure-file%5D%20%5BTestpattern%3A%20Dynamic%20PV%20(default%20fs)%5D%20provisioning%20should%20provision%20storage%20with%20mount%20options%20)
 
 
 ### Graduation Criteria
@@ -306,12 +333,8 @@ the existing API objects?**
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
-  
-  Depending on the driver implementation of applying FSGroup, latency for the following SLI may increase:
-  
-  "Startup latency of schedulable stateful pods, excluding time to pull images, run init containers, provision volumes (in delayed binding mode) and unmount/detach volumes (from previous pod if needed), measured from pod creation timestamp to when all its containers are reported as started and observed via watch, measured as 99th percentile over last 5 minutes"
-  
-  Comparing to the existing recursive `chown` and `chmod` strategy, this operation will likely improve pod startup latency in the most common case.
+
+  This feature does not have any impact on scalability.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -366,6 +389,7 @@ The CSI driver log should be inspected to look for `NodeStageVolume` and/or `Nod
 ## Implementation History
 
 - Feb 2 2021: KEP merged into kubernetes/enhancements repo
+- Sep 26 2022: Use latest template
 
 ## Drawbacks
 

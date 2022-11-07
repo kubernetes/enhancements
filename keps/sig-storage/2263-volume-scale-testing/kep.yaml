@@ -14,7 +14,6 @@ reviewers:
 approvers:
   - "@saad-ali"
   - "@wojtek-t"
-prr-approvers:
 see-also:
   - "https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md"
   - "https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/docs/design.md"

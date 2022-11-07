@@ -302,13 +302,13 @@ e2e tests. For Windows a new set of tests will be added to the existing
 
 ### Graduation Criteria
 
-The plan is to introduce the feature as alpha in the v1.25 time frame behind the
+The plan is to introduce the feature as alpha in the v1.26 time frame behind the
 `NodeLogViewer` kubelet feature gate and using the `kubectl alpha node-logs`
 sub-command.
 
 #### Alpha -> Beta Graduation
 
-The plan is to graduate the feature to beta in the v1.26 time frame. At that
+The plan is to graduate the feature to beta in the v1.27 time frame. At that
 point we would have collected feedback from cluster administrators and
 developers who have enabled the feature. Based on this feedback and issues
 opened we should consider adding a kubelet side throttle for the viewing the
@@ -320,7 +320,7 @@ The kubectl implementation will move from `kubectl alpha node-logs` to
 `kubectl node-logs`.
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.27 time frame at which point
+The plan is to graduate the feature to GA in the v1.28 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 

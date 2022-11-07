@@ -225,3 +225,8 @@ See [Rollout breakage](#rollout-breakage).
 ## Implementation History
 
 - _2019-12-05_: Published KEP
+- _2020-02-19_: Mark the `--redirect-container-streaming` flag as deprecated. Log a warning on use.
+Mark the `StreamingProxyRedirects` feature as deprecated. Log a warning on use in v1.18.
+- _2020-10-28_: `--redirect-container-streaming` can no longer be enabled in v1.20.
+- _2021-04-30_: Default `StreamingProxyRedirects` to disabled in v1.22.
+- _2021-12-06_: Removed `StreamingProxyRedirects` feature gate in v1.24.

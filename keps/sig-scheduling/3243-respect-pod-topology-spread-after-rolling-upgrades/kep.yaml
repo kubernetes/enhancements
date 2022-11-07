@@ -16,13 +16,6 @@ see-also:
   - "/keps/sig-scheduling/3022-min-domains-in-pod-topology-spread"
   - "/keps/sig-scheduling/3094-pod-topology-spread-considering-taints"
 
-##### WARNING !!! ######
-# prr-approvers has been moved to its own location
-# You should create your own in keps/prod-readiness
-# Please make a copy of keps/prod-readiness/template/nnnn.yaml
-# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
-#prr-approvers:
-
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
 

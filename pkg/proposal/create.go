@@ -164,10 +164,6 @@ func populateProposal(p *api.Proposal, opts *CreateOpts) {
 	p.Filename = opts.Name
 	p.LastUpdated = "v1.19"
 	p.Stage = api.Stage(opts.Stage)
-
-	if len(opts.PRRApprovers) > 0 {
-		p.PRRApprovers = updatePersonReference(opts.PRRApprovers)
-	}
 }
 
 func updatePersonReference(names []string) []string {

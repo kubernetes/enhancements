@@ -9,8 +9,6 @@ participating-sigs:
   - sig-instrumentation
 status: implemented
 creation-date: 2020-04-16
-prr-approvers:
-  - "@ehashman"
 reviewers:
   - "@lavalamp"
   - "@deads2k"

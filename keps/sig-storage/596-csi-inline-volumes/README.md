@@ -52,12 +52,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -134,7 +134,7 @@ spec:
 
 CSI driver vendors that support inline volumes will be responsible for secure handling of volumes.
 
-For example, `csi-driver-nfs` allows anybody who can create a pod to mount any NFS volume into that pod, when the cluster admin deploys the driver with csi driver instance allowing ephemeral use. This option is not on by default, but may be surprising to some admins that this allows mounting of any NFS volume and could be unsafe without additional authorization checks.
+For example, `csi-driver-nfs` allows anybody who can create a pod to mount any NFS volume into that pod, when the cluster admin deploys the driver with csi driver instance allowing ephemeral use. This may be surprising to some admins that this allows mounting of any NFS volume and could be unsafe without additional authorization checks.
 
 Downstream distributions and cluster admins that wish to exercise fine-grained control over which CSI drivers are allowed to use ephemeral inline volumes within a pod spec should do so with a 3rd party pod admission plugin or webhook (not part of this KEP).
 
@@ -377,11 +377,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - [x] Fix for [#89290 - CSI Inline volume panic when calling applyFSGroup](https://github.com/kubernetes/kubernetes/issues/89290)
 - [x] Fix for [#79980 - CSI volume reconstruction](https://github.com/kubernetes/kubernetes/issues/79980)
 - [x] Updated documentation as described in [Security Considerations](#security-considerations) and [Read-only volumes](#read-only-volumes)
-- [ ] Upgrade / downgrade manual testing, document results in the [upgrade / rollback section](#rollout-upgrade-and-rollback-planning).
-- [ ] Provide measurements for the [Scalability section](#scalability) (time taken to start a pod)
-- [ ] Ensure our sponsored [NFS](https://github.com/kubernetes-csi/csi-driver-nfs) and [SMB](https://github.com/kubernetes-csi/csi-driver-smb) CSI drivers align with the new guidance in [Security Considerations](#security-considerations)
-- [ ] Conformance tests implemented / promoted
-- [ ] Feature flag set to GA
+- [x] Upgrade / downgrade manual testing, document results in the [upgrade / rollback section](#rollout-upgrade-and-rollback-planning).
+- [x] Provide measurements for the [Scalability section](#scalability) (time taken to start a pod)
+- [x] Ensure our sponsored [NFS](https://github.com/kubernetes-csi/csi-driver-nfs) and [SMB](https://github.com/kubernetes-csi/csi-driver-smb) CSI drivers align with the new guidance in [Security Considerations](#security-considerations)
+- [x] Conformance tests implemented
+- [x] Feature flag set to GA
 
 
 ## Production Readiness Review Questionnaire
@@ -451,13 +451,28 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-  TODO: To be documented as part of manual GA testing.
+  Test Scenario:
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+  1) Create single node kubeadm cluster on 1.15 with CSIInlineVolume feature flag disabled.
+  2) Create 3 running pods (1 with attached PV, 1 with attached secret, 1 with no storage).
+  3) Confirm that a pod with inline volume can not start while feature flag is disabled.
+  4) Upgrade cluster to 1.16 with feature flag enabled.
+  5) Confirm that the running pods from step 2 are running successfully after upgrade.
+  6) Confirm that a pod with inline volume can start successfully after upgrade.
+  7) Rollback cluster to 1.15 with feature flag disabled.
+  8) Confirm that the running pods from step 2 are running successfully after downgrade.
+  9) Confirm that a pod with inline volume can not (re)start after downgrade.
+  10) Confirm that new pods can be started after downgrade (same as step 2).
+  11) Upgrade cluster to 1.16 again with feature flag enabled.
+  12) Confirm that the running pods from step 10 are running successfully after upgrade.
+  13) Confirm that a pod with inline volume can start successfully after upgrade.
+
+  This scenario tests the upgrade->downgrade->upgrade path and validates the following assertions derived from the `How can a rollout or rollback fail? Can it impact already running workloads?` section of this PRR:
+
+  - Upgrade does not impact pods that are already running without this feature.
+  - Workloads requiring CSI Inline Volumes can use the feature via pod spec update after upgrade.
+  - Rollback does not impact pods that are already running without this feature.
+  - Starting new workloads using this feature fails after rollback (with feature flag disabled).
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -557,13 +572,15 @@ CSI NodePublishVolume requests:
 
   Compared to CSI persistent volumes, there should be no increase in the amount of time
   taken to mount / unmount, as there will be fewer CSI calls required for inline volumes.
-  Compared to Secrets and ConfigMaps, inline CSI volumes will be slower mount / unmount,
+  Compared to Secrets and ConfigMaps, inline CSI volumes may be slower mount / unmount,
   since an external CSI driver is responsible for providing the actual volume.
   Note that mount time is in the critical path for [pod startup latency](https://github.com/kubernetes/community/blob/1181fb0266a01d1dfd170ff437817eb7de24b624/sig-scalability/slos/pod_startup_latency.md) and the choice to use CSI inline volumes may affect the SLI/SLO, since this is still a type of volume that needs to be mounted.
 
-  TODO: Provide a measurements showing the time it takes to start a pod with 5 secrets,
-  compared to mounting those secrets via a CSI inline volume. This will be driver
-  dependent, but it would be useful to set some baseline expectations.
+  However, pod startup latency on kubernetes 1.25 shows similar results between
+  a pod mounting 5 secrets and a pod mounting 5 CSI inline volumes using the
+  [CSI Hostpath Driver](https://github.com/kubernetes-csi/csi-driver-host-path).
+  In both cases, the pod takes 3-4 seconds to transition from "PodScheduled" to
+  "Ready" on a single node cluster. Results may vary depending on the CSI driver.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 

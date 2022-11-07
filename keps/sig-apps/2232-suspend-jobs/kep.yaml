@@ -11,8 +11,6 @@ reviewers:
   - "@alculquicondor"
 approvers:
   - "@janetkuo"
-prr-approvers:
-  - "@wojtek-t"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
