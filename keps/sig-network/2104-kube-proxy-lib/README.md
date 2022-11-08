@@ -58,8 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-2104: rework kube-proxy architecture
-
+# KEP-2104: kube-proxy library (KEP-2104, breakout)
 # Index
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
