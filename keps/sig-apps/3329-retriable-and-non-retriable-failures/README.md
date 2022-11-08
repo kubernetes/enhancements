@@ -146,6 +146,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Using Pod status.reason field](#using-pod-statusreason-field)
   - [Using of various PodCondition types](#using-of-various-podcondition-types)
   - [More nodeAffinity-like JobSpec API](#more-nodeaffinity-like-jobspec-api)
+  - [Possible future extensions](#possible-future-extensions)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -785,21 +786,20 @@ future if there is a good motivating use-case.
 
 ##### Admission failures
 
-In some scenarios a pod admission failure could be restarted and is likely to
-succeed on another node (for example a pod scheduled to a node with resource
-pressure, see: [Pod admission error](#pod-admission-error)). However, in some
-situations isn't clear as the failure can be caused by incompatible pod and node
-configurations. As node configurations are often the same within a cluster it is
-likely that the pod would fail if restarted on any node in the cluster. In that
-case, adding `DisruptionTarget` condition could cause a never-ending loop of
-retries if the pod failure policy was configured to ignore such failures. Thus,
-we decide not to add any pod condition for such failures. If there is a
-sufficient motivating use-case a dedicated pod condition might be introduced to
-annotate some of the admission failure scenarios.
+In some scenarios a pod admission failure could result in a successful pod restart on another
+node (for example a pod scheduled to a node with resource pressure, see:
+[Pod admission error](#pod-admission-error)). However, in other situations it won't be as clear,
+since the failure can be caused by incompatible pod and node configurations. Node configurations
+are often the same within a cluster, so it is likely that the pod would fail if restarted on any
+other node in the cluster. In that case, adding `DisruptionTarget` condition could cause
+a never-ending loop of retries, if the pod failure policy was configured to ignore such failures.
+Given the above, we decide not to add any pod condition for such failures. If there is a sufficient
+motivating use-case, a dedicated pod condition might be introduced to annotate some of the
+admission failure scenarios.
 
 ##### Resource limits exceeded
 
-A Pod failure-initiated by Kubelet can be caused by exceeding pod's
+A Pod failure initiated by Kubelet can be caused by exceeding pod's
 (or container's) resource (memory or ephemeral-storage) limits. We have considered
 (and prepared an initial implementation, see PR
 [Add ResourceExhausted pod condition for oom killer and exceeding of local storage limits](https://github.com/kubernetes/kubernetes/pull/113436))
@@ -807,7 +807,7 @@ introduction of a dedicated Pod failure condition `ResourceExhausted` to
 annotate pod failures due to the above scenarios.
 
 However, it turned out, that there are complications with detection of exceeding
-of memory limits:
+memory limits:
 - the approach we considered is to rely on the Out-Of-Memory (OOM) killer.
 In particular, we could detect that a pod was terminated due to OOM killer based
 on the container's `reason` field being equal to `OOMKilled`. This value is set
@@ -818,21 +818,21 @@ for event handling and
 for the constant definition)
 and CRI-O (see
 [here](https://github.com/cri-o/cri-o/blob/edf889bd277ae9a8aa699c354f12baaef3d9b71d/server/container_status.go#L88-L89)).
-- setting of the `reason` field to equal `OOMKilled` is not standardized. We have
-started an effort to standardize the handling of handling OOM killed containers
+- setting the `reason` field to `OOMKilled` is not standardized, either. We have
+started an effort to standardize the handling of OOM killed containers
 (see: [Documentation for the CRI API reason field to standardize the field for containers terminated by OOM killer](https://github.com/kubernetes/kubernetes/pull/112977)).
-However, in the process it turned out that on some configurations
+However, in the process it turned out that in some configurations
 (for example the CRI-O with cgroupv2, see:
 [Add e2e_node test for oom killed container reason](https://github.com/kubernetes/kubernetes/pull/113205)),
 the container's `reason` field is not set to `OOMKilled`.
 - OOM killer might get invoked not only when container's limits are exceeded,
-but also when the system is running low on memory. In such a scenario there
+but also when the system is running low on memory. In such scenario there
 can be race conditions in which both the `DisruptionTarget` condition and the
 `ResourceExhausted` could be added.
 
 Thus, we decide not to annotate the scenarios with the `ResourceExhausted`
 condition. While there are not known issues with detection of the exceeding of
-Pod's ephemeral storage limits we prefer to avoid future extension of the
+Pod's ephemeral storage limits, we prefer to avoid future extension of the
 semantics of the new condition type. Alternatively, we could introduce a pair of
 dedicated pod condition types: `OOMKilled` and `EphemeralStorageLimitExceeded`.
 This approach, however, could create an unnecessary proliferation of the pod
@@ -840,9 +840,6 @@ condition types.
 
 Finally, we would like to first hear user feedback on the preferred approach
 and also on how important it is to cover the resource limits exceeded scenarios.
-We believe to be able to collect this feedback after users start to use the
-feature - using job failure policies based on the `DisruptionTarget` condition
-and container exit codes.
 
 #### JobSpec API alternatives
 
@@ -996,7 +993,7 @@ When the failure is initiated by a component which deletes the pod, then the API
 call to append the condition will be issued as a pod status update call
 before the Pod delete request (not necessarily as the last update request before
 the actual delete). For Kubelet, which does not delete the pod itself, the pod
-condition is added in the same API request as to change the phase to failed.
+condition is added in the same API request as the phase change to failed.
 This way the Job controller will be able to see the condition, and match it
 against the pod failure policy, when handling a failed pod.
 
@@ -2066,6 +2063,19 @@ Such API, while more flexible, might be harder to use in practice. Thus, in the
 first iteration of the feature, we intend to provide a user-friendly API
 targeting the known use-cases. A more flexible API can be considered as a future
 improvement.
+
+### Possible future extensions
+
+As one possible direction of extending the feature is adding pod failure
+conditions in the following scenarios (see links for discussions on the factors
+that made us not to cover the scenarios in Beta):
+- [active deadline timeout exceeded](#active-deadline-timeout-exceeded)
+- [admission failures](#admission-failures)
+- [resource limits exceeded](#resource-limits-exceeded).
+
+We are going to re-evaluate the decisions based on the user feedback after users
+start to use the feature - using job failure policies based on the `DisruptionTarget` condition
+and container exit codes.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
