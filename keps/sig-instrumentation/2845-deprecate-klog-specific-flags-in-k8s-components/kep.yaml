@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-arch
-status: implementable
+status: implemented
 creation-date: 2021-07-30
 reviewers:
   - pohly
@@ -16,12 +16,12 @@ approvers:
 see-also:
   - "/keps/sig-instrumentation/1602-structured-logging"
 replaces: []
-stage: beta
-latest-milestone: "v1.24"
+stage: stable
+latest-milestone: "v1.26"
 milestone:
   alpha: "v1.23"
   beta: "v1.24"
-  stable: "v1.25"
+  stable: "v1.26"
 
 feature-gates: []
 disable-supported: true
