@@ -150,20 +150,16 @@ tools.  This KEP distills the goals of such an interface and propose it's lifecy
 
 ## Motivation
 
-There have been several presentations and issues regarding the motivation for a new kube-proxy implementation.
-
-- *Scaling* the kube proxy requires scaling the number of watches on the APIServer, and having customizable deployments around this benefits niche use cases for larger scale / small nodes.
-- *Extending* the kube-proxy is difficult because it needs to be "copied", and code needs to be written against a non-explicit data model. 
-- *Testing* the kube-proxy is difficult because of the way it is coupled to the APIServer and the internal, in-memory data model of the kube-proxy codebase. 
-- *Coupling* of kube-proxy logic to CNI provider implementation is difficult because of the inability to easily extend and test the kube-proxy.
-- *Choosing* the data model for how service proxying is implemented (i.e. via events vs network state) isn't easy.
+There have been several presentations, issues, and projects dedicated to reusing kube proxy logic while extending it to embrace
+different backend technologies (i.e. NFT, eBPF, openvswitch, and so on).  This KEP attempts to make a library which will facilitate
+this type of work.  
 
 A general solution to this problem is explored in the KPNG project (https://github.com/kubernetes-sigs/kpng/), which exhibits many properties
 that allow for such goals to be accomplished.  These are enabled by:
 
-- A Generic "Diff store" which allows for declarative, backend-generic calculation of differences between the Kubernetes networking state space from one time point to another.
-- A library that makes the data model of the Kubernetes network and its topology easy to consume for an individual node, abstracting away API Semantics (like topology) from underlying network routing rules.
-- Definition of types which have a minimal amount of boiler plate, which can describe routing of Kubernetes VIPs (services) to endpoints in a generic way that is understandable to people who don't work on Kubernetes on a day-to-day basis.
+- A Generic "*Diff store"* which provides a client side, in memory data model for performant, declarative, generic calculation of differences between the Kubernetes networking state space from one time point to another (i.e. a replacement for the implicit change tracking functionality in k/k/pkg/proxy https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/endpoints.go#L161).
+- A *library that simplifies consumption* of the Kubernetes network and its topology easy to consume for an individual node, abstracting away API Semantics (like topology) from underlying network routing rules.
+- *Definition of types* which have a minimal amount of boiler plate, can be created without using the Kubernetes API data model (and thus used to extend proxying behaviour to things outside of the Kubernetes pod, service, and endpoint semantics), and which can describe routing of Kubernetes VIPs (services) to endpoints in a generic way that is understandable to people who don't work on Kubernetes on a day-to-day basis.
 
 ### Goals
 
@@ -203,14 +199,9 @@ As a Kubernetes maintainer, I don't want to have to understand the internals of 
 
 ### Risks and Mitigations
 
-- There's a performance risk when it comes to large scales, we've proposed a new issue https://github.com/kubernetes-sigs/kpng/issues/325 as a community wide, open scale testing session on a large cluster that we can run manually to inspect in real time and see any major deltas.
-
-- There may be magic functionality that is unpublished in the kube-proxy that we don't know about which we lose when doing this.  
-
-Mitigations are - falling back to the in-tree proxy, or simply titrating logic over piece by piece if we find holes .  We don't think there are many of these those because there are 100s of networking tests, many of which test specific items like udp proxying, avoiding blackholes, service updating, scaling of pods, local routing logic for things like service topologies, and so on.
-
-- Story 5, while implementable from a development standpoint to make it easy to hack on new backends, hasn't been broadly tested in a production
-context and might need tooling like mTLS and so on, in order to be production ready for clouds and other user facing environments.
+No risks, because we arent removing the in tree proxy as part of this repo, but rather, proposing a library for kube proxy extenders
+to use optionally.  There may be risks, eventually, if we write another KEP to *replatform* sig-networks k/k/pkg/proxy implementations
+on top of this library, but that would be in a separate KEP. 
 
 ## Design Details
 
@@ -223,6 +214,8 @@ context and might need tooling like mTLS and so on, in order to be production re
 ##### e2e tests
 
 ### Graduation Criteria
+
+We will version "kube-proxy-lib" as 1.0 once it is known to be powering at least one backend proxy which can be run by an end userr, which is able to pass the Kubernetes sig-network (non disruptive) and Conformance suites, including Layer 7 and serviceType=Loadbalancer tests which currently run in the prow sig-network e2es.
 
 ## Production Readiness Review Questionnaire
 
