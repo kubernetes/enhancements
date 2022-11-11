@@ -168,6 +168,7 @@ that allow for such goals to be accomplished.  These are enabled by:
 - Exemplify the use of such a repository in a mock "backend" which uses the repository to process and respond to changes in the Kubernetes networking state.
 - Define a policy around versioning and releasing of "kube-proxy-lib".
 - Create a CI system that runs in test-grid which tests kube-proxy-lib compatibility with the latest Kubernetes releases continuously, and which can be used to inform API changes for regressions that break "kube-proxy-lib".
+- Enable the eventual *replacement* of the k/k/pkg/proxy serviceChangeTracker and endpointsChangeTracker related caching structures inside of in-tree kube proxy with this generic library.
 
 ### Non-Goals
 
