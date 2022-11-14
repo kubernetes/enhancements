@@ -578,6 +578,10 @@ We will also create a separate page on [k8s.dev](https://k8s.dev) and link to it
 
 Create an issue to track the work needed to wrap strings in `i18n.T()`.
 
+Fix known issues affecting translation completeness:
+* https://github.com/kubernetes/kubectl/issues/1326
+* https://github.com/kubernetes/kubectl/issues/1327
+
 <<[UNRESOLVED TODO]>>
 
 TODO:
