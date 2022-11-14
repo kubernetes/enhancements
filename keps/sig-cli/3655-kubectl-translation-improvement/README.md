@@ -83,12 +83,23 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [1. Make it simple for people to update translations.](#1-make-it-simple-for-people-to-update-translations)
+  - [2. Identify and empower contributors who will be approvers and reviewers for each locale.](#2-identify-and-empower-contributors-who-will-be-approvers-and-reviewers-for-each-locale)
+  - [3. Improve documentation.](#3-improve-documentation)
+  - [4. Ensure all strings in code support translations.](#4-ensure-all-strings-in-code-support-translations)
+  - [5. Establish metrics to track the state of translation completeness.](#5-establish-metrics-to-track-the-state-of-translation-completeness)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [BACKGROUND: How kubectl translations work.](#background-how-kubectl-translations-work)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [1. DETAILS: Make it simple for people to update translations.](#1-details-make-it-simple-for-people-to-update-translations)
+  - [2. DETAILS: Identify and empower contributors who will be approvers and reviewers for each locale.](#2-details-identify-and-empower-contributors-who-will-be-approvers-and-reviewers-for-each-locale)
+  - [3. DETAILS: Improve documentation.](#3-details-improve-documentation)
+  - [4. DETAILS: Ensure all strings in code support translations.](#4-details-ensure-all-strings-in-code-support-translations)
+  - [5. DETAILS: Establish metrics to track the state of translation completeness.](#5-details-establish-metrics-to-track-the-state-of-translation-completeness)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -507,8 +518,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
----
-#### 1. Make it simple for people to update translations.
+### 1. DETAILS: Make it simple for people to update translations.
 
 Currently, translation contributors need to run `hack/update-translations.sh -x` to extract all strings wrapped in `i18n.T()` into a file called [`template.pot`](https://github.com/kubernetes/kubernetes/blob/33e6ebc8f8df47864a77c867d78216adb70cd79d/staging/src/k8s.io/kubectl/pkg/util/i18n/translations/kubectl/template.pot). This template can be synchronized with a locale's `k8s.po` file (using poedit for example) to bring in new text that needs to be translated.
 
@@ -523,8 +533,7 @@ As part of this effort, we should simplify `hack/update-translations.sh` so that
 Alternative for consideration:
 * Instead of having a presubmit job and requiring developers to keep the translation files up-to-date, we could run `hack/update-translations.sh` in a postsubmit job and commit any changes that occur back to the k/k repo (is that even possible?), or automatically open a pull request (more likely this will be the way).
 
----
-#### 2. Identify and empower contributors who will be approvers and reviewers for each locale.
+### 2. DETAILS: Identify and empower contributors who will be approvers and reviewers for each locale.
 
 Currently, the [OWNERS](https://github.com/kubernetes/kubernetes/blob/9682b7248fb69733c2a0ee53618856e87b067f16/staging/src/k8s.io/kubectl/pkg/util/i18n/translations/OWNERS) file under `i18n/translations` looks like this:
 
@@ -564,8 +573,7 @@ TODO:
 
 <</[UNRESOLVED]>>
 
-___
-#### 3. Improve documentation.
+### 3. DETAILS: Improve documentation.
 
 There is a [`README.md`](https://github.com/kubernetes/kubernetes/blob/eb75b34394964fbc325ca08a5d0b126c5ea16b6f/staging/src/k8s.io/kubectl/pkg/util/i18n/translations/README.md) located within kubectl's i18 directory, which is helpful, but the process is not simple for a new or occasional contributor.
 
@@ -573,8 +581,7 @@ This document will be updated to remove any out-of-date information and add any 
 
 We will also create a separate page on [k8s.dev](https://k8s.dev) and link to it from [Non-code Contributions](https://www.k8s.dev/docs/guide/non-code-contributions/), so that people who are interested in becoming a translator for kubectl can discover how to start.
 
----
-#### 4. Ensure all strings in code support translations.
+### 4. DETAILS: Ensure all strings in code support translations.
 
 Create an issue to track the work needed to wrap strings in `i18n.T()`.
 
@@ -592,8 +599,7 @@ TODO:
 
 <</[UNRESOLVED]>>
 
----
-#### 5. Establish metrics to track the state of translation completeness.
+### 5. DETAILS: Establish metrics to track the state of translation completeness.
 
 In order to understand the current state of translations and track progress or regression over time, we need to establish a way to measure how complete the translations are for each locale.
 
