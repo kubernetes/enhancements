@@ -294,11 +294,6 @@ The system for specifying custom verbs needs to permit:
 * Verbs which cover specific leaf fields, for example all labels in .metadata.labels.
 * Verbs which are parameterized in some way, examples given earlier. The schema
   needs to state how the verb is parameterized.
-* Whether the verb is uncovered (not included by) the generic privilege. This
-  is needed to achieve our second goal. Uncovered permissions are expected to be
-  very rare -- only new fields will be supported. Marking existing fields this
-  way would break existing clients unless the corresponding permission is added,
-  which we can't universally do (see authz section above).
 * If a field name changes between versions of an object, the permission verb
   should not. Otherwise it will be extremely laborious to configure the system
   to ensure permissions don't change when objects are accessed via different
@@ -323,6 +318,43 @@ this KEP yet.
 (The exact permission system will be described below because we're not done with
 the requirements yet, keep reading!)
 
+#### Uncovered verbs
+
+There's one more piece of information we need to satisfy our second goal, and it
+can't go in the schema because it may vary from cluster to cluster.
+
+This concept is whether a permission verb is "covered" by enclosing permissions,
+or whether it is "uncovered". If a users tries to make a change, and one of the
+fields changing has a permission verb which is "uncovered", the user must have
+that permission in order to make the change, it's no longer good enough to have
+the general update permission or even an enclosing permission (like permission
+to modify metadata).
+
+To support this, we will add a new resource to the system. Each object will
+contain a list of permissions to mark as "uncovered". We support multiple
+objects to make it easy for us to add some default object(s) in the future, and
+to let cluster admins mark certain permissions as uncovered in their particular
+cluster.
+
+The k8s project can probably only permit brand new fields to have "uncovered"
+permissions by default, otherwise we would break existing users. But cluster
+admins know the exact authz system they use, and they can simultanesouly mark a
+permission as "uncovered" while granting it via their authz system, so that
+there is no outage.
+
+Example:
+
+```
+apiVersion: permissionconfig.k8s.io/v1
+kind: UncoveredPermissionSet
+metadata:
+  name: legacySensitiveLabels
+spec:
+  uncoveredPermissions:
+  - "granular:label(pod-security.kubernetes.io)" # for the enforce label
+  - "granular:label(scheduler.alpha.kubernetes.io)" # for the node-selector label
+```
+
 #### API Server Additional Plumbing and Checks
 
 Currently apiserver performs the authz check before descending into any detailed
@@ -336,6 +368,9 @@ still change some fields if it has the specific permissions required.
 
 API Server already maintains schema information for all resource types. This
 will be watched to also maintain field <-> permission mappings.
+
+API Server will be modified to watch UncoveredPermissionSets, to keep a map in
+memory of these.
 
 Now we can describe the modifications to API Server:
 
@@ -352,8 +387,10 @@ On any mutating call,
 5. If the marker=granular, every field needs to be covered by some permission.
    Check permissions, stop and fail if some field is not covered. (The order is
    described below.)
-6. If the marker=regular ONLY fields having "excluded" permissions need to be
-   checked; if such fields are modified, check their permissions as in step 5.
+6. If the marker=granular|regular, any field matching an uncovered permission
+   requires the user to have that permission exactly. Enclosing permissions,
+   whether generic or granular, don't count. Check any needed permissions as in
+   step 5 above.
 7. (If the marker is absent or has some other value, fail with a 5xx error.)
 8. If all checks pass, perform the rest of the needed operation.
 9. If any check fails, fail the request. The error message will not list ALL
@@ -366,6 +403,9 @@ representation in the schema it will be clear what that means. The reason for
 this is that multiple fields can be covered by a more general permission,
 greatly reducing the number of checks needed in the worst case (as long as the
 system administrator has made use of the general permission).
+
+Fields with an "uncovered" permission don't get the above hierarchical
+treatment; you must have that exact permission.
 
 ### Notes/Constraints/Caveats (Optional)
 
