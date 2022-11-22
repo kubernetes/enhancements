@@ -273,7 +273,115 @@ no longer be included in this metric.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade->downgrade->upgrade testing (manual or automated) will be required for Beta. If tested manually, the steps will be documented in this KEP.
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+Build and run the latest version of Kubernetes using Kind:
+```
+$ kind build node-image
+$ kind create cluster --image kindest/node:latest
+...
+...
+$ kubectl get no
+NAME                 STATUS   ROLES           AGE   VERSION
+kind-control-plane   Ready    control-plane   21m   v1.26.0-beta.0.88+3cfa2453421710
+
+```
+
+Deploy a webserver. In this test the following Deployment and Service was used:
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agnhost-server
+  template:
+    metadata:
+      labels:
+        app: agnhost-server
+    spec:
+      containers:
+      - name: agnhost
+        image: registry.k8s.io/e2e-test-images/agnhost:2.40
+        args:
+        - serve-hostname
+        - --port=80
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  internalTrafficPolicy: Local
+  selector:
+    app: agnhost-server
+  ports:
+  - port: 80
+    protocol: TCP
+```
+
+Before roll back, first verify that the `ProxyTerminatingEndpoint` feature is working. This is accomplished by
+scaling down the `agnhost-server` deployment to 0 replicas, and checking that the server still accepts traffic
+while it is terminating:
+
+Retrieve the cluster IP:
+```
+$ kubectl get svc agnhost-server
+NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+agnhost-server   ClusterIP   10.96.132.199   <none>        80/TCP    6m40s
+```
+
+Send a request from inside the kind node container:
+```
+$ docker exec -ti kind-control-plane bash
+root@kind-control-plane:/# curl 10.96.132.199
+agnhost-server-6d66cfc94f-q5msk
+```
+
+Scale down `agnhost-server` deployment to 0 replicas, check the pod is terminating, and check that the
+cluster IP works while the pod is terminating.
+```
+$ kubectl scale deploy/agnhost-server --replicas=0
+deployment.apps/agnhost-server scaled
+$ kubectl get po
+NAME                              READY   STATUS        RESTARTS   AGE
+agnhost-server-6d66cfc94f-x9kcw   1/1     Terminating   0          19s
+$ docker exec -ti kind-control-plane bash
+root@kind-control-plane:/# curl 10.96.132.199
+agnhost-server-6d66cfc94f-x9kcw
+```
+
+Rollback the feature by disabling the feature gate in kube-proxy:
+```
+# edit kube-proxy ConfigMap and add `ProxyTerminatingEndpoints: false` to `featureGates` field
+$ kubectl -n kube-system edit cm kube-proxy
+configmap/kube-proxy edited
+# restart kube-proxy
+$ kubectl -n kube-system delete po -l k8s-app=kube-proxy
+pod "kube-proxy-2ltb8" deleted
+
+```
+
+Verify that traffic cannot be routed to terminating endpoints anymore:
+```
+$ kubectl scale deploy/agnhost-server --replicas=0
+deployment.apps/agnhost-server scaled
+$ kubectl get po
+NAME                              READY   STATUS        RESTARTS   AGE
+agnhost-server-6d66cfc94f-qmftt   1/1     Terminating   0          12s
+$ docker exec -ti kind-control-plane bash
+root@kind-control-plane:/# curl 10.96.132.199
+curl: (7) Failed to connect to 10.96.132.199 port 80 after 0 ms: Connection refused
+```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
