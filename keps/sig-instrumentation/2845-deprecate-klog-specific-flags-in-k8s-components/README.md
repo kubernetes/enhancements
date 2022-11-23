@@ -1,4 +1,4 @@
-# KEP-2845: Deprecate klog specific flags in Kubernetes Compnents
+# KEP-2845: Deprecate klog specific flags in Kubernetes Components
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -158,7 +158,7 @@ Flags that should be deprecated:
 
 Flag deprecation should comply with standard k8s policy and require 3 releases before removal.
 
-This leaves that two flags that should be implemented by all log formats
+This leaves two flags that should be implemented by all log formats
 
 * -v - control global log verbosity of Info logs
 * --vmodule - control log verbosity of Info logs on per file level
@@ -172,6 +172,7 @@ default "text" format.
 
 With removal of configuration alternatives we need to make sure that defaults
 make sense. List of logging features implemented by klog and proposed actions:
+
 * Routing logs based on type/verbosity - Supported by alternative logging formats.
 * Writing logs to file - Feature removed.
 * Log file rotation based on file size - Feature removed.
@@ -205,7 +206,7 @@ I0605 22:03:07.224378 3228948 logger.go:59] "Log using InfoS" key="value"
 
 #### Writing logs to files
 
-We should use go-runner as a official fallback for users that want to retain
+We should use go-runner as an official fallback for users that want to retain
 writing logs to files. go-runner runs as parent process to components binary
 reading it's stdout/stderr and is able to route them to files. go-runner is
 already released as part of official K8s images it should be as simple as changing:
@@ -231,7 +232,7 @@ be treated as removal of any other flag.
 
 Is it ok for K8s components to drop support writing to files?
 Writing directly to files is an important feature still used by users, but this
-doesn't directly necessitates direct support in components. By providing a
+doesn't directly necessitate direct support in components. By providing a
 external solution like go-runner we can allow community to develop more advanced
 features while maintaining high quality implementation within components.
 Having more extendable solution developed externally should be more beneficial
@@ -350,7 +351,7 @@ k8s binaries, but this can be done one by one independently of other components.
   - Will enabling / disabling the feature require downtime of the control
     plane?
     **Yes, for apiserver it will require a restart, which can be considered a
-    control plane downtime in non highly available clusters**
+    control plane downtime in non-highly available clusters**
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
     **Yes, it will require restart of Kubelet**
