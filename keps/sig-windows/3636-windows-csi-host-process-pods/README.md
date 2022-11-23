@@ -710,13 +710,26 @@ to the new implementation, whereas the legacy code is maintained on the`v1.x`.
 
 ### Security analysis
 
-We suggest enabling HostProcess containers only for system workloads. One of the drawbacks of this new mode is the
-lack of filesystem isolation, which means that HostProcess containers have entire visibility of the host fileystem.
-To prevent workloads from accessing specific paths in the host we recommend:
+- Install the Pod Security Admissions controller and use Pod Security Standards
+  - Embrace the least privilege principle, quoting [Enforcing Pod Security Standards | Kubernetes](https://kubernetes.io/docs/setup/best-practices/enforcing-pod-security-standards/#embrace-the-principle-of-least-privilege)
+    - Namespaces that lack any configuration at all should be considered significant gaps in your cluster security model.
+      We recommend taking the time to analyze the types of workloads occurring in each namespace, and by referencing the Pod Security Standards,
+      decide on an appropriate level for each of them. Unlabeled namespaces should only indicate that they've yet to be evaluated.
+    - Namespaces allowing privileged workloads should establish and enforce appropriate access controls.
+    - For workloads running in those permissive namespaces, maintain documentation about their unique security requirements.
+      If at all possible, consider how those requirements could be further constrained.
+  - In namespaces without privileged workloads:
+    - Follow the guidelines in https://kubernetes.io/docs/tasks/configure-pod-container/enforce-standards-namespace-labels/#applying-to-a-single-namespace,
+      for example, add the following labels to a namespace:
 
-- Creating a Windows user with limited permissions to create files under the kubelet controlled path `C:\var\lib\kubelet`
-- Enabling `PodSecurityAdmission` on the namespace where system components run. Note that this needs an additiona
-  admission webhook to be installed in the cluster.
+  ```plain
+  kubectl label --overwrite ns my-existing-namespace \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version=v1.25
+  ```
+
+    - Both the baseline and restricted Pod Security Standards disallows the creation of HPC pods (docs).
+- Create a Windows user with limited permissions to create files under the kubelet controlled path `C:\var\lib\kubelet`
 
 ### Test Plan
 
