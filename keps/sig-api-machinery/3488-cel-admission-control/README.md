@@ -28,6 +28,7 @@
     - [Enforcement Actions](#enforcement-actions)
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
+      - [Use Cases](#use-cases)
       - [Variables](#variables)
     - [Secondary Authz](#secondary-authz)
     - [Access to namespace metadata](#access-to-namespace-metadata)
@@ -1065,27 +1066,87 @@ Details to consider:
 
 #### CEL Expression Composition
 
+##### Use Cases
+
+###### Code re-use for complicated expressions
+
+A CEL expression may not be computationally expensive, but could still be
+intricate enough that copy-pasting could prove to be a bad decision later on
+in time. With the addition of the `messageExpression` field, more copy-pasting
+is expected as well. If a sufficiently complex expression ended up copy-pasted everywhere,
+and then needs to be updated somehow, it will need that update in every place
+it was copy-pasted. A variable, on the other hand, will only need to be updated
+in one place.
+
+###### Reusing/memoizing an expensive computation
+
+For a CEL expression that runs in O(n^2) time or worse (or otherwise
+takes a significant amount of time to execute), it would be nice to only run
+it when necessary. For instance, if multiple validation expressions used the
+same expensive expression, that expression could be refactored out into a
+variable.
+
 ##### Variables
 
-Each CEL "program" is a single expression. There is no support for vaiable
+Each CEL "program" is a single expression. There is no support for variable
 assignment. This can result in redundant code to traverse maps/arrays or
 dereference particular fields.
 
 We can support this in much the same way as cel-policy-template `terms`. These
 can be lazily evaluated while the validation expressions are evaluated
-(cel-policy-template does this). The results can also be memoized to avoid
-repeated evaluations if they are shared across validations.
+(cel-policy-template does this).
+
+A policy can include an additional `variables` section. This is an array
+containing one or more `name` and `expression` pairs, which can be used/re-used by
+the policy's validation expressions. These results are memoized on a
+per-validation basis, so if multiple expressions use the same spec variables,
+the expression that calculates the variable's value will only run once.
+
+The variables can be accessed as members of `variables`, which is an object
+that is exposed to CEL expressions (both validation expressions as well as
+other variables).
+
+For example:
 
 ```yaml
   variables:
     - name: metadataList
       expression: "spec.list.map(x, x.metadata)"
     - name: itemMetadataNames
-      expression: "metadataList.map(m, m.name)"
+      expression: "variables.metadataList.map(m, m.name)"
   validations:
-    - expression: "itemMetadataNames.all(name, name.startsWith('xyz-'))"
-    - expression: "itemMetadataNames.exists(name, name == 'required')"
+    - expression: "variables.itemMetadataNames.all(name, name.startsWith('xyz-'))"
+    - expression: "variables.itemMetadataNames.exists(name, name == 'required')"
 ```
+
+Variable names must be valid CEL names. What constitutes a
+valid CEL name can be found at CEL's [language definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax) under `IDENT`.
+This validity is checked at write time.
+
+For per-policy runtime cost limit purposes, variables count towards the runtime cost limit
+once per policy. The cost of each variable is computed when it is first evaluated in an
+expression, mirroring how the cost limit would be calculated if the variable's
+expression was embedded verbatim.  If the runtime cost limit is exceeded in the
+process, then evaluation halts. No individual variable or expression will be listed as the
+cause in the resulting message. Whether or not the request actually fails depends on the failure policy,
+however. For subsequent uses, inclusion of the variable has zero effect on the runtime
+cost limit. If the variable evaluates to an array or some other iterable, and some expression
+iterates on it, that of course contributes to the cost limit, but simply including the variable does
+not add the underlying expression's cost again.
+
+Variables are also subject to the per-expression runtime cost limit. Exceeding the per-expression
+runtime cost limit is always attributed to the variable, unlike the per-policy limit.
+
+Variables can only reference other variables that
+have been previously defined in the `variables` section, so circular references
+are not allowed.
+
+If an error ocurrs during variable evaluation, then the expression
+that caused it to be evaluated (since variable are always
+lazily-evaluated) also finishes with an error. Evaluation for that
+variable is not attempted again during the same validation; if any other
+expressions attempt to evaluate a variable that already failed an evaluation
+attempt, they will also be considered to have failed.
 
 #### Secondary Authz
 
