@@ -753,8 +753,9 @@ MinCL(i) = NominalCL(i) - LendableCL(i)
 Naturally the CurrentCL values are also limited by how many seats are
 available for borrowing from other priority levels.  The sum of the
 CurrentCLs is always equal to the server's concurrency limit
-(ServerCL) plus or minus a little for rounding in the adjustment
-algorithm below.
+(ServerCL), possibly plus a little for the `ceil` in the definition of
+the NominalCLs and plus or minus a little for rounding in the
+adjustment algorithm below.
 
 Dispatching is done independently for each priority level.  Whenever
 (1) a non-exempt priority level's number of occupied seats is zero or
