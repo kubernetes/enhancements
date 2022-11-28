@@ -792,9 +792,11 @@ is introduced or removed or its NominalCL, LendableCL, or BorrowingCL
 changes.  At such a time, the current adjustment period comes to an
 early end and the regular adjustment logic runs; the adjustment timer
 is reset to next fire 10 seconds later.  For a newly introduced
-priority level, we set HighSeatDemand, AvgSeatDemand, and
-SmoothSeatDemand to NominalCL-LendableSD/2 and StDevSeatDemand to
-zero.
+priority level, we set HighSeatDemand, AvgSeatDemand,
+SmoothSeatDemand, and StDevSeatDemand to zero.  Initializing
+SmoothSeatDemand to a higher value would risk creating an illusion of
+pressure that decays only slowly; initializing to zero is safe because
+the arrival of actual pressure gets a quick response.
 
 For adjusting the CurrentCL values, each non-exempt priority level `i`
 has a lower bound (`MinCurrentCL(i)`) for the new value.  It is simply
