@@ -560,7 +560,7 @@ Below will be the reviewers and approvers for each locale:
 | fr_FR  |           |           |
 | it_IT  |           |           |
 | ja_JP  |           |           |
-| ko_KR  |           |           |
+| ko_KR  | @seokho-son | @seokho-son |
 | pt_BR  |           |           |
 | zh_CN  |           |           |
 | zh_TW  |           |           |
