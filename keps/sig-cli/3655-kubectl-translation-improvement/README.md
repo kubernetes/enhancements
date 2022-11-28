@@ -188,7 +188,6 @@ This KEP proposes improvements to the process used to maintain kubectl's transla
 1. Make it simple for people to update translations.
 2. Identify and empower contributors who will be approvers and reviewers for each locale.
 3. Improve documentation.
-   . Ensure all strings in code support translations.
 4. Ensure all strings in code support translations.
 5. Establish metrics to track the state of translation completeness.
 
