@@ -556,7 +556,7 @@ Below will be the reviewers and approvers for each locale:
 
 | Locale | Reviewers | Approvers |
 |--------|-----------|-----------|
-| de_DE  |           |           |
+| de_DE  | @iamNoah1 | @iamNoah1 |
 | fr_FR  |           |           |
 | it_IT  |           |           |
 | ja_JP  |           |           |
