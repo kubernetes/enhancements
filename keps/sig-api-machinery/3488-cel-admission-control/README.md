@@ -359,8 +359,8 @@ This API separates policy _definition_ from policy _configuration_ by splitting
 responsibilities across resources. The resources involved are:
 
 - Policy definitions (ValidatingAdmissionPolicy)
-- Policy bindings (PolicyBinding)
-- Policy param resources (custom resources)
+- Policy bindings (ValidatingAdmissionPolicyBinding)
+- Policy param resources (custom resources or config maps)
 
 ![Relatinships between policy resources](erd.png)
 
@@ -394,7 +394,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: "replicalimit-policy.example.com"
 spec:
-  paramSource:
+  paramKind:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
@@ -412,7 +412,7 @@ spec:
       # ...other rule related fields here...
 ```
 
-The `spec.paramSource` field of the `ValidatingAdmissionPolicy` specifies the
+The `spec.paramKind` field of the `ValidatingAdmissionPolicy` specifies the
 kind of resources used to parameterize this policy. For this example, it is
 configured by `ReplicaLimit` custom resources. Note in this example how the CEL
 expression references to the parameters via the CEL `params` variable, e.g.
@@ -434,13 +434,15 @@ resource are created. For example:
 
 ```yaml
 # Policy binding
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "replicalimit-binding-test.example.com"
 spec:
-  policy: "replicalimit-policy.example.com"
-  params: "replica-limit-test.example.com"
+  policyName: "replicalimit-policy.example.com"
+  paramRef:
+   name: "replica-limit-test.example.com"
+   namespace: "default"
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -464,13 +466,15 @@ An admission policy may have multiple bindings. To bind all other environments
 environment to have a maxReplicas limit of 100, create another `PolicyBinding`:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: aadmissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "replicalimit-binding-nontest"
 spec:
-  policy: "replicalimit-policy.example.com"
-  params: "replica-limit-clusterwide.example.com"
+  policyName: "replicalimit-policy.example.com"
+  paramRef:
+    name: "replica-limit-test.example.com"
+    namespace: "default"
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -491,13 +495,14 @@ matching binding. In the above example, the "nontest" policy binding could
 instead have been defined as a global policy:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: aadmissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "replicalimit-binding-global"
 spec:
-  policy: "replicalimit-policy.example.com"
-  params: "replica-limit-clusterwide.example.com"
+  policyName: "replicalimit-policy.example.com"
+  paramRef:
+   name: replica-limit-clusterwide.example.com"
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -534,7 +539,7 @@ organized into CEL variables as well as some other useful variables:
 
 - 'object'
 - 'oldObject'
-- 'review'
+- 'request'
   - 'requestResource' (GVR)
   - 'resource' (GVR)
   - 'name'
@@ -543,35 +548,35 @@ organized into CEL variables as well as some other useful variables:
   - 'userInfo'
   - 'dryRun'
   - 'options'
-- 'config' - configuration data of the policy configuration being validated
+- 'params' - referred params object, maybe null if no object is referred
 
 See below "Decisions and Enforcement" for more detail about how the
 `spec.validations` field works and how violations are reported.
 
 ##### Policy Configuration
 
-`PolicyBinding` resources and parameter CRDs together define how cluster
+`ValidatingAdmissionPolicyBinding` resources and parameter CRDs together define how cluster
 administrators configure policies for clusters.
 
-Each `PolicyBinding` contains:
+Each `ValidatingAdmissionPolicyBinding` contains:
 
-- `spec.policy` - A reference to the policy being configured
+- `spec.policyName` - A reference to the policy being configured
 - `spec.matchResources` - Match criteria for which resources the policy should
   validate
-- `spec.params` - Reference to the custom resource containing the params to use
+- `spec.paramKind` - Reference to the custom resource containing the params to use
   when validating resources 
-- `spec.mode` - See "Decisions and Enforcement" for details.
 
 Example:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: aadmissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "xyzlimit-scale.example.com"
 spec:
-  policy: xyzlimit-scale.example.com
-  params: xyzlimit-scale-settings.example.com
+  policyName: xyzlimit-scale.example.com
+  paramRef:
+    name: xyzlimit-scale-settings.example.com
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -962,8 +967,8 @@ higher level. This could be added later.
 
 #### Singleton Policies
 
-For simple policies that apply cluster wide, a policy can be authored using a
-single `ValidatingAdmissionPolicy` resource.
+For simple policies that does not refer to a param, a policy can be authored using a
+single `ValidatingAdmissionPolicy` resource without a `paramKind` field.
 
 This is only available for cases where there is no need to have multiple
 bindings, and where all params can be inlined in CEL.
@@ -975,17 +980,16 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 ...
 spec:
+  # no paramKind
   matchConstraints: ...
   validations:
   - expression: "object.spec.replicas < 100"
-  singletonBinding:
-    matchResources: ...
 ```
 
 Note that:
 
-- `spec.paramSource` must be absent and validations may not reference `params`
-- If `spec.singletonBinding` is present policy binding support is disabled.
+- `spec.paramKind` must be absent
+- validation expressions may not refer `params`
 
 Safety features:
 
@@ -1536,7 +1540,7 @@ Steps:
 
 1. Webhook is configured and in-use.
 2. `ValidatingAdmissionPolicy` created with `FailPolicy: Ignore`
-3. `ValidatingAdmissionPolicy` is monitored to ensure it behaves the same as te webhook (logs or audit annotations can be used)
+3. `ValidatingAdmissionPolicy` is monitored to ensure it behaves the same as the webhook (logs or audit annotations can be used)
 4. `ValidatingAdmissionPolicy` is updated to `FailPolicy: Fail`
 5. Verify the webhook never denies any requests. If the admission policy is
    equivalent, then policy will be run first and deny the request before
@@ -1716,7 +1720,7 @@ metadata:
   generation: 2
   ...
 status:
-  paramSource:
+  paramKind:
     apiVersion: "example.com/v1"
     kind: "fooLimits"
     generation: 5
@@ -2475,7 +2479,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: "validate-xyz.example.com"
 spec:
-  paramSource:
+  paramKind:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
