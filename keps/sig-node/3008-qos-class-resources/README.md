@@ -109,6 +109,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [API server](#api-server)
   - [Container runtimes](#container-runtimes)
   - [Open Questions](#open-questions)
+    - [Class capacity](#class-capacity)
+      - [Class capacity with extended resources](#class-capacity-with-extended-resources)
+      - [Class capacity in the API](#class-capacity-in-the-api)
     - [Pod QoS class](#pod-qos-class)
     - [Default class](#default-class)
   - [Test Plan](#test-plan)
@@ -918,6 +921,128 @@ Container runtimes will be updated to support the
 [CRI API extensions](#cri-api)
 
 ### Open Questions
+
+#### Class capacity
+
+Resource quota provides a way to restrict access to certain types of QoS-class
+resources and their classes. However, the current design does not contain any
+mechanism for controlling the number of assigments into a certain class on
+per-node or per-namespace basis. That is. say that "only 2 containers can be
+assigned to RDT class *gold* on this node".
+
+This concept was deliberately left out of the proposal in order to reduce
+confusion with other countable resources (native resources, extended
+resources). Also, capacity does not often fully fit together with QoS
+prioritization: generally there needs to be at least one "unlimited" class as
+each container or pod needs to belong to some class.
+
+However, there are at least two mechamisms how class capacity can be
+implemented. The first is by leveraging extended resources and an admission
+webhook to limit the usage of classes. The other alternative is to implement
+class capacity in the API directly.
+
+##### Class capacity with extended resources
+
+It would be possible to implement "class capacity" by leveraging extended
+resources and mutating admission webhooks:
+
+1. An extended resource with the desited capacity is created for each class
+   which needs to be controlled. A possible example:
+  ```plaintext
+  Allocatable:
+  qos/container/resource-X/class-A:        2
+  qos/container/resource-X/class-B:        4
+  qos/container/resource-Y/class-foo:      1
+  ```
+
+  In this example *class-A* and *class-B* of QoS-class resource *resource-X*
+  would be limited to 2 and 4 assignments, respectively (on this node).
+  Similarly, class *class-foo* of QoS-class resource *resource-Y* would be
+  limited to only one assignment.
+
+2. A specific mutating admission webhook is deployed which syncs the specific
+   extended resources. That is, if a specific QoS-class resource assignment is
+   requested in the pod spec, a request for the corresponding extended resource
+   is automatically added. And vice versa: if a specific extended resource is
+   requested a QoS-class resource request is automatically put in place.
+
+However, this approach is quite involved, has shortcomings and caveats and thus
+it is probably suitable only for targeted usage scenarios, not as a general
+solution. Downsides include:
+
+- requires implementation of "side channel" control mechanisms, e.g. admission
+  webhook and some solution for capacity management (extended resources)
+- deployment of admission webhooks is cumbersome
+- management of capacity is limited and cumbersome
+  - management of extended resources needs a separate mechanism
+  - ugly to handle a scenario where *class-A* on *node-1* would be unlimited
+    but on *node-2* it would have some capacity limit (e.g. use a very high
+    integer capacity of the extended resource on *node-2*)
+  - dynamic changes are harder
+- not well-suited for managing pod-level QoS-class resources as pod-level
+  resource requests (for the extended resource) are not supported in Kubernetes
+- possible confusion for users regarding the double accounting (QoS-class
+  resources and extended resources)
+
+##### Class capacity in the API
+
+An alternative is to include the concept of "class capacity" in the APIs
+directly. In this solution the per-node capacity would be controlled by the
+runtime and visible in node status. Also resource quota could be extended to
+limit and track capacity, giving per-namespace capacity control.
+
+Adding "class capacity" to the APIs could be a separete future implementation
+phase if it is not desired in the first round of API changes.
+
+###### CRI
+
+Add capacity both to resource discovery.
+
+```diff
+ message ClassResourceClassInfo {
+     // Name of the class
+     string name = 1;
++    // Capacity is the number of maximum allowed simultaneous assignments into this class
++    // Zero means "infinite" capacity i.e. the usage is not restricted.
++    uint64 capacity = 2;
++
+ }
+```
+
+###### NodeStatus
+
+Corresponding to the CRI changes, class capacity would be added to the class
+info in NodeStatus.
+
+```diff
+ type ClassResourceClassInfo struct {
+        // Name of the class.
+        Name string
++       // Capacity is the number of maximum allowed simultaneous assignments into this class
++       // Zero means "infinite" capacity i.e. the usage is not restricted
++       // +optional
++       Capacity int64
+ }
+```
+
+###### ResourceQuotaSpec
+
+ResourceQuota would be supplemented similarly.
+
+```diff
+ type AllowedClass struct {
+        // Name of the class.
+        Name string
++       // Capacity is the hard limit for usage of the class.
++       // +optional
++       Capacity int64
+ }
+```
+
+It is worth noting that this change in ResourceQuota is independent from the
+other. That is, resource quota could have "class capacity" even though there
+wouldn't be such concept on the node status level. And vice versa: node status
+could have "class capacity" without resource quota having this concept.
 
 #### Pod QoS class
 
