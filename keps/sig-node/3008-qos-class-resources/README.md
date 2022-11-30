@@ -936,7 +936,7 @@ resources). Also, capacity does not often fully fit together with QoS
 prioritization: generally there needs to be at least one "unlimited" class as
 each container or pod needs to belong to some class.
 
-However, there are at least two mechamisms how class capacity can be
+However, there are at least two mechanisms how class capacity can be
 implemented. The first is by leveraging extended resources and an admission
 webhook to limit the usage of classes. The other alternative is to implement
 class capacity in the API directly.
