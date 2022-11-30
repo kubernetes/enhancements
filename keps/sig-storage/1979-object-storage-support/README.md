@@ -308,7 +308,7 @@ In case of IAM style authentication, along with the `credentialsSecretName`, `se
 
 ###### 3. COSI calls driver to generate credentials
 
-All but the sidecar for the specified driver will ignore the BucketClaim object. Only the appropriate sidecar will make a gRPC request to its driver to generate credentials/map service accounts.
+All but the sidecar for the specified driver will ignore the `BucketAccess` object. Only the appropriate sidecar will make a gRPC request to its driver to generate credentials/map service accounts.
 
 This step will only proceed if the Bucket already exist. The Bucket's `BucketReady` condition should be true. Until access been granted, the `AccessGranted` condition in BucketAccess will be false.
 
@@ -325,7 +325,7 @@ This step will only proceed if the Bucket already exist. The Bucket's `BucketRea
     |------------------------------------------|
 ```
 
-Each BucketAccess is meant to map to a unique service account in the OSP. Once the requested privileges have been granted, a secret by the name specified in `credentialsSecretName` in the BucketClaim is created. The secret will reside in the namespace of the BucketClaim. The secret will contain either access keys or service account tokens based on the chosen authentication type. The format of this secret can be found [here](#bucketinfo)
+Each BucketAccess is meant to map to a unique service account in the OSP. Once the requested privileges have been granted, a secret by the name specified in `credentialsSecretName` in the `BucketAccess` is created. The secret will reside in the namespace of the `BucketAccess`. The secret will contain either access keys or service account tokens based on the chosen authentication type. The format of this secret can be found [here](#bucketinfo)
 
 If this call returns successfully, the sidecar sets `AccessGranted` condition to `True` in the BucketAccess.
 
