@@ -991,7 +991,7 @@ directly. In this solution the per-node capacity would be controlled by the
 runtime and visible in node status. Also resource quota could be extended to
 limit and track capacity, giving per-namespace capacity control.
 
-Adding "class capacity" to the APIs could be a separete future implementation
+Adding "class capacity" to the APIs could be a separate future implementation
 phase if it is not desired in the first round of API changes.
 
 ###### CRI
