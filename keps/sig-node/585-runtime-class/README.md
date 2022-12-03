@@ -153,40 +153,36 @@ kata-container sandboxes. We might create the following runtime classes:
 
 ```yaml
 kind: RuntimeClass
-apiVersion: node.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1
+handler: runc
 metadata:
     name: native  # equivalent to 'legacy' for now
-spec:
-    runtimeHandler: runc
 ---
 kind: RuntimeClass
-apiVersion: node.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1
+handler: gvisor
 metadata:
     name: gvisor
-spec:
-    runtimeHandler: gvisor
 ----
 kind: RuntimeClass
-apiVersion: node.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1
+handler: kata-runtime
 metadata:
     name: kata-containers
-spec:
-    runtimeHandler: kata-containers
 ----
 # provides the default sandbox runtime when users don't care about which they're getting.
 kind: RuntimeClass
-apiVersion: node.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1
+handler: gvisor
 metadata:
   name: sandboxed
-spec:
-  runtimeHandler: gvisor
 ```
 
 Then when a user creates a workload, they can choose the desired runtime class to use (or not, if
 they want the default).
 
 ```yaml
-apiVersion: extensions/v1beta1
+apiVersion: v1
 kind: Deployment
 metadata:
   name: sandboxed-nginx
