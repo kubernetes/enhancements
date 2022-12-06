@@ -3,15 +3,17 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [X] **Pick a hosting SIG.**
+  sig-node
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [X] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+  Number 3675
+- [X] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
@@ -173,6 +175,18 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+This plugin manager will allow pluggable items, such as 
+
+This plugin manager takes the concept of dynamic resource allocation and extends this 
+to the classic kubelet-managed resources of CPU and memory.  It will remove, over time, 
+the logic of the topology manager and make these decisions at the plugin layer.
+
+It additionally consolidates the code internal to the 
+kubelet
+
+
+
+
 ## Motivation
 
 <!--
@@ -184,6 +198,20 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+CPU Management, memory management, and topology managment currently live within 
+the kubelet.  Additionally, there is currently no way to handle on-the-node 
+resources outside of the general device envelope without communicating with the 
+API server in some way, either through an informer or an operator.  As increased
+demands are placed on the kubelet, more managers are pushed inside.
+
+There are multiple out-of-tree solutions to handle the cpu management shortcomings
+in a timely manner without having to merge code directly into Kubelet.
+
+Vendors remain frustrated because they must test with every release and then push 
+these changes upstream.
+
+This KEP rather proposes that we move more to the ability of a microkernel model
+
 ### Goals
 
 <!--
@@ -191,12 +219,36 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+* Be able to plug resource managers into Kubelet to allow for customization of user requirements
+* Be able to export resources to expose them to the scheduler, similar to the way resources
+work today, including in cases of differentiating different types of CPUs.  This differentiation 
+can be either software or hardware-defined.  For instance, it may be useful to the user to
+designate some cores as performance cores and others as efficiency cores where no hardware
+differentiation between the cores may exist, but the frequencies may be set by a manager.
+* Make it simple to expand resources to those not currently envisioned
+* Make it simple to expose attributes about resources 
+* Have test harness for resource managers
+
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+* Break any existing use cases for topology manager, memory manager, cpu manager, or 
+device manager.  Whatever solution is added, there should be full support of 
+default behavior with a default plugin. 
+* Default behavior: While the deployment model might be changed due to legacy code 
+being moved out of Kubelet, the default case without the plugin manager enabled 
+will be the same as if current implementation of Topology manager is disabled.
+* Creating any more latency than there is today for scheduling:  We should be 
+careful not to add any latency into scheduling over what exists today for default behavior.
+* Podspecs:  Will be able to support current pod specs.  While there may be additional 
+extensibility in the future, the current pod specs will still work.
+* Plugins do not write to API themselves.  
+
 
 ## Proposal
 
