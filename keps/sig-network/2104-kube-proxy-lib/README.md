@@ -155,7 +155,7 @@ This distillation of a "[KPNG-like interface]" was originally presented by Tim H
 
 ## Motivation
 
-There have been several presentations, issues, and projects dedicated to reusing kube proxy logic while extending it to embrace
+There have been several presentations, issues, and projects dedicated to reusing kube-proxy logic while extending it to embrace
 different backend technologies (i.e. NFT, eBPF, openvswitch, and so on).  This KEP attempts to make a library which will facilitate
 this type of work.  
 
