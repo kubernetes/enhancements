@@ -175,14 +175,24 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This plugin manager will allow pluggable items, such as 
-
 This plugin manager takes the concept of dynamic resource allocation and extends this 
-to the classic kubelet-managed resources of CPU and memory.  It will remove, over time, 
-the logic of the topology manager and make these decisions at the plugin layer.
+to the classic kubelet-managed resources of CPU and memory.  It will allow users to 
+bypass teh current logic of the kubelet managed resources and instead handle the resources
+through the plugins.  It will additionally allow resources to be managed on the node
+without forcing traffic to the API server for pod update information.  The Kubelet
+already owns this information.  
 
-It additionally consolidates the code internal to the 
-kubelet
+These changes will consolidate the code internal to the kubelet and allow more creative
+and innovative approaches to resource management without having to bypass the Kubelet.
+We can instead start cultivating a library of plugins specific to particular use cases,
+and continue to maintain a plugin that is specific to the majority of the use cases, as
+we have now with topology manager, cpu manager, and memory manager.
+
+Kernels exist for allowing resource managers to not be built directly into the kernel,
+but rather to have kernel modules for specific cases.  For example, there are multiple
+power governors available for different vendors.  As users desire more fine-grained 
+control of resources, they too should be afforded the nice pluggability that we afford
+other components in Kubernetes, such as device plugins, CNI, or CSI.
 
 
 
@@ -198,19 +208,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-CPU Management, memory management, and topology managment currently live within 
-the kubelet.  Additionally, there is currently no way to handle on-the-node 
-resources outside of the general device envelope without communicating with the 
-API server in some way, either through an informer or an operator.  As increased
-demands are placed on the kubelet, more managers are pushed inside.
 
-There are multiple out-of-tree solutions to handle the cpu management shortcomings
-in a timely manner without having to merge code directly into Kubelet.
-
-Vendors remain frustrated because they must test with every release and then push 
-these changes upstream.
-
-This KEP rather proposes that we move more to the ability of a microkernel model
 
 ### Goals
 
