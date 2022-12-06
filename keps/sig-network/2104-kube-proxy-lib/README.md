@@ -142,10 +142,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-After about a year and a half of testing a new kube-proxy implementation (https://github.com/kubernetes-sigs/kpng/) and
-collecting sig-network and community feedback, it became clear that an interface for building new kube proxy's without  an
-opinionated implementation is desired by the Kubernetes networking commmunity attempting to build specialied networking
-tools.  This KEP distills the goals of such an interface and propose it's lifecycle and official support policy for sig-network.
+After about a year and a half of testing a [new kube-proxy implementation] and
+collecting sig-network and community feedback, it became clear that an interface for building new service proxies without an
+opinionated implementation is desired by the Kubernetes networking commmunity attempting to build specialized networking
+tools.  This KEP distills the goals of such an interface and proposes its lifecycle and official support policy for sig-network.
+
+[new kube-proxy implementation]: https://github.com/kubernetes-sigs/kpng/
 
 This distillation of a "KPNG like interface" was originally presented by tim hockins in a sig-network breakout session, informally in https://docs.google.com/presentation/d/1Y-tZ4fFC9L2NvtBeiIXD1MiJ0ieg_zg4Q6SlFmIax8w/edit?hl=en&resourcekey=0-SFhIGTpnJT5fo6ZSzQC57g#slide=id.g16976fedf03_0_221.
 
