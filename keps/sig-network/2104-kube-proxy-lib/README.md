@@ -157,7 +157,7 @@ This distillation of a "[KPNG-like interface]" was originally presented by Tim H
 
 There have been several presentations, issues, and projects dedicated to reusing kube-proxy logic while extending it to embrace
 different backend technologies (i.e. nftables, eBPF, Open vSwitch, and so on).  This KEP attempts to make a library which will facilitate
-this type of work.  
+this type of work.
 
 A previous attempt at a broad solution to this problem was explored in the KPNG project (https://github.com/kubernetes-sigs/kpng/), which exhibits many properties that allow for such goals to be accomplished.  However, because it had so many "features", sig-network decided by consensus to take some of the ideas behind it (i.e. the definition of a clear boundary between the data model for Kubernetes, and the data model for a kube-proxy), into a separate KEP.
 
@@ -167,7 +167,7 @@ A previous attempt at a broad solution to this problem was explored in the KPNG 
 - Exemplify the use of such a repository in a mock proxy implementation which uses the library to process and log changes in the Kubernetes networking state.
 - Define a policy around versioning and releasing of "kube-proxy-lib".
 - Create a CI system that runs in test-grid which tests kube-proxy-lib compatibility with the latest Kubernetes releases continuously, and which can be used to inform API changes for regressions that break "kube-proxy-lib".
-- Enable the eventual *replacement* of the k/k/pkg/proxy serviceChangeTracker and endpointsChangeTracker related caching structures inside of in-tree kube proxy with this generic library, as a way to make legacy bugs easier to fix in the future (such as https://github.com/kubernetes/kubernetes/issues/112604).
+- Enable the eventual *replacement* of the k/k/pkg/proxy `serviceChangeTracker` and `endpointsChangeTracker` related caching structures inside of in-tree kube proxy with this generic library, as a way to make legacy bugs easier to fix in the future (such as https://github.com/kubernetes/kubernetes/issues/112604), and write down the high level plan for this replacement in this KEP.
 
 ### Non-Goals
 
@@ -198,8 +198,7 @@ TBD
 ### Risks and Mitigations
 
 No risks, because we arent removing the in tree proxy as part of this repo, but rather, proposing a library for kube proxy extenders
-to use optionally.  There may be risks, eventually, if we write another KEP to *replatform* sig-networks k/k/pkg/proxy implementations
-on top of this library, but that would be in a separate KEP. 
+to use optionally.  Because this KEP defines a library, which will be built *before* we replace the existing kube proxy, it might not be perfect in the initial inception.
 
 ## Design Details
 
