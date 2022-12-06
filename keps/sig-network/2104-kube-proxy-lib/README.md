@@ -149,7 +149,9 @@ tools.  This KEP distills the goals of such an interface and proposes its lifecy
 
 [new kube-proxy implementation]: https://github.com/kubernetes-sigs/kpng/
 
-This distillation of a "KPNG like interface" was originally presented by tim hockins in a sig-network breakout session, informally in https://docs.google.com/presentation/d/1Y-tZ4fFC9L2NvtBeiIXD1MiJ0ieg_zg4Q6SlFmIax8w/edit?hl=en&resourcekey=0-SFhIGTpnJT5fo6ZSzQC57g#slide=id.g16976fedf03_0_221.
+This distillation of a "[KPNG-like interface]" was originally presented by Tim Hockin in a sig-network breakout session.
+
+[KPNG-like interface]: https://docs.google.com/presentation/d/1Y-tZ4fFC9L2NvtBeiIXD1MiJ0ieg_zg4Q6SlFmIax8w/edit?hl=en&resourcekey=0-SFhIGTpnJT5fo6ZSzQC57g#slide=id.g16976fedf03_0_221
 
 ## Motivation
 
