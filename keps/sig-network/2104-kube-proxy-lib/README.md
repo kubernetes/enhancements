@@ -156,7 +156,7 @@ This distillation of a "[KPNG-like interface]" was originally presented by Tim H
 ## Motivation
 
 There have been several presentations, issues, and projects dedicated to reusing kube-proxy logic while extending it to embrace
-different backend technologies (i.e. NFT, eBPF, openvswitch, and so on).  This KEP attempts to make a library which will facilitate
+different backend technologies (i.e. nftables, eBPF, Open vSwitch, and so on).  This KEP attempts to make a library which will facilitate
 this type of work.  
 
 A general solution to this problem is explored in the KPNG project (https://github.com/kubernetes-sigs/kpng/), which exhibits many properties
@@ -169,20 +169,20 @@ that allow for such goals to be accomplished.  These are enabled by:
 ### Goals
 
 - Build a vendorable repository "kube-proxy-lib" which can be used to make new kube-proxy's.
-- Exemplify the use of such a repository in a mock "backend" which uses the repository to process and respond to changes in the Kubernetes networking state.
+- Exemplify the use of such a repository in a mock proxy implementation which uses the library to process and log changes in the Kubernetes networking state.
 - Define a policy around versioning and releasing of "kube-proxy-lib".
 - Create a CI system that runs in test-grid which tests kube-proxy-lib compatibility with the latest Kubernetes releases continuously, and which can be used to inform API changes for regressions that break "kube-proxy-lib".
 - Enable the eventual *replacement* of the k/k/pkg/proxy serviceChangeTracker and endpointsChangeTracker related caching structures inside of in-tree kube proxy with this generic library.
 
 ### Non-Goals
 
-- Rewrite or decouple the core , in-tree linux Kubernetes kube-proxy implementations, which are relied on by too many users to be tolerant to major changes.
+- Rewrite or decouple the core, in-tree linux Kubernetes kube-proxy implementations, which are relied on by too many users to be tolerant to major changes.
 - Force a new architecture for the standard kube-proxy on to naive users.
 
 ## Proposal
 
 We propose to build a kubernetes-sigs/kube-proxy-lib repository.  This repository will be vendored by people wanting to build a new Kube proxy, and provide them with:
-- A vendorable golang library that defines a few interfaces that can be easily implemented as a new kube proxy, which respond to endpoint slices and services changes.
+- A vendorable golang library that defines a few interfaces that can be easily implemented by a new service proxy, which respond to EndpointSlice and Service changes.
 - Documentation on how to build a kube proxy, based on https://github.com/kubernetes-sigs/kpng/blob/master/doc/service-proxy.md and other similar documents.
 - integration test tooling, similar to the KPNG project's, which allows users to locally implement network routing logic in a small golang program which is not
 directly connected to the Kubernetes API server, for local, iterative development of Kubernetes network proxy tooling.
