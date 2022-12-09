@@ -80,6 +80,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -142,54 +143,56 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-After about a year and a half of testing a [new kube-proxy implementation] and
-collecting sig-network and community feedback, it became clear that an interface for building new service proxies without an
-opinionated implementation is desired by the Kubernetes networking commmunity attempting to build specialized networking
-tools.  This KEP distills the goals of such an interface and proposes its lifecycle and official support policy for sig-network.
+After about a year and a half of testing a [new service proxy implementation](https://github.com/kubernetes-sigs/kpng/), and
+collecting sig-network and community feedback, it is clear that a shared library (referred to as kube-proxy-lib in this document) designed to make building new service proxies easier is needed. Specifically, it is desired by members of the Kubernetes networking community who are attempting to build specialized networking tools.  This KEP distills the goals of such a library and proposes its lifecycle and official support policy for sig-network.
 
-[new kube-proxy implementation]: https://github.com/kubernetes-sigs/kpng/
-
-This distillation of a "[KPNG-like interface]" was originally presented by Tim Hockin in a sig-network breakout session.
-
-[KPNG-like interface]: https://docs.google.com/presentation/d/1Y-tZ4fFC9L2NvtBeiIXD1MiJ0ieg_zg4Q6SlFmIax8w/edit?hl=en&resourcekey=0-SFhIGTpnJT5fo6ZSzQC57g#slide=id.g16976fedf03_0_221
+This distillation of a "[KPNG-like interface](https://docs.google.com/presentation/d/1Y-tZ4fFC9L2NvtBeiIXD1MiJ0ieg_zg4Q6SlFmIax8w/edit?hl=en&resourcekey=0-SFhIGTpnJT5fo6ZSzQC57g#slide=id.g16976fedf03_0_221)" was originally presented by Tim Hockin in a sig-network breakout session.
 
 ## Motivation
 
 There have been several presentations, issues, and projects dedicated to reusing kube-proxy logic while extending it to embrace
 different backend technologies (i.e. nftables, eBPF, Open vSwitch, and so on).  This KEP attempts to make a library which will facilitate
-this type of work.
+this type of work ultimately making it much easier to write and maintain new proxy implementations.
 
-A previous attempt at a broad solution to this problem was explored in the KPNG project (https://github.com/kubernetes-sigs/kpng/), which exhibits many properties that allow for such goals to be accomplished.  However, because it had so many "features", sig-network decided by consensus to take some of the ideas behind it (i.e. the definition of a clear boundary between the data model for Kubernetes, and the data model for a kube-proxy), into a separate KEP.
+A previous attempt at a broad solution to this problem was explored in the [KPNG project](https://github.com/kubernetes-sigs/kpng/), which exhibits many properties that allow for such goals to be accomplished.  However, because it had so many "features", sig-network decided by consensus to take some of the ideas behind it (i.e. the definition of a clear boundary between the data model for Kubernetes, and the data model for a service proxy), into a separate KEP.
 
 ### Goals
 
-- Build a vendorable repository "k8s.io/kube-proxy" (an existing repository, which lives at https://github.com/kubernetes/kube-proxy), which can be used to make new service proxies.
-- Exemplify the use of such a repository in a mock proxy implementation which uses the library to process and log changes in the Kubernetes networking state.
-- Define a policy around versioning and releasing of "kube-proxy-lib".
+- Build a library in the [kube-proxy staging repository "k8s.io/kube-proxy"](https://github.com/kubernetes/kube-proxy) (an existing [k8s staging repository](https://github.com/kubernetes/kubernetes/tree/master/staging)), which can be used to help build new service proxies.
+- Replace the [shared kube-proxy code k/k/pkg/proxy](https://github.com/kubernetes/kubernetes/tree/master/pkg/proxy), specifically the shared Kubernetes API client and client side caching structures `serviceChangeTracker` and `endpointsChangeTracker` inside of in-tree kube proxy with this generic library.
+- Exemplify the use of such a repository in a mock proxy implementation which uses the library to process and log changes of the Kubernetes networking state.
+- Define a policy around versioning and releasing of kube-proxy-lib.
 - Create a CI system that runs in test-grid which tests kube-proxy-lib compatibility with the latest Kubernetes releases continuously, and which can be used to inform API changes for regressions that break "kube-proxy-lib".
-- Enable the eventual *replacement* of the k/k/pkg/proxy `serviceChangeTracker` and `endpointsChangeTracker` related caching structures inside of in-tree kube proxy with this generic library, as a way to make legacy bugs easier to fix in the future (such as https://github.com/kubernetes/kubernetes/issues/112604), and write down the high level plan for this replacement in this KEP.
 
 ### Non-Goals
 
-- Rewrite or decouple the core, in-tree linux Kubernetes kube-proxy implementations, which are relied on by too many users to be tolerant to major changes.
-- Force new, potentially incompatible architectural requirements on users for the standard kube-proxy on to naive users.
+- Write any more new "in-tree" service proxies.
+- Make any incompatible architectural or deployment changes to the existing kube-proxy implementations.
+- Tackle any complex new deployment scenarios (This is solved by [KPNG](https://github.com/kubernetes-sigs/kpng/))
 
 ## Proposal
 
-We propose to build a kubernetes-sigs/kube-proxy-lib repository.  This repository will be vendored by people wanting to build a new Kube proxy, and provide them with:
-- A vendorable golang library that defines a few interfaces that can be easily implemented by a new service proxy, which respond to EndpointSlice and Service changes.
-- Documentation on how to build a kube proxy, based on https://github.com/kubernetes-sigs/kpng/blob/master/doc/service-proxy.md and other similar documents.
-- integration test tooling which allows developers that are good at networking, but not deeply invested in kubernetes internals, to build and test new networking backends easily.
+We propose to build a new library in the [kube-proxy staging repository](https://github.com/kubernetes/kube-proxy). This repository will be vendored by the core implementations and developers who want to build new service proxy implementations, providing them with:
+
+- A vendorable golang library that defines a few interfaces which can be easily implemented by a new service proxy, that responds to EndpointSlice and Service changes.
+- Documentation on how to build a kube proxy with the library, based on [So You Want To Write A Service Proxy...](https://github.com/kubernetes-sigs/kpng/blob/master/doc/service-proxy.md) and other similar documents.
+- Integration test tooling which allows developers who are familiar with dataplane networking internals, but not deeply invested in kubernetes internals, to build and test new networking backends easily.
+
+Not only will this make writing new backends easier, but through incremental changes and optimizations to the new library we hope to also improve the existing proxies, making [legacy bugs](https://github.com/kubernetes/kubernetes/issues/112604) easier to fix in the future.
 
 ### User Stories (Optional)
 
 #### Story 1
 
-As a networking technology startup I want to make my own service proxy implementation but don't want to maintain the logic of talking to the APIServer, caching its data, or calculating an abbreviated/proxy-focused representation of the Kubernetes networking state space.  I'd like a wholesale framework I can simply plug my logic into. 
+As a networking technology startup I want to easily make a new service proxy implementation without maintaining the logic of talking to the APIServer, caching its data, or calculating an abbreviated/proxy-focused representation of the Kubernetes networking state space.  I'd like a wholesale framework I can simply plug my custom dataplane oriented logic into.
 
 #### Story 2
 
-As a service proxy maintainer, I don't want to have to understand the internals of a networking backend in order to simulate or write core updates to the logic of the kube-proxy locally.
+As a service proxy maintainer, I don't want to have to understand the in-tree internals of a networking backend in order to simulate or write core updates to the logic of the kube-proxy locally.
+
+#### Story 3
+
+As a Kubernetes developer I want to make maintaining the shared proxy code easier, and allow for updates to that code to be completed in a more incremental and well tested way.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -197,10 +200,16 @@ TBD
 
 ### Risks and Mitigations
 
-No risks, because we arent removing the in tree proxy as part of this repo, but rather, proposing a library for kube proxy extenders
-to use optionally.  Because this KEP defines a library, which will be built *before* we replace the existing kube proxy, it might not be perfect in the initial inception.
+No risks, because we aren't removing the in-tree proxy as part of this kep, but rather, proposing a library for kube proxy and extenders
+to use which, at least for the first stage, will look identical to what already exists today.  However, because this KEP also speaks to proposing
+updates and optimizations to the library in the future there could some risks further down the line which we will continue to plan for.
 
 ## Design Details
+
+**NOTE: This section is still under active development please comment with any further ideas**
+
+The implementation of this kep will begin by moving the [shared kube-proxy code](https://github.com/kubernetes/kubernetes/tree/master/pkg/proxy) as it stands today into the kube-proxy staging repo. This will be
+immediately followed by the work to switch the existing proxies (iptables, ipvs, and windows) incrementally, to utilize the new library code. Following the stabilization of that work, i.e unit and e2e test green lighting, we can began building up more tooling around testing and use of the library for external consumers.  Finally with testing and release mechanisms in place we can begin analyzing possible improvements and updates to the shared library code, using the POC done in KPNG as a reference, to make writing new out of tree service proxy implementations easier.
 
 ### Test Plan
 
@@ -212,7 +221,7 @@ to use optionally.  Because this KEP defines a library, which will be built *bef
 
 ### Graduation Criteria
 
-We will version "kube-proxy-lib" as 1.0 once it is known to be powering at least one backend proxy which can be run by an end userr, which is able to pass the Kubernetes sig-network (non disruptive) and Conformance suites, including Layer 7 and serviceType=Loadbalancer tests which currently run in the prow sig-network e2es.
+We will follow the standard Kubernetes release cycle for the kube-proxy-lib, it will "graduate" once it is used by the existing in-tree proxy implementations and at least one out-of-tree service proxy implementation utilizing it has been completed.
 
 ## Production Readiness Review Questionnaire
 
@@ -220,7 +229,6 @@ We will version "kube-proxy-lib" as 1.0 once it is known to be powering at least
 
 This project will depend on the Kubernetes client-go library to acquire Service, Endpoints, EndpointSlices, and other
 networking API objects.
-
 
 ### Scalability
 
@@ -234,10 +242,10 @@ No
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No, it wont result in new K8s APIs. 
+No, it wont result in new K8s APIs.
 
-However, there will be an in-memory API that is supported by this library, that is incremented overr time
-to reflect changes in the Kubernetes API.  Upgrading a verrsion of this library may require users to change
+However, there will be an in-memory API that is supported by this library, that is incremented over time
+to reflect changes in the Kubernetes API.  Upgrading a version of this library may require users to change
 the way they consume its various data structures.  We will provide migration guides when this happens between
 versions.
 
@@ -247,11 +255,13 @@ No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+No
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The APISErver going down will prevent this library from generally working as would be expected in normal cases, where all incoming
+The APIServer going down will prevent this library from generally working as would be expected in normal cases, where all incoming
 Kubernetes networking data is being polled from the APIServer.  However, since this library will be flexible, there are other ways
 of providing it with networking information, and thus, APIServer outage doesn't have to result in the library itself being entirely unusable.
 
@@ -261,16 +271,13 @@ of providing it with networking information, and thus, APIServer outage doesn't 
 
 ## Implementation History
 
-
-"Librarification" PR into KPNG: https://github.com/kubernetes-sigs/kpng/pull/389. 
+["Librarification" PR into KPNG](https://github.com/kubernetes-sigs/kpng/pull/389).
 
 ## Drawbacks
 
 ## Alternatives
 
-We could retain the existing kube proxy, but that would require copy and pasting alot of code, and continuing to document a the datastructures and golang maps for diffing which were never originally designed for external consumption.  The exsiting Kube proxy's non-explicit mapping and diffing of Kubernetes API objects inspired the KPNG project, originally.
-
-We could also leverage the KPNG project as an overall framework for solving these problems.  The only drawback of this is that it is opinionated towards a raw GRPC implementaiton and other users (i.e. XDS) want something more decoupled possibly.  This realization has inspired this KEP. 
+We could retain the existing kube proxy shared code in core kubernetes and simply better document the datastructures and golang maps used for kubernetes client operations and client side caching. However, that would still require external proxy implementations to copy and paste large amounts of code.  The other option is to not tackle this problem in-tree and to move forward with the singular development of external projects like KPNG as the overall framework for solving these problems.  The drawbacks to this include of this is that it is opinionated towards a raw GRPC implementation and other users (i.e. XDS) want something more decoupled possibly.  This realization has inspired this KEP.
 
 ## Infrastructure Needed (Optional)
 
