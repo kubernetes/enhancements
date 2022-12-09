@@ -142,26 +142,26 @@ aliases:
     - mylesagray
     - phenixblue
   committee-code-of-conduct:
-    - celestehorgan
-    - karenhchu
-    - palnabarun
-    - tpepper
-    - vllry
+    - detiber
+    - endocrimes
+    - hlipsig
+    - jeremyrickard
+    - salaxander
   committee-security-response:
     - cjcullen
+    - enj
     - joelsmith
     - lukehinds
     - micahhausler
-    - swamymsft
     - tabbysable
     - tallclair
   committee-steering:
+    - BenTheElder
     - cblecker
-    - dims
+    - cpanato
     - justaugustus
-    - liggitt
     - mrbobbytables
-    - parispittman
+    - palnabarun
     - tpepper
 ## BEGIN CUSTOM CONTENT
   enhancements-approvers:
