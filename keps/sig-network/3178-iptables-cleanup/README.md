@@ -552,15 +552,33 @@ This section must be completed when targeting beta to a release.
 
 The most likely cause of a rollout failure would be a third-party
 component that depended on one of the no-longer-existing IPTables
-chains. It is impossible to predict exactly how this third-party
-component would fail in this case, but it would likely impact already
-running workloads.
+chains; most likely this would be a CNI plugin (either the default
+network plugin or a chained plugin) or some other networking-related
+component (NetworkPolicy implementation, service mesh, etc).
+
+It is impossible to predict exactly how this third-party component
+would fail in this case, but it would likely impact already running
+workloads.
 
 ###### What specific metrics should inform a rollback?
 
-Any failures would be the result of third-party components being
-incompatible with the change, so no core Kubernetes metrics are likely
-to be relevant.
+If the default network plugin (or plugin chain) depends on the missing
+iptables chains, it is possible that all `CNI_ADD` calls would fail
+and it would become impossible to start new pods, in which case
+kubelet's `started_pods_errors_total` would start to climb. However,
+"impossible to start new pods" would likely be noticed quickly without
+metrics anyway...
+
+For the most part, since failures would likely be in third-party
+components, it would be the metrics of those third-party components
+that would be relevant to diagnosing the problem. Since the problem is
+likely to manifest in the form of iptables calls failing because they
+reference non-existent chains, a metric for "number of iptables
+errors" or "time since last successful iptables update" might be
+useful in diagnosing problems related to this feature. (However, it is
+also quite possible that the third-party components in question would
+have no relevant metrics, and errors would be exposed only via log
+messages.)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -579,16 +597,14 @@ This section must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-There is no simple way to do this because if the feature is working
-correctly there will be no difference in externally-visible behavior.
-(The generated iptables rules will be different, but the _effect_ of
-the generated iptables rules will be the same.)
+The feature is not "used by workloads"; when enabled, it is always in
+effect and affects the cluster as a whole.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] Other (treat as last resort)
 
-  - Details: As above, the feature is not supposed to have any
+  - Details: The feature is not supposed to have any
     externally-visible effect. If anything is not working, it is
     likely to be a third-party component, so it is impossible to say
     what a failure might look like.
