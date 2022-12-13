@@ -582,7 +582,17 @@ messages.)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD
+Yes.
+
+When considering only core kubernetes components, and only
+alpha-or-later releases, upgrade/downgrade and enablement/disablement
+create no additional complications beyond clean installs; kube-proxy
+simply doesn't care about the additional rules that kubelet may or may
+not be creating any more.
+
+Upgrades from pre-alpha to beta-or-later or downgrades from
+beta-or-later to pre-alpha are not supported, and for this reason we
+waited 2 releases after alpha to go to beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -659,6 +669,10 @@ No
 
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
 
 <!--
@@ -700,7 +714,12 @@ Major milestones might include:
 
 - Initial proposal: 2022-01-23
 - Updated: 2022-03-27, 2022-04-29
+- Merged as `implementable`: 2022-06-10
 - Updated: 2022-07-26 (feature gate rename)
+- Alpha release (1.25): 2022-08-23
+- [Blog post about upcoming changes]: 2022-09-07
+
+[Blog post about upcoming changes]: https://kubernetes.io/blog/2022/09/07/iptables-chains-not-api/
 
 ## Drawbacks
 
