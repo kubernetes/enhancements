@@ -1,0 +1,20 @@
+title: Multi-Network
+kep-number: 3698
+authors:
+  - "@mskrocki"
+owning-sig: sig-network
+status: provisional
+creation-date: 2022-12-19
+reviewers:
+  - "@thockin"
+  - "@khenidak"
+  - "@danwinship"
+  - "@aojea"
+  - "@bowei"
+  - "@hbagdi"
+  - "@jpeach"
+approvers:
+  - "@thockin"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
