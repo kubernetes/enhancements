@@ -6,7 +6,7 @@ authors:
   - "@bertinatto"
 owning-sig: sig-storage
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2021-01-22
 reviewers:
   - "@msau42"
