@@ -19,7 +19,7 @@ package repo
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+
 	"os"
 	"path/filepath"
 
@@ -56,5 +56,5 @@ func (r *Repo) WriteKEP(kep *api.Proposal) error {
 
 	logrus.Infof("writing KEP metadata to %s", kepYamlPath)
 
-	return ioutil.WriteFile(kepYamlPath, b, os.ModePerm)
+	return os.WriteFile(kepYamlPath, b, os.ModePerm)
 }

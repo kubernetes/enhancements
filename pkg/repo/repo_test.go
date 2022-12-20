@@ -18,7 +18,6 @@ package repo_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -109,7 +108,7 @@ func TestProposalValidate(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			b, err := ioutil.ReadFile(tc.file)
+			b, err := os.ReadFile(tc.file)
 			require.NoError(t, err)
 
 			var p api.Proposal

@@ -18,7 +18,6 @@ package proposal
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,7 +113,7 @@ func createKEP(kep *api.Proposal, opts *CreateOpts) error {
 		repo.ProposalFilename,
 	)
 
-	if writeErr := ioutil.WriteFile(newPath, template, os.ModePerm); writeErr != nil {
+	if writeErr := os.WriteFile(newPath, template, os.ModePerm); writeErr != nil {
 		return errors.Wrapf(writeErr, "writing KEP data to file")
 	}
 
