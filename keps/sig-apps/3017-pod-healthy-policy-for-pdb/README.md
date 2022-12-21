@@ -128,7 +128,7 @@ and thus should be evicted without being potentially constrained by a Pod Disrup
 
 Currently, we only allow evicting Running pods in case there are enough pods healthy
 (`.status.currentHealthy` is at least equal to `.status.DesiredHealthy`).
-This is to give the application best change to achieve availability and prevent data loss
+This is to give the application best chance to achieve availability and prevent data loss
 by disallowing disruption of starting pods that have not become Healthy (Ready yet).
 
 We also want to allow unconditional eviction of Running pods for applications that do not have
@@ -165,10 +165,6 @@ type PodDisruptionBudgetSpec struct {
     // Additional policies may be added in the future.
     // Clients making eviction decisions should disallow eviction of unhealthy pods
     // if they encounter an unrecognized policy in this field.
-    //
-    // This field is alpha-level. The eviction API uses this field when
-    // the feature gate PDBUnhealthyPodEvictionPolicy is enabled (disabled by default).
-    // +optional
     UnhealthyPodEvictionPolicy *UnhealthyPodEvictionPolicyType `json:"unhealthyPodEvictionPolicy,omitempty" protobuf:"bytes,4,opt,name=unhealthyPodEvictionPolicy"`
 }
 
