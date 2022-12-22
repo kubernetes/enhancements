@@ -121,7 +121,7 @@ SIG Architecture for cross-cutting KEPs).
 
 -->
 
-# KEP-XXXXX: IMA namespace support inside containers
+# KEP-3702: IMA namespace support inside containers
 
   
 
@@ -130,7 +130,7 @@ SIG Architecture for cross-cutting KEPs).
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
 
 title can help communicate what the KEP is and should be considered as part of
-
+7
 any review.
 
 -->
