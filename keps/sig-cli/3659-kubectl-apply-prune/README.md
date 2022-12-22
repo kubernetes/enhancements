@@ -185,7 +185,6 @@ know that this has succeeded?
 
 - MUST NOT formalize the grouping of objects under management as an "application" or other high-level construct
 - MUST NOT require users to manually/independently construct the grouping, which would be a significant reduction in UX compared to the current alpha
-- MUST NOT require server-side API changes
 - MUST NOT require any particular CRDs to be installed
 - MAY still have limited performance when used to manage thousands of resources of hundreds of types in a single operation (MUST NOT be expected to overcome performance limitations of issuing many individual deletion requests, for example)
 
@@ -521,6 +520,21 @@ For GKs that are namespace scoped, we would normally expect those to be part of 
 As with `applyset.k8s.io/contains-group-kinds`, this list of namespaces must be sorted alphabetically, and should be minimal (ideally other than during apply and prune operations).
 
 As cross-namespace ApplySets are not particularly encouraged, we do not currently optimize this further.  In particular, we do not specify the GKs per namespace.  We can add more annotations in future should the need arise.
+
+### Objects with owner references
+
+>  <<[UNRESOLVED @justinsb @KnVerey]>>
+>
+> If an object in the set we retrieve for pruning
+> has owner references, what should we do? This would be
+> somewhat unexpected; it implies that kubectl apply doesn't
+> really own the object, apparently.
+> We could consider this an error, or perhaps warn
+> and skip the object, assuming GC should take care
+> of cleaning it up.
+>
+> <<[/UNRESOLVED]>>
+
 
 ### Kubectl Reference Implementation
 
