@@ -197,7 +197,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 -->
 
 During rolling upgrades, there are two versions of Pods from the deployments in the cluster,
-but the inter-Pods Affinity plugin cannot understand that, and will take all Pods matching condition defined in `PodAffinityTerm` into consideration.
+but the inter-Pods Affinity plugin cannot understand that, and will take all Pods matching conditions defined in `PodAffinityTerm` into consideration.
 
 It results in filtering out Nodes that actually should go to the scoring phase, 
 or giving low scores to Nodes that should get higher scores.
@@ -213,7 +213,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Take a specific label into consideration as default. In other words, create a well-know label to identify the Pod group.
+- Take a specific label into consideration as default. In other words, create a well-known label to identify the Pod group.
 
 ## Proposal
 
@@ -390,7 +390,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 **Score**
 - `k8s.io/kubernetes/test/integration/scheduler/scoring/priorities_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadScoring
 
-Also, we should make sure this feature bring no significant performance degradation in both Filter and Score.
+Also, we should make sure this feature brings no significant performance degradation in both Filter and Score.
 
 - `k8s.io/kubernetes/test/integration/scheduler_perf/scheduler_perf_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=BenchmarkPerfScheduling
 
@@ -411,7 +411,7 @@ N/A
 --
 
 This feature doesn't introduce any new API endpoints and doesn't interact with other components. 
-So, E2E tests doesn't add extra value to integration tests.
+So, E2E tests don't add extra value to integration tests.
 
 ### Graduation Criteria
 
