@@ -4,7 +4,7 @@ authors:
   - "@aojea"
 owning-sig: sig-network
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2021-12-02
 reviewers:
   - "@thockin"
