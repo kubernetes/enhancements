@@ -13,7 +13,6 @@
     - [Phase 1 API Changes](#phase-1-api-changes)
       - [Inline Definition - ContainerNotifier](#inline-definition---containernotifier)
       - [PodNotification](#podnotification)
-        - [PodNotificationStatus](#podnotificationstatus)
     - [Phase 2 API Additions](#phase-2-api-additions)
       - [Notification](#notification)
       - [ContainerNotifierHandler](#containernotifierhandler)
