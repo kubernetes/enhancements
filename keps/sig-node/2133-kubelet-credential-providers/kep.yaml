@@ -7,7 +7,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-auth
   - sig-cloud-provider
-status: implementable
+status: implemented
 creation-date: 2020-11-12
 reviewers:
   - "@cheftako"
