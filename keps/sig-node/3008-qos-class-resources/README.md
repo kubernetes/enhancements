@@ -102,6 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [ContainerConfig](#containerconfig)
     - [UpdateContainerResourcesRequest](#updatecontainerresourcesrequest)
     - [PodSandboxConfig](#podsandboxconfig)
+    - [ContainerStatus](#containerstatus)
     - [RuntimeStatus](#runtimestatus)
     - [Consts](#consts)
   - [Pod annotations](#pod-annotations)
@@ -791,6 +792,21 @@ assignments at sandbox creation time (`RunPodSandboxRequest`).
 +    // QoS resources the pod will be assigned to.
 +    map<string, string> classes = 1;
 +}
+```
+
+#### ContainerStatus
+
+The `ContainerResources` message (part of `ContainerStatus`) will be extended
+to report back QoS-class resource assignments of a container, similar to other
+resources.
+
+```diff
+@@ -1251,6 +1269,8 @@ message ContainerResources {
+     LinuxContainerResources linux = 1;
+     // Resource limits configuration specific to Windows container.
+     WindowsContainerResources windows = 2;
++    // Configuration of QoS resources.
++    ContainerQoSResources qos_resources = 3;
 ```
 
 #### RuntimeStatus
