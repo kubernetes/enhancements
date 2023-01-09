@@ -106,7 +106,7 @@ From there, OpenTelemetry trace data can be exported to a tracing backend of cho
 specified within `kubernetes/component-base` with the default URL to make the kubelet send its spans to the collector.
 Alternatively, I can point the kubelet at an OpenTelemetry collector listening on a different port or URL if I need to.
 
-#### Continuous Trace Collection
+#### Continuous trace collection
 
 As a cluster administrator or cloud provider, I would like to collect gRPC and HTTP trace data from the transactions between the API server and the 
 kubelet and interactions with a node's container runtime (Container Runtime Interface) to debug cluster problems.  I can set the `SamplingRatePerMillion`
@@ -115,7 +115,7 @@ debug, I can search span metadata or specific nodes to find a trace which displa
 The sampling rate for trace exports can be configured based on my needs. I can collect each node's kubelet trace data as distinct tracing services
 to diagnose node issues.
 
-##### Example Scenarios
+##### Example scenarios
 
 * Latency or timeout experienced when:
     * Attach or exec to running containers
