@@ -16,7 +16,7 @@ approvers:
   - "@BenTheElder"
   - "@puerco"
   - "@ameukam"
-stage: beta
+stage: stable
 latest-milestone: "v1.27"
 milestone:
   stable: "v1.27"

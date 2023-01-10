@@ -72,7 +72,6 @@ This KEP is unusual and doesn't actually make/propose changes to the Kubernetes 
 The Kubernetes project has created and runs the `registry.k8s.io` image registry which is fully controlled by the community.
 This registry has been [GA for several months](https://kubernetes.io/blog/2022/11/28/registry-k8s-io-faster-cheaper-ga/) now and we need to freeze the old image registry.
 
-
 ## Motivation
 
 Running public image registries is very expensive and eats up a significant chunk of the project's Infrastructure budget. We built `registry.k8s.io` image registry to serve images from various origins around the world depending on the location of the user. For example, an a kops Kubernetes cluster in eu-west-1 can pull images from an AWS S3 bucket in the same region which is very fast and more importantly very cheap for the Kubernetes project.
@@ -119,17 +118,6 @@ This is the planned technical changes(grouped by repos):
 
 This is not applicable.
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 ### Graduation Criteria
 
 This is not applicable.
@@ -138,18 +126,6 @@ This is not applicable.
 
 When users upgrade to various kubernetes versions that use the new image registry, they will be able to pull images from the new
 registry.
-
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
 
 ### Version Skew Strategy
 
@@ -165,17 +141,6 @@ This is not applicable.
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
 ## Drawbacks
 
 This is not applicable.
@@ -187,11 +152,6 @@ Why should this KEP _not_ be implemented?
 ## Alternatives
 
 We keep pushing new images to the old registry.
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
 
 ## Infrastructure Needed (Optional)
 
