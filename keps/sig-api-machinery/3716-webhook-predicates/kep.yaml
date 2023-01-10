@@ -4,6 +4,7 @@ authors:
   - "@tallclair"
 owning-sig: sig-api-machinery
 participating-sigs:
+  - sig-auth
 status: provisional
 creation-date: 2023-01-09
 reviewers:
