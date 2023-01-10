@@ -889,7 +889,8 @@ version of the API and update to a matching kubelet and making node schedulable 
 Downgrade involves doing the above in reverse.
 
 ### Version Skew Strategy
-Kubelet and the CRI runtime versions are expected to match so we don't have to worry about.
+CRI changes were merged in v1.25 in order to enable runtimes to implement support.
+  - containerd added support for this feature in 1.6.9
 
 Previous versions of clients that are unaware of the new ResizePolicy fields would set them
 to nil. API server mutates such updates by copying non-nil values from old Pod to the current
@@ -898,7 +899,42 @@ Pod.
 A previous version of kubelet interprets mutation to Pod Resources as a Container definition
 change and will restart the container with the new Resources. This could lead to Node resource
 over-subscription. In order to address this, the feature-gate will remain default false for
-atleast two versions after the initial release that carries it.
+atleast two versions after v1.27 alpha release. i.e: beta is planned for v1.29 and
+InPlacePodVeritcalScaling feature-gate will be true in versions v1.29+
+
+Allowed [version skews](https://kubernetes.io/releases/version-skew-policy/) are handled as below:
+
+| apiserver ver -> |    v1.27    |    v1.28     |    v1.29    |    v1.30    |
+|------------------|-------------|--------------|-------------|-------------|
+| kubelet v1.25    |     N       |     X        |     X       |     X       |
+| kubelet v1.26    |     N       |     N        |     X       |     X       |
+| kubelet v1.27    |     N       |     N        |     A       |     X       |
+| kubelet v1.28    |     X       |     N        |     A       |     A       |
+| kubelet v1.29    |     X       |     X        |     A       |     N       |
+| kubelet v1.30    |     X       |     X        |     X       |     N       |
+| scheduler v1.26  |     N       |     X        |     X       |     X       |
+| scheduler v1.27  |     N       |     N        |     X       |     X       |
+| scheduler v1.28  |     X       |     N        |     B       |     X       |
+| scheduler v1.29  |     X       |     X        |     N       |     N       |
+| scheduler v1.30  |     X       |     X        |     X       |     N       |
+| kubectl v1.26    |     C       |     X        |     X       |     X       |
+| kubectl v1.27    |     N       |     N        |     X       |     X       |
+| kubectl v1.28    |     N       |     N        |     N       |     X       |
+| kubectl v1.29    |     X       |     N        |     N       |     N       |
+| kubectl v1.30    |     X       |     X        |     N       |     N       |
+| kubectl v1.31    |     X       |     X        |     X       |     N       |
+
+**X**: Not allowed
+
+**N**: No special handling needed.
+
+**A**: kubelet sets PodStatus.Resize=Infeasible if it sees PodStatus.Resize=Proposed
+       when feature-gate is disabled on kubelet
+
+**B**: Use max(ResourcesAllocated, Requests) if PodStatus.Resize != "" (empty)
+
+**C**: dropDisabledPodFields/dropDisabledPodStatusFields function sets ResizePolicy,
+       ResourcesAllocated, and ContainerStatus.Resources fields to nil.
 
 ## Production Readiness Review Questionnaire
 

@@ -36,7 +36,7 @@ latest-milestone: "v1.27"
 
 milestone:
   alpha: "v1.27"
-  beta: "v1.28"
+  beta: "v1.29"
   stable: "v1.30"
 
 feature-gates:
