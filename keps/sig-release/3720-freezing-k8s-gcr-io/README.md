@@ -1,6 +1,6 @@
 # KEP-3720: Freeze `k8s.gcr.io` image registry
 
-The change proposed by this KEP is very unusual as the engineering work will be done on release-tools. However, this is a major change to the project hence the KEP.
+The change proposed by this KEP is very unusual as the engineering work will be done in the k/k repository. However, this is a major change to the project hence the KEP.
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -69,37 +69,29 @@ This KEP is unusual and doesn't actually make/propose changes to the Kubernetes 
 
 ## Summary
 
-The Kubernetes project has created and runs `registry.k8s.io` image registry which is fully controlled by the community.
+The Kubernetes project has created and runs the `registry.k8s.io` image registry which is fully controlled by the community.
 This registry has been [GA for several months](https://kubernetes.io/blog/2022/11/28/registry-k8s-io-faster-cheaper-ga/) now and we need to freeze the old image registry.
 
 
 ## Motivation
 
-Running image registries is very expensive and eats up a significant chunk of the projects Infrastructure costs. We built `registry.k8s.io` image registry to serve images from various origins around the world depending on the location of the user. For example, an AWS Cluster API cluster in eu-west-1 can pull images from an AWS S3 bucket in the same region which is very fast and more importantly very cheap for the Kubernetes project.
+Running public image registries is very expensive and eats up a significant chunk of the project's Infrastructure budget. We built `registry.k8s.io` image registry to serve images from various origins around the world depending on the location of the user. For example, an a kops Kubernetes cluster in eu-west-1 can pull images from an AWS S3 bucket in the same region which is very fast and more importantly very cheap for the Kubernetes project.
 
-There was a plan to redirect `k8s.gcr.io` to `registry.k8s.io` but it didn't work out so we backported the image registry defaults to 1.26.x, 1.25, 1.24, 1.23, and 1.22 so all the patch releases from December 2022 will using the new registry by default.
+There was a plan to redirect `k8s.gcr.io` to `registry.k8s.io` but it didn't [work out](https://kubernetes.slack.com/archives/CCK68P2Q2/p1666725317568709) so we backported the image registry defaults to 1.25, 1.24, 1.23, and 1.22 so all the patch releases from December 2022 will using the new registry by default.
 
 We are currently exceeding our budget as it will take quite a while for end users to upgrade Kubernetes to v1.25 so we want to incentivise our end users to move to the new registry as fast as possible by freezing the registry by 1.27. This would mean that all subsequent image releases will not be available on the old registry.
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
 
 ### Goals
 
-Freeze `k8s.gcr.io` image registry and push all new images and tags to the `registry.k8s.io` registry.
+Freeze `k8s.gcr.io` image registry and push all new images and tags exclusively to the `registry.k8s.io` image registry.
 
 ### Non-Goals
 
-- `registry.k8s.io` internal implementations details. That is handled separately by sig-k8s-infra
+- `registry.k8s.io` internal implementations details. That is handled separately by sig-k8s-infra.
 
 ## Proposal
 
-Freeze the `k8s.gcr.io` image by not pushing any new digests or tags after 1.27 release. The 1.27 release itself won't be available on `k8s.gcr.io`
+Freeze the `k8s.gcr.io` image by not pushing any new digests or tags after 1.27 release. The 1.27 release itself won't be available on `k8s.gcr.io`.
 
 ### Risks and Mitigations
 
@@ -110,16 +102,16 @@ affect other users of k8s.gcr.io who should have already updated their helm char
 
 The image promotion process is described [here](https://github.com/kubernetes/k8s.io/tree/main/k8s.gcr.io). Please read it for full details.
 
-This is the planned technical changes(grouped by repos).
+This is the planned technical changes(grouped by repos):
 
 - k-sigs/promo-tools
   - merge https://github.com/kubernetes-sigs/promo-tools/pull/669
 - k/k8s.io
   - Fix https://github.com/kubernetes/k8s.io/issues/4611
   - clean up the contents of the `registry.k8s.io` folder. Most of the content should be in k/registry.k8s.io repository
-  - duplicate the top level `k8s.gcr.io` and call the new folder `registry.k8s.io`
+  - duplicate the top level folder `k8s.gcr.io` in the repo and call it `registry.k8s.io`
 - k/test-infra
-  - blockade the k8s.gcr.io folder in k/k8s.io repository
+  - blockade the k8s.gcr.io folder in k/k8s.io repository. blockade is a prow plugin that rejects PRs that modify specific folders/files.
   - update the ProwJobs [post-k8sio-image-promo](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes/sig-k8s-infra/trusted/releng/releng-trusted.yaml) and [pull-k8sio-cip](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes/sig-k8s-infra/releng/artifact-promotion-presubmits.yaml) `thin-manifest-dir` flags to point to the new folder
 
 
@@ -166,7 +158,6 @@ This is not applicable.
 ## Communication Plan
 
 This is a major change and requires an appropiate communication plan.
-
 
 ## Production Readiness Review Questionnaire
 
