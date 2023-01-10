@@ -133,7 +133,7 @@ This is not applicable.
 
 ## Communication Plan
 
-This is a major change and requires an appropiate communication plan.
+This is a major change and requires an appropriate communication plan.
 
 ## Production Readiness Review Questionnaire
 
