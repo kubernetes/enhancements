@@ -1,6 +1,6 @@
 # KEP-3720: Freeze `k8s.gcr.io` image registry
 
-The change proposed by this KEP is very unusual as the engineering work will be done in the k/k repository. However, this is a major change to the project hence the KEP.
+The change proposed by this KEP is very unusual as the engineering work will **not** be done in the k/k repository. However, this is a major change to the project hence the KEP.
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
