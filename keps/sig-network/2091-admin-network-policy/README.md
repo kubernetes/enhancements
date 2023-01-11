@@ -164,6 +164,14 @@ under `policy.networking.k8s.io` API group:
 - AdminNetworkPolicy
 - BaselineAdminNetworkPolicy
 
+The AdminNetworkPolicy(ANP) and BaselineAdminNetworkPolicy(BANP) resources will
+help the administrators:
+1. Set strict security rules for the cluster, i.e. a developer CANNOT override
+these rules by creating NetworkPolicies that applies to the same workloads as the
+AdminNetworkPolicy does.
+2. Set baseline security rules that describes default connectivity for cluster
+workloads, which CAN be overridden by developer NetworkPolicies if needed.
+
 ### AdminNetworkPolicy resource
 
 An AdminNetworkPolicy (ANP) resource will help the administrators set strict security
@@ -209,11 +217,10 @@ The policy instances will be ordered based on the numeric priority assigned to e
 ANP. `Priority` is a 32 bit integer value, where a smaller number corresponds to
 a higher precedence. The lowest numeric priority value is "0", which corresponds
 to the highest precedence. Larger numbers have lower precedence.
-Any ANP will have higher precedence over the namespaced NetworkPolicy instances
-in the cluster. If traffic matches both an ANP rule and a NetworkPolicy rule, the
-only case where the NetworkPolicy rule will be evaluated instead of ANP rule, is
-when there is a third higher-precedence ANP `Pass` rule that allows it to bypass
-any lower-precedence ANP rules.
+All ANPs will have higher precedence over NetworkPolicies in the cluster. If
+traffic matches both an ANP rule and a NetworkPolicy rule, the only case where the
+NetworkPolicy rule will be evaluated is when there is a third higher-precedence
+ANP `Pass` rule that allows it to bypass any lower-precedence ANP rules.
 
 The relative precedence of the rules within a single ANP object (all of which
 share a priority) will be determined by the order in which the rule is written.
@@ -248,18 +255,17 @@ names.
 
 An BaselineAdminNetworkPolicy (BANP) resource will help the administrators set
 baseline security rules that describes default connectivity for cluster workloads,
-which CAN be overridden by developer NetworkPolicies if needed.
+which CAN be overridden by developer owned NetworkPolicies if needed.
 
 The BaselineAdminNetworkPolicy spec will look almost identical to that of an ANP,
 except for two important differences:
 1. There is no `Priority` field associated with BaselineAdminNetworkPolicy.
-Note that in writing a BaselineAdminNetworkPolicy, admins can still stack a narrower
-`Allow` on top of a wider `Deny` rule for example, by positioning the `Allow` rule
-higher in the ingress/egress rule list, which will result it to be evaluated
-first. However, the authors of this KEP did not have a valid usecase for creating
-multiple BaselineAdminNetworkPolicies in a cluster with distinct policy-level
-priorities. BANPs are intended for setting cluster default security postures, and
-in most cases the subject of such policy should be the entire cluster.
+Note that in writing a BaselineAdminNetworkPolicy, admins can create different
+priorities in rules by placing them before or after one another. However, the
+authors of this KEP did not find a valid usecase for creating multiple
+BaselineAdminNetworkPolicies in a cluster with distinct policy-level priorities.
+BANPs are intended for setting cluster default security postures, and in most
+cases the subject of such policy should be the entire cluster.
 2. There is no `Pass` action for BaselineAdminNetworkPolicy rules.
 
 ### User Stories
@@ -418,116 +424,148 @@ API group:
 
 // AdminNetworkPolicy describes cluster-level network traffic control rules
 type AdminNetworkPolicy struct {
-  metav1.TypeMeta
-  metav1.ObjectMeta
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata"`
 
-  // Specification of the desired behavior of AdminNetworkPolicy.
-  Spec     AdminNetworkPolicySpec
+	// Specification of the desired behavior of AdminNetworkPolicy.
+	Spec AdminNetworkPolicySpec `json:"spec"`
 
   // Status is the status to be reported by the implementation, this is not
   // standardized in alpha and consumers should report what they see fit in
   // relation to their AdminNetworkPolicy implementation.
   // +optional
-  Status  AdminNetworkPolicyStatus
+	Status AdminNetworkPolicyStatus `json:"status,omitempty"`
 }
 
 type AdminNetworkPolicyStatus struct {
   Conditions   []metav1.Condition
 }
 
-// AdminNetworkPolicySpec provides the specification of AdminNetworkPolicy
+// AdminNetworkPolicySpec defines the desired state of AdminNetworkPolicy.
 type AdminNetworkPolicySpec struct {
-  // Priority is a value from 0 to 1000. Rules with lower numeric priority values
-  // have higher precedence, and are checked before rules with higher numeric
-  // priority values. All AdminNetworkPolicy rules have higher precedence than
-  // NetworkPolicy or BaselineAdminNetworkPolicy rules.
-  Priority    *int32
+	// Priority is a value from 0 to 1000. Rules with lower priority values have
+	// higher precedence, and are checked before rules with higher priority values.
+	// All AdminNetworkPolicy rules have higher precedence than NetworkPolicy or
+	// BaselineAdminNetworkPolicy rules
+	// The relative precedence of the rules within a single ANP object (all of
+	// which share the priority) will be determined by the order in which the rule
+	// is written. Thus, a rule that appears at the top of the ingress/egress rules
+	// would take the highest precedence. If ingress rules are defined before egress
+	// rules in the same ANP object then ingress would take precedence and vice versa.
+	// The behavior is undefined if two ANP objects have same priority.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1000
+	Priority int32 `json:"priority"`
 
-  // Subject defines the objects to which this AdminNetworkPolicy applies.  
-  Subject     AdminNetworkPolicySubject
+	// Subject defines the pods to which this AdminNetworkPolicy applies.
+	Subject AdminNetworkPolicySubject `json:"subject"`
 
-  // List of Ingress rules to be applied to the selected objects.
-  // A total of 100 rules will be allowed per each network policy instance,
-  // this rule count will be calculated as the total summation of the
-  // Ingress and Egress rules in a single AdminNetworkPolicy Instance.
-  Ingress     []AdminNetworkPolicyIngressRule
+	// Ingress is the list of Ingress rules to be applied to the selected pods.
+	// A total of 100 rules will be allowed in each ANP instance. ANPs with no
+	// ingress rules do not affect ingress traffic.
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	Ingress []AdminNetworkPolicyIngressRule `json:"ingress,omitempty"`
 
-  // List of Egress rules to be applied to the selected objects.
-  // A total of 100 rules will be allowed per each network policy instance,
-  // this rule count will be calculated as the total summation of the
-  // Ingress and Egress rules in a single AdminNetworkPolicy Instance.
-  Egress      []AdminNetworkPolicyEgressRule
-}
-
-// AdminNetworkPolicySubject defines what objects the policy selects.
-// Exactly one of the `Namespaces` or `Pods` pointers should be set.
-type AdminNetworkPolicySubject struct {
-  Namespaces    *metav1.LabelSelector
-  Pods          *NamespacedPodSubject
+	// Egress is the list of Egress rules to be applied to the selected pods.
+	// A total of 100 rules will be allowed in each ANP instance. ANPs with no
+	// egress rules do not affect egress traffic.
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	Egress []AdminNetworkPolicyEgressRule `json:"egress,omitempty"`
 }
 
 // AdminNetworkPolicyIngressRule describes an action to take on a particular
 // set of traffic destined for pods selected by an AdminNetworkPolicy's
-// Subject field. The traffic must match both ports and from.
+// Subject field.
 type AdminNetworkPolicyIngressRule struct {
-  // Name is an identifier for this rule, that should be no more than 100 characters
-  // in length.
-  // +optional
-  Name         string
+	// Name is an identifier for this rule, that may be no more than 100 characters
+	// in length. This field should be used by the implementation to help
+	// improve observability, readability and error-reporting for any applied
+	// AdminNetworkPolicies.
+	// +optional
+	// +kubebuilder:validation:MaxLength=100
+	Name string `json:"name,omitempty"`
 
-  // Action specifies whether this rule must pass, allow or deny traffic.
-  // Allow: allows the selected traffic
-  // Deny: denies the selected traffic
-  // Pass: allows the selected traffic to skip and remaining positive priority (non-zero)
-  // ANP rules and be delegated by K8's Network Policy.
-  Action       AdminNetPolRuleAction
+	// Action specifies the effect this rule will have on matching traffic.
+	// Currently the following actions are supported:
+	// Allow: allows the selected traffic (even if it would otherwise have been denied by NetworkPolicy)
+	// Deny: denies the selected traffic
+	// Pass: instructs the selected traffic to skip any remaining ANP rules, and
+	// then pass execution to any NetworkPolicies that select the pod.
+	// If the pod is not selected by any NetworkPolicies then execution
+	// is passed to any BaselineAdminNetworkPolicies that select the pod.
+	Action AdminNetworkPolicyRuleAction `json:"action"`
 
-  // Ports allows for matching on traffic based on port and protocols.
-  Ports        []AdminNetworkPolicyPort
+	// From is the list of sources whose traffic this rule applies to.
+	// If any AdminNetworkPolicyPeer matches the source of incoming
+	// traffic then the specified action is applied.
+	// This field must be defined and contain at least one item.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
+	From []AdminNetworkPolicyPeer `json:"from"`
 
-  // List of sources from which traffic will be allowed/denied/passed to the entities
-  // selected by this AdminNetworkPolicyRule. Items in this list are combined using a logical OR
-  // operation. If this field is empty, this rule matches no sources.
-  // If this field is present and contains at least one item, this rule
-  // allows/denies/passes traffic from the defined AdminNetworkPolicyPeer(s)
-  From         []AdminNetworkPolicyPeer
+	// Ports allows for matching traffic based on port and protocols.
+	// If Ports is not set then the rule does not filter traffic via port.
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	Ports *[]AdminNetworkPolicyPort `json:"ports,omitempty"`
 }
 
 // AdminNetworkPolicyEgressRule describes an action to take on a particular
 // set of traffic originating from pods selected by a AdminNetworkPolicy's
-// Subject field. The traffic must match both ports and to.
+// Subject field.
 type AdminNetworkPolicyEgressRule struct {
-  // Name is an identifier for this rule, that should be no more than 100 characters
-  // in length.
-  // +optional
-  Name         string
+	// Name is an identifier for this rule, that may be no more than 100 characters
+	// in length. This field should be used by the implementation to help
+	// improve observability, readability and error-reporting for any applied
+	// AdminNetworkPolicies.
+	// +optional
+	// +kubebuilder:validation:MaxLength=100
+	Name string `json:"name,omitempty"`
 
-  // Action specifies whether this rule must pass, allow or deny traffic.
-  // Allow: allows the selected traffic
-  // Deny: denies the selected traffic
-  // Pass: allows the selected traffic to skip and remaining positive priority (non-zero)
-  // ANP rules and be delegated by K8's Network Policy.
-  Action       AdminNetPolRuleAction
+	// Action specifies the effect this rule will have on matching traffic.
+	// Currently the following actions are supported:
+	// Allow: allows the selected traffic (even if it would otherwise have been denied by NetworkPolicy)
+	// Deny: denies the selected traffic
+	// Pass: instructs the selected traffic to skip any remaining ANP rules, and
+	// then pass execution to any NetworkPolicies that select the pod.
+	// If the pod is not selected by any NetworkPolicies then execution
+	// is passed to any BaselineAdminNetworkPolicies that select the pod.
+	Action AdminNetworkPolicyRuleAction `json:"action"`
 
-  // Ports allows for matching on traffic based on port and protocols.
-  Ports        []AdminNetworkPolicyPort
+	// To is the List of destinations whose traffic this rule applies to.
+	// If any AdminNetworkPolicyPeer matches the destination of outgoing
+	// traffic then the specified action is applied.
+	// This field must be defined and contain at least one item.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
+	To []AdminNetworkPolicyPeer `json:"to"`
 
-  // List of destinations to which traffic will be allowed/denied/passed from the entities
-  // selected by this AdminNetworkPolicyRule. Items in this list are combined using a logical OR
-  // operation. If this field is empty, this rule matches no destinations.
-  // If this field is present and contains at least one item, this rule
-  // allows/denies/passes traffic to the defined AdminNetworkPolicyPeer(s)
-  To           []AdminNetworkPolicyPeer
+	// Ports allows for matching traffic based on port and protocols.
+	// If Ports is not set then the rule does not filter traffic via port.
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	Ports *[]AdminNetworkPolicyPort `json:"ports,omitempty"`
 }
 
+
 const (
-  // RuleActionPass enables admins to provide exceptions to ClusterNetworkPolicies and delegate this rule to
-  // K8s NetworkPolicies.
-  AdminNetPolRuleActionPass    AdminNetPolRuleAction = "Pass"
-  // RuleActionDeny enables admins to deny specific traffic.
-  AdminNetPolRuleActionDeny    AdminNetPolRuleAction = "Deny"
-  // RuleActionAllow enables admins to specifically allow certain traffic.
-  AdminNetPolRuleActionAllow   AdminNetPolRuleAction = "Allow"
+	// AdminNetworkPolicyRuleActionAllow indicates that matching traffic will be
+	// allowed regardless of NetworkPolicy and BaselineAdminNetworkPolicy
+	// rules. Users cannot block traffic which has been matched by an "Allow"
+	// rule in an AdminNetworkPolicy.
+	AdminNetworkPolicyRuleActionAllow AdminNetworkPolicyRuleAction = "Allow"
+	// AdminNetworkPolicyRuleActionDeny indicates that matching traffic will be
+	// denied before being checked against NetworkPolicy or
+	// BaselineAdminNetworkPolicy rules. Pods will never receive traffic which
+	// has been matched by a "Deny" rule in an AdminNetworkPolicy.
+	AdminNetworkPolicyRuleActionDeny AdminNetworkPolicyRuleAction = "Deny"
+	// AdminNetworkPolicyRuleActionPass indicates that matching traffic will
+	// bypass further AdminNetworkPolicy processing (ignoring rules with lower
+	// precedence) and be allowed or denied based on NetworkPolicy and
+	// BaselineAdminNetworkPolicy rules.
+	AdminNetworkPolicyRuleActionPass AdminNetworkPolicyRuleAction = "Pass"
 )
 ```
 
@@ -659,16 +697,29 @@ resources:
 
 ```golang
 
+// AdminNetworkPolicySubject defines what resources the policy applies to.
+// Exactly one field must be set.
+// +kubebuilder:validation:MaxProperties=1
+// +kubebuilder:validation:MinProperties=1
+type AdminNetworkPolicySubject struct {
+	// Namespaces is used to select pods via namespace selectors.
+	// +optional
+	Namespaces *metav1.LabelSelector `json:"namespaces,omitempty"`
+	// Pods is used to select pods via namespace AND pod selectors.
+	// +optional
+	Pods *NamespacedPodSubject `json:"pods,omitempty"`
+}
+
 // NamespacedPodSubject allows the user to select a given set of pod(s) in
 // selected namespace(s)
 type NamespacedPodSubject struct {
   // This field follows standard label selector semantics; if empty,
   // it selects all Namespaces.  
-  NamespaceSelector  metav1.LabelSelector
+  NamespaceSelector  metav1.LabelSelector `json:"namespaceSelector"`
 
   // Used to explicitly select pods within a namespace; if empty,
   // it selects all Pods.  
-  PodSelector        metav1.LabelSelector
+  PodSelector        metav1.LabelSelector `json:"podSelector"`
 }
 
 // AdminNetworkPolicyPort describes how to select network ports on pod(s).
