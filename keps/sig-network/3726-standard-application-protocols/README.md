@@ -160,7 +160,7 @@ This loose definition has led us to have instances where implementations do diff
 
 One good example is `HTTP2`. 
 * In GKE you can use `appProtocol: HTTP2` and it will describe HTTP2 over TLS (https://cloud.google.com/kubernetes-engine/docs/how-to/secure-gateway#load-balancer-tls).
-* While in Istio it will be h2c (HTTP2 over cleartext.
+* While in Istio it will be h2c (HTTP2 over cleartext).
 
 That creates a problem where users with GKE and Istio in their cluster can have very different behaviors for the same `appProtocol` value.
 
