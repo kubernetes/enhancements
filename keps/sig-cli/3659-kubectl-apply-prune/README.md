@@ -278,13 +278,22 @@ For a more detailed walkthrough of the implementation along with examples, pleas
  - **GVK allowlist mismatch**: the allowlist is hardcoded (either by kubectl or by the user) and as such it is not tied in any way to the list of kinds we actually need to manage to prune effectively. For example, the default allowlist will never prune PDBs, regardless of whether current or previous operations created them.
  - **namespace mismatch**: the namespace list is constructed dynamically from the _current_ set of objects, which causes object leakage when the current operation touches fewer namespaces than the previous one did. For example, if the initial operation touched namespaces A and B, and the second touched only B, nothing in namespace A will be pruned.
 
- TODO: link issues
+Related issues:
+- https://github.com/kubernetes/kubernetes/issues/106284
+- https://github.com/kubernetes/kubernetes/issues/57916
+- https://github.com/kubernetes/kubernetes/issues/40635
+- https://github.com/kubernetes/kubernetes/issues/66430
+- https://github.com/kubernetes/kubectl/issues/555
 
 #### UX: flag changes affect correctness
 
 If the user changes the `--prune-allowlist` or `--selector` flags used with the apply command, this may radically change the scoping of the pruning operation, causing it over- or under-select resources. For example, if they add a new label to all their resources and adjust the `--selector` accordingly, this will have the side-effect of leaking ALL resources that should have been deleted during the operation (nothing will be pruned). On the contrary, if `--prune-allowlist` is expanded to include additional types or `--selector` is made more general, any objects that have been manually applied by other actors in the system may automatically get scoped in.
 
-TODO: link issues
+There was also a previous bad interaction with the `--force` flag, which was worked around by disabling that flag combination at the flag parsing stage.
+
+Related issues:
+- https://github.com/kubernetes/kubernetes/issues/89322
+- https://github.com/kubernetes/kubectl/issues/1239
 
 #### Scalability
 
@@ -292,27 +301,33 @@ To discover the set of resources to be pruned, kubectl makes a LIST query to eve
 
 A related issue is that the identifier of ownership for pruning is the last-applied annotation, which is not something that can be queried on. This means we cannot avoid retrieving irrelevant resources in the LIST requests we make.
 
-TODO: link issues
-
 #### UX: easy to trigger inadvertent over-selection
 
 The default allowlist, in addition to being incomplete, is unintuitive. Notably, it includes the cluster-scoped Namespace and PersistentVolume resources, and will prune these resources even if the `--namespace` flag is used. Given that Namespace deletion cascades to all the contents of the namespaces, this is particularly catastropic.
 
 Because every `apply` operation uses the same identity for the purposes of pruning (i.e. has the same last-applied annotation), it is easy to make a small change to the scoping of the command that will inadvertantly cover resources managed by other operations, with potentially disasterous effects.
 
-TODO: link issues
+Related issues:
+- https://github.com/kubernetes/kubectl/issues/1272
+- https://github.com/kubernetes/kubernetes/issues/110905
+- https://github.com/kubernetes/kubernetes/issues/108161
+- https://github.com/kubernetes/kubernetes/issues/74414
 
 #### UX: difficult to use with custom resources
 
 Because the default allowlist is hard-coded in the kubectl codebase, it inherently does not include any custom resources. Users who want to prune custom resources necessarily need to specify their own allowlist and keep it up to date.
 
-TODO: link issues
+Related issues:
+- https://github.com/kubernetes/kubectl/issues/1310
 
 #### Sustainability: incompatibility with server-side apply
 
 While it is not disabled, pruning does not work correctly with server-side apply today. If the objects being managed were created with server-side apply, or were migrated to server-side apply using a custom field manager, they will never be pruned. If they were created with client-side apply and migrated to server-side using the default field manager, they will be pruned as needed. The worst case is that the managed set includes objects in multiple of these states, leading to inconsistent behaviour.
 
 One solution to this would be to use the presence of the current field manager as the indicator of eligibility for pruning. However, field managers cannot be queried on any more than annotations can, so are not a great for an identifier we want to select on. It can also be considered problematic that the default state for server-side applied objects includes at least two field managers, which are then all taken to be object owners for the purposes of pruning, regardless of their intent to use this power. In other words, we end up introducing the possibilty of multiple owners without the possiblity of conflict detection.
+
+Related issues:
+- https://github.com/kubernetes/kubernetes/issues/110893
 
 ### Related solutions in the ecosystem
 
@@ -507,7 +522,7 @@ When querying for ApplySet contents, an ApplySet could contain cluster-scoped re
 
 Best practice is likely to avoid ApplySets spanning namespaces.  However, sometimes this is unavoidable - particularly when managing cluster-scoped objects - and the “plumbing” tooling cannot enforce this restriction.
 
-Where a GK is known to be part of the ApplySet and is cluster-scoped, we should naturally query for those objects at cluster scope; any permission problems here should be surfaced as errors.  Where we cannot determine the list of GKs for an ApplySet, we may support “discovery”, likely warning that the ApplySet does not define a list of GKs, and then attempt to perform cluster-scoped queries, likely warning if there are insufficient permissions.
+Where a GK is known to be part of the ApplySet and is cluster-scoped, we should naturally query for those objects at cluster scope; any permission problems here should be surfaced as errors.  When a tool cannot determine the list of GKs for an ApplySet, it may support “discovery”, likely warning that the ApplySet does not define a list of GKs, and then attempt to perform cluster-scoped queries, likely warning if there are insufficient permissions.
 
 >  <<[UNRESOLVED @justinsb @KnVerey]>>
 >
@@ -515,7 +530,7 @@ Where a GK is known to be part of the ApplySet and is cluster-scoped, we should 
 >
 > <<[/UNRESOLVED]>>
 
-For GKs that are namespace scoped, we would normally expect those to be part of an ApplySet object in the same namespace.  We define an additional annotation however for cross-namespace ApplySets:  `applyset.k8s.io/additional-namespaces`.  The value of this annotation is a comma-separated list of the names of the namespaces (other than the ApplySet namespace) in which objects are found, for example `default,kube-system,ns1,ns2`.  Note that there is no need to include this specifically for cluster-scoped objects, as those are covered by the group-kind list.  We reserve the empty value.  If this annotation is present, the tooling will query namespace-scoped resources in those namespaces in addition to the namespace of the ApplySet object (if any).  If this annotation is not present on a namespace-scoped ApplySet parent object, the tooling will query namespace-scoped resources only in the same namespace as the ApplySet parent object.  If the annotation is not present on a cluster-scoped ApplySet parent object, the tooling will not query namespace-scoped resources at all (kubectl will output an error if given namespace-scoped GKs in this case).
+For GKs that are namespace-scoped, we would normally expect those to be part of an ApplySet object in the same namespace.  We define an additional annotation however for cross-namespace ApplySets:  `applyset.k8s.io/additional-namespaces`.  The value of this annotation is a comma-separated list of the names of the namespaces (other than the ApplySet namespace) in which objects are found, for example `default,kube-system,ns1,ns2`.  Note that there is no need to include this specifically for cluster-scoped objects, as those are covered by the group-kind list.  We reserve the empty value.  If this annotation is present, the tooling will query namespace-scoped resources in those namespaces in addition to the namespace of the ApplySet object (if any).  If this annotation is not present on a namespace-scoped ApplySet parent object, the tooling will query namespace-scoped resources only in the same namespace as the ApplySet parent object.  If the annotation is not present on a cluster-scoped ApplySet parent object, the tooling will not query namespace-scoped resources at all and should output an error if given namespace-scoped GKs.
 
 As with `applyset.k8s.io/contains-group-kinds`, this list of namespaces must be sorted alphabetically, and should be minimal (ideally other than during apply and prune operations).
 
@@ -523,17 +538,15 @@ As cross-namespace ApplySets are not particularly encouraged, we do not currentl
 
 ### Objects with owner references
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> If an object in the set we retrieve for pruning
-> has owner references, what should we do? This would be
-> somewhat unexpected; it implies that kubectl apply doesn't
-> really own the object, apparently.
-> We could consider this an error, or perhaps warn
-> and skip the object, assuming GC should take care
-> of cleaning it up.
->
-> <<[/UNRESOLVED]>>
+If an object in the set retrieved for pruning has owner references,
+tooling should verify that those references match the ApplySet parent.
+If they do, the tool should proceed as normal. If they do not, the
+tooling should consider this an ownership conflict and throw an error.
+
+We are taking this stance initially to be conservative and ensure that
+use cases related to objects bearing owner references are surfaced.
+In the future, we could downgrade this stance to recommending a warning,
+or to considering owner references orthogonal and ignoring them entirely.
 
 
 ### Kubectl Reference Implementation
@@ -1141,7 +1154,16 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+### Full GKNN listing
+
+Instead of encoding a list of GKs to scope in, we could encode a the full list of GKNN object references, making the ApplySet parent object a (somewhat) human-readable inventory of the set. The reason for not choosing this approach is that we do not think it would actually allow us to further optimize the implementation in practice, and that its additional detail would make it more prone to desynchronization.
+
+The reason it does not optimize performance in practice is that we're considering the source of truth for membership to be the `part-of` annotations on the resources themselves. This is useful for visibility and for ownership conflict avoidance, but it means we must retrieve the objects themselves to check the source of truth rather than relying on the GVKNN. Since individual GET calls are far more expensive than LISTs in the common case for pruning, in practice, we would end up extracting the GK list from any GKNN list and make the same calls we would have with just a GK list. If it is deemed worthwhile, we could indeed do this, and it would allow an additional layer of in-band drift detection via comparison of the precise list to the set of current labelled resources.
+
+Alternatively, we could omit the `part-of` label entirely (which leaves no means of ownership conflict management), or consider the GKNN list the source of truth (which leaves a much wider vector for object leakage in practice than GK listing does, in our opinion).
+
 ### OwnerRefs
+
 We could use ownerRefs to track applyset membership.  A significant advantage of ownerRefs is that pruning is done automatically by the kube-apiserver, which runs a garbage collection algorithm to automatically delete resources that are no longer referenced.
 However today the apiserver does not support an efficient way to query by ownerRef (unlike labels, where we can specify a label selector to the kube-apiserver).  This means we can’t efficiently list the objects in an applyset, nor can we efficiently support a dry-run / preview (without listing all the objects).  Moreover, there is no support for cross-namespace ownerRefs, nor for a namespace-scoped object owning a cluster-scoped object.  These are not blockers per-se, in that as a community we control the full-stack.  However, the scoping issues are more fundamental and have meant that existing tooling such as helm has not used ownerRefs, so this would likely be a barrier to adoption by existing tooling.  We do not preclude tooling from using ownerRefs; we are simply proposing standardizing the labels to provide interoperability with existing tooling and the existing kube-apiserver.
 
