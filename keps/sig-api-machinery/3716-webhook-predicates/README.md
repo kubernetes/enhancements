@@ -234,17 +234,18 @@ type Predicate struct {
 	// Examples:
 	//   - Expression accessing a property named "namespace": {"Expression": "object.__namespace__ > 0"}
 	//   - Expression accessing a property named "x-p
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+	//   - Expression accessing a property named "redact__d": {"Expression": "object.redact__underscores__d > 0"}
+	//
+	// Equality on arrays with list type of 'set' or 'map' ignores element order, i.e. [1, 2] == [2, 1].
+	// Concatenation on arrays with x-kubernetes-list-type use the semantics of the list type:
+	//   - 'set': `X + Y` performs a union where the array positions of all elements in `X` are preserved and
+	//     non-intersecting elements in `Y` are appended, retaining their partial order.
+	//   - 'map': `X + Y` performs a merge where the array positions of all keys in `X` are preserved but the values
+	//     are overwritten by values in `Y` when the key sets of `X` and `Y` intersect. Elements in `Y` with
+	//     non-intersecting keys are appended, retaining their partial order.
+	// Required.
+	Expression string `json:"expression"`
+}
 ```
 
 The predicate expression has access to the contents of the `AdmissionRequest` object (exposed as the
