@@ -315,9 +315,13 @@ client-side validation, albeit one that is error-prone and not officially
 supported).
 
 Long-term, we want to favor using out-of-tree solutions for client-side
-validation. The [kubeconform](https://github.com/yannh/kubeconform) project is an example of an out-of-tree solution that does this, and
-we recommend using this or similar tools to validate manifests offline going
-forward.
+validation. The [kubeconform](https://github.com/yannh/kubeconform) project is an example of an out-of-tree solution that does this.
+
+Although likely to never be a perfect representation of the validation that the
+server performs, adding better support for these out-of-tree solutions that
+better utilize the progress made server-side with regards to performance,
+openapi v3, etc is definitely an avenue of future work worth exploring by
+sig-api-machinery.
 
 ##### Aligning json and yaml errors
 
@@ -669,8 +673,11 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### GA
 
 - [x] Wait two releases (1.25 and 1.26) with field validation enabled by default
-  and receive minimal bug reports pertaining to the feature.
-- [] More rigorous e2e/conformance testing added to invoke field validation directly
+  and receive minimal bug reports pertaining to the feature. As a data point,
+  GKE clusters running field validation by default in 1.25 are seeing less CPU
+  and memory overall vs 1.24, supporting the notion that this feature has not
+  significantly impacted performance.
+- [] Add conformance testing to invoke field validation directly
   against the API server
 
 <!--
@@ -699,15 +706,23 @@ enhancement:
 Following the graduation of server-side field validation to GA, there will be a
 period of time when a newer client (which expects server-side field validation locked in GA) will send
 requests to an older server that could have server-side field validation
-disabled. Until version skew makes it incompatible for a client to hit a server
-with field validation disabled, kubectl will need to continue to have
-client-side validation available. 
+disabled.
 
-After this skew (2-3 releases), client-side
-validation will be removed from kubectl entirely. (See section on [Out-of-Tree
+Until version skew makes it incompatible for a client to hit a server
+with field validation disabled, kubectl must continue to check if the feature is
+enabled server-side. As long as the feature can be disabled server-side, kubectl
+must continue to have client-side validation. When the feature can't be disabled
+server-side, kubectl should remove client-side validation entirely.
+
+Given that kubectl [supports](https://kubernetes.io/releases/version-skew-policy/#kubectl) one minor version skew (older or newer) of kube-apipserver,
+this would mean that removing client-side validation in 1.28 would be
+1-version-skew-compatible with GA in 1.27 (when server-side validation can no
+longer be disabled).
+
+See section on [Out-of-Tree
 Alternatives to Client Side
 Validation](#out-of-tree-alternatives-to-client-side-validation) for
-alternatives to client-side validation)
+alternatives to client-side validation
 
 ## Production Readiness Review Questionnaire
 
@@ -850,9 +865,15 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Users should expect to see an increase in request latency (~5% increase) and memory usage
-(~10% increase) for requests that desire server side schema validation (json and
-yaml only, no change for protobuf).
+We have benchmark tests for field validation
+[here](https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/field_validation_test.go#L2936-L2996) and an analysis of those
+benchmarks summarized
+[here](https://github.com/kubernetes/kubernetes/pull/107848#issuecomment-1032216698).
+
+Based on the above, users should should expect to see negligible latency increases (with the
+exception of SMP requests that are ~5% slower), and memory that is negligible
+for JSON (and no change for protobuf), but around 10-20% more memory usage for
+YAML data.
 
 Cluster operators can also use cpu usage monitoring to determine whether
 increased usage of server-side schema validation dramatically increases CPU usage after feature enablement.

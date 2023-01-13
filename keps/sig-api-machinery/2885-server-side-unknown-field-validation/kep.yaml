@@ -33,11 +33,12 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
+# Note: feature-gate removed upon graduation to GA in 1.27
 feature-gates:
   - name: ServerSideFieldValidation
     components:
       - kube-apiserver
-disable-supported: false
+disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
