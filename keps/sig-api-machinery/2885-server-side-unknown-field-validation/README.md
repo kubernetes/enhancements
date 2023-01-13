@@ -317,11 +317,10 @@ supported).
 Long-term, we want to favor using out-of-tree solutions for client-side
 validation. The [kubeconform](https://github.com/yannh/kubeconform) project is an example of an out-of-tree solution that does this.
 
-Although likely to never be a perfect representation of the validation that the
-server performs, adding better support for these out-of-tree solutions that
-better utilize the progress made server-side with regards to performance,
-openapi v3, etc is definitely an avenue of future work worth exploring by
-sig-api-machinery.
+SIG API Machinery's effort will go to producing clear and complete (and
+improving over time) API spec documents insteading of making client side
+validation. We strongly recommend that third part integrators make use of such
+documents.
 
 ##### Aligning json and yaml errors
 
@@ -762,7 +761,8 @@ Pick one of these and delete the rest.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: ServerSideFieldValidation
   - Components depending on the feature gate: kube-apiserver
-  - Note: feature gate removed upon graduation to GA (1.27)
+  - Note: feature gate locked to true upon graduation to GA (1.27) and removed
+    two releases later (1.29)
 - [x] Other
   - Describe the mechanism: query parameter
   - Will enabling / disabling the feature require downtime of the control
