@@ -188,7 +188,7 @@ same wording for type `EndpointPort`
 ### Adding new protocols
 
 In order to be included in the list, a new protocol must:
-* Not be a [IANA standard service name](https://www.iana.org/assignments/service-names)
+* Not be an [IANA standard service name](https://www.iana.org/assignments/service-names)
 * Run on top of L4 protocol supported by Kubernetes Service
 * Be supported in more than three implementations
 * Be well defined and broadly used
