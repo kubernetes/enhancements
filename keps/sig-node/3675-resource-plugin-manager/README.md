@@ -175,26 +175,25 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This plugin manager takes the concept of dynamic resource allocation and extends this 
+This plugin manager uses the concept of dynamic resource allocation and extends this 
 to the classic kubelet-managed resources of CPU and memory.  It will allow users to 
-bypass teh current logic of the kubelet managed resources and instead handle the resources
-through the plugins.  It will additionally allow resources to be managed on the node
-without forcing traffic to the API server for pod update information.  The Kubelet
-already owns this information.  
+bypass the current logic of the kubelet managed resources and instead handle the resources
+through the Dynamic Resource Allocation plugins.  It will additionally allow the CPU and 
+memory resources to be managed on the node without forcing traffic to the API server for 
+pod update information.  The Kubelet already owns this information, so to extend it 
+through known mechanicsms we use today for devices is an obvious extension.
 
-These changes will consolidate the code internal to the kubelet and allow more creative
-and innovative approaches to resource management without having to bypass the Kubelet.
-We can instead start cultivating a library of plugins specific to particular use cases,
-and continue to maintain a plugin that is specific to the majority of the use cases, as
-we have now with topology manager, cpu manager, and memory manager.
+These changes will allow more creative and innovative approaches to resource management 
+for CPUs and memory and the advertsement of more interesting configurations than simply 
+number of cores and memory without having to bypass the Kubelet.  It will also allow 
+the advertisement of configurations beyond the NUMA zones for CPUs and memory to the 
+scheduler.  
 
 Kernels exist for allowing resource managers to not be built directly into the kernel,
 but rather to have kernel modules for specific cases.  For example, there are multiple
 power governors available for different vendors.  As users desire more fine-grained 
-control of resources, they too should be afforded the nice pluggability that we afford
-other components in Kubernetes, such as device plugins, CNI, or CSI.
-
-
+control of resources, they too should be afforded the pluggability that we afford other 
+components in Kubernetes, such as device plugins, CNI, or CSI.
 
 
 ## Motivation
@@ -370,6 +369,9 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+We will extend the current Dynamic Resource Allocation to handle also memory
+and CPU resources.
 
 ### Test Plan
 
