@@ -117,7 +117,7 @@ That creates a problem where users with GKE and Istio in their cluster can have 
 ### Non-Goals
 
 * Validate appProtocol values
-* Monitor `appProtocol implementations
+* Monitor appProtocol implementations
 
 
 ## Proposal
@@ -151,12 +151,49 @@ There are no real “risks”, primary concerns are:
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+At first, the list is going to live in `ServicePort` and `EndpointPort` as part of the AppProtocol description.
+
+Based on the list size, we might revisit this decision in the future and suggest an alternative location.
+
+Proposed changes to the API spec:
+
+```go
+type ServicePort struct {
+  ... 
+  ...
+
+  // The application protocol for this port.
+  // This field follows standard Kubernetes label syntax.
+  // Valid values are either:
+  //
+  // * Un-prefixed protocol names - reserved for IANA standard service names (as per
+  // RFC-6335 and https://www.iana.org/assignments/service-names).
+  //
+  // * Kubernetes standard names:
+  //   * 'k8s.io/h2' - http2 over TLS 
+  //   * 'k8s.io/h2c' - http2 over cleartext TCP 
+  //   * 'k8s.io/grpc' - grpc traffic
+  //
+  // * Other protocols should use prefixed names such as
+  // mycompany.com/my-custom-protocol.
+  // +optional
+  AppProtocol *string
+```
+
+same wording for type `EndpointPort`
+
+### Adding new protocols
+
+In order to be included in the list, a new protocol must:
+* Not be a [IANA standard service name](https://www.iana.org/assignments/service-names)
+* Run on top of L4 protocol supported by Kubernetes Service
+* Be supported in more than three implementations
+* Be well defined and broadly used
+
+
+### Documentation change
+
+[kubernetes website](https://github.com/kubernetes/website/blob/main/content/en/docs/concepts/services-networking/service.md#application-protocol) will be changed accordingly
 
 ### Test Plan
 
