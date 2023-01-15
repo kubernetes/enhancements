@@ -140,9 +140,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -797,6 +797,10 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+A rollback might be considered if the metric `scheduler_pending_pods{queue="gated"}` stays in a
+high watermark for a long time. It, if not intentionally, may reveal that some controllers forget
+to empty the Pods' scheduling gates, which keep them in pending state.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -805,11 +809,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+It will be tested manually prior to beta launch.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -820,13 +828,16 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-Add a label `notReady` to the existing metric `pending_pods` to distinguish unschedulable Pods:
+A new "queue" type `gated` is added to the existing metric `scheduler_pending_pods` to distinguish
+unschedulable Pods:
 
-- `unschedulable` (existing): scheduler tried but cannot find any Node to host the Pod
-- `notReady` (new): scheduler respect the Pod's present `schedulingGates` and hence not schedule it
+- `scheduler_pending_pods{queue="unschedulable"}` (existing): scheduler tried but cannot find any
+Node to host the Pod
+- `scheduler_pending_pods{queue="gated"}` (new): scheduler respect the Pod's present `schedulingGates`
+and hence not schedule it
 
 Moreover, to explicitly indicate a Pod's scheduling-unready state, a condition
-`{type:PodScheduled, reason:WaitingForGates}` is introduced.
+`{type:PodScheduled, reason:SchedulingGated}` is introduced.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -835,6 +846,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+- observe non-zero value for the metric `pending_pods{queue="gated"}`
+- observe non-empty value in a Pod's `.spec.schedulingGates` field
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -854,6 +868,11 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [x] API .spec
   - Other field: `schedulingGates`
+- [x] Events
+  - Event Type: PodScheduled
+  - Event Status: False
+  - Event Reason: WaitingForGates SchedulingGated
+  - Event Message: Scheduling is blocked due to non-empty scheduling gates
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -872,18 +891,17 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: scheduler_pending_pods{queue="gated"}
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -892,11 +910,15 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+N/A.
+
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+
+N/A.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -914,6 +936,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+N/A.
 
 ### Scalability
 
@@ -951,6 +975,9 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+The feature itself doesn't generate API calls. But it's expected the API Server would receive
+additional update/patch requests to mutate the scheduling gates, by external controllers.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -958,6 +985,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -967,6 +996,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No to existing API objects that doesn't use this feature.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -979,6 +1010,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+No.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -990,6 +1023,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -1006,6 +1041,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Update/Patch requests will be rejected.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1021,7 +1058,12 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+In a highly-available cluster, if there are skewed API Servers, some update requests
+may get accepted and some may get rejected.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A.
 
 ## Implementation History
 
@@ -1036,7 +1078,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-- 2022-09-16 - Initial Proposal
+- 2022-09-16: Initial KEP
+- 2022-01-14: Graduate the feature to Beta
 
 ## Drawbacks
 
@@ -1052,11 +1095,11 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-- Define a boolean filed `.spec.schedulingPaused`. Its value is optionally initialized to `True` to
+Define a boolean filed `.spec.schedulingPaused`. Its value is optionally initialized to `True` to
 indicate it's not scheduling-ready, and flipped to `False` (by a controller) afterwards to trigger
 this Pod's scheduling cycle.
 
-  This approach is not chosen because it cannot support multiple independent controllers to control
+This approach is not chosen because it cannot support multiple independent controllers to control
 specific aspect a Pod's scheduling readiness.
 
 ## Infrastructure Needed (Optional)
