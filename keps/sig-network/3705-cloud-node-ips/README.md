@@ -13,6 +13,7 @@
   - [Changes to <code>--node-ip</code>](#changes-to-)
   - [Changes to the <code>provided-node-ip</code> annotation](#changes-to-the--annotation)
   - [Changes to cloud providers](#changes-to-cloud-providers)
+  - [Example of <code>--node-ip</code> possibilities](#example-of--possibilities)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -159,9 +160,10 @@ specify both IPs that you want it to use.
 
 ### Changes to `--node-ip`
 
-The most obvious required change is that we need to allow dual-stack
-`--node-ip` values in clusters using external cloud providers (but
-_not_ in clusters using legacy cloud providers).
+The most obvious required change is that we need to allow
+comma-separated dual-stack `--node-ip` values in clusters using
+external cloud providers (but _not_ in clusters using legacy cloud
+providers).
 
 Additionally, the fact that kubelet does not currently pass
 "`0.0.0.0`" and "`::`" to the cloud provider creates a compatibility
@@ -181,17 +183,10 @@ require that the cloud provider pick a node IP of a specific family.
 back to the other family if there are no IPs of this family" behavior
 that "`0.0.0.0`" and "`::`" imply.)
 
-```
-<<[UNRESOLVED IPvX capitalization ]>>
-
-Should it be `IPv4`/`IPv6` or `ipv4`/`ipv6`?
-
-<<[/UNRESOLVED]>>
-```
-
 Additionally, we will update the code to allow including "`IPv4`" and
 "`IPv6`" in dual-stack `--node-ip` values as well (in both cloud and
-non-cloud clusters).
+non-cloud clusters). This code will have to check the status of the
+feature gate until the feature is GA.
 
 [kubernetes #111695]: https://github.com/kubernetes/kubernetes/issues/111695
 
@@ -240,6 +235,60 @@ code to handle the node IP annotation and node address management, no
 cloud-provider-specific changes should be needed; we should be able to
 make the needed changes in the `cloud-provider` module, and then the
 individual providers just need to revendor to the new version.
+
+### Example of `--node-ip` possibilities
+
+Assume a node where the cloud has assigned the IPs `1.2.3.4`,
+`5.6.7.8`, `abcd::1234` and `abcd::5678`, in that order of preference.
+
+("SS" = "Single-Stack", "DS" = "Dual-Stack")
+
+| `--node-ip` value    | New? | Annotation             | Resulting node addresses |
+|----------------------|------|------------------------|--------------------------|
+| (none)               | no   | (unset)                | `["1.2.3.4", "5.6.7.8", "abcd::1234", "abcd::5678"]` (DS IPv4-primary) |
+| `0.0.0.0`            | no   | (unset)                | `["1.2.3.4", "5.6.7.8", "abcd::1234", "abcd::5678"]` (DS IPv4-primary) |
+| `::`                 | no   | (unset)                | `["1.2.3.4", "5.6.7.8", "abcd::1234", "abcd::5678"]` (DS IPv4-primary *) |
+| `1.2.3.4`            | no   | `"1.2.3.4"`            | `["1.2.3.4"]` (SS IPv4) |
+| `9.10.11.12`         | no   | `"9.10.11.12"`         | (error, because the requested IP is not available) |
+| `abcd::5678`         | no   | `"abcd::5678"`         | `["abcd::5678"]` (SS IPv6) |
+| `1.2.3.4,abcd::1234` | yes* | `"1.2.3.4,abcd::1234"` | `["1.2.3.4", "abcd::1234"]` (DS IPv4-primary) |
+| `IPv4`               | yes  | `"IPv4"`               | `["1.2.3.4"]` (SS IPv4) |
+| `IPv6`               | yes  | `"IPv6"`               | `["abcd::1234"]` (SS IPv6) |
+| `IPv4,IPv6`          | yes  | `"IPv4,IPv6"`          | `["1.2.3.4", "abcd::1234"]` (DS IPv4-primary) |
+| `IPv6,5.6.7.8`       | yes  | `"IPv6,5.6.7.8"`       | `["abcd::1234", "5.6.7.8"]` (DS IPv6-primary) |
+| `IPv4,abcd::ef01`    | yes  | `"IPv4,abcd::ef01"`    | (error, because the requested IPv6 IP is not available) |
+
+Notes:
+
+  - In the `--node-ip ::` case, kubelet will be expecting a
+    single-stack IPv6 or dual-stack IPv6-primary setup and so would
+    get slightly confused in this case since the cloud gave it a
+    dual-stack IPv4-primary configuration. (In particular, you would
+    have IPv4-primary nodes but IPv6-primary pods.)
+
+  - `--node-ip 1.2.3.4,abcd::ef01` was previous valid syntax when
+    using no `--cloud-provider`, but was not valid for cloud kubelets.
+
+If the cloud only had IPv4 IPs for the node, then the same examples would look like:
+
+| `--node-ip` value    | New? | Annotation             | Resulting node addresses |
+|----------------------|------|------------------------|--------------------------|
+| (none)               | no   | (unset)                | `["1.2.3.4", "5.6.7.8"]` (SS IPv4) |
+| `0.0.0.0`            | no   | (unset)                | `["1.2.3.4", "5.6.7.8"]` (SS IPv4) |
+| `::`                 | no   | (unset)                | `["1.2.3.4", "5.6.7.8"]` (SS IPv4 *) |
+| `1.2.3.4`            | no   | `"1.2.3.4"`            | `["1.2.3.4"]` (SS IPv4) |
+| `9.10.11.12`         | no   | `"9.10.11.12"`         | (error, because the requested IP is not available) |
+| `abcd::5678`         | no   | `"abcd::5678"`         | (error, because the requested IP is not available) |
+| `1.2.3.4,abcd::1234` | yes* | `"1.2.3.4,abcd::1234"` | (error, because the requested IPv6 IP is not available) |
+| `IPv4`               | yes  | `"IPv4"`               | `["1.2.3.4"]` (SS IPv4) |
+| `IPv6`               | yes  | `"IPv6"`               | (error, because no IPv6 IPs are available) |
+| `IPv4,IPv6`          | yes  | `"IPv4,IPv6"`          | (error, because no IPv6 IPs are available) |
+| `IPv6,5.6.7.8`       | yes  | `"IPv6,5.6.7.8"`       | (error, because no IPv6 IPs are available) |
+| `IPv4,abcd::ef01`    | yes  | `"IPv4,abcd::ef01"`    | (error, because the requested IPv6 IP is not available) |
+
+In this case, kubelet would be even more confused in the
+`--node-ip ::` case, and some things would likely not work.
+By contrast, with `--node-ip IPv6`, the user would get a clear error.
 
 ### Test Plan
 
