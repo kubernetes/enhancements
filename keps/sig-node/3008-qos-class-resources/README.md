@@ -404,11 +404,7 @@ updates are not possible.
 This future step adds support for controlling the access to available QoS-class
 resources.
 
-If QoS-class resources were advertised as API objects the natural access
-control mechanism would be through RBAC.
-
-If QoS-class resources were advertised in node status (similar to other resources),
-access control could be achieved e.g. by extending ResourceQuotaSpec which
+Access control could be achieved e.g. by extending ResourceQuotaSpec which
 would implement restrictions based on the namespace.
 
 ```diff
@@ -445,6 +441,9 @@ would implement restrictions based on the namespace.
 +       Name QoSResourceName
 +       // Allowed classes.
 +       Classes []string
++       // Capacity is the hard limit for usage of the class.
++       // +optional
++       Capacity int64
 +}
 
 
@@ -726,7 +725,8 @@ this information into node status.
 +message QoSResourceInfo {
 +    // Name of the QoS resources.
 +    string Name = 1;
-+    // Mutable is set to true if this resource sypports dynamic updates.
++    // Mutable is set to true if this resource supports in-place updates i.e.
++    // the class of a running container or sandbox can be changed.
 +    bool Mutable = 2;
 +    // List of classes of this QoS resource.
 +    repeated QoSResourceClassInfo classes = 3;
