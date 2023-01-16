@@ -6,9 +6,9 @@ owning-sig: sig-scheduling
 status: provisional
 creation-date: 2022-11-09
 reviewers:
-  - TBD
+  - "@Huang-Wei"
 approvers:
-  - TBD
+  - "@Huang-Wei"
 
 see-also:
   - "/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades"

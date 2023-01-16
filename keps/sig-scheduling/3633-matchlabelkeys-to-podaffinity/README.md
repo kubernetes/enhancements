@@ -175,15 +175,9 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-PodAffinity and PodAntiAffinity have `LabelSelector` to define the target group of Pods.
-This KEP proposes introducing a complementary field `MatchLabelKeys` to PodAffinity and PodAntiAffinity,
-which help the inter-Pods Affinity plugin to identify the group.
-
-This `MatchLabelKeys` is proposed from the similar motivation, and would have the same behavior as the one in Pod Topology Spread. 
-(See [KEP-3243](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades).)
-
-The scheduler will use those keys to look up label values from the incoming pod; and those key-value 
-labels are ANDed with `LabelSelector`. 
+This KEP proposes introducing a complementary field `MatchLabelKeys` to `PodAffinityTerm`.
+This enables users to finely control the scope where Pods are expected to co-exist (PodAffinity)
+or not (PodAntiAffinity), on top of the existing `LabelSelector`.
 
 ## Motivation
 
@@ -196,15 +190,25 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-During rolling upgrades, there are two versions of Pods from the deployments in the cluster,
-but the inter-Pods Affinity plugin cannot understand that, and will take all Pods matching conditions defined in `PodAffinityTerm` into consideration.
+During a workload's rolling upgrade, depending on its `upgradeStrategy`, old and new versions of
+Pods may co-exist in the cluster. 
+As scheduler cannot distinguish "old" from "new", it cannot properly honor the API semantics of 
+PodAffinity and PodAntiAffiniy during the upgrade. 
+In the worse case, new version of Pod cannot be scheduled if it's a saturated cluster: [1], [2], [3].
 
-It results in filtering out Nodes that actually should go to the scoring phase, 
-or giving low scores to Nodes that should get higher scores.
+[1]: https://github.com/kubernetes/kubernetes/issues/56539#issuecomment-449757010
+[2]: https://github.com/kubernetes/kubernetes/issues/90151
+[3]: https://github.com/kubernetes/kubernetes/issues/103584
+
+On the other hand, on an idle cluster, this can cause the scheduling result sub-optimal because
+some qualifying Nodes are filtered out incorrectly.
+
+From the same motivation, we've introduced `MatchLabelKeys` in Pod Topology Spread.
+See [KEP-3243: Respect PodTopologySpread after rolling upgrades](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades).
 
 ### Goals
 
-- The `MatchLabelKeys` is introduced in `PodAffinityTerm` and can be used from PodAffinity and PodAntiAffinity.
+- Introduce `MatchLabelKeys` in `PodAffinityTerm` to let users define the scope where Pods are evaluated in required and preferred Pod(Anti)Affinity.
 
 ### Non-Goals
 
@@ -213,7 +217,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Take a specific label into consideration as default. In other words, create a well-known label to identify the Pod group.
+- Apply additional internal labels when evaluating `MatchLabelKeys`
 
 ## Proposal
 
@@ -237,22 +241,19 @@ bogged down.
 
 #### Story 1
 
-When users run a rolling update with a deployment that uses hard constraint PodAffinity,
-and they want to let the inter-Pod Affinity plugin to take only replicas from the same replicaset into consideration.
+When users run a rolling update with a deployment that uses required PodAffinity,
+and they want only replicas from the same replicaset to be evaluated.
 
-The deployment controller adds `pod-template-hash` to underlying ReplicaSet and thus every Pods created from Deployment.
-https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#pod-template-hash-label
+The deployment controller adds [pod-template-hash](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#pod-template-hash-label) to underlying ReplicaSet and thus every Pod created from Deployment carries the hash string.
 
-Therefore, users can use `pod-template-hash` in `MatchlabelKeys` to let the inter-Pod Affinity plugin to take only Pods with the same `pod-template-hash` into consideration.
+Therefore, users can use `pod-template-hash` in `MatchlabelKeys` to inform the scheduler to only evaluate Pods with the same `pod-template-hash` value.
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: application-server
-
-## - sniped - ##
-
+...
   affinity:
     podAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -263,8 +264,8 @@ metadata:
             values:
             - database
         topologyKey: topology.kubernetes.io/zone
-        MatchlabelKeys: # ADDED
-          - pod-template-hash
+        matchlabelKeys: # ADDED
+        - pod-template-hash
 ```
 
 ### Notes/Constraints/Caveats (Optional)
@@ -275,6 +276,12 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+In most scenarios, users can use the label keyed with `pod-template-hash` added 
+automatically by the Deployment controller to distinguish between different 
+revisions in a single Deployment. But for more complex scenarios 
+(eg. Pod(Anti)Affinity associating two deployments at the same time), users are 
+responsible for providing common labels to identify which pods should be grouped. 
 
 ### Risks and Mitigations
 
@@ -289,6 +296,11 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+
+In addition to using `pod-template-hash` added by the Deployment controller, 
+users can also provide the customized key in  `MatchLabelKeys` to identify 
+which pods should be grouped. If so, the user needs to ensure that it is 
+correct and not duplicated with other unrelated workloads.
 
 ## Design Details
 
@@ -308,18 +320,21 @@ type PodAffinityTerm struct {
 	TopologyKey string
 	NamespaceSelector *metav1.LabelSelector
 
-	// MatchLabelKeys is a set of pod label keys to select the pods over which 
-	// spreading will be calculated. The keys are used to lookup values from the
+	// MatchLabelKeys is a set of pod label keys to select which pods will
+	// be taken into consideration. The keys are used to lookup values from the
 	// incoming pod labels, those key-value labels are ANDed with `LabelSelector`
-	// to select the group of existing pods over which spreading will be calculated
-	// for the incoming pod. Keys that don't exist in the incoming pod labels will
-	// be ignored. The default value is empty.
+	// to select the group of existing pods which pods will be taken into consideration 
+	// for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming 
+  // pod labels will be ignored. The default value is empty.
 	// +optional
 	MatchLabelKeys []string
 }
 ```
 
-The inter-Pod Affinity plugin will use keys listed in `MatchLabelKeys` to look up label values from the incoming pod; and those key-value labels are ANDed with `LabelSelector`. 
+The inter-Pod Affinity plugin will obtain the labels from the pod 
+labels by the keys in `MatchLabelKeys`. The obtained labels will be merged 
+to `LabelSelector` of `PodAffinityTerm` to filter and group pods. 
+The pods belonging to the same group will be evaluated.
 
 ### Test Plan
 
@@ -406,12 +421,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-N/A
-
---
-
-This feature doesn't introduce any new API endpoints and doesn't interact with other components. 
-So, E2E tests don't add extra value to integration tests.
+- These e2e tests will be added.
+  - `MatchLabelKeys: ["pod-template-hash"]` in `PodAffinity` (both in Filter and Score) works as expected with a rolling upgrade scenario.
+  - `MatchLabelKeys: ["pod-template-hash"]` in `PodAntiAffinity` (both in Filter and Score) works as expected with a rolling upgrade scenario.
 
 ### Graduation Criteria
 
@@ -481,7 +493,7 @@ in back-to-back releases.
 
 - Feature implemented behind a feature flag
 - Unit tests and e2e tests are implemented 
-- No significant performance degradation is observed from the benchmark test.
+- No significant performance degradation is observed from the benchmark test
 
 #### Beta
 
@@ -892,6 +904,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+ - 2022-11-09: Initial KEP PR is submitted.
 
 ## Drawbacks
 
