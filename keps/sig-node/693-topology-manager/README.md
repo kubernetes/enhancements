@@ -1,67 +1,92 @@
-# Node Topology Manager
 
-_Authors:_
-
-* @ConnorDoyle - Connor Doyle &lt;connor.p.doyle@intel.com&gt;
-* @balajismaniam - Balaji Subramaniam &lt;balaji.subramaniam@intel.com&gt;
-* @lmdaly - Louise M. Daly &lt;louise.m.daly@intel.com&gt;
-
-_Reviewers:_
-* @klueska - Kevin Klues &lt;kklues@nvidia.com&gt;
-* @nolancon - Conor Nolan &lt;conor.nolan@intel.com&gt;
-
-## Table of Contents
+# KEP-693: Node Topology Manager
 
 <!-- toc -->
-- [Overview](#overview)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
-  - [User Stories](#user-stories)
 - [Proposal](#proposal)
-  - [Proposed Changes](#proposed-changes)
-    - [New Component: Topology Manager](#new-component-topology-manager)
-      - [The Effective Resource Request/Limit of a Pod](#the-effective-resource-requestlimit-of-a-pod)
-      - [Scopes](#scopes)
-      - [Policies](#policies)
-      - [Computing Preferred Affinity](#computing-preferred-affinity)
-      - [New Interfaces](#new-interfaces)
-    - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
-    - [Changes to Existing Components](#changes-to-existing-components)
-- [Graduation Criteria](#graduation-criteria)
-  - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
-  - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
-  - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
-  - [Beta (v1.20)](#beta-v120)
-  - [GA (stable)](#ga-stable)
-- [Test Plan](#test-plan)
+  - [Main idea: Two phase topology coherence protocol](#main-idea-two-phase-topology-coherence-protocol)
+  - [New Component: Topology Manager](#new-component-topology-manager)
+    - [The Effective Resource Request/Limit of a Pod](#the-effective-resource-requestlimit-of-a-pod)
+    - [Scopes](#scopes)
+    - [Policies](#policies)
+    - [Computing Preferred Affinity](#computing-preferred-affinity)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1: Fast virtualized network functions](#story-1-fast-virtualized-network-functions)
+    - [Story 2: Accelerated neural network training](#story-2-accelerated-neural-network-training)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Limitations](#limitations)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [New Interfaces](#new-interfaces)
+  - [Changes to Existing Components](#changes-to-existing-components)
+  - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
   - [Multi-NUMA Systems Tests](#multi-numa-systems-tests)
   - [Future Tests](#future-tests)
-- [Challenges](#challenges)
-- [Limitations](#limitations)
-- [Alternatives](#alternatives)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
+    - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
+    - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
+    - [Beta (v1.20) [COMPLETED]](#beta-v120-completed)
+    - [GA (stable) [COMPLETED]](#ga-stable-completed)
+    - [Deprecation](#deprecation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
 - [References](#references)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
-# Overview
+## Release Signoff Checklist
 
-An increasing number of systems leverage a combination of CPUs and
-hardware accelerators to support latency-critical execution and
-high-throughput parallel computation. These include workloads in fields
-such as telecommunications, scientific computing, machine learning,
-financial services and data analytics. Such hybrid systems comprise a
-high performance environment.
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-In order to extract the best performance, optimizations related to CPU
-isolation and memory and device locality are required. However, in
-Kubernetes, these optimizations are handled by a disjoint set of
-components.
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-This proposal provides a mechanism to coordinate fine-grained hardware
-resource assignments for different components in Kubernetes.
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
-# Motivation
+## Summary
+
+An increasing number of systems leverage a combination of CPUs and hardware accelerators to support latency-critical execution and high-throughput parallel computation. These include workloads in fields such as telecommunications, scientific computing, machine learning, financial services and data analytics. Such hybrid systems comprise a high performance environment.
+
+In order to extract the best performance, optimizations related to CPU isolation and memory and device locality are required. However, in Kubernetes, these optimizations are handled by a disjoint set of components.
+
+This proposal provides a mechanism to coordinate fine-grained hardware resource assignments for different components in Kubernetes.
+
+## Motivation
 
 Multiple components in the Kubelet make decisions about system
 topology-related assignments:
@@ -94,14 +119,14 @@ and 5.2.17 of the
 [ACPI Specification](http://www.acpi.info/DOWNLOADS/ACPIspec50.pdf) for more
 information.
 
-## Goals
+### Goals
 
 - Arbitrate preferred NUMA Node affinity for containers based on input from
   CPU Manager and Device Manager.
 - Provide an internal interface and pattern to integrate additional
   topology-aware Kubelet components.
 
-## Non-Goals
+### Non-Goals
 
 - _Inter-device connectivity:_ Decide device assignments based on direct
   device interconnects. This issue can be separated from socket
@@ -121,23 +146,9 @@ information.
   use the device plugin API as a stopgap solution for specialized
   networking requirements.
 
-## User Stories
+## Proposal
 
-*Story 1: Fast virtualized network functions*
-
-A user asks for a "fast network" and automatically gets all the various
-pieces coordinated (hugepages, cpusets, network device) in a preferred NUMA Node
-alignment, in most cases this will be the narrrowest possible set of NUMA Node(s).
-
-*Story 2: Accelerated neural network training*
-
-A user asks for an accelerator device and some number of exclusive CPUs
-in order to get the best training performance, due to NUMA Node alignment of
-the assigned CPUs and devices.
-
-# Proposal
-
-*Main idea: Two phase topology coherence protocol*
+### Main idea: Two phase topology coherence protocol
 
 Topology affinity is tracked at the container level, similar to devices and
 CPU affinity. At pod admission time, a new component called the Topology
@@ -146,8 +157,6 @@ Device Manager and the CPU Manager. The Topology Manager acts as an oracle
 for local alignment by those same components when they make concrete resource
 allocations. We expect the consulted components to use the inferred QoS class
 of each pod in order to prioritize the importance of fulfilling optimal locality.
-
-## Proposed Changes
 
 ### New Component: Topology Manager
 
@@ -218,22 +227,22 @@ The [debug][debug-container]/[ephemeral][ephemeral-container] containers are not
 
 The Topology Manager will attempt to align resources on either a pod-by-pod or a container-by-container basis depending on the value of a new kubelet flag, `--topology-manager-scope`. The values this flag can take on are detailed below:
 
-**container (default)**: The Topology Manager will collect topology hints from all Hint Providers on a container-by-container basis. Individual policies will then attempt to align resources for each container individually, and pod admission will be based on whether all containers were able to achieve their individual alignments or not.
+1. **container (default)**: The Topology Manager will collect topology hints from all Hint Providers on a container-by-container basis. Individual policies will then attempt to align resources for each container individually, and pod admission will be based on whether all containers were able to achieve their individual alignments or not.
 
-**pod**: The Topology Manager will collect topology hints from all Hint Providers on a pod-by-pod basis. Individual policies will then attempt to align resources for all containers collectively, and pod admission will be based on whether all containers are able to achieve a common alignment or not.
+1. **pod**: The Topology Manager will collect topology hints from all Hint Providers on a pod-by-pod basis. Individual policies will then attempt to align resources for all containers collectively, and pod admission will be based on whether all containers are able to achieve a common alignment or not.
 
 #### Policies
 
-**none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
+1. **none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
 
-**best-effort**: Topology Manager will provide the preferred allocation based
+1. **best-effort**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
 
-**restricted**: Topology Manager will provide the preferred allocation based
+1. **restricted**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. 
 This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
-**single-numa-node**: Topology mananager will enforce an allocation of all resources on a single NUMA Node. If such
+1. **single-numa-node**: Topology mananager will enforce an allocation of all resources on a single NUMA Node. If such
 an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
 The Topology Manager component will be disabled behind a feature gate until
@@ -278,7 +287,39 @@ The chosen Topology Manager policy then decides to admit or reject the pod based
 - **single-numa-node**:
     * Admits the pod to the node if the preferred field of the Topology is set to true **and** the bitmask is set to a single NUMA node.
 
-#### New Interfaces
+
+### User Stories (Optional)
+
+#### Story 1: Fast virtualized network functions
+A user asks for a "fast network" and automatically gets all the various
+pieces coordinated (hugepages, cpusets, network device) in a preferred NUMA Node
+alignment, in most cases this will be the narrrowest possible set of NUMA Node(s).
+
+#### Story 2: Accelerated neural network training
+A user asks for an accelerator device and some number of exclusive CPUs
+in order to get the best training performance, due to NUMA Node alignment of
+the assigned CPUs and devices.
+
+### Notes/Constraints/Caveats (Optional)
+
+#### Limitations
+
+* The maximum number of NUMA nodes that Topology Manager will allow is 8,
+  past this there will be a state explosion when trying to enumerate the
+  possible NUMA affinities and generating their hints.
+* The scheduler is not topology-aware, so it is possible to be scheduled
+  on a node and then fail on the node due to the Topology Manager.
+  
+### Risks and Mitigations
+
+* Testing the Topology Manager in a continuous integration environment
+  depends on cloud infrastructure to expose multi-node topologies
+  to guest virtual machines.
+* Implementing the `HintProvider` interface may prove challenging.
+
+## Design Details
+
+### New Interfaces
 
 ```go
 package bitmask
@@ -380,24 +421,7 @@ _Figure: Topology Manager components._
 ![topology-manager-instantiation](https://user-images.githubusercontent.com/379372/47447526-945a7580-d772-11e8-9761-5213d745e852.png)
 
 _Figure: Topology Manager instantiation and inclusion in pod admit lifecycle._
- 
-### Feature Gate and Kubelet Flags
- 
-A new feature gate will be added to enable the Topology Manager feature. This feature gate will be enabled in Kubelet, and will be disabled by default in the Alpha release.  
 
- * Proposed Feature Gate:  
-  `--feature-gate=TopologyManager=true`  
- 
- This will be also followed by a Kubelet Flag for the Topology Manager Policy, which is described above. The `none` policy will be the default policy.
- 
- * Proposed Policy Flag:  
- `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
-
-Based on the policy chosen, the following flag will determine the scope with which the policy is applied (i.e. either on a pod-by-pod or a container-by-container basis). The `container` scope will be the default scope.
-
- * Proposed Scope Flag:  
- `--topology-manager-scope=container|pod`  
- 
 ### Changes to Existing Components
 
 1. Kubelet consults Topology Manager for pod admission (discussed above.)
@@ -544,41 +568,7 @@ of devices are still available. Without this extra bit of information, the
 available after filtering by `TopologyHint`. This API, allows it to ultimately
 perform a much better allocation, with minimal cost.
 
-# Graduation Criteria
-
-## Alpha (v1.16) [COMPLETED]
-
-* Feature gate is disabled by default.
-* Alpha-level documentation.
-* Unit test coverage.
-* CPU Manager allocation policy takes topology hints into account.
-* Device plugin interface includes NUMA Node ID.
-* Device Manager allocation policy takes topology hints into account.
-
-## Alpha (v1.17) [COMPLETED]
-
-* Allow pods in all QoS classes to request aligned resources.
-
-## Beta (v1.18) [COMPLETED]
-
-* Enable the feature gate by default.
-* Provide beta-level documentation.
-* Add node E2E tests.
-* Guarantee aligned resources for multiple containers in a pod.
-* Refactor to easily support different merge strategies for different policies.
-
-## Beta (v1.20)
-
-* Support pod-level resource alignment.
-
-## GA (stable)
-
-* Add support for device-specific topology constraints beyond NUMA.
-* Support hugepages alignment.
-* User feedback.
-* *TBD*
-
-# Test Plan
+### Test Plan
 
 There is a presubmit job for Topology Manager, that will be run on 
 all PRs. This job is here:
@@ -594,7 +584,7 @@ feature gate and set the CPU Manager policy to 'static'.
 At the beginning of the test, the code will determine if the system
 under test has support for single or multi-NUMA nodes. 
 
-## Single NUMA Systems Tests
+### Single NUMA Systems Tests
 For each of the four topology manager policies, the tests will
 run a subset of the current CPU Manager tests. This includes spinning 
 up non-guaranteed pods, guaranteed pods, and multiple guaranteed and 
@@ -602,7 +592,7 @@ non-guaranteed pods. As with the CPU Manager tests, CPU assignment is
 validated. Tests related to multi-NUMA systems will be skipped, and 
 a log will be generated indicating such.
 
-## Multi-NUMA Systems Tests
+### Multi-NUMA Systems Tests
 For each of the four topology manager policies, the tests will spin up
 guaranteed pods and non-guaranteed pods, requesting CPU and device 
 resources. When the policy is set to single-numa-node for guaranteed pods, 
@@ -610,33 +600,434 @@ the test will verify that guaranteed pods resources (CPU and devices)
 are aligned on the same NUMA node. Initially, the test will request 
 SR-IOV devices, utilizing the SR-IOV device plugin. 
 
-## Future Tests
+### Future Tests
 It would be good to add additional devices, such as GPU, in the multi-NUMA
 systems test.
 
-# Challenges
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
-* Testing the Topology Manager in a continuous integration environment
-  depends on cloud infrastructure to expose multi-node topologies
-  to guest virtual machines.
-* Implementing the `HintProvider` interface may prove challenging.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
 
-# Limitations
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
 
-* The maximum number of NUMA nodes that Topology Manager will allow is 8,
-  past this there will be a state explosion when trying to enumerate the
-  possible NUMA affinities and generating their hints.
-* The scheduler is not topology-aware, so it is possible to be scheduled
-  on a node and then fail on the node due to the Topology Manager.
-  
-# Alternatives
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-* [AutoNUMA][numa-challenges]: This kernel feature affects memory
-  allocation and thread scheduling, but does not address device locality.
+##### Prerequisite testing updates
 
-# References
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
 
-* *TBD*
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `20230116` - `92.6%`
+
+##### Integration tests
+
+Not Applicable.
+
+##### e2e tests
+
+Device Manager and Device plugin node e2e tests:
+* https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/topology_manager_test.go
+
+
+### Graduation Criteria
+
+#### Alpha (v1.16) [COMPLETED]
+
+- Feature gate is disabled by default.
+- Alpha-level documentation.
+- Unit test coverage.
+- CPU Manager allocation policy takes topology hints into account.
+- Device plugin interface includes NUMA Node ID.
+- Device Manager allocation policy takes topology hints into account
+
+#### Alpha (v1.17) [COMPLETED]
+
+- Allow pods in all QoS classes to request aligned resources.
+
+#### Beta (v1.18) [COMPLETED]
+
+- Enable the feature gate by default.
+- Provide beta-level documentation.
+- Add node E2E tests.
+- Additional tests are in Testgrid and linked in KEP
+- Guarantee aligned resources for multiple containers in a pod.
+- Refactor to easily support different merge strategies for different policies.
+
+#### Beta (v1.20) [COMPLETED]
+
+* Support pod-level resource alignment.
+
+#### GA (stable) [COMPLETED]
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing.
+- Allowing time for user feedback.
+- Add support for device-specific topology constraints beyond NUMA.
+- Support hugepages alignment.
+
+#### Deprecation
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+
+### Upgrade / Downgrade Strategy
+
+Not Applicable.
+
+### Version Skew Strategy
+
+This feature is kubelet specific, so version skew strategy is N/A.
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
+
+### Feature Enablement and Rollback
+
+<!--
+This section must be completed when targeting alpha to a release.
+-->
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: TopologyManager
+  - Components depending on the feature gate: Topology Manager
+
+Kubelet Flag for the Topology Manager Policy, which is described above. The `none` policy will be the default policy.
+ 
+- Proposed Policy Flag:  
+ `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
+
+Based on the policy chosen, the following flag will determine the scope with which the policy is applied (i.e. either on a pod-by-pod or a container-by-container basis). The `container` scope will be the default scope.
+
+- Proposed Scope Flag:  
+ `--topology-manager-scope=container|pod`  
+ 
+
+###### Does enabling the feature change any default behavior?
+
+<!--
+Any change of default behavior may be surprising to users or break existing
+automations, so be extremely careful here.
+-->
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+<!--
+Describe the consequences on existing workloads (e.g., if this is a runtime
+feature, can it break the existing applications?).
+
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
+
+NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+-->
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+###### Are there any tests for feature enablement/disablement?
+
+<!--
+The e2e framework does not currently support enabling or disabling feature
+gates. However, unit tests in each component dealing with managing data, created
+with and without the feature, are necessary. At the very least, think about
+conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
+-->
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
+
+###### What specific metrics should inform a rollback?
+
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+<!--
+Even if applying deprecation policies, they may still surprise some users.
+-->
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+<!--
+Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+checking if there are objects with field X set) may be a last resort. Avoid
+logs or events for this purpose.
+-->
+
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
+
+### Dependencies
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### Does this feature depend on any specific services running in the cluster?
+
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
+
+### Scalability
+
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
+
+For beta, this section is required: reviewers must answer these questions.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### Will enabling / using this feature result in any new API calls?
+
+<!--
+Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+Focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+-->
+
+###### Will enabling / using this feature result in introducing new API types?
+
+<!--
+Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+-->
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+<!--
+Describe them, providing:
+  - Which API(s):
+  - Estimated increase:
+-->
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+<!--
+Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+-->
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+<!--
+Look at the [existing SLIs/SLOs].
+
+Think about adding additional work or introducing new steps in between
+(e.g. need to do X to start a container), etc. Please describe the details.
+
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+-->
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+<!--
+Things to keep in mind include: additional in-memory state, additional
+non-trivial computations, excessive access to disks (including increased log
+volume), significant amount of data sent and/or received over network, etc.
+This through this both in small and large cases, again with respect to the
+[supported limits].
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+## Implementation History
+
+- **2018-01-25:** Topology Manager proposal submitted to the community repo (https://github.com/kubernetes/community/pull/1680).
+- **2019-01-08:** Topology Manager proposal merged.
+- **2019-01-30:** Proposal moved to enhancement repo (https://github.com/kubernetes/enhancements/pull/781).
+- **2023-01-16:** KEP ported to the most recent template and GA graduation.
+
+## References
 
 [k8s-issue-49964]: https://github.com/kubernetes/kubernetes/issues/49964
 [nfd-issue-84]: https://github.com/kubernetes-incubator/node-feature-discovery/issues/84
@@ -646,3 +1037,22 @@ systems test.
 [the-rule-of-effective-request-limit]: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#resources
 [debug-container]: https://kubernetes.io/docs/tasks/debug-application-cluster/debug-running-pod/#ephemeral-container
 [ephemeral-container]: https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+
+## Alternatives
+
+[AutoNUMA][numa-challenges]: This kernel feature affects memory
+allocation and thread scheduling, but does not address device locality.
+
+## Infrastructure Needed (Optional)
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
