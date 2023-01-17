@@ -68,7 +68,7 @@ list of IDs for living kube-apiservers in the cluster.
 
 ## Motivation
 
-The [dynamic coordinated storage version API](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190802-dynamic-coordinated-storage-version.md#curating-a-list-of-participating-api-servers-in-ha-master)
+The [dynamic coordinated storage version API](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/2339-storageversion-api-for-ha-api-servers/README.md#curating-a-list-of-participating-api-servers-in-ha-master)
 needs such a list to garbage collect stale records. The
 [API priority and fairness feature](https://github.com/kubernetes/kubernetes/pull/91389)
 needs a unique identifier for an apiserver reporting its concurrency limit.
