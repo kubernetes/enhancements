@@ -902,6 +902,12 @@ over-subscription. In order to address this, the feature-gate will remain defaul
 atleast two versions after v1.27 alpha release. i.e: beta is planned for v1.29 and
 InPlacePodVeritcalScaling feature-gate will be true in versions v1.29+
 
+kubelet: When feature-gate is disabled, if kubelet sees a Proposed resize, it rejects the
+resize as Infeasible.
+
+scheduler: If PodStatus.Resize field is not empty, scheduler uses max(ResourcesAllocated, Requests)
+even if the feature-gate is disabled.
+
 Allowed [version skews](https://kubernetes.io/releases/version-skew-policy/) are handled as below:
 
 | apiserver ver -> |    v1.27    |    v1.28     |    v1.29    |    v1.30    |
