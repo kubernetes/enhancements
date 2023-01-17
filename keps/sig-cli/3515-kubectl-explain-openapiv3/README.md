@@ -89,15 +89,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Built-in Template Options](#built-in-template-options)
     - [Plaintext](#plaintext)
     - [OpenAPIV3 (raw json)](#openapiv3-raw-json)
-    - [HTML](#html)
-    - [Markdown](#markdown)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [OpenAPI V3 Not Available](#openapi-v3-not-available)
       - [Risk](#risk)
       - [Mitigation](#mitigation)
-    - [OpenAPI serialization time](#openapi-serialization-time)
-      - [Risk](#risk-1)
-      - [Mitigation](#mitigation-1)
 - [Design Details](#design-details)
     - [Current High-level Approach](#current-high-level-approach)
     - [Proposed High-level Approach](#proposed-high-level-approach)
@@ -109,7 +104,6 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha 1](#alpha-1)
-    - [Alpha 2](#alpha-2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -126,6 +120,9 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Implement proto.Models for OpenAPI V3 data](#implement-protomodels-for-openapi-v3-data)
   - [Custom User Templates](#custom-user-templates)
+  - [Other template outputs](#other-template-outputs)
+    - [HTML](#html)
+    - [Markdown](#markdown)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -222,7 +219,6 @@ wiping nullable fields.
 3. Fallback to old `explain` implementation if cluster does not expose OpenAPI v3 data.
 4. Provide multiple new output formats for kubectl explain:
     * human-readable plaintext
-    * markdown
     * maybe others
 5. (Optional?) Allow users to specify their own templates for use with kubectl
   explain (there may be interesting use cases for this)
@@ -286,40 +282,6 @@ This command is useful not only for its convenience, but also other visualizatio
 may be built upon the raw output if we opt not to support a first-class custom
 template solution in the future.
 
-#### HTML
-
-> PROVISIONAL SECTION
-
-```shell
-kubectl explain pods --output html
-```
-
-Similarly to [godoc](https://pkg.go.dev), we suggest to provide a searchable,
-navigable, generated webpage for the kubernetes types of whatever cluster kubectl
-is talking to.
-
-Only the fields selected in the command line (and their subfields' types, etc) 
-will be included in the resultant page.
-
-Possible idea: If user types `kubectl explain --output html` with no specific target, 
-then all types in the cluster are included.
-
-#### Markdown
-> PROVISIONAL SECTION
-
-```shell
-kubectl explain pods --output md
-```
-
-When using the `md` template, a markdown document is printed to stdout, so it
-might be saved and used for a documentation website, for example.
-
-Similarly to `html` output, only the fields selected in the command line 
-(and their subfields' types, etc) will be included in the resultant page.
-
-Possible idea: If user types `kubectl explain --output md` with no specific target,
-then all types in the cluster are included.
-
 ### Risks and Mitigations
 
 #### OpenAPI V3 Not Available
@@ -333,9 +295,13 @@ OpenAPI v3 data is not available in the current cluster.
 ###### If the user does not provide an --output argument
 
 In alpha in particular, if `--output` is not specified, the old `explain` behavior
-using openapi v2 deta will be used.
+using openapi v2 data will be used.
 
-After beta, `--output plaintext` will be assumed and behave as below.
+In beta, kubectl will test if server publishes `/openapi/v3`. If it does, it will
+proceed with the new renderer. If there is no endpoint published, kubectl will fall
+back to the old v2 implemtation.
+
+After GA, `--output plaintext` will be assumed and behave as below.
 
 ###### If the user does provide an --output argument
 
@@ -349,18 +315,6 @@ will always render with the latest spec-version of the data, if it is available.
 
 Other network errors should be handled using normal kubectl error handling.
 
-
-#### OpenAPI serialization time
-##### Risk
-
-Today there is no interactive-speed way to deserialize protobuf or JSON openapi
-v3 data into the kube-openapi format.
-
-##### Mitigation
-
-There has been recent progress in this area. To unmarshal kube-OpenAPI v3 is now able
-to be done in a performant enough way to do it in the CLI. This KEP's beta release
-should be blocked on the merging of this optimization.
 
 ## Design Details
 
@@ -384,13 +338,15 @@ specified by the user's path.
 
 1. User types `kubectl explain pods`
 2. kubectl resolves 'pods' to GVR core v1 pods using cluster discovery information
-3. kubectl fetches `/openapi/v3/<group>/<version>`
-4. kubectl parses the result as kube-openapi spec3
-5. kubectl locates the schema of the return type for the Path `/apis/<group>/<version>/<resource>` in kube-openapi
-6. If a field path was used, kubectl traverses the definition's fields to the subschema
+3. kubectl attempts to fetches `/openapi/v3` which indexes where to find specs for each GV
+4. If failure and fallback to v2 is allowed, falls back to Step #3 of the "Current High-level Approach".
+5. Otherwise, kubectl fetches OpenAPIV3 path for GV: `/openapi/v3/<group>/<version>`
+6. kubectl parses the result as map[string]any
+7. kubectl locates the schema of the return type for the Path `/apis/<group>/<version>/<resource>`
+8. If a field path was used, kubectl traverses the definition's fields to the subschema
 specified by the user's path.
-8. kubectl renders the type using its built-in template for human-readable plaintext
-9. If `--recursive` was used, repeat step 8 for the transitive closure of object-typed fields of the top-level object. Concat the results together.
+9. kubectl renders the type using its built-in template for human-readable plaintext
+10. If `--recursive` was used, repeat step 9 for the transitive closure of object-typed fields of the top-level object. Concat the results together.
 
 ### Template rendering
 
@@ -491,27 +447,13 @@ Defined using feature gate
 - Plaintext output roughly matches explain output
 - OpenAPIV3 (raw json) output implemented
 
-#### Alpha 2
-
-If we decide to move ahead with the `md` and `html` outputs, an Alpha 2 may
-be required.
-
-- `md` output implemented (or dropped from design due to continued debate)
-  - Table of contents all GVKs grouped by Group then Version.
-  - Section for each individual GVK
-  - All types hyperlink to specific section
--  basic `html` output  (or dropped from design due to continued debate)
-  - Table of contents all GVKs grouped by Group then Version.
-  - Page for each individual GVK.
-  - All types hyperlink to their specific page
-  - Searchable by name, description, field name.
-
 #### Beta
 
-- kube-openAPI v3 JSON deserialization is optimized to take less than 150ms on
-  most machines
 - OpenAPI V3 is enabled by default on at least one version within kubectl's support window.
 As of Kubernetes 1.24 OpenAPIV3 entered beta and become enabled by default, therefore meeting this requirement.
+In Kubectl for release 1.25, all k8s versions within support window will be able to have OpenAPIV3 enabled.
+However, the fallback is kept around since it may not always be enabled.
+
 - `--output plaintext` is on-by-default and environment variable is removed/on by default
 - `--output plaintext-openapiv2` added as a name for the old `explain` implementation, so the feature may be positively disabled.
 
@@ -519,9 +461,8 @@ As of Kubernetes 1.24 OpenAPIV3 entered beta and become enabled by default, ther
 
 - OpenAPIV3 is GA and has been since at least the minimum supported apiserver version
 by kubectl.
-- All kube-apiserver releases within version skew of kubectl should have OpenAPIV3 on by default. This is true as of kubectl for Kubernetes 1.25
+- OpenAPIV3 should be stable for all k8s versions within skew.
 - Old `kubectl explain` implementation is removed, as is support for OpenAPIV2-backed `kubectl explain`
-- `--output plaintext-openapiv2` has been deprecated for at least one release
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -618,12 +559,19 @@ enhancement:
 
 This feature only requires the target cluster has enabled The OpenAPIV3 feature.
 
-OpenAPIV3 is Beta as of Kubernetes 1.24. This feature should not be on-by-default
-until it is GA.
+OpenAPIV3 is Beta as of Kubernetes 1.24. Thus every version of Kubernetes within skew
+should be reasonably expected to have the feature on, unless it has been explicitly
+disabled. 
 
-Users of the `--output` flag who attempt to use it against a cluster for which
+This feature should not be on-by-default without an automatic fallback 
+until OpenAPIV3 is GA.
+
+Users of the `--output plaintext` flag who attempt to use it against a cluster for which
 OpenAPI v3 is not enabled will be shown an error informing them of missing openapi
 version upon 404.
+
+In Beta, if no output is specified, OpenAPIV3 will be tried first, and fallback to V2 if
+not available. In GA, the fallback will be removed (since all clusters in skew should publish V3 endpoint by then)
 
 Built-in templates supported by kubectl should aim to support at least one OpenAPI
 version which is GA for an apiserver version within the support window.
@@ -676,7 +624,7 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: Environment variable `ENABLE_EXPLAIN_OPENAPIV3` which toggles validity of `--output` flag
+  - Describe the mechanism: Environment variable `KUBECTL_EXPLAIN_OPENAPIV3` which toggles validity of `--output` flag
     (to be renamed to --output when feature is no longer experimental)
   - Will enabling / disabling the feature require downtime of the control
     plane? No
@@ -990,3 +938,52 @@ Since the API surface for this sort of feature remains very unclear and will lik
 be very unstable, this sort of feature should be delayed until the internal
 templates have proven the API surface to be used. To do otherwise would risk
 breaking user's templates.
+
+### Other template outputs
+
+We considered an `md` and `html` template for this KEP, possibly with the following
+requirements:
+
+ - `md` output implemented (or dropped from design due to continued debate)
+   - Table of contents all GVKs grouped by Group then Version.
+   - Section for each individual GVK
+   - All types hyperlink to specific section
+ -  basic `html` output  (or dropped from design due to continued debate)
+   - Table of contents all GVKs grouped by Group then Version.
+   - Page for each individual GVK.
+   - All types hyperlink to their specific page
+   - Searchable by name, description, field name.
+
+This was removed from scope for the KEP to focus only on the feature users rely
+on which is the plaintext explain. These templates may be added in the future.
+
+#### HTML
+
+ ```shell
+ kubectl explain pods --output html
+ ```
+
+ Similarly to [godoc](https://pkg.go.dev), we suggest to provide a searchable,
+ navigable, generated webpage for the kubernetes types of whatever cluster kubectl
+ is talking to.
+
+ Only the fields selected in the command line (and their subfields' types, etc) 
+ will be included in the resultant page.
+
+ Possible idea: If user types `kubectl explain --output html` with no specific target, 
+ then all types in the cluster are included.
+
+#### Markdown
+
+ ```shell
+ kubectl explain pods --output md
+ ```
+
+ When using the `md` template, a markdown document is printed to stdout, so it
+ might be saved and used for a documentation website, for example.
+
+ Similarly to `html` output, only the fields selected in the command line 
+ (and their subfields' types, etc) will be included in the resultant page.
+
+ Possible idea: If user types `kubectl explain --output md` with no specific target,
+ then all types in the cluster are included.
