@@ -50,4 +50,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TODO
+  - topology_manager_admission_requests_total
+  - topology_manager_admission_errors_total
