@@ -4,6 +4,7 @@ authors:
   - "@hoegaarden"
   - "@RobertKielty"
   - "@saschagrunert"
+  - "@xmudrii"
 owning-sig: sig-release
 participating-sigs:
   - sig-cluster-lifecycle
@@ -19,7 +20,7 @@ approvers:
   - "@tpepper"
 editor: TBD
 creation-date: 2019-02-19
-last-updated: 2022-10-12
+last-updated: 2023-01-18
 status: provisional
 see-also:
   - "https://github.com/kubernetes/enhancements/pull/858"

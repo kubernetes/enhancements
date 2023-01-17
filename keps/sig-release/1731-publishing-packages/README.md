@@ -1,4 +1,4 @@
-# Publishing kubernetes packages
+# Publishing kubernetes packages <!-- omit in toc -->
 
 <!-- toc -->
 
@@ -11,6 +11,15 @@
   - [User Stories](#user-stories)
     - [User Roles](#user-roles)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Using OBS instead of manually building and hosting packages](#using-obs-instead-of-manually-building-and-hosting-packages)
+    - [How Open Build Service works?](#how-open-build-service-works)
+    - [OBS configuration and packages layout](#obs-configuration-and-packages-layout)
+    - [Packages in OBS](#packages-in-obs)
+    - [Package Sources](#package-sources)
+    - [Package Specs](#package-specs)
+    - [Integrating OBS with our current release pipeline](#integrating-obs-with-our-current-release-pipeline)
+    - [Authentication to OBS and User Management](#authentication-to-obs-and-user-management)
+    - [How are packages used?](#how-are-packages-used)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -23,7 +32,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
-- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -84,14 +92,18 @@ and this will implicitly achieve the main goal of
 ## Proposal
 
 - Make the infrastructure generic and simple enough to be easily handed off to the CNCF
-  - Storage buckets (to store the staged/released packages) or anything similar
-  - DNS entries (e.g. apt.kubernetes.io, ...)
-  - package mirror (e.g. a self hosted aptly/artifactory/... or as a service)
-    - have multiple channels, e.g. `stable`, `dev`, `nightly`
+  - Choose a Packages as a Service solution (e.g. Open Build Service...) or build
+    the infrastructure manually. In case we build the infrastructure manually, we need
+    at least:
+    - Storage buckets (to store the staged/released packages) or anything similar
+    - DNS entries (e.g. apt.kubernetes.io, ...)
+    - Package mirror (e.g. a self hosted aptly/artifactory/... or as a service)
+      - have multiple channels, e.g. `stable`, `dev`, `nightly`
 - Run the package builds as part of [krel stage and release]
 - Have a safe way to store the signing key and make it available to the release team and release tooling
+  - Making key available to the Release Team/Managers is not a requirement if using 'as a service' solution
 - Automatically sign the repository and packages
-- Automatically build and publish packages on a nightly basis
+- Automatically build and publish packages on a nightly basis (not required)
 
 [krel stage and release]: https://github.com/kubernetes/release/blob/master/docs/krel/README.md#usage
 
@@ -151,49 +163,182 @@ Scenario: [...]
 
 ### Implementation Details/Notes/Constraints
 
-Packages will be published for different:
+Packages will be built and published using [Open Build Service (OBS)][obs]. openSUSE will sponsor the Kubernetes
+project by giving us access to the [OBS instance hosted by openSUSE][obs-build].
 
-- Package managers, like `apt` (consumes deb packages) and `yum` (consumes rpm packages).
-- **`${k8s_release}`**: the version of kubernetes `<major>.<minor>`
-  (e.g. `1.12`, `1.13`, `1.14`, ...)
+[obs]: https://openbuildservice.org/
+[obs-build]: https://build.opensuse.org/
+
+#### Using OBS instead of manually building and hosting packages
+
+The reasons for using Open Build Service (OBS) instead of building and hosting packages ourselves are:
+
+- We want to handoff managing GPG keys to the third-party
+  - Managing GPG keys ourselves represents a security risk. For example, if a Release Manager with access to the GPG key
+    steps down, we might need to rotate the key. This is a process that affects End Users, therefore
+    we want to avoid it
+  - In this case, GPG keys are securely managed by the OBS platform hosted by openSUSE. No one from the Kubernetes
+    project will have direct access to the key, mitigating one of the main risks of this proposal
+- We want to avoid managing the infrastructure ourselves, including buckets, mirrors/CDNs...
+- We want to provide 'as a service' access to the packages infrastructure to Release Managers and eventually other
+  Kubernetes maintainers for their subprojects
+
+#### How Open Build Service works?
+
+From the [OBS website](https://openbuildservice.org/):
+
+> The Open Build Service (OBS) is a generic system to build and distribute binary packages from sources in an automatic, consistent and reproducible way. You can release packages as well as updates, add-ons, appliances and entire distributions for a wide range of operating systems and hardware architectures.
+
+OBS works in a way that we push sources and package spec files. Upon pushing packages/changes, OBS automatically
+triggers builds for all chosen operating systems and architectures. Under the hood, OBS uses the same set of tools that
+we use for building packages: `dpkg-buildpackage` and `rpmbuild`.
+
+OBS implements a simple source-control management (SCM) system. It provides a complete history for all packages
+allowing users to see what spec files and sources we used to build the concrete package. The history is accessible
+via the OBS web interface.
+
+Interaction with the OBS platform is done mainly via the [`osc` command-line tool][osc]. Alternatively, it's possible
+to interact via the web interface. Currently there are no (Go) libraries that we can use instead of the `osc` tool.
+
+[osc]: https://openbuildservice.org/help/manuals/obs-user-guide/cha.obs.osc.html
+
+#### OBS configuration and packages layout
+
+Packages will be published for the following Debian-based (`apt`) and RPM-based (`yum`) distributions and architectures:
+
+- Ubuntu 20.04 (`aarch64`, `armv7l`, `ppc64le`, `s390x`, `x86_64`)
+- CentOS Stream 8 (`aarch64`, `ppc64le`, `x86_64`)
+- OpenSUSE Factory (`armv7l`, `s390x`)
+
+Those operating systems are supposed to provide the best compatibility with all Debian-based and RPM-based
+distributions, respectively.
+
+The following packages will be published for all operating system and architectures listed earlier. For simplicity,
+we'll refer to those as packages as the **core packages**:
+
+- `cri-tools`
+- `kubeadm`
+- `kubectl`
+- `kubelet`
+- `kubernetes-cni`
+
+We'll use this layout for the core packages:
+
 - **`${channel}`**: can be `stable`, `dev`, `nightly`
   - `stable`: all official releases for `${k8s_release}`
-    (e.g.: `1.13.0`, `1.13.1`, `1.13.2`, ...)
-  - `dev`: all development releases for all minor releases in this `${k8s_release}`, including `alpha`s, `beta`s and `rc`s
-    (e.g.: `1.13.0-rc.2`, `1.13.2-beta.0`, `1.13.1-alpha.3`, ...)
-  - `nightly`: any package cut automatically on a daily basis (optionally)
+    (e.g.: `1.26.0`, `1.26.1`, `1.26.2`, ...)
+  - `dev`: all development releases for all minor releases in this `${k8s_release}`,
+    including `alpha`s, `beta`s and `rc`s (e.g.: `1.26.0-rc.2`, `1.26.2-beta.0`, `1.26.1-alpha.3`, ...)
+  - `nightly`: any package cut automatically from the `master` branch on a daily basis (optionally)
+    - Nightly packages are currently out of scope and might be handled via a different KEP
+- **`${k8s_release}`**: the version of Kubernetes `<major>.<minor>`
+  (e.g. `1.12`, `1.13`, `1.14`, ...)
 
-This means, that End Users can configure their systems’ package managers to use
-those different `${channel}`s of a kubernetes `${k8s_release}` for their
-corresponding package manager.
+In OBS, this layout replicates as:
 
-A configuration for the package managers might look something like:
+- The root OBS project is [**`isv:kubernetes`**](https://build.opensuse.org/project/show/isv:kubernetes)
+- **`core`** subproject will be created in the root project to be used for the core packages
+  - In the future, we might want to allow other subprojects to use OBS, so we want to properly layout our root project
+- Each **`${channel}`** has a subproject in the **`core`** project (e.g. **`isv:kubernetes:core:stable`**)
+- Each **`${k8s_release}`** has a subproject in the **`${channel}`** subproject
+  (e.g. **`isv:kubernetes:core:stable:v1.26`**)
+  - Packages are published to this subproject. Other subprojects are only placeholders
+    for **`${k8s_release}`** subprojects
+  
+Having **`${k8s_release}`** subproject as a subproject of **`${channel}`** is required so we can build multiple
+releases in parallel. Otherwise, we would have to build a mechanism to wait for ongoing build process to be done
+before starting the build process for the next release in the pipeline. This is because if changes are pushed to
+the package, the ongoing build process is aborted. Running builds sequentially is not an option because
+that would slow down the release process too much.
 
-- deb:
-  ```
-  # deb http://apt.kubernetes.io ${k8s_release} ${channel}
-  deb [signed-by=/etc/keyrings/kubernetes-keyring.gpg] http://apt.kubernetes.io/debian 1.26 nightly
-  ```
-- rpm/yum:
-  ```
-  [kubernetes]
-  name=Kubernetes
-  # baseurl=http://yum.kubernetes.io/${k8s_release}/${channel}
-  baseurl=http://yum.kubernetes.io/fedora/1.26/nightly
-  enabled=1
-  gpgcheck=1
-  repo_gpgcheck=1
-  gpgkey=file:///etc/pki/rpm-gpg/kubernetes.gpg.pub
-  ```
+The subprojects can be created manually via the web interface. Upon creating a **`${k8s_release}`** subproject,
+the target operating systems and architectures (listed at the beginning of this subheading) must be configured for
+the subproject (via the Repositories option). This is to be done by the Release Managers before cutting the first
+alpha release for that minor release.
 
-Different architectures will be published into the same repos, it is up to the package managers to pull and install the correct package for the target platform.
+Note: it's important to ensure that the subproject and created packages are configured in a way to keep
+previous build (i.e. previous patch releases).
+
+#### Packages in OBS
+
+Before pushing packages, a **Package** object must be created in each **`${k8s_release}`** subproject for each package
+that we want to publish. This can be done via the `osc` command-line tool or the web interface. The created package
+inherits information about the target operating systems and architectures from the subproject. Creating packages is
+to be done by the Release Managers before cutting the first alpha release for that minor release.
+
+Once all Package objects are created, sources and spec files can be pushed to those packages using `osc`.
+
+#### Package Sources
+
+We'll push pre-built binaries to OBS instead of pushing sources and then building binaries in the OBS pipeline.
+The reasoning for this is:
+
+- We already have our own release pipeline. Adding another release pipeline would increase the maintenance burden for
+  Release Managers
+- It would increase the effort for updating build dependencies such as Go
+- It would increase the effort for validating correctness of created binaries
+- Binary published by our release process would differ to binaries built by OBS
+  - Additional efforts would be needed to get reproducible builds working
+  - We would also lose cosign signatures for binaries built by OBS
+
+`kubepkg` will be extended with a subcommand to create a tarball with all required binaries and files (e.g. systemd
+units and config files). The tarball is supposed to be created with the maximum compression to save on bandwidth and
+storage. The structure of the tarball is supposed to be:
+
+- Root of tarball:
+  - LICENSE file
+  - All accompanying files (e.g. systemd units)
+  - Subdirectory for each target architecture:
+    - Binary for that architecture (e.g. `kubectl`)
+
+#### Package Specs
+
+There are two key changes to the package specs compared to what specs we have at the time of writing this KEP:
+
+- We'll maintain specs only for the RPM-based distros
+- We'll have a dedicated spec for each package
+  - Right now, for RPM-based distros, we have one spec file that builds all packages
+  - This is to make it easier to maintain and update those spec files / packages, as well as, to make it easier for
+    distributors to consume and use those spec files
+
+The starting point for creating RPM specs is going to be the [RPM specs currently embedded in `kubepkg`][kubepkg-rpm].
+The following changes are needed to those RPM specs:
+
+- Parametrize specs so the build tooling is able to pick a binary for the correct target architecture
+- Ensure all spec files are passing rpm-lint
+
+The reason for dropping deb specs is that maintaining and generating those specs is much more complicated than
+maintaining RPM specs. Considering that we use pre-built binaries, we can easily convert RPM specs to Debian specs
+using the [`debbuild` tool][debbuild]. The `debbuild` tool is already available in the OBS pipeline. This tool
+can also be used by distributors if they want to build deb packages on their own.
+
+The RPM specs will be generated by `kubepkg`, which already supports this. We only need to update the spec files.
+
+[kubepkg-rpm]: https://github.com/kubernetes/release/tree/e10a44f8f9a9c08441260574e3d2a8711031fafe/cmd/kubepkg/templates/latest/rpm
+[debbuild]: https://github.com/debbuild/debbuild
+
+#### Integrating OBS with our current release pipeline
+
+As described above, currently, it's up to the Release Manager to create the subproject and packages structure in OBS
+before releasing the first alpha release. This should be the only manual steps required by Release Managers (besides
+the user management, described below).
+
+The workflow for publishing packages is:
+
+- Authenticate to OBS via `osc`
+- Pull all packages that we'll be publishing from OBS using `osc`
+- Regenerate specs for all packages using `kubepkg`
+- Generate the sources tarballs for all packages using `kubepkg`
+- Commit all changes and push them to OBS using `osc`
+- Wait for packages to be built and published successfully
+  - There's [RabbitMQ][obs-rabbitmq] available that we can use to listen for events
+  - This might not be feasible for all architectures, for example, building for `s390x` can take quite a while
 
 Ideally and optionally, publishing/promoting a package means to commit a change
 to a configuration file which triggers a "package promotion tool", which:
 
 - manages which packages need to go into which `${channel}` for which package manager of which `${k8s_release}`
 - guard that by the packages checksum
-- is able to promote a package from a bucket and also from a `${channel}` to the other
 - work off of a declarative configuration
 
 This tool does for packages what the [Image Promoter][img-promoter] tool does
@@ -207,20 +352,55 @@ promotion is an optional part of this KEP. As an intermediate solution we can
 also leave the package publishing on the Google side and focus on building them
 before graduating the KEP to GA.
 
-All architectures that are supported by the [package building tool][pkg-gen-kep] should be published.
-This KEP suggests to start with publishing a single supported architecture
-(e.g. `linux/amd64`) and extend that iteratively, when we verify that creating
-all packages for all architectures is fast enough to be done as part of the
-release process. If it turns out this step takes too long, we need to think
-about doing the package building & publishing asynchronous to the release
-process (see also: [Risks](#risks-and-mitigations)).
+At the time of writing this KEP, there are no Go libraries for working with OBS that we could use to integrate directly
+with `krel`. Eventually, we could evaluate if it makes sense to build such a library for our purposes. Until then,
+we'll use `osc` directly (by exec-ing), which also requires adding `osc` to our build images.
+
+[obs-rabbitmq]: https://rabbit.opensuse.org/
+
+#### Authentication to OBS and User Management
+
+The concept of API tokens in OBS is very limited and provides access only to a very few endpoints. In other words,
+it's not possible to use API tokens for publishing to OBS. Instead, we need to create some sort of a service account
+to be used when publishing packages. This is one time operation that can be done by SIG Release Leads.
+
+Users are managed manually via the OBS web interface. SIG Release Leads must have access to add/remove users from
+our OBS project. Release Managers should be given read/write access, so they can maintain and create projects and
+packages.
+
+#### How are packages used?
+
+The End Users can configure their systems’ package managers to use
+those different `${channel}`s of a kubernetes `${k8s_release}` for their
+corresponding package manager.
+
+A configuration for the package managers might look something like:
+
+- deb:
+  ```
+  # deb http://apt.kubernetes.io ${k8s_release} ${channel}
+  deb [signed-by=/etc/keyrings/kubernetes-keyring.gpg] http://obs.kubernetes.io/core:/stable:/v1.26/deb/ /
+  ```
+- rpm/yum:
+  ```
+  [kubernetes]
+  name=Kubernetes
+  # baseurl=http://yum.kubernetes.io/${k8s_release}/${channel}
+  baseurl=http://obs.kubernetes.io/core:/stable:/v1.26/rpm/
+  enabled=1
+  gpgcheck=1
+  repo_gpgcheck=1
+  gpgkey=file:///etc/pki/rpm-gpg/kubernetes.gpg.pub
+  ```
+
+Different architectures will be published into the same repos, it is up to the package managers to pull and install the correct package for the target platform.
 
 ### Risks and Mitigations
 
-- _Risk_: We don't find a proper way to share secrets like the signing key
-  _Mitigation_: Using a third party tool like 1Password
+- _Risk_: The OBS installation provided by openSUSE is unable to serve the load generated by the Kubernetes project
+  _Mitigation_: We can host our own mirrors and take some load from openSUSE (e.g. on Equinix Metal)
 - _Risk_: Building all the packages for all the distributions and their version takes too long to be done nightly or via cutting the release  
-  _Mitigation_: We do not deliver nightly packages.
+  _Mitigation_: We do not deliver nightly packages or wait for packages to be published in the release pipeline.
 
 ## Design Details
 
@@ -261,15 +441,15 @@ Once the tests show that the mirrors are good, we can adapt the official documen
 
 #### Alpha
 
-- Needed infrastructure is in place (buckets, DNS, repos, …)
+- Open Build Service is configured and ready to host packages
+- Spec files are ready and can be used in OBS to bulid packages
 - There is a documented process to create and publish deb and rpm packages of Kubernetes components
 - It is possible to consume the published deb and rpm packages using steps similar to the documented process
 
 #### Alpha -> Beta Graduation
 
-- [ ] [krel] creates deb and rpm packages of Kubernetes components
+- [ ] [krel] interacts with Open Build Service to automatically trigger package builds and publishing
 - [ ] Packages are signed
-- [ ] Repository indices are updated after packages are copied to the repositories
 - [ ] Post-publish tests are written and run as part of the release process
 - [ ] Nightly builds will be built and published on a daily basis using [krel] which will be improved to take over this task from [kubepkg] making use of [pre-existing periodic jobs] (https://github.com/kubernetes/test-infra/blob/97cb34fa9e2bfc4af35de3e561cb9fc5a1094da1/config/jobs/kubernetes/sig-release/kubernetes-builds.yaml#L120-L166)
 - [ ] Documentation written checked to be complete and correct.
@@ -312,9 +492,3 @@ N/A
 ## Alternatives [optional]
 
 N/A
-
-## Infrastructure Needed
-
-New infrastructure is required to manage keys used to sign the deb and rpm
-artifacts so as to remove the dependency on existing infrastructure and
-personal.
