@@ -347,7 +347,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Dependence on any Kubernetes control-plane metrics implies that they are using this feature.
+We've introduced a metric (i.e. `registered_metrics_total`) which should serve to indicate this feature is enabled.
 
 ###### How can someone using this feature know that it is working for their instance?
 
