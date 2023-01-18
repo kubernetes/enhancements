@@ -297,7 +297,7 @@ Related issues:
 
 #### Scalability
 
-To discover the set of resources to be pruned, kubectl makes a LIST query to every GVR on the allowlist, for every namespace (if applicable): `GVR(namespaced)*Ns + GVR(global)`. For example, with the default list and one target namespace, this is 14 requests; with the default list and two namespaces, it jumps to 26. An obvious fix for some of the correctness issues described would be to get the full list of GVRs from discovery and query ALL of them, ensuring all previous objects are discovered. Indeed some tools do this, and pass the resulting list to kubectl's allowlist. But this strategy is clearly not performant, and many of the additional queries are wasted, as the GVRs in question are extremely unlikely to have resources managed via kubectl.
+To discover the set of resources to be pruned, kubectl makes a LIST query for each Group-Version-Resource (GVR) on the allowlist, for every namespace (if applicable): `GVR(namespaced)*Ns + GVR(global)`. For example, with the default list and one target namespace, this is 14 requests; with the default list and two namespaces, it jumps to 26. An obvious fix for some of the correctness issues described would be to get the full list of GVRs from discovery and query ALL of them, ensuring all previous objects are discovered. Indeed some tools do this, and pass the resulting list to kubectl's allowlist. But this strategy is clearly not performant, and many of the additional queries are wasted, as the GVRs in question are extremely unlikely to have resources managed via kubectl.
 
 A related issue is that the identifier of ownership for pruning is the last-applied annotation, which is not something that can be queried on. This means we cannot avoid retrieving irrelevant resources in the LIST requests we make.
 
@@ -335,25 +335,25 @@ The following popular tools have mechanisms for managing sets of objects, which 
 
 #### Helm
 
-**Pattern**: list of GVKNN (from secret) + labels
+**Pattern**: list of Group-Version-Kind-Namespace-Name (GVKNN) (from secret) + labels
 
 Each helm chart installation is represented by a Secret object in the cluster.  The `type` field of the Secret is set to `helm.sh/release.v1`.  Objects that are part of the helm chart installation get annotations `meta.helm.sh/release-name` and `meta.helm.sh/release-namespace`, but the link to the “parent” Secret is somewhat obscure.    The list of GKs in use can be derived from the data encoded in the secret, but this data actually includes the full manifest.
 
 #### Carvel kapp
 
-**Pattern**: list of GK (from configmap) + labels
+**Pattern**: list of Group-Kinds (GK) (from configmap) + labels
 
 Each kapp installation is represented by a ConfigMap object in the cluster.  The ConfigMap has a label `kapp.k14s.io/is-app: "”`.  Objects that are part of the kapp have two labels: `kapp.k14s.io/app=<number>` and `kapp.k14s.io/association=<string>`.  Getting from the parent ConfigMap to these values is again somewhat obscure.  The `app` label is encoded in a JSON blob in the “spec” value of the ConfigMap.  The `association` object includes an MD5 hash of the object identity, and varies across objects in a kapp.  The list of GKs in use is encoded as JSON in the “spec” value of the ConfigMap.
 
 #### kpt
 
-**Pattern**: list of GKNN (from ResourceGroup)
+**Pattern**: list of Group-Kind-Namespace-Name (GKNN) (from ResourceGroup)
 
 Kpt uses a ResourceGroup CRD, and can register that CRD automatically.    The ResourceGroup contains a full list of GKNNs for all managed objects.  Kpt calls this full list of objects - including the names and namespaces - an “inventory”.  Each object gets an annotation `config.k8s.io/owning-inventory`, where that annotation corresponds to a label on the ResourceGroup `cli-utils.sigs.k8s.io/inventory-id`
 
 #### Google ConfigSync
 
-**Pattern**: list of GVKNN (from ResourceGroup)
+**Pattern**: list of Group-Version-Kind-Namespace-Name (GVKNN) (from ResourceGroup)
 
 Distinct sets of synchronized resources are represented by RootSync / RepoSyncs, along with a ResourceGroup that has the full inventory.  Each object has some annotations that define membership, including the same `config.k8s.io/owning-inventory` as is used by kpt.    As with other solutions, following the “chain” from RootSync/RepoSync to managed objects is somewhat obscure.
 
@@ -382,11 +382,17 @@ applyset.k8s.io/part-of: <applysetkey>
 
 The `<applysetkey>` can be chosen essentially arbitrarily (subject to the limits of label values).
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> Should we identify a few patterns to avoid collisions?  Either uid:12345 or <toolname>:...
->
-> <<[/UNRESOLVED]>>
+We recommend that tooling uses a prefix that is its "tool name", e.g. `kubectl.` or `helm.`,
+followed by some tooling-specific unique value.  We can investigate maintaining a formal registry,
+but we initially reserve the following prefixes:
+
+* `kubectl.` for kubectl
+* `helm.` for helm
+* `kpt.` for kpt
+* `uid.` for where the suffix is the UID of the applyset object (e.g. `uid.e049464e-4583-4642-9649-93dcb0e96bd4`)
+* `id.` for where the suffix is the group-kind followed by the namespace followed by the name, such as
+  `id.configmaps.ns1.parent1`.  (While this is a little tricky to parse, it should be unique because
+  neither namespaces nor object names allows dots.)
 
 ### ApplySet Object Labels
 
@@ -406,11 +412,9 @@ Implicit in this are a few assumptions:
 How the ApplySet object is specified is a tooling decision.  Gitops based tooling may choose to make the ApplySet object explicit in the source git repo.  Other tooling may choose to leverage their existing concepts, for example mapping to a Secret or ConfigMap that they are creating already.  The tooling is responsible for consistently specifying the ApplySet object across apply invocations, so that pruning can be done consistently.
 
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> Do we agree: For kubectl specifically, we propose supporting but not requiring explicitly provided parent objects, with automatic object creation in the latter case. This is explained in more detail below.
->
-> <<[/UNRESOLVED]>>
+For kubectl specifically, we propose supporting but not requiring explicitly
+provided parent objects, with automatic object creation in the latter case.
+This is explained in more detail below.
 
 
 
@@ -456,14 +460,12 @@ Consider including folks who also work outside the SIG or subproject.
 
 In order to support listing all the applysets in theory we would need to query all GKs with a label selector.  However, we can reduce the set of GKs that need to be queried with two optimizations:
 
-For built-in types, we limit to ConfigMaps and Secrets.
-For custom resources, we require that CRDs that define types that can be used as ApplySet objects be labeled with a label with a name of `applyset.k8s.io/role/applyset`.
+* For built-in types, we limit to ConfigMaps and Secrets.
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> The value is currently unspecified (TODO: maybe v1?)
->
-> <<[/UNRESOLVED]>>
+* For custom resources, we require that CRDs that define types that can be used as ApplySet objects be labeled with a label with a name of `applyset.k8s.io/role/applyset`.
+
+The value is currently ignored, but implementors should set an empty value to
+be forwards-compatible with future evolution of this convention.
 
 A `kubectl apply list-applysets -n ns` command would therefore do the following queries:
 
@@ -486,7 +488,7 @@ We want to support efficient listing of the objects that belong to a particular 
 
 We already know the label selector for a given applyset, by convention: we take the id from the value of the `applyset.k8s.io/id` label, and that becomes the required value of the `applyset.k8s.io/part-of` label.
 
-In order to narrow the list of GKs, we require the applyset object to define the list of GKs in use.  The plumbing tooling can optimize selection of the objects in this applyset based on this list.
+In order to narrow the list of Group-Kinds (GKs), we require the applyset object to define the list of GKs in use.  The plumbing tooling can optimize selection of the objects in this applyset based on this list.
 
 “Porcelain” tooling can still perform tooling-specific GK identification. Tooling generally can use their existing mechanisms, be they more efficient or more powerful or just easier to continue to support.  However, by using the standardized labels proposed here, they can interoperate with other tooling and enjoy protection against their resources being changed by another tool (such as kubectl).  Tooling is not required to implement these labels, and we are not introducing new behaviours for “unenlightened” objects.
 
@@ -494,13 +496,9 @@ To identify the GKs in use, kubectl and applyset-compatible tooling shall add an
 
 To avoid spurious updates and conflicts, the list must be sorted alphabetically.  The list may include GKs where there are no resources actually labeled with the applyset-id, but to avoid churn this should be avoided and ideally only be a transitional step during an apply or prune operation.
 
-We may in future define additional mechanisms, such as supporting a field selector on the CRD that identifies a strongly-typed list.
-
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> Any we want to do now?
->
-> <<[/UNRESOLVED]>>
+We may in future define additional mechanisms, such as supporting a field
+selector on the CRD that identifies a strongly-typed list; we do not plan
+to do this in the alpha.
 
 Where no list of GKs can be determined the tooling should warn that we are performing a full-GK scan.  As discussed in the interoperability section, tooling should not populate the annotation unless it believes itself to be the manager of an applyset.
 
@@ -524,17 +522,26 @@ Best practice is likely to avoid ApplySets spanning namespaces.  However, someti
 
 Where a GK is known to be part of the ApplySet and is cluster-scoped, we should naturally query for those objects at cluster scope; any permission problems here should be surfaced as errors.  When a tool cannot determine the list of GKs for an ApplySet, it may support “discovery”, likely warning that the ApplySet does not define a list of GKs, and then attempt to perform cluster-scoped queries, likely warning if there are insufficient permissions.
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> Should kubectl ever fall back to this? Will it have a separate subcommand for it?
->
-> <<[/UNRESOLVED]>>
+For the alpha scope, this functionality will be restricted to subcommands of apply
+(like the migrate functionality).  We will likely want a command similar in spirit
+to `fsck`.  We will add warnings/suggestions to the main "apply" flow when we detect
+problems that might require a full-scan / discovery.  We may extend this based on
+user-feedback from the alpha.
 
 For GKs that are namespace-scoped, we would normally expect those to be part of an ApplySet object in the same namespace.  We define an additional annotation however for cross-namespace ApplySets:  `applyset.k8s.io/additional-namespaces`.  The value of this annotation is a comma-separated list of the names of the namespaces (other than the ApplySet namespace) in which objects are found, for example `default,kube-system,ns1,ns2`.  Note that there is no need to include this specifically for cluster-scoped objects, as those are covered by the group-kind list.  We reserve the empty value.  If this annotation is present, the tooling will query namespace-scoped resources in those namespaces in addition to the namespace of the ApplySet object (if any).  If this annotation is not present on a namespace-scoped ApplySet parent object, the tooling will query namespace-scoped resources only in the same namespace as the ApplySet parent object.  If the annotation is not present on a cluster-scoped ApplySet parent object, the tooling will not query namespace-scoped resources at all and should output an error if given namespace-scoped GKs.
 
 As with `applyset.k8s.io/contains-group-kinds`, this list of namespaces must be sorted alphabetically, and should be minimal (ideally other than during apply and prune operations).
 
 As cross-namespace ApplySets are not particularly encouraged, we do not currently optimize this further.  In particular, we do not specify the GKs per namespace.  We can add more annotations in future should the need arise.
+
+Where an applyset includes both cluster-scoped and namespace-scoped resources,
+by reducing to the above cases.  The set of relevant resources is determined
+by consulting the `applyset.k8s.io/contains-group-kinds` annotation; whether
+those kinds are cluster-scoped or namespace-scoped are found using the normal
+API discovery mechanisms.  Cluster-scoped resources ignore the
+`applyset.k8s.io/additional-namespaces` annotation, namespace-scoped resources
+combine the current namespace from the applyset object (if that is itself
+namespace-scoped) with the namespaces from the annotation.
 
 ### Objects with owner references
 
@@ -548,6 +555,17 @@ use cases related to objects bearing owner references are surfaced.
 In the future, we could downgrade this stance to recommending a warning,
 or to considering owner references orthogonal and ignoring them entirely.
 
+### Versioning
+
+The labels and annotations proposed here are not versioned.  Putting a version
+into the key would forever complicate label-selection (because we would have to
+query over multiple labels).  However, if we do need versioning, we can introduce
+versions by including a prefix like `v2:` (and we would likely do
+`v2:[...` or `v2:{...`).  Colons are not valid in namespaces nor in group-kinds,
+so there is no conflict with the existing (v1) usage described here.  Labels cannot
+include a `:` character, so if we needed to version a label we can use `v2.`,
+however our usage of labels is primarily around matching opaque applyset-id
+tokens and thus seems unlikely to need versioning.
 
 ### Kubectl Reference Implementation
 
@@ -576,12 +594,10 @@ When `--applyset` is specified, kubectl will automatically create a secret named
 >
 > <<[/UNRESOLVED]>>
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> Will we also support an object being provided as part of the input
-> resources, and if so, will we limit the kinds?
->
-> <<[/UNRESOLVED]>>
+In future, we may support a applyset object being provided as part of
+the input resources, but we will do so in response to user demand and
+user feedback, and do not have existing plans to do so in the alpha
+scope.
 
 When pruning with `--applyset`, kubectl will delete objects that are labeled as part of the applyset of objects, but are not in the list of objects being applied.  We expect to reuse the existing prune logic and behavior here, except that we will select objects differently (although as existing prune is also based on label selection, we may be able to reuse the bulk of the label-selection logic also).  Dry-run will be supported, as will `kubectl diff --applyset=id`.
 
@@ -589,25 +605,34 @@ We will not support all the combinations of flags that apply and prune currently
 
 We will detect “overlapping” applysets where objects already have a different applyset label, and initially treat this an error (we may add “adopt” or “force” functionality later).
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> Expand on how we will accomplish this:
-> - Do an extra GET request before SSA?
-> - Use a separate SSA manager to create the labels on the objects to get automatic conflict detection?
-> - Is there another option?
-> This has consistency and performance implications.
->
-> <<[/UNRESOLVED]>>
+During implementation of the alpha we will explore to what extent we can
+optimize this overlap discovery, particularly in conjunction with
+server-side-apply which does not require an object read before applying.
+A richer apply tooling than kubectl does will likely establish watches
+on the objects before applying them, to monitor object health and status.
+However, this is out of scope for kubectl and thus we will likely have to
+optimize differently for kubectl.  In the worst case, we will have to fetch
+the objects before applying (with a set of label-filtered LIST requests),
+we will explore to what extent that can be amortized over other kubectl
+operations in alpha.  One interesting option may be to use the fieldManager,
+choosing a fieldManager that includes the applyset ID to automatically
+detect conflicts (by _not_ specifying force); we intend to explore
+how this looks in practice and whether other options present themselves.
 
-We will not support “adoption” of existing applysets initially, other than by applying “over the top”.  Based on user feedback, we may require a flag to adopt existing objects.  Note that adoption is not trivial, in that different users may expect different behaviors with regard to the GKs selected or the treatment of objects having/lacking the `last-application-configuration` annotation.
+We differentiate between "adoption" (taking over management of a set of
+objects created by another tool), vs "migration" (taking over management of
+a set of objects created with the existing pruning mechanism).
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
-> Expand on adoption (taking over management of a set created by another tool)
-> vs migration (taking over management of a set created by the old pruning mechanism)
-> and how kubectl will or won't facilitate these flows.
->
-> <<[/UNRESOLVED]>>
+We will not support "adoption" of existing applysets initially, other than
+by re-applying "over the top".  Based on user feedback, we may require a flag
+to adopt existing objects / applysets.
+
+In the alpha scope, we will explore suitable "migration" tooling for moving
+from existing `--prune` objects.  Note that migration is not trivial, in that
+different users may expect different behaviors with regard to the GKs selected
+or the treatment of objects having/lacking the `last-application-configuration`
+annotation.  We intend to create `migrate` as an explicit subcommand of `apply`,
+rather than trying to overload the "normal flow" apply command.
 
 ### Tooling Interoperability
 
@@ -617,15 +642,15 @@ For read operations, we expect that using different tooling shall generally be s
 
 For write operations, we need to be more careful.  Deleting an applyset using the “wrong tool” should be safe, but we will likely include a confirmation if deleting an applyset using the “wrong tool”, particularly unknown tools.  We expect that porcelain tools may define richer behavior on delete, so this is the equivalent of pulling the power cable on an applyset instead of performing a clean shutdown.
 
-We do not believe that update operations are safe if using the “wrong tool”, because that tooling may have additional metadata that would then not be updated.  Tooling should generally reject applying on top of unknown applysets.  PorcelainTooling may choose to recognize other tooling and implement specific logic there; in particular this may be useful for moving between different major versions of the same tooling.  We may implement a `--force` flag, but this would likely be logically equivalent in outcome to a full applyset deletion and recreation, though with the potential (but not the guarantee) to be less disruptive.
+We do not believe that update operations are safe if using the “wrong tool”, because that tooling may have additional metadata that would then not be updated.  Tooling should generally reject applying on top of unknown applysets.  Porcelain tooling may choose to recognize other tooling and implement specific logic there; in particular this may be useful for moving between different major versions of the same tooling.  We may implement a `--force` flag, but this would likely be logically equivalent in outcome to a full applyset deletion and recreation, though with the potential (but not the guarantee) to be less disruptive.
 
->  <<[UNRESOLVED @justinsb @KnVerey]>>
->
->  How should we recognize that we’re using the “wrong’ tool?
-> Should we have something like `applyset.k8s.io/tooling: helm/v2.0.6` on the applyset?
->
-> <<[/UNRESOLVED]>>
-
+In order to identify usage of the "wrong tool", we define a further annotation
+`applyset.k8s.io/tooling`, which tooling can set to protect their applysets.
+The value should be something like `kubectl/v1.27.3` or `helm/v2.0.6`,
+i.e. `<toolname>/<semver>`.  Compatible porcelain tooling should recognize that
+a different tool is managing the applyset and provide an appropriate warning.
+We intend to explore the trade-off between safety and user-friendly behaviour
+here, during evolution of the feature in alpha and beyond.
 
 ### Security Considerations
 
@@ -709,6 +734,18 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 
 ### Graduation Criteria
+
+We would like this functionality to replace the existing uses of `--prune`.  We have
+chosen to take an approach that is a better and supportable evolution of the existing
+label based pruning, rather than a revolutionary new approach, to try to enable migration.
+
+At some point we might deprecate the existing `--prune` functionality, to encourage users
+to migrate.  A suitable timeline would probably be to begin deprecation at beta, and to
+not remove the functionality until at least applyset reaches GA + 1 version.  However, we
+intend to gather feedback from early alphas here - in particular we want to discover:
+
+* Are there `--prune` use-cases we do not cover?
+* Do existing `--prune` users migrate enthusiastically (without any "nudge" from deprecation)?
 
 <!--
 **Note:** *Not required until targeted at a release.*
