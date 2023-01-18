@@ -146,7 +146,7 @@ it seemed like a good time to capture requirements and a process for updating Ku
 
 ## Proposal
 
-Track changes made to the Kubernetes master branch that were required to adopt a new go minor version (go 1.N).
+Track changes made to the default Kubernetes development branch that were required to adopt a new go minor version (go 1.N).
 This typically includes changes like:
 
 * updates to static analysis tooling to support any go language changes
@@ -157,7 +157,7 @@ This typically includes changes like:
 * updates to Kubernetes code to work with both go 1.N and 1.(N‑1)
   (e.g. [commit c31cc5ec](https://github.com/kubernetes/kubernetes/commit/c31cc5ec46315a02343ec6d6a2ef659e2cc8668e))
 
-Merge those changes to the Kubernetes master branch *prior* to updating to go 1.N.
+Merge those changes to the default Kubernetes development branch *prior* to updating to go 1.N.
 This ensures those changes build and pass tests with both go 1.N and 1.(N‑1).
 Here is an [example of tracking and pre-merging changes for adopting go 1.20](https://github.com/kubernetes/release/issues/2815#issuecomment-1373891562).
 
@@ -224,8 +224,8 @@ This KEP does depend on the ability to test a specific change against two go ver
 Currently, this is accomplished using copies of presubmit jobs suffixed with
 ["go-canary"](https://grep.app/search?q=go-canary&filter[repo][0]=kubernetes/test-infra),
 built using a proposed go version and manually triggered on a pull request.
-This is the mechanism currently used to verify changes made to the Kubernetes
-master branch in preparation for a go minor version update.
+This is the mechanism currently used to verify changes made to the default Kubernetes
+development branch in preparation for a go minor version update.
 
 https://github.com/kubernetes/test-infra/issues/28310 tracks a feature 
 request to allow the code under test to dictate the go version used.
