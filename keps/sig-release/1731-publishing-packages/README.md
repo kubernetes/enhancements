@@ -25,13 +25,13 @@
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Alpha -\> Beta Graduation](#alpha---beta-graduation)
-    - [Beta -\> GA Graduation](#beta---ga-graduation)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-- [Drawbacks \[optional\]](#drawbacks-optional)
-- [Alternatives \[optional\]](#alternatives-optional)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
