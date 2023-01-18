@@ -80,6 +80,8 @@ The go project has the following [release policies](https://github.com/golang/go
 * Support the last 2 minor versions with patch releases
   (each minor version of go has ~12 months of security fix support)
 
+These policies are followed closely, resulting in [2 go minor versions per year since 2016](https://go.dev/doc/devel/release).
+
 The Kubernetes project is built on go and has the following policies:
 
 * Immediately test/adopt new minor versions of go on the main development branch.
