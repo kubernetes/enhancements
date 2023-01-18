@@ -801,6 +801,9 @@ A rollback might be considered if the metric `scheduler_pending_pods{queue="gate
 high watermark for a long time. It, if not intentionally, may reveal that some controllers forget
 to empty the Pods' scheduling gates, which keep them in pending state.
 
+Another indicator for rollback is the 90-percentile value of metric `scheduler_plugin_execution_duration_seconds{plugin="SchedulingGates"}`
+exceeds 100ms steadily.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -836,6 +839,9 @@ Node to host the Pod
 - `scheduler_pending_pods{queue="gated"}` (new): scheduler respect the Pod's present `schedulingGates`
 and hence not schedule it
 
+The metric `scheduler_plugin_execution_duration_seconds{plugin="SchedulingGates"}` gives a histogram
+to show the Nth percentile value how SchedulingGates plugin is executed.
+
 Moreover, to explicitly indicate a Pod's scheduling-unready state, a condition
 `{type:PodScheduled, reason:SchedulingGated}` is introduced.
 
@@ -848,6 +854,7 @@ logs or events for this purpose.
 -->
 
 - observe non-zero value for the metric `pending_pods{queue="gated"}`
+- observe entries for the metric `scheduler_plugin_execution_duration_seconds{plugin="SchedulingGates"}`
 - observe non-empty value in a Pod's `.spec.schedulingGates` field
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -901,6 +908,7 @@ Pick one more of these and delete the rest.
 
 - [x] Metrics
   - Metric name: scheduler_pending_pods{queue="gated"}
+  - Metric name: scheduler_plugin_execution_duration_seconds{plugin="SchedulingGates"}
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
