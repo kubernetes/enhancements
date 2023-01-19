@@ -386,7 +386,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- No integration tests added.
 
 ##### e2e tests
 
@@ -397,8 +397,6 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
-
-- <test>: <link to test coverage>
 
 The feature flag will be enabled for e2e tests. The tests will attempt to convert volume 
 mode when creating a `PVC` from a `VolumeSnapshot`:
