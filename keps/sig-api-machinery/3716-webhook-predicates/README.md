@@ -1,4 +1,4 @@
-# KEP-3716: Webhook Predicates
+# KEP-3716: Admission Webhook Predicates
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -35,6 +35,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Exclusion Expressions](#exclusion-expressions)
   - [Resource Exclusions](#resource-exclusions)
   - [CEL Admission Control](#cel-admission-control)
 <!-- /toc -->
@@ -89,6 +90,12 @@ webhook in the critical path of cluster stability. Even if tools like namespace 
 avoid circular-dependencies and exclude critical system resources, a webhook outage can still have a
 major impact on cluster availability. This proposal aims to mitigate (but not eliminate) these
 issues by allowing webhooks to be more narrowly scoped and targeted.
+
+
+The same benefits also apply to bootstrapping a new cluster, or in a disaster-recovery scenario
+where objects in a cluster need to be recreated from source code. Being able to define and deploy a
+webhook before any workload Pods are defined means that admins don't need to bypass security
+controls to fix things, and helps to ensure there's never a security gap when restoring service.
 
 **Performance:** Admission webhooks sit in the critical request path for write-requests. Validating
 webhooks can be run in parallel, but Mutating webhooks must be run in serial (up to 2 times!). This
@@ -217,6 +224,8 @@ type Predicate struct {
 	// ref: https://github.com/google/cel-spec
 	// CEL expressions have access to the contents of the AdmissionRequest, organized into CEL variables:
 	//
+	//'object' - The object from the incoming request. The value is null for DELETE requests.
+	//'oldObject' - The existing object. The value is null for CREATE requests.
 	//'request' - Attributes of the admission request([ref](/pkg/apis/admission/types.go#AdmissionRequest)).
 	//
 	// The `apiVersion`, `kind`, `metadata.name` and `metadata.generateName` are always accessible from the root of the
@@ -233,7 +242,7 @@ type Predicate struct {
 	//	  "import", "let", "loop", "package", "namespace", "return".
 	// Examples:
 	//   - Expression accessing a property named "namespace": {"Expression": "object.__namespace__ > 0"}
-	//   - Expression accessing a property named "x-p
+	//   - Expression accessing a property named "x-prop": {"Expression": "object.x__dash__prop > 0"}
 	//   - Expression accessing a property named "redact__d": {"Expression": "object.redact__underscores__d > 0"}
 	//
 	// Equality on arrays with list type of 'set' or 'map' ignores element order, i.e. [1, 2] == [2, 1].
@@ -252,15 +261,6 @@ The predicate expression has access to the contents of the `AdmissionRequest` ob
 `request` variable), but is not given any additional information. Expressions requiring access to
 additional information (such as a paramater object) must be performed in the webhook, and are out of
 scope for this proposal.
-
-<<[UNRESOLVED api structure ]>>
-Do we need the predicate struct? Or should we just inline it instead? That is:
-```go
-type ValidatingWebhook struct {
-  Predicates []string `json:"predicates,omitempty"`
-}
-```
-<<[/UNRESOLVED]>>
 
 ### Risks and Mitigations
 
@@ -830,15 +830,28 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+### Exclusion Expressions
+
+The `predicate` expression could be inverted, so that requests that match are excluded rather than
+included. In this case, we would probably also want to change from requiring all expressions to
+match, to excluding the request if any match.
+
+Although this approach would simplify some usecases, such as
+[excluding resources from a wildcard rule](#exclude-resources-from-a-wildcard-rule) or
+[exempting system users from a security policy](#exempt-system-users-from-security-policy), it
+means other expressions would become double-negatives, which generally goes against API design
+best-practices.
+
 ### Resource Exclusions
 
-https://github.com/kubernetes/enhancements/pull/3694 Proposes an alternative approach using a more
-structured format for expressing resource exclusions. This approach may be more approachable to
-users who are not comfortable writing CEL expressions, but it is significantly less powerful.
-This would address [Exclude resources from a wildcard rule](#exclude-resources-from-a-wildcard-rule),
-and could be extended with subject exclusions to address
-[Exempt system users from security policy](#exempt-system-users-from-security-policy),
-but would not be sufficient to address
+[KEP-3693](https://github.com/kubernetes/enhancements/issues/3693) Proposes an alternative approach
+using a more structured format for expressing resource exclusions. This approach may be more
+approachable to users who are not comfortable writing CEL expressions, but it is significantly less
+powerful. This would address
+[Exclude resources from a wildcard rule](#exclude-resources-from-a-wildcard-rule),
+and could be extended with subject exclusions to
+address [Exempt system users from security policy](#exempt-system-users-from-security-policy), but
+would not be sufficient to address
 [Scope an NFS access management webhook to Pods mounting NFS volumes](#scope-an-nfs-access-management-webhook-to-pods-mounting-nfs-volumes).
 
 These two approaches are not mutually exclusive.
