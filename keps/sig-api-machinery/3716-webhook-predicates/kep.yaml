@@ -1,4 +1,4 @@
-title: KEP Template
+title: Admission Webhook Match Conditions
 kep-number: 3716
 authors:
   - "@tallclair"
@@ -8,9 +8,11 @@ participating-sigs:
 status: provisional
 creation-date: 2023-01-09
 reviewers:
-  - TBD
+  - jpbetz
+  - cici37
+  - maxsmythe
 approvers:
-  - TBD
+  - deads2k
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
@@ -42,7 +44,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: WebhookPredicates
+  - name: AdmissionWebhookMatchConditions
     components:
       - kube-apiserver
 disable-supported: true
