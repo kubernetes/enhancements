@@ -1,4 +1,4 @@
-# KEP-3716: Admission Webhook Predicates
+# KEP-3716: Admission Webhook Match Conditions
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -70,17 +70,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes adding "predicate" expressions to admission webhooks, as an extension to the
-existing `rules` to define the scope of a webhook. A `predicate` is a
+This KEP proposes adding "match conditions" to admission webhooks, as an extension to the
+existing `rules` to define the scope of a webhook. A `matchCondition` is a
 [CEL](https://github.com/google/cel-spec) expression that must evaluate to true for the admission
-request to be sent to the webhook. If a `predicate` evaluates to false, the webhook is skipped for
+request to be sent to the webhook. If a `matchCondition` evaluates to false, the webhook is skipped for
 that request (implicitly allowed).
-
-<<[UNRESOLVED naming ]>>
-I'm not satisfied with the name `predicates` for this feature. Other ideas considered:
-- filters, prefilters
-- match{Predicates, Filters, Criteria, Expressions, Constraints, ...}
-<<[/UNRESOLVED]>>
 
 ## Motivation
 
@@ -122,8 +116,8 @@ Currently, if a webhook uses wildcard match rules, there is no way to filter out
 resources or requests from matching the wildcard. If the webhook instead enumerates every resource
 that should match, it must be kept up-to-date with every CRD that's added.
 
-With CEL predicates, the webhook could specify wildcard match rules, and add predicates to filter
-out the desired resources:
+With CEL match conditions, the webhook could specify wildcard match rules, and add match conditions
+to filter out the desired resources:
 
 ```yaml
 rules:
@@ -134,7 +128,7 @@ rules:
     apiGroups: '*'
     apiVersions: '*'
     resources: '*'
-predicates:
+matchConditions:
   # Exclude leases from the webhook
   - expression: '!(request.resource.group == "coordination.k8s.io" && resource.resource == "leases")'
 ```
@@ -148,10 +142,10 @@ System _resources_ can currently be exempted through a namespace or label select
 system components against non-system resources cannot be. For example, update pod status requests by
 Kubelets cannot be excluded from user webhooks intercepting all pod requests.
 
-With `predicates`, a managed cluster could append system-exclusion rules to each webhook. For example:
+With `matchConditions`, a managed cluster could append system-exclusion rules to each webhook. For example:
 
 ```yaml
-predicates:
+matchConditions:
   # Exclude node requests from the webhook
   - expression: '!("system:nodes" in request.userInfo.groups)'
 ```
@@ -172,7 +166,7 @@ that the request is within scope, and return early if it's not. This adds latenc
 failure point to irrelevant requests. This example requires an external integration, and thus is not
 a candidate for migration to CEL `ValidatingAdmissionPolicy`.
 
-With predicates, the predicate expressions can check whether the request object is in-scope for the
+With match conditions, the expressions can check whether the request object is in-scope for the
 webhook:
 
 ```yaml
@@ -181,7 +175,7 @@ rules:
     apiGroups: '' # core
     apiVersions: '*'
     resources: 'pods'
-predicates:
+matchConditions:
   # Only include pods with an NFS volume.
   - expression: 'request.object.spec.volumes.exists(v, v.has(nfs))'
 ```
@@ -200,26 +194,26 @@ predicates:
 ### API
 
 Both `ValidatingWebhook` and `MutatingWebhook` (in `admissionregistration.k8s.io`) will be updated
-with a new `Predicates` field:
+with a new `MatchConditions` field:
 
 ```go
 
 type ValidatingWebhook struct {
   // ...
 
-  // Predicates is a list of conditions on the AdmissionRequest ('request') that must be met for a
+  // MatchConditions is a list of conditions on the AdmissionRequest ('request') that must be met for a
   // request to be sent to this webhook.
   // +optional
-  Predicates []Predicate `json:"predicates,omitempty"`
+  MatchConditions []MatchCondition `json:"matchConditions,omitempty"`
 }
 
 type MutatingWebhook struct {
   // ...
-  Predicates []Predicate `json:"predicates,omitempty"`
+  MatchConditions []MatchCondition `json:"matchConditions,omitempty"`
 }
 
-// Predicate represents a condition which must by fulfilled for a request to be sent to a webhook.
-type Predicate struct {
+// MatchCondition represents a condition which must by fulfilled for a request to be sent to a webhook.
+type MatchCondition struct {
   // Expression represents the expression which will be evaluated by CEL.
 	// ref: https://github.com/google/cel-spec
 	// CEL expressions have access to the contents of the AdmissionRequest, organized into CEL variables:
@@ -257,7 +251,7 @@ type Predicate struct {
 }
 ```
 
-The predicate expression has access to the contents of the `AdmissionRequest` object (exposed as the
+The match condition expression has access to the contents of the `AdmissionRequest` object (exposed as the
 `request` variable), but is not given any additional information. Expressions requiring access to
 additional information (such as a paramater object) must be performed in the webhook, and are out of
 scope for this proposal.
@@ -266,35 +260,35 @@ scope for this proposal.
 
 #### Security
 
-**Risk: Attacker adds or changes a predicate to weaken an admission policy.**
+**Risk: Attacker adds or changes a match condition to weaken an admission policy.**
 
 This is does not represent a new threat, as doing so would require update access to the admission
 registration object, and with that permission an attacker could already disable the policy through
 manipulating match rules, namespace selector, or object selector (or reroute the webhook entirely).
 
-**Risk: Logic error in predicate expression.**
+**Risk: Logic error in match condition expression.**
 
-Currently the predicate conditions must be encoded in the webhook backend itself. Moving the logic
+Currently the match conditions must be encoded in the webhook backend itself. Moving the logic
 into a CEL expression does not materially increase the risk of a logic bug.
 
 #### Debugability
 
 We do not normally log, audit, or emit an event when a webhook is out-of-scope for a request, and
-the same will _mostly_ be true for predicates.
+the same will _mostly_ be true for match conditions.
 
 At [log level V(5)](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md#what-method-to-use),
 we will emit a log when a request that would otherwise be in-scope for a webhook is excluded for a
-non-matching predicate.
+non-matching match condition.
 
 Short of increasing log verbosity, the recommended debug strategy is to capture or reproduce a
-relevant AdmissionRequest (for example, in a non-prod cluster disable all predicates and log the
-requests from a webhook). Then, manually test the predicates against the request, and iterate as
-necessary.
+relevant AdmissionRequest (for example, in a non-prod cluster disable all match conditions and log
+the requests from a webhook). Then, manually test the match conditions against the request, and
+iterate as necessary.
 
 #### Performance
 
 The CEL expression evaluation will leverage the same [Resource Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2876-crd-validation-expression-language#resource-constraints)
-used by CEL CRD Validation & CEL Admission Control. All the predicates for a given webhook will
+used by CEL CRD Validation & CEL Admission Control. All the match conditions for a given webhook will
 share the same resource budget.
 
 <<[UNRESOLVED resource constraints ]>>
@@ -832,7 +826,7 @@ Why should this KEP _not_ be implemented?
 
 ### Exclusion Expressions
 
-The `predicate` expression could be inverted, so that requests that match are excluded rather than
+The `matchCondition` expression could be inverted, so that requests that match are excluded rather than
 included. In this case, we would probably also want to change from requiring all expressions to
 match, to excluding the request if any match.
 
