@@ -214,7 +214,7 @@ type MutatingWebhook struct {
 
 // MatchCondition represents a condition which must by fulfilled for a request to be sent to a webhook.
 type MatchCondition struct {
-  // Expression represents the expression which will be evaluated by CEL.
+	// Expression represents the expression which will be evaluated by CEL.
 	// ref: https://github.com/google/cel-spec
 	// CEL expressions have access to the contents of the AdmissionRequest, organized into CEL variables:
 	//
