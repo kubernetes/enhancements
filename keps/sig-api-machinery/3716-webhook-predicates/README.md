@@ -251,10 +251,10 @@ type MatchCondition struct {
 }
 ```
 
-The match condition expression has access to the contents of the `AdmissionRequest` object (exposed as the
-`request` variable), but is not given any additional information. Expressions requiring access to
-additional information (such as a paramater object) must be performed in the webhook, and are out of
-scope for this proposal.
+The match condition expression is evaluated by the same libraries as those used for CEL
+ValidatingAdmissionPolicy. The only difference in expressions is the availability of the `params`
+variable. Expressions requiring access to additional information outside the AdmissionRequest must
+be performed in the webhook, and are out of scope for this proposal.
 
 ### Risks and Mitigations
 
