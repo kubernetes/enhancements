@@ -5,13 +5,13 @@ authors:
 owning-sig: sig-cli
 participating-sigs: []
 status: provisional
-creation-date: 2022-11-15
+creation-date: "2022-11-15"
 reviewers:
-  - @soltysh
-  - @seans3
-  - @eddiezane
+  - "@soltysh"
+  - "@seans3"
+  - "@eddiezane"
 approvers:
-  - @soltysh
+  - "@soltysh"
 
 see-also:
   - "https://github.com/kubernetes/enhancements/issues/128"

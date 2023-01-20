@@ -247,7 +247,7 @@ Options:
 
 The reason for this stagnation is that the implementation has fundamental limitations that limit performance and cause unexpected behaviours.
 
-Acknowledging that pruning could not be progressed out of alpha in its current form, SIG CLI created a proof of concept for an alternative implmentation in the [cli-utils](https://github.com/kubernetes-sigs/cli-utils) repo in 2019 (initially [moved over](https://github.com/kubernetes-sigs/cli-utils/pull/1) from [cli-experimental#13](https://github.com/kubernetes-sigs/cli-experimental/pull/13)). This implementation was proposed in [KEP 810](https://github.com/kubernetes/enhancements/pull/810/files), which did not reach consensus and was ultimately closed. In the subsequent three years, work continued on the proof of concept, and other ecosystem tools (notably `kpt live apply`) have been using it successfully while the canoncial implementation in k/k has continued to stagnate.
+Acknowledging that pruning could not be progressed out of alpha in its current form, SIG CLI created a proof of concept for an alternative implmentation in the [cli-utils](https://github.com/kubernetes-sigs/cli-utils) repo in 2019 (initially [moved over](https://github.com/kubernetes-sigs/cli-utils/pull/1) from [cli-experimental#13](https://github.com/kubernetes-sigs/cli-experimental/pull/13)). This implementation was proposed in [KEP 810](https://github.com/kubernetes/enhancements/pull/810/files), which did not reach consensus and was ultimately closed. In the subsequent three years, work continued on the proof of concept, and other ecosystem tools (notably `kpt live apply`) have been using it successfully while the canonicial implementation in k/k has continued to stagnate.
 
 At Kubecon NA 2022, @seans3 and @KnVerey led a session discussing the limitations of the prune approach in kubectl apply. The consensus was:
 - `kubectl apply --prune` is very difficult to use correctly.
@@ -303,9 +303,9 @@ A related issue is that the identifier of ownership for pruning is the last-appl
 
 #### UX: easy to trigger inadvertent over-selection
 
-The default allowlist, in addition to being incomplete, is unintuitive. Notably, it includes the cluster-scoped Namespace and PersistentVolume resources, and will prune these resources even if the `--namespace` flag is used. Given that Namespace deletion cascades to all the contents of the namespaces, this is particularly catastropic.
+The default allowlist, in addition to being incomplete, is unintuitive. Notably, it includes the cluster-scoped Namespace and PersistentVolume resources, and will prune these resources even if the `--namespace` flag is used. Given that Namespace deletion cascades to all the contents of the namespaces, this is particularly catastrophic.
 
-Because every `apply` operation uses the same identity for the purposes of pruning (i.e. has the same last-applied annotation), it is easy to make a small change to the scoping of the command that will inadvertantly cover resources managed by other operations, with potentially disasterous effects.
+Because every `apply` operation uses the same identity for the purposes of pruning (i.e. has the same last-applied annotation), it is easy to make a small change to the scoping of the command that will inadvertently cover resources managed by other operations, with potentially disastrous effects.
 
 Related issues:
 - https://github.com/kubernetes/kubectl/issues/1272
@@ -324,14 +324,14 @@ Related issues:
 
 While it is not disabled, pruning does not work correctly with server-side apply today. If the objects being managed were created with server-side apply, or were migrated to server-side apply using a custom field manager, they will never be pruned. If they were created with client-side apply and migrated to server-side using the default field manager, they will be pruned as needed. The worst case is that the managed set includes objects in multiple of these states, leading to inconsistent behaviour.
 
-One solution to this would be to use the presence of the current field manager as the indicator of eligibility for pruning. However, field managers cannot be queried on any more than annotations can, so are not a great for an identifier we want to select on. It can also be considered problematic that the default state for server-side applied objects includes at least two field managers, which are then all taken to be object owners for the purposes of pruning, regardless of their intent to use this power. In other words, we end up introducing the possibilty of multiple owners without the possiblity of conflict detection.
+One solution to this would be to use the presence of the current field manager as the indicator of eligibility for pruning. However, field managers cannot be queried on any more than annotations can, so are not a great for an identifier we want to select on. It can also be considered problematic that the default state for server-side applied objects includes at least two field managers, which are then all taken to be object owners for the purposes of pruning, regardless of their intent to use this power. In other words, we end up introducing the possibility of multiple owners without the possiblity of conflict detection.
 
 Related issues:
 - https://github.com/kubernetes/kubernetes/issues/110893
 
 ### Related solutions in the ecosystem
 
-The following popular tools have mechanisms for managing sets of objects, which are described briefly below. An ideal solution for kubectl's pruning feature would allow tools like these to "rebase" these mechanisms over the new "plumbing" layer. This possibilty could increase ecosystem coherence and interoperability, as well as provide a cleaner bridge from the baseline capabilities offered in kubectl to these more advanced tools.
+The following popular tools have mechanisms for managing sets of objects, which are described briefly below. An ideal solution for kubectl's pruning feature would allow tools like these to "rebase" these mechanisms over the new "plumbing" layer. This possibility could increase ecosystem coherence and interoperability, as well as provide a cleaner bridge from the baseline capabilities offered in kubectl to these more advanced tools.
 
 #### Helm
 
@@ -343,7 +343,7 @@ Each helm chart installation is represented by a Secret object in the cluster.  
 
 **Pattern**: list of Group-Kinds (GK) (from configmap) + labels
 
-Each kapp installation is represented by a ConfigMap object in the cluster.  The ConfigMap has a label `kapp.k14s.io/is-app: "”`.  Objects that are part of the kapp have two labels: `kapp.k14s.io/app=<number>` and `kapp.k14s.io/association=<string>`.  Getting from the parent ConfigMap to these values is again somewhat obscure.  The `app` label is encoded in a JSON blob in the “spec” value of the ConfigMap.  The `association` object includes an MD5 hash of the object identity, and varies across objects in a kapp.  The list of GKs in use is encoded as JSON in the “spec” value of the ConfigMap.
+Each kapp installation is represented by a ConfigMap object in the cluster.  The ConfigMap has a label `kapp.k14s.io/is-app: "”`.  Objects that are part of the kapp have two labels: `kapp.k14s.io/app=<number>` and `kapp.k14s.io/association=<string>`.  Getting from the parent ConfigMap to these valuesca is again somewhat obscure.  The `app` label is encoded in a JSON blob in the “spec” value of the ConfigMap.  The `association` object includes an MD5 hash of the object identity, and varies across objects in a kapp.  The list of GKs in use is encoded as JSON in the “spec” value of the ConfigMap.
 
 #### kpt
 
