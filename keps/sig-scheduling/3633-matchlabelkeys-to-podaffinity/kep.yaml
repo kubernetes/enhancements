@@ -23,7 +23,7 @@ milestone:
   stable: "v1.30"
 
 feature-gates:
-  - name: MatchLabelKeysInPodAffinityAndPodAntiAffinity
+  - name: MatchLabelKeysInPodAffinity
     components:
       - kube-scheduler
 disable-supported: true

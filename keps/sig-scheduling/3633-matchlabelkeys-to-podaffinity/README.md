@@ -203,8 +203,7 @@ In the worse case, new version of Pod cannot be scheduled if it's a saturated cl
 On the other hand, on an idle cluster, this can cause the scheduling result sub-optimal because
 some qualifying Nodes are filtered out incorrectly.
 
-From the same motivation, we've introduced `MatchLabelKeys` in Pod Topology Spread.
-See [KEP-3243: Respect PodTopologySpread after rolling upgrades](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades).
+The same issue applies to other scheduling directives as well. For example, MatchLabelKeys was introduced in topologyConstaint in [KEP-3243: Respect PodTopologySpread after rolling upgrades](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades).
 
 ### Goals
 
@@ -280,7 +279,7 @@ This might be a good place to talk about core concepts and how they relate.
 In most scenarios, users can use the label keyed with `pod-template-hash` added 
 automatically by the Deployment controller to distinguish between different 
 revisions in a single Deployment. But for more complex scenarios 
-(eg. Pod(Anti)Affinity associating two deployments at the same time), users are 
+(e.g., Pod(Anti)Affinity associating two deployments at the same time), users are 
 responsible for providing common labels to identify which pods should be grouped. 
 
 ### Risks and Mitigations
@@ -325,7 +324,7 @@ type PodAffinityTerm struct {
 	// incoming pod labels, those key-value labels are ANDed with `LabelSelector`
 	// to select the group of existing pods which pods will be taken into consideration 
 	// for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming 
-  // pod labels will be ignored. The default value is empty.
+	// pod labels will be ignored. The default value is empty.
 	// +optional
 	MatchLabelKeys []string
 }
