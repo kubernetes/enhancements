@@ -14,12 +14,13 @@ reviewers:
 approvers:
   - "@dchen1107"
 creation-date: 2021-01-27
-last-updated: 2022-06-16
+last-updated: 2023-05-19
 status: implementable
-stage: alpha
-latest-milestone: "v1.26"
+stage: beta
+latest-milestone: "v1.28"
 milestone:
   alpha: "v1.23"
+  beta: "v1.28"
 see-also:
   - N/A
 replaces:
