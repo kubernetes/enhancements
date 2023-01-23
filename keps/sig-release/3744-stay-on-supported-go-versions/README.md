@@ -192,9 +192,13 @@ Update release branches to build/release using go 1.N once all of these conditio
 2. go 1.N has been used in a released Kubernetes version for at least 1 month
    * this ensures all release-blocking and release-informing CI has run on go 1.N
    * this gives time for release candidates and early adoption by the Kubernetes community
-3. Backported code and dependency changes build and pass unit, integration, and e2e tests with both go 1.N and 1.(N‑1)
+3. Backported code and dependency changes build and pass unit and integration tests with both go 1.N 
+   and the go minor version used for the .0 release of the Kubernetes release branch
    * this ensures consumers of patch releases of published Kubernetes
      libraries are not *forced* to update to go 1.N
+   * if this is the first go minor version update done on the release branch,
+     create unit and integration presubmit/periodic jobs that run with the go minor version
+     used for the .0 release of the Kubernetes release branch
 4. There are no regressions relative to go 1.(N‑1) known to impact Kubernetes
 5. Behavior changes in go 1.N are mitigated to preserve existing behavior for previous
    Kubernetes minor versions without requiring action by Kubernetes end-users. Examples:
@@ -250,6 +254,12 @@ https://github.com/kubernetes/test-infra/issues/28310 tracks a feature
 request to allow the code under test to dictate the go version used.
 If this was implemented, a release branch PR could be opened, pass CI presubmits,
 then add a commit updating the go version and pass CI presubmits a second time.
+
+To ensure release branches continue to remain compatible with the original
+go minor version used with the .0 release for each release branch,
+prior to updating the go minor version in a release branch, presubmit/periodic 
+unit and integration test job variants would be created using using the original
+go minor version.
 
 ##### Prerequisite testing updates
 
