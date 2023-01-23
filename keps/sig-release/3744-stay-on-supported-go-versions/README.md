@@ -131,7 +131,7 @@ Feedback to the go team about this situation prompted a [discussion](https://git
 and a [design](https://go.dev/design/56986-godebug) for improving backward compatibility in go in ways that would allow
 projects like Kubernetes to use supported go versions while retaining previous go version runtime behavior for a period of time.
 
-With that proposal [likely to be accepted](https://github.com/golang/go/issues/56986#issuecomment-1371307658),
+With that proposal [accepted](https://github.com/golang/go/issues/56986#issuecomment-1387606939),
 and a [request to clarify Kubernetes' approach to updating go versions on release branches](https://github.com/kubernetes/kubernetes/issues/112408),
 it seemed like a good time to capture requirements and a process for updating Kubernetes release branches.
 
