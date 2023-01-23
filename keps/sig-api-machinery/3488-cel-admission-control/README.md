@@ -852,7 +852,9 @@ Policy definitions:
   - `messageExpression: "<cel expression>"` (mutually exclusive with `message`)
     - As part of [the KEP update to add expression composition](https://github.com/kubernetes/enhancements/pull/3669/files),
       expressions defined under `variables` will be accessible from `messageExpression`
-    - While messageExpression is a CEL expression, it does not factor into the runtime cost limit.
+    - `messageExpression` is a CEL expression and thus factors into the runtime cost limit.
+    If the runtime cost limit is exceeded during `messageExpression` execution, then this is logged.
+    Whether or not the action is admitted after that depends upon failure policy.
   - If `message` and `messageExpression` are absent, `expression` and `name`
     will be included in the failure message
   - If `messageExpression` results in an error: `expression` and `name` will be
