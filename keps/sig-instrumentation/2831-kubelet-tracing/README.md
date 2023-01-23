@@ -143,7 +143,10 @@ OpenTelemetry-Go provides the [propagation package](https://github.com/open-tele
 
 ### Connected Traces with Nested Spans
 
-Nested spans with top-level traces in the kubelet will connect CRI calls together. Nested spans will be created for the following:
+With the initial implementation of this proposal, kubelet tracing produced disconnected spans, because context was not wired through kubelet CRI calls.
+With [this PR](https://github.com/kubernetes/kubernetes/pull/113591), context is now plumbed between CRI calls and kubelet.
+It is now possible to connect spans for CRI calls. Nested spans with top-level traces in the kubelet will connect CRI calls together.
+Nested spans will be created for the following:
 * Sync Loops (e.g. syncPod, eviction manager, various gc routines) where the kubelet initiates new work.
     * [top-level traces for pod sync and GC](https://github.com/kubernetes/kubernetes/pull/114504)
 * Incoming requests (exec, attach, port-forward, metrics endpoints, podresources)
@@ -233,11 +236,12 @@ Beta
 - [X] OpenTelemetry reaches GA
 - [X] Publish examples of how to use the OT Collector with kubernetes
 - [X] Allow time for feedback
-- [] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
-- [] Unit/integration test to verify connected traces in kubelet.
-- [] Revisit the format used to export spans.
-- [] Parity with the old text-based Traces
+- [ ] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
+- [ ] Unit/integration test to verify connected traces in kubelet.
+- [ ] Revisit the format used to export spans.
+- [ ] Parity with the old text-based Traces
 - [ ] Connecting traces from container runtimes via the Container Runtime Interface
+  - https://github.com/kubernetes/kubernetes/pull/114504
 
 GA
 
