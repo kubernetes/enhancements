@@ -1231,7 +1231,7 @@ To consider:
 
 To implement:
 
-- `string.format` for CEL/cel-go ([tracking PR](https://github.com/google/cel-go/pull/617))
+- `string.format` into CEL upstream ([tracking PR](https://github.com/google/cel-go/pull/617)) (TODO @DangerOnTheRanger: add tracking cel-go issue once available)
 
 #### Audit Annotations
 
