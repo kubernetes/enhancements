@@ -98,10 +98,13 @@ confusion for Kubernetes users.
 
 Move the existing ReferenceGrant resource into a new
 `grants.authorization.k8s.io` API group, defined within the Kubernetes code base
-as part of the 1.27 release. We may take this opportunity to clarify
-underspecified parts of the API, but will not add, change, or remove any fields
-as part of this transition. This resource will start with v1beta1 as the API
-version, matching the API version it already has within Gateway API.
+as part of the 1.27 release.
+
+We will take this opportunity to clarify underspecified parts of the API, but
+will not add, change, or remove any fields as part of this transition.
+This resource will start with v1beta1 as the API version, matching the API version
+it already has within Gateway API.
+
 
 ### Risks and Mitigations
 
@@ -129,6 +132,39 @@ to be deployed in separate namespaces that more clearly match up with desired
 authorization.
 
 ## Design Details
+
+### General Notes
+
+#### `ReferenceGrant` is half of a handshake
+
+When thinking about ReferenceGrant, it is important to remember that it does not
+do anything by itself. It *Grants* the *possibility* of making a *Reference*
+across namespaces. It's intended that _another object_ (that is, the From object)
+complete the handshake by creating a reference to the referent object (the To
+object).
+
+#### `Kind` vs `Resource`
+
+When creating a metaresource (that is, a resource that targets other resources)
+like ReferenceGrant, it's important to consider if the metaresource uses the more
+common `Kind` or the more correct `Resource`.
+
+When designing the Gateway API in general, we considered this quite a bit (and
+@robscott even ended up making https://github.com/kubernetes/community/pull/5973
+to clarify the API conventions), but in the end decided to use Kind, to improve
+the user experience. That is, it's easier users to take the value from the `kind`
+field at the top of the YAML they are already using, and put it straight into
+these fields, rather than needing to do a kind-resource lookup for every user's
+interaction with the API.
+
+Secondly, as in the Ingress API, the target types must be clearly defined by
+each implementation, so there should be no opportunity for ambiguity.
+
+Lastly, this is only half of a handshake, so the From referent must also both
+support referencing the To referent, and must reference the one in the To field.
+
+With all of that in mind, we felt that the benefits in terms of specificity
+outweighed the costs in terms of user pain to use the more correct `Resource`.
 
 ### API Spec
 
@@ -222,6 +258,28 @@ type ReferenceGrantTo struct {
 }
 ```
 
+### Outstanding questions and clarifications
+
+This section lists some of the outstanding questions people have had about
+ReferenceGrant, and other items that we'll be clarifying in the godoc and other
+documentation as part of the transition to the new API group, keeping in mind
+that we will not be adding any new features, fields, or behavior, just clarifying
+what's done already.
+
+Also note that we don't consider any of these blockers for the general _idea_ of
+moving ReferenceGrant to the new API group, just notes to save discussion time.
+
+* Clarify that an implementation is required to reconcile ReferenceGrant for
+  specific `To` Kinds.
+* Corollary for future work, define how controllers interact. Is it a problem if
+  multiple controllers consume the same ReferenceGrant?
+* Status design is still pending, but it's currently expected that controllers
+  will indicate status on the _referring_ resources, not on ReferenceGrant itself.
+* Clarify that the expected operating model for implementations expects them to
+  have broad, read access to both ReferenceGrant and the specific `To` Kinds they
+  support, and then self-limit to only _use_ the relevant ones.
+* Decide whether to formally add `*` as a special value for Namespace, to mean
+  "all namespaces".
 
 ### Test Plan
 

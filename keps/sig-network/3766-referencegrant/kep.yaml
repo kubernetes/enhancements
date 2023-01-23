@@ -2,6 +2,7 @@ title: Move ReferenceGrant to sig-auth API Group
 kep-number: 3766
 authors:
   - "@robscott"
+  - "@youngnick"
 owning-sig: sig-auth
 participating-sigs:
   - sig-network
