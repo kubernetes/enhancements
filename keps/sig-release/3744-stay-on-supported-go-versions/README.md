@@ -148,6 +148,8 @@ it seemed like a good time to capture requirements and a process for updating Ku
 
 ## Proposal
 
+**1. Track prereq changes for each new minor go version**
+
 Track changes made to the default Kubernetes development branch that were required to adopt a new go minor version (go 1.N).
 This typically includes changes like:
 
@@ -159,13 +161,28 @@ This typically includes changes like:
 * updates to Kubernetes code to work with both go 1.N and 1.(N‑1)
   (e.g. [commit c31cc5ec](https://github.com/kubernetes/kubernetes/commit/c31cc5ec46315a02343ec6d6a2ef659e2cc8668e))
 
+Prioritize making the prereq changes as minimal and low-risk as possible.
 Merge those changes to the default Kubernetes development branch *prior* to updating to go 1.N.
 This ensures those changes build and pass tests with both go 1.N and 1.(N‑1).
-Here is an [example of tracking and pre-merging changes for adopting go 1.20](https://github.com/kubernetes/release/issues/2815#issuecomment-1373891562).
+Here is an [example of tracking prereq changes for go1.20](https://github.com/kubernetes/release/issues/2815#issuecomment-1373891562).
 
-Ensure all of those changes are backported to supported Kubernetes release branches,
-and update those release branches to build/release using go 1.N once all of these
-conditions are satisfied:
+**2. Backport prereq changes to release branches**
+
+Backport prereq changes for go 1.N to release branches, keeping in mind the guidance to
+[avoid introducing risk to release branches](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-release/cherry-picks.md#what-kind-of-prs-are-good-for-cherry-picks).
+
+Considering the typical changes required to update go versions:
+
+* Tooling and test changes carry minimal risk
+* Dependency updates should be evaluated for extent / risk; if needed, and if possible, work with dependency maintainers to obtain the required fix in a more scoped way
+* Updates to fix issues caught by improved vet or lint checks generally fix real problems and are reasonable to backport, or are very small / isolated and carry minimal risk
+* Updates to make code work with both go 1.N and 1.(N‑1) should be evaluated for extent / risk; if needed, isolate the change in go-version-specific files.
+
+Here is an [example of tracking backports of prereq changes for go 1.20](https://github.com/kubernetes/release/issues/2815#issuecomment-1373891562).
+
+**3. Update release branches to new go minor versions**
+
+Update release branches to build/release using go 1.N once all of these conditions are satisfied:
 
 1. go 1.N has been released at least 3 months
    * this gives ~3 months for adoption of go 1.N by the go community
