@@ -1338,8 +1338,22 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage
 
 -->
-The following scenario will be covered with e2e tests:
-- early job termination when a container fails with a non-retriable exit code
+The following scenario are covered with e2e tests:
+- [sig-apps#gce](https://testgrid.k8s.io/sig-apps#gce):
+  - Job Using a pod failure policy to not count some failures towards the backoffLimit Ignore DisruptionTarget condition
+  - Job Using a pod failure policy to not count some failures towards the backoffLimit Ignore exit code 137
+  - Job should allow to use the pod failure policy on exit code to fail the job early
+  - Job should allow to use the pod failure policy to not count the failure towards the backoffLimit
+- [sig-scheduling#gce-serial](https://testgrid.k8s.io/sig-scheduling#gce-serial):
+  - SchedulerPreemption [Serial] validates pod disruption condition is added to the preempted pod
+- [sig-release-master-informing#gce-cos-master-serial](https://testgrid.k8s.io/sig-release-master-informing#gce-cos-master-serial):
+  - NoExecuteTaintManager Single Pod [Serial] pods evicted from tainted nodes have pod disruption condition
+
+The following scenarios are covered with node e2e tests
+([sig-node-presubmits#pr-kubelet-gce-e2e-pod-disruption-conditions](https://testgrid.k8s.io/sig-node-presubmits#pr-kubelet-gce-e2e-pod-disruption-conditions) and
+[sig-node-presubmits#pr-node-kubelet-serial-containerd](https://testgrid.k8s.io/sig-node-presubmits#pr-node-kubelet-serial-containerd)):
+  - GracefulNodeShutdown [Serial] [NodeFeature:GracefulNodeShutdown] [NodeFeature:GracefulNodeShutdownBasedOnPodPriority] graceful node shutdown when PodDisruptionConditions are enabled [NodeFeature:PodDisruptionConditions] should add the DisruptionTarget pod failure condition to the evicted pods
+  - PriorityPidEvictionOrdering [Slow] [Serial] [Disruptive][NodeFeature:Eviction] when we run containers that should cause PIDPressure; PodDisruptionConditions enabled [NodeFeature:PodDisruptionConditions] should eventually evict all of the correct pods
 
 More e2e test scenarios might be considered during implementation if practical.
 
