@@ -237,7 +237,7 @@ Beta
 - [] Unit/integration test to verify connected traces in kubelet.
 - [] Revisit the format used to export spans.
 - [] Parity with the old text-based Traces
-
+- [ ] Connecting traces from container runtimes via the Container Runtime Interface
 GA
 
 ## Production Readiness Review Questionnaire
