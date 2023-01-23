@@ -76,7 +76,7 @@ This registry has been [GA for several months](https://kubernetes.io/blog/2022/1
 
 Running public image registries is very expensive and eats up a significant chunk of the project's Infrastructure budget. We built `registry.k8s.io` image registry to serve images from various origins around the world depending on the location of the user. For example, an a kops Kubernetes cluster in eu-west-1 can pull images from an AWS S3 bucket in the same region which is very fast and more importantly very cheap for the Kubernetes project.
 
-There was a plan to redirect `k8s.gcr.io` to `registry.k8s.io` but it didn't [work out](https://kubernetes.slack.com/archives/CCK68P2Q2/p1666725317568709) so we backported the image registry defaults to 1.25, 1.24, 1.23, and 1.22 so all the patch releases from December 2022 will using the new registry by default.
+There was a plan to redirect `k8s.gcr.io` to `registry.k8s.io` but it didn't [work out](https://kubernetes.slack.com/archives/CCK68P2Q2/p1666725317568709) so we backported the image registry defaults to 1.24, 1.23, and 1.22 so all the patch releases from December 2022 will using the new registry by default.
 
 We are currently exceeding our budget as it will take quite a while for end users to upgrade Kubernetes to v1.25 so we want to incentivise our end users to move to the new registry as fast as possible by freezing the registry by 1.27. This would mean that all subsequent image releases will not be available on the old registry.
 
@@ -91,6 +91,15 @@ Freeze `k8s.gcr.io` image registry and push all new images and tags exclusively 
 ## Proposal
 
 Freeze the `k8s.gcr.io` image by not pushing any new digests or tags after 1.27 release. The 1.27 release itself won't be available on `k8s.gcr.io`.
+
+I'm proposing that on the 1st of April 2023 (10 days before 1.27 is released):
+
+- `k8s.gcr.io` is frozen and no new images will be published by any subproject.
+- last 1.23 release on `k8s.gcr.io` will be 1.23.18 (goes EoL before the freeze)
+- last 1.24 release on `k8s.gcr.io` will be 1.24.12
+- last 1.25 release on `k8s.gcr.io` will be 1.25.8
+- last 1.26 release on `k8s.gcr.io` will be 1.26.3
+- 1.27.0 will not be available `k8s.gcr.io`
 
 ### Risks and Mitigations
 
@@ -134,6 +143,11 @@ This is not applicable.
 ## Communication Plan
 
 This is a major change and requires an appropriate communication plan.
+
+We plan on communicating this change via:
+- an email to k-dev
+- an email to k-announce
+- a blog post on kubernetes.io
 
 ## Production Readiness Review Questionnaire
 
