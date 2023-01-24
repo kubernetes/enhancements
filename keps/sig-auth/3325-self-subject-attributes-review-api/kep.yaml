@@ -12,10 +12,11 @@ reviewers:
 - "@mikedanese"
 - "@liggitt"
 approvers:
-- TBD
+- "@deads2k"
+- "@liggitt"
 creation-date: "2022-05-30"
 status: implementable
-stage: alpha
+stage: beta
 latest-milestone: "v1.26"
 milestone:
   alpha: "v1.26"

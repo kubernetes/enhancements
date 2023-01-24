@@ -251,21 +251,20 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Beta
 
 - Gather feedback from users
-- `SelfSubjectReview` is promoted to `authentication.k8s.io/v1beta1` API
+- `SelfSubjectReview` is promoted to `authentication.k8s.io/v1beta1` API (Beta APIs are not enabled by default, [see](https://github.com/kubernetes/enhancements/blob/master/keps/sig-architecture/3136-beta-apis-off-by-default/README.md)).
 - Promote feature gate to Beta and make it enabled by default
 - Unit tests coverage improved
-- `kubectl alpha auth whoami` command uses `authentication.k8s.io/v1beta1` API
+- `kubectl alpha auth whoami` command uses `authentication.k8s.io/v1beta1` API, falls back to `authentication.k8s.io/v1alpha1` API
 - Fix [documentation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#self-subject-review):
   - Change API version
   - Rewrite conditions to enable the feature
 
 #### GA
 
-- `SelfSubjectReview` is promoted to `authentication.k8s.io/v1` API
+- `SelfSubjectReview` is promoted to `authentication.k8s.io/v1` API and enable by default
 - Promote feature gate to Stable
 - `kubectl alpha auth whoami` replaced with `kubectl auth whoami`
-- `kubectl auth whoami` command uses `authentication.k8s.io/v1` API
-- An article about motivation to use this feature is added to the Kubernetes blog
+- `kubectl auth whoami` command prefers `authentication.k8s.io/v1` API over `authentication.k8s.io/v1beta1` and `authentication.k8s.io/v1alpha1`
 - More integration and e2e tests cases
 - Fix [documentation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#self-subject-review):
   - Change API version
