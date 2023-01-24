@@ -27,6 +27,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Adding new protocols](#adding-new-protocols)
+  - [Followup work](#followup-work)
   - [Documentation change](#documentation-change)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -90,7 +91,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 There are cases where implementations implement different things for the same application protocol names. That already causes(and can cause more in the future) issues for certain implementations to interoperate. (see example with GKE and Istio under [Motivation](#motivation))
 
-This KEP proposes to declare standard Kubernetes protocol names for common protocols that are not IANA service names.
+This KEP suggests a different description for the `AppProtocol` field and proposes to declare standard Kubernetes protocol names for common protocols that are not IANA service names.
 
 
 ## Motivation
@@ -99,21 +100,23 @@ The lack of direct support for specifying application protocols for ports and th
 
 While this is a good solution - we never came with recommended standards other than [IANA standard service names](https://www.iana.org/assignments/service-names) or a domain prefixed protocol.
 
-This loose definition has led us to have instances where implementations do different things for common protocols.
+This loose definition has led us to;
+1. Have instances where implementations do different things for common protocols.
+2. Have no support for implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port.
 
-One good example is `HTTP2`. 
+One good example for the first bullet is `HTTP2`. 
 * In GKE you can use `appProtocol: HTTP2` and it will describe HTTP2 over TLS (https://cloud.google.com/kubernetes-engine/docs/how-to/secure-gateway#load-balancer-tls).
 * While in Istio it will be h2c (HTTP2 over cleartext).
 
 That creates a problem where users with GKE and Istio in their cluster can have very different behaviors for the same `appProtocol` value.
 
 
-
 ### Goals
 
+* Rephrase AppProtocol field description
 * Build consensus around how common (non IANA service names) should be implemented
 * Help the broader community and specifically implementations to interoperate better
-* Provide short and clear documentation for how appProtocol values should be implemented
+* Provide short and clear documentation for how AppProtocol values should be implemented
   * Update the appProtocol user documentation respectively
 
 
@@ -121,11 +124,14 @@ That creates a problem where users with GKE and Istio in their cluster can have 
 
 * Validate appProtocol values
 * Monitor appProtocol implementations
+* Support multiple AppProtocols values for the same port to improve interoperability (suggested as a followup work though)
 
 
 ## Proposal
 
-Kubernetes supports the `appProtocol` field to provide a way to specify an application protocol for each Service port.
+~~Kubernetes supports the `appProtocol` field to provide a way to specify an application protocol for each Service port.~~
+
+Kubernetes `appProtocol` field is used as a hint for implementations to configure the protocol used between the implementation and the application it exposes.
 
 The [documentation](https://kubernetes.io/docs/concepts/services-networking/service/#application-protocol) for this field says that:
 
@@ -137,11 +143,8 @@ Those common protocols will be well defined strings prefixed with ‘k8s.io’.
 `k8s.io/h2c` as an example.
 
 ### list of protocols
-- 'k8s.io/h2c'
-- 'k8s.io/h2'
+- 'k8s.io/http2'
 - 'k8s.io/grpc'
-- 'k8s.io/grpc-web'
-- 'k8s.io/tls'
 - 'k8s.io/tcp'
 
 ### Risks and Mitigations
@@ -165,7 +168,9 @@ type ServicePort struct {
   ... 
   ...
 
-  // The application protocol for this port.
+  // Used as a hint for implementations to
+  // configure the protocol used between the
+  // implementation and the application it exposes.
   // This field follows standard Kubernetes label syntax.
   // Valid values are either:
   //
@@ -173,9 +178,9 @@ type ServicePort struct {
   // RFC-6335 and https://www.iana.org/assignments/service-names).
   //
   // * Kubernetes standard names:
-  //   * 'k8s.io/h2' - http2 over TLS 
-  //   * 'k8s.io/h2c' - http2 over cleartext TCP 
-  //   * 'k8s.io/grpc' - grpc traffic
+  //   * 'k8s.io/http2' - http2 over cleartext, aka 'h2c'. https://www.rfc-editor.org/rfc/rfc7540
+  //   * 'k8s.io/grpc' - grpc traffic - see https://github.com/grpc/grpc/blob/v1.51.1/doc/PROTOCOL-HTTP2.md
+  //   * 'k8s.io/tcp' - plain tcp traffic
   //
   // * Other protocols should use prefixed names such as
   // mycompany.com/my-custom-protocol.
@@ -193,7 +198,10 @@ In order to be included in the list, a new protocol must:
 * Be supported in more than three implementations
 * Be well defined and broadly used
 
+### Followup work
+To support implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port we need to turn `AppProtocol` to a list.
 
+It is likely to be an API change but design details TBD.
 ### Documentation change
 
 [kubernetes website](https://github.com/kubernetes/website/blob/main/content/en/docs/concepts/services-networking/service.md#application-protocol) will be changed accordingly
