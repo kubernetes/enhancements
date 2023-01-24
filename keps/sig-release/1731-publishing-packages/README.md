@@ -1,7 +1,6 @@
 # Publishing kubernetes packages <!-- omit in toc -->
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -423,22 +422,27 @@ corresponding package manager.
 
 A configuration for the package managers might look something like:
 
-- deb:
+- deb (deb822 formatted version):
   ```
-  # deb http://apt.kubernetes.io ${k8s_release} ${channel}
-  deb [signed-by=/etc/keyrings/kubernetes-keyring.gpg] http://obs.kubernetes.io/core:/stable:/v1.26/deb/ /
+  Types: deb
+  URIs: http://packages.kubernetes.io/core:/stable:/v1.26/deb/
+  Suites: ./
+  Signed-By: /etc/keyrings/kubernetes-keyring.gpg
   ```
 - rpm/yum:
   ```
   [kubernetes]
   name=Kubernetes
-  # baseurl=http://yum.kubernetes.io/${k8s_release}/${channel}
-  baseurl=http://obs.kubernetes.io/core:/stable:/v1.26/rpm/
-  enabled=1
+  type=rpm-md
+  baseurl=https://packages.kubernetes.io/core:/stable:/v1.26:/build/rpm/
   gpgcheck=1
-  repo_gpgcheck=1
-  gpgkey=file:///etc/pki/rpm-gpg/kubernetes.gpg.pub
+  gpgkey=https://packages.kubernetes.io/core:/stable:/v1.26:/build/rpm/repodata/repomd.xml.key
+  enabled=1
   ```
+
+**Note**: The (base) URL for packages will be changed from `{apt,yum}.kubernetes.io` to `packages.kubernetes.io`.
+This is to better support the OBS workflow. This is consider as a kind of breaking change, however, since there
+are other manual migration steps needed (e.g. changing the GPG key), we don't consider this as a problem.
 
 Different architectures will be published into the same repos, it is up to the package managers to pull and install the correct package for the target platform.
 
