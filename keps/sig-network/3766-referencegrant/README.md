@@ -12,7 +12,16 @@
     - [Potential for Variations Among Implementations](#potential-for-variations-among-implementations)
     - [Cross-Namespace References may Weaken Namespace Boundaries](#cross-namespace-references-may-weaken-namespace-boundaries)
 - [Design Details](#design-details)
+  - [General Notes](#general-notes)
+    - [<code>ReferenceGrant</code> is half of a handshake](#-is-half-of-a-handshake)
+    - [<code>Resource</code> vs <code>Kind</code>](#-vs-)
+    - [Revocation behavior](#revocation-behavior)
+  - [Example Usage](#example-usage)
+    - [Gateway API Gateway Referencing Secret](#gateway-api-gateway-referencing-secret)
+    - [Gateway API HTTPRoute Referencing Service](#gateway-api-httproute-referencing-service)
+    - [PersistentVolumeClaim using cross namespace data source](#persistentvolumeclaim-using-cross-namespace-data-source)
   - [API Spec](#api-spec)
+  - [Outstanding questions and clarifications](#outstanding-questions-and-clarifications)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -68,17 +77,19 @@ sig-storage](https://kubernetes.io/blog/2023/01/02/cross-namespace-data-sources-
 to enable cross-namespace data sources.
 
 This KEP proposes moving ReferenceGrant from its current
-`gateway.networking.k8s.io` API group to a new `grants.authorization.k8s.io` API
+`gateway.networking.k8s.io` API group into the `authorization.k8s.io` API
 group.
 
 ## Motivation
 
-Now that it's clear that ReferenceGrant is useful beyond just Gateway API, it
-would be good to formalize this model in a more neutral home, ideally sig-auth.
-At this point, each project that wants to enable cross-namespace references has
-to choose between introducing a dependency on Gateway API and creating a new
-resource that would largely duplicate ReferenceGrant. Both options would lead to
-confusion for Kubernetes users.
+Any project that wants to enable cross-namespace references currently has to choose
+between introducing a dependency on Gateway API's ReferenceGrant or creating a
+new API that would be partially redundant (leading to confusion for users).
+	
+Recent interest between SIGs has made it clear that ReferenceGrant is wanted for use
+cases other than Gateway API. We would like to move ReferenceGrant to a neutral home
+(ideally, under sig-auth) in order to make it the canonical API for managing references
+across namespaces.
 
 ### Goals
 
@@ -97,13 +108,11 @@ confusion for Kubernetes users.
 ## Proposal
 
 Move the existing ReferenceGrant resource into a new
-`grants.authorization.k8s.io` API group, defined within the Kubernetes code base
+`authorization.k8s.io` API group, defined within the Kubernetes code base
 as part of the 1.27 release.
 
-We will take this opportunity to clarify underspecified parts of the API, but
-will not add, change, or remove any fields as part of this transition.
-This resource will start with v1beta1 as the API version, matching the API version
-it already has within Gateway API.
+We will take this opportunity to clarify and update the API after SIG-Auth
+feedback. This resource will start with v1alpha1 as the API version.
 
 
 ### Risks and Mitigations
@@ -143,28 +152,225 @@ across namespaces. It's intended that _another object_ (that is, the From object
 complete the handshake by creating a reference to the referent object (the To
 object).
 
-#### `Kind` vs `Resource`
+#### `Resource` vs `Kind`
 
 When creating a metaresource (that is, a resource that targets other resources)
 like ReferenceGrant, it's important to consider if the metaresource uses the more
 common `Kind` or the more correct `Resource`.
 
-When designing the Gateway API in general, we considered this quite a bit (and
-@robscott even ended up making https://github.com/kubernetes/community/pull/5973
-to clarify the API conventions), but in the end decided to use Kind, to improve
-the user experience. That is, it's easier users to take the value from the `kind`
-field at the top of the YAML they are already using, and put it straight into
-these fields, rather than needing to do a kind-resource lookup for every user's
-interaction with the API.
+In the original Gateway API implementation, we chose to use `Kind` rather than
+`Resource`, mainly to improve the user experience. That is, it's easier users
+to take the value from the `kind` field at the top of the YAML they are already
+using, and put it straight into these fields, rather than needing to do a
+kind-resource lookup for every user's interaction with the API. @robscott even
+ended up making https://github.com/kubernetes/community/pull/5973 to clarify
+the API conventions.
 
-Secondly, as in the Ingress API, the target types must be clearly defined by
-each implementation, so there should be no opportunity for ambiguity.
+However, in discussion on this KEP, it's clear that the more generic nature of
+_this_ API requires the additional specificity that `Resource` provides.
 
-Lastly, this is only half of a handshake, so the From referent must also both
-support referencing the To referent, and must reference the one in the To field.
+The Gateway API ReferenceGrant looked like this:
+```yaml
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateways
+  namespace: bar
+spec:
+  from:
+    # Note that in Gateway API, Group is currently defaulted
+    # to this, which means you to explicitly set the group to
+    # the empty string for Core resources. We should definitely
+    # change this.
+    - group: "gateway.networking.kubernetes.io"
+      kind: Gateway
+      namespace: foo
+  to:
+   - group: ""
+     kind: Secret
+```
 
-With all of that in mind, we felt that the benefits in terms of specificity
-outweighed the costs in terms of user pain to use the more correct `Resource`.
+The new version will look like this instead:
+```yaml
+apiVersion: authorization.k8s.io/v1alpha1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateways
+  namespace: bar
+spec:
+  from:
+    # Assuming that we leave the default for Group to the empty
+    # string, so that Core objects don't need additional config.
+    - group: "gateway.networking.kubernetes.io" 
+      resource: gateways
+      namespace: foo
+  to:
+    - resource: secrets
+
+```
+
+The new version communicates the scope more clearly because `resource` is plural.
+
+#### Revocation behavior
+
+Unfortunately, there's no way to be specific about what happens when a
+ReferenceGrant is deleted in every possible case - the revocation behavior is
+dependent on what access is being granted (and revoked).
+
+The general rules we've used in the past are:
+* Deletion of a ReferenceGrant means the granted access is revoked
+* ReferenceGrant controllers must remove any configuration generated by the granted
+access as soon as possible (eventual consistence permitting)
+* Implementations should err on the side of removing access rather than leaving
+it lying around.
+
+The examples below include information about what happens when the ReferenceGrant
+is removed as data points.
+
+### Example Usage
+
+#### Gateway API Gateway Referencing Secret
+
+In this example (from the Gateway API docs), we have a Gateway in the
+`gateway-api-example-ns1` namespace, referencing a Secret in the
+`gateway-api-example-ns2` namespace. The following ReferenceGrant allows this:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: Gateway
+metadata:
+  name: cross-namespace-tls-gateway
+  namespace: gateway-api-example-ns1
+spec:
+  gatewayClassName: acme-lb
+  listeners:
+  - name: https
+    protocol: HTTPS
+    port: 443
+    hostname: "*.example.com"
+    tls:
+      certificateRefs:
+    # There's a Kind/Resource mismatch here, which sucks, but it is not
+    # easily fixable, since Gateway is already a beta, close to GA
+    # object.
+      - kind: Secret
+        group: ""
+        name: wildcard-example-com-cert
+        namespace: gateway-api-example-ns2
+---
+apiVersion: authorization.k8s.io/v1alpha1
+kind: ReferenceGrant
+metadata:
+  name: allow-ns1-gateways-to-ref-secrets
+  namespace: gateway-api-example-ns2
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    resource: gateways
+    namespace: gateway-api-example-ns1
+  to:
+  - resource: secrets
+```
+
+For Gateway TLS references, if this ReferenceGrant is deleted (revoking, 
+the grant), then the Listener will become invalid, and the configuration
+will be removed as soon as possible (eventual consistency permitting).
+
+#### Gateway API HTTPRoute Referencing Service
+
+In this example, a HTTPRoute in the `baz` namespace is directing traffic
+to a Service backend in the `quux` namespace.
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: quuxapp
+  namespace: baz
+spec:
+  parentRefs:
+  - name: example-gateway
+    sectionName: https
+  hostnames:
+  - quux.example.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+  # BackendRefs are Services by default.
+    - name: quuxapp
+    namespace: quux
+      port: 80
+---
+apiVersion: authorization.k8s.io/v1alpha1
+kind: ReferenceGrant
+metadata:
+  name: allow-baz-httproutes
+  namespace: quux
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    resource: httproutes
+    namespace: baz
+  to:
+  - resource: services
+```
+
+For HTTPRoute objects referencing a backend in another namespace, if the
+ReferenceGrant is deleted, the backend will become invalid (since the target
+can't be found). If there was more than one backend, then the valid parts of the
+HTTPRoute's config would persist in the data plane.
+
+But in this case, the cross-namespace reference is the _only_ backend, so the
+removal of the ReferenceGrant will also result in the removal of the HTTPRoute's
+config from the data plane.
+#### PersistentVolumeClaim using cross namespace data source
+
+This example is taken from https://kubernetes.io/blog/2023/01/02/cross-namespace-data-sources-alpha/
+and updated to use the proposed new spec.
+
+It allows the PersistentVolumeClaim in the `dev` namespace to use a volume
+snapshot from the `prod` namespace as its data source.
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: example-pvc
+  namespace: dev
+spec:
+  storageClassName: example
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  dataSourceRef:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: new-snapshot-demo
+    namespace: prod
+  volumeMode: Filesystem
+---
+apiVersion: authorization.k8s.io/v1alpha1
+kind: ReferenceGrant
+metadata:
+  name: allow-prod-pvc
+  namespace: prod
+spec:
+  from:
+  - resource: persistentvolumeclaims
+    namespace: dev
+  to:
+  - group: snapshot.storage.k8s.io
+    resource: volumesnapshots
+    name: new-snapshot-demo
+```
+
+At time of writing, I'm not sure about the behavior here when the ReferenceGrant
+is deleted.
 
 ### API Spec
 
@@ -216,10 +422,10 @@ type ReferenceGrantSpec struct {
 	// +kubebuilder:validation:MaxItems=16
 	From []ReferenceGrantFrom `json:"from"`
 
-	// To describes the resources that may be referenced by the resources
-	// described in "From". Each entry in this list MUST be considered to be an
-	// additional place that references can be valid to, or to put this another
-	// way, entries MUST be combined using OR.
+	// To describes the resources in this namespace that may be referenced by
+	// the resources described in "From". Each entry in this list MUST be
+	// considered to be an additional set of objects that references can be
+	// valid to, or to put this another way, entries MUST be combined using OR.
 	//
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
@@ -232,8 +438,8 @@ type ReferenceGrantFrom struct {
 	// When empty, the Kubernetes core API group is inferred.
 	Group Group `json:"group"`
 
-	// Kind is the kind of the referent.
-	Kind string `json:"kind"`
+	// Kind is the resource of the referent.
+	Resource string `json:"resource"`
 
 	// Namespace is the namespace of the referent.
 	Namespace string `json:"namespace"`
@@ -246,8 +452,8 @@ type ReferenceGrantTo struct {
 	// When empty, the Kubernetes core API group is inferred.
 	Group string `json:"group"`
 
-	// Kind is the kind of the referent.
-	Kind string `json:"kind"`
+	// Kind is the resource of the referent.
+	Resource string `json:"resource"`
 
 	// Name is the name of the referent. When unspecified, this policy
 	// refers to all resources of the specified Group and Kind in the local
@@ -262,9 +468,8 @@ type ReferenceGrantTo struct {
 
 This section lists some of the outstanding questions people have had about
 ReferenceGrant, and other items that we'll be clarifying in the godoc and other
-documentation as part of the transition to the new API group, keeping in mind
-that we will not be adding any new features, fields, or behavior, just clarifying
-what's done already.
+documentation as part of the transition to the new API group, along with any
+other changes we need to make that aren't already reflected in this document.
 
 Also note that we don't consider any of these blockers for the general _idea_ of
 moving ReferenceGrant to the new API group, just notes to save discussion time.
