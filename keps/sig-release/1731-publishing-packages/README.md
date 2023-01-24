@@ -13,7 +13,9 @@
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Using OBS instead of manually building and hosting packages](#using-obs-instead-of-manually-building-and-hosting-packages)
     - [How Open Build Service works?](#how-open-build-service-works)
-    - [OBS configuration and packages layout](#obs-configuration-and-packages-layout)
+    - [Packages, Operating Systems, and Architectures in Scope](#packages-operating-systems-and-architectures-in-scope)
+    - [Repository Layout](#repository-layout)
+    - [Projects and Packages in OBS](#projects-and-packages-in-obs)
     - [Packages in OBS](#packages-in-obs)
     - [Package Sources](#package-sources)
     - [Package Specs](#package-specs)
@@ -202,30 +204,41 @@ to interact via the web interface. Currently there are no (Go) libraries that we
 
 [osc]: https://openbuildservice.org/help/manuals/obs-user-guide/cha.obs.osc.html
 
-#### OBS configuration and packages layout
+#### Packages, Operating Systems, and Architectures in Scope
 
 We'll publish Debian-based (`deb`) and RPM-based (`rpm`) packages. Packages will be published for the following
-architectures: `aarch64`, `armv7l`, `ppc64le`, `s390x`, `x86_64`. We'll build packages on the following operating
-systems and architectures:
+architectures:
+
+* `x86_64` (`amd64`)
+* `aarch64`
+* `armv7l` (`arm`)
+* `ppc64le`
+* `s390x`
+
+We'll **build** packages for those architectures on the following Operating Systems:
 
 - Ubuntu 20.04 (`aarch64`, `armv7l`, `ppc64le`, `s390x`, `x86_64`)
 - CentOS Stream 8 (`aarch64`, `ppc64le`, `x86_64`)
+  - CentOS Stream 8 doesn't support `armv7l` and `s390x` on OBS, hence, we use OpenSUSE Factory which does support
+    those architectures
 - OpenSUSE Factory (`armv7l`, `s390x`)
 
-Note: those operating systems are used as **builders**. The resulting packages are supposed to work on any Debian-based
+Those operating systems are used as **builders**. The resulting packages are supposed to work on any Debian-based
 and RPM-based distribution, respectively. Those distributions were chosen based on recommendations from the OBS team
 to provide the best compatibility with all all Debian-based and RPM-based distributions.
 
 The following packages will be published for all operating system and architectures listed earlier. For simplicity,
 we'll refer to those as packages as the **core packages**:
 
-- `cri-tools`
-- `kubeadm`
-- `kubectl`
-- `kubelet`
-- `kubernetes-cni`
+- cri-tools
+- kubeadm
+- kubectl
+- kubelet
+- kubernetes-cni
 
-We'll use this layout for the core packages:
+#### Repository Layout
+
+We'll use this layout when creating repositories for the **core packages**:
 
 - **`${channel}`**: can be `stable`, `dev`, `nightly`
   - `stable`: all official releases for `${k8s_release}`
@@ -237,43 +250,60 @@ We'll use this layout for the core packages:
 - **`${k8s_release}`**: the version of Kubernetes `<major>.<minor>`
   (e.g. `1.12`, `1.13`, `1.14`, ...)
 
-In OBS, this layout replicates as:
+#### Projects and Packages in OBS
+
+Speaking of OBS, **Packages** are located in **Projects**. We'll use two different types of projects:
+
+- Building/Staging project - we'll build packages in a project of this type
+- Publishing/Maintenance project - we'll publish packages from a project of this type
+
+The reason for using two different types of projects is that OBS doesn't keep previously published packages.
+For example, if we publish v1.26.0, and then v1.26.1, after v1.26.1 is published, the v1.26.0 package is removed.
+To be able to keep all packages/versions (e.g. v1.26.0 and v1.26.1), we need to publish packages from the
+maintenance project.
+
+The repository layout mentioned earlier replicates in OBS as:
 
 - The root OBS project is [**`isv:kubernetes`**](https://build.opensuse.org/project/show/isv:kubernetes)
-- **`core`** subproject will be created in the root project to be used for the core packages
-  - In the future, we might want to allow other subprojects to use OBS, so we want to properly layout our root project
-- Each **`${channel}`** has a subproject in the **`core`** project (e.g. **`isv:kubernetes:core:stable`**)
-- Each **`${k8s_release}`** has a subproject in the **`${channel}`** subproject
+- **`core`** subproject of the root project will be created to be used for **core packages**
+  - In the future, we might decide to publish other packages (e.g. Minikube), so we want to have
+    a proper and scalable layout from the beginning
+- Each **`${channel}`** has a subproject of the **`core`** project (e.g. **`isv:kubernetes:core:stable`**)
+- Each **`${k8s_release}`** has a **publishing** subproject of the **`${channel}`** subproject
   (e.g. **`isv:kubernetes:core:stable:v1.26`**)
-  - Packages are published to this subproject. Other subprojects are only placeholders
-    for **`${k8s_release}`** subprojects
+  - We'll publish our packages from this project
+- Each **`${k8s_release}`** has a **building** subproject as a subproject of the appropriate publishing subproject
+  (e.g. **`isv:kubernetes:core:stable:v1.26:stage`**)
+  - We'll build packages in this project
   
 Having **`${k8s_release}`** subproject as a subproject of **`${channel}`** is required so we can build multiple
-releases in parallel. Otherwise, we would have to build a mechanism to wait for ongoing build process to be done
-before starting the build process for the next release in the pipeline. This is because if changes are pushed to
-the package, the ongoing build process is aborted. Running builds sequentially is not an option because
-that would slow down the release process too much.
+releases in parallel. This is because if changes are pushed to the package, the ongoing build process is aborted.
+Running builds sequentially is not an option because that would slow down the release process too much.
 
-The subprojects can be created manually via the web interface. Upon creating a **`${k8s_release}`** subproject,
-the target operating systems and architectures (listed at the beginning of this subheading) must be configured for
-the subproject (via the Repositories option). This is to be done by the Release Managers before cutting the first
-alpha release for that minor release.
-
-Note: it's important to ensure that the subproject and created packages are configured in a way to keep
-previous build (i.e. previous patch releases).
+Mentioned subprojects can be created manually via the web interface. Upon creating appropriate **`${k8s_release}`**
+subprojects, the target operating systems and architectures (listed earlier) must be configured for those subprojects
+(via the Repositories option). Additionally, some meta configuration is needed to declare the projects as publishing
+and building. This is to be done by the Release Managers before cutting the first alpha release for that minor release.
+The concrete configuration steps will be documented outside of this KEP, as part of the Release Managers Handbook.
+We'll also consider automating this in some form.
 
 #### Packages in OBS
 
-Before pushing packages, a **Package** object must be created in each **`${k8s_release}`** subproject for each package
-that we want to publish. This can be done via the `osc` command-line tool or the web interface. The created package
-inherits information about the target operating systems and architectures from the subproject. Creating packages is
-to be done by the Release Managers before cutting the first alpha release for that minor release.
+**Package** object must be created in the **`${k8s_release}`** **building** subproject for each package that we want
+to build and publish. This can be done via the `osc` command-line tool or the web interface. The created package 
+inherits information about the target operating systems and architectures from the subproject.
 
-Once all Package objects are created, sources and spec files can be pushed to those packages using `osc`.
+Creating packages is to be done by the Release Managers before cutting the first alpha release for that minor release.
+We'll consider automating this in some form.
+
+Packages in the **publishing** subproject are created automatically for each published build. Those automatically
+packages are named as `<package-name>.<timestamp>`, e.g. `kubectl.20230120135613`. This naming schema doesn't affect
+package managers or users, i.e. those packages are still installable by their original name
+(e.g. `apt install kubectl=1.26.0*`). More about building and publishing packages is explained in the next sections.
 
 #### Package Sources
 
-We'll push pre-built binaries to OBS instead of pushing sources and then building binaries in the OBS pipeline.
+We'll build packages using pre-built binaries instead of pushing sources and then building binaries in the OBS pipeline.
 The reasoning for this is:
 
 - We already have our own release pipeline. Adding another release pipeline would increase the maintenance burden for
@@ -290,6 +320,7 @@ storage. The structure of the tarball is supposed to be:
 
 - Root of tarball:
   - LICENSE file
+  - README.md file
   - All accompanying files (e.g. systemd units)
   - Subdirectory for each target architecture:
     - Binary for that architecture (e.g. `kubectl`)
@@ -308,14 +339,16 @@ The starting point for creating RPM specs is going to be the [RPM specs currentl
 The following changes are needed to those RPM specs:
 
 - Parametrize specs so the build tooling is able to pick a binary for the correct target architecture
+- Provide additional metadata needed for building Debian-based packages
 - Ensure all spec files are passing rpm-lint
 
-The reason for dropping deb specs is that maintaining and generating those specs is much more complicated than
+The reason for dropping deb specs is that maintaining and generating those specs is more complicated than
 maintaining RPM specs. Considering that we use pre-built binaries, we can easily convert RPM specs to Debian specs
-using the [`debbuild` tool][debbuild]. The `debbuild` tool is already available in the OBS pipeline. This tool
-can also be used by distributors if they want to build deb packages on their own.
+automatically using the [`debbuild` tool][debbuild]. The `debbuild` tool is already available in the OBS pipeline.
+This tool can also be used by distributors if they want to build deb packages on their own.
 
-The RPM specs will be generated by `kubepkg`, which already supports this. We only need to update the spec files.
+The RPM specs will be generated by `kubepkg`, which already supports this. That said, we only need to update the spec
+files.
 
 [kubepkg-rpm]: https://github.com/kubernetes/release/tree/e10a44f8f9a9c08441260574e3d2a8711031fafe/cmd/kubepkg/templates/latest/rpm
 [debbuild]: https://github.com/debbuild/debbuild
@@ -328,14 +361,25 @@ the user management, described below). We'll consider automating those steps in 
 
 The workflow for publishing packages is:
 
-- Authenticate to OBS via `osc`
-- Pull all packages that we'll be publishing from OBS using `osc`
-- Regenerate specs for all packages using `kubepkg`
-- Generate the sources tarballs for all packages using `kubepkg`
-- Commit all changes and push them to OBS using `osc`
-- Wait for packages to be built and published successfully
+- Authenticate to OBS via `osc` and pull existing packages from the appropriate **building subproject**
+- Update specs and generate the sources tarball using `kubepkg`
+- Commit changes and push them to the **building subproject**
+- Wait for packages to be built
   - There's [RabbitMQ][obs-rabbitmq] available that we can use to listen for events
   - This might not be feasible for all architectures, for example, building for `s390x` can take quite a while
+- Once packages are built, release those packages by running `osc release`
+  - Releasing (or publishing) packages means taking them from the **building subproject** and publishing them
+    from the **publishing subproject**. This step makes packages available to end users
+  - As described earlier, this ensures we keep previous builds and versions (e.g. both v1.26.0 and v1.26.1)
+
+```mermaid
+flowchart
+    Authenticate --> Checkout[Checkout/Clone packages]
+    Checkout --> Gen[Generate specs and sources]
+    Gen --> Push[Push changes to OBS]
+    Push --> Wait[Wait for builds]
+    Wait --> Release[Release builds]
+```
 
 Ideally and optionally, publishing/promoting a package means to commit a change
 to a configuration file which triggers a "package promotion tool", which:
