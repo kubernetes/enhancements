@@ -69,7 +69,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP describes a process for updating supported Kubernetes minor version
-release branches to build and release with new minor versions of go,
+release-1.x branches to build and release with new minor versions of go,
 with a focus on preserving behavior and compatibility of Kubernetes patch releases.
 
 ## Motivation
@@ -143,6 +143,7 @@ it seemed like a good time to capture requirements and a process for updating Ku
 
 ### Non-Goals
 
+* change the current approach of updating the default Kubernetes development branch to the latest go minor version as soon as possible
 * change the cadence of Kubernetes patch releases
 * change the duration of support for a given Kubernetes minor version
 
@@ -166,9 +167,9 @@ Merge those changes to the default Kubernetes development branch *prior* to upda
 This ensures those changes build and pass tests with both go 1.N and 1.(N‑1).
 Here is an [example of tracking prereq changes for go1.20](https://github.com/kubernetes/release/issues/2815#issuecomment-1373891562).
 
-**2. Backport prereq changes to release branches**
+**2. Backport prereq changes to release-1.x branches**
 
-Backport prereq changes for go 1.N to release branches, keeping in mind the guidance to
+Backport prereq changes for go 1.N to release-1.x branches, keeping in mind the guidance to
 [avoid introducing risk to release branches](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-release/cherry-picks.md#what-kind-of-prs-are-good-for-cherry-picks).
 
 Considering the typical changes required to update go versions:
@@ -180,9 +181,9 @@ Considering the typical changes required to update go versions:
 
 Here is an [example of tracking backports of prereq changes for go 1.20](https://github.com/kubernetes/release/issues/2815#issuecomment-1373891562).
 
-**3. Update release branches to new go minor versions**
+**3. Update release-1.x branches to new go minor versions**
 
-Update release branches to build/release using go 1.N once all of these conditions are satisfied:
+Update release-1.x branches to build/release using go 1.N once all of these conditions are satisfied:
 
 1. go 1.N has been released at least 3 months
    * this gives ~3 months for adoption of go 1.N by the go community
