@@ -907,7 +907,7 @@ Problem examples:
 | CRD is in multiple clusters, but schema differs        | If policy author is aware of the schema variations, can they write policies that work for all the variations? |
 | Validation of an aggregated API server type            | Main API server does not have type definitions |
 
-Due to these complications, we have decided to evalute CEL expressions
+Due to these complications, we have decided to evaluate CEL expressions
 dynamically. Informational type checking will be provided (except for aggregated
 API server types), but will be surfaced only as warnings. See "Alternatives
 Considered" section for details of all the alternatives we reviewed when
