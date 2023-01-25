@@ -4,6 +4,8 @@ authors:
   - "@ardaguclu"
 owning-sig: sig-cli
 status: implementable
+see-also:
+  - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2379-kubectl-plugins"
 creation-date: 2023-01-16
 reviewers:
   - "@brianpursley"

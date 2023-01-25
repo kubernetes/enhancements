@@ -40,21 +40,20 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -70,7 +69,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP enables external plugins being used as subcommands of built-in `create` command via new `--use-plugin` flag.
+This KEP allows external plugins to be used as subcommands of built-in commands when the subcommand does not exist.
 
 ## Motivation
 
@@ -84,7 +83,7 @@ This KEP proposes a viable alternative to users via plugins instead of creating 
 
 ### Goals
 
-* Enable external plugin usage for `kubectl create` command
+* Enable external plugin usage for `kubectl` built-in commands as subcommands, if subcommands does not exist.
 
 ### Non-Goals
 
@@ -92,36 +91,28 @@ This KEP proposes a viable alternative to users via plugins instead of creating 
 
 ## Proposal
 
-This KEP introduces a new boolean flag, namely `--use-plugin`. Without this flag, plugin mechanism will work
-exactly the way it already works. On the other hand, if the user passes this flag;
+When user executes a subcommand of a built-in command, instead returning an "unknown command" error, `kubectl` will search this subcommand
+in external plugins with the name structure similar to current plugin search mechanism(e.g. `kubectl-create-foo`).
 
 ```sh
-$ kubectl foo --use-plugin
-(running kubectl-foo plugin without passing --use-plugin flag)
-
-$ kubectl set env --use-plugin
-("Error: set command is not allowed for shadowing by plugins")
-
-$ kubectl create job --use-plugin
-(running kubectl-create-job plugin without passing --use-plugin flag. If the plugin is not found, failing)
+$ kubectl create foo
+(running kubectl-create-foo plugin)
 ```
 
-Being said that `--use-plugin` will be used to force plugin execution and do this only for allowed built-in commands. Currently,
-only `create` command will be supported and this list can be extended in future considerations.
+If `kubectl` finds a match for the subcommand, it will execute this external plugin how it already does 
+for external plugins currently.
 
-Because of starting as alpha and this is an explicitly opted-in feature, `--use-plugin` flag is only visible and usable after setting;
+Because of starting as alpha and this is an explicitly opted-in feature, shadowing functionality will be hidden behind the environment variable
+and will only be used after exporting;
 ```sh
 export KUBECTL_ENABLE_ALPHA_CMD_SHADOW=true
 ```
 
 ### Notes/Constraints/Caveats
 
-In terms of built-in commands, there is not any constraint. Because if user passes the flag, command will be run as plugin regardless
-of existed or not. In terms of plugins, this proposal has a notable constraint that `--use-plugin` flag will be removed while
-executing plugin. That means that if plugin internally also supports `--use-plugin` flag, flag will not be passed. The reason of
-this constraint is that there is no differentiation between user passes `--use-plugin` flag to force plugin usage or actually tries
-to pass `--use-plugin` flag to plugin. This can simply be overcome by plugin owners will use different flag naming rather than `--use-plugin`
-which is supposed to be special flag in the manner of this proposal.
+This KEP in alpha and beta stage will only support shadowing for `kubectl create` to get feedback for other
+built-in commands as well. Currently, we know that there are requests for `kubectl create` command but we need to find out
+which other built-in commands will also be requested for this shadowing.
 
 ### Risks and Mitigations
 
@@ -188,9 +179,10 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 Tests should include;
-- Running `kubectl create CRD` and expects error
-- Running `kubectl create CRD --use-plugin` and expect it creates CRD whose plugin should be existed
-- Running `kubectl set env --use-plugin` and expects error
+- Create custom resource `foo` and `foo2`
+- Add external plugin only for `kubectl-create-foo2` in test directory
+- Running `kubectl create foo` and expects error
+- Running `kubectl create foo2` and expect it creates `foo2` successfully
 
 ##### e2e tests
 
@@ -205,7 +197,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 Test should include;
-- Create a custom plugin for an example CRD and run `kubectl create CRD --use-plugin` and expects CRD is created
+- Add custom plugin `kubectl-create-foo` for custom resource `foo`
+- Apply custom resource `foo` into the test cluster
+- Execute `kubeectl create foo` command and expects resource is successfully created.
 
 ### Graduation Criteria
 
@@ -235,7 +229,6 @@ functionality is accessed.
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
 - Feature implemented behind a `KUBECTL_ENABLE_ALPHA_CMD_SHADOW=true` environment variable
@@ -245,6 +238,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 - Gather feedback from developers and surveys
 - Add integration tests
+- Enable shadowing for all commands
 
 #### GA
 
@@ -275,6 +269,7 @@ in back-to-back releases.
 
 - Gather feedback from developers and surveys
 - Add integration tests
+- Enable shadowing for all commands
 
 #### GA
 
@@ -369,8 +364,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-There would be a breaking change if any of built-in commands have `--use-plugin` flag. But there is none. 
-If the external plugins use `--use-plugin` flag, their plugins will not get `--use-plugin`'s value.
+No, user will continue using their all commands without any change. 
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -384,8 +378,10 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Yes, we can roll back to a previous release of `kubectl`
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+Shadowing will continue being supported without any impact on default behavior.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -401,6 +397,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+No, users can only use this feature via enabling environment variable. 
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -625,6 +622,10 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+Built-in commands and subcommands in `kubectl` always overrule external plugins so that it is not possible to shadow
+already existing built-ins. Thereby, same troubleshooting mechanism should be applied just troubleshooting
+the `kubectl` commands. If the user has a problem when using a plugin, there won't be any change and user needs
+to contact with the plugin owner.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
@@ -646,7 +647,7 @@ For each of them, fill in the following information by copying the below templat
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
-
+The KEP was proposed on 2022-10-22
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
@@ -666,16 +667,19 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+Alternative of the proposed mechanism to overcome this request is to propose a new flag `--use-plugin`. User can
+pass this flag when they want to explicitly use the external plugin. Thanks to that, user also can shadow
+already existing subcommands. For example `kubectl create job` executes built-in `job` subcommand, on the other hand
+`kubectl create job --use-plugin` executes custom `kubectl-create-job` plugin.
+
+However, downside of this alternative is that usability hurts without any gain;
+- Everytime user has to pass a new flag to execute external plugin. 
+- This flag can not be passed to external plugins and this makes `--use-plugin` flag a special flag.
+- There is no clear use case allowing plugins for already existed subcommands which means that we want to disable this 
+deliberately instead providing as a feature. 
+
 <!--
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
--->
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
 -->
