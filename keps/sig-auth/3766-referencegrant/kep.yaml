@@ -7,23 +7,23 @@ owning-sig: sig-auth
 participating-sigs:
   - sig-network
   - sig-storage
-status: implementable
+status: provisional
 creation-date: 2023-01-20
 reviewers:
   - "@enj"
-  - "@xing-yang"
   - "@deads2k"
-  - "@thockin"
   - "@liggitt"
+  - "@msau42"
+  - "@thockin"
 approvers:
-  - TBD
+  - "@enj"
+  - "@liggitt"
 
-stage: beta
+stage: alpha
 
 latest-milestone: "v1.27"
 
 milestone:
-  beta: "v1.27"
-  stable: "v1.28"
+  alpha: "v1.27"
 
 disable-supported: true
