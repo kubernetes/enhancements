@@ -798,8 +798,8 @@ that might indicate a serious problem?
 -->
 
 A rollback might be considered if the metric `scheduler_pending_pods{queue="gated"}` stays in a
-high watermark for a long time. It, if not intentionally, may reveal that some controllers forget
-to empty the Pods' scheduling gates, which keep them in pending state.
+high watermark for a long time since it may indicate that some controllers are not properly handling
+removing the scheduling gates, which causes the pods to stay in pending state.
 
 Another indicator for rollback is the 90-percentile value of metric `scheduler_plugin_execution_duration_seconds{plugin="SchedulingGates"}`
 exceeds 100ms steadily.
