@@ -1282,16 +1282,6 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-### Full GKNN listing
-
-Instead of encoding a list of GKs to scope in, we could encode a the full list of GKNN object references, making the ApplySet parent object a (somewhat) human-readable inventory of the set. The reason for not choosing this approach is that we do not think it would actually allow us to further optimize the implementation in practice, and that its additional detail would make it more prone to desynchronization.
-
-The reason it does not optimize performance in practice is that we're considering the source of truth for membership to be the `part-of` annotations on the resources themselves. This is useful for visibility and for ownership conflict avoidance, but it means we must retrieve the objects themselves to check the source of truth rather than relying on the GVKNN. Since individual GET calls are far more expensive than LISTs in the common case for pruning, in practice, we would end up extracting the GK list from any GKNN list and make the same calls we would have with just a GK list. If it is deemed worthwhile, we could indeed do this, and it would allow an additional layer of in-band drift detection via comparison of the precise list to the set of current labelled resources.
-
-That said, the GKNN approach could likely be used to increase efficiency in a particularly common scenario: recognition that the set has not changed. We could choose to trust the listing in this scenario to avoid making any queries at all. A standard annotation for storing GKNN information is already part of this proposal, and we could switch the kubectl implementation to it based on experience with the alpha if desired.
-
-Alternatively, we could omit the `part-of` label entirely (which leaves no means of ownership conflict management), or consider the GKNN list the source of truth (which leaves a much wider vector for object leakage in practice than GK listing does, in our opinion).
-
 ### OwnerRefs
 
 We could use ownerRefs to track ApplySet membership.  A significant advantage of ownerRefs is that pruning is done automatically by the kube-apiserver, which runs a garbage collection algorithm to automatically delete resources that are no longer referenced.
