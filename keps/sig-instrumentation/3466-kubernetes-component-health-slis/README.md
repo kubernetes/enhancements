@@ -250,13 +250,13 @@ without any issues.
 
 ##### Integration tests
 
-- [X] ensure existence of healthcheck endpoint (beta requirement)
+- [ ] ensure existence of healthcheck endpoint (beta requirement)
 
 - <test>: <link to test coverage>
 
 ##### e2e tests
 
-- [X] ensure existence of healthcheck endpoint (beta requirement)
+- [ ] ensure existence of healthcheck endpoint (beta requirement)
 
 - <test>: <link to test coverage>
 
@@ -336,8 +336,7 @@ We will target this feature behind a flag `ComponentSLIs`
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-
-- [X] Feature gate (also fill in values in `kep.yaml`)
+- [ ] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `ComponentSLIs`
   - Components depending on the feature gate:
     + apiserver
@@ -346,6 +345,9 @@ We will target this feature behind a flag `ComponentSLIs`
     + controller-manager
     + kube-proxy
 
+###### Are there any tests for feature enablement/disablement?
+
+Given this feature is purely in-memory, no enablement/disablement tests are needed.
 
 ###### Does enabling the feature change any default behavior?
 
