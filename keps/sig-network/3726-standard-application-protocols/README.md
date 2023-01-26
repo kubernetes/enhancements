@@ -23,7 +23,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [list of protocols](#list-of-protocols)
+  - [New Standard Protocols](#new-standard-protocols)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Adding new protocols](#adding-new-protocols)
