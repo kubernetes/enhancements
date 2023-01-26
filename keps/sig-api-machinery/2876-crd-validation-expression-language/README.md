@@ -260,7 +260,7 @@ Example Validation Rules:
 
 - Each validation rule has an optional 'message' field for the error message that
 will be surfaced when the validation rule evaluates to false.
-- As a mutually-exclusive alternative to the `message` field, there is also a
+- As an alternative to the `message` field, there is also a
 `messageExpression` field that represents a CEL expression that evaluates to a
 string that will be used when the validation rule evaluates to false. If both the
 `message` and `messageExpression` fields are given, or the `messageExpression`
@@ -269,6 +269,7 @@ runtime cost limit is exceeded during `messageExpression` execution, then this
 is logged. Whether or not the action is admitted after that depends upon failure policy.
 Additionally, as part of [the KEP update to add expression composition](https://github.com/kubernetes/enhancements/pull/3669/files),
 expressions defined under `variables` will be accessible from `messageExpression`.
+- If both `message` and `messageExpression` are present, `messageExpression` will take priority.
 
 - The validator will be scoped to the location of the `x-kubernetes-validations`
 extension in the schema. In the above example, the validator is scoped to the
