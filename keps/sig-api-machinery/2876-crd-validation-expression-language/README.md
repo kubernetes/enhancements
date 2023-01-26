@@ -262,9 +262,8 @@ Example Validation Rules:
 will be surfaced when the validation rule evaluates to false.
 - As an alternative to the `message` field, there is also a
 `messageExpression` field that represents a CEL expression that evaluates to a
-string that will be used when the validation rule evaluates to false. If both the
-`message` and `messageExpression` fields are given, or the `messageExpression`
-field does not evaluate to a string, then the CRD write will fail.  If the
+string that will be used when the validation rule evaluates to false. If the
+`messageExpression` field does not evaluate to a string, then the CRD write will fail. If the
 runtime cost limit is exceeded during `messageExpression` execution, then this
 is logged. Whether or not the action is admitted after that depends upon failure policy.
 Additionally, as part of [the KEP update to add expression composition](https://github.com/kubernetes/enhancements/pull/3669/files),
