@@ -144,14 +144,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 After about a year and a half of testing a [new service proxy implementation](https://github.com/kubernetes-sigs/kpng/), and
-collecting sig-network and community feedback, it is clear that a shared library (referred to as kube-proxy-lib in this document) designed to make building new service proxies easier is needed. Specifically, it is desired by members of the Kubernetes networking community who are attempting to build specialized networking tools. However, in order to prevent the community from having to maintain
-two separate sets of code (the core kube-proxy code and the aforementioned new library) while also ensuring the stability of the existing proxies, it makes sense to work incrementally towards this ultimate goal.
+collecting sig-network and community feedback, it is clear that a shared library (referred to as the kube-proxy staging library in this document) designed to make building new service proxies easier is needed. Specifically, it is desired by members of the Kubernetes networking community who are attempting to build specialized networking tools. However, in order to prevent the community from having to maintain
+two separate sets of code (the existing kube-proxy code and the aforementioned new library) while also ensuring the stability of the existing proxies, it makes sense to work incrementally towards this goal in the kube-proxy
+staging library.
 
 This KEP describes the **first step** towards the ultimate end goal of providing
 a shared library of core kube-proxy functionality which can be easily consumed by the community.
-Specifically, it will work to move the existing [shared kube-proxy code](https://github.com/kubernetes/kubernetes/tree/master/pkg/proxy) into [staging](https://github.com/kubernetes/kube-proxy).
+Specifically, it will work to move the existing [shared kube-proxy code](https://github.com/kubernetes/kubernetes/tree/master/pkg/proxy) and associated network utilities into [staging](https://github.com/kubernetes/kube-proxy).
 
-This initial work will open the door for future improvements to kube-proxy code to be made in both
+This initial work will open the door for future kube-proxy code improvements to be made in both
 a safe an incremental way.
 
 ## Motivation
@@ -161,15 +162,15 @@ different backend technologies (i.e. nftables, eBPF, Open vSwitch, and so on).  
 this type of work ultimately making it much easier to write and maintain new proxy implementations.
 
 A previous attempt at a broad solution to this problem was explored in the [KPNG project](https://github.com/kubernetes-sigs/kpng/), which exhibits many properties that allow for such goals to be accomplished.  However, because it introduced many new features and would result in large breaking changes if it were
-to be incorporated back in tree, it became clear we needed to decompose this large task into smaller pieces. Therefore, we've decided to keep things simple and start by moving the existing shared kube-proxy code into staging where it can be iterated and augmented in an safe, consumable and incremental manner.
+to be incorporated back in tree, it became clear we needed to decompose this large task into smaller pieces. Therefore, we've decided to keep things simple and start by moving the existing shared kube-proxy code into staging where it can be iterated on and augmented to in an safe, consumable and incremental manner.
 
 ### Goals
 
 - Move the [shared kube-proxy code k/k/pkg/proxy](https://github.com/kubernetes/kubernetes/tree/master/pkg/proxy), and relevant
 networking utilities (i.e `pkg/util/iptables`) into the kube-proxy [staging repository](https://github.com/kubernetes/kube-proxy).
 - Ensure all existing kube-proxy unit and e2e coverage remains the same or is improved.
-- Ensure the shared code can be easily consumed by external users to help write new out of tree service proxies.
-- Write documentation detailing how external consumers can utilize kube-proxy staging library.
+- Ensure the shared code can be easily vendored by external users to help write new out of tree service proxies.
+- Write documentation detailing how external consumers can utilize the kube-proxy staging library.
 
 ### Non-Goals
 
@@ -182,7 +183,7 @@ networking utilities (i.e `pkg/util/iptables`) into the kube-proxy [staging repo
 We propose to build a new library in the [kube-proxy staging repository](https://github.com/kubernetes/kube-proxy). This repository will be vendored by the core implementations and developers who want to build new service proxy implementations, providing them with:
 
 - A vendorable golang library that defines a few interfaces which can be easily implemented by a new service proxy, that responds to EndpointSlice and Service changes.
-- Documentation on how to build a kube proxy with the library, based on [So You Want To Write A Service Proxy...](https://github.com/kubernetes-sigs/kpng/blob/master/doc/service-proxy.md) and other similar documents.
+- Documentation on how to build a kube proxy with the library, based on [So You Want To Write A Service Proxy...](https://github.com/kubernetes-sigs/kpng/blob/master/doc/service-proxy.md) and other similar resources.
 
 Not only will this make writing new backends easier, but through incremental changes and optimizations to the new library we hope to also improve the existing proxies, making [legacy bugs](https://github.com/kubernetes/kubernetes/issues/112604) easier to fix in the future.
 
@@ -207,23 +208,24 @@ TBD
 ### Risks and Mitigations
 
 Since this KEP involves the movement of core code bits there are some obvious risks, however they will be mitigated by ensuring
-all existing unit and e2e test coverage is kept up to date and/or improved througout the process.
+all existing unit and e2e test coverage is kept stable and/or improved throughout the process.
 
 ## Design Details
 
 **NOTE: This section is still under active development please comment with any further ideas**
 
 The implementation of this kep will begin by moving the various networking utilities (i.e `pkg/util/iptables`, `pkg/util/conntrack`,
-`pkg/util/ipset`, `pkg/util/ipvs`) used by `pkg/proxy` to the staging repo using @danwinship's [previous attempt](https://github.com/kubernetes/kubernetes/pull/112886) as a guide. Additionally we will need to [re-look](https://github.com/kubernetes/utils/pull/165) into moving `pkg/util/async` out of `pkg/util/async` and into [`k8s/utils`](https://github.com/kubernetes/utils).
+`pkg/util/ipset`, `pkg/util/ipvs`) used by `pkg/proxy` to the staging repo using @danwinship [previous attempt](https://github.com/kubernetes/kubernetes/pull/112886) as a guide. Additionally we will need to [re-look](https://github.com/kubernetes/utils/pull/165) into moving `pkg/util/async` out of `pkg/util/async` and into [`k8s/utils`](https://github.com/kubernetes/utils).
 
 Following this initial work, the [shared kube-proxy code](https://github.com/kubernetes/kubernetes/tree/master/pkg/proxy) as it stands today will be moved into the kube-proxy staging repo. Throughout this process it's crucial that all unit and e2e test coverage
 is either maintained or improved to ensure stability of the existing in-tree proxies.
 
 In conclusion, documentation will be written to help users consume the now vendorable kube-proxy code.
 
-Additional steps (most likely described in further detail in a follow-up kep) will include:
-    - Building up more tooling around testing and use of the library for external consumers.
-    - Analysis possible improvements and updates to the shared library code, using the POC done in KPNG as a reference, to make writing new out of tree service proxy implementations easier.
+Additional steps (possibly described in further detail with a follow-up kep) will include:
+
+- Building up more tooling around testing and use of the library for external consumers.
+- Analysis of possible improvements and updates to the shared library code, using the POC done in [KPNG](https://github.com/kubernetes-sigs/kpng) as a reference, to make writing new out of tree service proxy implementations easier.
 
 ### Test Plan
 
@@ -275,8 +277,7 @@ No
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 The APIServer going down will prevent this library from generally working as would be expected in normal cases, where all incoming
-Kubernetes networking data is being polled from the APIServer.  However, since this library will be flexible, there are other ways
-of providing it with networking information, and thus, APIServer outage doesn't have to result in the library itself being entirely unusable.
+Kubernetes networking data is being polled from the APIServer.
 
 ###### What are other known failure modes?
 
@@ -284,13 +285,16 @@ of providing it with networking information, and thus, APIServer outage doesn't 
 
 ## Implementation History
 
-["Librarification" PR into KPNG](https://github.com/kubernetes-sigs/kpng/pull/389).
+- [Add kep to move kubeproxy out of tree (to staging)](https://github.com/kubernetes/enhancements/pull/2635)
+- ["Move kube-proxy networking utilities to staging"](https://github.com/kubernetes/kubernetes/pull/112886)
+- [Import BoundedFrequencyRunner from k8s.io/kubernetes](https://github.com/kubernetes/utils/pull/165)
+- ["Librarification" PR into KPNG](https://github.com/kubernetes-sigs/kpng/pull/389).
 
 ## Drawbacks
 
 ## Alternatives
 
-We could retain the existing kube proxy shared code in core kubernetes and simply better document the datastructures and golang maps used for kubernetes client operations and client side caching. However, that would still require external proxy implementations to copy and paste large amounts of code.  The other option is to not tackle this problem in-tree and to move forward with the singular development of external projects like KPNG as the overall framework for solving these problems.  The drawbacks to this include of this is that it is opinionated towards a raw GRPC implementation and other users (i.e. XDS) want something more decoupled possibly.  This realization has inspired this KEP.
+We could retain the existing kube proxy shared code in core kubernetes and simply better document the data structures and golang maps used for kubernetes client operations and client side caching. However, that would still require external proxy implementations to copy and paste large amounts of code.  The other option is to not tackle this problem in-tree and to move forward with the singular development of external projects like KPNG as the overall framework for solving these problems.  The drawbacks to this include the large additional maintenance burden, and that it is opinionated towards a raw GRPC implementation and other users (i.e. XDS) want something more decoupled possibly.  This realization has inspired this KEP.
 
 ## Infrastructure Needed (Optional)
 
