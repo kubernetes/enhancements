@@ -89,14 +89,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-There are cases where implementations implement different things for the same application protocol names. That already causes(and can cause more in the future) issues for certain implementations to interoperate. (see example with GKE and Istio under [Motivation](#motivation))
+There are cases where implementations implement different things for the same application protocol names. That has already caused issues for certain implementations to interoperate, with the possibility of more in the future. (See the example with GKE and Istio under [Motivation](#motivation))
 
 This KEP suggests a different description for the `AppProtocol` field and proposes to declare standard Kubernetes protocol names for common protocols that are not IANA service names.
 
 
 ## Motivation
 
-The lack of direct support for specifying application protocols for ports and the widespread use of implementation-specific annotations to mitigate it had led k8s to add the `AppProtocol` field to the port spec.
+The lack of direct support for specifying application protocols for ports and the widespread use of implementation-specific annotations to mitigate it had led Kubernetes to add the `AppProtocol` field to the port spec.
 
 While this is a good solution - we never came with recommended standards other than [IANA standard service names](https://www.iana.org/assignments/service-names) or a domain prefixed protocol.
 
@@ -142,7 +142,7 @@ This KEP proposes to declare standard Kubernetes protocol names for common proto
 Those common protocols will be well defined strings prefixed with ‘k8s.io’. 
 `k8s.io/h2c` as an example.
 
-### list of protocols
+### New Standard Protocols
 - 'k8s.io/http2'
 - 'k8s.io/grpc'
 - 'k8s.io/tcp'
@@ -157,9 +157,9 @@ There are no real “risks”, primary concerns are:
 
 ## Design Details
 
-At first, the list is going to live in `ServicePort` and `EndpointPort` as part of the AppProtocol description.
+At first, the collection of standard protocols is going to live in `ServicePort` and `EndpointPort` as part of the AppProtocol description.
 
-Based on the list size, we might revisit this decision in the future and suggest an alternative location.
+We might revisit this decision in the future and suggest an alternative location based on the number of standard protocols we support.
 
 Proposed changes to the API spec:
 
@@ -192,16 +192,17 @@ same wording for type `EndpointPort`
 
 ### Adding new protocols
 
-In order to be included in the list, a new protocol must:
+In order to be included in the collection, a new protocol must:
 * Not be an [IANA standard service name](https://www.iana.org/assignments/service-names)
 * Run on top of L4 protocol supported by Kubernetes Service
-* Be supported in more than three implementations
+* Be supported in two or more implementations
 * Be well defined and broadly used
 
 ### Followup work
 To support implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port we need to turn `AppProtocol` to a list.
 
 It is likely to be an API change but design details TBD.
+
 ### Documentation change
 
 [kubernetes website](https://github.com/kubernetes/website/blob/main/content/en/docs/concepts/services-networking/service.md#application-protocol) will be changed accordingly
@@ -272,7 +273,7 @@ N/A
 
 ## Drawbacks
 
-* The list of protocols can become stale fairly quick when new protocols are implemented before we decide to declare them as part of k8s.io common list. That can lead to a the current state again where implementations already implement support without a prefix (although they should not) OR with a domain prefix.
+* The collection of the standard protocols can become stale fairly quick when new protocols are implemented before we decide to declare them as part of k8s.io common collection. That can lead to a the current state again where implementations already implement support without a prefix (although they should not) OR with a domain prefix.
 
 
 ## Alternatives
