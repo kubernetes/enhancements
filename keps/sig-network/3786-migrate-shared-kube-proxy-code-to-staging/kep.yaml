@@ -1,15 +1,14 @@
 title: rework kube-proxy architecture
-kep-number: 2104
+kep-number: 3786
 authors:
   - "@mcluseau"
   - "@rajaskakodar"
-  - "@astoyocos"
+  - "@astoycos"
   - "@jayunit100"
   - "@nehalohia"
 owning-sig: sig-network
 participating-sigs:
   - sig-network
-  - sig-windows
 status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
 creation-date: 2020-10-10
 reviewers:
@@ -27,35 +26,34 @@ approvers:
 #prr-approvers:
 
 see-also:
-  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
-replaces:
-  - "/keps/sig-ccc/3456-replaced-kep"
+  - https://github.com/kubernetes/enhancements/pull/2094
+  - https://github.com/kubernetes/enhancements/pull/3649
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha|beta|stable
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.19"
+latest-milestone: "v1.28"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
-milestone:
-  alpha: "v1.19"
-  beta: "v1.20"
-  stable: "v1.22"
+# (astoycos) This is an internal code change it does not need to follow the release milestones
+# milestone:
+#   alpha: "v1.19"
+#   beta: "v1.20"
+#   stable: "v1.22"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates:
-  - name: MyFeature
-    components:
-      - kube-apiserver
-      - kube-controller-manager
-disable-supported: true
+# (astoycos) This is an internal code change it does not need to use feature-gates
+# feature-gates:
+#   - name: MyFeature
+#     components:
+#       - kube-apiserver
+#       - kube-controller-manager
+# disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics:
-  - my_feature_metric
-
+# metrics:
+#   - my_feature_metric
