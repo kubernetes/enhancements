@@ -294,7 +294,9 @@ careful not to add any latency into scheduling over what exists today for defaul
 extensibility in the future, the current pod specs will still work.
 * Plugins do not write to API themselves.
 
+
 #### Not In Scope for Alpha
+
 1.	Standard Pods (not handled by a driver) which require Topology and Memory management will not be covered by the alpha release and new cci cpu management policy (target for beta). 
 2.	Full E2E testing with other components such as Device Manager, DRA .. (target for beta).
 3.	Scheduler validation (target for beta)
@@ -311,17 +313,6 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The proposal is to extend Dynamic Resource Allocation to handle CPU and Memory 
-and to make all resources pluggable within the Kubelet.  Additionally, all current
-memory, cpu, and topology management should be moved out of the kubelet and be 
-used as the default plugin for Kubernetes.  This will include simplifying the 
-current internal code and setting up a Kubelet plugins directory, allowing custom
-drivers for resources to be committed back to the community.
-
-This means any driver, or plugin, for these resources could be written in 
-arbitrary programming languages as long as it supports the resource allocation protocol
-and the gRPC interfaces defined in this KEP.  Deploynig will not depend on reconfiguring
-core Kubernetes components or the Kubelet.
 
 ### User Stories (Optional)
 
@@ -334,10 +325,12 @@ bogged down.
 
 
 #### Custom workloads, such as HPC/AI/ML
+
 Custom workloads often have a desire to mix, for instance, shared and pinned cores.
 Additionally, they may 
 
 #### Power optimization of workloads
+
 Cores should be able to be quickly spun up or down according to resource requirements.
 
 #### Research of new resource management patterns within the cloud
@@ -377,8 +370,56 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-We will extend the current Dynamic Resource Allocation to handle also memory
-and CPU resources.
+#### Compute Specification Option
+
+The CCI model combined with some of the capabilities introduced in the Dynamic Resource Allocation (DRA) KEP [3], offers the ability to transition compute resource allocation behavior from being a cluster-admin dominated configuration to one that allows users with precise compute requirements to articulate the compute attributes that they need. 
+In several domains such Streaming, Telco, HPC, and AI/ML, users require fine-grained compute resource control to maximize their key performance indicators.  They need an API option that can be made available through upstream Kubernetes components and specific compute resource allocation plugins.
+
+##### Example 1: Attributed-based resource specification
+
+One realization of such an API can be achieved by an attribute-based mechanism for compute resources that resembles the Dynamic Resource Allocation (DRA) claim mechanism. The attribute-based compute resource request model is a step towards improved semantic workload portability that can be tried in a progressive manner with CCI. 
+In the following, there is an example of a novel approach that could be fulfilled with the CCI architecture. This example presents a set of per-core attributes that enable precision beyond a policy-only based approach: 
+
+\# A resource request which consists of:
+\# 2 exclusive cores (no other processes running on them)
+\# 	* the cores shall be siblings 
+\# 	* they shall run at 2.1 ghz
+\# 	* application assigned has the highest priority on the core
+\# 	* there are no IRQs on the core
+\# 6 exclusive cores(no other processes running on them)
+\# 4 shared cores(other processes can run on them)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-compute-claim-parameters
+  namespace: default
+data:
+  cores: |
+    2
+    6
+    4
+  compute_attributes: |
+    exclusive, smt-sibling-required, 2.1Ghz, 1.0 priority, no-irq
+    exclusive
+    shared
+apiVersion: resource.k8s.io/v1alpha1
+kind: ResourceClaimTemplate
+metadata:
+  name: example-compute-claim-parameters-template
+  namespace: default
+spec:
+  metadata:
+    labels:
+      app: inline-resource
+  spec:
+    resourceClassName: cpuressources
+    parametersRef:
+      kind: ConfigMap
+      name: example-compute-claim-parameters
+
+##### Example 2.: Policy-based resource specification
+
+Another option how a resource allocation configuration for Kubernetes Pods could be achieved is through a policy mechanism. In this case the policy will be applied to all Pods to be processed. The configuration of the policy can happen directly in a CCI Compute Resource Driver Plugin as input argument in the yaml deployment. This methodology can be used to realize methodologies similar to the static CPU manager policy or other policies.
 
 ### Test Plan
 
@@ -417,25 +458,6 @@ to implement this enhancement.
 *	End-to-End tests including Driver Allocations and cpu manager allocations
 *	Performance/Scalabilty tests
 
-#### Graduation Criterion
--	Alpha - > Beta:
-
-*	Integrate API feedback from users and community
-*	Proven cross-components consistency (ideally via tests)
-*	Handling of topology manager and memory manager use-cases
-*	Finish Identified Code refactoring of common building blocks (look at common pieces in all plugin-frameworks  in kubelet) 
-*	Look to what makes sense to leave inside Kubelet due to latency and use case requirementsIntroduce community cci drivers repo
-*	Similar to Kubernetes Scheduler Plugin repo
-*	Have plugins specific to common use cases or environments
-*	Smooth integration with scheduler extensions/ plugins …
-
--	Beta -> GA
-
-*	Successful adoption across users
-*	Proven Components Correctness
-*	Performance tests completion
-
-
 ##### Prerequisite testing updates
 
 <!--
@@ -466,7 +488,6 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
 
 ##### Integration tests
 
@@ -522,41 +543,34 @@ functionality is accessed.
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
+-->
 #### Alpha
 
 - Feature implemented behind a feature flag
 - Initial e2e tests completed and enabled
+- Integrate API feedback from users and community
+-	Proven cross-components consistency (ideally via tests)
+-	Handling of topology manager and memory manager use-cases
+-	Finish Identified Code refactoring of common building blocks (look at common pieces in all plugin-frameworks  in kubelet) 
+-	Look to what makes sense to leave inside Kubelet due to latency and use case requirementsIntroduce community cci drivers repo
+-	Similar to Kubernetes Scheduler Plugin repo
+-	Have plugins specific to common use cases or environments
+-	Smooth integration with scheduler extensions/ plugins …
 
 #### Beta
 
 - Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
 
 #### GA
 
+-	Successful adoption across users
+-	Proven Components Correctness
+-	Performance tests completion
+
 - N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
 #### Deprecation
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 ### Upgrade / Downgrade Strategy
 
@@ -827,15 +841,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
+The CCI Resource Manager approach resembles device manager protocol. The scalability and performance impact will be similar to the case of handling device plugins.
 
-For beta, this section is required: reviewers must answer these questions.
+Further performance benchmarks will be done in Beta Phase
 
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### Will enabling / using this feature result in any new API calls?
 
