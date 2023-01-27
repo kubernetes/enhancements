@@ -780,6 +780,10 @@ However, if complete unit test coverage is not possible, explain the reason of i
 together with explanation why this is acceptable.
 -->
 
+We will strive for a reasonable trade-off between agility
+and code coverage, consistent with the high standards of
+the kubernetes projects.
+
 <!--
 Additionally, for Alpha try to enumerate the core package you will be touching
 to implement this enhancement and provide the current unit coverage for those
@@ -807,8 +811,6 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 CLI tests will be added to both `test/cmd/diff.sh` and `test/cmd/apply.sh`.
 
-- <test>: <link to test coverage>
-
 ##### e2e tests
 
 <!--
@@ -821,7 +823,15 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+We will add e2e tests to verify the core operational flows,
+in particular:
+
+* applying a set of objects ("set1") as an applyset and with pruning (no changes)
+* applying a partially overlaping set of objects ("set2") as an applyset with dry-run pruning (no changes made but differences reported)
+* applying set2 without pruning (new objects added, no pruning)
+* applying set2 as an applyset with dry-run pruning (no changes made but pruning reported)
+* applying set2 as an applyset with pruning (pruning operates as expected)
+* applying set2 as an applyset with pruning again (no changes)
 
 ### Graduation Criteria
 
@@ -836,6 +846,12 @@ intend to gather feedback from early alphas here - in particular we want to disc
 
 * Are there `--prune` use-cases we do not cover?
 * Do existing `--prune` users migrate enthusiastically (without any "nudge" from deprecation)?
+
+#### Alpha
+
+- Feature implemented behind env var
+- Initial e2e tests completed and enabled
+- Positive user feedback gathered
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -913,6 +929,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+Plan for alpha is that users must explicitly opt-in with `KUBECTL_APPLYSET_ALPHA`,
+existing functionality will remain.
+
 ### Version Skew Strategy
 
 <!--
@@ -927,6 +946,10 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Functionality is client-side only.  The functionality does not reference
+versioned fields or kinds (i.e. uses group-kinds, not group-version-kinds;
+uses metadata.labels instead of dedicated fields).
 
 ## Production Readiness Review Questionnaire
 
@@ -973,12 +996,21 @@ well as the [existing list] of feature gates.
 - [ ] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name:
   - Components depending on the feature gate:
-- [ ] Other
+- [X] Other
   - Describe the mechanism:
+
+     Functionality is client-side only.  Plan for alpha is that users must explicitly
+     opt-in with `KUBECTL_APPLYSET_ALPHA`, existing functionality will remain.
+
   - Will enabling / disabling the feature require downtime of the control
     plane?
+
+      No
+
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+      No
 
 ###### Does enabling the feature change any default behavior?
 
@@ -986,6 +1018,11 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+If the user opts-in, then they will get the new functionality.  For alpha,
+the existing functionality will remain the default for alpha.  We do not
+plan to replace the existing functionality, users will always need to
+opt-in by specifying an applyset-id flag.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1000,7 +1037,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, this is client-side only.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Mixing and matching current pruning with new pruning and non-pruning
+might cause objects to not be pruned, as with today when mixing pruning
+modes.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1016,6 +1059,9 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+We will maintain tests for "prune v2" and "prune v1", until
+such time as prune v1 (technically still in alpha) is removed.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1179,6 +1225,12 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+The number of calls should be comparable to prune-v1.  We will investigate
+optimizing these calls (e.g. using PartialObjectMetadata).
+
+We will also investigate during alpha replacing client-side throttling with
+parallel behaviour that better makes matches priority and fairness.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1188,6 +1240,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1195,6 +1249,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1204,6 +1260,10 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Small increase:
+* New applyset objects
+* Small "applyset" label on all child objects
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1216,6 +1276,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+Impact not expected to be measurable.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -1227,6 +1289,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+Impact expected to be negligible.
 
 ### Troubleshooting
 
