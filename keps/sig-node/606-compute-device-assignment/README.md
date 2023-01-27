@@ -84,7 +84,7 @@ As such the external monitoring agents need to be able to determine the set of d
 
 ### Non-Goals
 
-TBD
+* Enable cluster components to consume the API. The API is node-local only.
 
 ## Proposal
 
@@ -175,19 +175,17 @@ The infrastructure required is expensive and it is not clear what additional tes
 
 ##### Prerequisite testing updates
 
-TBD
-
 ##### Unit tests
 
-TBD
+- `k8s.io/kubernetes/pkg/kubelet/apis/podresources`: `20230127` - `61.5%`
 
 ##### Integration tests
 
-TBD
+covered by e2e tests
 
 ##### e2e tests
 
-TBD
+- `k8s.io/kubernetes/test/e2e_node/podresources_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=POD%20Resources
 
 ### Graduation Criteria
 
@@ -279,7 +277,7 @@ No.
   - Condition name: 
   - Other field: 
 - [X] Other (treat as last resort)
-  - Details: TBD
+  - Details: check the kubelet metrics `pod_resources_endpoint_*`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -330,7 +328,10 @@ Feature only collects data when requests comes in, data is then garbage collecte
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-TBD
+No. Clients consume the API through the gRPC interface exposed from the unix domain socket. Only a single socket is created and managed by the kubelet,
+shared among all the clients (typically one). No resources are reserved when a client connects, and the API is stateless (no state preserved across
+calls, not concept of session). All the data needed to serve the calls is fetched by internal, already existing data structures internal to resource
+managers.
 
 ### Troubleshooting
 
