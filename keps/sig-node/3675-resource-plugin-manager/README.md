@@ -260,16 +260,23 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-* Be able to plug cpu and memory resource managers into Kubelet to allow for customization 
-  of user requirements
-* Be able to export resources to expose them to the scheduler, similar to the way resources
-work today, including in cases of differentiating different types of CPUs.  This differentiation 
-can be either software or hardware-defined.  For instance, it may be useful to the user to
-designate some cores as performance cores and others as efficiency cores where no hardware
-differentiation between the cores may exist, but the frequencies may be set by a manager.
-* Make it simple to expand resources to those not currently envisioned
-* Make it simple to expose attributes about resources 
-* Have test harness for resource managers for CPU and memory
+#### Alpha Goals
+
+1.	Provide Initial infrastructure to support CCI Plugins and k8s Deployments requiring CCI Drivers
+2.	Support seamless k8s start ( no plugins required) through the CCI CPU management policy
+3.	Support minimal set of plugin-less Pod-deployment through CPU Manager – equivalent to best-effort QoS (if sufficient time – static handling of burstable and guaranteed QoS)
+4.	Resource sets support cpu and memory
+5.	Consistent state handling between CCI Driver and CPU Manager
+6.	Support proper fail mechanisms of Pods if CCI driver is not available
+7.	Continue cluster operation if CCI driver is not available 
+
+
+#### Beta & Post-Beta Goals
+
+1.	Interoperability with Device Plugins, DRA .. 
+2.	Identify minimal in-cluster operational core (from existing CPU Manager, Memory Manager, Topology Manager)
+3.	E2E testing including other components
+
 
 
 ### Non-Goals
@@ -286,6 +293,11 @@ careful not to add any latency into scheduling over what exists today for defaul
 * Podspecs:  Will be able to support current pod specs.  While there may be additional 
 extensibility in the future, the current pod specs will still work.
 * Plugins do not write to API themselves.
+
+#### Not In Scope for Alpha
+1.	Standard Pods (not handled by a driver) which require Topology and Memory management will not be covered by the alpha release and new cci cpu management policy (target for beta). 
+2.	Full E2E testing with other components such as Device Manager, DRA .. (target for beta).
+3.	Scheduler validation (target for beta)
 
 
 ## Proposal
@@ -605,6 +617,14 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
+#### Operational Requirements for Alpha:
+
+*	Enable CCI Feature Gate
+*	Disable Memory manager 
+*	Disable Topology Manager
+*	Choose the “CCI” CPU management policy
+
+
 ###### How can this feature be enabled / disabled in a live cluster?
 
 <!--
@@ -670,6 +690,11 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 This section must be completed when targeting beta to a release.
 -->
 The usual Kubernetes upgrade and downgrade strategy applies for in-tree components. Vendors must take care that upgrades and downgrades work with the drivers that they provide to customers
+  
+We propose a solution of the bootstrapping problem for the cluster initialization by using the new CCI policy of CPU Manager. The policies allows the deployment of Pods not bound a CCI driver without requiring any plugin. The allocation of such Pods will be handled by std cpu manager. 
+  
+Pods which require CCI Driver will fail starting and report an error due to driver unavailability.  If a CCI Plugin fails, Pods which were about to be allocated that were tied to the plugin will fail. Based on requirements a fallback mechanism can be implemented where such Pods fallback to a given std. QoS Model.
+
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
