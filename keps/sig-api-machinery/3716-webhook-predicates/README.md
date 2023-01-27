@@ -150,6 +150,20 @@ matchConditions:
   - expression: '!("system:nodes" in request.userInfo.groups)'
 ```
 
+Since the expression will be evaluated using a common Kubernetes CEL library, these expressions
+should also get automatic access to the secondary authorization check mechanism described in
+[KEP-3488: CEL for Admission Control](/keps/sig-api-machinery/3488-cel-admission-control#secondary-authz).
+In practice, this means that RBAC bindings can be used to opt-out privileged users from security policy:
+
+_Note: The secondary authz mechanism has not yet been designed, and the example syntax here is just
+to illustrate how it might be used._
+
+```yaml
+matchConditions:
+  # Exclude users with the 'breakglass' permission on the 'security-policy' webhook.
+  - expression: '!authorized(request.userInfo, "breakglass", "validatingwebhookconfigurations.admissionregistration.k8s.io/security-policy")'
+```
+
 #### Scope an NFS access management webhook to Pods mounting NFS volumes
 
 > I want to narrowly scope my webhook to only the relevant requests, in order to reduce load on the
@@ -223,7 +237,7 @@ type MatchCondition struct {
 	//'request' - Attributes of the admission request([ref](/pkg/apis/admission/types.go#AdmissionRequest)).
 	//
 	// The `apiVersion`, `kind`, `metadata.name` and `metadata.generateName` are always accessible from the root of the
-	// request.object. No other metadata properties are accessible.
+	// object. No other metadata properties are accessible.
 	//
 	// Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible.
 	// Accessible property names are escaped according to the following rules when accessed in the expression:
