@@ -223,7 +223,9 @@ Alpha metrics have no stability guarantees but are parseable by the static analy
 
 `Beta` metrics have *some* stability guarantees. Specifically, we guarantee that:
 
- - `Beta` metrics will not be removed without first being explicitly deprecated. After deprecation, the metric will be removed in 4 months or 1 release.
+ - `Beta` metrics will not be removed without first being explicitly deprecated. 
+    + you can deprecate Beta metrics at any point if because of changes in underlying code/feature (i.e. it's impossible to compute such metric with the code changes, you can remove it after one release)
+    + if the metric is still possible to expose (we just think it's not the right one, e.g. we want to remove some label), but technically can still expose it, we leave it deprecated for 3 releases
  - Furthermore, `Beta` metrics are guaranteed to be **forward compatible** in respect to alerts and queries which may be written against them. By "forward compatible", we mean that queries and alerts which are written against the metric and its labels will continue to work in the future. We ensure forward compatibility by ensuring that **labels can only be added**, *and not removed*, from `Beta` metrics.
  - `Beta` metrics will be included in metric auto-documentation
 
