@@ -60,7 +60,9 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3675: Resource Plugin Manager Refactor
+# KEP-3675: Pluggable Resource Management 
+Container Compute Interface (CCI) Driver Extension
+
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -175,25 +177,15 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This plugin manager uses the concept of dynamic resource allocation and extends this 
-to the classic kubelet-managed resources of CPU and memory.  It will allow users to 
-bypass the current logic of the kubelet managed resources and instead handle the resources
-through the Dynamic Resource Allocation plugins.  It will additionally allow the CPU and 
-memory resources to be managed on the node without forcing traffic to the API server for 
-pod update information.  The Kubelet already owns this information, so to extend it 
-through known mechanicsms we use today for devices is an obvious extension.
+The authors have taken inspiration from the [CSI development](https://github.com/kubernetes/design-proposals-archive/blob/main/storage/container-storage-interface.md). 
+Kubernetes compute management is tightly integrated with the Kubelet and the existing suite of resources managers including the topology manager, CPU manager, memory manager, and device manager. While these managers have added functionality that has addressed a varied set of use cases, they do present the community with several challenges. 
+Adding a new capability to one of these managers is slow moving and difficult due to their complex interactions, the level of prudence required given the potential impacts, the implied necessity to make the extension work in as many scenarios as possible, as well as the overhead heaped onto the sig-node maintainers. More details on the challenges discussed with the community have been captured in the [CPU Management Kubelet Use Cases & Current State document](https://docs.google.com/document/d/1U4jjRR7kw18Rllh-xpAaNTBcPsK5jl48ZAVo7KRqkJk).  
+As a result, adding optimizations necessary to support some more niche use cases, to improve total cost of ownership for deployments with more exacting requirements on resources or to provide a mechanism to progressively roll-out the benefits of innovations related to newer CPU architectures is difficult and high cost to community resources.
+This proposal aims to address the challenges by introducing a new Container Compute Interface (CCI). The CCI is conceptually equivalent to the CSI in that it will delineate between the responsibility of the Kubelet and lower-level responsibility of compute focused plugins for resource assignment capabilities, such CPU and memory. 
+Given the existing Kubelet CPU/memory manager capabilities and their usefulness for many scenarios, the proposal takes a minimally disruptive approach to introducing the CCI favouring an architecture that drops back to the existing behaviour seamlessly during error conditions.
+The implication of CCI and the addition of the proposed CCI plugin manager will be to allow compute capabilities such as CPU and memory to be managed outside of the Kubelet via pluggable CCI Drivers.  This will allow users to augment the current implementation of Kubelet managed resources with support for more complex use-cases without having to modify the Kubelet. The CCI extensions will coexist with the existing CPU and memory allocation technique available to Kubernetes users today.
+These changes will allow the community to disaggregate the long-term stability and advancement of the Kubelet from the task of improving the compute resource management and keeping pace with the needs of specialized use cases and the advancements in the compute vendor ecosystem.
 
-These changes will allow more creative and innovative approaches to resource management 
-for CPUs and memory and the advertsement of more interesting configurations than simply 
-number of cores and memory without having to bypass the Kubelet.  It will also allow 
-the advertisement of configurations beyond the NUMA zones for CPUs and memory to the 
-scheduler.  
-
-Kernels exist for allowing resource managers to not be built directly into the kernel,
-but rather to have kernel modules for specific cases.  For example, there are multiple
-power governors available for different vendors.  As users desire more fine-grained 
-control of resources, they too should be afforded the pluggability that we afford other 
-components in Kubernetes, such as device plugins, CNI, or CSI.
 
 
 ## Motivation
@@ -393,10 +385,44 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-Current E2E tests should continue to pass.
+#### Alpha
+-	Planned Unit tests for :
 
-Equivalent tests should be formulated and run for the default plugin, E2E, for all policies,
-such as Topology, CPU management, and memory
+* CCI Resource Manager: target code cvg >=80%
+* CCI Store: target code cvg >=80%
+* CCI CPU Manager Policy: target code cvg >=80%
+*	Integration Tests
+*	CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
+*	State Consistency (CPU Manager + CCI) integrateion test
+*	End-to-End tests
+*	Example mocked driver test 
+
+#### BETA
+
+*	Introduce fail-safety tests
+*	Further integration tests with Device Manager and DRA
+*	Integration test including static QoS and driver-based allocation
+*	End-to-End tests including Driver Allocations and cpu manager allocations
+*	Performance/Scalabilty tests
+
+#### Graduation Criterion
+-	Alpha - > Beta:
+
+*	Integrate API feedback from users and community
+*	Proven cross-components consistency (ideally via tests)
+*	Handling of topology manager and memory manager use-cases
+*	Finish Identified Code refactoring of common building blocks (look at common pieces in all plugin-frameworks  in kubelet) 
+*	Look to what makes sense to leave inside Kubelet due to latency and use case requirementsIntroduce community cci drivers repo
+*	Similar to Kubernetes Scheduler Plugin repo
+*	Have plugins specific to common use cases or environments
+*	Smooth integration with scheduler extensions/ plugins …
+
+-	Beta -> GA
+
+*	Successful adoption across users
+*	Proven Components Correctness
+*	Performance tests completion
+
 
 ##### Prerequisite testing updates
 
@@ -405,8 +431,7 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-Should evaluate whether the current set of Topology Manager, CPU Management, and
-Memory Management tests are sufficient, and potentially add in more information.
+
 
 ##### Unit tests
 
@@ -644,6 +669,7 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 <!--
 This section must be completed when targeting beta to a release.
 -->
+The usual Kubernetes upgrade and downgrade strategy applies for in-tree components. Vendors must take care that upgrades and downgrades work with the drivers that they provide to customers
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
