@@ -160,7 +160,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Introduce a new API (`kind`) that will provide a mechanism to improve distribution and discovery of Kustomize functions, for use with `Kustomization`, `Components`, and `Composition` resources.
 
-This new API will provide a standardized way to define a collection of one or more Kustomize functions, as well as supporting KRM-style configuration resources, that can be consumed by Kustomize in order to automate the use of functions and eliminate manual out-of-band discovery and installation steps, regardless of the packaging format. All Kustomize configuration objects (i.e. Kustomization, Component and Composition) will support function source configuration via this new kind. Ideally, we would like the new API to become a standard that other KRM-style transformer orchestrators such as KPT can adopt as well.
+This new API will provide a standardized way to define a collection of one or more Kustomize functions, as well as supporting KRM-style configuration resources, that can be consumed by Kustomize in order to automate the use of functions and eliminate manual out-of-band discovery and installation steps, regardless of the packaging format. All Kustomize configuration objects (i.e. Kustomization, Component and eventually [Composition](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2299-kustomize-plugin-composition)) will support function source configuration via this new kind. Ideally, we would like the new API to become a standard that other KRM-style transformer orchestrators such as KPT can adopt as well.
 
 ### Key terminology
 
@@ -173,7 +173,7 @@ This new API will provide a standardized way to define a collection of one or mo
 
 ## Motivation
 
-The use of Kustomize functions today is cumbersome, both in terms of discovery and the use of functions within a Kustomization. The introduction of the `Composition` API will improve function workflows, but challenges remain surrounding function distribution and discovery. This KEP is motivated by this need to improve the distribution and discovery of functions, for use in `Composition` or other Kustomize resources. 
+The use of Kustomize functions today is cumbersome, both in terms of discovery and the use of functions within a Kustomization. This KEP is motivated by this need to improve the distribution and discovery of functions, for use in Kustomize resources. 
 
 In order to use Kustomize functions today, an end user must explicitly provide a reference to the function implementation. For example, consider the use of a function with a Kustomization. First, the user would define a resource configuration as follows:
 
@@ -209,23 +209,7 @@ This explicit configuration requires the user to include two separate pieces of 
 * they must provide the API Version and Kind
 * they must provide an explicit reference to the Docker container that will be used 
 
-When using a container based function with the `Composition` API, the user must still specify this information:
-
-```yaml
-# app/composition.yaml
-kind: Composition
-
-modules:
-# generate resources for a Java application
-- apiVersion: example.com/v1
-  kind: JavaApplication
-  runtime: {container: {image: example/module_providers/java:v1.0.0}}
-  spec:
-    application: team/my-app
-    version: v1.0
-```
-
-Once the explicit container reference is provided, Kustomize is able to download and run this image as part of the Kustomize build step, by invoking the user installed Docker client and leveraging local images or OCI registries. In addition to container based functions, ad-hoc functions can also currently be written using the [Starlark programming language](https://github.com/bazelbuild/starlark) and other non-container based mechanisms. Unlike container based functions, these functions do not currently have an associated registry concept and they must be stored locally. Discovery and installation of these runtimes are both currently left to the users. 
+Once the explicit container reference is provided, Kustomize is able to download and run this image as part of the Kustomize build step, by invoking the user installed Docker client and leveraging local images or OCI registries. Discovery and installation of these runtimes are currently left to the users. 
 
 In addition to these user defined functions, this KEP is also partially motivated by a need to change how Kustomize provides officially supported functionality. Currently, to support a given piece of functionality officially a built-in function must be created (and typically also added to the Kustomization API). Some of these features would be better implemented as extensions for security reasons or to limit the dependency graph of Kustomize and the integration with kubectl. No mechanism currently exists, however, to support official distribution of these capabilities, so they are instead built into Kustomize. This would also enable the Kustomize maintainers to make breaking changes to address legacy technical debt, without needing to update all functions as part of that action. This would also enable users to mix and match the version of the Kustomize binary with function versions, enabling a less disruptive migration approach. 
 
@@ -238,7 +222,8 @@ Develop an API (`kind`) for Kustomize that is focused on function discovery, as 
 A successful implementation of this API should have the following characteristics:
 
 1. Function based workflows are driven by seamless invocation of sets of functions without individual out-of-band discovery or installation steps for specific runtimes.
-1. The new API is integrated with the existing Kustomize tool (i.e. `kustomize build`) through references provided in Kustomization, Component, and Composition resources.
+1. The new API is integrated with the existing Kustomize tool (i.e. `kustomize build`) through references provided in Kustomization, and Component resources.
+1. The new API will be able to be integrated with future resources added to the existing Kustomize tool. (i.e. Composition)
 1. Eligible Kustomize functionality could be extracted and distributed as official extensions. This won't be completed as part of this KEP but the required changes to support this will be implemented. 
 
 ### Non-Goals
@@ -294,13 +279,13 @@ spec:
 
 When this Kustomization is processed by `kustomize build`, the referenced catalog (or catalogs) will be used to locate a function implementation that supports the apiVersion `example.com/v1` and kind `JavaApplication`. If found in one of the referenced catalogs, kustomize can determine the runtime configuration without the need for the user to specify it in the kustomization resources directly. The catalogs will be searched in order specified. If more than one catalog defines the target apiVersion and kind, the first will be selected. A catalog can be referenced by either a local file reference or a remote HTTPS, Git, or OCI reference.
 
-In addition to the new catalog kind, `kustomize build` will accept a repeatable flag `--trusted-catalog=""`. The values passed to this flag should match the values declared within the catalog. When present, this flag instructs `kustomize build` to automatically fetch and execute functions that are defined by the catalog and referenced within the Kustomization, Component or Composition, if needed. When a resource is processed by `kustomize build` and a catalog is referenced but not specified using the `--trusted-catalog=""` flag, an error will occur. 
+In addition to the new catalog kind, `kustomize build` will accept a repeatable flag `--trusted-catalog=""`. The values passed to this flag should match the values declared within the catalog. When present, this flag instructs `kustomize build` to automatically fetch and execute functions that are defined by the catalog and referenced within the Kustomization or Component, if needed. When a resource is processed by `kustomize build` and a catalog is referenced but not specified using the `--trusted-catalog=""` flag, an error will occur. 
 
 To support the user experience of using catalogs, we will also add a `kustomize view catalog` command that will display catalog configuration, including publisher information retrieved from the catalog itself, in order to support the trust determination process.
 
 Kustomize can at a later date provide a built in Catalog for supporting official extensions, published to a well publicized endpoint. This catalog will _NOT_ require the user to explicitly trust it. Users can provide the `apiVersion` and `kind` of the official extensions in kustomize resource and these will be resolved by the official catalog.
 
-In addition to container based functions, the `Catalog` will support discovery of Starlark and Exec based functions, via an HTTP(s), Git, or OCI reference as illustrated below: 
+In addition to container based functions, the `Catalog` will support discovery of Exec based functions, via an HTTP(s), Git, or OCI reference as illustrated below: 
 
 ```yaml
 apiVersion: config.kubernetes.io/v1alpha1
@@ -316,7 +301,8 @@ spec:
     versions:
     - name: v1
     runtime:  
-      starlark: https://example.co/module_providers/starlark-func:v1.0.0
+      exec:
+      - path: https://example.co/module_providers/exec-func:v1.0.0
 ```
 
 This concept can be extended later to support additional function packaging, but is out of scope for the current proposal.
@@ -416,31 +402,43 @@ When this command is run, Kustomize detects the use of `example.com/v1/JavaAppli
 As an application developer at Example Co, I want to use the published Example Co Catalog in the `Composition` for my application, but I want to pin to a specific version of the `SecretSidecar` module . While building my `Composition`, I don't want to care about the runtime configuration, except for `SecretSidecar` and I want Kustomize to figure the rest of the runtimes out for me, based on the catalog.
 
 ```yaml
-# app/composition.yaml
-kind: Composition
+# app/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
 catalogs:
   - https://example.co/kustomize/catalog.yaml
-modules:
-# generate resources for a Java application
-- apiVersion: example.com/v1
-  kind: JavaApplication
-  spec:
-    application: team/my-app
-    version: v1.0
+transformers:
+- java.yaml
+- secrets.yaml
+```
+
+```yaml
+# app/java.yaml
+apiVersion: example.com/v1
+kind: JavaApplication
+spec:
+  application: team/my-app
+  version: v1.0
+```
+
+```yaml
+# app/logger.yaml
 - apiVersion: example.com/v1
   kind: Logger
-  metadata:
-    name: my-logger
   spec:
     logPath: /var/logs
-- apiVersion: example.com/v1
-  kind: SecretSidecar
-  runtime: {container: {image: docker.example.co/module_providers/secrets:v0.9.0}}
-  metadata:
-    name: my-secrets
-  spec:
-    key: my.secret.value
-    path: /etc/secrets
+```
+
+```yaml
+# app/secrets.yaml
+apiVersion: example.com/v1
+kind: SecretSidecar
+runtime: {container: {image: docker.example.co/module_providers/secrets:v0.9.0}}
+metadata:
+  name: my-secrets
+spec:
+  key: my.secret.value
+  path: /etc/secrets
 ```
 
 Unlike the previous execution of Kustomize, Kustomize will not use the catalog to resolve the `SecretSidecar`, as the runtime configuration was specified. 
@@ -450,24 +448,40 @@ Unlike the previous execution of Kustomize, Kustomize will not use the catalog t
 As a platform operator at Example Co, I want to provide an easier mechanism to enable use of the official Example Co Catalog. To do this, I compile a version of Kustomize with a built in reference to the Example Co official catalog. Example Co users can then simply reference our functions, without specifying the catalog:
 
 ```yaml
-# app/composition.yaml
-kind: Composition
-modules:
-# generate resources for a Java application
-- apiVersion: example.com/v1
-  kind: JavaApplication
-  spec:
-    application: team/my-app
-    version: v1.0
+# app/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+catalogs:
+  - https://example.co/kustomize/catalog.yaml
+transformers:
+- java.yaml
+- secrets.yaml
+```
+
+```yaml
+# app/java.yaml
+apiVersion: example.com/v1
+kind: JavaApplication
+spec:
+  application: team/my-app
+  version: v1.0
+```
+
+```yaml
+# app/logger.yaml
 - apiVersion: example.com/v1
   kind: Logger
   spec:
     logPath: /var/logs
-- apiVersion: example.com/v1
-  kind: SecretSidecar
-  spec:
-    key: my.secret.value
-    path: /etc/secrets
+```
+
+```yaml
+# app/secrets.yaml
+apiVersion: example.com/v1
+kind: SecretSidecar
+spec:
+  key: my.secret.value
+  path: /etc/secrets
 ```
 
 #### Story 5
@@ -598,7 +612,7 @@ This proposal does not suggest adding any OCI artifact publishing capabilities t
 
 ### Risks and Mitigations
 
-This proposal introduces extension capabilities to Kustomize that may expose users to external content. As with `Composition`, it must be made clear to users that use of a `Catalog` may represent untrusted/unvalidated content and they should only use `Catalogs` that they trust. When `Catalog` and other resources are stored as OCI artifacts, users can get extra assurance of content by using `digest` references. Additionally, the [cosign](https://github.com/sigstore/cosign) project could be used to provide signing and validation capabilities. The guidance around executing functions, as outlined in the [Composition](../2290-kustomize-plugin-composition/README.md) KEP remain applicable when combined with `Catalog` resources.
+This proposal introduces extension capabilities to Kustomize that may expose users to external content. It must be made clear to users that use of a `Catalog` may represent untrusted/unvalidated content and they should only use `Catalogs` that they trust. When `Catalog` and other resources are stored as OCI artifacts, users can get extra assurance of content by using `digest` references. Additionally, the [cosign](https://github.com/sigstore/cosign) project could be used to provide signing and validation capabilities. The guidance around executing functions, as outlined in the [Composition](../2290-kustomize-plugin-composition/README.md) KEP remain applicable when combined with `Catalog` resources.
 
 ## Design Details
 
@@ -932,16 +946,16 @@ spec:
 
 ### Determining the Function to Execute
 
-When a `Composition`, or other Kustomize resource that utilizes funcions is loaded, Kustomize will leverage the `Catalog` to determine function runtimes that should be run. The order in which funcions are resolved is determined by the type of resource being processed, and will be clearly addressed in user facing documentation. When multiple catalogs are specified, they will be searched in the specified order. Within a catalog, the functions referenced will be searched in the specified order. This means that if two catalogs specify the same function, the first one referenced will be used. This also applies to a function being defined twice within a single catalog.
+When a Kustomize resource that utilizes funcions is loaded, Kustomize will leverage the `Catalog` to determine function runtimes that should be run. The order in which functions are resolved is determined by the type of resource being processed, and will be clearly addressed in user facing documentation. When multiple catalogs are specified, they will be searched in the specified order. Within a catalog, the functions referenced will be searched in the specified order. This means that if two catalogs specify the same function, the first one referenced will be used. This also applies to a function being defined twice within a single catalog.
 
 For a `Kustomization`, a catalog reference is local to a given layer and individual layers could reference different catalog or runtime versions. As the layer is processed, Kustomize will evaluate any catalog references and select the appropriate version based on the referenced catalog. 
 
-For a `Composition`, on the other hand, `Kustomize` will consolidate the modules (functions) defined in the `Composition` and it's imports into a finalized list of modules. Next, it will consolidate the list of `Catalog`s in the module and it's imports to build a finalized list of `Catalog`s. Each of the `Catalog` resources will be fetched and used to build a unified catalog representation. When two catalogs define the same module, the first definition will be used.
+In the future when dealing with a `Composition`, on the other hand, `Kustomize` will consolidate the modules (functions) defined in the `Composition` and it's imports into a finalized list of modules. Next, it will consolidate the list of `Catalog`s in the module and it's imports to build a finalized list of `Catalog`s. Each of the `Catalog` resources will be fetched and used to build a unified catalog representation. When two catalogs define the same module, the first definition will be used.
 
 Once the module list and the catalogs for the resolved composition have been generated, the following steps will be performed in order to determine the `runtime` to execute:
 
 * If a KRM-style resource includes the `runtime` field, that will be used
-* The `runtime` field will continue to support `container.image`, `starlark.path`, and `exec.path` options, for the time being. This short-circuits `Catalog` for the given function, and the flags currently required for function execution (`--enable-alpha-plugins`, `--enable-exec`) will continue to be required in this case.
+* The `runtime` field will continue to support `container.image`, and `exec.path` options, for the time being. This short-circuits `Catalog` for the given function, and the flags currently required for function execution (`--enable-alpha-plugins`, `--enable-exec`) will continue to be required in this case.
 * If the `runtime` field is absent, the configured `Catalog` resources will be used to determine the runtime to execute, based on the `kind` and `apiVersion` fields of the resource specification. If an official catalog has been created for Kustomize, it will be checked first.
 * If there is no matching module, the processing of the resource will result in an error.
 
@@ -958,7 +972,6 @@ When OCI references are used, either a `tag` or `digest` reference can be used. 
 |-----------------------------|------------------------------------------------------------|
 | Kustomize Catalog           | application/vnd.cncf.kubernetes.krm-func-catalog.layer.v1+yaml      |
 | Kustomize Function Definition | application/vnd.cncf.kubernetes.krm-func-definition.layer.v1+yaml   |
-| Kustomize Function (Starlark) | application/vnd.cncf.kubernetes.krm-func-runtime-starlark.layer.v1 |
 | Kustomize Function (Exec)     | application/vnd.cncf.kubernetes.krm-func-runtime-starlark.layer.v1 |
 
 The [ORAS](https://oras.land) library and CLI can be used to publish these artifacts and can be used to build specific publishing tooling, but Kustomize will not be changed to add publishing capabilities. Instead, appropriate user documentation and examples will be provided. 
@@ -992,7 +1005,7 @@ TBD
 #### Beta
 
 - Gather feedback from developers and surveys
-- Starlark and Exec function support
+- Exec function support
 - OCI artifact support for catalog and runtime distribution
 
 #### GA
