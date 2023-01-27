@@ -3,15 +3,17 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [X] **Pick a hosting SIG.**
+  sig-node
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [X] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+  Number 3675
+- [X] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
@@ -173,6 +175,27 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+This plugin manager uses the concept of dynamic resource allocation and extends this 
+to the classic kubelet-managed resources of CPU and memory.  It will allow users to 
+bypass the current logic of the kubelet managed resources and instead handle the resources
+through the Dynamic Resource Allocation plugins.  It will additionally allow the CPU and 
+memory resources to be managed on the node without forcing traffic to the API server for 
+pod update information.  The Kubelet already owns this information, so to extend it 
+through known mechanicsms we use today for devices is an obvious extension.
+
+These changes will allow more creative and innovative approaches to resource management 
+for CPUs and memory and the advertsement of more interesting configurations than simply 
+number of cores and memory without having to bypass the Kubelet.  It will also allow 
+the advertisement of configurations beyond the NUMA zones for CPUs and memory to the 
+scheduler.  
+
+Kernels exist for allowing resource managers to not be built directly into the kernel,
+but rather to have kernel modules for specific cases.  For example, there are multiple
+power governors available for different vendors.  As users desire more fine-grained 
+control of resources, they too should be afforded the pluggability that we afford other 
+components in Kubernetes, such as device plugins, CNI, or CSI.
+
+
 ## Motivation
 
 <!--
@@ -183,6 +206,60 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
+Users are requiring more varied workloads; the current set of available configurations
+for CPU, memory, and topology remain limited.  Additionally, the number of managers
+becoming internal to the Kubelet continues to increase, and we should find a more 
+dynamic and pluggable way of handling these resources.  Operating systems work by
+allowing drivers and pluggable resources, even to how cpu, memory, and devices are allocated.
+Kubernetes can be looked at as being the operating system of the cloud, and allowing
+specialty modules in order to address the use cases, rather than continuing to add
+complexity directly by continuing to modify the kubelet, will allow the greatest scope
+of abilities while stopping the continued increasing complexity within the core of
+the Kubelet.
+
+Users would like to be able to address the following use cases:
+
+- The ability to allow vendors to release vendor-specific managers for their hardware
+  and provide an interface while not having vendor-specific code within Kubelet.
+
+- Differentiate between types of cores and memory.
+
+  Note - Dynamic resouce allocation does this with regular resources today.  We seek to
+  extend this ability.
+  
+- Diffentiate between different configurations of cores and memory, for instance cores
+  designated as performance versus those designated as efficiency cores
+  
+- Have custom plugins to optimize for particular types of workloads.  These plugins
+  may be built for performance, power reduction, or both.  
+  
+  Note:  Currently, there are very limited sets of available topology policies.  Every
+  new policy must be approved and be lockstep with the Kuberenetes release process.
+
+- Be able to hot-plug and test new resource managers.  
+
+- Be able to remove some of the complexity with current setup.
+
+- Have a faster path to desired changes, without potentially impacting the core of 
+  Kubernetes with every policy change.
+  
+  Note that current solutions have been cropping up to allow for resource management
+  outside the core Kubelet.  THese solutions require turning off the Kubelet functionality 
+  and overriding current Kubelet allocation.  We should provide a path otherwise.
+  
+- Be able to get information on the pods on the node without having to contact the
+  API server, which may not have updated information.
+  
+- Be able to change the number of resources available on the node, at any time, and update.
+
+- Be able to do research, with minimum toil, on new policies and resource management strategies.
+
+- Can model off of current Kubernetes scheduler plugins and have a similar community that
+  releases plugins for particular use cases.
+
+This design will also use the already tried and true gRPC, which is used for many other
+pluggable components within Kubernetes.  It will simplify the Kubelet as it is today
+and move the complexity out into external managers.
 
 ### Goals
 
@@ -191,12 +268,33 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+* Be able to plug cpu and memory resource managers into Kubelet to allow for customization 
+  of user requirements
+* Be able to export resources to expose them to the scheduler, similar to the way resources
+work today, including in cases of differentiating different types of CPUs.  This differentiation 
+can be either software or hardware-defined.  For instance, it may be useful to the user to
+designate some cores as performance cores and others as efficiency cores where no hardware
+differentiation between the cores may exist, but the frequencies may be set by a manager.
+* Make it simple to expand resources to those not currently envisioned
+* Make it simple to expose attributes about resources 
+* Have test harness for resource managers for CPU and memory
+
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+* Break any existing use cases for topology manager, memory manager, cpu manager, or 
+device manager.
+* Creating any more latency than there is today for scheduling:  We should be 
+careful not to add any latency into scheduling over what exists today for default behavior.
+* Podspecs:  Will be able to support current pod specs.  While there may be additional 
+extensibility in the future, the current pod specs will still work.
+* Plugins do not write to API themselves.
+
 
 ## Proposal
 
@@ -209,6 +307,18 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+The proposal is to extend Dynamic Resource Allocation to handle CPU and Memory 
+and to make all resources pluggable within the Kubelet.  Additionally, all current
+memory, cpu, and topology management should be moved out of the kubelet and be 
+used as the default plugin for Kubernetes.  This will include simplifying the 
+current internal code and setting up a Kubelet plugins directory, allowing custom
+drivers for resources to be committed back to the community.
+
+This means any driver, or plugin, for these resources could be written in 
+arbitrary programming languages as long as it supports the resource allocation protocol
+and the gRPC interfaces defined in this KEP.  Deploynig will not depend on reconfiguring
+core Kubernetes components or the Kubelet.
+
 ### User Stories (Optional)
 
 <!--
@@ -218,9 +328,18 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
 
-#### Story 2
+#### Custom workloads, such as HPC/AI/ML
+Custom workloads often have a desire to mix, for instance, shared and pinned cores.
+Additionally, they may 
+
+#### Power optimization of workloads
+Cores should be able to be quickly spun up or down according to resource requirements.
+
+#### Research of new resource management patterns within the cloud
+
+#### User-specific plugins
+
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -254,6 +373,9 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+We will extend the current Dynamic Resource Allocation to handle also memory
+and CPU resources.
+
 ### Test Plan
 
 <!--
@@ -267,9 +389,14 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
+
+Current E2E tests should continue to pass.
+
+Equivalent tests should be formulated and run for the default plugin, E2E, for all policies,
+such as Topology, CPU management, and memory
 
 ##### Prerequisite testing updates
 
@@ -277,6 +404,9 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+
+Should evaluate whether the current set of Topology Manager, CPU Management, and
+Memory Management tests are sufficient, and potentially add in more information.
 
 ##### Unit tests
 
