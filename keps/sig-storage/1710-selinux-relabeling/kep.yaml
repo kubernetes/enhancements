@@ -19,7 +19,7 @@ approvers:
 see-also:
   - /keps/sig-storage/695-skip-permission-change/README.md
 stage: alpha
-latest-milestone: "v1.26"
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.24"
   beta: "v1.27"
