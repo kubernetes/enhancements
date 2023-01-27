@@ -175,26 +175,25 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This plugin manager takes the concept of dynamic resource allocation and extends this 
+This plugin manager uses the concept of dynamic resource allocation and extends this 
 to the classic kubelet-managed resources of CPU and memory.  It will allow users to 
-bypass teh current logic of the kubelet managed resources and instead handle the resources
-through the plugins.  It will additionally allow resources to be managed on the node
-without forcing traffic to the API server for pod update information.  The Kubelet
-already owns this information.  
+bypass the current logic of the kubelet managed resources and instead handle the resources
+through the Dynamic Resource Allocation plugins.  It will additionally allow the CPU and 
+memory resources to be managed on the node without forcing traffic to the API server for 
+pod update information.  The Kubelet already owns this information, so to extend it 
+through known mechanicsms we use today for devices is an obvious extension.
 
-These changes will consolidate the code internal to the kubelet and allow more creative
-and innovative approaches to resource management without having to bypass the Kubelet.
-We can instead start cultivating a library of plugins specific to particular use cases,
-and continue to maintain a plugin that is specific to the majority of the use cases, as
-we have now with topology manager, cpu manager, and memory manager.
+These changes will allow more creative and innovative approaches to resource management 
+for CPUs and memory and the advertsement of more interesting configurations than simply 
+number of cores and memory without having to bypass the Kubelet.  It will also allow 
+the advertisement of configurations beyond the NUMA zones for CPUs and memory to the 
+scheduler.  
 
 Kernels exist for allowing resource managers to not be built directly into the kernel,
 but rather to have kernel modules for specific cases.  For example, there are multiple
 power governors available for different vendors.  As users desire more fine-grained 
-control of resources, they too should be afforded the nice pluggability that we afford
-other components in Kubernetes, such as device plugins, CNI, or CSI.
-
-
+control of resources, they too should be afforded the pluggability that we afford other 
+components in Kubernetes, such as device plugins, CNI, or CSI.
 
 
 ## Motivation
@@ -227,6 +226,9 @@ Users would like to be able to address the following use cases:
 
   Note - Dynamic resouce allocation does this with regular resources today.  We seek to
   extend this ability.
+  
+- Diffentiate between different configurations of cores and memory, for instance cores
+  designated as performance versus those designated as efficiency cores
   
 - Have custom plugins to optimize for particular types of workloads.  These plugins
   may be built for performance, power reduction, or both.  
@@ -266,7 +268,8 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-* Be able to plug resource managers into Kubelet to allow for customization of user requirements
+* Be able to plug cpu and memory resource managers into Kubelet to allow for customization 
+  of user requirements
 * Be able to export resources to expose them to the scheduler, similar to the way resources
 work today, including in cases of differentiating different types of CPUs.  This differentiation 
 can be either software or hardware-defined.  For instance, it may be useful to the user to
@@ -274,7 +277,7 @@ designate some cores as performance cores and others as efficiency cores where n
 differentiation between the cores may exist, but the frequencies may be set by a manager.
 * Make it simple to expand resources to those not currently envisioned
 * Make it simple to expose attributes about resources 
-* Have test harness for resource managers
+* Have test harness for resource managers for CPU and memory
 
 
 ### Non-Goals
@@ -285,16 +288,12 @@ and make progress.
 -->
 
 * Break any existing use cases for topology manager, memory manager, cpu manager, or 
-device manager.  Whatever solution is added, there should be full support of 
-default behavior with a default plugin. 
-* Default behavior: While the deployment model might be changed due to legacy code 
-being moved out of Kubelet, the default case without the plugin manager enabled 
-will be the same as if current implementation of Topology manager is disabled.
+device manager.
 * Creating any more latency than there is today for scheduling:  We should be 
 careful not to add any latency into scheduling over what exists today for default behavior.
 * Podspecs:  Will be able to support current pod specs.  While there may be additional 
 extensibility in the future, the current pod specs will still work.
-* Plugins do not write to API themselves.  
+* Plugins do not write to API themselves.
 
 
 ## Proposal
@@ -310,7 +309,7 @@ nitty-gritty.
 
 The proposal is to extend Dynamic Resource Allocation to handle CPU and Memory 
 and to make all resources pluggable within the Kubelet.  Additionally, all current
-memory, cpu, and topology management sohuld be moved out of the kubelet and be 
+memory, cpu, and topology management should be moved out of the kubelet and be 
 used as the default plugin for Kubernetes.  This will include simplifying the 
 current internal code and setting up a Kubelet plugins directory, allowing custom
 drivers for resources to be committed back to the community.
@@ -331,8 +330,11 @@ bogged down.
 
 
 #### Custom workloads, such as HPC/AI/ML
+Custom workloads often have a desire to mix, for instance, shared and pinned cores.
+Additionally, they may 
 
 #### Power optimization of workloads
+Cores should be able to be quickly spun up or down according to resource requirements.
 
 #### Research of new resource management patterns within the cloud
 
@@ -370,6 +372,9 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+We will extend the current Dynamic Resource Allocation to handle also memory
+and CPU resources.
 
 ### Test Plan
 
