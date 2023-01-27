@@ -2,6 +2,7 @@ title: KEP Template
 kep-number: 3659
 authors:
   - "@KnVerey"
+  - "@justinsb"
 owning-sig: sig-cli
 participating-sigs: []
 status: provisional

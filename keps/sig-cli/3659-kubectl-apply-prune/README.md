@@ -134,7 +134,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Full GKNN listing](#full-gknn-listing)
   - [OwnerRefs](#ownerrefs)
   - [ManagedFields](#managedfields)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
