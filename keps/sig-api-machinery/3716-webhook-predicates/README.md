@@ -191,7 +191,7 @@ rules:
     resources: 'pods'
 matchConditions:
   # Only include pods with an NFS volume.
-  - expression: 'request.object.spec.volumes.exists(v, v.has(nfs))'
+  - expression: 'object.spec.volumes.exists(v, v.has(nfs))'
 ```
 
 ### Goals
@@ -215,8 +215,9 @@ with a new `MatchConditions` field:
 type ValidatingWebhook struct {
   // ...
 
-  // MatchConditions is a list of conditions on the AdmissionRequest ('request') that must be met for a
-  // request to be sent to this webhook.
+  // MatchConditions is a list of conditions on the AdmissionRequest ('request') that must be met
+  // for a request to be sent to this webhook. All conditions in the list must evaluate to TRUE for
+  // the request to be matched.
   // +optional
   MatchConditions []MatchCondition `json:"matchConditions,omitempty"`
 }
@@ -228,38 +229,16 @@ type MutatingWebhook struct {
 
 // MatchCondition represents a condition which must by fulfilled for a request to be sent to a webhook.
 type MatchCondition struct {
+  // NOTE: Placeholder documentation, to be replaced by https://github.com/kubernetes/website/issues/39089.
+  //
 	// Expression represents the expression which will be evaluated by CEL.
 	// ref: https://github.com/google/cel-spec
 	// CEL expressions have access to the contents of the AdmissionRequest, organized into CEL variables:
 	//
-	//'object' - The object from the incoming request. The value is null for DELETE requests.
-	//'oldObject' - The existing object. The value is null for CREATE requests.
-	//'request' - Attributes of the admission request([ref](/pkg/apis/admission/types.go#AdmissionRequest)).
+	// 'object' - The object from the incoming request. The value is null for DELETE requests.
+	// 'oldObject' - The existing object. The value is null for CREATE requests.
+	// 'request' - Attributes of the admission request([ref](/pkg/apis/admission/types.go#AdmissionRequest)).
 	//
-	// The `apiVersion`, `kind`, `metadata.name` and `metadata.generateName` are always accessible from the root of the
-	// object. No other metadata properties are accessible.
-	//
-	// Only property names of the form `[a-zA-Z_.-/][a-zA-Z0-9_.-/]*` are accessible.
-	// Accessible property names are escaped according to the following rules when accessed in the expression:
-	// - '__' escapes to '__underscores__'
-	// - '.' escapes to '__dot__'
-	// - '-' escapes to '__dash__'
-	// - '/' escapes to '__slash__'
-	// - Property names that exactly match a CEL RESERVED keyword escape to '__{keyword}__'. The keywords are:
-	//	  "true", "false", "null", "in", "as", "break", "const", "continue", "else", "for", "function", "if",
-	//	  "import", "let", "loop", "package", "namespace", "return".
-	// Examples:
-	//   - Expression accessing a property named "namespace": {"Expression": "object.__namespace__ > 0"}
-	//   - Expression accessing a property named "x-prop": {"Expression": "object.x__dash__prop > 0"}
-	//   - Expression accessing a property named "redact__d": {"Expression": "object.redact__underscores__d > 0"}
-	//
-	// Equality on arrays with list type of 'set' or 'map' ignores element order, i.e. [1, 2] == [2, 1].
-	// Concatenation on arrays with x-kubernetes-list-type use the semantics of the list type:
-	//   - 'set': `X + Y` performs a union where the array positions of all elements in `X` are preserved and
-	//     non-intersecting elements in `Y` are appended, retaining their partial order.
-	//   - 'map': `X + Y` performs a merge where the array positions of all keys in `X` are preserved but the values
-	//     are overwritten by values in `Y` when the key sets of `X` and `Y` intersect. Elements in `Y` with
-	//     non-intersecting keys are appended, retaining their partial order.
 	// Required.
 	Expression string `json:"expression"`
 }
@@ -284,6 +263,17 @@ manipulating match rules, namespace selector, or object selector (or reroute the
 
 Currently the match conditions must be encoded in the webhook backend itself. Moving the logic
 into a CEL expression does not materially increase the risk of a logic bug.
+
+Of particular significance are match conditions tied to non-functional properties of an object, such
+as using labels to decide whether to opt an object out of a policy. Without additional admition
+controls on who can set those non-functional aspects, exempting the policy based on that could be a
+security vulnerability. In contrast, the
+[NFS example usecase](#scope-an-nfs-access-management-webhook-to-pods-mounting-nfs-volumes) exempts
+the policy on a _functional_ aspect - whether an NFS volume is mounted, and thus whether the policy
+is relevant.
+
+These risks are inherent to the feature being proposed and cannot be mitigated through technical
+means, but should be highlighted in the documentation.
 
 #### Debugability
 
