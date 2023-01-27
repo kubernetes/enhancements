@@ -34,11 +34,9 @@
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Open Questions](#open-questions)
-  - [Do We Need Status?](#do-we-need-status)
   - [Do We Need Verbs?](#do-we-need-verbs)
   - [Do We Need Any or Wildcard Selectors?](#do-we-need-any-or-wildcard-selectors)
   - [Do We Need Label Selectors?](#do-we-need-label-selectors)
-  - [Are &quot;To&quot; and &quot;From&quot; the right field names?](#are-to-and-from-the-right-field-names)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -166,6 +164,20 @@ Anyone creating or updating a ReferenceGrant MUST have read access to the resour
 they are providing access to. If that authorization check fails, the update or
 create action will also fail.
 
+<<[UNRESOLVED Do we need checks beyond read access? ]>>
+Previous Discussion: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084528657
+
+Comment that started that thread:
+
+does anything ensure the user creating the ReferenceGrant has permissions (read?
+write?) on the object they are granting access to? Translating the existing
+ReferenceGrant into an authz check means translating from Kind to Resource
+
+since this is extending "half of a handshake", it seems important to ensure the
+actor extending the handshake actually has permission to do so
+
+<<[/UNRESOLVED]>>
+
 #### `Resource` vs `Kind`
 
 When creating a metaresource (that is, a resource that targets other resources)
@@ -219,12 +231,13 @@ spec:
       resource: gateways
       namespace: foo
   to:
-    - resource: secrets
+    - group: ""
+      resource: secrets
 
 ```
 
-The new version communicates the scope more clearly because `resource` is
-unambiguous and corresponds to exactly one URL path on the API Server.
+The new version communicates the scope more clearly because `group`+`resource`
+is unambiguous and corresponds to exactly one set of objects on the API Server.
 
 This change also leaves room for an enhancement. Whether we have an in-tree or
 CRD implementation, we can rely on the exact matching that the plural resource
@@ -291,7 +304,8 @@ spec:
     resource: gateways
     namespace: gateway-api-example-ns1
   to:
-  - resource: secrets
+  - group: ""
+    resource: secrets
 ```
 
 For Gateway TLS references, if this ReferenceGrant is deleted (revoking, 
@@ -337,7 +351,8 @@ spec:
     resource: httproutes
     namespace: baz
   to:
-  - resource: services
+  - group: ""
+    resource: services
 ```
 
 For HTTPRoute objects referencing a backend in another namespace, if the
@@ -472,6 +487,31 @@ type ReferenceGrantSpec struct {
 	To []ReferenceGrantTo `json:"to"`
 }
 
+```
+<<[UNRESOLVED Are "To" and "From" the right field names? ]>>
+Previous Discussion: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084671720
+
+Comments from @thockin:
+
+I would not argue for subject/object - that's confusing, and I love to take
+analogies too far.
+
+NetPol uses To/From but only for actual communications, and that still has been
+critiqued as perhaps "too cute".
+
+Subject/From isn't too bad, but not as symmetric. Subject/Referrer is correct
+but decidedly uncute. Subject/Origin?
+
+I hold opinions from an API review POV, but I'd like sig-auth to own the
+decision :)
+
+For reference, there was an [earlier
+discussion](https://groups.google.com/g/kubernetes-api-reviewers/c/ldmrXXQC4G4)
+on the kubernetes-api-reviewers mailing list that's also relevant to this.
+<<[/UNRESOLVED]>>
+
+```go
+
 // ReferenceGrantFrom describes trusted namespaces and kinds.
 type ReferenceGrantFrom struct {
 	// Group is the group of the referent.
@@ -520,6 +560,50 @@ moving ReferenceGrant to the new API group, just notes to save discussion time.
   multiple controllers consume the same ReferenceGrant?
 * Status design is still pending, but it's currently expected that controllers
   will indicate status on the _referring_ resources, not on ReferenceGrant itself.
+<<[UNRESOLVED do we need status? ]>>
+Original Thread: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084670421
+
+We want to be able to represent the following, in descending order of 
+importance: 
+
+1. Communicate that the ReferenceGrant is actively being used
+2. Communicate which controllers are using this ReferenceGrant
+3. Communicate how many times it's been used with sufficient granularity that I
+   can see the effects of my changes (if I remove this reference, am I removing
+   a dependency on this ReferenceGrant?)
+
+We could introduce a status structure that allowed each implementing controller
+to write 1 entry:
+
+```yaml
+status:
+  referencesAllowed:
+  - controllerName: gateway.example.com
+    numReferences: 1
+```
+
+@thockin responded with:
+
+If we think that the cardinality of controllers is low, we can put it in status.
+The downsides are:
+
+1. Could frequently require retries because of optimistic concurrency failures
+   (I'm trying to increment my count, but so is everyone else)
+1. If we're wrong about cardinality, there's not an easy way out
+1. Lots of writes to a resource that will be watched fairly often (every
+   controller which needs refs will watch all refgrants)
+1. We need .status.
+1. If we instead put that into a ReferenceGrantUse resource (just a tuple of
+   controller-name and count), then we only have optimistic concurrency
+   problems with ourselves, we have ~infinite cardinality, nobody will be
+   watching them, and RefGrant doesn't need .status.
+
+Downsides:
+
+1. It's another new resource
+1. It's a new pattern, untested in other places.
+
+<<[/UNRESOLVED]>>
 * Clarify that the expected operating model for implementations expects them to
   have broad, read access to both ReferenceGrant and the specific `To` Kinds they
   support, and then self-limit to only _use_ the relevant ones.
@@ -610,54 +694,15 @@ the old Gateway API resources as part of a seamless migration. We expect that
 many implementations will provide this recommendation to users, and we may even
 provide tooling to simplify this process.
 
+<<[UNRESOLVED open questions that don't clearly fit elsewhere ]>>
 ## Open Questions
 
 This KEP was merged in a provisional state with a number of open questions
 remaining. This section highlights the questions we have not resolved yet.
 
-### Do We Need Status?
-
-We want to be able to represent the following, in descending order of 
-importance: 
-
-1. Communicate that the ReferenceGrant is actively being used
-2. Communicate which controllers are using this ReferenceGrant
-3. Communicate how many times it's been used with sufficient granularity that I
-   can see the effects of my changes (if I remove this reference, am I removing
-   a dependency on this ReferenceGrant?)
-
-We could introduce a status structure that allowed each implementing controller
-to write 1 entry:
-
-```yaml
-status:
-  referencesAllowed:
-  - controllerName: gateway.example.com
-    numReferences: 1
-```
-
-@thockin responded with:
-
-If we think that the cardinality of controllers is low, we can put it in status.
-The downsides are:
-
-1. Could frequently require retries because of optimistic concurrency failures
-   (I'm trying to increment my count, but so is everyone else)
-1. If we're wrong about cardinality, there's not an easy way out
-1. Lots of writes to a resource that will be watched fairly often (every
-   controller which needs refs will watch all refgrants)
-1. We need .status.
-1. If we instead put that into a ReferenceGrantUse resource (just a tuple of
-   controller-name and count), then we only have optimistic concurrency
-   problems with ourselves, we have ~infinite cardinality, nobody will be
-   watching them, and RefGrant doesn't need .status.
-
-Downsides:
-
-1. It's another new resource
-1. It's a new pattern, untested in other places.
-
 ### Do We Need Verbs?
+
+Previous Discussion: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084509958
 
 We could add a `verbs` field to enable users to specify the kind of referential
 access they want to grant. For example, we could define "read", "route", and
@@ -668,6 +713,10 @@ This would enable more precise grants, and potentially more open ended fields
 elsewhere in the resource, see the next item for more.
 
 ### Do We Need Any or Wildcard Selectors?
+
+Previous Discussions:
+* https://github.com/kubernetes/enhancements/pull/3767#discussion_r1086020464
+* https://github.com/kubernetes/enhancements/pull/3767#discussion_r1086012665
 
 We already allow "Name" to be optional in `To`, effectively resulting in
 wildcard behavior. Should we expand that to allow any of the following?
@@ -682,6 +731,10 @@ introduced the concepts of "verbs" described above, this would become
 a moot point.
 
 ### Do We Need Label Selectors?
+
+Previous Discussions:
+* https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084492070
+* https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084674648
 
 As a natural next step, instead of simply allowing all, we could use
 label selectors to enable:
@@ -730,25 +783,7 @@ type NamespaceResource struct {
     Resource string
 }
 ```
-
-### Are "To" and "From" the right field names?
-Comments from @thockin:
-
-I would not argue for subject/object - that's confusing, and I love to take
-analogies too far.
-
-NetPol uses To/From but only for actual communications, and that still has been
-critiqued as perhaps "too cute".
-
-Subject/From isn't too bad, but not as symmetric. Subject/Referrer is correct
-but decidedly uncute. Subject/Origin?
-
-I hold opinions from an API review POV, but I'd like sig-auth to own the
-decision :)
-
-For reference, there was an [earlier
-discussion](https://groups.google.com/g/kubernetes-api-reviewers/c/ldmrXXQC4G4)
-on the kubernetes-api-reviewers mailing list that's also relevant to this.
+<<[/UNRESOLVED]>>
 
 
 ## Production Readiness Review Questionnaire
