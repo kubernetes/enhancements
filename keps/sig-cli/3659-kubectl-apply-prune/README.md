@@ -122,6 +122,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -827,7 +828,7 @@ We will add e2e tests to verify the core operational flows,
 in particular:
 
 * applying a set of objects ("set1") as an applyset and with pruning (no changes)
-* applying a partially overlaping set of objects ("set2") as an applyset with dry-run pruning (no changes made but differences reported)
+* applying a partially overlapping set of objects ("set2") as an applyset with dry-run pruning (no changes made but differences reported)
 * applying set2 without pruning (new objects added, no pruning)
 * applying set2 as an applyset with dry-run pruning (no changes made but pruning reported)
 * applying set2 as an applyset with pruning (pruning operates as expected)
