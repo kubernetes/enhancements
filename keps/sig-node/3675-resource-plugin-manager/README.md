@@ -87,9 +87,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -111,7 +108,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Infrastructure Needed](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -178,13 +175,43 @@ updates.
 -->
 
 The authors have taken inspiration from the [CSI development](https://github.com/kubernetes/design-proposals-archive/blob/main/storage/container-storage-interface.md). 
-Kubernetes compute management is tightly integrated with the Kubelet and the existing suite of resources managers including the topology manager, CPU manager, memory manager, and device manager. While these managers have added functionality that has addressed a varied set of use cases, they do present the community with several challenges. 
-Adding a new capability to one of these managers is slow moving and difficult due to their complex interactions, the level of prudence required given the potential impacts, the implied necessity to make the extension work in as many scenarios as possible, as well as the overhead heaped onto the sig-node maintainers. More details on the challenges discussed with the community have been captured in the [CPU Management Kubelet Use Cases & Current State document](https://docs.google.com/document/d/1U4jjRR7kw18Rllh-xpAaNTBcPsK5jl48ZAVo7KRqkJk).  
-As a result, adding optimizations necessary to support some more niche use cases, to improve total cost of ownership for deployments with more exacting requirements on resources or to provide a mechanism to progressively roll-out the benefits of innovations related to newer CPU architectures is difficult and high cost to community resources.
-This proposal aims to address the challenges by introducing a new Container Compute Interface (CCI). The CCI is conceptually equivalent to the CSI in that it will delineate between the responsibility of the Kubelet and lower-level responsibility of compute focused plugins for resource assignment capabilities, such CPU and memory. 
-Given the existing Kubelet CPU/memory manager capabilities and their usefulness for many scenarios, the proposal takes a minimally disruptive approach to introducing the CCI favouring an architecture that drops back to the existing behaviour seamlessly during error conditions.
-The implication of CCI and the addition of the proposed CCI plugin manager will be to allow compute capabilities such as CPU and memory to be managed outside of the Kubelet via pluggable CCI Drivers.  This will allow users to augment the current implementation of Kubelet managed resources with support for more complex use-cases without having to modify the Kubelet. The CCI extensions will coexist with the existing CPU and memory allocation technique available to Kubernetes users today.
-These changes will allow the community to disaggregate the long-term stability and advancement of the Kubelet from the task of improving the compute resource management and keeping pace with the needs of specialized use cases and the advancements in the compute vendor ecosystem.
+Kubernetes compute management is tightly integrated with the Kubelet and the 
+existing suite of resources managers including the topology manager, CPU manager, 
+memory manager, and device manager. While these managers have added functionality that has addressed a varied set of use cases, they do present the community with several challenges.
+
+Adding a new capability to one of these managers is slow moving and difficult 
+due to their complex interactions, the level of prudence required given the potential
+impacts, the implied necessity to make the extension work in as many scenarios as
+possible, as well as the overhead heaped onto the sig-node maintainers. More 
+details on the challenges discussed with the community have been captured in 
+the [CPU Management Kubelet Use Cases & Current State document](https://docs.google.com/document/d/1U4jjRR7kw18Rllh-xpAaNTBcPsK5jl48ZAVo7KRqkJk).  
+
+As a result, adding optimizations necessary to support some more niche use cases, 
+to improve total cost of ownership for deployments with more exacting requirements 
+on resources or to provide a mechanism to progressively roll-out the benefits of 
+innovations related to newer CPU architectures is difficult and high cost to community resources.
+
+This proposal aims to address the challenges by introducing a new Container Compute 
+Interface (CCI). The CCI is conceptually equivalent to the CSI in that it will 
+delineate between the responsibility of the Kubelet and lower-level responsibility
+of compute focused plugins for resource assignment capabilities, such CPU and memory. 
+
+Given the existing Kubelet CPU/memory manager capabilities and their usefulness 
+for many scenarios, the proposal takes a minimally disruptive approach to
+introducing the CCI favouring an architecture that drops back to the existing
+behaviour seamlessly during error conditions.
+
+The implication of CCI and the addition of the proposed CCI plugin manager 
+will be to allow compute capabilities such as CPU and memory to be managed outside
+of the Kubelet via pluggable CCI Drivers.  This will allow users to augment the
+current implementation of Kubelet managed resources with support for more complex
+use-cases without having to modify the Kubelet. The CCI extensions will coexist 
+with the existing CPU and memory allocation technique available to Kubernetes users today.
+
+These changes will allow the community to disaggregate the long-term 
+stability and advancement of the Kubelet from the task of improving the compute 
+resource management and keeping pace with the needs of specialized use cases and
+the advancements in the compute vendor ecosystem.
 
 
 
@@ -198,6 +225,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
+
 Users are requiring more varied workloads; the current set of available configurations
 for CPU, memory, and topology remain limited.  Additionally, the number of managers
 becoming internal to the Kubelet continues to increase, and we should find a more 
@@ -211,47 +239,32 @@ the Kubelet.
 
 Users would like to be able to address the following use cases:
 
-- The ability to allow vendors to release vendor-specific managers for their hardware
+* The ability to allow vendors to release vendor-specific managers for their hardware
   and provide an interface while not having vendor-specific code within Kubelet.
-
-- Differentiate between types of cores and memory.
-
+* Differentiate between types of cores and memory. <br>
   Note - Dynamic resouce allocation does this with regular resources today.  We seek to
   extend this ability.
-  
-- Diffentiate between different configurations of cores and memory, for instance cores
-  designated as performance versus those designated as efficiency cores
-  
-- Have custom plugins to optimize for particular types of workloads.  These plugins
-  may be built for performance, power reduction, or both.  
-  
+* Diffentiate between different configurations of cores and memory, for instance cores
+  designated as performance versus those designated as efficiency cores 
+* Have custom plugins to optimize for particular types of workloads.  These plugins
+  may be built for performance, power reduction, or both.  <br>
   Note:  Currently, there are very limited sets of available topology policies.  Every
   new policy must be approved and be lockstep with the Kuberenetes release process.
-
-- Be able to hot-plug and test new resource managers.  
-
-- Be able to remove some of the complexity with current setup.
-
-- Have a faster path to desired changes, without potentially impacting the core of 
-  Kubernetes with every policy change.
-  
+* Be able to hot-plug and test new resource managers.  
+* Be able to remove some of the complexity with current setup.
+* Have a faster path to desired changes, without potentially impacting the core of 
+  Kubernetes with every policy change. <br>
   Note that current solutions have been cropping up to allow for resource management
   outside the core Kubelet.  THese solutions require turning off the Kubelet functionality 
   and overriding current Kubelet allocation.  We should provide a path otherwise.
-  
-- Be able to get information on the pods on the node without having to contact the
-  API server, which may not have updated information.
-  
-- Be able to change the number of resources available on the node, at any time, and update.
-
-- Be able to do research, with minimum toil, on new policies and resource management strategies.
-
-- Can model off of current Kubernetes scheduler plugins and have a similar community that
-  releases plugins for particular use cases.
+* Be able to get information on the pods on the node without having to contact the
+  API server, which may not have updated information. 
+* Be able to change the number of resources available on the node, at any time, and update.
+* Be able to do research, with minimum toil, on new policies and resource management strategies
 
 This design will also use the already tried and true gRPC, which is used for many other
-pluggable components within Kubernetes.  It will simplify the Kubelet as it is today
-and move the complexity out into external managers.
+pluggable components within Kubernetes.  The hope is that it will also, as a side effect, allow a 
+path to simplify the Kubelet as it is today and move the complexity into external plugins.
 
 ### Goals
 
@@ -372,54 +385,75 @@ proposal will be implemented, this is the place to discuss them.
 
 #### Compute Specification Option
 
-The CCI model combined with some of the capabilities introduced in the Dynamic Resource Allocation (DRA) KEP [3], offers the ability to transition compute resource allocation behavior from being a cluster-admin dominated configuration to one that allows users with precise compute requirements to articulate the compute attributes that they need. 
-In several domains such Streaming, Telco, HPC, and AI/ML, users require fine-grained compute resource control to maximize their key performance indicators.  They need an API option that can be made available through upstream Kubernetes components and specific compute resource allocation plugins.
+The CCI model combined with some of the capabilities introduced in the Dynamic 
+Resource Allocation (DRA) KEP [3], offers the ability to transition compute 
+resource allocation behavior from being a cluster-admin dominated configuration
+to one that allows users with precise compute requirements to articulate the
+compute attributes that they need. 
+
+In several domains such Streaming, Telco, HPC, and AI/ML, users require
+fine-grained compute resource control to maximize their key performance 
+indicators.  They need an API option that can be made available through
+upstream Kubernetes components and specific compute resource allocation 
+plugins.
 
 ##### Example 1: Attributed-based resource specification
 
-One realization of such an API can be achieved by an attribute-based mechanism for compute resources that resembles the Dynamic Resource Allocation (DRA) claim mechanism. The attribute-based compute resource request model is a step towards improved semantic workload portability that can be tried in a progressive manner with CCI. 
-In the following, there is an example of a novel approach that could be fulfilled with the CCI architecture. This example presents a set of per-core attributes that enable precision beyond a policy-only based approach: 
+One realization of such an API can be achieved by an attribute-based 
+mechanism for compute resources that resembles the Dynamic Resource 
+Allocation (DRA) claim mechanism. The attribute-based compute resource 
+request model is a step towards improved semantic workload portability 
+that can be tried in a progressive manner with CCI. 
 
-\# A resource request which consists of:
-\# 2 exclusive cores (no other processes running on them)
-\# 	* the cores shall be siblings 
-\# 	* they shall run at 2.1 ghz
-\# 	* application assigned has the highest priority on the core
-\# 	* there are no IRQs on the core
-\# 6 exclusive cores(no other processes running on them)
-\# 4 shared cores(other processes can run on them)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: example-compute-claim-parameters
-  namespace: default
-data:
-  cores: |
+In the following, there is an example of a novel approach that could be 
+fulfilled with the CCI architecture. This example presents a set of
+per-core attributes that enable precision beyond a policy-only based approach: 
+
+    \# A resource request which consists of:
+    \# 2 exclusive cores (no other processes running on them)
+    \# 	* the cores shall be siblings
+    \# 	* they shall run at 2.1 ghz
+    \# 	* application assigned has the highest priority on the core
+    \# 	* there are no IRQs on the core
+    \# 6 exclusive cores(no other processes running on them)
+    \# 4 shared cores(other processes can run on them) 
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: example-compute-claim-parameters
+      namespace: default
+    data:
+      cores: |
     2
     6
     4
-  compute_attributes: |
-    exclusive, smt-sibling-required, 2.1Ghz, 1.0 priority, no-irq
-    exclusive
-    shared
-apiVersion: resource.k8s.io/v1alpha1
-kind: ResourceClaimTemplate
-metadata:
-  name: example-compute-claim-parameters-template
-  namespace: default
-spec:
-  metadata:
-    labels:
-      app: inline-resource
-  spec:
-    resourceClassName: cpuressources
-    parametersRef:
-      kind: ConfigMap
-      name: example-compute-claim-parameters
+      compute_attributes: |
+        exclusive, smt-sibling-required, 2.1Ghz, 1.0 priority, no-irq
+        exclusive
+        shared
+    apiVersion: resource.k8s.io/v1alpha1
+    kind: ResourceClaimTemplate
+    metadata:
+      name: example-compute-claim-parameters-template
+      namespace: default
+    spec:
+      metadata:
+        labels:
+          app: inline-resource
+      spec:
+        resourceClassName: cpuressources
+        parametersRef:
+          kind: ConfigMap
+          name: example-compute-claim-parameters
 
 ##### Example 2.: Policy-based resource specification
 
-Another option how a resource allocation configuration for Kubernetes Pods could be achieved is through a policy mechanism. In this case the policy will be applied to all Pods to be processed. The configuration of the policy can happen directly in a CCI Compute Resource Driver Plugin as input argument in the yaml deployment. This methodology can be used to realize methodologies similar to the static CPU manager policy or other policies.
+Another option how a resource allocation configuration for Kubernetes
+Pods could be achieved is through a policy mechanism. In this case the
+policy will be applied to all Pods to be processed. The configuration
+of the policy can happen directly in a CCI Compute Resource Driver Plugin
+as input argument in the yaml deployment. This methodology can be used to
+realize methodologies similar to the static CPU manager policy or other policies.
 
 ### Test Plan
 
@@ -487,6 +521,26 @@ https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
 This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
+
+###### Alpha
+
+*	Planned Unit tests for :
+*	CCI Resource Manager: target code cvg >=80%
+*	CCI Store: target code cvg >=80%
+*	CCI CPU Manager Policy: target code cvg >=80%
+* Integration Tests
+* CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
+* State Consistency (CPU Manager + CCI) integrateion test
+*	End-to-End tests
+*	Example mocked driver test 
+
+###### BETA
+
+*	Introduce fail-safety tests
+*	Further integration tests with Device Manager and DRA
+*	Integration test including static QoS and driver-based allocation
+*	End-to-End tests including Driver Allocations and cpu manager allocations
+*	Performance/Scalabilty tests
 
 
 ##### Integration tests
@@ -703,11 +757,19 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 <!--
 This section must be completed when targeting beta to a release.
 -->
-The usual Kubernetes upgrade and downgrade strategy applies for in-tree components. Vendors must take care that upgrades and downgrades work with the drivers that they provide to customers
+The usual Kubernetes upgrade and downgrade strategy applies for in-tree components. 
+Vendors must take care that upgrades and downgrades work with the drivers that
+they provide to customers
   
-We propose a solution of the bootstrapping problem for the cluster initialization by using the new CCI policy of CPU Manager. The policies allows the deployment of Pods not bound a CCI driver without requiring any plugin. The allocation of such Pods will be handled by std cpu manager. 
+We propose a solution of the bootstrapping problem for the cluster initialization by
+using the new CCI policy of CPU Manager. The policies allows the deployment of
+Pods not bound a CCI driver without requiring any plugin. The allocation of such
+Pods will be handled by std cpu manager. 
   
-Pods which require CCI Driver will fail starting and report an error due to driver unavailability.  If a CCI Plugin fails, Pods which were about to be allocated that were tied to the plugin will fail. Based on requirements a fallback mechanism can be implemented where such Pods fallback to a given std. QoS Model.
+Pods which require CCI Driver will fail starting and report an error due to driver 
+unavailability.  If a CCI Plugin fails, Pods which were about to be allocated
+that were tied to the plugin will fail. Based on requirements a fallback mechanism 
+can be implemented where such Pods fallback to a given std. QoS Model.
 
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
@@ -899,7 +961,7 @@ Think about adding additional work or introducing new steps in between
 -->
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
-
+  
 <!--
 Things to keep in mind include: additional in-memory state, additional
 non-trivial computations, excessive access to disks (including increased log
@@ -922,6 +984,17 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+  
+We propose a solution of the bootstrapping problem for the cluster initialization 
+by using the new CCI policy of CPU Manager. The policies allows the deployment of
+Pods not bound a CCI driver without requiring any plugin. The allocation of such Pods
+will be handled by std cpu manager. Pods which require CCI Driver will fail starting
+and report an error due to driver unavailability.
+  
+If a CCI Plugin fails, Pods which were about to be allocated will fail. Based on 
+requirements a fallback mechanism can be implemented where such Pods fallback to 
+a given std. QoS Model.
+
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
@@ -968,11 +1041,21 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+  We could choose, instead, to continually extend existing Kubelet managers.  This is
+  already complicated and becomes more so as users want more and more specialty use
+  cases.  Additionally, chip companies are coming up with increasingly complicatde 
+  architecture and the community will not want to spend time and resources supporting
+  odd changes particular for particular chipsets.  Rather, we should choose to reduce
+  complexity within the Kubelet over time.
 
-## Infrastructure Needed (Optional)
+## Infrastructure Needed 
 
 <!--
 Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+  
+We may choose to add in a repo that allows donations of plugins specific to particular
+use cases, in the way that we already do so for Kubernetes Scheduler Plugins.  This 
+will allow a central place for the community to donate useful content.
