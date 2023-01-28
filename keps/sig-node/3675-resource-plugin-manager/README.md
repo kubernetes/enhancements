@@ -581,6 +581,42 @@ The CCI driver registration can be handled by t ubeletlet plugin framework.
 This approach is already used with device plugins and DRA plugins. The approach
 will be sufficient the cover plugin registration, status and health-check functionality.
 
+##### Allocation & Container Removal Flow
+
+Admission and adding a Container:<br>
+![image](https://user-images.githubusercontent.com/1184214/215234931-6e9e03f5-3e7e-4bf4-9d6d-620279d9d458.png)<br>
+Fig. 3.: Sequence of container allocation which uses CCI driver<br><br>
+
+
+The lifetime events are triggered by the container manager and internal lifecycle manager in 
+exact order for admitting, adding, and removing containers. As shown on Fig . 3  an admit 
+container is invoked for containers inside Pods requiring a resource driver before calling 
+the admit on the cpu manager side. On success the resource set result is added to the CCI 
+store. The admit call on cpu manager side will trigger the CCI policy which will execute a 
+lookup inside the store to get the assigned cpuset for the new container.  If the operation 
+fails an error will be reported back to the user. On success the data will be stored in the 
+cpu manager state which then gets accessed by add container call. All blocking rpc calls are 
+configured in alpha with a reasonable timeout. The overall operations can be summarized as
+the following sequence of steps (shown In Fig. 3.):<br>
+1-2. Admit via CCI driver<br>
+3. On Success store resource set in CCI Store/ On Failure: return error<br>
+4 – 7. Admit via CPU Manager: update state if Pod admission was successful<br>
+8 – 9. Add Container via CPU driver and CPU Manager: will trigger CRI operations and further resource configuration operations<br>
+
+Container Removal:<br>
+![image](https://user-images.githubusercontent.com/1184214/215234976-23835b19-fe89-4a36-88ca-cd6b85d7de4d.png)<br>
+
+Fig.4.: Container removal sequence diagram involving cci plugins<br><br>
+The container removal case is described as a sequence in Fig.4. After registering
+a removal event in the internal container lifecycle the cci manager is triggered 
+and it invokes the CCI Driver to free any resources takes by the container. On
+success the cci store will be also cleaned and a new available resource set will 
+be computed. Directly after this action a remove container call is triggered on 
+the cpu manager side and this invokes the cci policy. The cci policy will remove the
+container also from the cpu manager state and update the available cpus based on the
+available resources returned by the cci store. All blocking rpc calls are configured in
+alpha with a reasonable timeout.
+
 
 ### Test Plan
 
@@ -598,35 +634,6 @@ when drafting this test plan.
 [X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
-
-#### Alpha
--	Planned Unit tests for :
-
-* CCI Resource Manager: target code cvg >=80%
-* CCI Store: target code cvg >=80%
-* CCI CPU Manager Policy: target code cvg >=80%
-*	Integration Tests
-*	CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
-*	State Consistency (CPU Manager + CCI) integrateion test
-*	End-to-End tests
-*	Example mocked driver test 
-
-#### BETA
-
-*	Introduce fail-safety tests
-*	Further integration tests with Device Manager and DRA
-*	Integration test including static QoS and driver-based allocation
-*	End-to-End tests including Driver Allocations and cpu manager allocations
-*	Performance/Scalabilty tests
-
-##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
-
 
 ##### Unit tests
 
