@@ -85,7 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Required changes for a WATCH request with the RV=&quot;&quot; and the ResourceVersionMatch=MostRecent](#required-changes-for-a-watch-request-with-the-rv-and-the-resourceversionmatchmostrecent)
+  - [Required changes for a WATCH request with the SendInitialEvents=true](#required-changes-for-a-watch-request-with-the-sendinitialeventstrue)
     - [API changes](#api-changes)
     - [Important optimisations](#important-optimisations)
     - [Manual testing without the changes in place](#manual-testing-without-the-changes-in-place)
@@ -179,7 +179,7 @@ The kube-apiserver is vulnerable to memory explosion.
 The issue is apparent in larger clusters, where only a few LIST requests might cause serious disruption.
 Uncontrolled and unbounded memory consumption of the servers does not only affect clusters that operate in an 
 HA mode but also other programs that share the same machine.
-In this KEP we propose a potential solution to this issue.
+In this KEP we propose a solution to this issue.
 
 ## Motivation
 
@@ -257,7 +257,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-In order to lower memory consumption while getting a list of data and make it more predictable, we propose to use consistent streaming from the watch-cache instead of paging from etcd.
+In order to lower memory consumption while getting a list of data and make it more predictable, we propose to use streaming from the watch-cache instead of paging from etcd.
 Initially, the proposed changes will be applied to informers as they are usually the heaviest users of LIST requests (see [Appendix](#appendix) section for more details on how informers operate today).
 The primary idea is to use standard WATCH request mechanics for getting a stream of individual objects, but to use it for LISTs.
 This would allow us to keep memory allocations constant.
@@ -266,17 +266,17 @@ plus a few additional allocations, that will be explained later in this document
 The rough idea/plan is as follows:
 
 - step 1: change the informers to establish a WATCH request with a new query parameter instead of a LIST request.
-- step 2: upon receiving the request from an informer, contact etcd to get the latest RV. It will be used to make sure the watch cache has seen objects up to the received RV. This step is necessary and ensures we will serve consistent data, even from the cache.
-- step 2a: send all objects currently stored in memory for the given resource.
+- step 2: upon receiving the request from an informer, compute the RV at which the result should be returned (possibly contacting etcd if consistent read was requested). It will be used to make sure the watch cache has seen objects up to the received RV. This step is necessary and ensures we will meet the consistency requirements of the request.
+- step 2a: send all objects currently stored in memory for the given resource type.
 - step 2b: propagate any updates that might have happened meanwhile until the watch cache catches up to the latest RV received in step 2.
 - step 2c: send a bookmark event to the informer with the given RV.
 - step 3: listen for further events using the request from step 1.
 
 Note: the proposed watch-list semantics (without bookmark event and without the consistency guarantee) kube-apiserver follows already in RV="0" watches.
 The mode is not used in informers today but is supported by every kube-apiserver for legacy, compatibility reasons.
-A watch started with RV="0" may return stale. It is possible for the watch to start at a much older resource version that the client has previously observed, particularly in high availability configurations, due to partitions or stale caches
+A watch started with RV="0" may return stale data. It is possible for the watch to start at a much older resource version that the client has previously observed, particularly in high availability configurations, due to partitions or stale caches.
 
-Note 2: informers need consistent lists to avoid time-travel when switching to another HA instance of kube-apiserver with outdated/lagging watch cache.
+Note 2: informers need consistent lists to avoid time-travel when initializing after restart to avoid time travel in case of switching to another HA instance of kube-apiserver with outdated/lagging watch cache.
 See the following [issue](https://github.com/kubernetes/kubernetes/issues/59848) for more details.
 
 
@@ -310,7 +310,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-### Required changes for a WATCH request with the RV="" and the ResourceVersionMatch=MostRecent
+### Required changes for a WATCH request with the SendInitialEvents=true
 
 The following sequence diagram depicts steps that are needed to complete the proposed feature.
 A high-level overview of each was provided in a table that follows immediately the diagram.
@@ -328,11 +328,11 @@ Whereas further down in this section we provided a detailed description of each 
  </tr>
 <tr>
   <th>2.</th>
-  <th>The watch cache contacts etcd for the most up-to-date ResourceVersion.</th>
+  <th>If needed, the watch cache contacts etcd for the most up-to-date ResourceVersion.</th>
 </tr>
 <tr>
   <th>2a.</th>
-  <th>The watch cache starts streaming initial data. The data it already has in memory.</th>
+  <th>The watch cache starts streaming initial data it already has in memory.</th>
 </tr>
 <tr>
   <th>2b.</th>
@@ -352,14 +352,14 @@ Whereas further down in this section we provided a detailed description of each 
 </tr>
 </table>
 
-Step 1: On initialization the reflector gets a snapshot of data from the server by passing RV=”” (= unset value) and setting resourceVersionMatch=MostRecent (= ensure freshness).
+Step 1: On initialization the reflector gets a snapshot of data from the server by passing RV=”” (= unset value) to ensure freshness and setting resourceVersionMatch=NotOlderThan and sendInitialEvents=true.
 We do that only during the initial ListAndWatch call.
 Each event (ADD, UPDATE, DELETE) except the BOOKMARK event received from the server is collected.
-Passing resourceVersionMatch=MostRecent tells the cacher it has to guarantee that the cache is at least up to date as a LIST executed at the same time.
+Passing resourceVersion="" tells the cacher it has to guarantee that the cache is at least up to date as a LIST executed at the same time.
 
 Note: This ensures that returned data is consistent, served from etcd via a quorum read and prevents "going back in time".
 
-Note 2: Unfortunately as of today, the watch cache is vulnerable to stale reads, see https://github.com/kubernetes/kubernetes/issues/59848 for more details.
+Note 2: Watch cache currently doesn't have the feature of supporting resourceVersion="" and thus is vulnerable to stale reads, see https://github.com/kubernetes/kubernetes/issues/59848 for more details.
 
 Step 2: Right after receiving a request from the reflector, the cacher gets the current resourceVersion (aka bookmarkAfterResourceVersion) directly from the etcd.
 It is used to make sure the cacher is up to date (has seen data stored in etcd) and to let the reflector know it has seen all initial data.
@@ -447,18 +447,51 @@ It replaces its internal store with the collected items (syncWith) and reuses th
 
 #### API changes
 
-Extend the optional `ResourceVersionMatch` query parameter of `ListOptions` with the following enumeration value:
+Extend the `ListOptions` struct with the following field:
 
 ```
-const (
-    // ResourceVersionMatchMostRecent matches data at the most recent ResourceVersion.
-    // The returned data is consistent, that is, served from etcd via a quorum read.
-    // For watch calls, it begins with synthetic "Added" events of all resources up to the most recent ResourceVersion.
-    // It ends with a synthetic "Bookmark" event containing the most recent ResourceVersion.
-    // For list calls, it has the same semantics as leaving ResourceVersion and ResourceVersionMatch unset.
-    ResourceVersionMatchMostRecent ResourceVersionMatch = "MostRecent"
-)
+type ListOptions struct {
+    ...
+
+    // SendInitialEvents, when set together with Watch option,
+    // begin the watch stream with synthetic init events to build the
+    // whole state of all resources followed by a synthetic "Bookmark"
+    // event containing a ResourceVersion after which the server
+    // continues streaming events.
+    //
+    // When SendInitialEvents option is set, we require ResourceVersionMatch
+    // option to also be set. The semantic of the watch request is as following:
+    // - ResourceVersionMatch = NotOlderThan
+    //   It starts with sending initial events for all objects (at some resource
+    //   version), potentially followed by an event stream until the state
+    //   becomes synced to a resource version as fresh as the one provided by
+    //   the ResourceVersion option. At this point, a synthetic bookmark event
+    //   is send and watch stream is continued to be send.
+    //   If RV is unset, this is interpreted as "consistent read" and the
+    //   bookmark event is send when the state is synced at least to the moment
+    //   when request started being processed.
+    // - ResourceVersionMatch = Exact
+    //   Unsupported error is returned.
+    // - ResourceVersionMatch unset (or set to any other value)
+    //   BadRequest error is returned.
+    //
+    // Defaults to true if ResourceVersion="" or ResourceVersion="0" (for backward
+    // compatibility reasons) and to false otherwise.
+    SendInitialEvents bool
+}
 ```
+
+The watch bookmark marking the end of initial events stream will have a dedicated
+annotation:
+```
+"k8s.io/initial-events-end": "true"
+```
+(the exact name is subject to change during API review). It will allow clients to
+precisely figure out when the initial stream of events is finished.
+
+It's worth noting that explicitly setting SendInitialEvents to false with ResourceVersion="0"
+will result in not sending initial events, which makes the option works exactly the same
+across every potential resource version passed as a parameter.
 
 #### Important optimisations
 

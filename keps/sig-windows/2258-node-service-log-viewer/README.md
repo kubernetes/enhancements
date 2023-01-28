@@ -195,10 +195,10 @@ configured. Here are some examples:
 The `/var/log/` endpoint is enabled using the `enableSystemLogHandler` kubelet
 configuration options. To gain access to this new feature this option needs to
 be enabled. In addition when introducing this feature it will be hidden behind a
-`NodeLogViewer` feature gate in the kubelet that needs to be explicitly enabled. So
+`NodeLogQuery` feature gate in the kubelet that needs to be explicitly enabled. So
 you need to enable both options to get access to this new feature and disabling
 `enableSystemLogHandler` will disable the new feature irrespective of the
-`NodeLogViewer` feature gate.
+`NodeLogQuery` feature gate.
 
 A reference implementation of this feature is available
 [here](https://github.com/kubernetes/kubernetes/pull/96120).
@@ -240,7 +240,6 @@ Examples:
 
 Options:
   -g, --grep='': Filter log entries by the provided regex pattern. Only applies to node journal logs.
-  -o, --output='': Display journal logs in an alternate format (short, cat, json, short-unix). Only applies to node journal logs.
       --raw=false: Perform no transformation of the returned data.
       --role='': Set a label selector by node role.
   -l, --selector='': Selector (label query) to filter on.
@@ -302,13 +301,13 @@ e2e tests. For Windows a new set of tests will be added to the existing
 
 ### Graduation Criteria
 
-The plan is to introduce the feature as alpha in the v1.26 time frame behind the
-`NodeLogViewer` kubelet feature gate and using the `kubectl alpha node-logs`
+The plan is to introduce the feature as alpha in the v1.27 time frame behind the
+`NodeLogQuery` kubelet feature gate and using the `kubectl alpha node-logs`
 sub-command.
 
 #### Alpha -> Beta Graduation
 
-The plan is to graduate the feature to beta in the v1.27 time frame. At that
+The plan is to graduate the feature to beta in the v1.28 time frame. At that
 point we would have collected feedback from cluster administrators and
 developers who have enabled the feature. Based on this feedback and issues
 opened we should consider adding a kubelet side throttle for the viewing the
@@ -320,7 +319,7 @@ The kubectl implementation will move from `kubectl alpha node-logs` to
 `kubectl node-logs`.
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.28 time frame at which point
+The plan is to graduate the feature to GA in the v1.29 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 
@@ -338,13 +337,13 @@ viewer, the result should be "feature not supported".
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate
-    - Feature gate name: NodeLogViewer
+    - Feature gate name: NodeLogQuery
     - Components depending on the feature gate: kubelet
 
 * **Does enabling the feature change any default behavior?** No
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes. It can be disabled by disabling the `NodeLogViewer` feature
+  the enablement)?** Yes. It can be disabled by disabling the `NodeLogQuery` feature
   gate in the kubelet.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
@@ -408,6 +407,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 - Created on Jan 14, 2021
 - Updated on May 5th, 2021
+- Updated on Dec 13th, 2022
 
 ## Drawbacks
 

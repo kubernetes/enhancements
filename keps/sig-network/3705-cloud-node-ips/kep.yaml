@@ -1,24 +1,27 @@
-title: Server Side Unknown Field Validation
-kep-number: 2885
+title: Cloud Dual-Stack --node-ip Handling
+kep-number: 3705
 authors:
-  - "@kevindelgado"
-owning-sig: sig-api-machinery
+  - "@danwinship"
+owning-sig: sig-network
 participating-sigs:
-status: implementable
-creation-date: 2021-08-20
+  - sig-node
+  - sig-cloud-provider
+status: provisional
+creation-date: 2022-11-29
 reviewers:
-  - "@apelisse"
-  - "@jpbetz"
-  - "@smarterclayton"
+  - "@mdbooth"
+  - "@khenidak"
+  - "@thockin"
+  - TBD
 approvers:
-  - "@deads2k"
-  - "@liggitt"
+  - TBD
 
 see-also:
-replaces:
+  - "https://github.com/kubernetes/enhancements/issues/1664"
+  - "https://github.com/kubernetes/enhancements/pull/1665"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: stable
+stage: alpha
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -27,18 +30,19 @@ latest-milestone: "v1.27"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.23"
-  beta: "v1.25"
-  stable: "v1.27"
+  alpha: "v1.27"
+  beta: "v1.28"
+  stable: "v1.29"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-# Note: feature-gate removed upon graduation to GA in 1.27
 feature-gates:
-  - name: ServerSideFieldValidation
+  - name: CloudNodeIPs
     components:
-      - kube-apiserver
+      - kubelet
+      - cloud-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - my_feature_metric

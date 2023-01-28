@@ -25,7 +25,6 @@
     - [Deprecated Fields](#deprecated-fields)
     - [Beta to GA Graduation](#beta-to-ga-graduation)
     - [Load Test](#load-test)
-    - [Components Migration](#components-migration)
 - [Considerations](#considerations)
   - [Performance Impact](#performance-impact)
   - [Backward Compatibility](#backward-compatibility)
@@ -74,7 +73,7 @@ The KEP aims at fixing few issues in the current way Events are structured and i
 
 Most sections and design details are copied from the original design doc: [Make Kubernetes Events Useful and Safe](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/events-redesign.md).
 
-The new Event API has been promoted from v1beta1 to v1 in 1.19 and currently only scheduler was migrated to use it. This KEP proposes to graduate the new Event API by migrating all the remaining Kubernetes components to use the new Event API.
+The new Event API has been promoted from v1beta1 to v1 in 1.19 and currently only scheduler was migrated to use it.
 
 ## Motivation
 
@@ -370,7 +369,7 @@ Scalability and Performance:
 
 ### Graduation Criteria
 
-The new Event API is in v1 right now and scheduler has been migrated to use new API. The plan is to do a load test and migrate all the remaining components.
+The new Event API is in v1 right now and scheduler has been migrated to use new API. The plan is to do a load test before migrating all the remaining components.
 
 #### Deprecated Fields
 
@@ -383,26 +382,10 @@ This section lists the deprecated Event API fields that should be removed before
 
 - Remove deprecated fields listed above
 - Gather data from performance and scalability tests
-- Remove all in-tree use of the core/v1.Event API in favour of events.k8s.io/v1
 
 #### Load Test
 
 The idea is to use [ClusterLoader](https://github.com/kubernetes/perf-tests/tree/master/clusterloader2) testing framework to do a load test to make sure events generated can be handled by etcd and there's no big performance reduction.
-
-#### Components Migration
-
-The list of components that need to be migrated is shown as follows:
-
-- kubelet
-- cloud-controller-manager
-- kube-controller-manager
-- leader election
-- node problem detector
-- gce ingress controller
-- event exporter
-
-(Note: there are more out-of-tree components that need to be migrated)
-
 
 ## Considerations
 
