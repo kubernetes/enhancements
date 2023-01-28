@@ -477,7 +477,7 @@ the cpuset state of the cpu manager and resource plugins and  a new policy insid
 manager which can query the compute resource store for any allocations and allocation-removals
 done by the plugin.
 
-![image](https://user-images.githubusercontent.com/1184214/215233970-fbd6c801-dc44-4c0e-88be-0078c01a8e1a.png)<br>
+![image](ExternallyManagedResourceExtension.jpg)<br>
 Fig. 2.: CCI Resource Manager Architecture inside Kubelet
 
     Pod Spec “CCIDriverName Extension”
@@ -584,7 +584,7 @@ will be sufficient the cover plugin registration, status and health-check functi
 ##### Allocation & Container Removal Flow
 
 Admission and adding a Container:<br>
-![image](https://user-images.githubusercontent.com/1184214/215234931-6e9e03f5-3e7e-4bf4-9d6d-620279d9d458.png)<br>
+![image](CCIAllocationSequenceDiagram.jpg)<br>
 Fig. 3.: Sequence of container allocation which uses CCI driver<br><br>
 
 
@@ -604,7 +604,7 @@ the following sequence of steps (shown In Fig. 3.):<br>
 8 – 9. Add Container via CPU driver and CPU Manager: will trigger CRI operations and further resource configuration operations<br>
 
 Container Removal:<br>
-![image](https://user-images.githubusercontent.com/1184214/215234976-23835b19-fe89-4a36-88ca-cd6b85d7de4d.png)<br>
+![image](CCIRemovalSequenceDiagram.jpg)<br>
 
 Fig.4.: Container removal sequence diagram involving cci plugins<br><br>
 The container removal case is described as a sequence in Fig.4. After registering
