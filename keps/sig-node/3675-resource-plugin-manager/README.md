@@ -501,6 +501,87 @@ the Pod resources will be allocated through the standard CPU manager within t ub
 alternative association approach can be considered during the implementation which can avoid
 Pod spec changes.
 
+1. CCI Resource Manager<br>
+These changes will need a separate resource manager component inside the container 
+manager which will handle plugin management tasks, including plugin registration and 
+invocations of registered plugins.  These tasks will be managed via grpc for Pods who 
+require one or more resource management plugin(s) to get successfully allocated.  In 
+the alpha version we provide to entry points to plugins on admission,  addContainer 
+and removeContainer lifetime events (plugins have to implement Admit, AddResource 
+and RemoveResource handlers accordingly). 
+
+2. CCI Resource Store<br>
+The Resource Manager uses a store to keep track of resourcesets which can include 
+cpusets, memory, etc ..  allocated by CCI Drivers. This information is gathered 
+per container. The store will be used by a new cpu manager policy to synchronize 
+the state between cpu manager and pluggable CCI Drivers.  The store offers the 
+following interface to manage resource sets.
+
+        +AddResource(Pod, container, resourceset)
+        +RemoveResource(container)
+        +AvailablResources(): resourceset
+
+3. The Container Compute Interface “CCI” CPU Manager Policy<br>
+The synchronization of cpuset state is done by a new policy inside the 
+cpu manager – “CCI”. For simplicity in alpha version we plan to support 
+best-effort QoS for all Pods not requiring a resource management driver. 
+In later phases we can support cover Pods requiring the static policy but
+no resource driver. 
+
+4. CCI Drivers Plugin Interface<br>
+The initial interface of resource management plugins is very simple and consists 
+of three functions:
+
+        +cciAdmit(Pod, container, cci spec, available resources) : <err, resourceset>
+        +cciAddContainerResource (Pod, container, cgroup, containerid): <err>
+        +cciRemoveContainerResource (containerid): err
+
+`cciAdmit` function provides information if a given container belonging to a
+Pod and having a specific cci spec can be admitted to next stage of the allocation 
+pipeline. The admission will return a reserved resource-set or error. In case of 
+successful admission the resource set will be stored in the CCI Store and made 
+available to the cpu manager policy. In the case of failure the error is reported
+back to user and the Pod allocation is cancelled.
+
+`cciAddContainerResource` function is called before container start with a given 
+Pod name and container name, cgroup of Pod and the container id. The driver than
+performs an allocation of the admitted resource-set.  In case of failure of the
+driver and error is returned.
+
+`cciRemoveContainerResource` function is called to free the cpu resources taken
+by a container. The functions returns nil if the operation was successful or an
+error if the operation failed on the plugin side.
+
+    /* 
+    CCIDriver a grpc service interface for cci resour ubelet d ent drivers.
+    The interface provides admission, allocation and cleanup entrypoints.
+    Drivers are registered  ubeletlet plugins and will be called by the 
+    cci resource manager for Pods which are associated with this driver.
+    */
+    service CCIDriver {
+      //cciAdmit admission function to reserve resources for a given container
+      rpc cciAdmit(AdmitRequest) returns (AdmitResponse) {}
+  
+      //cciAddContainerResource allocation entry point for admitted containers
+      rpc cciAddContainerResource (AddResourceRequest)
+        returns (AddResourceResponse) {}
+
+      //cciRemoveContainerResource clea ubelet dted resources for a given container
+      rpc cciRemoveContainerResource (RemoveResourceRequest)
+        returns (RemoveResourceResponse) {}
+    }
+
+5.	CCI Drivers Factory API<br>
+The KEP includes a new staged API which enabled the CCI driver creation. The 
+API can be used by a driver implementor to start a driver and automatically
+register it against Kubelet's CCI Resource Manager.
+
+6.	CCI Drivers Registration<br>
+The CCI driver registration can be handled by t ubeletlet plugin framework. 
+This approach is already used with device plugins and DRA plugins. The approach
+will be sufficient the cover plugin registration, status and health-check functionality.
+
+
 ### Test Plan
 
 <!--
