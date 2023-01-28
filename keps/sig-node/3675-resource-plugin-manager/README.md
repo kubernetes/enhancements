@@ -410,14 +410,14 @@ In the following, there is an example of a novel approach that could be
 fulfilled with the CCI architecture. This example presents a set of
 per-core attributes that enable precision beyond a policy-only based approach: 
 
-    \# A resource request which consists of:
-    \# 2 exclusive cores (no other processes running on them)
-    \# 	* the cores shall be siblings
-    \# 	* they shall run at 2.1 ghz
-    \# 	* application assigned has the highest priority on the core
-    \# 	* there are no IRQs on the core
-    \# 6 exclusive cores(no other processes running on them)
-    \# 4 shared cores(other processes can run on them) 
+    # A resource request which consists of:
+    # 2 exclusive cores (no other processes running on them)
+    # 	* the cores shall be siblings
+    # 	* they shall run at 2.1 ghz
+    # 	* application assigned has the highest priority on the core
+    # 	* there are no IRQs on the core
+    # 6 exclusive cores(no other processes running on them)
+    # 4 shared cores(other processes can run on them) 
     apiVersion: v1
     kind: ConfigMap
     metadata:
@@ -455,6 +455,51 @@ policy will be applied to all Pods to be processed. The configuration
 of the policy can happen directly in a CCI Compute Resource Driver Plugin
 as input argument in the yaml deployment. This methodology can be used to
 realize methodologies similar to the static CPU manager policy or other policies.
+
+##### Resource Manager Architecture
+
+The extension consists of an optional CCI driver inside Pod spec which
+indicates if a CCI driver exists, then it shall process compute resources. 
+The CCI plugin allocations can coexist with the existing CPU manager and 
+memory manager allocations through the introduction of a new policy inside 
+the CPU manager: cci-policy. The policy addition will allow the non-disruptive
+handling of all existing Pods without attached CCI drivers by the existing
+CPU manager and the triggering of Pod allocation done via the driver.
+The policy also takes care for fallback options, proper cluster start and 
+plugin failure handling.
+
+In the alpha version of the Resource Manager applies plugins to manage resource
+allocations for Pods which are explicitly marked to be handled by an allocation 
+plugin.  The overall architecture consists of a manager component – the Resource
+Manager inside the container manager, an optional Pod spec argument to identify which 
+Pods to be processed by the manager, a compute resource store – a component used to sync
+the cpuset state of the cpu manager and resource plugins and  a new policy inside cpu
+manager which can query the compute resource store for any allocations and allocation-removals
+done by the plugin.
+
+![image](https://user-images.githubusercontent.com/1184214/215233970-fbd6c801-dc44-4c0e-88be-0078c01a8e1a.png)<br>
+Fig. 2.: CCI Resource Manager Architecture inside Kubelet
+
+    Pod Spec “CCIDriverName Extension”
+    type PodSpec {
+       …
+    	 // CCIResourceDriver is an optional parameter which can identify if a Pod resource manager (cpu an memory)
+	    // has to be handled by a pluggable CCI resource driver 
+	    // This is an alpha field and requires enabling the
+    	 // CCIResourceManager feature gate.
+	    //
+    	 // This field is immutable.
+	    //
+	    // +featureGate=CCIResourceManager
+	    // +optional
+	    CCIResourceDriver string `js”n:”cciResourceDriver,omitem”ty” protob”f:”bytes,40,opt,name=cciResourceDri”er”`
+     …}
+
+The proposed extension relies on a new optional argument inside the Pod spec to `driverName`. 
+We use this optional argument to drive the allocation process. If the driver name is not provided,
+the Pod resources will be allocated through the standard CPU manager within t ubeletlet. An
+alternative association approach can be considered during the implementation which can avoid
+Pod spec changes.
 
 ### Test Plan
 
