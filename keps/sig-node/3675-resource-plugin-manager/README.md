@@ -596,12 +596,7 @@ store. The admit call on cpu manager side will trigger the CCI policy which will
 lookup inside the store to get the assigned cpuset for the new container.  If the operation 
 fails an error will be reported back to the user. On success the data will be stored in the 
 cpu manager state which then gets accessed by add container call. All blocking rpc calls are 
-configured in alpha with a reasonable timeout. The overall operations can be summarized as
-the following sequence of steps (shown In Fig. 3.):<br>
-1-2. Admit via CCI driver<br>
-3. On Success store resource set in CCI Store/ On Failure: return error<br>
-4 – 7. Admit via CPU Manager: update state if Pod admission was successful<br>
-8 – 9. Add Container via CPU driver and CPU Manager: will trigger CRI operations and further resource configuration operations<br>
+configured in alpha with a reasonable timeout. 
 
 Container Removal:<br>
 ![image](CCIRemovalSequenceDiagram.jpg)<br>
