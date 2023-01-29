@@ -657,23 +657,27 @@ extending the production code to implement this enhancement.
 *	CCI Resource Manager: target code cvg >=80%
 *	CCI Store: target code cvg >=80%
 *	CCI CPU Manager Policy: target code cvg >=80%
-* Integration Tests
-* CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
-* State Consistency (CPU Manager + CCI) integrateion test
+
 *	End-to-End tests
-*	Example mocked driver test 
+
 
 ###### BETA
 
 *	Introduce fail-safety tests
-*	Further integration tests with Device Manager and DRA
-*	Integration test including static QoS and driver-based allocation
-*	End-to-End tests including Driver Allocations and cpu manager allocations
+
+
+
 *	Performance/Scalabilty tests
 
 
 ##### Integration tests
-
+###### Alpha
+* CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
+* State Consistency (CPU Manager + CCI) integrateion test
+###### BETA
+* CPU, Memory, Topology and CCI Manager Integration test
+*	Further integration tests with Device Manager and DRA
+*	Integration test including static QoS and driver-based allocation
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
@@ -685,7 +689,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 - <test>: <link to test coverage>
 
 ##### e2e tests
-
+###### Alpha
+*	E2E test with mocked CCI driver 
+###### BETA
+*	End-to-End tests including CCI Driver Allocations and cpu manager allocations
+*	End-to-End tests including CCI Driver Allocations , cpu manager allocations amd diveces
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
@@ -727,7 +735,7 @@ functionality is accessed.
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 -->
-#### Alpha
+#### Alpha to Beta
 
 - Feature implemented behind a feature flag
 - Initial e2e tests completed and enabled
@@ -740,16 +748,12 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 -	Have plugins specific to common use cases or environments
 -	Smooth integration with scheduler extensions/ plugins …
 
-#### Beta
+#### Beta to GA
 
-- Gather feedback from developers and surveys
-
-#### GA
-
+- Gather feedback from developers and surveys and integrate it
 -	Successful adoption across users
 -	Proven Components Correctness
 -	Performance tests completion
-
 - N examples of real-world usage
 
 #### Deprecation
