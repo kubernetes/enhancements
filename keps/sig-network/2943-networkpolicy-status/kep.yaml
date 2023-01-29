@@ -3,7 +3,7 @@ kep-number: 2943
 authors:
   - "@rikatz"
 owning-sig: sig-network
-status: implementable
+status: withdrawn
 creation-date: 2021-09-06
 reviewers:
   - "@thockin"
@@ -23,7 +23,7 @@ see-also:
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.24"
+latest-milestone: "v1.27"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:

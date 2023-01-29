@@ -8,7 +8,7 @@ participating-sigs:
   - sig-auth
   - sig-node
   - sig-storage
-status: implementable
+status: implemented
 creation-date: 2020-10-09
 reviewers:
   - "@jsturtevant"

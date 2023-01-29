@@ -616,6 +616,7 @@ main focus will be on kubectl and golang clients.
 #### Beta
 
 - kubectl uses the aggregated discovery feature by default
+- Metrics are added
 
 #### GA
 
@@ -678,7 +679,12 @@ channel if you need any help or guidance. -->
 
 ###### Does enabling the feature change any default behavior?
 
-No
+Clients using client-go version 1.26 and up will use the aggregated
+discovery endpoint rather than the unaggregated discovery endpoint.
+This is handled automatically in client-go and clients should see less
+requests to the api server when fetching discovery information. Client
+versions older than 1.26 will continue to use the old unaggregated
+discovery endpoint without any changes.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -690,7 +696,13 @@ and restarting the component. No other changes should be necessary to
 disable the feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
---> Yes, the feature may be disabled by reverting the feature flag.
+-->
+
+Yes, the feature may be disabled on the apiserver by reverting the
+feature flag. This will disable aggregated discovery for all clients. If there is a golang specific client side bug, the feature may also be
+turned off in client-go via the
+[WithLegacy()](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/client-go/discovery/discovery_client.go#L80)
+toggle and this will require a recompile of the application.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -731,6 +743,18 @@ feature flags will be enabled on some API servers and not others
 during the rollout. Similarly, consider large clusters and how
 enablement/disablement will rollout across nodes. -->
 
+During a rollout, some apiservers may support aggregated discovery and
+some may not. It is recommended that clients request for both the
+aggregated discovery document with a fallback to the unaggregated
+discovery format. This can be achieved by setting the Accept header to
+have a fallback to the default GVK of the `/apis` and `/api` endpoint.
+For example, to request the aggregated discovery type and fallback to
+the unaggregated discovery, the following header can be sent: `Accept:
+application/json;as=APIGroupDiscoveryList;v=v2beta1;g=apidiscovery.k8s.io,application/json`
+
+This kind of fallback is already implemented in client-go and this
+note is intended for non-golang clients.
+
 ###### What specific metrics should inform a rollback?
 
 <!-- What signals should users be paying attention to when the feature
@@ -748,10 +772,19 @@ term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+n/a. The API introduced does not store data and state is recalculated on the upgrade, downgrade, upgrade cycle. No state is preserved between versions.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!-- Even if applying deprecation policies, they may still surprise
 some users. -->
+
+By enabling aggregated discovery as the default, the new API is
+slightly different from the unaggregated version. The
+StorageVersionHash field is removed from resources in the aggregated
+discovery API. The storage version migrator will have an additional
+flag when initializing the discovery client to continue using the
+unaggregated API.
 
 ### Monitoring Requirements
 
@@ -765,6 +798,17 @@ the previous answers based on experience in the field. -->
 <!-- Ideally, this should be a metric. Operations against the
 Kubernetes API (e.g., checking if there are objects with field X set)
 may be a last resort. Avoid logs or events for this purpose. -->
+
+Operators can check whether an aggregated discovery request can be
+made by sending a request to `apis` with
+`application/json;as=APIGroupDiscoveryList;v=v2beta1;g=apidiscovery.k8s.io,application/json`
+as the Accept header and looking at the the `Content-Type` response
+header. A Content Type response header of `Content-Type:
+application/json;g=apidiscovery.k8s.io;v=v2beta1;as=APIGroupDiscoveryList`
+indicates that aggregated discovery is supported and a `Content-Type:
+application/json` header indicates that aggregated discovery is not
+supported. They can also check for the presence of aggregated
+discovery related metrics: `aggregated_discovery_aggregation_count`
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -802,14 +846,18 @@ the next question. -->
 - [x] Metrics
   - Metric name: `aggregator_discovery_aggregation_duration`
   - Components exposing the metric: `kube-server`
-  - This is a metric for exposing the time it took to aggregate all the
+  - This is a metric for exposing the time it took to aggregate all the api resources.
+
+  - Metric name: `aggregator_discovery_aggregation_count`
+  - Components exposing the metric: `kube-server`
+  - This is a metric for the number of times that the discovery document has been aggregated.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!-- Describe the metrics themselves and the reasons why they weren't
 added (e.g., cost, implementation difficulties, etc.). -->
 
-Yes. A metric for the regeneration count of the discovery document. `aggregator_discovery_aggregation_count`
+No.
 
 ### Dependencies
 
@@ -832,6 +880,12 @@ cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the
 feature: -->
+
+No, but if aggregated apiservers are present, the feature will attempt
+to contact and aggregate the data published from the aggregated
+apiserver on a set interval. If there is high error rate, stale data
+may be returned because the latest data was not able to be fetched
+from the aggregated apiserver.
 
 ### Scalability
 
@@ -858,6 +912,12 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching
     state, heartbeats, leader election, etc.) -->
 
+No. Enabling this feature should reduce the total number of API calls
+for client discovery. Instead of clients sending a discovery request
+to all group versions (`/apis/<group>/<version>`), they will only need
+to send a request to the aggregated endpoint to obtain all resources
+that the cluster supports.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!-- Describe them, providing:
@@ -866,11 +926,15 @@ Focusing mostly on:
   - Supported number of objects per namespace (for namespace-scoped
 objects) -->
 
+Yes, but these API types are not persisted.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!-- Describe them, providing:
   - Which API(s):
   - Estimated increase: -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -879,6 +943,8 @@ objects) -->
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every
 existing Pod) -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -890,6 +956,8 @@ details.
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos -->
 
+No.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!-- Things to keep in mind include: additional in-memory state,
@@ -899,6 +967,8 @@ and/or received over network, etc. This through this both in small and
 large cases, again with respect to the [supported limits].
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md -->
+
+No.
 
 ### Troubleshooting
 
@@ -913,6 +983,8 @@ may consider splitting it into a dedicated `Playbook` document
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature is built into the API server, and will not work if the API server is unavailable.
 
 ###### What are other known failure modes?
 
@@ -931,6 +1003,8 @@ the below template:
 why. -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+The feature can be rolled back by setting the AggregatedDiscoveryEndpoint feature flag to false.
 
 ## Implementation History
 
