@@ -747,6 +747,12 @@ Generally RBAC gives us the permissions we need to operate safely here.  No spec
 Known Risks:
 - A user without delete permission but with update permission could mark an object as part of an ApplySet, and then an administrator could inadvertently delete the object as part of their next apply/prune. This is also true of the current pruning implementation (by setting the last-applied-configuration annotation to any value). Mitigation: We will support the dry-run functionality for pruning.  Webhooks or future enhancements to RBAC/CEL may allow for granular permission on labels.
 
+- UserA could change the applyset ID on an existing applyset ApplySet1, copying the ID of a second applyset ApplySet2.  If UserB then
+applies to ApplySet1, they would delete objects from ApplySet2.  UserA did not necessarily have permission
+to delete those objects; UserB probably did not intend to prune objects from ApplySet2.  Mitigation might require additional
+restrictions on the applyset ID (such as choosing something that identifies the applyset parent, like `base64(GKNN)`,
+so we can detect a "fake" applyset ID), or we might add a backpointer label/annotation from child objects to the parent applyset.
+We will evaluate this during alpha development.
 
 ### Test Plan
 
