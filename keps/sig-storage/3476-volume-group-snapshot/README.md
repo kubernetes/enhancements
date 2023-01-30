@@ -40,7 +40,7 @@
     - [CSI Group Controller RPC](#csi-group-controller-rpc)
     - [CreateVolumeGroupSnapshot](#createvolumegroupsnapshot)
     - [DeleteVolumeGroupSnapshot](#deletevolumegroupsnapshot)
-    - [ControllerGetVolumeGroupSnapshot](#controllergetvolumegroupsnapshot)
+    - [GetVolumeGroupSnapshot](#getvolumegroupsnapshot)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -349,24 +349,6 @@ type VolumeGroupSnapshotSpec struct {
         // secret object contains more than one secret, all secrets are passed.
         // +optional
         VolumeGroupSnapshotSecretRef *SecretReference
-
-	// A list of VolumeSecrets
-        // This field is only needed if per volume secret is different from
-        // VolumeGroupSnapshotSecretRef
-        // +optional
-	VolumeSecretRefList []VolumeSecret
-}
-
-Type VolumeSecret {
-        // Name of a PVC 
-        Name string
-
-        // VolumeSecretRef is a reference to the secret object containing
-        // sensitive information to pass to the CSI driver to complete the CSI
-        // calls for VolumeGroupSnapshots.
-        // This field is optional, and may be empty if no secret is required. If the
-        // secret object contains more than one secret, all secrets are passed.
-        VolumeSecretRef *SecretReference
 }
 
 Type VolumeGroupSnapshotStatus struct {
@@ -581,35 +563,14 @@ message CreateVolumeGroupSnapshotRequest {
   // ControllerCreateVolumeGroupSnapshot request.
   // This field is OPTIONAL. Refer to the `Secrets Requirements`
   // section on how to use this field.
-  // The secrets provided in this field SHOULD be the same as
-  // the secrets provided in ControllerDeleteVolumeGroupSnapshot
-  // and ControllerGetVolumeGroupSnapshot requests for the same
-  // group snapshot unless if secrets are rotated after the
-  // group snapshot is created.
+  // The secrets provided in this field SHOULD be the same for
+  // all group snapshot operations on the same group snapshot.
   map<string, string> secrets = 3 [(csi_secret) = true];
-
-  // Volume secrets required by plugin to complete volume group
-  // snapshot creation request. This field is needed in case the
-  // volume level secrets are different from the above secrets
-  // for the group snapshot.
-  // This field is OPTIONAL.
-  repeated VolumeSecret volume_secrets = 4;
 
   // Plugin specific parameters passed in as opaque key-value pairs.
   // This field is OPTIONAL. The Plugin is responsible for parsing and
   // validating these parameters. COs will treat these as opaque.
-  map<string, string> parameters = 5;
-}
-
-message VolumeSecret {
-  // ID of the volume whose secrets are provided.
-  // This field is REQUIRED.
-  string volume_id = 1;
-
-  // Secrets required by plugin for a volume operation.
-  // This field is REQUIRED. Refer to the `Secrets Requirements`
-  // section on how to use this field.
-  map<string, string> secrets = 2 [(.csi.v1.csi_secret) = true];
+  map<string, string> parameters = 4;
 }
 
 message CreateVolumeGroupSnapshotResponse {
@@ -641,6 +602,17 @@ message VolumeGroupSnapshot {
   // Timestamp when the volume group snapshot is taken.
   // This field is REQUIRED.
   .google.protobuf.Timestamp creation_time = 3;
+
+  // Indicates if all individual snapshots in the group snapshot
+  // are ready to use as a `volume_content_source` in a
+  // `CreateVolumeRequest`. The default value is false.
+  // If any snapshot in the list of snapshots in this message have
+  // ready_to_use set to false, the SP MUST set this field to false.
+  // If all of the snapshots in the list of snapshots in this message
+  // have ready_to_use set to true, the SP SHOULD set this field to
+  // true.
+  // This field is REQUIRED.
+  bool ready_to_use = 4;
 }
 ```
 
@@ -677,10 +649,10 @@ message DeleteVolumeGroupSnapshotResponse {
 }
 ```
 
-#### ControllerGetVolumeGroupSnapshot
+#### GetVolumeGroupSnapshot
 
 ```
-message ControllerGetVolumeGroupSnapshotRequest {
+message GetVolumeGroupSnapshotRequest {
   option (alpha_message) = true;
 
   // The ID of the group snapshot to fetch current group snapshot
@@ -689,7 +661,7 @@ message ControllerGetVolumeGroupSnapshotRequest {
   string group_snapshot_id = 1;
 
   // Secrets required by plugin to complete
-  // ControllerGetVolumeGroupSnapshot request.
+  // GetVolumeGroupSnapshot request.
   // This field is OPTIONAL. Refer to the `Secrets Requirements`
   // section on how to use this field.
   // The secrets provided in this field SHOULD be the same as
@@ -699,7 +671,7 @@ message ControllerGetVolumeGroupSnapshotRequest {
   map<string, string> secrets = 2 [(csi_secret) = true];
 }
 
-message ControllerGetVolumeGroupSnapshotResponse {
+message GetVolumeGroupSnapshotResponse {
   option (alpha_message) = true;
 
   // This field is REQUIRED
