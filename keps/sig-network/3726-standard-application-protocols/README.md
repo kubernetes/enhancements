@@ -63,18 +63,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -197,6 +197,12 @@ In order to be included in the collection, a new protocol must:
 * Run on top of L4 protocol supported by Kubernetes Service
 * Be supported in two or more implementations
 * Be well defined and broadly used
+
+<<[UNRESOLVED sig-network ]>>
+if we require two implementations to support a protocol before we include it in the standard collection (i.e k8s.io prefixed collection) we create a situation where we force them to support their own domain prefixed values and k8s.io-prefixed values, have their users migrate to the k8s.io values once they are included, and also the k8s.io ones might end up not be quite the same definition as the implementation specific ones (as we see in the GKE & Istio example).
+
+The proposed followup work might address this problem also when we turn the field into a list
+<<[/UNRESOLVED]>>
 
 ### Followup work
 To support implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port we need to turn `AppProtocol` to a list.
