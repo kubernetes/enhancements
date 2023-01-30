@@ -198,13 +198,14 @@ In order to be included in the collection, a new protocol must:
 * Be supported in two or more implementations
 * Be well defined and broadly used
 
-```
 <<[UNRESOLVED sig-network ]>>
+
 if we require two implementations to support a protocol before we include it in the standard collection (i.e k8s.io prefixed collection) we create a situation where we force them to support their own domain prefixed values and k8s.io-prefixed values, have their users migrate to the k8s.io values once they are included, and also the k8s.io ones might end up not be quite the same definition as the implementation specific ones (as we see in the GKE & Istio example).
 
 The proposed followup work might address this problem also when we turn the field into a list
+
 <<[/UNRESOLVED]>>
-```
+
 
 ### Followup work
 To support implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port we need to turn `AppProtocol` to a list.
