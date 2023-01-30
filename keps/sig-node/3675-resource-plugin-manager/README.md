@@ -248,11 +248,13 @@ Users would like to be able to address the following use cases:
 * Diffentiate between different configurations of cores and memory, for instance cores
   designated as performance versus those designated as efficiency cores 
 * Have custom plugins to optimize for particular types of workloads.  These plugins
-  may be built for performance, power reduction, or both.  <br>
+  may be built for performance, power reduction, cpu savings, et cetera.  <br>
   Note:  Currently, there are very limited sets of available topology policies.  Every
   new policy must be approved and be lockstep with the Kuberenetes release process.
 * Be able to hot-plug and test new resource managers.  
-* Be able to remove some of the complexity with current setup.
+* Be able to remove some of the complexity with current setup and, over time, reduce
+  the amount of code contained within Kubelet.  Instead, build a library with specific
+  needs.
 * Have a faster path to desired changes, without potentially impacting the core of 
   Kubernetes with every policy change. <br>
   Note that current solutions have been cropping up to allow for resource management
@@ -260,7 +262,6 @@ Users would like to be able to address the following use cases:
   and overriding current Kubelet allocation.  We should provide a path otherwise.
 * Be able to get information on the pods on the node without having to contact the
   API server, which may not have updated information. 
-* Be able to change the number of resources available on the node, at any time, and update.
 * Be able to do research, with minimum toil, on new policies and resource management strategies
 
 This design will also use the already tried and true gRPC, which is used for many other
