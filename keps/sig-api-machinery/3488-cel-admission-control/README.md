@@ -907,7 +907,7 @@ Problem examples:
 | CRD is in multiple clusters, but schema differs        | If policy author is aware of the schema variations, can they write policies that work for all the variations? |
 | Validation of an aggregated API server type            | Main API server does not have type definitions |
 
-Due to these complications, we have decided to evalute CEL expressions
+Due to these complications, we have decided to evaluate CEL expressions
 dynamically. Informational type checking will be provided (except for aggregated
 API server types), but will be surfaced only as warnings. See "Alternatives
 Considered" section for details of all the alternatives we reviewed when
@@ -1165,7 +1165,7 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
 
 - CEL estimated cost limits
 - CEL runtime cost limits
-- Go context cancelation as a way of halting CEL execution if the request
+- Go context cancellation as a way of halting CEL execution if the request
   context is canceled for any reason.
 
  Estimated cost is, unfortunately, not something we can offer for admission with
@@ -1174,11 +1174,11 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
  for the same cases where we provide informational type checking, in which case
  we can report any cost limit violations in the same way we report type checking
  violations. Note that for built-in types, where `max{Length,Items,Properties}`
- value valiations are not available, estimated cost calculations will not be
- nearly as helpful or actionable. I recommend we do not attempt any estimated
- cost calculations on built-in types until the value validations are available.
+ value validations are not available, estimated cost calculations will not be
+ nearly as helpful or actionable. We do not plan to enforce any estimated
+ cost calculations on ValidatingAdmissionPolicy.
 
- Runtime cost limits can should be established and enforced. Exceeding the cost
+ Runtime cost limits should be established and enforced. Exceeding the cost
  limit will trigger the `FailurePolicy`, so this will need to be documented, but
  unlike webhooks, runtime cost is deterministic (it is purely a function of the
  input data and the CEL expression and is independent of underlying hardware or
@@ -1186,7 +1186,7 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
  webhook timeouts.
 
  The request's Go context will be passed in to all CEL evaluations such that
- cancelation halts CEL evaluation, if, for any reason, the context is canceled.
+ cancellation halts CEL evaluation, if, for any reason, the context is canceled.
 
 #### Safety Features
 
