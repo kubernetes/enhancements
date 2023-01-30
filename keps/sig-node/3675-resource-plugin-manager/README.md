@@ -1195,7 +1195,7 @@ information to express the idea and why it was not acceptable.
 -->
   We could choose, instead, to continually extend existing Kubelet managers.  This is
   already complicated and becomes more so as users want more and more specialty use
-  cases.  Additionally, chip companies are coming up with increasingly complicatde 
+  cases.  Additionally, chip companies are coming up with increasingly complicated 
   architecture and the community will not want to spend time and resources supporting
   odd changes particular for particular chipsets.  Rather, we should choose to reduce
   complexity within the Kubelet over time.
