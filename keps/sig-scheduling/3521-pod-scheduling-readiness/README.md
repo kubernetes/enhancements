@@ -521,10 +521,10 @@ The following scenarios need to be covered in integration tests:
 can be moved back to activeQ when `.spec.schedulingGates` is all cleared
 - Ensure no significant performance degradation
 
-- `test/integration/scheduler/queue_test.go`: Will add new tests.
-- `test/integration/scheduler/plugins/plugins_test.go`: Will add new tests.
-- `test/integration/scheduler/enqueue/enqueue_test.go`: Will add new tests.
-- `test/integration/scheduler_perf/scheduler_perf_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=BenchmarkPerfScheduling
+- `test/integration/scheduler/queue_test.go`: added in Alpha.
+- `test/integration/scheduler/plugins/plugins_test.go`: added in Alpha.
+- `test/integration/scheduler/enqueue/enqueue_test.go`: added in Alpha.
+- `test/integration/scheduler_perf/scheduler_perf_test.go`: will add in Beta. (https://storage.googleapis.com/k8s-triage/index.html?test=BenchmarkPerfScheduling)
 
 ##### e2e tests
 
@@ -538,10 +538,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-Create a test with the following sequences:
+An e2e test was created in Alpha with the following sequences:
 
-- Provision a cluster with feature gate `PodSchedulingReadiness=true` (we may need to setup a testgrid
-for when it's alpha)
 - Create a Pod with non-nil `.spec.schedulingGates`.
 - Wait for 15 seconds to ensure (and then verify) it did not get scheduled.
 - Clear the Pod's `.spec.schedulingGates` field.
@@ -790,6 +788,12 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+It shouldn't impact already running workloads. It's an opt-in feature, and users need to set
+`.spec.schedulingGates` field to use this feature.
+
+When this feature is disabled by the feature flag, the already created Pod's `.spec.schedulingGates`
+field is preserved, however, the newly created Pod's `.spec.schedulingGates` field is silently dropped.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
@@ -878,7 +882,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [x] Events
   - Event Type: PodScheduled
   - Event Status: False
-  - Event Reason: WaitingForGates SchedulingGated
+  - Event Reason: SchedulingGated
   - Event Message: Scheduling is blocked due to non-empty scheduling gates
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -1005,7 +1009,10 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No to existing API objects that doesn't use this feature.
+- No to existing API objects that doesn't use this feature.
+- For API objects that use this feature:
+  - API type: Pod
+  - Estimated increase in size: new field `.spec.schedulingGates` about ~64 bytes (in the case of 2 scheduling gates)
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1018,7 +1025,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-No.
+This delay should be negligible.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1049,7 +1056,11 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Update/Patch requests will be rejected.
+During the downtime of API server and/or etcd:
+
+- Running workloads that don't need to remove their scheduling gates function well.
+- Running workloads that need to update their scheduling gates will stay in scheduling gated state
+as API requests will be rejected.
 
 ###### What are other known failure modes?
 
