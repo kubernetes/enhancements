@@ -92,7 +92,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
@@ -248,11 +247,13 @@ Users would like to be able to address the following use cases:
 * Diffentiate between different configurations of cores and memory, for instance cores
   designated as performance versus those designated as efficiency cores 
 * Have custom plugins to optimize for particular types of workloads.  These plugins
-  may be built for performance, power reduction, or both.  <br>
+  may be built for performance, power reduction, cpu savings, et cetera.  <br>
   Note:  Currently, there are very limited sets of available topology policies.  Every
   new policy must be approved and be lockstep with the Kuberenetes release process.
 * Be able to hot-plug and test new resource managers.  
-* Be able to remove some of the complexity with current setup.
+* Be able to remove some of the complexity with current setup and, over time, reduce
+  the amount of code contained within Kubelet.  Instead, build a library with specific
+  needs.
 * Have a faster path to desired changes, without potentially impacting the core of 
   Kubernetes with every policy change. <br>
   Note that current solutions have been cropping up to allow for resource management
@@ -260,7 +261,6 @@ Users would like to be able to address the following use cases:
   and overriding current Kubelet allocation.  We should provide a path otherwise.
 * Be able to get information on the pods on the node without having to contact the
   API server, which may not have updated information. 
-* Be able to change the number of resources available on the node, at any time, and update.
 * Be able to do research, with minimum toil, on new policies and resource management strategies
 
 This design will also use the already tried and true gRPC, which is used for many other
@@ -340,17 +340,34 @@ bogged down.
 
 #### Custom workloads, such as HPC/AI/ML
 
-Custom workloads often have a desire to mix, for instance, shared and pinned cores.
-Additionally, they may 
+Custom workloads often have a desire to mix types of cores.  For instance, a workload
+should be able to have some number of static cores and some number of shared cores.
+A node should be able to allow both types of cores, without having to have one setting
+or another, and be able to pull from these pulls accordingly.  Additionally, there may 
+be a need to have some high-priority cores for higher performance and other lower-priority
+cores for other less-sensitive parts of a workloads.  In these use cases, the workloads 
+may also have particular types of NUMA splits required.
 
 #### Power optimization of workloads
 
 Cores should be able to be quickly spun up or down according to resource requirements.
+Additionally, the nodes should be as densely packed as possible regrading the abliity to
+do core use.  There should also be the ability to choose between efficiency cores and
+performance cores within newer architectures, according to workload requirements.
 
 #### Research of new resource management patterns within the cloud
 
+There are a variety of modifiers that can be placed around cores.  Static cores,
+isolated cores, shared cores, efficiency cores, and performance cores are only the
+beginning of unexplored spaces.  Being able to play with various patterns in research
+without having to be an expert in how to modify Kubelet and it's multiple internal
+managers is a big benefit to the research community.
+
 #### User-specific plugins
 
+A user may have very specific allocation patterns they require.  This sort of capability
+may be rare and not belong upstream in mainstream Kubernetes, but there should still
+be a simple way to do allow users to do their specific experiments.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -1194,7 +1211,7 @@ information to express the idea and why it was not acceptable.
 -->
   We could choose, instead, to continually extend existing Kubelet managers.  This is
   already complicated and becomes more so as users want more and more specialty use
-  cases.  Additionally, chip companies are coming up with increasingly complicatde 
+  cases.  Additionally, chip companies are coming up with increasingly complicated 
   architecture and the community will not want to spend time and resources supporting
   odd changes particular for particular chipsets.  Rather, we should choose to reduce
   complexity within the Kubelet over time.
