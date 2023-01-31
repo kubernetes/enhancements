@@ -224,8 +224,9 @@ Alpha metrics have no stability guarantees but are parseable by the static analy
 `Beta` metrics have *some* stability guarantees. Specifically, we guarantee that:
 
  - `Beta` metrics will not be removed without first being explicitly deprecated. 
-    + you can deprecate Beta metrics at any point if because of changes in underlying code/feature (i.e. it's impossible to compute such metric with the code changes, you can remove it after one release)
-    + if the metric is still possible to expose (we just think it's not the right one, e.g. we want to remove some label), but technically can still expose it, we leave it deprecated for 3 releases
+    + you can deprecate Beta metrics at any point:
+      * if because of changes in underlying code/feature it's impossible to compute such metric the metric can be removed after one release
+      * if the metric is still possible to expose (we just think it's not the right one, e.g. we want to remove some label), but technically can still expose it, we leave it deprecated for 3 releases
  - Furthermore, `Beta` metrics are guaranteed to be **forward compatible** in respect to alerts and queries which may be written against them. By "forward compatible", we mean that queries and alerts which are written against the metric and its labels will continue to work in the future. We ensure forward compatibility by ensuring that **labels can only be added**, *and not removed*, from `Beta` metrics.
  - `Beta` metrics will be included in metric auto-documentation
 
@@ -343,7 +344,7 @@ This should not affect upgrade/rollback paths.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No.
+`Alpha` metrics will be recategorized as `Internal`.
 
 ### Monitoring Requirements
 
@@ -365,7 +366,7 @@ N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-`registered_metrics_total` will be used to calculate the number of registered stable metrics.
+No.
 
 ### Dependencies
 
@@ -373,7 +374,7 @@ Prometheus and the Kubernetes metric framework.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-In order to ingest these metrics, one needs a prometheus scraping agent and some backend to persist the metric data.
+No.
 
 ### Scalability
 
