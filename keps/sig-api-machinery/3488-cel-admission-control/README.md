@@ -29,6 +29,7 @@
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
       - [Use Cases](#use-cases)
+      - [Policy Predicates](#policy-predicates)
       - [Variables](#variables)
     - [Secondary Authz](#secondary-authz)
     - [Access to namespace metadata](#access-to-namespace-metadata)
@@ -1010,6 +1011,8 @@ However, enforcing types for every expression and object is not feasible because
 - Aggregated API servers
 
 Problem examples:
+
+ create mode 100644 keps/sig-network/3458-remove-transient-node-predicates-from-service-controller/README.md
 
 | Problem                                          | Summary                                                                                                               |
 |--------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
