@@ -9,13 +9,20 @@ participating-sigs:
 status: implementable
 creation-date: 2023-01-10
 reviewers:
-  - "@BenTheElder"
-  - "@puerco"
   - "@ameukam"
+  - "@cpanato"
+  - "@dims"
+  - "@jeremyrickard"
+  - "@justaugustus"
+  - "@saschagrunert"
 approvers:
-  - "@BenTheElder"
-  - "@puerco"
+reviewers:
   - "@ameukam"
+  - "@cpanato"
+  - "@dims"
+  - "@jeremyrickard"
+  - "@justaugustus"
+  - "@saschagrunert"
 stage: stable
 latest-milestone: "v1.27"
 milestone:
