@@ -26,6 +26,7 @@
     - [Limits](#limits)
   - [Phase 2](#phase-2)
     - [Enforcement Actions](#enforcement-actions)
+    - [Audit Annotations](#audit-annotations)
     - [Audit Events](#audit-events)
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
@@ -37,7 +38,7 @@
     - [Safety Features](#safety-features)
     - [Aggregated API servers](#aggregated-api-servers)
     - [CEL function library](#cel-function-library)
-    - [Audit Annotations](#audit-annotations)
+    - [Audit Annotations](#audit-annotations-1)
     - [Client visibility](#client-visibility)
     - [Metrics](#metrics)
   - [User Stories](#user-stories)
@@ -1024,66 +1025,36 @@ this enhancement.
 
 #### Enforcement Actions
 
-For parity with admission webhooks, a validating policy may also emit audit
-annotations and warnings:
-
-- [Audit
-  annotations](https://github.com/kubernetes/kubernetes/blob/97bbf07d3f3f20332912ee411fdf75ce84425e28/staging/src/k8s.io/api/admission/v1/types.go#L142)
-  are key/value pairs included in the audit event for an admission request. The
-  audit annotation key supplied by the policy definition author will be prefixed
-  with the name of the `ValidatingAdmissionPolicy` and policy binding, e.g.:
-  `mypolicy.mygroup.example.com/mybinding.mygroup.example.com/<annotation-key>`.
-- [Warnings](https://kubernetes.io/blog/2020/09/03/warnings/#admission-webhooks)
-  are string messages that are returned to API clients. Warning are returned for
-  both requests that are accepted and requests that are rejected.
-
-`ValidatingAdmissionPolicy` may declare audit annotations in the policy
-definition. E.g.:
-
-```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
-kind: ValidatingAdmissionPolicy
-...
-spec:
-  ...
-  validations:
-    - expression: <expression>
-  auditAnnotations:
-    - includeWhen: <expression> # optional field
-      key: "my-audit-key"
-      valueExpression: <expression that evaluates to a string>
-```
-
-Additionally, `ValidatingAdmissionPolicyBinding` resource may control how
-admission is enforced. This is performed using a single field. E.g.:
+`ValidatingAdmissionPolicyBinding` resources may control how admission is
+enforced. This is performed using a single field. E.g.:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1alpha1
 kind: ValidatingAdmissionPolicyBinding
 ...
 spec:
-  enforcement: warn # optional field
+  validationActions: [warn, audit] # optional field
 ```
+
+The enum options will be:
 
 - `deny`: Validation failures result in a denied request. (default beahvior if
   field is unset)
-- `warn`: Validation failures are reported as warnings to the client.
-- `silent`: Validation failures are not reported to clients. Audit annotations
-          for any failed validations are still included in audit events (see
-          below).
-- (To disable audit annotations, delete the binding)
+- `warn`: Validation failures are reported as warnings to the client. (xref: [Admisssion Webhook Warnings](https://kubernetes.io/blog/2020/09/03/warnings/#admission-webhooks))
+- `audit`: Validation failures are published as audit events (see below Audit
+  Annotations section for details).
 
 Systems that need to aggregate validation failures may implement an [audit
 webhook
 backend](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/#webhook-backend). See
 below "Audit Events" for details.
 
-For singleton policies, the enforcement field will be set on the policy definition.
+For singleton policies, the `validationActions` field will be set on the policy definition.
 
-Metrics will include enforcement so that cluster administrators can monitor the
-validation failures of a binding before setting enforcement to `deny`.
+Metrics will include validation action so that cluster administrators can monitor the
+validation failures of a binding before setting `validationActions` to `deny`.
 
-Supported use cases:
+This enables the following use cases:
 
 - A policy framework captures enforcement violations during dry run and
   aggregates them. (E.g. When in DryRun mode, OPA Gatekeeper aggregates
@@ -1094,18 +1065,56 @@ Supported use cases:
   knowing all the details of the policies. During rollout the cluster admin
   needs a state where the policies being rolled out cannot result in admission
   rejection. With the enforcement field on bindings, cluster admins can decide
-  between `silent` and `warn` as the initial state and then transition through
-  the states until the binding reaches `deny`, monitoring metrics and audit
-  events along the way.
+  which initial actions to enable and then add actions until `deny` is enabled.
+  The cluster admin may monitoring metrics, warnings and audit events along the
+  way.
 - A policy framework needs different enforcement actions at different
   enforcement points. Since this API defines the behavior of only the admission
-  enforcement point, higher level constructs can map to this enforcement point
-  as needed.
+  enforcement point, higher level constructs can map to the actions of this
+  enforcement point as needed.
+
+Future work:
+
+ValidatingAdmissionPolicy resources might, in the future, add a `warnings` field
+adjacent to the `validations` and `auditAnnotations` fields to declare
+expressions only ever result in warnings. This would allow
+ValidatingAdmissionPolicy authors to declare a expression as non-enforcing
+regardless of `validationActions`.
+
+#### Audit Annotations
+
+`ValidatingAdmissionPolicy` may declare [Audit
+  annotations](https://github.com/kubernetes/kubernetes/blob/97bbf07d3f3f20332912ee411fdf75ce84425e28/staging/src/k8s.io/api/admission/v1/types.go#L142)
+  in the policy definition. E.g.:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+...
+spec:
+  ...
+  validations:
+    - expression: <expression>
+  auditAnnotations:
+    - key: "my-audit-key"
+      valueExpression: <expression that evaluates to a string>
+```
+
+The published annotation key will be of the form `<ValidatingPolicyDefinition
+name>/<auditAnnotation key>` and will be validated as a
+[QualifiedName](https://github.com/kubernetes/kubernetes/blob/dfa4143086bf504c6c72d5eee8a2210b8ed41b9a/staging/src/k8s.io/apimachinery/pkg/util/validation/validation.go#L43).
+
+The validation rule will be: `len(key) < QualifierName.maxLength - len(policy
+name) - 1` to accommodate the `<ValidatingPolicyDefinition
+name>/<auditAnnotation key>` audit annotation key format.
+
+If `valueExpression` returns a string, the audit annotation is published.  If
+`valueExpression` returns null, the audit annotation is omitted. No other return
+types will be supported.
 
 #### Audit Events
 
-All audit event keys are prefixed by
-`<ValidatingPolicyDefinition name>/<ValidatingPolicyDefinitionBinding name>/`.
+All audit event keys are prefixed by `<ValidatingPolicyDefinition name>/`.
 
 At Metadata audit level or higher, when a validating admission binding fails any
 validation expression, details are included in the audit annotations
@@ -1117,7 +1126,7 @@ for the audit event under the key `validation_failures`. E.g.:
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "annotations": {
-        "mypolicy.mygroup.example.com/mybinding.mygroup.example.com/validation_failure": "{\"expression\": 1, \"message\": \"x must be greater than y\", \"enforcement\": \"deny\"}"
+        "mypolicy.mygroup.example.com/validation_failure": "{\"expression\": 1, \"message\": \"x must be greater than y\", \"enforcement\": \"deny\", \"binding\": \"mybinding.mygroup.example.com\"}"
         # other annotations
         ...
     }
@@ -1135,7 +1144,7 @@ are included with the key provided. E.g.:
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "annotations": {
-        "mypolicy.mygroup.example.com/mybinding.mygroup.example.com/myauditkey": "my audit value"
+        "mypolicy.mygroup.example.com/myauditkey": "my audit value"
         # other annotations
         ...
     }
