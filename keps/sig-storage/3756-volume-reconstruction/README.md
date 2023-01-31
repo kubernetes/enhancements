@@ -328,6 +328,9 @@ a feature gate.
 
 ## Design Details
 
+This section serves as a design document of the proposed *and* the old
+VolumeManager startup + volume reconstruction during that.
+
 ### Proposed VolumeManager startup
 
 When kubelet starts, VolumeManager starts DSWP and reconciler
@@ -417,7 +420,6 @@ then periodically does:
    3. For volumes that failed reconstruction kubelet cannot call appropriate
       volume plugin to unmount them. Kubelet at least tries to unmount the
       directory and clean up any orphan files there.
-
 
 #### Observability
 
@@ -540,8 +542,19 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 Both are for the old reconstruction code, we don't have a job that enables
 alpha features + runs `[Disruptive]` tests.
 
-TODO: check why it's flaky. *235 failures (3 in last day) out of 130688 builds
-from 1/11/2023, 1:00:33 AM to 1/25/2023*
+Recent results:
+
+> *235 failures (3 in last day) out of 130688 builds from 1/11/2023, 1:00:33 AM
+> to 1/25/2023*
+
+I checked couple of the recent flakes and all failed because they could not
+create namespace for the test:
+
+https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-cri-containerd-e2e-cos-gce-serial/1620328095124819968:
+
+> Unexpected error while creating namespace: Post
+> "https://35.247.99.121/api/v1/namespaces": dial tcp 35.247.99.121:443:
+> connect: connection refused
 
 ### Graduation Criteria
 
