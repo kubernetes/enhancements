@@ -592,12 +592,7 @@ well as the [existing list] of feature gates.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MatchLabelKeysInPodAffinityAndPodAntiAffinity`
   - Components depending on the feature gate: `kube-scheduler`, `kube-apiserver`
-- [x] Other
-  - Describe the mechanism: when `PodAffinityTerm` has `MatchLabelKeys`, The scheduler will use those keys to look up label values from the incoming pod; and those key-value labels are ANDed with `LabelSelector` (the existing field). 
-  - Will enabling / disabling the feature require downtime of the control
-    plane?: No.
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).: No.
+- [ ] Other
 
 ###### Does enabling the feature change any default behavior?
 
@@ -646,7 +641,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-No - Only unit and integration tests will be added.
+Yes. The tests to confirm the behavior on switching the feature gate will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
