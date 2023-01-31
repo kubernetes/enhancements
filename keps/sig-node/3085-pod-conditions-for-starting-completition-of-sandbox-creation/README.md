@@ -1209,8 +1209,6 @@ used to confirm that the new pod condition introduced is being:
 This section must be completed when targeting beta to a release.
 -->
 
-Skipping this section at the Alpha stage and will populate at Beta.
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -1223,12 +1221,38 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+This flag is only relevant for the Kubelet. Therefore, the new condition will be
+reported for pods scheduled on nodes that have the feature enabled.
+
+A controller or service that consumes the new pod condition should be enabled
+only after rollout of the new condition has succeeded on all nodes. Similarly,
+the controller or service that consumes the new pod condition should be disabled
+before the rollback. This helps prevent a controller/service consuming the
+condition getting the data from pods running in a subset of the nodes in the
+middle of a rollout or rollback.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+A sharp increase in the number of PATCH requests to API Server from Kubelets
+after enabling this feature is a sign of potential problem and can inform a
+rollback. A cluster operator may monitor
+```
+apiserver_request_total{verb="PATCH", resource="pods", subresource="status"}
+```
+for this.
+
+This may be the case in clusters that use a special runtime environment like
+microVM/Kata, where the sandbox may crash repeatedly (without ever getting a
+chance to start containers) resulting in lots of potential updates due to the
+new condition "flapping". However, in such environments, this may already be the
+case with existing pod conditions like ContainersReady and Ready (unless the
+sandbox environment/VM crashes very early before a single container is run).
+Batching of pod status updates from the Kubelet status manager will also help.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1238,19 +1262,25 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade/downgrade of Kubelet incorporating this feature (preceded with draining
+of pods) has been tested successfully.
+
+New pods scheduled on the node after un-cordoning following node
+upgrade/downgrade surface the expected pod conditions.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
+No
+
 ### Monitoring Requirements
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
-
-Skipping this section at the Alpha stage and will populate at Beta.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1259,6 +1289,13 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+This question isn't totally relevant for this feature, since this is an
+administrator-enabled feature controlled via kubelet flag, not something the
+user controls with an API server resource spec.
+
+Checking the Pod conditions on nodes with this feature enabled is the simplest
+way to check if the feature is enabled properly on a vanilla k8s cluster.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1273,8 +1310,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason:
-- [ ] API .status
-  - Condition name:
+- [x] API .status
+  - Condition name: PodReadyToStartContainers reported for pod
   - Other field:
 - [ ] Other (treat as last resort)
   - Details:
@@ -1302,12 +1339,8 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: There are no specific SLIs for the Kubelet Status Manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1315,6 +1348,15 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+New metrics may be added to the Kubelet status manager to surface fine grained
+information about updates to overall pod status as well as specific pod
+conditions. However, such a change affects the whole Kubelet Status Manager
+(rather than specific pod conditions) and thus beyond the scope of this KEP.
+
+A general Kubernetes metrics collector like Kube State Metrics (that already
+consume pod condifitions and surface those as metrics) will need to be enhanced
+to consume the new pod condition in this KEP.
 
 ### Dependencies
 
