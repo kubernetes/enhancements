@@ -23,9 +23,9 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
-- [Implementation History](#implementation-history-1)
   - [Alpha](#alpha-1)
   - [Beta](#beta-1)
+  - [GA](#ga-1)
 - [Alternatives](#alternatives)
 - [References](#references)
 <!-- /toc -->
@@ -183,6 +183,7 @@ Depending on skew strategy:
   - connect timeout
   - protocol (HTTP, QUIC)
 - Close on any remaining open issues & bugs
+- Promote tests to conformance
 
 ### Upgrade / Downgrade Strategy
 
@@ -198,37 +199,11 @@ Downgrade: gRPC probes will not be supported in a downgrade from Alpha.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
 
 Feature enablement will be guarded by a feature gate flag.
 
 ###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
--->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `GRPCContainerProbe`
@@ -250,42 +225,26 @@ It becomes enabled again after the `kubelet` restart.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Y
-es, unit tests for the feature when enabled and disabled will be
+Yes, unit tests for the feature when enabled and disabled will be
 implemented in both kubelet and api server.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+We passed the version skew problem for the new API. No planning is required.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+We passed the version skew problem - the API will be available on any supported
+version skew. So no issues are expected with rollout and rollback.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Rollback wouldn't address issues. Pods will need to stop using the new probe
+type.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+N/A
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -378,19 +337,6 @@ None
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
-## Implementation History
-
 * Original PR for k8 Prober: https://github.com/kubernetes/kubernetes/pull/89832
 * 2020-04-04: MR for k8 Prober
 * 2021-05-12: Cloned to this KEP to move the probe forward.
@@ -403,6 +349,10 @@ Alpha feature was implemented in 1.23.
 ### Beta
 
 Feature is promoted to beta in 1.24.
+
+### GA
+
+Feature is promoted to GA in 1.27.
 
 ## Alternatives
 
