@@ -132,12 +132,18 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+A possible PodFailurePolicy spec might look something like this with the new additions
+
+```
+podFailurePolicy:
+  rules:
+  - action: FailJob|FailIndex
+    onExitCodes:
+      containerName: main
+      operator: In
+      values: [42]
+  backoffLimitTarget: Job|Index
+```
 
 ### Test Plan
 
