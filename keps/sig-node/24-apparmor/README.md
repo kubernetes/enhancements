@@ -340,7 +340,7 @@ Since
 [we support](https://kubernetes.io/docs/setup/release/version-skew-policy/) up
 to 2 minor releases of version skew between the master and node, annotations
 must continue to be supported and backfilled for at least 2 versions passed the
-initial implementation. If this feature is implemented in v1.26, I propose v1.30 as a
+initial implementation. If this feature is implemented in v1.27, I propose v1.30 as a
 target for removal of the old behavior. Specifically, annotation support will be removed
 in the kubelet after this period, and fields will no longer be copied to annotations for older kubelet 
 versions. However, annotations submitted to the API server will continue to be copied to fields at the 
