@@ -641,7 +641,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes. The tests to confirm the behavior on switching the feature gate will be added.
+No. But, the tests to confirm the behavior on switching the feature gate will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
