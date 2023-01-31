@@ -517,6 +517,8 @@ Major milestones might include:
 -->
 
 - 2022-05-10: KEP draft created
+- 2022-12-17(v1.27): add the experimental (alpha) feature gate EtcdLearnerMode and initial implementation <https://github.com/kubernetes/kubernetes/pull/113318>
+- 2023-01-28(v1.27): add e2e test for etcd learner mode <https://github.com/kubernetes/kubeadm/pull/2807>
 
 ## Drawbacks
 
