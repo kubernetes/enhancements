@@ -1101,14 +1101,14 @@ variable.
 
 The match criteria in bindings are not expected to be able to cover all possible
 ways users may want to scope their policies. For example, there is no way to
-match off of kind, only resource. To provide extensibility for the match critiera
+match off of kind, only resource. To provide extensibility for the match criteria
 without requiring modifying every validation rule individually, a global predicate
 system is needed. These predicates contain CEL statements that must be satisfied, otherwise
 the policy will be ignored. In order to keep bindings language-agnostic and to support
 singleton policies, the logic should live in the policy definition resource. To enable
 customization per-binding, the CEL statements should have access to the parameter resource.
 
-Here is an example of a policy definition using policy predicates (under the `customConstraints` field):
+Here is an example of a policy definition using policy predicates (under the `matchConditions` field):
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1alpha1
@@ -1126,7 +1126,7 @@ Spec:
       apiVersions: ["v1"]
       operations:  ["CREATE", "UPDATE"]
       resources:   ["deployments"]
-  customConstraints:
+  matchConditions:
     - expression: 'metadata.kind == "Deployment"'
     - expression: '!(metadata.namespace in params.excludedNamespaces)'
   validations:
@@ -1136,10 +1136,14 @@ Spec:
 
 For demonstration purposes, we assume `match` has no support for `excludedNamespaces`.
 
-`customConstraints` has the following behaviors:
+Note that `matchConditions` and `validations` look similar, but `matchConditions` entries only have the
+`expression` field: their only function is to gate whether the expressions in `validations` are evaluated.
+
+`matchConditions` has the following behaviors:
 
 * Only the request object and parameters are accessible (no referential lookup)
-* All custom constraints must be satisfied (evaluate to `true`) before `validations` are tested
+* All match conditions must be satisfied (evaluate to `true`) before `validations` are tested
+* If there is an error executing a match condition, the failure policy for the (definition, binding) tuple is invoked
 
 
 ##### Variables
