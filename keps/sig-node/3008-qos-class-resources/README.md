@@ -226,7 +226,9 @@ aimed at enabling) are:
 With QoS-class resources, Pods and their containers can request opaque
 QoS-class identifiers (classes) of certain QoS mechanism (QoS-class resource
 type). Kubelet relays this information to the container runtime, without
-directing how the request is enforced in the underlying system.
+directing how the request is enforced in the underlying system. Being opaque to
+Kubernetes means that QoS-class resources have to be supported by the container
+runtime as it is responsible for the actual low-level management of them.
 
 ## Motivation
 
@@ -355,7 +357,6 @@ resources and start experimenting with them in Kubernetes:
   be communicated from kubelet to the runtime
 - extend the CRI protocol to allow runtime to communicate available QoS-class
   resources (the types of resources and the classes within) to kubelet
-- implement pod annotations as an initial user interface
 - introduce a feature gate for enabling QoS-class resource support in kubelet
 - extend PodSpec to support assignment of QoS-clsss resources
 - extend NodeStatus to show availability/capacity of QoS-clsss resources on a
@@ -629,6 +630,8 @@ resource assignments to the runtime.
 +// container.
 +message ContainerQoSResources {
 +    // QoS resources the container will be assigned to.
++    // Key-value pairs where key is name of the QoS resource and value is the
++    // name of the class.
 +    map<string, string> classes = 1;
 +}
 ```
@@ -676,6 +679,8 @@ assignments at sandbox creation time (`RunPodSandboxRequest`).
 +// PodQoSResources specifies the configuration of QoS resources of a pod.
 +message PodQoSResources {
 +    // QoS resources the pod will be assigned to.
++    // Key-value pairs where key is name of the QoS resource and value is the
++    // name of the class.
 +    map<string, string> classes = 1;
 +}
 ```
@@ -806,6 +811,27 @@ There is already an ongoing effort to add [Pod level resource limits][kep-2837]
 that aims at adding a pod level `Resources` field in a similar fashion. Thus,
 we opt for adding ResourceRequirements insted of QoSResources directly into the
 PodSpec.
+
+As an example, a Pod requesting class "fast" of a (exemplary) pod-level QoS
+resource named "network", with one container requesting class "gold" of
+container-level QoS resource named "rdt":
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qos-resource-example
+spec:
+  resources:
+    qosResources:
+      network: fast
+  containers:
+  - name: cnt
+    image: nginx
+    resources:
+      qosResources:
+        rdt: gold
+```
 
 #### NodeStatus
 
