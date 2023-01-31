@@ -1,0 +1,30 @@
+title: Kubelet Server TLS Certificate Rotation
+kep-number: 267
+authors:
+  - "@mikedanese"
+  - "@liggitt"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-node
+  - sig-security
+status: implemented
+creation-date: 2017-04-24
+reviewers:
+  - "@awly"
+  - "@mikedanese"
+approvers:
+  - "@tallclair"
+latest-milestone: "v1.12"
+milestone:
+  alpha: "v1.7"
+  beta: "v1.12"
+feature-gates:
+  - name: RotateKubeletServerCertificate
+    components:
+      - kubelet
+disable-supported: true
+metrics:
+  - "certificate_manager_server_rotation_seconds"
+  - "certificate_manager_server_ttl_seconds"
+  - "server_expiration_renew_errors"
+stage: beta
