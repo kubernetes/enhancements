@@ -507,47 +507,27 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `AdmissionWebhookMatchConditions`
+  - Components depending on the feature gate: `kube-apiserver`
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. If the feature is enabled, but the `matchConditions` field is unset, the default behavior
+remains unchanged.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes. Disabling the feature gate will ignore any `matchConditions` set, and return to the default
+behavior. This could increase the traffic to the webhook, and potentially increase the error rate if
+the webhook is down or rejects those requests.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Any `matchConditions` that were already stored on existing webhooks will be enforced.
+
+Note: enabling `matchConditions` can only reduce the number of requests being sent to a webhook (or
+remain unchanged). Enabling it will never increase the number of requests.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -563,6 +543,9 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+[Registry tests](https://github.com/kubernetes/kubernetes/blob/c4ebbeeb747cd3e2b1d83733a14d367a65723a45/pkg/registry/core/pod/strategy_test.go)
+will verify the drop disabled fields logic is correctly implemented.
 
 ### Rollout, Upgrade and Rollback Planning
 
