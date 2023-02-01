@@ -60,22 +60,6 @@ SIG Architecture for cross-cutting KEPs).
 -->
 # [KEP-3008](#3008): QoS-class resources
 
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -188,25 +172,6 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-
 Add support to Kubernetes for declaring _quality-of-service_ resources, and
 assigning these to Pods. A quality-of-service (QoS-class) resource is similar
 to other Kubernetes resource types (i.e. native resources such as `cpu` and
@@ -231,15 +196,6 @@ Kubernetes means that QoS-class resources have to be supported by the container
 runtime as it is responsible for the actual low-level management of them.
 
 ## Motivation
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
 
 This enhancement proposal aims at improving the quality of service of
 applications by making available a new type of resource control mechanism in
@@ -294,11 +250,6 @@ kubelet to the container runtime.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
 - Make it possible to request QoS-class resources
   - Support RDT class assignment of containers. This is already supported by
     the containerd and CRI-O runtime and part of the OCI runtime-spec
@@ -315,11 +266,6 @@ know that this has succeeded?
 - Access control ([future work](#future-work))
 
 ### Non-Goals
-
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
 
 - Interface or mechanism for configuring the QoS-class resources (responsibility of
   the container runtime).
@@ -464,15 +410,6 @@ would implement restrictions based on the namespace.
 ```
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
-
 This section currently covers [implementation phase 1](#phase-1) (see
 [implementation phases](#implementation-phases) for an outline of the complete
 implementation).
@@ -522,13 +459,6 @@ kube-apiserver, kube-scheduler) to support QoS-class resources.
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
 #### Story 1
 
 As a user I want to minimize the interference of other applications to my
@@ -551,13 +481,6 @@ As a user I want to assign a low priority task into an (RDT) class that limits
 the available memory bandwidth.
 
 ### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
 
 The proposal only describes the details of implementation Phase 1 and some
 parts like permission control are not covered. The
@@ -586,13 +509,6 @@ Consider including folks who also work outside the SIG or subproject.
   KEP introducing permission controls.
 
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 The detailed design presented here covers [implementation phase 1](#phase-1)
 (see [implementation phases](#implementation-phases) for an outline of all
