@@ -18,13 +18,13 @@
 - [Design Details](#design-details)
   - [Pod.spec changes](#podspec-changes)
   - [CRI changes](#cri-changes)
-  - [Phases](#phases)
-    - [Phase 1: pods &quot;without&quot; volumes](#phase-1-pods-without-volumes)
-      - [pkg/volume changes for phase I](#pkgvolume-changes-for-phase-i)
-    - [Phase 2: pods with volumes](#phase-2-pods-with-volumes)
-    - [Phase 3: TBD](#phase-3-tbd)
-    - [Unresolved](#unresolved)
-  - [Summary of the Proposed Changes](#summary-of-the-proposed-changes)
+  - [Support for stateless pods](#support-for-stateless-pods)
+  - [Handling of stateless volumes](#handling-of-stateless-volumes)
+    - [Example of how idmap mounts work](#example-of-how-idmap-mounts-work)
+      - [Example without idmap mounts](#example-without-idmap-mounts)
+      - [Example with idmap mounts](#example-with-idmap-mounts)
+    - [Regarding the previous implementation for volumes](#regarding-the-previous-implementation-for-volumes)
+  - [Unresolved](#unresolved)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -47,6 +47,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Don't use idmap mounts and rely chown all the files correctly](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
+  - [64k mappings?](#64k-mappings)
+  - [Allow runtimes to pick the mapping?](#allow-runtimes-to-pick-the-mapping)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -406,9 +409,9 @@ In other words, we can make sure the pod can read files instead of chowning them
 all using the host IDs the pod is mapped to, by just using an idmap mount that
 has the same mapping that we use for the pod user namespace.
 
-##### Regarding the previous implementation for volumes
-We previously added to the [KubeletVolumeHost
-interface][kubeletVolumeHost-interface] the following method:
+#### Regarding the previous implementation for volumes
+We previously added to the [KubeletVolumeHost interface][kubeletVolumeHost-interface]
+the following method:
 
 ```
 GetHostIDsForPod(pod *v1.Pod, containerUID, containerGID *int64) (hostUID, hostGID *int64, err error)
@@ -419,7 +422,7 @@ components that implement the interface.
 
 [kubeletVolumeHost-interface]: https://github.com/kubernetes/kubernetes/blob/36450ee422d57d53a3edaf960f86b356578fe996/pkg/volume/plugins.go#L322
 
-#### Unresolved
+### Unresolved
 
 Here is a list of considerations raised in PRs discussion that hasn't yet
 settle. This list is not exhaustive, we are just trying to put the things that
