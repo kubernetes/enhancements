@@ -1060,8 +1060,7 @@ For stateless pods this is of course not an issue.
 Tim suggested that we might want to allow the container runtimes to choose the
 mapping and have different runtimes pick different mappings. While KEP authors
 disagree on this, we still need to discuss it and settle on something.  This was
-[raised
-here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
+[raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
 
 For stateless pods with 64k mappings this is not an issue. This was considered
 something to discuss for pods with volumes (out of scope of this KEP).
