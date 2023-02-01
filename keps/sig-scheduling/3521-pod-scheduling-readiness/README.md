@@ -76,6 +76,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
+  - [Future Work](#future-work)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -227,6 +228,11 @@ and make progress.
 
 - Enforce updating the Pod's conditions to expose more context for scheduling-paused Pods.
 - Focus on in-house use-cases of the Enqueue extension point.
+
+### Future Work
+
+- Permission control on individual schedulingGate (via 
+[fine-grained permissions](https://docs.google.com/document/d/11g9nnoRFcOoeNJDUGAWjlKthowEVM3YGrJA3gLzhpf4))
 
 ## Proposal
 
@@ -521,9 +527,8 @@ The following scenarios need to be covered in integration tests:
 can be moved back to activeQ when `.spec.schedulingGates` is all cleared
 - Ensure no significant performance degradation
 
-- `test/integration/scheduler/queue_test.go`: added in Alpha.
-- `test/integration/scheduler/plugins/plugins_test.go`: added in Alpha.
-- `test/integration/scheduler/enqueue/enqueue_test.go`: added in Alpha.
+- `test/integration/scheduler/queue_test.go#TestSchedulingGates`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestSchedulingGates)
+- `test/integration/scheduler/plugins/plugins_test.go#TestPreEnqueuePlugin`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestPreEnqueuePlugin)
 - `test/integration/scheduler_perf/scheduler_perf_test.go`: will add in Beta. (https://storage.googleapis.com/k8s-triage/index.html?test=BenchmarkPerfScheduling)
 
 ##### e2e tests
@@ -544,6 +549,8 @@ An e2e test was created in Alpha with the following sequences:
 - Wait for 15 seconds to ensure (and then verify) it did not get scheduled.
 - Clear the Pod's `.spec.schedulingGates` field.
 - Wait for 5 seconds for the Pod to be scheduled; otherwise error the e2e test.
+
+In beta, it will be enabled by default in the [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=Feature%3APodSchedulingReadiness) dashboard.
 
 ### Graduation Criteria
 
@@ -620,8 +627,6 @@ in back-to-back releases.
 #### Beta
 
 - Feature enabled by default.
-- Permission control on individual schedulingGate is applicable (via 
-[fine-grained permissions](https://docs.google.com/document/d/11g9nnoRFcOoeNJDUGAWjlKthowEVM3YGrJA3gLzhpf4)).
 - Gather feedback from developers and out-of-tree plugins.
 - Benchmark tests passed, and there is no performance degradation.
 - Update documents to reflect the changes.
@@ -768,7 +773,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Appropriate tests will be added in Alpha. See [Test Plan](#test-plan) for more details.
+Appropriate tests have been added in the integration tests. See [Integration tests](#integration-tests) for more details.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -817,6 +822,10 @@ are missing a bunch of machinery and tooling and can't do that now.
 -->
 
 It will be tested manually prior to beta launch.
+
+<<UNRESOLVED>>
+Add detailed scenarios and result here, and cc @wojtek-t.
+<</UNRESOLVED>>
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -978,6 +987,9 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+The feature itself doesn't generate API calls. But it's expected the API Server would receive
+additional update/patch requests to mutate the scheduling gates, by external controllers.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -987,8 +999,7 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-The feature itself doesn't generate API calls. But it's expected the API Server would receive
-additional update/patch requests to mutate the scheduling gates, by external controllers.
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1025,7 +1036,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-This delay should be negligible.
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
