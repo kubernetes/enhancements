@@ -6,6 +6,8 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+    - [Alpha v1.22](#alpha-v122)
+    - [Alpha v1.27](#alpha-v127)
   - [User Stories (Optional)](#user-stories-optional)
     - [Memory Sensitive Workload](#memory-sensitive-workload)
     - [Node Availability](#node-availability)
@@ -52,7 +54,7 @@
 Support memory qos with cgroups v2.
 
 ## Motivation
-In traditional cgroups v1 implement in Kubernetes, we can only limit cpu resources, such as `cpu_shares / cpu_set / cpu_quota / cpu_period`, memory qos is not yet implemented. cgroups v2 brings new capabilities for memory controller and it would help Kubernetes enhance memory isolation quality.
+In traditional cgroups v1 implement in Kubernetes, we can only limit cpu resources, such as `cpu_shares / cpu_set / cpu_quota / cpu_period`, memory qos has not been implemented yet. cgroups v2 brings new capabilities for memory controller and it would help Kubernetes enhance memory isolation quality.
 
 ### Goals
 - Provide guarantees around memory availability for pod and container memory requests and limits
@@ -87,13 +89,18 @@ Cgroups v2 introduces a better way to protect and guarantee memory quality.
 
 This proposal sets `requests.memory` to `memory.min` for protecting container memory requests. `limits.memory` is set to `memory.max` (this is consistent with existing `memory.limit_in_bytes` for cgroups v1, we do nothing because [cgroup_v2](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2) has implemented for that).  
 
-We also introduce `memory.high` to throttle container memory overcommit allocation. It will be set based on a formula:
+We also introduce `memory.high` for container cgroup to throttle container memory overcommit allocation. 
+***Note***: memory.high is set for container-level cgroup, and not for pod-level cgroup. If a container in a pod sees a spike in memory usage, it could result in total pod-level memory usage to reach memory.high level set at pod-level cgroup. This will induce throttling in other containers as the pod-level memory.high was hit. Hence to avoid containers from affecting each other, we set memory.high for only container-level cgroup.
+
+#### Alpha v1.22
+It is based on a formula:
 ```
-memory.high=limits.memory/node allocatable memory * memory throttling factor
+memory.high=(limits.memory or node allocatable memory) * memory throttling factor, 
+where default value of memory throttling factor is set to 0.8
 ```
 
-e.g. if a container has `requests.memory=50, limits.memory=100`, and we have a throttling factor of .8, `memory.high` would be 80. if a container had no memory limit specified, we substitute `limits.memory` for `node allocatable memory` and apply the throttling factor of .8 to that value.
-It must be ensure that `memory.high` is always greater than `memory.min`.
+e.g. If a container has `requests.memory=50, limits.memory=100`, and we have a throttling factor of .8, `memory.high` would be 80. If a container has no memory limit specified, we substitute `limits.memory` for `node allocatable memory` and apply the throttling factor of .8 to that value.
+It must be ensured that `memory.high` is always greater than `memory.min`.
 
 Node reserved resources(kube-reserved/system-reserved) are either considered. It is tied to `--enforce-node-allocatable` and `memory.min` will be set properly.
 
@@ -101,8 +108,154 @@ Brief map as follows:
 | type | memory.min | memory.high |
 | -------- | -------- | -------- | 
 | container | requests.memory | limits.memory/node allocatable memory * memory throttling factor |
-| pod | sum(requests.memory) | n |
-| node | n/a | pods, kube-reserved, system-reserved | n |
+| pod | sum(requests.memory) | N/A |
+| node | pods, kube-reserved, system-reserved | N/A |
+
+#### Alpha v1.27
+The formula for memory.high for container cgroup is modified in Alpha stage of the feature in K8s v1.27. It will be set based on formula:
+```
+memory.high=floor[(requests.memory + memory throttling factor * (limits.memory or node allocatable memory - requests.memory))/pageSize] * pageSize, where default value of memory throttling factor is set to 0.9
+```
+Note: If a container has no memory limit specified, we substitute `limits.memory` for `node allocatable memory` and apply the throttling factor of .9 to that value.
+
+
+The table below runs over the examples with different values requests.memory and 1Mi pageSize:
+
+| limits.memory (1000) | memory throttling factor (0.9)|
+| ---------------------- | ----------------------------- |
+| request 0    | 900  |
+| request 100  | 910  |
+| request 200  | 920  |
+| request 300  | 930  |
+| request 400  | 940  |
+| request 500  | 950  |
+| request 600  | 960  |
+| request 700  | 970  |
+| request 800  | 960  |
+| request 900  | 980  |
+| request 1000 | 1000 |
+
+
+Node reserved resources(kube-reserved/system-reserved) are either considered. It is tied to `--enforce-node-allocatable` and `memory.min` will be set properly.
+
+Brief map as follows:
+| type | memory.min | memory.high |
+| -------- | -------- | -------- | 
+| container | requests.memory | floor[(requests.memory + memory throttling factor * (limits.memory or node allocatable memory - requests.memory))/pageSize] * pageSize |
+| pod | sum(requests.memory) | N/A |
+| node | n/a | pods, kube-reserved, system-reserved | N/A |
+
+###### Reasons for changing the formula of memory.high calculation in Alpha v1.27
+
+The formula for memory.high has changed in K8s v1.27 as the Alpha v1.22 implementation has following problems:
+1. It fails to throttle when requested memory is closer to memory limits (or node allocatable) as it results in memory.high being less than requests.memory.
+
+   For example, if `requests.memory = 85, limits.memory=100`, and we have a throttling factor of 0.8, then as per the Alpha implementation memory.high =  memory throttling factor * limits.memory i.e. memory.high = 80. In this case the level at which throttling is supposed to occur i.e. memory.high is less than requests.memory. Hence there won't be any throttling as the Alpha v1.22 implementation doesn't allow memory.high to be less than requested memory. 
+
+2. It could result in early throttling putting the processes under early heavy reclaim pressure. 
+  
+    For example, 
+    * `requests.memory` = 800Mi
+
+      `memory throttling factor` = 0.8
+
+      `limits.memory` = 1000Mi
+
+      As per Alpha v1.22 implementation,
+
+      `memory.high` = memory throttling factor * limits.memory  = 0.8 * 1000Mi = 800Mi
+
+      This results in early throttling and puts the processed under heavy reclaim pressure at 800Mi memory usage levels. There's a significant difference of 200Mi between the memory throttling limit (800Mi) and memory usage hard limit (1000Mi). 
+
+    * `requests.memory` = 500Mi
+
+      `memory throttling factor` = 0.6
+
+      `limits.memory` = 1000Mi
+      
+      As per Alpha v1.22 implementation,
+
+      `memory.high` = memory throttling factor * limits.memory = 0.6 * 1000Mi = 600Mi
+      
+      Throttling occurs at 600Mi which is just a 100Mi over the requested memory. There's a significant difference of 400Mi between the memory throttle limit (600Mi) and memory usage hard limit (1000Mi).
+  
+
+3. Default throttling factor of 0.8 may be too aggressive for some applications that are latency sensitive and always use memory close to memory limits.
+
+   For example, there are some known Java workloads that use 85% of the memory will start to get throttled once this feature is enabled by default. Hence the default 0.8 MemoryThrottlingFactor value may not be a good value for many applications due to inducing throttling too early.
+
+<br>
+Some more examples to compare memory.high using Alpha v1.22 and Alpha v1.27 are listed below:
+
+| Limit 1000Mi <br /> Request, factor | Alpha v1.22: memory.high = memory throttling factor \* memory.limit (or node allocatable if memory.limit is not set) | Alpha v1.27: memory.high = floor[(requests.memory + memory throttling factor * (limits.memory or node allocatable memory - requests.memory))/pageSize] * pageSize assuming 1Mi pageSize
+| -------------------------------- | ------------------------------------------------------- | ------------------------------------------------
+| request 500Mi, factor 0.6        | 600Mi (very early throttling when memory usage is just 100Mi above requested memory; 400Mi unused) | 800Mi
+| request 800Mi, factor 0.6        | no throttling (600 < 800 i.e. memory.high < memory.request => no throttling) | 920Mi
+| request 1Gi, factor 0.6          | max | max
+| request 500Mi, factor 0.8        | 800Mi (early throttling at 800Mi, when 200Mi is unused) | 900Mi
+| request 850Mi, factor 0.8        | no throttling (800 < 850 i.e. memory.high < memory.request => no throttling) | 970Mi
+| request 500Gi, factor 0.4        | no throttling (800 < 400  i.e. memory.high < memory.request => no throttling) | 700Mi
+
+***Note***: As seen from the examples in the table, the formula used in Alpha v1.27 implementation eliminates the cases of memory.high being less than memory.request. However, it still can result in early throttling if memory throttling factor is set low. Hence, it is recommended to set a high memory throttling factor to avoid early throttling.
+
+###### Quality of Service for Pods
+
+In addition to the change in formula for memory.high, we are also adding the support for memory.high to be set as per `Quality of Service(QoS) for Pod` classes. Based on user feedback in Alpha v1.22, some users would like to opt-out of MemoryQoS on a per pod basis to ensure there is no early memory throttling. By making user's pods guaranteed, they will be able to do so. Guaranteed pod ,by definition, are not overcommitted, so memory.high does not provide significant value. 
+
+Following are the different cases for setting memory.high as per QOS classes:
+1. Guaranteed
+Guaranteed pods by their QoS definition require memory requests=memory limits and are not overcommitted. Hence MemoryQoS feature is disabled on those pods by not setting memory.high. This ensures that Guaranteed pods can fully use their memory requests up to their set limit, and not hit any throttling.
+
+2. Burstable
+Burstable pods by their QoS definity require at least one container in the Pod with CPU or memory request or limit set. 
+
+    Case I: When requests.memory and limits.memory are set, the forumula is used as-is: 
+    ```
+    memory.high = floor[ (requests.memory + memory throttling factor * (limits.memory - requests.memory)) / pageSize ] * pageSize
+    ```
+
+    Case II. When requests.memory is set, limits.memory is not set, we substitute limits.memory for node allocatable memory in the formula:
+    ```
+    memory.high = floor[ (requests.memory + memory throttling factor * (node allocatable memory - requests.memory))/ pageSize ] * pageSize
+    ```
+
+    Case III. When requests.memory is not set and  limits.memory is set, we set `requests.memory = 0` in the formula:
+    ```
+    memory.high = floor[ (memory throttling factor * limits.memory) / pageSize) ] * pageSize
+    ```
+
+3. BestEffort 
+The pod gets a BestEffort class if limits.memory and requests.memory are not set. We set `requests.memory = 0` and substitute limits.memory for node allocatable memory in the formula:
+    ```
+    memory.high = floor[ (memoryThrottlingFactor * node allocatable memory) / pageSize) * pageSize
+    ```
+
+###### Alternative solutions for implementing memory.high
+Alternative solutions that were discussed (but not preferred) before finalizing the implementation for memory.high are:
+1. Allow customers to set memoryThrottlingFactor for each pod in annotations.
+
+   Proposal: Add a new annotation for customers to set memoryThrottlingFactor to override kubelet level memoryThrottlingFactor.
+	  * Pros
+        * Allows more flexibility.
+        * Can be quickly implemented.
+	  * Cons
+        * Customers might not need per pod memoryThrottlingFactor configuration.
+        * It is too low-level detail to expose to customers.
+
+2. Allow customers to set MemoryThrottlingFactor in pod yaml.
+
+   Proposal: Add a new field in API for customers to set memoryThrottlingFactor to override kubelet level memoryThrottlingFactor.
+    * Pros
+        * Allows more flexibility.
+    * Cons
+        * Customers might not need per pod memoryThrottlingFactor configuration.
+        * API changes take a lot of time, and we might eventually realize that the customers don’t need per pod level setting.
+        * It is too low-level detail to expose to customers, and it is highly unlikely to get an API approval.
+
+***[Preferred Alternative]***: Considering the cons of the alternatives mentioned above, adding support for memory QoS looks more preferrable over other solutions for following reasons:
+  * Memory QOS complies with QOS which is a wider known concept. 
+  * It is simple to understand as it requires setting only 1 kubelet configuration for setting memory throttling factor.
+  * It doesn't involve API changes, and doesn't expose low-level detail to customers.
 
 ### User Stories (Optional)
 #### Memory Sensitive Workload
@@ -212,6 +365,7 @@ For `GA`, the introduced e2e tests will be promoted to conformance. It was also 
 
 #### Beta Graduation
 - [cgroup_v2](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2) is in `Beta`
+- Metrics and graphs to show the amount of reclaim done on a cgroup as it moves from below-request to above-request to throttling
 - Memory QoS is covered by unit and e2e-node tests
 - Memory QoS supports containerd, cri-o and dockershim
 
