@@ -444,11 +444,20 @@ Implicit in this proposal are a few assumptions:
 
 Each ApplySet MUST have an ID that can be used to uniquely identify the parent and member objects via the label selector conventions outlined in the following sections. As such, the name:
 * is subject to the normal limits of label values
-* MUST be generated in a way that provides reasonable uniqueness guarantees at the cluster scope
+* MUST be the base64 encoding of the hash of the GKNN, in the form `base64(sha256(<name>.<namespace>.<kind>.<group>))`, using the URL safe encoding of RFC4648.
 
-This uniqueness constraint is designed to prevent over-selection due to naming collisions within overlapping scopes. To comply with it, this specification recommends that tooling choose IDs derived from identifiers that are already globally unique. For instance, the parent object's UUID or a base64 encoding of its GKNN would be suitable. We reserve the right to dictate a specific format at some point before this KEP goes into beta.
+The second restriction is intended to protect against "id impersonation" attacks;
+we will likely evaluate specifics here during alpha (for example whether to include
+an empty string for a namespace on cluster-scoped objects).
 
-This name does not need to be used for the `metadata.name` of the parent object. In fact, it is likely desirable for tooling to allow end users to choose the `metadata.name` of the parent so that it is more intuitive for them to refer to.
+When operating against an existing applyset, tooling MUST verify the applyset against
+the generation mechanism here.  Tooling MUST return an error if the applyset id does
+not match, though it MAY support some sort of force or repair operation instead, though
+this should require confirmation of some kind from the user ("type yes" or a flag).
+
+This applyset ID does not need to be used for the `metadata.name` of the parent object.
+Tooling should likely allow end users to choose the `metadata.name` of the parent
+so that it is more intuitive for them to refer to.
 
 ### ApplySet Member Objects
 
@@ -457,11 +466,13 @@ This name does not need to be used for the `metadata.name` of the parent object.
 Objects that are part of an ApplySet MUST carry the following label:
 
 ```yaml
-applyset.k8s.io/part-of: <applysetkey> # REQUIRED
+applyset.k8s.io/part-of: <applysetid> # REQUIRED
 ```
 
-This `applyset.k8s.io/part-of` label is the source of truth for membership in a set. Its `<applysetkey>` value MUST match the value of `applyset.k8s.io/id` on the parent (see [ApplySet Parent Objects](#labels-and-annotations)) and comply with the naming constraints outlined in [ApplySet Naming](#applyset-naming).
+This `applyset.k8s.io/part-of` label is the source of truth for membership in a set. Its `<applysetid>` value MUST match the value of `applyset.k8s.io/id` on the parent (see [ApplySet Parent Objects](#labels-and-annotations)) and comply with the naming constraints outlined in [ApplySet Naming](#applyset-naming).
 
+Where objects in a provided manifest already have a label with this key, tooling SHOULD
+treat this manifest as invalid and return an error.
 
 ### ApplySet Parent Objects
 
@@ -479,7 +490,7 @@ While a purpose-made cluster-scoped CRD is a logical choice, the specification h
 ApplySets MUST also have a “parent object” in the cluster. The ApplySet object MUST be labeled with:
 
 ```yaml
-applyset.k8s.io/id: <applysetkey> # REQUIRED
+applyset.k8s.io/id: <applysetid> # REQUIRED
 ```
 
 The `applyset.k8s.io/id` label is what makes the object an ApplySet parent object. Its value MUST match the value of `applyset.k8s.io/part-of` on the member objects (see [ApplySet Member Objects](#labels)), and MUST comply with the naming constraints outlined in [ApplySet Naming](#applyset-naming).
@@ -749,10 +760,9 @@ Known Risks:
 
 - UserA could change the applyset ID on an existing applyset ApplySet1, copying the ID of a second applyset ApplySet2.  If UserB then
 applies to ApplySet1, they would delete objects from ApplySet2.  UserA did not necessarily have permission
-to delete those objects; UserB probably did not intend to prune objects from ApplySet2.  Mitigation might require additional
-restrictions on the applyset ID (such as choosing something that identifies the applyset parent, like `base64(GKNN)`,
-so we can detect a "fake" applyset ID), or we might add a backpointer label/annotation from child objects to the parent applyset.
-We will evaluate this during alpha development.
+to delete those objects; UserB probably did not intend to prune objects from ApplySet2.  This is mitigated by
+the constrained choice of the applyset-ID from the object GKNN; "borrowing" an applyset ID from another object
+will now cause a mismatch and tooling will report an error.  (Thank you to @liggitt for this observation).
 
 ### Test Plan
 
