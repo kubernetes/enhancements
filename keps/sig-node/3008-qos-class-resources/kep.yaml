@@ -6,8 +6,10 @@ owning-sig: sig-node
 participating-sigs: []
 status: provisional
 creation-date: 2021-10-07
-reviewers: []
-approvers: []
+reviewers:
+  - "@rphillips"
+approvers:
+  - "@sig-node-leads"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -28,6 +30,7 @@ feature-gates:
     components:
       - kubelet
       - kube-apiserver
+      - kube-scheduler
 disable-supported: true
 
 # The following PRR answers are required at beta release
