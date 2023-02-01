@@ -1089,23 +1089,78 @@ repeated evaluations if they are shared across validations.
 
 #### Secondary Authz
 
-We have general agreement to include this as a feature, but need to provide
-a concrete design.
+TODO: background and motivation
 
-kube-apiserver authorizer checks (aka Secondary-authz checks) have been proposed
-as a way of doing things like:
-
-- Validate that only a user with a specific permission can set a particular
+- Validate that only a user with a specific permission can set a particular field.
+- Validate that only a controller responsible for a finalizer can remove it from the finalizers
   field.
-- Validate that only a controller responsible for a finalizer can remove it from
-  the finalizers field.
 
-This could be supported by matching criteria, or via CEL expression access, or both.
- 
-Use cases:
+To depend on an authz decision, validation expressions can reference the identifier `authorizer`,
+which will be bound at evaluation time to an Authorizer object supporting receiver-style function
+overloads:
+
+| Symbol      | Type                                                 | Description |
+|-------------|------------------------------------------------------|-------------|
+| path        | Authorizer.(string) -> PathCheck                     | todo        |
+| check       | PathCheck.(string) -> Decision                       | todo        |
+| resource    | Authorizer.(string, string, string) -> ResourceCheck | todo        |
+| subresource | ResourceCheck.(string) -> ResourceCheck              | todo        |
+| namespace   | ResourceCheck.(string) -> ResourceCheck              | todo        |
+| name        | ResourceCheck.(string) -> ResourceCheck              | todo        |
+| check       | ResourceCheck.(string) -> Decision                   | todo        |
+| allowed     | Decision.() -> bool                                  | todo        |
+| denied      | Decision.() -> bool                                  | todo        |
+
+Example expressions using `authorizer`:
+
+- `authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed()`
+- `authorizer.path('/metrics').check('get').denied()`
+
+Note that this API:
+
+- Produces errors at compilation time when parameters are missing or improperly combined
+  (e.g. subresource with non-resource path, missing path or resource).
+- Is open to the addition of future knobs (e.g. impersonation).
+
+Other considerations:
+
+- Does there need to be a special limit on the number of authz checks generated during expression
+  evaluation, or is it sufficient to assign an appropriate fixed cost?
+- Since authorization decisions depend on an apiserver's authorizer, and the
+  ValidatingAdmissionPolicy plugin is supported on [aggregated API
+  servers](#aggregated-api-servers), the evaluation result of any validation expression involving
+  secondary authz inherently depends on which apiserver evalutes it.
+- A validation expression could be written such that it allows malicious clients to probe
+  permissions. Policy authors are responsible for careful use of client-provided inputs when
+  constructing authz checks.
+- Decisions can be stored either as a [variable](#variables) or as part of the implementation of the
+  object bound to the exposed `authorizer` object (i.e. caching decisions for identical checks
+  within a single policy evaluation) in order to prevent duplicate checks across multiple validation
+  expressions.
+
+Use cases in existing admission plugins:
 
 - PodSecurityPolicy (kube)
 - CertificateApproval (kube)
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "certificate-approval-policy.example.com"
+spec:
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["certificates.k8s.io"]
+      apiVersions: ["*"]
+      operations:  ["UPDATE"]
+      resources:   ["certificatesigningrequests/approval"]
+  validations:
+  - expression: "authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed() || authorizer.resource('signers', 'certificates.k8s.io', '*').name([oldObject.spec.signerName.split('/')[0], '*'].join('/')).check('approve').allowed()"
+    reason: Forbidden
+    messageExpression: "user not permitted to approve requests with signerName %q".format([oldObject.spec.signerName])"
+```
+
 - CertificateSigning (kube)
 - OwnerReferencesPermissionEnforcement (kube)
 - network.openshift.io/ExternalIPRanger
