@@ -743,7 +743,7 @@ Memory Manager and Device Manager to either admit a pod to the node or reject it
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes,  this feature can be disabledby specifying `TopologyManager` feature gate
+Yes, this feature can be disabled by specifying `TopologyManager` feature gate
 in the kubelet configuration. Note that disabling the feature gate requires
 kubelet restart for the changes to take effect. In case no pods consuming
 resources aligned by Topology Manager are running on the node, disabling
@@ -800,8 +800,10 @@ Monitor the following metrics:
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Inspect the kubelet configuration of the nodes: check feature gates and the policies
-or policies configured.
+The operator can look at `topology_manager_admission_requests_total` and `topology_manager_admission_errors_total`
+metrics to determine if topology manager is performing its admission check.
+In addition to that, kubelet configuration of the nodes can be inspected to check feature gates and the policies
+configured.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -834,7 +836,10 @@ No.
 
 ### Scalability
 
-No, this is a node-local feature.
+Topology Manager is a component within kubelet for alignment of resources
+based on resource distribution across NUMA nodes and configured policy.
+Since this is a node-local feature, there are no calls to the API
+server or to the cloud provider and hence does not impact scalability.
 
 ###### Will enabling / using this feature result in any new API calls?
 
