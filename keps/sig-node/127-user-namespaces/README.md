@@ -61,7 +61,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
 - [X] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -1016,6 +1016,10 @@ For each of them, fill in the following information by copying the below templat
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
+
+2016: First iterations of this KEP, but code never landed upstream.
+Kubernetes 1.25: Support for stateless pods merged (alpha)
+Kubernetes 1.27: Support for stateless pods rework to rely on idmap mounts (alpha)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
