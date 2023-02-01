@@ -123,7 +123,6 @@ Here we use UIDs, but the same applies for GIDs.
 - Increase pod to pod isolation by allowing to use non-overlapping mappings
   (UIDs/GIDs) whenever possible. IOW, if two containers runs as user X, they run
   as different UIDs in the node and therefore are more isolated than today.
-  See phase 3 for limitations.
 - Allow pods to have capabilities (e.g. `CAP_SYS_ADMIN`) that are only valid in
   the pod (not valid in the host).
 - Benefit from the security hardening that user namespaces provide against some
@@ -300,7 +299,7 @@ The picked range will be stored under a file named `userns` in the pod folder
 (by default it is usually located in `/var/lib/kubelet/pods/$POD/userns`). This
 way, the Kubelet can read all the allocated mappings if it restarts.
 
-During phase 1, to make sure we don't exhaust the host UID namespace, we will
+During alpha, to make sure we don't exhaust the host UID namespace, we will
 limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
 leaves us plenty of host UID space free and this limits is probably never hit in
 practice. See UNRESOLVED for more some UNRESOLVED info we still have on this.
@@ -1036,14 +1035,6 @@ here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382
 
 For stateless pods with 64k mappings this is not an issue. This was considered
 something to discuss for pods with volumes (out of scope of this KEP).
-
-### Should phase 2 be automatic?
-
-Tim [raised this](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798766024): do
-we actually want to ship phase 2 as automatic thing? If we do, any workloads
-that use it can't ever switch to whatever we do in phase 3
-
-Phase 2 (support for pods with volumes) is out of scope.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
