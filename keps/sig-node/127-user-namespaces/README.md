@@ -421,6 +421,19 @@ In other words, we can make sure the pod can read files instead of chowning them
 all using the host IDs the pod is mapped to, by just using an idmap mount that
 has the same mapping that we use for the pod user namespace.
 
+##### Regarding the previous implementation for volumes
+We previously added to the [KubeletVolumeHost
+interface][kubeletVolumeHost-interface] the following method:
+
+```
+GetHostIDsForPod(pod *v1.Pod, containerUID, containerGID *int64) (hostUID, hostGID *int64, err error)
+```
+
+As this is not needed anymore, it will be deleted from the interface and all
+components that implement the interface.
+
+[kubeletVolumeHost-interface]: https://github.com/kubernetes/kubernetes/blob/36450ee422d57d53a3edaf960f86b356578fe996/pkg/volume/plugins.go#L322
+
 #### Unresolved
 
 Here is a list of considerations raised in PRs discussion that hasn't yet
