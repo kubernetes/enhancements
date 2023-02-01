@@ -23,6 +23,7 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -42,9 +43,9 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -53,7 +54,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -333,6 +334,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 - Existing Pod Lifecycle tests must pass fine even after increasing the relisting frequency.
+- E2E Node Conformance non-blocking [presubmit job](https://testgrid.k8s.io/sig-node-presubmits#pr-crio-cgrpv1-evented-pleg-gce-e2e)
+- E2E Node Conformance non-blocking [periodic job](https://testgrid.k8s.io/sig-node-cri-o#ci-crio-cgroupv1-evented-pleg)
 
 
 ### Graduation Criteria
@@ -340,6 +343,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Feature implemented behind a feature flag
 - Existing `node e2e` tests around pod lifecycle must pass
+
+#### Beta
+- Add E2E Node Conformance presubmit job in CI 
+- Add E2E Node Conformance periodic job in CI
 
 ### Upgrade / Downgrade Strategy
 
@@ -379,8 +386,7 @@ If reenabled, kubelet will again start updating container statuses using CRI eve
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, unit tests for the feature when enabled and disabled will be implemented in both kubelet
-
+These [unit test](https://github.com/kubernetes/kubernetes/blob/ca70940ba8c375bc69091822a9d52bcb7925de3b/pkg/kubelet/pleg/evented_test.go#L47) performs a health check on Evented PLEG.
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -409,6 +415,14 @@ that might indicate a serious problem?
 -->
 
 If users observe incosistancy in the container statuses reported by the kubelet and the CRI runtime (e.g. using a tool like `crictl`) after enabling this feature, they should consider rolling back the feature.
+
+Apart from that cluster admins can monitor the state of evented PLEG's connection with the CRI runtime using following metrics, 
+
+* `evented_pleg_connection_error_count` - The count of errors encountered during the establishment of streaming connection with the CRI runtime.
+* `evented_pleg_connection_success_count` - The count of successful streaming connections with the CRI runtime.
+* `evented_pleg_connection_latency_seconds` - The latency of streaming connection with the CRI runtime, measured in seconds.
+* `evented_pleg_notifications_received` - The number of notifications received through streaming connection with the CRI runtime.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -416,7 +430,20 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-N/A for alpha release. But we will add the tests for beta release.
+
+Following scenarios were tested in manual tests, 
+
+Scenario 1: Kubelet Upgrade without Corresponding CRI Runtime Upgrade
+
+Step 1: Kubelet is upgraded but CRI runtime remains unchanged. Kubelet falls back to using the Generic PLEG as the CRI runtime does not emit any CRI events.
+Step 2: Kubelet is downgraded, but the CRI runtime version remains the same. Kubelet continues to work with the existing Generic PLEG.
+Step 3: If the Kubelet is upgraded again, it behaves similarly to step 1.
+
+Scenario 2: Kubelet and CRI Runtime Upgrade Together
+
+Step 1: Both the Kubelet and CRI runtime are upgraded. Since the CRI runtime emits CRI events, Kubelet uses the Evented PLEG with an increased relisting period for the Generic PLEG.
+Step 2: Kubelet and CRI runtime are downgraded. Kubelet defaults to using the Generic PLEG.
+Step 3: If the Kubelet is upgraded again, it behaves similarly to Scenario 1, Step 1.  
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
@@ -564,6 +591,10 @@ No.
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -589,6 +620,8 @@ Disabling this feature in the kubelet will revert to the existing relisting PLEG
 ## Implementation History
 
 - PR for required CRI changes - https://github.com/kubernetes/kubernetes/pull/110165
+- PR for presubmit Node e2e job - https://github.com/kubernetes/test-infra/pull/28366
+- PR for periodic Node e2e job - https://github.com/kubernetes/test-infra/pull/28592
 
 ## Drawbacks
 
