@@ -258,7 +258,31 @@ message NamespaceOption {
     // do not set a user namespace.
     UserNamespace userns_options = 5;
 }
+```
 
+The Mount message will be modified to take the UID/GID mappings. The complete
+Mount is shown here:
+
+```
+// Mount specifies a host volume to mount into a container.
+message Mount {
+    // Path of the mount within the container.
+    string container_path = 1;
+    // Path of the mount on the host. If the hostPath doesn't exist, then runtimes
+    // should report error. If the hostpath is a symbolic link, runtimes should
+    // follow the symlink and mount the real destination to container.
+    string host_path = 2;
+    // If set, the mount is read-only.
+    bool readonly = 3;
+    // If set, the mount needs SELinux relabeling.
+    bool selinux_relabel = 4;
+    // Requested propagation mode.
+    MountPropagation propagation = 5;
+    // uid_mappings specifies the UID mappings for this mount.
+    repeated IDMapping uid_mappings = 6;
+    // gid_mappings specifies the GID mappings for this mount.
+    repeated IDMapping gid_mappings = 7;
+}
 ```
 
 ### Support for stateless pods
