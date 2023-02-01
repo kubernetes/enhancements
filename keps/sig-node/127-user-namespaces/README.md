@@ -328,106 +328,6 @@ limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
 leaves us plenty of host UID space free and this limits is probably never hit in
 practice. See UNRESOLVED for more some UNRESOLVED info we still have on this.
 
-##### pkg/volume changes
-
-For the user inside the userns to be able to read the files of the mounted
-volumes, we will rely on the FSGroup feature for most volumes. This was
-[requested by sig-storage][sig-storage-fsgroup] during review to merge in v1.25.
-
-We need to teach the [operation executor][operation-executor] to convert
-the container UIDs/GIDs to the host UIDs/GIDs that this pod is mapped to. To do
-this, we will modify the [KubeletVolumeHost
-interface][kubeletVolumeHost-interface] adding functions to transform a
-container ID to the corresponding host ID, so the operation executor will just
-call that function (via self.volumePluginMgr.Host.GetHostIDsForPod())
-
-This function will call the kubelet, which will use the user namespace manager
-created to transform the IDs for that pod. The [KubeletVolumeHost
-interface][kubeletVolumeHost-interface] will then have this new method:
-
-```
-GetHostIDsForPod(pod *v1.Pod, containerUID, containerGID *int64) (hostUID, hostGID *int64, err error)
-```
-
-This method will only transform the IDs if the pod is running with userns
-enabled. If userns is disabled, the params will not be translated.
-
-If the feature gate is enabled and the pod is running with userns enabled, then
-an hostGID will always be returned by GetHostIDsForPod(). If the received
-containerGID param is nil, it will return the hostGID for user 0 inside the
-conatainer, otherwise the hostGID corresponding to the containerGID param.
-
-By returning a hostGID even if the containerGID is nil, we guarantee that the pod
-will be able to read the files of the volumes. As this will, in turn, force the
-fsGroup to be set for these volumes.
-
-Note that FSGroup has some limitations, for example see issue
-[#57923][fsgroup-issue]. We will hit the same limitations: when userns is used,
-the defaultMode or mode field these volumes can have, will not be honored. If we
-use FSGroup, then the file can never have 0600 permissions (it will always have
-permissions for the group), so some libraries and tools (like ssh) that enforce
-those permissions will fail.
-
-We will work with sig-storage to see how to improve upon this current limitation
-we have. For that end, we leave untouched a subsection on how we proposed to
-solve this problem in earlier versions of the KEP.
-
-
-[sig-storage-fsgroup]: https://github.com/kubernetes/kubernetes/pull/111090#discussion_r936900666
-[fsgroup-issue]: https://github.com/kubernetes/kubernetes/issues/57923
-
-##### Ideas to improve support for these stateless volumes (configmaps, etc.)
-
-We need the files created by the kubelet for these volume types to be readable
-by the user the pod is mapped to in the host. Luckily, Kuberentes already
-supports specifying an [fsUser and fsGroup for volumes][volume-mounter-args] for
-projected SA tokens so we just need to extend that to the other volume types we
-support in phase I.
-
-First, we need to teach the [operation executor][operation-executor] to convert
-the container UIDs/GIDs to the host UIDs/GIDs that this pod is mapped to. To do
-this, we will modify the [volumeHost interface][volumeHost-interface] adding
-functions to transform a container ID to the corresponding host ID, so the
-operation executor will just call that function (via
-self.volumePluginMgr.Host.GetHostIDsForPod())
-
-This function will call the kubelet, which will use the user namespace manager
-created to transform the IDs for that pod. The [volumeHost
-interface][volumeHost-interface] will then have this new method:
-
-```
-GetHostIDsForPod(pod *v1.Pod, containerUID, containerGID *int64) (hostUID, hostGID *int64, err error)
-```
-
-This method will only transform the IDs if the pod is running with userns
-enabled. If userns is disabled, the params will not be translated and, also, 
-GetHostIDsForPod() will return nil if the containerUID/containerGID received
-were nil. This is to keep the current functionality untouched, as [fsUser and
-fsGroup can be set to nil][operation-executor] today by the operation executor.
-
-Secondly, we need to modify these volume types to honor the `fsUser` passed in
-mounterArgs to their SetUpAt() method. As the [AtomicWriter already knows and
-honors the FsUser field][atomic-writer-fsUser] already, just setting this field
-is missing when creating the FileProjection (only done when the feature gate is
-enabled). For example, configmaps will just need to set FsUser alongside Data
-and Mode [here][configmap-fsuser] (and all the other paths in that function that
-create the projection, of course). Other volume types are quite similar too.
-
-For this we need to modify the MakePayload() or CollectData() functions of each
-supported volume type to handle the fsUser new param, and the corresponding
-volume SetUpAt() function to pass this new param when calling AtomicWriter.
-
-We have written already this code and the per-volume diff is 3 lines.
-
-For fsGroup() we don't need any changes, these volume types already honors it.
-
-[volume-mounter-args]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/volume.go#L125-L129
-[operation-executor]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/util/operationexecutor/operation_generator.go#L674-L675
-[volumeHost interface]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/plugins.go#L360-L361
-[kubeletVolumeHost]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/plugins.go#L326-L327
-[atomic-writer-fsUser]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/util/atomic_writer.go#L68
-[configmap-fsuser]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/configmap/configmap.go#L272-L273
-
 #### Unresolved
 
 Here is a list of considerations raised in PRs discussion that hasn't yet
@@ -501,10 +401,6 @@ Tests are already written for that file.
 The rest of the changes are more about hooking it up so it is called.
 
 - `pkg/kubelet/kuberuntime/kuberuntime_container_linux.go`: 24.05.2022 - 90.8%
-- `pkg/volume/configmap/configmap.go`: 24.05.2022 - 74.8%
-- `pkg/volume/downwardapi/downwardapi.go`: 24.05.2022 - 61.7%
-- `pkg/volume/secret/secret.go`: 24.05.2022 - 65.7%
-- `pkg/volume/projected/projected.go`: 24.05.2022 - 68.2%
 
 ##### Integration tests
 
