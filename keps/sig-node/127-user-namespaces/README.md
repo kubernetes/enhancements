@@ -328,6 +328,99 @@ limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
 leaves us plenty of host UID space free and this limits is probably never hit in
 practice. See UNRESOLVED for more some UNRESOLVED info we still have on this.
 
+### Handling of stateless volumes
+
+Only the aforementioned volume types are supported. If other volume types are
+used, a clear error is thrown during API validation of the pod.spec.
+
+When the volumes used are supported, the kubelet will set the `uid_mappings` and
+`gid_mappings` in the CRI `Mount message`. It will use the same mappings the
+kubelet allocated for the user namespace (see previous section for more details
+on this).
+
+The container runtime, when it receives the `Mount message` with the UID/GID
+mappings fields set, it uses the Linux idmap mounts support to create such a
+mount. If the kernel/filesystem used doesn't support idmap mounts, a clear error
+will be thrown by the OCI runtime at pod creation.
+
+#### Example of how idmap mounts work
+
+Let's say we have a pod A that has this mapping for its user namespace
+allocated (same mapping for UIDs than for GIDs):
+
+| Host ID  | Container ID   | Length  |
+|----------|----------------|---------|
+| 65536    |      0         |  65536  |
+
+This means user 0 inside the container is mapped to user 65536 on the host, user
+1 is mapped to 65537 on the host, and so forth. Let' say the pod is running UID
+0 inside the container too.
+
+Let's say also that this pod has a configmap with a file named `foo`.
+The file `/var/lib/kubelet/.../volumes/configmap/foo` is created by the kubelet,
+the owner is host UID 0, and bind-mounted into the container at
+`/vol/configmap/foo`.
+
+##### Example without idmap mounts
+
+To understand how idmap mounts work, let's first see an example of what happens
+without idmap mounts.
+
+If the pod wants to read who is the owner of file `/vol/configmap/foo`, as host
+UID 0 is not mapped in this userns, it will be shown as nobody. Therefore,
+process running in the pod's userns won't be able to read the file (unless it
+has permissions for others).
+
+Therefore, if we want the pod to be able to read those files and permissions be
+what we expect, the kubelet needs to chown the file to a UID that is mapped into
+the pod's userns (e.g. UID 65536 in this example), as that is what root inside
+the container is mapped to in the user namespace.
+
+We tried this before, but several limitations were hit:
+
+* Changing the owner of files in configmaps/secrets/etc was a concern, those
+  volume type today ignore FsUser setting and changing it to honor them was a
+  concern for some members of the community due to possibly breaking some
+  existing behavior.
+
+* Therefore, we need to rely on `fsGroup`, that always mark files readable for
+  the group. This means this solution can't work when we NEED not to have
+  permissions for the group (think of ssh keys, for example, that tools enforce no
+  permission for the group)
+
+* There are several other files that also need to have the proper permissions,
+  like: /dev/termination-log, /etc/hosts, /etc/resolv.conf, /etc/hotname, etc.
+  While it is completely possible to do, it adds more complexity to lot of parts
+  of the code base and future Kubernetes features will have to take this into
+  account too. Furthermore, some of these files are created by container runtimes,
+  so complexity creeps out very easily.
+
+##### Example without idmap mounts
+
+Now let's say the pod is using its volumes that were mounted using idmap mounts
+by the container runtime. All the mappings used (the idmap mounts and the pod
+userns) are:
+
+| Host ID  | Container ID   | Length  |
+|----------|----------------|---------|
+| 65536    |      0         |  65536  |
+
+
+Keep in mind the file `/var/lib/kubelet/.../volumes/configmap/foo` is created by
+the kubelet, the owner is host UID 0, **but** it is bind-mounted into
+`/vol/configmap/foo` **using an idmap mount** with the mapping aforementioned.
+
+To achieve this, the kubelet only needs to set the UID/GID mappings in the
+`Mount` CRI message.
+
+If the pod wants to read who is the owner of file `/vol/configmap/foo`, now it
+will see the owner is root inside the container. This is due to the IDs
+transformations that the idmap mount does for us.
+
+In other words, we can make sure the pod can read files instead of chowning them
+all using the host IDs the pod is mapped to, by just using an idmap mount that
+has the same mapping that we use for the pod user namespace.
+
 #### Unresolved
 
 Here is a list of considerations raised in PRs discussion that hasn't yet
@@ -455,7 +548,7 @@ use container runtime versions that have the needed changes.
 Note this section is a WIP yet.
 
 ##### Alpha
-- Phase 1 implemented
+- Support with idmap mounts
 
 ##### Beta
 
