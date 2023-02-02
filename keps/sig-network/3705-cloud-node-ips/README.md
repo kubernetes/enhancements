@@ -20,6 +20,10 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -94,6 +98,9 @@ using a cloud provider. This KEP proposes to fix that.
 - Update the code in `k8s.io/cloud-provider/node/helpers` to implement
   the needed algorithms for the new behaviors.
 
+- Rename the `alpha.kubernetes.io/provided-node-ip` annotation, which
+  has not been alpha for a long time.
+
 ### Non-Goals
 
 - Changing the behavior of nodes using legacy cloud providers.
@@ -146,7 +153,7 @@ If `--cloud-provider` and `--node-ip` are both specified (and
 annotation to the node, `alpha.kubernetes.io/provided-node-ip`. Cloud
 providers expect this annotation to conform to the current expected
 `--node-ip` syntax (ie, a single value); if it does not, then they
-will log an error and, not remove the
+will log an error and not remove the
 `node.cloudprovider.kubernetes.io/uninitialized` taint from the node,
 causing the node to remain unusable until kubelet is restarted with a
 valid (or absent) `--node-ip`.
@@ -208,25 +215,45 @@ will try to parse it as a single IP address, fail, log an error, and
 leave the node in the tainted state, which is exactly what we wanted
 it to do if it can't interpret the `--node-ip` value correctly.
 
-Therefore, we do not need a new annotation for the new `--node-ip`
+Therefore, we do not _need_ a new annotation for the new `--node-ip`
 values; we can continue to use the existing annotation, assuming
 existing cloud providers will treat unrecognized values as errors.
 
-```
-<<[UNRESOLVED annotation-name ]>>
+That said, the existing annotation name is
+`alpha.kubernetes.io/provided-node-ip` but it hasn't been "alpha" for
+a long time. We should fix this. So:
 
-The annotation name is `alpha.kubernetes.io/provided-node-ip`
-but it hasn't been "alpha" for a long time. Should we rename it? In
-that case, we probably need to keep supporting both versions for a
-while.
+  1. When `--node-ip` is unset, kubelet should delete both the legacy
+     `alpha.kubernetes.io/provided-node-ip` annotation and the new
+     `kubernetes.io/provided-node-ip` annotation (regardless of
+     whether the feature gate is enabled or not, to avoid problems
+     with rollback and skew).
 
-<<[/UNRESOLVED]>>
-```
+  2. When the `CloudNodeIPs` feature is enabled and `--node-ip` is
+     set, kubelet will set both the legacy annotation and the new
+     annotation. (It always sets them both to the same value, even if
+     that's a value that old cloud providers won't understand).
+
+  2. When the `CloudNodeIPs` feature is enabled, the cloud provider
+     will use the new `kubernetes.io/provided-node-ip` annotation _if
+     the legacy alpha annotation is not set_. (But if both annotations
+     are set, it will prefer the legacy annotation, so as to handle
+     rollbacks correctly.)
+
+  3. A few releases after GA, kubelet can stop setting the legacy
+     annotation, and switch to unconditionally deleting it, and
+     setting/deleting the new annotation depending on whether
+     `--node-ip` was set or not. Cloud providers will also switch to
+     only using the new annotation, and perhaps logging a warning if
+     they see a node with the old annotation but not the new
+     annotation.
 
 Kubelet will preserve the existing behavior of _not_ passing
-"`0.0.0.0`" or "`::`" to the cloud provider, for backward
-compatibility, but it _will_ pass "`IPv4`" and "`IPv6`" if they are
-passed as the `--node-ip`.
+"`0.0.0.0`" or "`::`" to the cloud provider, even via the new
+annotation. This is needed to preserve backward compatibility with
+current behavior in clusters using those `--node-ip` values. However,
+it _will_ pass "`IPv4`" and/or "`IPv6`" if they are passed as the
+`--node-ip`.
 
 ### Changes to cloud providers
 
@@ -266,8 +293,30 @@ Notes:
     dual-stack IPv4-primary configuration. (In particular, you would
     have IPv4-primary nodes but IPv6-primary pods.)
 
-  - `--node-ip 1.2.3.4,abcd::ef01` was previous valid syntax when
+  - `--node-ip 1.2.3.4,abcd::ef01` was previously valid syntax when
     using no `--cloud-provider`, but was not valid for cloud kubelets.
+
+<<[UNRESOLVED multiple-addresses ]>>
+
+In the examples above, `--node-ip IPv4` means "pick any one IPv4
+address", not "use all IPv4 addresses". This seemed to me to be
+consistent with the behavior when specifying a specific IP address (in
+which case all other IPs of the same NodeAddressType are removed from
+the list), but is inconsistent with the behavior of `--node-ip
+0.0.0.0` / `--node-ip ::` with legacy cloud providers and bare metal
+(where that affects the _sorting_ of IPs but does not do any
+_filtering_).
+
+In past discussions (eg https://kep.k8s.io/1664,
+https://issues.k8s.io/95768) no one has ever been entirely sure what
+the point of having multiple node.status.addresses values is, and
+there has never been a way to get multiple node.status.addresses
+values (of the same IP family) on "bare metal", so that would tend to
+prevent people from designing features that depended on multiple node
+addresses. So it's not clear that there's really any downside in
+filtering out the "unused" node IPs...
+
+<<[/UNRESOLVED]>>
 
 If the cloud only had IPv4 IPs for the node, then the same examples would look like:
 
@@ -316,26 +365,13 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
+Most of the changes will be in `k8s.io/cloud-provider/node/helpers`.
+There will also be small changes in kubelet startup.
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet`: `2023-01-30` - `66.9`
+- `k8s.io/kubernetes/pkg/kubelet/nodestatus`: `2023-01-30` - `91.2`
+- `k8s.io/kubernetes/vendor/k8s.io/cloud-provider/node/helpers`: `2023-01-30` - `31.7`
+- `k8s.io/kubernetes/vendor/k8s.io/cloud-provider/node/helpers/address.go`: `2023-01-30` - `100`
 
 ##### Integration tests
 
@@ -346,6 +382,17 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
+
+```
+<<[UNRESOLVED integration ]>>
+
+I don't know what existing integration testing of kubelet and cloud
+providers there is. Given unit tests for the new `--node-ip` parsing
+and `node.status.addresses`-setting code, and e2e tests of some sort,
+we probably don't need integration tests.
+
+<<[/UNRESOLVED]>>
+```
 
 - <test>: <link to test coverage>
 
@@ -366,7 +413,19 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 I'm not sure how we currently handle cloud-provider e2e. GCP does not
 support IPv6 and `kind` does not use a cloud provider, so we cannot
-test the new code/behavior in any of the "core" e2e tests.
+test the new code/behavior in any of the "core" e2e jobs.
+
+@aojea suggests we _could_ use `kind` with an external cloud provider.
+This would presumably have to be a bespoke dummy cloud provider, but
+since we are only doing this to test the new `k/cloud-provider` code,
+having a mostly-dummied-out cloud provider should not be a problem? It
+could perhaps have a default `NodeAddresses` return value of
+"<intentionally-wrong-IPv4-IP>, <correct-IPv6-IP>,
+<intentionally-wrong-IPv6-IP>, <correct-IPv4-IP>", and then we could
+pass `--node-ip <correct-IPv4-IP>,IPv6` to kubelet. If the cloud
+provider did not receive and interpret the `--node-ip` value
+correctly, then we would end up with node IPs that didn't work and the
+test job should fail.
 
 <<[/UNRESOLVED]>>
 ```
@@ -375,67 +434,38 @@ test the new code/behavior in any of the "core" e2e tests.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- New `--node-ip` handling and annotation implemented behind a feature flag
+- Unit tests updated
+
+- Initial e2e tests completed and enabled? Unless maybe the e2e tests
+  will take a bunch of development work on either kind or the
+  cloud-provider CI infrastructure, in which case we might decide to
+  pass on e2e testing in Alpha?
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- Positive feedback / no bugs
+- At least one release after Alpha
+- Decision made about whether `--node-ip IPv4` means 1 IPv4 IP or all IPv4 IPs
+- e2e tests definitely completed and enabled if they weren't already in Alpha
+- e2e test that new annotation gets cleared on rollback
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+- Positive feedback / no bugs
+- Two releases after Beta to allow time for feedback
 
 #### Deprecation
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- Two releases after GA, kubelet will stop setting the legacy
+  `alpha.kubernetes.io/provided-node-ip` annotation (and start
+  deleting it). Cloud providers will stop honoring the legacy
+  annotation.
+
+- (Two releases after that, we can remove the code to delete the
+  legacy annotation when present.)
 
 ### Upgrade / Downgrade Strategy
 
@@ -450,18 +480,53 @@ to start after downgrade.
 
 ### Version Skew Strategy
 
-By design, "old kubelet / new cloud provider" (or "new kubelet with
-old `--node-ip` value / new cloud provider") will work fine, because
-any `--node-ip` values accepted by old kubelet are defined to have the
-same meaning with old and new cloud providers.
+- Old kubelet / old cloud provider: Kubelet will only set the old
+  annotation, and the cloud provider will only read the old
+  annotation. Everything works (even if there's a stale new annotation
+  left over from a cluster rollback).
 
-OTOH, "new kubelet with new `--node-ip` value / old cloud provider"
-will (intentionally) fail, because the old cloud provider won't be
-able to fulfil the new `--node-ip` request.
+- Old kubelet / new cloud provider: Kubelet will only set the old
+  annotation. The cloud provider will read the old annotation, and
+  will interpret it in the same way an old cloud provider would
+  (because all `--node-ip` values accepted by an old kubelet are
+  interpreted the same way by both old and new cloud providers).
+  Everything works (even if there's a stale new annotation left over
+  from a kubelet rollback, because the new cloud provider still
+  prefers the old annotation).
 
-For future upgrades/downgrades where both kubelet and the cloud
-provider support the new `--node-ip` behavior, there are no skew
-issues.
+- New kubelet, single-stack `--node-ip` value / old cloud provider:
+  Kubelet will set both annotations (to the same value). The cloud
+  provider will read the old annotation. Everything works, because
+  this is an "old" `--node-ip` value, and the old cloud provider knows
+  how to interpret it correctly.
+
+- New kubelet, dual-stack `--node-ip` value / old cloud provider:
+  Kubelet will set both annotations (to the same value). The cloud
+  provider will read the old annotation, but it will _not_ know how to
+  interpret it because it's a "new" value. So it will log an error and
+  leave the node tainted. (This is the desired result, since the cloud
+  provider is not able to obey the `--node-ip` value the administrator
+  provided.)
+
+- New kubelet / new cloud provider: Kubelet will set both annotations
+  (to the same value). The cloud provider will read the old
+  annotation, and will know how to interpret it regardless of whether
+  it's an "old" or "new" value. Everything works.
+
+- Future (post-GA) kubelet / GA cloud provider: Kubelet will set
+  the new annotation, and delete the old annotation if present. The
+  cloud provider will see that only the new annotation is set, and so
+  will use that. Everything works (even if there had been a stale old
+  annotation left over from the upgrade).
+
+- GA kubelet / Future (post-GA) cloud provider: Kubelet will set
+  both annotations (to the same value). The cloud provider will only
+  look at the new annotation. Everything works.
+
+- Future (post-GA) kubelet / Future (post-GA) cloud provider: Kubelet
+  will set the new annotation, and delete the old annotation if
+  present. The cloud provider will only look at the new annotation.
+  Everything works.
 
 ## Production Readiness Review Questionnaire
 
@@ -477,12 +542,38 @@ issues.
 
 ###### Does enabling the feature change any default behavior?
 
-No
+Kubelet will begin setting two annotations on each node rather than
+one. However, cloud providers will still prefer the old annotation and
+will only read the new annotation if the old one isn't there.
+
+So assuming no bugs, the only visible change after (just) enabling the
+feature is the duplicate annotation.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, as long as you also roll back the kubelet configuration to no
 longer use the new feature.
+
+One edge case: if a user who was not previously setting `--node-ip`
+upgrades, enables the feature, starts using `--node-ip`, and then
+rolls back the kubelet and its configuration but _not_ the cloud
+provider, then they will end up with a node that has a stale "new"
+annotation (with the `--node-ip` value they had been using while
+upgraded), but no "old" annotation (because the rolled-back kubelet
+configuration no longer specifies `--node-ip` so kubelet will delete
+the old annotation). The (not-rolled-back) cloud provider will then
+mistake this as being the future rather than the past, assuming
+kubelet intentionally set only the new annotation and not the old
+annotation, and so it will obey the (stale) new annotation.
+
+That could be prevented by stretching out the feature enablement over
+a few more releases, and not having the cloud-provider switch from
+"always use the old annotation" to "prefer the old annotation when
+it's set but use the new annotation if it's the only one" until a few
+releases later. If we were going to do that, then perhaps we should
+split the annotation renaming into a separate KEP from the dual-stack
+`--node-ip` handling, so that the edge cases of the annotation
+renaming don't have to slow down the dual-stack `--node-ip` adoption.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -490,18 +581,7 @@ It works.
 
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+TBD; we should have a test that the annotation is cleared on rollback
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -608,9 +688,8 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Not really.
-
-The size of the `alpha.kubernetes.io/provided-node-ip` annotation may
+Not really. Kubelet will now create two node-IP-related annotations on
+each Node rather than just one, and the value of the annotation may
 be slightly larger (eg because it now contains two IP addresses rather
 than one), and some users may change their `--node-ip` to take
 advantage of the new functionality in a way that would cause more node
