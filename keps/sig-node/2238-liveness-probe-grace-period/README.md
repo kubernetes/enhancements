@@ -540,6 +540,10 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
   No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature improves probe behavior, and should not lead to resource exhaustion on the node.
+
 ### Troubleshooting
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
