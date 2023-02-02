@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-release
 participating-sigs:
   - sig-architecture
-status: provisional
+status: implementable
 creation-date: 2023-01-17
 reviewers:
   - "@cpanato" # sig-release
