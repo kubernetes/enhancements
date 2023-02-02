@@ -673,6 +673,13 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
+
+Plan to add more tests for enablement/disablement for beta. PR started here with
+tests that toggle feature on and off and show feature works in both cases.
+
+https://github.com/kubernetes/kubernetes/blob/a62e52cf2ede71a7219c04569ee09f0410f709f0/staging/src/k8s.io/kubectl/pkg/cmd/explain/explain_test.go#L157-L219
+
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -722,7 +729,7 @@ logs or events for this purpose.
 -->
 
 There is no direct metrics of `explain` users, but operators can indirectly
-guage usership by watching openapi v3 metrics.
+gauge usership by watching openapi v3 metrics.
 
 ###### How can someone using this feature know that it is working for their instance?
 
