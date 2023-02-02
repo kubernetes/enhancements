@@ -202,15 +202,17 @@ Update release-1.x branches to build/release using go 1.N once all of these cond
      used for the .0 release of the Kubernetes release branch
 4. There are no regressions relative to go 1.(N‑1) known to impact Kubernetes
 5. Behavior changes in go 1.N are mitigated to preserve existing behavior for previous
-   Kubernetes minor versions without requiring action by Kubernetes end-users. Examples:
-   * defaulting GOGC in kube-apiserver `main()` to preserve go1.17 memory use 
-     characteristics in Kubernetes 1.23.x updating from go1.17 to go1.18
-   * defaulting GODEBUG in kube-apiserver `main()` to preserve SHA-1 x509 
-     enablement in Kubernetes 1.23.x updating from go1.17 to go1.18
-   * allowing kubectl plugin resolution to locate plugin binaries in the 
-     current directory updating from go1.18 to go1.19
-   * using the `go.mod` version directive and `godebug` directives in go1.21+ to preserve 
-     go runtime legacy behavior as described in https://github.com/golang/go/issues/56986
+   Kubernetes minor versions without requiring action by Kubernetes end-users.
+   * In go1.21+, the go runtime is expected to match previous runtime behavior by default
+     if we avoid leave the go version indicated in `go.mod` files in release branches unchanged,
+     as described in https://github.com/golang/go/issues/56986
+   * If necessary, other mitigation approaches can be used as long as they are transparent to end users. Examples:
+     * defaulting GOGC in kube-apiserver `main()` to preserve go1.17 memory use 
+       characteristics in Kubernetes 1.23.x updating from go1.17 to go1.18
+     * defaulting GODEBUG in kube-apiserver `main()` to preserve SHA-1 x509 
+       enablement in Kubernetes 1.23.x updating from go1.17 to go1.18
+     * allowing kubectl plugin resolution to locate plugin binaries in the 
+       current directory updating from go1.18 to go1.19
 
 The [go update handbook](https://github.com/kubernetes/sig-release/blob/master/release-engineering/handbooks/go.md)
 and [go update issue template](https://github.com/kubernetes/release/blob/master/.github/ISSUE_TEMPLATE/dep-golang.md)
