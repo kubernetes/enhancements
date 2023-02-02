@@ -671,9 +671,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: SupplementalGroupsPolicy
+  - Components depending on the feature gate: kube-apiserver, kubelet, (and CRI implementations(e.g. containerd, cri-o))
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -687,6 +687,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No. Just introducing new API fields in Pod spec and CRI which does NOT change the default behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -701,7 +702,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes. It can be disabled after enabled. However, users should pay attention that gids of container processes in pods with `IgnoreGroupsInImage` policy would change. It means the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Just the policy `IgnoreGroupsInImage` is reenabled. Users should pay attention that gids of containers in pods with `IgnoreGroupsInImage` policy would change. It means that the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -717,6 +722,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Planned for Alpha.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -880,6 +887,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No. Just introducing new API fields in Pod spec and CRI which does NOT change the default behavior.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -889,6 +898,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -896,6 +907,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -905,6 +918,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -917,6 +932,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+No.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -928,6 +945,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+No.
 
 ### Troubleshooting
 
