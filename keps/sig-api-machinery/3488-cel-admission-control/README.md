@@ -407,7 +407,7 @@ spec:
   validations:
     - name: max-replicas
       expression: "object.spec.replicas <= params.maxReplicas"
-      messageExpression: "'object.spec.replicas must be no greater than {}'.format([params.maxReplicas])"
+      messageExpression: "'object.spec.replicas must be no greater than %d'.format([params.maxReplicas])"
       reason: Invalid
       # ...other rule related fields here...
 ```
@@ -2894,7 +2894,7 @@ spec.x[xKey].y[yIndex].field
   validations:
     - scope: "x[xKey].y[yIndex].field"
       expression: "scope.startsWith('xyz-')"
-      messageExpression: "'{}, {}: some problem'.format([scopePath.xKey, scopePath.yIndex])"
+      messageExpression: "'%s, %d: some problem'.format([scopePath.xKey, scopePath.yIndex])"
 ```
 
 Prior art:
