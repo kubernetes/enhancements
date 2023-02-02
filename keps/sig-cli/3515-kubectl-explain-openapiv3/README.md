@@ -624,8 +624,8 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: Environment variable `KUBECTL_EXPLAIN_OPENAPIV3` which toggles validity of `--output` flag
-    (to be renamed to --output when feature is no longer experimental)
+  - Describe the mechanism: disablement via `--output plaintext-openapiv2` CLI argument for `explain` subcommand. Beta may also be disabled with `KUBECTL_EXPLAIN_OPENAPIV3=false`
+   environment variable.
   - Will enabling / disabling the feature require downtime of the control
     plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -644,12 +644,19 @@ information populated.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Until the feature is stable it will only be enabled when the environment variable is used.
-It has no persistent effect on data that is viewewd.
+Yes, providing `--output plaintext-openapiv2` will disable the feature. 
+
+Alternatively during Alpha and Beta phases, 
+environment variable `KUBECTL_EXPLAIN_OPENAPIV3=false` may be used to disable the 
+feature without the backwards-incompatile argument.
+
+This feature has no persistent effect on data that is viewed. It is just a viewer
+of cluster data.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 There is no persistence to using the feature. It is only used for viewing data.
+So it behaves as normal.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -674,15 +681,8 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+No, this is a user-interactive CLI feature. If users don't like it they can
+use the old functionality by providing arguments `--output plaintext-openapiv2`
 
 ###### What specific metrics should inform a rollback?
 
@@ -693,17 +693,16 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+This feature has no state in the cluster. Using `explain` on a cluster cannot
+affect other users.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -722,15 +721,20 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+There is no direct metrics of `explain` users, but operators can indirectly
+guage usership by watching openapi v3 metrics.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 ```shell
-kubectl explain pods --output openapiv3
+kubectl explain pods --output plaintext
 ```
 
 User should see OpenAPI v3 JSON Schema for `pods` type printed to console.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+N/A
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -757,8 +761,8 @@ Pick one more of these and delete the rest.
   - Metric name:
   - [Optional] Aggregation method:
   - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: N/A for client-side user-interactive CLI feature
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -766,12 +770,14 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+N/A
 
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+None
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -791,7 +797,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 -->
 
 To reap the benefits of this feature, OpenAPI v3 is required, however OpenAPI v2
-data can be used as a fallback.
+data can be used as a fallback. OpenAPI V3 is GA as of Kubernetes 1.27.
 
 ### Scalability
 
@@ -815,7 +821,8 @@ not changed the server incurs a cheap, almost negligible cost to serving the req
 
 The document returned by calls to `/openapi/v3/...` is expected to be far smaller
 than the megabytes-scale openapi v2 document, since it only includes information
-for a single group-version.
+for a single group-version. Additionally, this new mechanism is far more cache-friendly
+so the expectation is that far less data will need to be transferred.
 
 <!--
 Describe them, providing:
