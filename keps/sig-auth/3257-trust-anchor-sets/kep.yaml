@@ -8,9 +8,11 @@ participating-sigs:
 status: implementable
 creation-date: 2022-02-16
 reviewers:
-  - TBD
+  - liggitt
+  - enj
 approvers:
-  - TBD
+  - liggitt
+  - enj
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
@@ -25,11 +27,11 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.26"
+latest-milestone: "v1.27"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.26"
+  alpha: "v1.27"
   beta: ""
   stable: ""
 
