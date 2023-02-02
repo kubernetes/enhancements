@@ -197,9 +197,6 @@ Update release-1.x branches to build/release using go 1.N once all of these cond
    and the go minor version used for the .0 release of the Kubernetes release branch
    * this ensures consumers of patch releases of published Kubernetes
      libraries are not *forced* to update to go 1.N
-   * if this is the first go minor version update done on the release branch,
-     create unit and integration presubmit/periodic jobs that run with the go minor version
-     used for the .0 release of the Kubernetes release branch
 4. There are no regressions relative to go 1.(N‑1) known to impact Kubernetes
 5. Behavior changes in go 1.N are mitigated to preserve existing behavior for previous
    Kubernetes minor versions without requiring action by Kubernetes end-users.
@@ -253,16 +250,11 @@ built using a proposed go version and manually triggered on a pull request.
 This is the mechanism currently used to verify changes made to the default Kubernetes
 development branch in preparation for a go minor version update.
 
-https://github.com/kubernetes/test-infra/issues/28310 tracks a feature 
-request to allow the code under test to dictate the go version used.
-If this was implemented, a release branch PR could be opened, pass CI presubmits,
-then add a commit updating the go version and pass CI presubmits a second time.
-
 To ensure release branches continue to remain compatible with the original
 go minor version used with the .0 release for each release branch,
-prior to updating the go minor version in a release branch, presubmit/periodic 
-unit and integration test job variants would be created using using the original
-go minor version.
+presubmit/periodic unit and integration test job variants would be created using using the original
+go minor version. The [per-branch test job config fork](https://github.com/kubernetes/test-infra/tree/master/releng/config-forker)
+tool could be updated to set up these unit and integration test jobs automatically.
 
 ##### Prerequisite testing updates
 
@@ -270,11 +262,13 @@ n/a
 
 ##### Unit tests
 
-n/a
+Addition of release branch periodic / presubmit unit test jobs
+running with the original go minor version for the branch.
 
 ##### Integration tests
 
-n/a
+Addition of release branch periodic / presubmit integration test jobs
+running with the original go minor version for the branch.
 
 ##### e2e tests
 
