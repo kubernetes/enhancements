@@ -598,6 +598,12 @@ when drafting this test plan.
 
 ### Graduation Criteria
 
+#### Alpha
+
+- The Feature is implemented behind `ConsistentWatchList` feature flag
+- Initial e2e tests completed and enabled
+- Scalability/Performance tests confirm gains of this feature
+
 <!--
 **Note:** *Not required until targeted at a release.*
 
