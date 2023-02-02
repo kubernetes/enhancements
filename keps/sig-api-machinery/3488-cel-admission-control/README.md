@@ -1043,6 +1043,7 @@ The enum options will be:
 - `warn`: Validation failures are reported as warnings to the client. (xref: [Admisssion Webhook Warnings](https://kubernetes.io/blog/2020/09/03/warnings/#admission-webhooks))
 - `audit`: Validation failures are published as audit events (see below Audit
   Annotations section for details).
+- `log`: The apiserver handling the admission request logs the validation failure.
 
 Systems that need to aggregate validation failures may implement an [audit
 webhook
@@ -1075,11 +1076,16 @@ This enables the following use cases:
 
 Future work:
 
-ValidatingAdmissionPolicy resources might, in the future, add a `warnings` field
-adjacent to the `validations` and `auditAnnotations` fields to declare
-expressions only ever result in warnings. This would allow
-ValidatingAdmissionPolicy authors to declare a expression as non-enforcing
-regardless of `validationActions`.
+- ValidatingAdmissionPolicy resources might, in the future, add a `warnings`
+  field adjacent to the `validations` and `auditAnnotations` fields to declare
+  expressions only ever result in warnings. This would allow
+  ValidatingAdmissionPolicy authors to declare a expression as non-enforcing
+  regardless of `validationActions`.
+
+- ValidatingAdmissionPolicy resources, might, in the future, offer per-expression
+  enforcement actions (instead of a separate `warnings` field) and combine these
+  enforcement actions with the ValidatingAdmissionPolicyBinding enforcement action
+  to determine the effective enforcement.
 
 #### Audit Annotations
 
