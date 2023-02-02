@@ -149,11 +149,14 @@ This proposal introduces new CRDs VolumeGroupSnapshot, VolumeGroupSnapshotConten
 
 A VolumeGroupSnapshot can be created from multiple PVCs with a label on the PVCs specified by the labelSelector in the VolumeGroupSnapshot if the CSI driver supports the CREATE_DELETE_GET_VOLUME_GROUP_SNAPSHOT capability.
 
+Note: In the following, we will use VolumeGroupSnapshot Controller to refer to the control logic for VolumeGroupSnapshot. This is not a new controller. It will be new control logic added to the existing Snapshot Controller and the csi-snapshotter sidecar.
+
 #### Dynamic provisioning
 
 * Admin creates a VolumeGroupSnapshotClass.
 * User creates a VolumeGroupSnapshot with label selector that matches the label applied to all PVCs to be snapshotted together.
-* This will trigger the VolumeGroupSnapshot controller to create a VolumeGroupSnapshotContent API object, and also call the CreateVolumeGroupSnapshot CSI function. It will also create multiple VolumeSnapshot API objects with volumeGroupSnapshotName in the status and the corresponding VolumeSnapshotContents with the snapshot handle. The VolumeSnapshot and VolumeSnapshotContent will point to each other before these objects are created in the API server to avoid triggering the VolumeSnapshot controller to create new individual objects. The CSI snapshotter sidecar will not call CSI driver in this case. If needed, GetVolumeGroupSnapshot CSI function will be called to retrieve individual snapshot statuses until all snapshots are ready to use.
+* This will trigger the VolumeGroupSnapshot controller to create a VolumeGroupSnapshotContent API object, and also call the CreateVolumeGroupSnapshot CSI function.
+* The controller will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 * CreateVolumeGroupSnapshot CSI function response
   * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The VolumeGroupSnapshot controller can use the returned list of snapshots to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update SnapshotList in the VolumeGroupSnapshot Status and SnapshotContentList in the VolumeGroupSnapshotContent Status.
 
@@ -176,7 +179,7 @@ status:
 
 Admin can create a VolumeGroupSnapshotContent, specifying an existing VolumeGroupSnapshotHandle in the storage system and specifying a VolumeGroupSnapshot name and namespace. Then the user creates a VolumeGroupSnapshot that points to the VolumeGroupSnapshotContent name.
 
-Admin will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the storage system, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the user can create VolumeSnapshots pointing to the VolumeSnapshotContents.
+The controller will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the storage system, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 
 ### Delete VolumeGroupSnapshot
 
@@ -502,9 +505,9 @@ spec:
   volumeGroupSnapshotClassName: volumeGroupSnapshotClass1
 ```
 
-A new external VolumeGroupSnapshot controller will handle VolumeGroupSnapshotClass, VolumeGroupSnapshot, and VolumeGroupSnapshotContent resources. We may need to split this into two controllers, one common controller that handles common functions such as binding, and one sidecar controller that calls the CSI driver.
+The new VolumeGroupSnapshot logic will be added to the Snapshot Controller and the csi-snapshotter sidecar to handle VolumeGroupSnapshotClass, VolumeGroupSnapshot, and VolumeGroupSnapshotContent resources accordingly.
 
-Snapshot controller will be modified so that it will not delete an indiviual VolumeSnapshot that is part of a VolumeGroupSnapshot. External snapshotter sidecar will be modified so that it will not delete an individual VolumeSnapshotContent that is part of a VolumeGroupSnapshotContent.
+Snapshot controller will also be modified so that it will not delete an indiviual VolumeSnapshot that is part of a VolumeGroupSnapshot. External snapshotter sidecar will be modified so that it will not delete an individual VolumeSnapshotContent that is part of a VolumeGroupSnapshotContent.
 
 ### CSI Changes
 
@@ -688,9 +691,9 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Other
     - Describe the mechanism:
-      The external volume group snapshot controllers do not have a
-      feature gate because they are out of tree.
-      It is enabled when these external controller sidecars are deployed with the CSI driver.
+      We don't have a feature gate because this feature is out of tree.
+      We will use a flag called enable-volume-group-snapshot to enable this
+      feature when the snapshot controller and csi-snapshotter sidecar are started.
     - Will enabling / disabling the feature require downtime of the control
       plane?
       From the controller side, it only affects the external controller sidecars.
@@ -703,21 +706,15 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Yes. In order to disable this feature once it has been enabled, we first need to make sure that all VolumeGroupSnapshot API objects are deleted. Then the new controllers for VolumeGroupSnapshot can be stopped/removed, and external-snapshotter controller/sidecar can be downgraded to a version without this feature.
+  Yes. In order to disable this feature once it has been enabled, we first need to make sure that all VolumeGroupSnapshot API objects are deleted. Then external-snapshotter controller/sidecar can be restarted without the feature flag.
 
-If we don't delete the VolumeGroupSnapshot API objects and CRDs but just uninstall the VolumeGroupSnapshot controllers and downgrade the other sidecars, the API objects continue to exist in the API server. User may delete an individual VolumeSnapshot that is associated with a VolumeGroupSnapshot. After that if the user starts the controllers/sidecars again, the pre-existing VolumeGroupSnapshot still has the deleted individual VolumeSnapshots in its status so it is out of sync with the storage system and provides out-dated information to the user. User can still restore individual PVCs from individual VolumeSnapshots that are not deleted, but they cannot restore PVCs from the deleted VolumeSnapshots.
-
-If the API objects and VolumeGroupSnapshot controllers are running, but the snapshotter sidecars are downgraded to a lower version that does not support this feature, it should be fine as individual snapshots that are part of a group snapshot will be created and deleted by the VolumeGroupSnapshot controller.
-
-If the external-snapshotter sidecar which supports this feature is running but VolumeGroupSnapshot controller is not (CRDs are still installed), creating VolumeGroupSnapshot will not be successful. Ready status in VolumeGroupSnapshot API objects will be false until those controllers are running again.
+If we don't delete the VolumeGroupSnapshot API objects and CRDs but just disable the feature and restart Snapshot controller and the csi-snapshotter sidecar, the API objects continue to exist in the API server. User may delete an individual VolumeSnapshot that is associated with a VolumeGroupSnapshot. After that if the user enables the feature again, the pre-existing VolumeGroupSnapshot still has the deleted individual VolumeSnapshots in its status so it is out of sync with the storage system and provides out-dated information to the user. User can still restore individual PVCs from individual VolumeSnapshots that are not deleted, but they cannot restore PVCs from the deleted VolumeSnapshots.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   We will be able to create new VolumeGroupSnapshot API objects again.
 
 * **Are there any tests for feature enablement/disablement?**
-  Since there is no feature gate for this feature on the external controller side and the only way to
-  enable or disable this feature is to install or unistall the sidecar, we cannot write
-  tests for feature enablement/disablement.
+  Unit tests will be added with or without the feature flag enabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
