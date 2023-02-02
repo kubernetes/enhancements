@@ -14,10 +14,10 @@ approvers:
   - "@derekwaynecarr"
 editor: TBD
 creation-date: 2018-09-06
-last-updated: 2022-08-30
+last-updated: 2023-02-02
 status: implementable
-latest-milestone: "1.15"
-stage: "alpha"
+latest-milestone: "1.27"
+stage: "beta"
 milestone:
   alpha: "1.15"
-  
+  beta: "1.27"

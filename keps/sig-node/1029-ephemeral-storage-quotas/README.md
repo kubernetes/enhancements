@@ -50,6 +50,7 @@
   - [Version 1.15](#version-115)
   - [Version 1.24](#version-124)
   - [Version 1.25](#version-125)
+  - [Version 1.27](#version-127)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
   - [Alternative quota-based implementation](#alternative-quota-based-implementation)
@@ -940,6 +941,11 @@ If the metrics shows some problems, we can check the log and quota dir with belo
 - Promote `LocalStorageCapacityIsolationFSMonitoring` to Beta, but there is a regression and we revert it to alpha.
 
 ConfigMap rendering [issue](https://github.com/kubernetes/kubernetes/issues/112081) was found in the 1.25.0 release. When ConfigMaps get updated within the API, they do not get rendered to the resulting pod's filesystem by the Kubelet. The feature has been [reverted to alpha](https://github.com/kubernetes/kubernetes/pull/112078) in the 1.25.1 release.
+
+### Version 1.27
+
+- Fix the blocking issue that caused the revert to alpha: [fsquota: only generate pod uuid is nil #112624](https://github.com/kubernetes/kubernetes/pull/112624)
+
 
 ## Drawbacks [optional]
 
