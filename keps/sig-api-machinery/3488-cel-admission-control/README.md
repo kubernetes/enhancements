@@ -876,7 +876,7 @@ spec:
   validations:
     - expression: "self.name.startsWith('xyz-')"
       name: name-prefix
-      messageExpression: "'{} must start with xyz-'.format([self.name])"
+      message: "self.name must start with xyz-"
       reason: Unauthorized
     - expression: "self.name.contains('bad')"
       name: bad-name
@@ -885,7 +885,7 @@ spec:
       reason: Invalid
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
-      messageExpression: "'{} contains suspicious'.format([self.name])"
+      message: "'self.name contains suspicious'"
       code: 400
       reason: Invalid
 ```
@@ -2880,7 +2880,7 @@ For example, to validate all containers:
   validations:
     - scope: "spec.containers[*]"
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "'{} does not start with \'xyz\'-'.format([scope.name])"
+      message: "scope.name does not start with 'xyz'"
 ```
 
 To make it possible to access the path information in the scope, we can offer a
@@ -2915,7 +2915,7 @@ Note: We considered extending to a list of scopes, e.g.:
   validations:
     - scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "'{} does not start with \'xyz\''.format([scope.name])"
+      message: "scope.name does not start with 'xyz'"
 ```
 
 But feedback was this is signficantly more difficult to understand.
