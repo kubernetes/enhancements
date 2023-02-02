@@ -313,10 +313,16 @@ API Server will return a validation error.
     | unscheduled Pod<br>(nil <tt>nodeName</tt>)   | ✅ create<br>❌ update   | ✅ create<br>✅ update    |
     | scheduled Pod<br>(non-nil <tt>nodeName</tt>) | ❌ create<br>❌ update   | ✅ create<br>✅ update    |
 
-- **New field disabled in Alpha but not scheduler extension:** In Alpha, the new Pod field is disabled
-by default. However, the scheduler's extension point is activated no matter the feature gate is enabled
-or not. This enables scheduler plugin developers to tryout the feature even in Alpha, by crafting
-different enqueue plugins and wire with custom fields or conditions.
+- **New field disabled in Alpha but not scheduler extension:** In a high level, this feature contains
+the following parts:
+  
+  - a. Pod's spec, feature gate, and other misc bits describing the field `schedulingGates`
+  - b. the `SchedulingGates` scheduler plugin
+  - c. the underlying scheduler framework, i.e., the new PreEnqueue extension point
+
+  If the feature is disabled, part `a` and `b` are disabled, but `c` is enabled anyways. This implies
+  a scheduler plugin developer can leverage part `c` _only_ to craft their own `a'` and `b'` to
+  accomplish their own feature set.
 
 - **New phase literal in kubectl:** To provide better UX, we're going to add a new phase literal
 `SchedulingPaused` to the "phase" column of `kubectl get pod`. This new literal indicates whether it's
