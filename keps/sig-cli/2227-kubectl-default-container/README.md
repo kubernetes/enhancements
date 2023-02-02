@@ -16,6 +16,11 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+    - [Testing Strategy](#testing-strategy)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -179,13 +184,37 @@ metadata:
 ```
 
 ### Test Plan
+
+#### Testing Strategy
+
 Add a unit test for each command, testing the behavior with the annotation, without the annotation, and with the --container flag
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+The main unit test is in package under `vendor/k8s.io/kubectl/pkg/`.
+
+- vendor/k8s.io/kubectl/pkg/cmd/exec:2023-01-13 - 68.9%
+- vendor/k8s.io/kubectl/pkg/cmd/util/helpers.go:2023-01-13 - 38.1%
+- vendor/k8s.io/kubectl/pkg/polymorphichelpers/logsforobject.go:2023-01-13 -  79%
+
+See details in <https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=kubectl>.
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
+
+[Kubectl logs default container logs](https://github.com/kubernetes/kubernetes/blob/02f893b6e28549a1008d4fc65c40990b87c07830/test/e2e/kubectl/logs.go#L163): <https://storage.googleapis.com/k8s-triage/index.html?sig=cli&test=default%20container%20logs>
 
 ### Graduation Criteria
 
 #### Alpha -> Beta Graduation
 
 As this is an opt-in feature, no gate is expected.
+
 - At least 2 release cycles pass to gather feedback and bug reports during
 - Documentations, add it to [well-known annotations docs](https://kubernetes.io/docs/reference/kubernetes-api/labels-annotations-taints/)
 - Add a warning deprecation message when using the annotation `kubectl.kubernetes.io/default-logs-container`
@@ -310,11 +339,26 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 ## Implementation History
 
-2021-03-10: Alpha implementation completion in 1.21
-- https://github.com/kubernetes/kubernetes/pull/97099
-- https://github.com/kubernetes/kubernetes/pull/99615
-- https://github.com/kubernetes/kubernetes/pull/99581
-- https://github.com/kubernetes/kubernetes/pull/99833
+2021-03-10(v1.21) Alpha: implementation completion
+
+- <https://github.com/kubernetes/kubernetes/pull/97099>
+- <https://github.com/kubernetes/kubernetes/pull/99615>
+- <https://github.com/kubernetes/kubernetes/pull/99581>
+- <https://github.com/kubernetes/kubernetes/pull/99833>
+
+2021-10-28(v1.24) Beta: make 'kubectl logs' default to the first container when default container cannot be 
+determined or found by annotations
+
+- <https://github.com/kubernetes/kubernetes/pull/105964>
+
+2022-04-05(v1.25): remove deprecated message of `kubectl.kubernetes.io/default-logs-container`
+
+- <https://github.com/kubernetes/kubernetes/pull/109254>
+
+2023-01-13(v1.27): add an e2e test case
+
+- <https://github.com/kubernetes/kubernetes/pull/115046>
+
 
 ## Drawbacks
 
