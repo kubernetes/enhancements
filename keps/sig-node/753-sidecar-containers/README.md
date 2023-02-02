@@ -988,11 +988,13 @@ So when the new functionality wasn't yet used, downgrade will not be affected.
 
 Due to the new field added to `initContainers` to turn them into sidecars,
 downgrading to the version without this feature will make all Pods using this
-flag unscheduleable. These Pod spec will be rejected by the control plane and
-all kubelets during unmarshalling.
+flag unscheduleable. New Pods will be rejected by the control plane and
+all kubelets. Pods that has already been created will not be rejected by control
+plane, but once reaching the kubelet, that has this feature disabled or which
+is old, kubelet will reject the Pod on unmarshalling.
 
-**Note**, this specific behavior on read is not clear and if unmarshaling works,
-the new logic to reject such Pods will be added.
+**Note**, we tested kubelet behavior. For the control plane we may need
+to implement a new logic to reject such Pods when feature gate got turned off.
 See [Upgrade/downgrade testing](#upgradedowngrade-testing) section.
 
 Workloads will have to be deleted and recreated with the old way of handling
