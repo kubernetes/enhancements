@@ -590,7 +590,7 @@ The api-server will accept mutation requests to `spec.completions` for `Indexed`
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, unit and integration tests will be added.
+N/A
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
