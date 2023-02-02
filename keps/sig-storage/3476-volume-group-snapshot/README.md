@@ -186,7 +186,9 @@ The controller will retrieve all volumeSnapshotHandles in the Volume Group Snaps
 A VolumeGroupSnapshot can be deleted if the CSI driver supports the CREATE_DELETE_GET_VOLUME_GROUP_SNAPSHOT capability.
 * When a VolumeGroupSnapshot is deleted, the VolumeGroupSnapshot controller will call the DeleteVolumeGroupSnapshot CSI function which will delete individual snapshots as well.
   * Since CSI driver handles individual snapshot creation in CreateVolumeGroupSnapshot, it should handle individual snapshot deletion in DeleteVolumeGroupSnapshot as well. DeleteSnapshot CSI function will not be called.
+  * When DeleteVolumeGroupSnapshot CSI function returns success, it is assumed that all individual snapshots on the storage system have been deleted. VolumeGroupSnapshot controller should remove all the finalizers and delete the VolumeSnapshot and VolumeSnapshotContent API objects.
 * DeleteSnapshot on a single snapshot that belongs to a group snapshot is not allowed.
+* The Snapshot Controller and csi-snapshotter sidecar will be modified to skip the handling of VolumeSnapshot and VolumeSnapshotContent deletion if they are part of a group.
 
 ### Restore
 
@@ -426,8 +428,9 @@ type VolumeGroupSnapshotContentSpec struct {
 // OneOf
 type VolumeGroupSnapshotContentSource struct {
         // Dynamical provisioning of VolumeGroupSnapshot
+        // A list of PersistentVolume names to be snapshotted together
         // +optional
-        VolumeGroupHandle *string
+        PersistentVolumeNames []string
 
         // Pre-provisioned VolumeGroupSnapshot
         // +optional
