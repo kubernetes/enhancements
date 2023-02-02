@@ -640,13 +640,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-Yes. there are unit and integration tests for feature enablement/disablement.
-- unit tests:
-  - `pkg/scheduler/framework/plugins/podtopologyspread/filtering_test.go`
-  - `pkg/scheduler/framework/plugins/podtopologyspread/scoring_test.go`
-- integration tests
-  -  `test/integration/scheduler/filters/filters_test.go`
-  -  `test/integration/scheduler/scoring/priorities_test.go`
+No. The unit tests that are exercising the `switch` of feature gate itself  will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -665,7 +659,11 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-It won't impact already running workloads because it is an opt-in feature.
+It won't impact already running workloads because it is an opt-in feature in scheduler.
+But during a rolling upgrade, if some apiservers have not enabled the feature, they will not
+be able to accept and store the field "MatchLabelKeys" and the pods associated with these 
+apiservers will not be able to use this feature. As a result, pods belonging to the 
+same deployment may have different scheduling outcomes.
 
 
 ###### What specific metrics should inform a rollback?
@@ -767,7 +765,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [x] Other (treat as last resort)
-  - Details: We can determine if the feature is being used by comparing the expected and actual scheduling results.
+  - Details: We can determine if this feature is being used by checking deployments that have only `MatchLabelKeys` set in `TopologySpreadConstraint` and no `LabelSelector`. These Deployments will strictly adhere to TopologySpread after both deployment and rolling upgrades if the feature is being used.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -898,7 +896,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-No.
+Yes. there is an additional work: the scheduler will use the keys in `matchLabelKeys` to look up label values from the pod and AND with `LabelSelector`.
+Maybe result in a very samll impact in scheduling latency which directly contributes to pod-startup-latency SLO.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
