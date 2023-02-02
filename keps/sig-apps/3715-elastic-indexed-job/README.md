@@ -198,7 +198,8 @@ know that this has succeeded?
 ### Non-Goals
 
 - Change the existing behavior of `NonIndexed` mode.
-- Change the existing behavior of `Indexed` mode for jobs that never mutate.
+- Change the existing behavior of `Indexed` mode for jobs that never mutate 
+  `.spec.completions` and `.spec.parallelism` together.
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
@@ -248,7 +249,7 @@ The manager communicates with the workers to manage their load; examples of such
 and districuted ML training. Examples of frameworks include Horovod with MPI, Spark and Ray.
 
 This workload can be modeled as two `Indexed` Jobs, one for the manager and one for the workers. A 
-headless service is created to set up stable hostnames for the worker pods . The workers job is
+headless service is created to set up stable hostnames for the worker pods. The workers job is
 scaled up/down by updating `spec.completions` and `spec.parallelism` in tandem.
 
 The success semantics of these workloads are tied to the manager, not the workers. However, in
@@ -406,7 +407,7 @@ Note that if tests reveals a required change that invalidates the above understa
 revert and start in Alpha.
 
 #### Beta
-- Validtion logic in place to allow mutating `spec.completions`
+- Validation logic in place to allow mutating `spec.completions` in tandem with `.spec.parallelism`.
 
 #### GA
 - Fix any potentially reported bugs.
@@ -534,6 +535,8 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
+The feature can be safely rolled back.
+
 <!--
 This section must be completed when targeting alpha to a release.
 -->
@@ -572,6 +575,8 @@ automations, so be extremely careful here.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 Yes. If disabled, kube-apiserver will reject mutating requests to `spec.completions` for `Indexed` jobs. 
+For Jobs that were previously mutated, then the only implication is that future mutating requests will be
+rejected.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -864,6 +869,10 @@ Create requests will be rejected.
 
 In a multi-master setup, when the cluster has skewed apiservers, some create requests
 may get accepted and some may get rejected.
+
+Detection: failed update requests; metric that an operator can monitor is apiserver_request_total[resource=job, group=batch, verb=UPDATE, code=403]
+Diagnostics: apiserver logs indicating rejected/accepted job update requests
+Testing: no testing, this is a transient state until all instances are on the same k8s version. 
 
 <!--
 For each of them, fill in the following information by copying the below template:
