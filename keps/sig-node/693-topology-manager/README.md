@@ -23,6 +23,7 @@
 - [Design Details](#design-details)
   - [New Interfaces](#new-interfaces)
   - [Changes to Existing Components](#changes-to-existing-components)
+  - [Noteworthy developments since Topology Manager introduction](#noteworthy-developments-since-topology-manager-introduction)
   - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
   - [Multi-NUMA Systems Tests](#multi-numa-systems-tests)
@@ -567,6 +568,14 @@ of devices are still available. Without this extra bit of information, the
 `devicemanager` would end up picking GPUs at random from the list of GPUs
 available after filtering by `TopologyHint`. This API, allows it to ultimately
 perform a much better allocation, with minimal cost.
+
+### Noteworthy developments since Topology Manager introduction
+
+1. [Update Topology Manager algorithm for selecting "best" non-preferred hint](https://github.com/kubernetes/kubernetes/pull/108154)
+In case of best-effort policy for Topology Manager, non-prefferered allocations are considered
+in cases where resources need to be allocated from multiple NUMA nodes. For determining the best non-preferred hint, simply selecting the narrowest possible hint is not ideal and an improvement was made to handle scenarios where perfect alignment from a single NUMA node is not possible.
+1. [Ability to take NUMA distances into consideration](https://github.com/kubernetes/kubernetes/pull/112914)
+A new topology manager option was introduced which when enabled with `prefer-closest-numa-nodes` option was fine tunes the behavior of existing `restricted` and `best-effort` policies. NUMA nodes with shorter distance between them would be favored when making admission decisions.
 
 ### Test Plan
 
