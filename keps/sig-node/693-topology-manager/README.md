@@ -861,6 +861,10 @@ No.
 
 No.
 
+This feature is not impacted by the scale of the cluster (number of nodes in the cluster) as that is not relevant and is not factored into the alignment algorithm. It is the scheduler that has to deal with the scalability aspect and determine nodes that can fulfill the resources requested by the pod. If this feature is turned off, the scheduler would still have to perform the same computation as it would if this feature was enabled. Hence, this feature is not impacted by scale or impacts the scalability of a cluster.
+
+Also, the resource alignment logic is executed at pod admission time which is prior to pod startup so there shouldn't be any impact on pod startup latency. The check at admission is to determine if the pod is suitable to be admitted on the node based on the configured policy. If considered suitable, the pod proceeds to startup (following which the pod startup latency is measured).
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No reported or known increase in resource usage.
