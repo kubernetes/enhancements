@@ -1033,17 +1033,21 @@ apiVersion: admissionregistration.k8s.io/v1alpha1
 kind: ValidatingAdmissionPolicyBinding
 ...
 spec:
-  validationActions: [warn, audit] # optional field
+  validationActions: [Warn, Audit] # required field
 ```
 
 The enum options will be:
 
-- `deny`: Validation failures result in a denied request. (default beahvior if
-  field is unset)
-- `warn`: Validation failures are reported as warnings to the client. (xref: [Admisssion Webhook Warnings](https://kubernetes.io/blog/2020/09/03/warnings/#admission-webhooks))
-- `audit`: Validation failures are published as audit events (see below Audit
+- `Deny`: Validation failures result in a denied request.
+- `Warn`: Validation failures are reported as warnings to the client. (xref: [Admisssion Webhook Warnings](https://kubernetes.io/blog/2020/09/03/warnings/#admission-webhooks))
+- `Audit`: Validation failures are published as audit events (see below Audit
   Annotations section for details).
-- `log`: The apiserver handling the admission request logs the validation failure.
+- `Log`: The apiserver handling the admission request logs the validation failure.
+
+If, in the future, `ValidatingAdmissionPolicy` also introduces enforcement
+action fields, this `validationActions` field on
+`ValidatingAdmissionPolicyBinding` will specify the "maximum" enforcement (at
+most the enforcement will be what `validationActions` specifies).
 
 Systems that need to aggregate validation failures may implement an [audit
 webhook
@@ -1053,7 +1057,7 @@ below "Audit Events" for details.
 For singleton policies, the `validationActions` field will be set on the policy definition.
 
 Metrics will include validation action so that cluster administrators can monitor the
-validation failures of a binding before setting `validationActions` to `deny`.
+validation failures of a binding before setting `validationActions` to `Deny`.
 
 This enables the following use cases:
 
@@ -1066,7 +1070,7 @@ This enables the following use cases:
   knowing all the details of the policies. During rollout the cluster admin
   needs a state where the policies being rolled out cannot result in admission
   rejection. With the enforcement field on bindings, cluster admins can decide
-  which initial actions to enable and then add actions until `deny` is enabled.
+  which initial actions to enable and then add actions until `Deny` is enabled.
   The cluster admin may monitoring metrics, warnings and audit events along the
   way.
 - A policy framework needs different enforcement actions at different
@@ -1103,8 +1107,11 @@ spec:
     - expression: <expression>
   auditAnnotations:
     - key: "my-audit-key"
-      valueExpression: <expression that evaluates to a string>
+      valueExpression: <expression that evaluates to a string (and is recorded) or null (and is not recorded)>
 ```
+
+`auditAnnotations` are independent of `validations`. A `ValidatingAdmissionPolicy`
+may contain only `validations`, only `auditAnnotations` or both.
 
 The published annotation key will be of the form `<ValidatingPolicyDefinition
 name>/<auditAnnotation key>` and will be validated as a
@@ -1132,7 +1139,7 @@ for the audit event under the key `validation_failures`. E.g.:
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "annotations": {
-        "mypolicy.mygroup.example.com/validation_failure": "{\"expression\": 1, \"message\": \"x must be greater than y\", \"enforcement\": \"deny\", \"binding\": \"mybinding.mygroup.example.com\"}"
+        "mypolicy.mygroup.example.com/validation_failure": "{\"expression\": 1, \"message\": \"x must be greater than y\", \"enforcement\": \"Deny\", \"binding\": \"mybinding.mygroup.example.com\"}"
         # other annotations
         ...
     }
