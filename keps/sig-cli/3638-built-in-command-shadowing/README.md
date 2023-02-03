@@ -122,7 +122,7 @@ In terms of risk considerations, users may adopt external plugins that do not ex
 built-in subcommand with the same name might be added. This brings about a risk about breaking users' scripts which
 rely on external plugins. To overcome that problem, there should be a some form of forcing mechanism to select
 external plugin instead built-in subcommand. `KUBECTL_ENABLE_CMD_SHADOW` flag can also be used also for that purpose
-in later stages. 
+in later stages to provide a way to the users always using external plugin instead built-in subcommand.
 
 ## Design Details
 
