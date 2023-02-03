@@ -14,6 +14,11 @@
       - [Localhost Profile](#localhost-profile)
       - [RuntimeDefault Profile](#runtimedefault-profile)
 - [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Failure and Fallback Strategy](#failure-and-fallback-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
     - [Pod Creation](#pod-creation)
@@ -23,7 +28,6 @@
     - [Runtime Profiles](#runtime-profiles)
     - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Kubelet Backwards compatibility](#kubelet-backwards-compatibility)
-  - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
@@ -73,7 +77,7 @@ minimum_ to clean up the feature from its beta release, without blocking future 
 ## Motivation
 
 AppArmor can enable users to run a more secure deployment, and/or provide better auditing and
-monitoring of their systems. AppArmor for should be supported to provide users a simpler alternative 
+monitoring of their systems. AppArmor for should be supported to provide users a simpler alternative
 to SELinux, or to provide an interface for users that are already maintaining a set of AppArmor profiles.
 
 ### Goals
@@ -163,7 +167,7 @@ profile cannot be set.
 This KEP proposes LocalhostProfile as the only source of user-defined
 profiles at this point. User-defined profiles are essential for users to realize
 the full benefits out of AppArmor, allowing them to decrease their attack
-surface based on their own workloads. Only profiles with a specified prefix will be 
+surface based on their own workloads. Only profiles with a specified prefix will be
 available to Localhost profiles. This prevents profiles meant for other system
 daemons to be utilized by Kubernetes and will be configurable by the kubelet.
 
@@ -222,6 +226,36 @@ KEP will be created to cover its details.
 
 ## Design Details
 
+### Test Plan
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+None
+
+##### Unit tests
+
+New tests will be added covering the annotation/field conflict cases described
+under [Version Skew Strategy](#version-skew-strategy).
+
+##### Integration tests
+
+Additional integration tests with PodSecurityAdmission will be required.
+
+- TestPodSecurityWebhook: https://github.com/kubernetes/kubernetes/blob/1ded677b2a77a764a0a0adfa58180c3705242c49/test/integration/auth/podsecurity_test.go#L95
+
+##### e2e tests
+
+AppArmor already has [e2e tests][https://github.com/kubernetes/kubernetes/blob/2f6c4f5eab85d3f15cd80d21f4a0c353a8ceb10b/test/e2e_node/apparmor_test.go],
+but the tests are guarded by the `[Feature:AppArmor]` tag and not run in the
+standard test suites.
+
+Tests will be tagged as `[Feature:AppArmor]` like it is implemented right now,
+but they will be migrated to use the new fields API.
+
 ### Failure and Fallback Strategy
 
 There are different scenarios in which applying an AppArmor profile may fail,
@@ -255,11 +289,11 @@ If the `AppArmor` feature is disabled per feature gate, then the annotations and
 fields are cleared (current behavior).
 
 If the pod's OS is `windows`, fields are forbidden to be set and annotations
-are not copied to the corresponding fields. 
+are not copied to the corresponding fields.
 
-If _only_ AppArmor fields are specified, add the corresponding annotations. If these 
+If _only_ AppArmor fields are specified, add the corresponding annotations. If these
 are specified at the Pod level, copy the annotations to each container that does
-not have annotations already specified. This ensures that the fields are enforced 
+not have annotations already specified. This ensures that the fields are enforced
 even if the node version trails the API version (see [Version Skew Strategy](##version-skew-strategy)).
 
 If _only_ AppArmor annotations are specified, copy the values into the
@@ -342,8 +376,8 @@ to 2 minor releases of version skew between the master and node, annotations
 must continue to be supported and backfilled for at least 2 versions passed the
 initial implementation. If this feature is implemented in v1.27, I propose v1.30 as a
 target for removal of the old behavior. Specifically, annotation support will be removed
-in the kubelet after this period, and fields will no longer be copied to annotations for older kubelet 
-versions. However, annotations submitted to the API server will continue to be copied to fields at the 
+in the kubelet after this period, and fields will no longer be copied to annotations for older kubelet
+versions. However, annotations submitted to the API server will continue to be copied to fields at the
 kubelet indefinitely, as was done with Seccomp.
 
 ##### Kubelet Backwards compatibility
@@ -355,18 +389,6 @@ Therefore, the AppArmor profiles will be applied following the priority order:
 1. Container-specific field.
 2. Container-specific annotation.
 3. Pod-wide field.
-
-### Test Plan
-
-AppArmor already has [e2e tests][https://github.com/kubernetes/kubernetes/blob/6596a14/test/e2e_node/apparmor_test.go],
-but the tests are guarded by the `[Feature:AppArmor]` tag and not run in the
-standard test suites.
-
-Tests will be tagged as `[Feature:AppArmor]` like it is implemented right now,
-but they will be migrated to use the new fields API.
-
-New tests will be added covering the annotation/field conflict cases described
-under [Version Skew Strategy](#version-skew-strategy).
 
 ### Graduation Criteria
 
@@ -414,14 +436,14 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [X] Feature gate 
+- [X] Feature gate
   - Feature gate name: `AppArmor`
   - Components depending on the feature gate:
       - kube-apiserver
       - kubelet
 
 ###### Does enabling the feature change any default behavior?
-  
+
   N/A - the feature is already enabled by default since Kubernetes v1.4.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -474,9 +496,9 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
-  Clusters upgrading while using beta AppArmor annotations will want to ensure 
+  Clusters upgrading while using beta AppArmor annotations will want to ensure
   that profiles on upgraded nodes are loaded at the Kubelet's specified path prefix.
-  Containers of Pods loading AppArmor profiles will fail to start if they attempt to 
+  Containers of Pods loading AppArmor profiles will fail to start if they attempt to
   load non-Kubernetes profiles.
 
   Monitoring the below metrics can help identify these issues:
@@ -496,8 +518,8 @@ are missing a bunch of machinery and tooling and can't do that now.
   this KEP' changes), therefore this will be covered as part of the new tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
-  
-  The promotion of AppArmor to GA would deprecate the beta annotations as described in the 
+
+  The promotion of AppArmor to GA would deprecate the beta annotations as described in the
   [Version Skew Strategy](#version-skew-strategy).
 
 ### Monitoring requirements
@@ -516,7 +538,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-  
+
   The feature is built into the kubelet and api server components. No metric is
   planned at this moment. The way to determine usage is by checking whether the
   pods/containers have a AppArmorProfile set.
@@ -534,7 +556,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 Pod events will provide details of profiles being successfully applied to specific containers.
 
-- [X] Events - Event Reason: `AppArmor` 
+- [X] Events - Event Reason: `AppArmor`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 <!--
