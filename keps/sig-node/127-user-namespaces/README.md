@@ -376,26 +376,11 @@ what we expect, the kubelet needs to chown the file to a UID that is mapped into
 the pod's userns (e.g. UID 65536 in this example), as that is what root inside
 the container is mapped to in the user namespace.
 
-We tried this before, but several limitations were hit:
+We tried this before, but several limitations were hit. See the 
+[alternatives section](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
+for more details on the limitations we hit.
 
-* Changing the owner of files in configmaps/secrets/etc was a concern, those
-  volume type today ignore FsUser setting and changing it to honor them was a
-  concern for some members of the community due to possibly breaking some
-  existing behavior.
-
-* Therefore, we need to rely on `fsGroup`, that always mark files readable for
-  the group. This means this solution can't work when we NEED not to have
-  permissions for the group (think of ssh keys, for example, that tools enforce no
-  permission for the group)
-
-* There are several other files that also need to have the proper permissions,
-  like: /dev/termination-log, /etc/hosts, /etc/resolv.conf, /etc/hotname, etc.
-  While it is completely possible to do, it adds more complexity to lot of parts
-  of the code base and future Kubernetes features will have to take this into
-  account too. Furthermore, some of these files are created by container runtimes,
-  so complexity creeps out very easily.
-
-##### Example without idmap mounts
+##### Example with idmap mounts
 
 Now let's say the pod is using its volumes that were mounted using idmap mounts
 by the container runtime. All the mappings used (the idmap mounts and the pod
@@ -1042,6 +1027,62 @@ Why should this KEP _not_ be implemented?
 
 Here is a list of considerations raised in PRs discussion that were considered.
 This list is not exhaustive.
+
+### Don't use idmap mounts and rely chown all the files correctly
+
+We explored the idea of not using idmap mounts for stateless pods, and instead
+make sure we chown each file with the hostID a pod is mapped to (see more
+details in the [example section](#example-without-idmap-mounts) of how file
+access works with userns and without idmap mounts).
+
+The problems were mostly:
+
+* Changing the owner of files in configmaps/secrets/etc was a concern, those
+  volume type today ignore FsUser setting and changing it to honor them was a
+  concern for some members of the community due to possibly breaking some
+  existing behavior. See discussions [here][fsgroup-1] and [here][fsgroup-2]
+
+* Therefore, we need to rely on `fsGroup`, that always mark files readable for
+  the group. This means this solution can't work when we NEED not to have
+  permissions for the group (think of ssh keys, for example, that tools enforce no
+  permission for the group)
+
+* There are several other files that also need to have the proper permissions,
+  like: /dev/termination-log, /etc/hosts, /etc/resolv.conf, /etc/hotname, etc.
+  While it is completely possible to do, it adds more complexity to lot of parts
+  of the code base and future Kubernetes features will have to take this into
+  account too.
+
+To exemplify the complexity of the last point, let's see some concrete examples.
+`/etc/hosts` is created by [ensureHostsFile()][ensure-hosts-file] that doesn't
+know pod attributes like the mapping. The same happens with
+[SetupDNSinContainerizedMounter][dns-in-container] that doesn't know anything
+else but the path. The same happens with the other files mentioned, all of them
+and live in different "subsystems" of the kubelet, have very long call chains
+will need to change to take the mapping or similar. Also, future patches, like
+https://github.com/kubernetes/kubernetes/pull/108076 to fix a security bug in
+`/dev/termination-log` also will need to be adjusted to take into account the
+pod mappings.
+
+If we go this route, while possible, more and more subsystems will have to
+special-case if the pod uses userns and chown to a specific ID. Not only
+existing places, but future places that create a file that is mounted will have
+to know about the mapping of the pod.
+
+Furthermore, some of these files are
+[created by containerruntimes][containerd-mounts-files], so complexity creeps
+out very easily.
+
+Taking into account the 3 points (can't easily create secret/configmap files
+with a specific owner; fsGroup has lot of limitations; and the complexity of
+chowing each of these files in the kubelet), this approach was discarded. Future
+KEPs can explore this path if they so want to.
+
+[fsgroup-1]: https://github.com/kubernetes/kubernetes/pull/111090#discussion_r934057520
+[fsgroup-2]: https://github.com/kubernetes/kubernetes/pull/111090#discussion_r935802376
+[dns-in-container]: https://github.com/kubernetes/kubernetes/blob/7a55b76f28eddbbb7abf69038d4bd5abab833b4f/pkg/kubelet/network/dns/dns.go#L452-L479
+[ensure-hosts-file]: https://github.com/kubernetes/kubernetes/blob/7a55b76f28eddbbb7abf69038d4bd5abab833b4f/pkg/kubelet/kubelet_pods.go#L327-L347
+[containerd-mounts-files]: https://github.com/containerd/containerd/blob/3d32da8f607a2a43d7157499254713f42b3c6701/pkg/cri/server/container_create_linux.go#L61
 
 ### 64k mappings?
 
