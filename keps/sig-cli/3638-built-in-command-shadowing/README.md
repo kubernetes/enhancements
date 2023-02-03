@@ -105,7 +105,7 @@ for external plugins currently.
 Because of starting as alpha and this is an explicitly opted-in feature, shadowing functionality will be hidden behind the environment variable
 and will only be used after exporting;
 ```sh
-export KUBECTL_ENABLE_ALPHA_CMD_SHADOW=true
+export KUBECTL_ENABLE_CMD_SHADOW=true
 ```
 
 ### Notes/Constraints/Caveats
@@ -118,6 +118,11 @@ which other built-in commands will also be requested for this shadowing.
 
 Security considerations are the same with executing other external plugins and there is no additional risk.
 
+In terms of risk considerations, users may adopt external plugins that do not exist as subcommand(e.g. `kubectl create foo`) but afterwards 
+built-in subcommand with the same name might be added. This brings about a risk about breaking users' scripts which
+rely on external plugins. To overcome that problem, there should be a some form of forcing mechanism to select
+external plugin instead built-in subcommand. `KUBECTL_ENABLE_CMD_SHADOW` flag can also be used also for that purpose
+in later stages. 
 
 ## Design Details
 
@@ -231,7 +236,7 @@ functionality is accessed.
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 #### Alpha
 
-- Feature implemented behind a `KUBECTL_ENABLE_ALPHA_CMD_SHADOW=true` environment variable
+- Feature implemented behind a `KUBECTL_ENABLE_CMD_SHADOW=true` environment variable
 - Initial unit tests
 
 #### Beta
@@ -262,7 +267,7 @@ in back-to-back releases.
 -->
 #### Alpha
 
-- Feature implemented behind a `KUBECTL_ENABLE_ALPHA_CMD_SHADOW=true` environment variable
+- Feature implemented behind a `KUBECTL_ENABLE_CMD_SHADOW=true` environment variable
 - Initial unit tests
 
 #### Beta
@@ -352,7 +357,7 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: Exporting `KUBECTL_ENABLE_ALPHA_CMD_SHADOW=true` environment variable will enable the feature
+  - Describe the mechanism: Exporting `KUBECTL_ENABLE_CMD_SHADOW=true` environment variable will enable the feature
   - Will enabling / disabling the feature require downtime of the control
     plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
