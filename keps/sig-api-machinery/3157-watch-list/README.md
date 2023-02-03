@@ -93,7 +93,12 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Required changes for a WATCH request with the RV set to the last observed value (RV &gt; 0)](#required-changes-for-a-watch-request-with-the-rv-set-to-the-last-observed-value-rv--0)
   - [Provide a fix for the long-standing issue <a href="https://github.com/kubernetes/kubernetes/issues/59848">https://github.com/kubernetes/kubernetes/issues/59848</a>](#provide-a-fix-for-the-long-standing-issue-httpsgithubcomkuberneteskubernetesissues59848)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -575,19 +580,9 @@ Then on the server side we:
 4. otherwise, construct the final list and send back to a client.
 
 ### Test Plan
-- unit tests for new code added to the watch cache were implemented.
-- unit tests for new code added to the reflector were implemented.
-- integration tests asserting fallback mechanism for reflector were added.
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -596,7 +591,68 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+- k8s.io/apiserver/pkg/storage/cacher: 02/02/2023 - 74,7%
+- k8s.io/client-go/tools/cache/reflector: 02/02/2023 - 88,6%
+
+##### Integration tests
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+- For alpha, tests asserting fallback mechanism for reflector will be added.
+
+##### e2e tests
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+- For alpha, tests exercising this feature will be added.
+
 ### Graduation Criteria
+
+#### Alpha
+
+- The Feature is implemented behind `ConsistentWatchList` feature flag
+- Initial e2e tests completed and enabled
+- Scalability/Performance tests confirm gains of this feature
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -977,6 +1033,18 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+On the contrary. It will decrease the memory usage required for master nodes.
 
 ### Troubleshooting
 
