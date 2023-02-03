@@ -14,7 +14,10 @@
   - [Current Services NodePort allocation model](#current-services-nodeport-allocation-model)
   - [Proposed Services NodePorts allocation model](#proposed-services-nodeports-allocation-model)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -273,17 +276,21 @@ Example 3 Small service nodeport range:
 
 ### Test Plan
 
-This feature doesn't modify the cluster behavior, only the order on which dynamic port are assigned to NodePort Services,
-there is no need for e2e or integration tests, unit tests are enough.
-
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
+##### Prerequisite testing updates
+None
 
 ##### Unit tests
+- `kubernetes/pkg/registry/core/service/portallocator`: `12/10/2022` - `83.1`
 
-- pkg/registry/core/service/portallocator/allocator_test.go - 83.1
+##### Integration tests
+
+This feature doesn't modify the cluster behavior, only the order on which dynamic port are assigned to NodePort Services, there is no need for e2e or integration tests, unit tests are enough.
+
+##### e2e tests
 
 ### Graduation Criteria
 
@@ -438,6 +445,11 @@ No
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
