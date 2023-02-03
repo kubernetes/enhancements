@@ -115,15 +115,15 @@ After some discussion with sig-storage folks and to accommodate changes coming f
 So basically new API will look like:
 
 ```go
-type ClaimResourceResizeStatus string
+type ClaimResourceStatus string
 
 const (
-    PersistentVolumeClaimControllerExpansionInProgress ClaimResourceResizeStatus = "ControllerExpansionInProgress"
-    PersistentVolumeClaimControllerExpansionFailed ClaimResourceResizeStatus = "ControllerExpansionFailed"
+    PersistentVolumeClaimControllerResizeProgress ClaimResourceStatus = "ControllerResizeInProgress"
+    PersistentVolumeClaimControllerResizeFailed ClaimResourceStatus = "ControllerResizeFailed"
 
-    PersistentVolumeClaimNodeExpansionPending ClaimResourceResizeStatus = "NodeExpansionPending"
-    PersistentVolumeClaimNodeExpansionInProgress ClaimResourceResizeStatus = "NodeExpansionInProgress"
-    PersistentVolumeClaimNodeExpansionFailed ClaimResourceResizeStatus = "NodeExpansionFailed"  
+    PersistentVolumeClaimNodeResizePending ClaimResourceStatus = "NodeResizePending"
+    PersistentVolumeClaimNodeResizeInProgress ClaimResourceStatus = "NodeResizeInProgress"
+    PersistentVolumeClaimNodeResizeFailed ClaimResourceStatus = "NodeResizeFailed"  
 )
 
 // PersistentVolumeClaimStatus represents the status of PV claim
@@ -142,8 +142,8 @@ type PersistentVolumeClaimStatus struct {
     // AllocatedResourceStatus stores a map of resource that is being expanded
     // and possible status that the resource exists in.
     // Some examples may be:
-    //  pvc.status.allocatedResourceStatus["storage"] = "ControllerExpansionInProgress"
-    AllocatedResourceStatus map[ResourceName]ClaimResourceResizeStatus
+    //  pvc.status.allocatedResourceStatus["storage"] = "ControllerResizeInProgress"
+    AllocatedResourceStatus map[ResourceName]ClaimResourceStatus
 }
 ```
 
@@ -155,16 +155,16 @@ reduces the PVC request size, for both CSI and in-tree plugins they are designed
 
 We however do have a problem with quota calculation because if a previously issued expansion is successful but is not recorded(or partially recorded) in api-server and user reduces requested size of the PVC, then quota controller will assume it as actual shrinking of volume and reduce used storage size by the user(incorrectly). Since we know actual size of the volume only after performing expansion(either on node or controller), allowing quota to be reduced on PVC size reduction will allow an user to abuse the quota system.
 
-To solve aforementioned problem - we propose that, a new field will be added to PVC, called `pvc.Status.AllocatedResources`. When user expands the PVC, and when expansion-controller starts volume expansion - it will set `pvc.Status.AllocatedResources` to user requested value in `pvc.Spec.Resources` before performing expansion and it will set `pvc.Status.AllocatedResourceStatus[storage]` to `ControllerExpansionInProgress`. The quota calculation will be updated to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` which will ensure that abusing quota will not be possible.
+To solve aforementioned problem - we propose that, a new field will be added to PVC, called `pvc.Status.AllocatedResources`. When user expands the PVC, and when expansion-controller starts volume expansion - it will set `pvc.Status.AllocatedResources` to user requested value in `pvc.Spec.Resources` before performing expansion and it will set `pvc.Status.AllocatedResourceStatus[storage]` to `ControllerResizeInProgress`. The quota calculation will be updated to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` which will ensure that abusing quota will not be possible.
 
 Resizing operation in external resize controller will always work towards full-filling size recorded in `pvc.Status.AllocatedResources` and only when previous operation has finished(i.e `pvc.Status.AllocatedResourceStatus[storage]` is nil) or when previous operation has failed with a terminal error - it will use new user requested value from `pvc.Spec.Resources`.
 
-Kubelet on the other hand will only expand volumes for which `pvc.Status.AllocatedResourceStatus[storage]` is in `NodeExpansionPending` or `NodeExpansionInProgress` state and `pv.Spec.Cap > pvc.Status.Cap`. If a volume expansion fails in kubelet with a terminal error(which will set `NodeExpansionFailed` state) - then it must wait for resize controller in external-resizer to reconcile the state and put it back in `NodeExpansionPending`.
+Kubelet on the other hand will only expand volumes for which `pvc.Status.AllocatedResourceStatus[storage]` is in `NodeResizePending` or `NodeResizeInProgress` state and `pv.Spec.Cap > pvc.Status.Cap`. If a volume expansion fails in kubelet with a terminal error(which will set `NodeResizeFailed` state) - then it must wait for resize controller in external-resizer to reconcile the state and put it back in `NodeResizePending`.
 
 When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Status.AllocatedResources` to lower value only if one of the following is true:
 
-1. If `pvc.Status.AllocatedResourceStatus[storage]` is `ControllerExpansionFailed` (indicating that previous expansion to last known `allocatedResources` failed with a final error) and previous control-plane has not succeeded.
-2. If `pvc.Status.AllocatedResourceStatus[storage]` is `NodeExpansionFailed` and SP supports node-only expansion (indicating that previous expansion to last known `allocatedResources` failed on node with a final error).
+1. If `pvc.Status.AllocatedResourceStatus[storage]` is `ControllerResizeFailed` (indicating that previous expansion to last known `allocatedResources` failed with a final error) and previous control-plane has not succeeded.
+2. If `pvc.Status.AllocatedResourceStatus[storage]` is `NodeResizeFailed` and SP supports node-only expansion (indicating that previous expansion to last known `allocatedResources` failed on node with a final error).
 3. If `pvc.Status.AllocatedResourceStatus[storage]` is `nil` or `empty` and previous `ControllerExpandVolume` has not succeeded.
 
 ![Determining new size](./get_new_size.png)
@@ -183,9 +183,9 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 - User increases 10Gi PVC to 100Gi by changing - `pvc.spec.resources.requests["storage"] = "100Gi"`.
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
 - Expansion controller starts expanding the volume and sets `pvc.Status.AllocatedResources` to `100Gi`.
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerExpansionInProgress`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerResizeInProgress`.
 - Expansion to 100Gi fails and hence `pv.Spec.Capacity` and `pvc.Status.Capacity `stays at 10Gi.
-- Expansion controller sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerExpansionFailed`.
+- Expansion controller sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerResizeFailed`.
 - User requests size to 20Gi.
 - Expansion controler notices that previous expansion to last known `allocatedresources` failed, so it sets new `allocatedResources` to `20G`
 - Expansion succeeds and `pvc.Status.Capacity` and `pv.Spec.Capacity` report new size as `20Gi`.
@@ -195,21 +195,21 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 - User increases 10Gi PVC to 100Gi by changing - `pvc.spec.resources.requests["storage"] = "100Gi"`
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
 - Expansion controller starts expanding the volume and sets `pvc.Status.AllocatedResources` to `100Gi`.
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerExpansionInProgress`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerResizeInProgress`.
 - Since expansion operations in control-plane are NO-OP, expansion in control-plane succeeds and `pv.Spec` is set to `100G`.
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeExpansionPending`.
-- Expansion starts on the node and kubelet sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeExpansionInProgress`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeResizePending`.
+- Expansion starts on the node and kubelet sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeResizeInProgress`.
 - Expansion fails on the node with a final error.
-- Kubelet sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeExpansionFailed`.
-- Since pvc has `pvc.Status.AllocatedResourceStatus['storage']` set to `NodeExpansionFailed` - kubelet will stop retrying node expansion.
-- At this point Kubelet will wait for `pvc.Status.AllocatedResourceStatus['storage']` to be `NodeExpansionPending`.
+- Kubelet sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeResizeFailed`.
+- Since pvc has `pvc.Status.AllocatedResourceStatus['storage']` set to `NodeResizeFailed` - kubelet will stop retrying node expansion.
+- At this point Kubelet will wait for `pvc.Status.AllocatedResourceStatus['storage']` to be `NodeResizePending`.
 - User requests size to 20Gi.
 - Expansion controller starts expanding the volume and sees that last expansion failed on the node and driver does not have control-plane expansion.
 - Expansion controller sets `pvc.Status.AllocatedResources` to `20G`.
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerExpansionInProgress`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerResizeInProgress`.
 - Since expansion operations in control-plane are NO-OP, expansion in control-plane succeeds and `pv.Spec` is set to `20G`.
 - Expansion succeed on the node with latest `allocatedResources` and `pvc.Status.Size` is set to `20G`.
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeExpansionPending`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `NodeResizePending`.
 - Kubelet can now retry expansion and expansion on node succeeds.
 - Kubelet sets `pvc.Status.AllocatedResourceStatus['storage']` to empty string and `pvc.Status.Capacity` to new value.
 - Quota controller sees a reduction in used quota because `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` is 20Gi.
@@ -219,7 +219,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 - User increases 10Gi PVC to 100Gi by changing `pvc.spec.resources.requests["storage"] = "100Gi"`
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
 - Expansion controller slowly starts expanding the volume and sets `pvc.Status.AllocatedResources` to `100Gi` (before expanding).
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerExpansionInProgress`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerResizeInProgress`.
 - At this point -`pv.Spec.Capacity` and `pvc.Status.Capacity` stays at 10Gi until the resize is finished.
 - While the storage backend is re-sizing the volume, user requests size 20Gi by changing `pvc.spec.resources.requests["storage"] = "20Gi"`
 - Expansion controller notices that previous expansion to last known `allocatedresources` is still in-progress.
@@ -234,7 +234,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 - User expands expands the PVC to 100GB.
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `89.9GB` to used quota.
 - Expansion controller starts expanding the volume and sets `pvc.Status.AllocatedResources` to `100GB` (before expanding).
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerExpansionInProgress`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerResizeInProgress`.
 - At this point -`pv.Spec.Capacity` and `pvc.Status.Capacity` stays at 10.1GB until the resize is finished.
 - while resize was in progress - expansion controler crashes and loses state.
 - User reduces the size of PVC to 10.5GB.
@@ -248,11 +248,11 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 - User increases 10Gi PVC to 100Gi by changing `pvc.spec.resources.requests["storage"] = "100Gi"`
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `90Gi` to used quota.
 - Expansion controller slowly starts expanding the volume and sets `pvc.Status.AllocatedResources` to `100Gi` (before expanding).
-- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerExpansionInProgress`.
+- Expansion controller also sets `pvc.Status.AllocatedResourceStatus['storage']` to `ControllerResizeInProgress`.
 - At this point -`pv.Spec.Capacity` and `pvc.Status.Capacity` stays at 10Gi until the resize is finished.
 - While the storage backend is re-sizing the volume, user requests size 200Gi by changing `pvc.spec.resources.requests["storage"] = "200Gi"`
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and adds `100Gi` to used quota.
-- Since `pvc.Status.AllocatedResourceStatus['storage']` is in `ControllerExpansionInProgress` - expansion controller still chooses last `pvc.Status.AllocatedResources` as new size.
+- Since `pvc.Status.AllocatedResourceStatus['storage']` is in `ControllerResizeInProgress` - expansion controller still chooses last `pvc.Status.AllocatedResources` as new size.
 - User reduces size back to `20Gi`.
 - Quota controller uses `max(pvc.Status.AllocatedResources, pvc.Spec.Resources)` and *returns* `100Gi` to used quota.
 - Expansion controller notices that previous expansion to last known `allocatedresources` is still in-progress.
@@ -447,10 +447,10 @@ _This section must be completed when targeting beta graduation to a release._
 * **What are other known failure modes?**
   For each of them fill in the following information by copying the below template:
   - No recovery is possible if volume has been expanded on control-plane and only failing on node.
-    - Detection: Expansion is stuck with `ResizeStatus` - `NodeExpansionPending` or `NodeExpansionFailed`.
+    - Detection: Expansion is stuck with `ResizeStatus` - `NodeResizePending` or `NodeResizeFailed`.
     - Mitigations: This should not affect any of existing PVCs but this was already broken in some sense and if volume has been 
       expanded in control-plane then we can't allow users to shrink their PVCs because that would violate the quota.
-    - Diagnostics: Expansion is stuck with `ResizeStatus` - `NodeExpansionPending` or `NodeExpansionFailed`.
+    - Diagnostics: Expansion is stuck with `ResizeStatus` - `NodeResizePending` or `NodeResizeFailed`.
     - Testing: There are some unit tests for this failure mode.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
