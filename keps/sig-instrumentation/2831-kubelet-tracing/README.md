@@ -230,6 +230,12 @@ Alpha
 
 - [X] Implement tracing of incoming and outgoing gRPC, HTTP requests in the kubelet
 - [X] Integration testing of tracing
+  - _component-base tracing/api/v1 integration test_ https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/tracing/tracing_test.go
+- [X] Unit testing of kubelet tracing and tracing configuration
+  - https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go#L503-#L532
+  - https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cri/remote/remote_runtime_test.go#L65-#L97
+  - https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go
+  - https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/component-base/tracing/api/v1/config_test.go
 
 Beta
 
@@ -299,7 +305,17 @@ _This section must be completed when targeting beta graduation to a release._
   No impact to running workloads, logs will indicate the problem.
 
 ###### What specific metrics should inform a rollback?
-  To be determined.
+
+  * This KEP is following the [opentelemetry-go issue #2547](https://github.com/open-telemetry/opentelemetry-go/issues/2547).
+
+  ```
+  ...using the OTLP trace exporter, it isn't currently possible to monitor (with metrics) whether or not spans are being successfully collected and exported.
+  For example, if my SDK cannot connect to an opentelemetry collector, and isn't able to send traces, I would like to be able to measure how many traces are collected,
+  vs how many are not sent. I would like to be able to set up SLOs to measure successful trace delivery from my applications.
+  ```
+
+  * Pod Lifecycle and Kubelet [SLOs](https://github.com/kubernetes/community/tree/master/sig-scalability/slos) are the signals that should guide a rollback.  In particular, the [`kubelet_pod_start_duration_seconds_count`, `kubelet_runtime_operations_errors_total`, and `kubelet_pleg_relist_interval_seconds_bucket`] would surface issues affecting kubelet performance.
+
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   Upgrades and rollbacks will be tested while feature-gate is experimental
