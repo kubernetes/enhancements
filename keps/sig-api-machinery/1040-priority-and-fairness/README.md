@@ -66,7 +66,13 @@
   - [References](#references)
   - [Design Considerations](#design-considerations)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -82,25 +88,22 @@
 
 ## Release Signoff Checklist
 
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
-of the targeted release**.
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
-- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [x] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have set the KEP status to `implementable`
+- [x] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
@@ -109,10 +112,11 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-This KEP generalizes the existing max-in-flight request handler in the
-apiserver to make more distinctions among requests and provide
-prioritization and fairness among the categories of requests.  An
-outline of the request handling in an apiserver can be found at
+This KEP describes an alternative to the existing max-in-flight
+request handler in the apiserver that makes more distinctions among
+requests, and provides prioritization and fairness among the
+categories of requests, in a user-configurable way.  An outline of the
+request handling in an apiserver can be found at
 https://speakerdeck.com/sttts/kubernetes-api-codebase-tour?slide=18 .
 
 ## Motivation
@@ -2573,9 +2577,7 @@ There are likely others.
 
 ## Design Details
 
-We are still ironing out the high level goals and approach.  Several
-earlier proposals have been floated, as listed next.  This section
-contains a discussion of the issues.
+The [Proposal](#proposal) is fairly detailed.
 
 ### References
 
@@ -2806,9 +2808,43 @@ with miniscule quanta, are also isomorphic.
 
 ### Test Plan
 
-- __Unit Tests__: All changes must be covered by unit tests. Additionally,
- we need to test the evenness of dispatching algorithm.
-- __Integration Tests__: The use cases discussed in this KEP must be covered by integration tests.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+Reviewers have not identified any additional tests that need to be
+added prior implementing this enhancement to ensure the enhancements
+have also solid foundations.
+
+##### Unit tests
+
+- `apiserver/pkg/apis/flowcontrol/bootstrap`: `23-02-02` - `100`
+- `apiserver/pkg/util/flowcontrol`: `23-02-02` - `76`
+- `apiserver/pkg/util/flowcontrol/fairqueuing`: `23-02-02` - `80.9`
+- `apiserver/pkg/util/flowcontrol/fairqueuing/eventclock`: `23-02-02` - `100`
+- `apiserver/pkg/util/flowcontrol/fairqueuing/promise`: `23-02-02` - `100`
+- `apiserver/pkg/util/flowcontrol/fairqueuing/queueset`: `23-02-02` - `81.6`
+- `apiserver/pkg/util/flowcontrol/request`: `23-02-02` - `87.5`
+- `apiserver/pkg/server/filters/priority-and-fairness.go`: `23-02-02` - `90.6`
+
+##### Integration tests
+
+The integration tests are in https://github.com/kubernetes/kubernetes/tree/master/test/integration/apiserver/flowcontrol .  Testgrid results for them can be seen at https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=apiserver%2Fflowcontrol .
+
+- TestConcurrencyIsolation
+- TestConditionIsolation
+- TestConfigConsumerFight
+- TestPriorityLevelIsolation
+
+##### e2e tests
+
+The end-to-end tests are in
+https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apimachinery/flowcontrol.go
+.
+
+- "API priority and fairness": https://storage.googleapis.com/k8s-triage/index.html?sig=api-machinery&test=API%20priority%20and%20fairness
 
 ### Graduation Criteria
 
@@ -2840,143 +2876,296 @@ GA:
 - [ ] APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that there is another level of concern that APF does not attempt to address, which is mismatch between the throughput that various controllers can sustain.
 - [ ] Satisfaction that the interface is sufficient to support tuning of capacity and resource costs.
 
+### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
+
+### Version Skew Strategy
+
+This feature affects only the kube-apiserver, so there is no issue
+with version skew with other components.
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
 
-* **How can this feature be enabled / disabled in a live cluster?** To enable
-  priority and fairness, all of the following must be enabled:
-  - [x] Feature gate
-    - Feature gate name: APIPriorityAndFairness
-    - Components depending on the feature gate:
-      - kube-apiserver
-  - [x] Command-line flags
-    - `--enable-priority-and-fairness`, and
-    - `--runtime-config=flowcontrol.apiserver.k8s.io/v1alpha1=true`
+###### How can this feature be enabled / disabled in a live cluster?
 
-* **Does enabling the feature change any default behavior?** Yes, requests that
-  weren't rejected before could get rejected while requests that were rejected
-  previously may be allowed. Performance of kube-apiserver under heavy load
-  will likely be different too.
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: APIPriorityAndFairness
+  - Components depending on the feature gate:
+    - kube-apiserver
+- [x] Other
+  - Describe the mechanism: command-line flag
+    `enable-priority-and-fairness`, which defaults to `true`.
+  - Will enabling / disabling the feature require downtime of the
+    control plane?  Changing a command-line flag requires restarting
+    the kube-apiserver.
+  - Will enabling / disabling the feature require downtime or
+    reprovisioning of a node? (Do not assume `Dynamic Kubelet Config`
+    feature is enabled).  No.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes.
+###### Does enabling the feature change any default behavior?
 
-* **What happens if we reenable the feature if it was previously rolled back?**
-  The feature will be restored.
+Yes, requests that weren't rejected before could get rejected while
+requests that were rejected previously may be allowed. Performance of
+kube-apiserver under heavy load will likely be different too.
 
-* **Are there any tests for feature enablement/disablement?** No. Manual tests
-  will be run before switching feature gate to beta.
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+The feature will be restored.
+
+###### Are there any tests for feature enablement/disablement?
+
+No.  Manual tests were run before switching feature gate to beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
-* **How can a rollout fail? Can it impact already running workloads?** A
-  misconfiguration could cause apiserver requests to be rejected, which could
-  have widespread impact such as: (1) rejecting controller requests, thereby
-  bringing a lot of things to a halt, (2) dropping node heartbeats, which may
-  result in overloading other nodes, (3) rejecting kube-proxy requests to
-  apiserver, thereby breaking existing workloads, (4) dropping leader election
-  requests, resulting in HA failure, or any combination of the above.
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-* **What specific metrics should inform a rollback?** An abnormal spike in the
-  `apiserver_flowcontrol_rejected_requests_total` metric should potentially be
-  viewed as a sign that kube-apiserver is rejecting requests, potentially
-  incorrectly. The `apiserver_flowcontrol_request_queue_length_after_enqueue`
-  metric getting too close to the configured queue length could be a sign of
-  insufficient queue size (or a system overload), which can be precursor to
-  rejected requests.
+A misconfiguration could cause apiserver requests to be rejected,
+which could have widespread impact such as: (1) rejecting controller
+requests, thereby bringing a lot of things to a halt, (2) dropping
+node heartbeats, which may result in overloading other nodes, (3)
+rejecting kube-proxy requests to apiserver, thereby breaking existing
+workloads, (4) dropping leader election requests, resulting in HA
+failure, or any combination of the above.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  No. Manual tests will be run before switching feature gate to beta.
+###### What specific metrics should inform a rollback?
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-  fields of API types, flags, etc.?** Yes, `--max-requests-inflights` will be
-  deprecated in favor of APF.
+See [the remarks on service health](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service).
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Manual tests were run during promotion to Beta in 1.20.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+The rollout replaces the behavior of the max-in-flight filter with the
+more sophisticated behavior of this feature.
 
 ### Monitoring Requirements
 
-* **How can an operator determine if the feature is in use by workloads?**
-  If the `apiserver_flowcontrol_dispatched_requests_total` metric is non-zero,
-  this feature is in use. Note that this isn't a workload feature, but a
-  control plane one.
+###### How can an operator determine if the feature is in use by workloads?
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
-  - [x] Metrics
-    - Metric name: `apiserver_flowcontrol_request_queue_length_after_enqueue`
-    - Components exposing the metric: kube-apiserver
+If the `apiserver_flowcontrol_dispatched_requests_total` metric is
+non-zero, this feature is in use. Note that this isn't a workload
+feature, but a control plane one.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  No SLOs are proposed for the above SLI.
+###### How can someone using this feature know that it is working for their instance?
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?** No.
+The classification functionality can be reviewed by looking at the
+`apf_pl` and `apf_fs` attributes that appear in the httplog lines from
+the apiserver when `-v=3` or more verbose. The classification is also
+reported in each HTTP response via the
+`X-Kubernetes-PF-PriorityLevel-UID` and
+`X-Kubernetes-PF-FlowSchema-UID` headers, respectively.
+
+The nominal division of concurrency can be checked by looking at the
+`apiserver_flowcontrol_nominal_limit_seats` metric of the limited
+priority levels to see whether they are in the proportions given by
+the `NominalConcurrencyShares` fields in the corresponding
+`PriorityLevelConfiguration` objects, and sum to the server's
+concurrency limit (the sum of the `--max-requests-inflight` and
+`--max-mutating-requests-inflight` command line parameters) allowing
+for rounding error.
+
+The dynamic adjustment of concurrency limits can be checked for
+validity by checking whether the
+`apiserver_flowcontrol_current_limit_seats` metrics sum to the
+server's concurrency limit allowing for rounding error.  The
+responsiveness to load can be checked by comparing those dynamic
+concurrency limits to various indications of load and keeping in mind
+the bounds shown by the `apiserver_flowcontrol_lower_limit_seats` and
+`apiserver_flowcontrol_upper_limit_seats` metrics.  Indications of
+load include the `apiserver_flowcontrol_request_wait_duration_seconds`
+histogram vector metric and the
+`apiserver_flowcontrol_demand_seats_smoothed` gauge vector metric.
+
+The dispatching can be checked by checking whether there are
+significant queuing delays only for flow schemeas that go to priority
+levels whose seats are highly utilized.  The histogram vector metric
+`apiserver_flowcontrol_request_wait_duration_seconds` shows the
+former, and tThe histogram vector metric
+`apiserver_flowcontrol_priority_level_seat_utilization` shows the
+latter.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+None have been identified.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+Since this feature is about protecting the server from overload,
+trouble in this feature and actual overload can show similar symptoms.
+Following are some thoughts about how to tell them apart.
+
+- high latency / long queue lengths + low request volume / low CPU
+  usage = probably APF misconfiguration or bug
+
+- high latency / long queue lengths + high request volume / high CPU
+  usage = probably APF is saving your cluster from an outage
+
+The following metrics give relevant clues.
+
+- `apiserver_flowcontrol_request_wait_duration_seconds` shows queuing
+  delay in APF.
+- `apiserver_flowcontrol_request_execution_seconds` shows execution
+  durations in APF; that summed with
+  `apiserver_flowcontrol_request_wait_duration_seconds` shows total
+  handling time covered by APF.
+- The `apiserver_request_duration_seconds_count` histogram shows total
+  request delay as measured in a handler tha encloses APF, grouped by
+  request characteristics.
+- The rate of change in
+  `apiserver_flowcontrol_request_execution_seconds_count` shows the
+  rates of request handling, grouped by flow schema.
+- The rate of change in `apiserver_request_total` shows the rates at
+  which requests are being handled, grouped by request
+  characteristics.
+- the `apiserver_flowcontrol_current_inqueue_requests` gauge vector
+  samples queue lengths for each flow schema.
+- the `apiserver_flowcontrol_priority_level_seat_utilization`
+  histogram vector summarizes per-nanosecond samples of the fraction
+  each priority level's seats that are occupied (these should not all
+  be low if the server is heavily loaded).
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?**
-  No.
+###### Does this feature depend on any specific services running in the cluster?
+
+No
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?** Yes.
-  Self-requests for new API objects will be introduced. In addition, the
-  request execution order may change, which could occasionally increase the
-  number of retries.
+###### Will enabling / using this feature result in any new API calls?
 
-* **Will enabling / using this feature result in introducing new API types?**
-  Yes, a new flowcontrol API group, configuration types, and status types are
-  introduced. See `k8s.io/api/flowcontrol/v1alpha1/types.go` for a full list.
+Yes.  Self-requests for new API objects will be introduced. In
+addition, the request execution order may change, which could
+occasionally increase the number of retries.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-  provider?** No.
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in increasing size or count of
-  the existing API objects?** No.
+Yes, a new flowcontrol API group, configuration types, and status
+types are introduced. See `k8s.io/api/flowcontrol/v1alpha1/types.go`
+for a full list.
 
-* **Will enabling / using this feature result in increasing time taken by any
-  operations covered by [existing SLIs/SLOs]?** Yes, a non-negligible latency
-  is added to API calls to kube-apiserver. While [preliminary tests](https://github.com/tkashem/graceful/blob/master/priority-fairness/filter-latency/readme.md)
-  shows that the API server latency is still well within the existing SLOs,
-  more thorough testing needs to be performed.
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-* **Will enabling / using this feature result in non-negligible increase of
-  resource usage (CPU, RAM, disk, IO, ...) in any components?** The proposed
-  flowcontrol logic in request handling in kube-apiserver will increase the CPU
-  and memory overheads involved in serving each request. Note that the resource
-  usage will be configurable and may require the operator to fine-tune some
-  parameters.
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+Yes, a non-negligible latency is added to API calls to
+kube-apiserver. While [preliminary
+tests](https://github.com/tkashem/graceful/blob/master/priority-fairness/filter-latency/readme.md)
+shows that the API server latency is still well within the existing
+SLOs, more thorough testing needs to be performed.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+The proposed flowcontrol logic in request handling in kube-apiserver
+will cause a small increase the CPU and memory overheads involved in
+serving each request when there is no significant queuing. When there
+_is_ significant queuing, it is because this feature is doing its
+intended function of smoothing out usage of many resources by limiting
+the number of requests being actively handled at once.  Holding
+requests in queues involves an added memory cost. Note that the
+resource usage will be configurable and may require the operator to
+fine-tune some parameters.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+This feature does not directly consume any resources on worker nodes.
+It can have indirect effects, through the changes in how the
+kube-apiserver serves requests.
 
 ### Troubleshooting
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
-  The feature is itself within the API server. Etcd being unavailable would
-  likely cause kube-apiserver to fail at processing incoming requests.
+###### How does this feature react if the API server and/or etcd is unavailable?
 
-* **What are other known failure modes?** A misconfiguration could reject
-  requests incorrectly. See the rollout and monitoring sections for details on
-  which metrics to watch to detect such failures (see the `kep.yaml` file for
-  the full list of metrics). The following kube-apiserver log messages could
-  also indicate potential issues:
-  - "Unable to list PriorityLevelConfiguration objects"
-  - "Unable to list FlowSchema objects"
+This feature is entirely in the apiserver, so will be unavailable when
+the apiserver is unavailable.
 
-* **What steps should be taken if SLOs are not being met to determine the
-  problem?** No SLOs are proposed.
+This feature does not depend directly on the storage and will continue
+to perform its function while the storage is unavailable, except for
+the parts of the function that involve maintaining its configuration
+objects and reacting to changes in them.  While the storage is
+unavailable this feature continues to use the last configuration that
+it read.  Unavailability of storage will naturally have severe effects
+on request executions and this feature will react to the relevant
+consequences.
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+###### What are other known failure modes?
+
+  - Some client makes requests with big responses that the client does
+    not finish reading in the first minute, constantly occupying (hand
+    size) X (max width = 10) seats --- which nearly starves other
+    clients when the priority level's concurrency limit is not much
+    greater than that.
+    - Detection: How can it be detected via metrics? In this situation
+      the requests from the bad client will timeout during execution
+      at a rate of (hand size)/minute, and other requests in the same
+      priority level will almost all timeout while waiting in a queue.
+    - Mitigations: What can be done to stop the bleeding, especially
+      for already running user workloads?  Identify the bad client and
+      create a special flow schema and priority level to isolate that
+      client.
+    - Diagnostics: What are the useful log messages and their required
+      logging levels that could help debug the issue?  In the
+      kube-apiserver's log at `-v=3` or more verbose the httplog
+      entries will indicate timeouts.
+    - Testing: Are there any tests for failure mode? If not, describe
+      why.  We only recently realized this failure mode and we hope to
+      make a change that will prevent it or automatically mitigate it.
+      See https://github.com/kubernetes/kubernetes/issues/115409 .
+
+  - A misconfiguration could reject
+    requests incorrectly.
+    - Detection: See the rollout and monitoring sections for details
+      on which metrics to watch to detect such failures (see the
+      `kep.yaml` file for the full list of metrics). The following
+      kube-apiserver log messages could also indicate potential
+      issues:
+      - "Unable to list PriorityLevelConfiguration objects"
+      - "Unable to list FlowSchema objects"
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+No SLOs are proposed.
 
 ## Implementation History
 
-
-- v1.19: `Alpha` release
+- v1.18: `Alpha` release
 - v1.20: graduated to `Beta`
 - v1.22: initial support for width concept and watch initialization
 - v1.23: introduce `v1beta2` API
   - no changes compared to `v1beta1`
   - `v1beta1` remain as storage version
 - v1.24: storage version changed to `v1beta2`
+- v1.26: introduce concurrency borrowing between priority levels
 
 ## Drawbacks
 
@@ -2995,6 +3184,5 @@ designs not chosen.
 
 ## Infrastructure Needed
 
-The end-to-end test suite should exercise the functionality introduced
-by this KEP.  This may require creating a special client to submit an
-overload of low-priority work.
+Nothing beyond the usual CI.
+
