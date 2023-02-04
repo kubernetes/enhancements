@@ -492,13 +492,16 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `/test/e2e/autoscaling/horizontal_pod_autoscaling.go`: https://storage.googleapis.com/k8s-triage/index.html?sig=autoscaling&job=ci-kubernetes-e2e-gci-gce-autoscaling&test=%5C(Container%20Resource%5C)
+**k8s-triage**
+
+- https://storage.googleapis.com/k8s-triage/index.html?sig=autoscaling&job=ci-kubernetes-e2e-gci-gce-autoscaling&test=Container%20Resource
 
 **tests**
 
 - https://github.com/kubernetes/kubernetes/blob/d4750857760ae55802f69989dc2451feeb9a29e5/test/e2e/autoscaling/horizontal_pod_autoscaling.go#L61
 - https://github.com/kubernetes/kubernetes/blob/d4750857760ae55802f69989dc2451feeb9a29e5/test/e2e/autoscaling/horizontal_pod_autoscaling.go#L163
 - https://github.com/kubernetes/kubernetes/blob/d4750857760ae55802f69989dc2451feeb9a29e5/test/e2e/autoscaling/horizontal_pod_autoscaling.go#L120
+- https://github.com/kubernetes/kubernetes/blob/d4750857760ae55802f69989dc2451feeb9a29e5/test/e2e/autoscaling/custom_metrics_stackdriver_autoscaling.go#L323
 
 ### Graduation Criteria
 
@@ -699,12 +702,19 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 The feature can be disabled in Alpha and Beta versions
 by restarting kube-apiserver and kube-controller-manager with the feature-gate off.
+
+As described in [Upgrade / Downgrade Strategy](#upgrade-/-downgrade-strategy),
+during the feature-gate off, all existing `ContainerResource` will be ignored by the HPA controller.
+
 In terms of Stable versions, users can choose to opt-out by not setting the
 `ContainerResource` type metric in their HPA.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 HPA with `ContainerResource` type metric can be created and can be handled by HPA controller.
+
+If there have been HPAs with the `ContainerResource` type metric created before the roll back,
+those `ContainerResource` will be restarted to get handled by the HPA controller.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -755,7 +765,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-N/A
+- so many HPAs are in `ScalingActive: false` condition with `FailedGetContainerResourceMetric` reason.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -807,8 +817,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [x] Events
-  - `SuccessfulRescale` event with `memory resource utilization (percentage of request) above target`
-    - Note that we cannot know if this reason is due to the `Resource` metric or `ContainerResource` in the current implementation. It'll be fixed to be able to distinguish.
+  - `SuccessfulRescale` event with `memory/cpu/etc resource utilization (percentage of request) above/below target`
+    - Note that we cannot know if this reason is due to the `Resource` metric or `ContainerResource` in the current implementation. We'll change this reason for `ContainerResource` to `memory/cpu/etc container resource utilization (percentage of request) above/below target` so that we can distinguish.
 - [x] API .status
   - When something wrong with the container metrics, `ScalingActive` condition will be false with `FailedGetContainerResourceMetric` reason.
 
@@ -1000,7 +1010,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-N/A
+- Failed to get container resource metric.
+  - Detection:  `ScalingActive: false` condition with `FailedGetContainerResourceMetric` reason.
+  - Mitigations: remove failed `ContainerResource` in HPAs.
+  - Diagnostics: Related errors should be printed as the messages of `ScalingActive: false`. 
+  - Testing: https://github.com/kubernetes/kubernetes/blob/0e3818e02760afa8ed0bea74c6973f605ca4683c/pkg/controller/podautoscaler/replica_calculator_test.go#L451
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1022,6 +1036,11 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+There's an alternative way to scale on container-level metrics without introducing ContainerResource metrics. 
+
+Users can export resource consumption metrics from containers on their own to an external metrics source and then configure HPA based on this external metric. 
+However this is cumbersome and results in delayed scaling decisions as using the external metrics path typically adds latency compared to in-cluster resource metrics path.
 
 ## Infrastructure Needed (Optional)
 
