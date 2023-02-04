@@ -1,20 +1,28 @@
 name: 3331-structured-config-for-oidc-authentication
 title: Structured config for OIDC authentication
 kep-number: "3331"
-authors: ['@nabokihms']
+authors:
+- "@nabokihms"
 owning-sig: sig-auth
-participating-sigs: [sig-auth]
-reviewers: ['@enj', '@TBD']
-approvers: ['@TBD']
-prr-approvers: ['@deads2k']
+participating-sigs:
+- sig-auth
+reviewers:
+- "@enj"
+- "@liggitt"
+approvers:
+- "@deads2k"
+- "@liggitt"
 creation-date: "2022-06-02"
 status: provisional
 stage: alpha
-latest-milestone: "v1.27"
+latest-milestone: "v1.26"
 milestone:
-    alpha: "v1.27"
-    beta: "v1.28"
-    stable: "v1.30"
-feature-gates: []
-disable-supported: false
+  alpha: "v1.27"
+  beta: "v1.28"
+  stable: "v1.30"
+feature-gates:
+- name: StructuredOIDCConfiguration
+  components:
+  - kube-apiserver
+disable-supported: true
 metrics: []
