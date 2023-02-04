@@ -126,7 +126,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This enhancement proposal covers implementing the structured configuration for the OIDC authenticator.
-OIDC authentication is essential part of Kubernetes, yet it has limitations in its current state. 
+OIDC authentication is important part of Kubernetes, yet it has limitations in its current state.
 Bellow we will discuss that limitation and propose solutions.
 
 # Motivation
@@ -139,11 +139,10 @@ better support various features that have been requested.
 
 There are features users want to tune. We need to provide customization of the following:
 
-- Claims validation rules: current OIDC provider supports only audience claim validation and only by exact values
-- Claim mappings: it is only possible to pick a single value from a single claim and prefix groups
-- Use more than one OIDC provider: the only option, for now, is to use [Dex](https://dexidp.io/) (or similar software)
-  as a lightweight OIDC proxy to connect many providers to Kubernetes
-- Change authenticator settings without restarting kube-apiserver
+- *Claims validation rules*: current OIDC provider supports only audience claim validation and only by exact values.
+- *Claim mappings*: it is only possible to pick a single value from a single claim and prefix groups.
+- *Use more than one OIDC provider*: the only option, for now, is to use an external OIDC provider that handles multiplexing support for multiple providers.
+- Change authenticator settings without restarting kube-apiserver.
 
 ### Non-Goals
 
@@ -171,7 +170,7 @@ The main part of this proposal is a configuration file. It contains an array of 
 type OIDCConfiguration struct {
     metav1.TypeMeta
     // Providers is a list of OIDC providers to authenticate Kubernetes users.
-    Providers []Provider
+    Providers []Provider `json:"providers"`
 }
 ```
 
@@ -180,16 +179,16 @@ Each provider has several properties that will be described in detail below.
 ```go
 type Provider struct {
     // Issuer is a basic OIDC provider connection options.
-    Issuer Issuer
+    Issuer Issuer `json:"issuer"`
     // ClaimValidationRules are rules that are applied to validate ID token claims to authorize users.
     // +optional
-    ClaimValidationRules []ClaimValidationRule
+    ClaimValidationRules []ClaimValidationRule `json:"claimValidationRules,omitempty"`
     // ClaimMappings points claims of an ID token to be treated as user attributes.
     // All mappings are logical expressions that is written in CEL https://github.com/google/cel-go.
-    ClaimMappings UserAttributes
+    ClaimMappings UserAttributes `json:"claimMappings"`
     // ClaimsFilter allows unmarshalling only required claims which positively affects performance.
     // +optional
-    ClaimsFilter []string
+    ClaimsFilter []string `json:"claimFilters,omitempty"`
 }
 ```
 
@@ -200,34 +199,46 @@ type Provider struct {
     ```go
     type Issuer struct {
         // URL points to the issuer URL in a format schema://url/path.
-        URL string
-        // CertificateAuthorityData contains PEM-encoded certificate authority certificates. Overrides CertificateAuthority
-        CertificateAuthorityData []byte
+        // Not required to be unique because users may want to have the API server trust multiple 
+        // client IDs (kubernetes dashboard, kubectl, etc.) from the same provider.
+        URL string `json:"url,omitempty"`
+        // CertificateAuthorityData contains PEM-encoded certificate authority certificates. Overrides CertificateAuthority.
+        // +optional
+        CertificateAuthorityData []byte `json:"certificateAuthorityData,omitempty"`
         // ClientID the JWT must be issued for, the "sub" field. This plugin only trusts a single
         // client to ensure the plugin can be used with public providers.
         // Do not affect anything with the SkipOIDCValidations option enabled.
         // +optional
-        ClientID string
+        ClientID string `json:"clientID,omitempty"`
         // SkipOIDCValidations is a flag to turn off issuer validation, client id validation.
         // OIDC related checks.
+        //  
+        // Validations that will be skipped:
+        // - ClientID validation
+        // - URL schema equals to HTTPS
+        // - Issuer URL check
+        // - Expiry validation
+        //
         // +optional
-        SkipOIDCValidations bool
+        SkipOIDCValidations bool `json:"skipOIDCValidations,omitempty"`
    }
    ```
 
-2. `ClaimValidationRules` - additional rules for authorization.
+2. `ClaimValidationRules` - additional authentication policies. These policies are applied after generic OIDC validations, e.g., checking the token signature, issuer URL, etc. Rules are applicable to distributed claims.
     ```go
     type ClaimValidationRule struct {
         // Rule is a logical expression that is written in CEL https://github.com/google/cel-go.
-        Rule string
+        Rule string `json:"rule"`
         // Message customize returning message for validation error of the particular rule.
         // +optional
-        Message string
+        Message string `json:"message,omitempty"`
     }
     ```
 
     For validation expressions, the CEL is used. They are similar to validations functions for [Custom Resources](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#resource-use-by-validation-functions).
     `Rule` expression should always evaluate a boolean. Token `claims` are passed to CEL expressions as a dynamic map `decls.NewMapType(decls.String, decls.Dyn)`.
+ 
+    > NOTE: If a rule returns `false` after evaluation, the `401 Unauthorized` error will be returned. If the evaluation is failed in runtime, the `500 Internal Sever Error` error will be returned with a message to kube-apiserver logs.
 
     You can find a snippet of validation rules below:
 
@@ -237,31 +248,31 @@ type Provider struct {
     - rule: 'claims.aud == "charmander" || claims.aud == "bulbasaur"'
       message: clients other than charmander or bulbasaur are not allowed
     
-    - rule: 'claims.roles.exists(r, r == "kubernetes-user")'
-      message: only kubernetes-user group members can access the cluster
+    - rule: 'claims.exp - claims.nbf > 86400'
+      message: total token lifetime must not exceed 24 hours
     ```
 
 3. `ClaimMappings` - rules to map claims from a token to Kubernetes user attributes.
     ```go
     type UserAttributes struct {
         // Username represents an option for the username attribute.
-        Username string
+        Username string `json:"username"`
         // Groups represents an option for the groups attribute. 
         // +optional
-        Groups string
+        Groups string `json:"groups,omitempty"`
         // UID represents an option for the uid attribute.
         // +optional
-        UID string
+        UID string `json:"uid,omitempty"`
         // Extra represents an option for the extra attribute.
         // +optional
-        Extra []ExtraMapping
+        Extra []ExtraMapping `json:"extra,omitempty"`
     }
    
     type ExtraMapping struct {
         // Key is a CEL expression to extract extra attribute key.
-        Key string
-        // Expression is a CEL expression to extract extra attribute value.
-        Expression string
+        Key string `json:"key"`
+        // Value is a CEL expression to extract extra attribute value.
+        Value string `json:"value"`
     }
     ```
 
@@ -303,19 +314,29 @@ type Provider struct {
    know the structure of the token and the exact claims they will use in CEL expressions.
    This option helps to reduce system load and operate only with required claims.
 
+> TODO: Think about prefixes. The flag-based OIDC authenticator implementation allows to prefix usernames and groups to avoid collisions with system groups or names.
+> 1. This is a common use case. Users can benefit from not using CEL for it.
+> 2. Not only enforcing prefixes is useful. It is also possible to reject tokens if there are groups with the `system:` prefix.
+
 ### More about CEL
 
-* CEL runtime should be compiled only once if structured OIDC config option is enabled
-* To make working with strings more convinient, `strings` and `encoding` [CEL extensions](https://github.com/google/cel-go/tree/v0.9.0/ext) should be enabled, 
-e.g, to be able to split a string with comma separated fields and use them as a single array
-* Benchmarks are required to see how different CEL expressions affects authentication time
-* CEL expressions are called on each request. We should properly investigate the influence of these calls on the system
-  latency and, if necessary, prove caching or other mechanisms to improve performance.
+* CEL runtime should be compiled only once if structured OIDC config option is enabled.
+* Two variables will be available in to use in rules: 
+  * `claim` for token claims
+  * `now` for the current time in UNIX format to be able to customize the expiration validation (e.g., `Rule: "claims.exp < now", Message: "Token is expired"`)
+* To make working with strings more convenient, `strings` and `encoding` [CEL extensions](https://github.com/google/cel-go/tree/v0.9.0/ext) should be enabled, 
+e.g, to be able to split a string with comma separated fields and use them as a single array.
+* Benchmarks are required to see how different CEL expressions affects authentication time.
+* CEL expressions are called on each request. We should properly investigate the influence of these calls on the system.
+  latency and, if necessary, prove caching or other mechanisms to improve performance. The possibility of applying caching mechanisms should be considered.
 
 ### Flags
 
 The only flag requires to enable the feature is the `--oidc-configuration-path` flag. It points to the configuration file.
 On startup, kube-apiserver enables the file watcher for the configuration file and reacts to any file change.
+
+> NOTE: This KEP is aimed at implementing a new Kubernetes authenticator. 
+> It will be possible to simultaneously enable a flag-based OIDC provider authenticator and a structured-config OIDC authenticator.
 
 ### Test Plan
 
@@ -334,7 +355,7 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-TBA
+https://github.com/kubernetes/kubernetes/issues/110782
 
 ##### Prerequisite testing updates
 
@@ -403,10 +424,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Gather feedback from developers and surveys
 - Complete benchmarks
+- Add metrics
 
 #### GA
 
-- Add metrics
 - Add a full documentation with examples for the most popular providers, e.g., Okta, Dex, Auth0
 - Migration guide
 - Deprecation warnings for non-structured OIDC provider configuration
@@ -450,7 +471,7 @@ No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, but disable means also deleting the flag from the kube-apiserver manifest.
+Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -458,13 +479,19 @@ No impact.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Not required.
+Feature enablement/disablement tests will be added as part of https://github.com/kubernetes/kubernetes/issues/110782
+
+> An example test could be: unit test that demonstrates that when the featuregate is false, the validation function on the Options type reports a failure when the flag is set.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-It cannot fail.
+It cannot fail until a bug in kube-apiserver connected to parsing structured config file occurs.
+
+Possible consequences are:
+* A cluster administrator rolls out the feature with the addition of some validation rules that may allow access to previously restricted users.
+* Other cluster components can depend on claim validations. Rolling back would mean losing validation functionality.
 
 ###### What specific metrics should inform a rollback?
 
@@ -530,7 +557,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-The feature should work 99.9% of the time.
+The feature should work 99.9% of the time (SLOs for actual requests should not change in any way compared to the flag-based OIDC configuration).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -629,7 +656,7 @@ TBA.
 
 ## Drawbacks
 
-Nothing can hold us. Everyone agrees that we have to implement this feature to fulfill user expectations.
+- This feature will be the first adoption of using CEL for a config file.
 
 ## Alternatives
 
