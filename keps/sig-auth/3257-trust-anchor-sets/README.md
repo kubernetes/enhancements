@@ -319,11 +319,11 @@ that happens.
 
 ### Risks and Mitigations
 
-Scalability: In the limit, ClusterTrustBundle objects will be used by
-every pod in the cluster, which will require watches from all Kubelets.  When
-they are updated, workloads will need to receive the updates fairly quickly
-(within 5 minutes across the whole cluster), to accommodate emergency rotation
-of trust anchors for a private CA.
+Scalability: In the limit, ClusterTrustBundle objects will be used by every pod
+in the cluster, which will require one ClusterTrustBundle watch from each
+Kubelet in the cluster.  When they are updated, workloads will need to receive
+the updates fairly quickly (within 5 minutes across the whole cluster), to
+accommodate emergency rotation of trust anchors for a private CA.
 
 Security: Should individual trust anchor set entries designate an OSCP endpoint
 to check for certificate revociation?  Or should we require the URL to be
@@ -853,13 +853,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 Yes.
 
-A pod that uses a pemTrustAnchors projected volume will result in an additional
-watch on the named ClusterTrustBundle object orginating from Kubelet.  This
-watch will be low-throughput.
-
-Similar to the existing kubelet watches on secrets and configmaps, special care
-will need to be taken to ensure that kube-apiserver can efficiently choose which
-single-ClusterTrustBundle watches to update for a given etcd update.
+Kubelet will open a watch on ClusterTrustBundle objects.  This watch will be
+low-throughput.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -894,12 +889,11 @@ arbitrary startup latency for my pod and cause an SLO breach.)
 Use of the ClusterTrustBundle objects by themselves should have negligible
 resource impact.
 
-Use of the pemTrustAnchors projected volume type will result in an additional
-watch on kube-apiserver for each unique (Node, ClusterTrustBundle) tuple in the
-cluster.  This is similar to existing kubelet support for projecting configmaps
-and secrets into a pod.  Just like for secrets and configmaps, we will need to
-make sure that kube-apiserver has the indexes it needs to efficiently map etcd
-watch events to Kubernetes watch channels.
+When the feature gate is enabled, Kubelet will open a watch on all
+ClusterTrustBundle objects in the cluster.  We expect there to be a low number
+of ClusterTrustBundle objects that does not scale with the number of nodes or
+workloads in the cluster, although individual ClusterTrustBundle objects could
+be large.
 
 ### Troubleshooting
 
