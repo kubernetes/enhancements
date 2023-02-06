@@ -10,7 +10,7 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Story 3](#story-3)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -19,6 +19,10 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -64,105 +68,144 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+Server-Side Apply has been a major new feature of Kubernetes, and has
+landed as GA in Kubernetes v1.22. Unfortunately, while the feature is
+accessible through `kubectl apply –server-side=true`, new objects,
+existing objects, and even previously server-side applied objects are
+still client-side applied by default unless the proper flag value is
+specified. The main reason is that Server-Side Apply is not entirely
+backwards compatible with client-side, and breaking users of `kubectl
+apply` now would come with a cost.
 
-A good summary is probably at least a paragraph in length.
+We’re proposing a way forward toward toggling the `--server-side` flag
+by default.
 
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+While changing from client-side to server-side is difficult because it
+will break some people's expectations and might break some scripts too,
+but the feature is required none-the-less for its benefits, for users:
+- Users are missing out on Server-Side Apply feature because they don't
+  know they can use it
+- Having both server-side and client-side feature is confusing for users
+  who've tried the feature, and changing from one to the other can cause
+  odd behaviors
+- Some flags in kubectl are meant for this historical CSA while some
+  flags are meant for SSA, causing even more confusion
+- strategic-merge-patch (SMP) is not maintained and broken, a
+  frustrating situation for users
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+For maintainers:
+- Many workflows need to be considered for both paradigms, making
+  maintenance of kubectl more difficult
+- kubectl has a lot of code to maintain SMP and other client-side apply
+  mechanisms. Removing the feature can greatly reduce the complexity of
+  kubectl
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
+The goal is to increase usage of Server-Side Apply so that users can
+benefits from the feature, mostly by turning the feature on by default.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+Good question.
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
+The feature consists of adding a new `auto` value to the `--server-side`
+flag for `kubectl apply` (and corresponding `kubectl diff`) and make
+this the default value. All the other values for the flag would continue
+to work as expected (for reference, `false` continues to client-side
+apply, and `true` continues to server-side apply).
+
+The meaning of `auto` goes as follows:
+- Resources continue to be fetched (GET) before-hand
+- If the resource has a kubectl `last-applied` annotation, we infer that
+  the resource is client-side applied, and we continue to client-side
+  apply that resource
+- If the resource is new (GET returns 404), the resource is server-side applied
+- If the resource already exists but doesn't have the `last-applied`
+  annotation, the resource is server-side applied
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
 #### Story 1
+
+User 1 starts using `kubectl` for the first time or on a new
+project, everything will always be server-side applied, they will get
+conflicts and all the good things about server-side apply.
 
 #### Story 2
 
-### Notes/Constraints/Caveats (Optional)
+User 2 only uses server-side apply all the time, they may have
+`--server-side` inserted in some scripts or configuration, or they must
+remember to always include the flag. Thanks the feature, forgetting the
+flag is now doing the right thing by server-side applying all their
+resources as expected, causing less confusion and risks of messing up.
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+#### Story 3
+
+User 3 has never used server-side apply and always used the default
+value of `--server-side`. Applying their existing resources will
+continue to work as expected. New resources, on the other hand, will at
+first apply the same but may eventually show-up with a conflict. They
+may have to update scripts to continue to work with
+`--server-side=false` if they want to, or they can update their
+scripts/workflow to address the conflicts properly.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+This design has no impact on security, but some consequences on UX, since the
+default UX of `kubectl apply` will change:
+- Currently, it can never fail because of conflict, since they are
+  overridden by default. The new default for Server-Side Apply is to
+  fail on conflicts, unless the `--force-conflict` flag is used. While
+  people can re-run the command with the flag, this might impact CI/CD
+  scripts that use `kubectl apply` directly, since they may not have a
+  break-glass way to address that.
+- CSA injects a last-applied-annotation into the objects that it
+  applies, but these don’t make sense in the context of SSA. An API or
+  tool that would use this annotation to detect which resources have
+  been applied would fail to find it for server-side applied objects.
+  Note that doing that is heavily frowned upon.
+- CSA users expect all excluded fields to be removed from the applied
+  object on the server. SSA has more complicated semantics for removing
+  fields (e.g. if another user manages fields)
 
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+<!-- Missing mitigation here -->
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+As mentioned in the proposal, the new value of `auto` will detect if a
+resource has been client-side applied before and will continue to
+client-side apply these resources, while all other resources will be
+server-side applied. This means that new resources will be server-side
+applied by default.
+
+The `last-applied` annotation is used to detect previous client-side
+applied object, hence it is not inserted for server-side objects.
+
+The interaction with other `kubectl apply` flags can be described as
+follows:
+- `--force-conflicts` only applies to existing resources that are
+  server-side applied
+- `--fieldmanager` applies to all resources
+- The `--prune` family of flags, I have no idea
+- `--overwrite` only applies to client-side applied resources
+
+Some other commands might be impacted. `kubectl create` (and family)
+notably have a `--save-config` flag that create the last-applied
+annotation. While I don't know how many people actually use the flag,
+the idea of saving this as a config is confusing, since people don't
+actually have the file and so the situation doesn't really fit well the
+`apply` workflow. We suggest adding a warning when this flag is used, as
+well as updating its documentation to suggest not using it.
+
+Because `kubectl diff` is supposed to map the behavior of `kubectl
+apply` as closely as possible, the change will also be done for that
+command.
 
 ### Test Plan
 
@@ -228,120 +271,53 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+Alpha is the current level of the feature since server-side apply is
+currently enabled by default in Kubernetes, but enabled on-demand by
+kubectl users.
+
+The feature already has a fair amount of usage though since tools
+(sometimes outside of kubectl) have used it both as "clients" and in
+controllers.
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+Server-Side Apply has a very limited set of bugs or feature requests as
+this point and is definitely mature. Enabling client-side will allow
+increased usage and reduce burden cost for kubectl to maintain both
+mecahnisms.
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+Kubectl doesn't have real-time metrics for usage. The decision to move
+to server-side entirely by default (if ever enabled) will be driven by
+bug reports and complaints from customers. Also by the ability to
+migrate existing client-side usage to server-side.
 
 #### Deprecation
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+We are not intending to deprecate the flag, but we might remove the
+`--server-side` flag in the long term.
+
+Same thing applies for `--save-config` and other client-side related
+flags in kubectl which we might remove.
+
+No deprecation is planned at that time though.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+While upgrade / downgrade doesn't really apply to a kubectl feature, we
+currently have a upgrade (and somewhat downgrade) feature in kubectl to
+go from client-side to server-side apply. The upgrade and downgrade
+works well in the nominal cases but fail with special cases. Enabling
+server-side by default also intends to address that problem.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+N/A.
 
 ## Production Readiness Review Questionnaire
-
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
 
 ### Feature Enablement and Rollback
 
