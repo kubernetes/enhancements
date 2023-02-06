@@ -268,6 +268,14 @@ runtime cost limit is exceeded during `messageExpression` execution, then this
 is logged. Whether or not the action is admitted after that depends upon failure policy.
 Additionally, as part of [the KEP update to add expression composition](https://github.com/kubernetes/enhancements/pull/3669/files),
 expressions defined under `variables` will be accessible from `messageExpression`.
+- There are several compile-time checks performed on CEL's `string.format` function that can affect `messageExpression`:
+  - If the formatting string passed to `string.format` is a constant, then the formatting string will be checked at
+  compile-time that it parses correctly.
+  - If the `arg` array passed to `string.format` is a literal, and the formatting string is a constant, then
+  at compile-time `arg`'s cardinality will be checked against the formatting string. Passing too few/too many arguments
+  compared to what the formatting string expects is not allowed.
+  - If the CEL expression is compiled, then type checking of each individual argument in `arg` will be done against
+  what is expected in the formatting string to ensure the proper formatting clauses are used on each member of arg.
 - If both `message` and `messageExpression` are present, `messageExpression` will take priority.
 
 - The validator will be scoped to the location of the `x-kubernetes-validations`
