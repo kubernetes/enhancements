@@ -891,7 +891,17 @@ xref:
 
 #### Informational type checking
 
-This is complicated by:
+Some advantages of strongly typed objects and expressions over treating everything as unstructured are:
+
+- Checks against missing/misspelled fields.
+  The user may write an expression that refers to a missing/misspelled field that
+  does not exist in their test cases but appears later. A type check can detect this kind of error while an evaluation-time check may not.
+- Checks against type confusions. Similarly, the user may confuse the type of field but their test cases never touch wrongly typed fields.
+- Guard against short-circuit evaluation. The user may make a mistake of one of the mentioned above but the code path is never covered in their test cases;
+- Support Kubernetes extensions. For example, IntOrString and map lists.
+
+
+However, enforcing types for every expression and object is not feasible because of:
 
 - Version skew
 - CRDs
@@ -899,30 +909,43 @@ This is complicated by:
 
 Problem examples:
 
-| Problem                                                | Summary                                     |
-| ------------------------------------------------------ | ------------------------------------------- |
-| version skew: ephemeralContainers case                 | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
-| version skew: Migration from annotation to field       | Need to be able to validate annotation (if present) or field (if it exists and is populated) |
-| CRD is deleted                                         | Nothing to type check against, but also means there are no coresponding custom resources |
-| CRD is in multiple clusters, but schema differs        | If policy author is aware of the schema variations, can they write policies that work for all the variations? |
-| Validation of an aggregated API server type            | Main API server does not have type definitions |
+| Problem                                          | Summary                                                                                                               |
+|--------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| version skew: ephemeralContainers case           | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
+| version skew: Migration from annotation to field | Need to be able to validate annotation (if present) or field (if it exists and is populated)                          |
+| CRD is deleted                                   | Nothing to type check against, but also means there are no coresponding custom resources                              |
+| CRD is in multiple clusters, but schema differs  | If policy author is aware of the schema variations, can they write policies that work for all the variations?         |
+| Validation of an aggregated API server type      | Main API server does not have type definitions                                                                        |
 
-Due to these complications, we have decided to evaluate CEL expressions
-dynamically. Informational type checking will be provided (except for aggregated
-API server types), but will be surfaced only as warnings. See "Alternatives
-Considered" section for details of all the alternatives we reviewed when
-selecting this approach.
+Due to these complications, Type checking will be optional which can be activated by an expression-level
+`TypeChecking` field. Possible modes are:
 
-Type checking is still performed for all expressions where a GVK can be matched
-to type check against, resulting in warnings, e.g.:
+- `Never` Do not type check the referred object or the param any time.
+  Treat `object`, `oldObject`, and `params` as dynamic-typed unstructured objects.
+  This is the default and the current behavior of Kubernetes 1.26.
+- `Evaluation` Type check the referred `object`, `oldObject`, and `params` when the expression is being compiled and evaluated after the policy is created. 
+  If the type check fails, mark the policy as misconfigured. Do not type check when the policy is being created or updated.
+- `Always` Type check the referred `object`, `oldObject`, and `params` immediately when the policy is being created or updated. 
+  If the type check fails, including the situation where the schema fails to resolve, the API server will reject the operation on the policy object. 
+  The same type check will happen during compilation and evaluation.
 
-```yaml
-...
-status:
-  expressionWarnings:
-    - expression: "object.foo"
-      warning: "no such field 'foo'"
-```
+The modes can be summarized as follows.
+
+| Mode       | Value & Param Type | Set Policy as misconfigured | Reject on creation/update |
+|------------|--------------------|-----------------------------|---------------------------|
+| Never      | Unstructured       | No                          | No                        |
+| Evaluation | Structured         | Yes                         | No                        |
+| Always     | Structured         | Yes                         | Yes                       |
+
+
+The type check may fail in one of the three reasons:
+1. The schema is resolved and parsed. The CEL library determines the expression is invalid;
+2. The schema is resolved, but cannot be parsed. This is considered an internal error and will be logged;
+3. The schema cannot be resolved because the referred type does not yet exist. This should be a transient error.
+
+If `TypeChecking` is set to Evaluation, and either 2 or 3 happens, the compilation will fall back to unstructured as if TypeCheckingMode was set to Never. This allows the evaluation to continue before the referred CRDs are created or published.
+
+In the next releases, the modes are to be implemented in the order of `Never`, `Evaluation`, and `Always`.
 
 #### Failure Policy
 
