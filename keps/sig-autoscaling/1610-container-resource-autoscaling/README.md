@@ -614,6 +614,7 @@ and thus, HPA controller will also do nothing with it.
 
 For existing HPAs, **the current implementation will continue to work on autoscaling based on `ContainerResource`.**
 This behavior will be changed to ignore `ContainerResource` when the feature gate is disabled by the beta.
+ ([issue](https://github.com/kubernetes/kubernetes/issues/115467))
 
 ### Version Skew Strategy
 
@@ -731,7 +732,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-No. But, the tests to confirm the behavior on switching the feature gate will be added.
+No. But, the tests to confirm the behavior on switching the feature gate will be added by beta. ([issue](https://github.com/kubernetes/kubernetes/issues/115467))
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -765,7 +766,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-- so many HPAs are in `ScalingActive: false` condition with `FailedGetContainerResourceMetric` reason.
+- Many HPAs are in `ScalingActive: false` condition with `FailedGetContainerResourceMetric` reason.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -776,7 +777,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 -->
 
 Not yet.
-But, as described in [Are there any tests for feature enablement/disablement?](#Are-there-any-tests-for-feature-enablement/disablement?), the tests to confirm the behavior on switching the feature gate will be added.
+But, as described in [Are there any tests for feature enablement/disablement?](#Are-there-any-tests-for-feature-enablement/disablement?), the tests to confirm the behavior on switching the feature gate will be added. ([issue](https://github.com/kubernetes/kubernetes/issues/115467))
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
