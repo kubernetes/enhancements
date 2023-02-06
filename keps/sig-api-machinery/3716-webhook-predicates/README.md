@@ -14,7 +14,7 @@
   - [API](#api)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Security](#security)
-    - [Debugability](#debugability)
+    - [Debuggability](#debuggability)
     - [Performance](#performance)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -261,8 +261,9 @@ manipulating match rules, namespace selector, or object selector (or reroute the
 
 **Risk: Logic error in match condition expression.**
 
-Currently the match conditions must be encoded in the webhook backend itself. Moving the logic
-into a CEL expression does not materially increase the risk of a logic bug.
+Currently the match conditions must be encoded in the webhook backend itself. Moving the logic into
+a CEL expression adds a potential failure point. This can be mitigated by testing, but the CEL
+ecosystem currently lacks some of the tools that would make this easier.
 
 Of particular significance are match conditions tied to non-functional properties of an object, such
 as using labels to decide whether to opt an object out of a policy. Without additional admition
@@ -275,7 +276,7 @@ is relevant.
 These risks are inherent to the feature being proposed and cannot be mitigated through technical
 means, but should be highlighted in the documentation.
 
-#### Debugability
+#### Debuggability
 
 We do not normally log, audit, or emit an event when a webhook is out-of-scope for a request, and
 the same will _mostly_ be true for match conditions.
@@ -519,8 +520,9 @@ remains unchanged.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Disabling the feature gate will ignore any `matchConditions` set, and return to the default
-behavior. This could increase the traffic to the webhook, and potentially increase the error rate if
-the webhook is down or rejects those requests.
+behavior. Disabling `AdmissionWebhookMatchConditions` could increase the traffic to the webhook, and
+potentially increase the error rate if the webhook fails to process the additional requests
+correctly.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
