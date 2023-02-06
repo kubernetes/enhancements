@@ -177,7 +177,8 @@ updates.
 The authors have taken inspiration from the [CSI development](https://github.com/kubernetes/design-proposals-archive/blob/main/storage/container-storage-interface.md). 
 Kubernetes compute management is tightly integrated with the Kubelet and the 
 existing suite of resources managers including the topology manager, CPU manager, 
-memory manager, and device manager. While these managers have added functionality that has addressed a varied set of use cases, they do present the community with several challenges.
+memory manager, and device manager. While these managers have added functionality that 
+has addressed a varied set of use cases, they do present the community with several challenges.
 
 Adding a new capability to one of these managers is slow moving and difficult 
 due to their complex interactions, the level of prudence required given the potential
@@ -210,8 +211,8 @@ with the existing CPU and memory allocation technique available to Kubernetes us
 
 These changes will allow the community to disaggregate the long-term 
 stability and advancement of the Kubelet from the task of improving the compute 
-resource management and keeping pace with the needs of specialized use cases and
-the advancements in the compute vendor ecosystem.
+resource management while keeping pace with the needs of 
+specialized use cases and the advancements in the compute vendor ecosystem.
 
 
 
@@ -228,14 +229,15 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 Users are requiring more varied workloads; the current set of available configurations
 for CPU, memory, and topology remain limited.  Additionally, the number of managers
-becoming internal to the Kubelet continues to increase, and we should find a more 
-dynamic and pluggable way of handling these resources.  Operating systems work by
-allowing drivers and pluggable resources, even to how cpu, memory, and devices are allocated.
-Kubernetes can be looked at as being the operating system of the cloud, and allowing
-specialty modules in order to address the use cases, rather than continuing to add
-complexity directly by continuing to modify the kubelet, will allow the greatest scope
-of abilities while stopping the continued increasing complexity within the core of
-the Kubelet.
+becoming internal to the Kubelet continues to increase; we should find a more 
+dynamic and pluggable way of handling these resources.  
+
+Operating systems work by allowing drivers and pluggable resources.  This includes various
+policies in how cpu, memory, and devices are allocated.  Kubernetes can be viewed as being 
+an the operating system of the cloud.  Allowing specialty modules to address the use cases
+directly, rather than continuing to add complexity by continuing to modify the kubelet, 
+will allow the greatest scope of abilities while halting continued increases of complexity 
+within the core of the Kubelet.
 
 Users would like to be able to address the following use cases:
 
