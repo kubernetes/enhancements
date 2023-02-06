@@ -437,9 +437,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-*   `pkg/apis/apps/validation/validation_test.go` - Tests that the .spec.ordinals.start value is properly validated.
-*   `pkg/controller/statefulset/stateful_set_control_test.go` - Tests that a StatefulSet slice can be created from specified starting ordinal.
-*   `pkg/registry/apps/statefulset/strategy_test.go` - Tests the create/update strategy of a StatefulSet with start ordinals. Also validates enablement/disablement of the feature.
+- k8s.io/kubernetes/pkg/apis/apps/validation: 2023-02-05: 90.5%
+- k8s.io/kubernetes/pkg/controller/statefulset: 2023-02-05: 85.7%
+- k8s.io/kubernetes/pkg/registry/apps/statefulset: 2023-02-05: 65.2%
 
 ##### E2E tests
 
@@ -451,18 +451,15 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-`Feature:StatefulSetStartOrdinal` in `k8s.io/kubernetes/test/e2e/apps/`.
-
-*   Adding `ordinals.start`: Validate that setting `ordinals.start` to `k` causes StatefulSet ordinals to be scaled (pods `[0, k-1]` are terminated, pods `[N, N+k-1]` are created)
-*   Increasing `ordinals.start`: Validate that increasing `ordinals.start` from `m` to `n` causes StatefulSet ordinals to be scaled (pods `[m, n-1]` are terminated, pods `[m+N, n+N-1]` are created)
-*   Removing `ordinals.start`: Validate that setting `ordinals.start` causes StatefulSet ordinals to be scaled (pods `[N-1, N+k-1]` are terminated, pods `[0, k-1]` are created)
-*   Decreasing `ordinals.start`: Validate that decreasing `ordinals.start` from `m` to `n` causes StatefulSet ordinals to be scaled (pods `[m+N, n+N-1]` are terminated, pods `[m, n-1]` are created)
+- k8s.io/kubernetes/test/e2e/apps/statefulset
+    - [Testgrid](https://testgrid.k8s.io/google-gce#gce-cos-master-default)
+    - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStartOrdinal)
 
 #### Integration tests
 
-`StatefulSetStartOrdinal` in `k8s.io/kubernetes/test/integration/statefulset`.
-
-*   Pod Restart Tests: Validate that StatefulSet RollingUpdate behavior is preserved, with an replica ordinal offset starting at `ordinals.start`
+- k8s.io/kubernetes/test/integration/statefulset.TestStatefulSetStartOrdinal
+  - [Testgrid](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration)
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStartOrdinal)
 
 ### Graduation Criteria
 
@@ -531,12 +528,13 @@ in back-to-back releases.
 #### Alpha
 
  * Feature functionality implemented but hidden behind a feature gate
- * Add unit, e2e and functional tests to automated k8s test.
+ * Add unit and integration tests
 
 #### Beta
 
  * Validate with user workloads
  * Enable feature gate for e2e pipelines
+ * Add e2e tests
 
 ### Upgrade / Downgrade Strategy
 
@@ -719,6 +717,10 @@ a divergence between these fields during steady state operations, this can
 indicate that the number of replicas being created by the StatefulSet do not
 match the expected number of replicas.
 
+On a large scale (across a large number of StatefulSets) the distribution of the
+ratio of these two metrics should not change when enabling this feature. If this
+ratio changes significantly after enabling this feature, it could indicate a problem.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -726,6 +728,17 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+Manual upgrade->downgrade->upgrade scenario (to be validated):
+
+- Create a cluster on a version that doesn't use this feature (eg: 1.26)
+- Upgrade a cluster to a version that uses this feature (eg: 1.27)
+- Install a StatefulSet that uses the `.spec.ordinals.start` field (eg: `2`)
+- Validate the StatefulSet creates the correct pods
+- Downgrade the cluster to the prior version that doesn't use this feature
+- Validate the StatefulSet follows documented the rollback scenario and pods are re-created so start ordinal is `0`
+- Upgrade the cluster to the newer version that uses this feature
+- Validate the StatefulSet pods are modified to start at `.spec.ordinals.start`
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -755,8 +768,10 @@ logs or events for this purpose.
 
 An operator can check the `.spec.ordinals.start` metric on the StatefulSet to
 determine if this StatefulSet has a non-default start ordinal defined. The
-operator can also check if the `statefulset_ordinals_start` metric is set. A
-non-zero value indicates it is in use.
+operator can also check if the `kube_statefulset_ordinals_start` metric is set.
+If `.spec.ordinals` is set on the StatefulSet, this metric will be populated.
+This metric can be counted across StatefulSets in a Kubernetes cluster, to
+identify the number of StatefulSets using this feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -790,8 +805,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-The `statefulset_reconcile_delay` metric (time between StatefulSet reconciliation
-loops) should not significantly increase when using this feature.
+This feature does not state a SLO.
 
 For checking correctness, the `kube_statefulset_status_replicas` metric can be
 compared against the `kube_statefulset_replicas` metric to check the expected
@@ -814,6 +828,9 @@ Pick one more of these and delete the rest.
     - [Optional] Aggregation method: `gauge`
     - Components exposing the metric: `pkg/controller/statefulset`
   - Metric name: `kube_statefulset_status_replicas`
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `pkg/controller/statefulset`
+  - Metric name: `kube_statefulset_ordinals_start`
     - [Optional] Aggregation method: `gauge`
     - Components exposing the metric: `pkg/controller/statefulset`
 
@@ -978,12 +995,40 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-No other failure modes are known.
+ - Rollback: On feature rollback a user workload may be disrupted due to replica ordinal
+   changes. See
+   [Rollout, upgrade and rollback planning](#rollout-upgrade-and-rollback-planning)
+   for context.
+   - Detection: This issue can affect any workloads that are using a non-zero
+     `.spec.ordinals.start` field prior to rollback. StatefulSets that are using
+     this field can be identified through the
+     `kube_statefulset_ordinals_start` metric.
+   - Mitigations: To mitigate, pods can be orphaned from their StatefulSet by using
+     `--orphan=cascade` to prevent the StatefulSet from deleting replica pods
+     until the application operator has a chance to react to the feature rollback.
+   - Testing: Unit tests exist to validate that the storage specification is preserved
+     on rollback. This means that if the feature is re-enabled after rollback,
+     the `.spec.ordinals.start` field will be preserved on the StatefulSet.
+
+<!-- TODO: Add Diagnostics details after adding logging to StatefulSet controller -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-If the StatefulSet SLOs are not met, the kube-controller-manager should be
-restarted or examined/debugged.
+The StatefulSet should be validated to check if the correct number of replicas are
+running, and the replica ordinal numbering matches what is specified in the
+`.spec.ordinals.start` field. This can be done by looking at the running pods,
+and seeing if they are numbered from `.spec.ordinals.start` to
+`.spec.ordinals.start` + `.spec.replicas`.
+
+If this is not the case, it could indicate that the StatefulSet controller
+is stuck reconciling. The StatefulSet controller creates new pod ordinals before
+it deletes lower pod ordinals, so the controller may be stuck reconciling higher
+order pods. This can happen if a higher order pod cannot be scheduled, so any
+pending or terminating pods in the selector can be inspected to determine why
+the StatefulSet is not reconciling to the expected `.spec.replicas` in status.
+
+If further problems are experienced, the feature can be rolled back. Note the caveats
+around [Rollback](#rollout-upgrade-and-rollback-planning) prior to doing so.
 
 ## Implementation History
 
@@ -998,9 +1043,9 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-  - 1.26, KEP created.
-  - 1.26, alpha implementation.
-  - 1.27, beta implementation.
+  - 2022-06-02: KEP created.
+  - 2022-10-06: Alpha implementation.
+  - 2023-02-09: Beta implementation.
 
 ## Drawbacks
 

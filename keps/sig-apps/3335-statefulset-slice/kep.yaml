@@ -38,3 +38,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - kube_statefulset_ordinals_start
