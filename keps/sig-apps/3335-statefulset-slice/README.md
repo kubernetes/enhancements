@@ -59,7 +59,7 @@ should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
 
-# KEP-3335: StatefulSet Slice
+# KEP-3335: StatefulSet Start Ordinal
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -94,9 +94,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
-      - [e2e/Integration tests](#e2eintegration-tests)
+      - [E2E tests](#e2e-tests)
+    - [Integration tests](#integration-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -133,7 +135,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -143,8 +145,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -201,7 +203,7 @@ This feature is motivated by the use case of orchestrating the migration of a St
 namespace or a Kubernetes cluster without disruption. Existing approaches to
 this problem include:
 
-1. Back and restore: This approach takes a backup of an application (StatefulSet, underlying storage), and re-creates it in a different location. This introduces application downtime, the duration of time between old StatefulSet termination and new StatefulSet recreation.
+1. Backup and restore: This approach takes a backup of an application (StatefulSet, underlying storage), and re-creates it in a different location. This introduces application downtime, the duration of time between old StatefulSet termination and new StatefulSet recreation.
 2. Pod level migration: Using `--cascade=orphan` when deleting a StatefulSet preserves the pods. This allows an application operator to evict and reschedule pods individually. However, as pods are ephemeral, this requires the application operator to emulate the behavior of the StatefulSet, to reschedule pods as they restart, or are evicted and rescheduled.
 
 Migrating a StatefulSet in slices allows for gradual migration of the application, as only a subset of replicas are migrated at any time. Consider the scenario of transferring pod ordinal ownership from a source StatefulSet with `N` pods to a destination StatefulSet with `0` pods. Further, to maintain application availability, no more than `d` pods should be unavailable at any time during the transfer. An orchestrator can manipulate `.spec.replicas` and `.spec.ordinals.start` to perform this migration:
@@ -435,10 +437,11 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-*   `pkg/controller/statefulset/stateful_set_control_test.go - Tests that a StatefulSet slice can be created from specified starting ordinal`
-*   `pkg/apis/apps/v1/defaults_test.go - Tests defaults for new fields added to StatefulSet`
+- k8s.io/kubernetes/pkg/apis/apps/validation: 2023-02-05: 90.5%
+- k8s.io/kubernetes/pkg/controller/statefulset: 2023-02-05: 85.7%
+- k8s.io/kubernetes/pkg/registry/apps/statefulset: 2023-02-05: 65.2%
 
-##### e2e/Integration tests
+##### E2E tests
 
 <!--
 This question should be filled when targeting a release.
@@ -448,12 +451,15 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-*   Pod Restart Tests: Validate that StatefulSet RollingUpdate behavior is preserved, with an replica ordinal offset starting at `ordinals.start`
-*   Scaling Tests
-    *   Adding `ordinals.start`: Validate that setting `ordinals.start` to `k` causes StatefulSet ordinals to be scaled (pods `[0, k-1]` are terminated, pods `[N, N+k-1]` are created)
-    *   Increasing `ordinals.start`: Validate that increasing `ordinals.start` from `m` to `n` causes StatefulSet ordinals to be scaled (pods `[m, n-1]` are terminated, pods `[m+N, n+N-1]` are created)
-    *   Removing `ordinals.start`: Validate that setting `ordinals.start` causes StatefulSet ordinals to be scaled (pods `[N-1, N+k-1]` are terminated, pods `[0, k-1]` are created)
-    *   Decreasing `ordinals.start`: Validate that decreasing `ordinals.start` from `m` to `n` causes StatefulSet ordinals to be scaled (pods `[m+N, n+N-1]` are terminated, pods `[m, n-1]` are created)
+- k8s.io/kubernetes/test/e2e/apps/statefulset
+    - [Testgrid](https://testgrid.k8s.io/google-gce#gce-cos-master-default)
+    - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStartOrdinal)
+
+#### Integration tests
+
+- k8s.io/kubernetes/test/integration/statefulset.TestStatefulSetStartOrdinal
+  - [Testgrid](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration)
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStartOrdinal)
 
 ### Graduation Criteria
 
@@ -487,7 +493,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Add unitInitial e2e tests completed and enabled
 
 #### Beta
 
@@ -522,8 +528,13 @@ in back-to-back releases.
 #### Alpha
 
  * Feature functionality implemented but hidden behind a feature gate
- * Add unit, functional, upgrade and downgrade tests to automated k8s test.
+ * Add unit and integration tests
 
+#### Beta
+
+ * Validate with user workloads
+ * Enable feature gate for e2e pipelines
+ * Add e2e tests
 
 ### Upgrade / Downgrade Strategy
 
@@ -658,14 +669,14 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Additional e2e tests will be added when targeting the Beta stage. These will
-validate the behavior of the cluster when enabled and disabled and ensure that
-existing behavior (eg: not specifying the new `ordinals.start` API) is
+Existing e2e tests will validate that when the feature is enabled, but not in
+use that the existing behavior (eg: not specifying the new `ordinals.start` API) is
 preserved.
 
-### Rollout, Upgrade and Rollback Planning
+Additionally unit tests for validating enablement/disablement will be added in
+Beta.
 
-TBD upon graduation to beta.
+### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
@@ -683,12 +694,32 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+If a control plane rollout disables this feature, the StatefulSet controller
+will update ordinal numbers it controls. This will result in pods being deleted,
+while other pods are scaled in. The StatefulSet controller scales up pods before
+it deletes pods, so as a result, the StatefulSet should not manage fewer than the
+number of replicas that are defined in the spec. Disabling the feature may have an effect on the
+stateful workload that is being run. If the stateful application expects a
+specific ordinal number to be available, it may result in an application failing
+to reach quorum, or rebalancing data based on the number of available replicas.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+The `kube_statefulset_status_replicas` metric can be monitored against the
+`kube_statefulset_replicas` metric to check the expected number of replicas to
+the actual number of pods matched by this StatefulSet's selector. If there is
+a divergence between these fields during steady state operations, this can
+indicate that the number of replicas being created by the StatefulSet do not
+match the expected number of replicas.
+
+On a large scale (across a large number of StatefulSets) the distribution of the
+ratio of these two metrics should not change when enabling this feature. If this
+ratio changes significantly after enabling this feature, it could indicate a problem.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -698,15 +729,27 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Manual upgrade->downgrade->upgrade scenario (to be validated):
+
+- Create a cluster on a version that doesn't use this feature (eg: 1.26)
+- Upgrade a cluster to a version that uses this feature (eg: 1.27)
+- Install a StatefulSet that uses the `.spec.ordinals.start` field (eg: `2`)
+- Validate the StatefulSet creates the correct pods
+- Downgrade the cluster to the prior version that doesn't use this feature
+- Validate the StatefulSet follows documented the rollback scenario and pods are re-created so start ordinal is `0`
+- Upgrade the cluster to the newer version that uses this feature
+- Validate the StatefulSet pods are modified to start at `.spec.ordinals.start`
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-### Monitoring Requirements
+No removals or deprecations are tied to this rollout. The rollout is enabled by
+the feature flag `StatefulSetStartOrdinal`.
 
-TBD upon graduation to beta.
+### Monitoring Requirements
 
 <!--
 This section must be completed when targeting beta to a release.
@@ -723,6 +766,13 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+An operator can check the `.spec.ordinals.start` metric on the StatefulSet to
+determine if this StatefulSet has a non-default start ordinal defined. The
+operator can also check if the `kube_statefulset_ordinals_start` metric is set.
+If `.spec.ordinals` is set on the StatefulSet, this metric will be populated.
+This metric can be counted across StatefulSets in a Kubernetes cluster, to
+identify the number of StatefulSets using this feature.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -734,13 +784,9 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
 - [ ] Other (treat as last resort)
-  - Details:
+  - Details: The user can inspect the pods that are created by the StatefulSet
+    which match the StatefulSet's selector.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -759,18 +805,34 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+This feature does not state a SLO.
+
+For checking correctness, the `kube_statefulset_status_replicas` metric can be
+compared against the `kube_statefulset_replicas` metric to check the expected
+number of replicas to the actual number of pods matched by this StatefulSet's
+selector. Under steady state, these two fields should be equal. Note that these
+two metrics can diverge if application replicas don't start up for other reasons
+(eg: StatefulSet is using `PodManagementPolicy: OrderedReady`, and pod-`k`
+doesn't become ready, preventing pod-`k+1` from being created).
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  - Metric name: `statefulset_reconcile_delay`
+    - [Optional] Aggregation method: `quantile`
+    - Components exposing the metric: `pkg/controller/statefulset`
+  - Metric name: `kube_statefulset_replicas`
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `pkg/controller/statefulset`
+  - Metric name: `kube_statefulset_status_replicas`
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `pkg/controller/statefulset`
+  - Metric name: `kube_statefulset_ordinals_start`
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `pkg/controller/statefulset`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -779,9 +841,9 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-### Dependencies
+No.
 
-TBD upon graduation to beta.
+### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
@@ -804,9 +866,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-### Scalability
+This feature depends on API Server to determine the health of a pod, in order
+control pods with particular ordinal numbers. There are no other external
+dependencies.
 
-TBD upon graduation to beta.
+### Scalability
 
 <!--
 For alpha, this section is encouraged: reviewers should consider these questions
@@ -833,6 +897,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -842,6 +908,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -849,6 +917,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -858,6 +928,9 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Yes, StatefulSet adds an additional `.spec.ordinals` field. If set, this adds a
+nested integer, `.spec.ordinals.start`.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -869,6 +942,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No. The runtime for pod control loop remains the same with this feature.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -882,9 +957,9 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-### Troubleshooting
+No. Resource usage remains the same with this feature.
 
-TBD upon graduation to beta.
+### Troubleshooting
 
 <!--
 This section must be completed when targeting beta to a release.
@@ -898,6 +973,12 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+In the event of API server/etcd unavailability, the StatefulSet control loop will
+be unable to list pod resources. This will prevent the control loop from being
+able to reconcile pod resources in the cluster. When API server
+and etcd become available again, the control loop will adjust to reconcile
+resources, according to the `.spec.ordinals.start` and `.spec.replicas` fields.
 
 ###### What are other known failure modes?
 
@@ -914,7 +995,40 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+ - Rollback: On feature rollback a user workload may be disrupted due to replica ordinal
+   changes. See
+   [Rollout, upgrade and rollback planning](#rollout-upgrade-and-rollback-planning)
+   for context.
+   - Detection: This issue can affect any workloads that are using a non-zero
+     `.spec.ordinals.start` field prior to rollback. StatefulSets that are using
+     this field can be identified through the
+     `kube_statefulset_ordinals_start` metric.
+   - Mitigations: To mitigate, pods can be orphaned from their StatefulSet by using
+     `--orphan=cascade` to prevent the StatefulSet from deleting replica pods
+     until the application operator has a chance to react to the feature rollback.
+   - Testing: Unit tests exist to validate that the storage specification is preserved
+     on rollback. This means that if the feature is re-enabled after rollback,
+     the `.spec.ordinals.start` field will be preserved on the StatefulSet.
+
+<!-- TODO: Add Diagnostics details after adding logging to StatefulSet controller -->
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+The StatefulSet should be validated to check if the correct number of replicas are
+running, and the replica ordinal numbering matches what is specified in the
+`.spec.ordinals.start` field. This can be done by looking at the running pods,
+and seeing if they are numbered from `.spec.ordinals.start` to
+`.spec.ordinals.start` + `.spec.replicas`.
+
+If this is not the case, it could indicate that the StatefulSet controller
+is stuck reconciling. The StatefulSet controller creates new pod ordinals before
+it deletes lower pod ordinals, so the controller may be stuck reconciling higher
+order pods. This can happen if a higher order pod cannot be scheduled, so any
+pending or terminating pods in the selector can be inspected to determine why
+the StatefulSet is not reconciling to the expected `.spec.replicas` in status.
+
+If further problems are experienced, the feature can be rolled back. Note the caveats
+around [Rollback](#rollout-upgrade-and-rollback-planning) prior to doing so.
 
 ## Implementation History
 
@@ -928,6 +1042,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+  - 2022-06-02: KEP created.
+  - 2022-10-06: Alpha implementation.
+  - 2023-02-09: Beta implementation.
 
 ## Drawbacks
 
