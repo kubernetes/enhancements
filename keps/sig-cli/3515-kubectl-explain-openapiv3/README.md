@@ -120,6 +120,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Implement proto.Models for OpenAPI V3 data](#implement-protomodels-for-openapi-v3-data)
   - [Custom User Templates](#custom-user-templates)
+- [Future Work](#future-work)
   - [Other template outputs](#other-template-outputs)
     - [HTML](#html)
     - [Markdown](#markdown)
@@ -338,7 +339,7 @@ specified by the user's path.
 
 1. User types `kubectl explain pods`
 2. kubectl resolves 'pods' to GVR core v1 pods using cluster discovery information
-3. kubectl attempts to fetches `/openapi/v3` which indexes where to find specs for each GV
+3. kubectl attempts to fetch `/openapi/v3`, which indexes where to find specs for each GV
 4. If failure and fallback to v2 is allowed, falls back to Step #3 of the "Current High-level Approach".
 5. Otherwise, kubectl fetches OpenAPIV3 path for GV: `/openapi/v3/<group>/<version>`
 6. kubectl parses the result as map[string]any
@@ -953,10 +954,15 @@ be very unstable, this sort of feature should be delayed until the internal
 templates have proven the API surface to be used. To do otherwise would risk
 breaking user's templates.
 
+## Future Work
+
+This was work that was specced out was part of this KEP, but not added. 
+SIG-CLI is open to improvements in these areas.
+
 ### Other template outputs
 
-We considered an `md` and `html` template for this KEP, possibly with the following
-requirements:
+This KEP makes it easy to extend the `explain` output. Requirements for
+built-in `md` and `html` outputs might be:
 
  - `md` output implemented (or dropped from design due to continued debate)
    - Table of contents all GVKs grouped by Group then Version.
