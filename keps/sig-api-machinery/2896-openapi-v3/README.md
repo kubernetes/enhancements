@@ -76,6 +76,10 @@ Architecture for cross-cutting KEPs). -->
   - [OpenAPI V3 Proto](#openapi-v3-proto)
   - [Clients](#clients)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -416,28 +420,75 @@ kubectl will be updated to use OpenAPI V3.
 
 ### Test Plan
 
-<!-- **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept encements with inadequate testing.
 All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing
-guidelines][testing-guidelines] when drafting this test plan.
-
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-For alpha, unit tests will be included to ensure that v3 schemas are properly
-generated and published. A validator will also be used to ensure that the spec
-generated is valid OpenAPI v3.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this encement.
 
-A fuzzer and performance benchmark tests will also be included.
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this encement to ensure the encements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this encement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this encement.
+-->
+
+This feature is primarily implemented in kube-openapi and unit tests, validation, benchmarks and fuzzing are added there. Some packages in k/k will be modified to capture the changes in kube-openapi and unit tests accompany them.
+
+`k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder`
+`k8s.io/kube-aggregator/pkg/controllers/openapiv3/aggregator`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the encement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+Tests in the following directory:
+
+- `test/integration/apiserver/openapi/...`: https://storage.googleapis.com/k8s-triage/index.html?test=TestOpenAPIV3
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the encement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+Tests will be added to ensure that OpenAPI is present for all group versions.
 
 ### Graduation Criteria
 
@@ -780,6 +831,10 @@ No. One thing to note is that aggregation for OpenAPI v2 consumes quite a bit of
 memory. OpenAPI v3 will avoid aggregating the entire spec and only aggregate (if
 necessary) per group/version, decreasing the runtime and memory usage to a
 negligible amount.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+This feature strictly operates on the control plane and has no effect on node resources.
 
 ### Troubleshooting
 
