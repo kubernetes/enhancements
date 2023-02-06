@@ -9,7 +9,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Making resizeStatus more general](#making-resizestatus-more-general)
+  - [Making resizeStatus more general in v1.27](#making-resizestatus-more-general-in-v127)
   - [Implementation](#implementation)
     - [User flow stories](#user-flow-stories)
       - [Case 0 (default PVC creation):](#case-0-default-pvc-creation)
@@ -108,7 +108,7 @@ As part of this proposal, we are mainly proposing three changes:
    - NodeExpansionFailed // state set when expansion has failed in kubelet with a terminal error. Transient errors don't set NodeExpansionFailed.
 3. Update quota code to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` when evaluating usage for PVC.
 
-### Making resizeStatus more general
+### Making resizeStatus more general in v1.27
 
 After some discussion with sig-storage folks and to accommodate changes coming from https://github.com/kubernetes/enhancements/issues/3751 we are proposing that we rename `pvc.Status.ResizeStatus` to `pvc.Status.AllocatedResourceStatus` and make it a map.
 
@@ -123,7 +123,7 @@ const (
 
     PersistentVolumeClaimNodeResizePending ClaimResourceStatus = "NodeResizePending"
     PersistentVolumeClaimNodeResizeInProgress ClaimResourceStatus = "NodeResizeInProgress"
-    PersistentVolumeClaimNodeResizeFailed ClaimResourceStatus = "NodeResizeFailed"  
+    PersistentVolumeClaimNodeResizeFailed ClaimResourceStatus = "NodeResizeFailed"
 )
 
 // PersistentVolumeClaimStatus represents the status of PV claim
@@ -302,7 +302,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
   so it should not break any of existing automation. This means that if `pvc.Status.AllocatedResources` is available it will be
   used for calculating quota.
 
-  To facilitate older kubelet - external resize controller will set `pvc.Status.ResizeStatus` to "''" after entire expansion process is complete. This will ensure that `ResizeStatus` is updated
+  To facilitate older kubelet - external resize controller will set `pvc.Status.AllocatedResourceStatus[storage]` to "''" after entire expansion process is complete. This will ensure that `ResizeStatus` is updated
 after expansion is complete even with older kubelet. No recovery from expansion failure will be possible in this case and the workaround will be removed once feature goes GA.
 
   One more thing to keep in mind is - enabling this feature in kubelet while keeping it disabled in external-resizer will cause
@@ -447,15 +447,15 @@ _This section must be completed when targeting beta graduation to a release._
 * **What are other known failure modes?**
   For each of them fill in the following information by copying the below template:
   - No recovery is possible if volume has been expanded on control-plane and only failing on node.
-    - Detection: Expansion is stuck with `ResizeStatus` - `NodeResizePending` or `NodeResizeFailed`.
+    - Detection: Expansion is stuck with `AllocatedResourceStatus[storage]` - `NodeResizePending` or `NodeResizeFailed`.
     - Mitigations: This should not affect any of existing PVCs but this was already broken in some sense and if volume has been 
       expanded in control-plane then we can't allow users to shrink their PVCs because that would violate the quota.
-    - Diagnostics: Expansion is stuck with `ResizeStatus` - `NodeResizePending` or `NodeResizeFailed`.
+    - Diagnostics: Expansion is stuck with `AllocatedResourceStatus['storage']` - `NodeResizePending` or `NodeResizeFailed`.
     - Testing: There are some unit tests for this failure mode.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   If admin notices an increase in expansion failure operations via aformentioned metrics or 
-  by observing `pvc.Status.ResizeStatus` then:
+  by observing `pvc.Status.AllocatedResourceStatus['storage']` then:
       - Check events on the PVC and observe why is PVC expansion failing.
       - Gather logs from kubelet and external-resizer and check for problems.
 
@@ -466,6 +466,7 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 - 2020-01-27 Initial KEP pull request submitted
+- 2023-02-03 Changing the APIs of `pvc.Status.ResizeStatus` by renaming it to `pvc.Status.AllocatedResourceStatus` and converting it to a map.
 
 ## Drawbacks
 
