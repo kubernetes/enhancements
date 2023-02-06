@@ -265,8 +265,6 @@ will be surfaced when the validation rule evaluates to false.
 string that will be used when the validation rule evaluates to false. If the
 `messageExpression` field does not evaluate to a string, then the CRD write will fail. If the
 runtime cost limit is exceeded during `messageExpression` execution, then the write will fail.
-Additionally, as part of [the KEP update to add expression composition](https://github.com/kubernetes/enhancements/pull/3669/files),
-expressions defined under `variables` will be accessible from `messageExpression`.
 - There are several compile-time checks performed on CEL's `string.format` function that can affect `messageExpression`:
   - If the formatting string passed to `string.format` is a constant, then the formatting string will be checked at
   compile-time that it parses correctly.
