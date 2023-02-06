@@ -565,7 +565,15 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- cmd/kube-apiserver/app/options/validation_test.go: 06/02/23 - 99.1
+- pkg/apis/networking/validation/validation_test.go: 06/02/23 - 91.7
+- pkg/controlplane/instance_test.go: 06/02/23 - 49.7
+- pkg/printers/internalversion/printers_test.go: 06/02/23 - 49.7
+- pkg/registry/core/service/ipallocator/bitmap_test.go: 06/02/23 - 86.9
+- pkg/registry/core/service/ipallocator/controller/repairip_test.go: 06/02/23 - 0 (new)
+- pkg/registry/core/service/ipallocator/ipallocator_test.go: 06/02/23 - 0 (new)
+- pkg/registry/networking/ipaddress/strategy_test.go: 06/02/23 - 0 (new)
+- staging/src/k8s.io/kubectl/pkg/describe/describe_test.go: 06/02/23 - 49.7
 
 ##### Integration tests
 
@@ -577,7 +585,18 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+There will be added tests to verify:
+
+- API servers using the old and new allocators at same time
+- API server upgrade from old to new allocatr
+- ServicesCIDRs resizing
+- ServiceCIDR without the IPv6 limitation size
+
+Files:
+
+- test/integration/controlplane/synthetic_controlplane_test.go
+- test/integration/servicecidr/allocator_test.go
+- test/integration/servicecidr/main_test.go
 
 ##### e2e tests
 
@@ -591,7 +610,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+e2e tests will cover all the user stories defined in the KEP
 
 ### Graduation Criteria
 
