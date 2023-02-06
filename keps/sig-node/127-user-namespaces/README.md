@@ -543,8 +543,6 @@ use container runtime versions that have the needed changes.
 
 ### Graduation Criteria
 
-Note this section is a WIP yet.
-
 ##### Alpha
 - Support with idmap mounts
 
@@ -554,8 +552,12 @@ Note this section is a WIP yet.
 - Should we reconsider making the mappings smaller by default?
 - Should we allow any way for users to for "more" IDs mapped? If yes, how many more and how?
 - Should we allow the user to ask for specific mappings?
+- Get review from VM container runtimes maintainers
+- Gather and address feedback from the community
 
 ##### GA
+
+- Gather and address feedback from the community
 
 ### Upgrade / Downgrade Strategy
 
