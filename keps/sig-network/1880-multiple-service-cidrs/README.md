@@ -266,15 +266,58 @@ Currently, the Service CIDRs are configured independently in each kube-apiserver
 the bootstrap process, the apiserver uses the first IP of each range to create the special
 "kubernetes.default" Service. It also starts a reconcile loop, that synchronize the state of the
 bitmap used by the internal allocators with the assigned IPs to the Services.
+This "kubernetes.default" Service is never updated, the first apiserver wins and assigns the
+ClusterIP from its configured service-ip-range, other apiservers with different ranges will
+not try to change the IP. If the apiserver that created the Service no longer works, the
+admin has to delete the Service so others apiservers can create it with its own ranges.
 
-With current implementation, each kube-apiserver can boot with different ranges configured.
+With current implementation, each kube-apiserver can boot with different ranges configured without errors,
+but the cluster will not work correctly, see https://github.com/kubernetes/kubernetes/issues/114743.
 There is no conflict resolution, each apiserver keep writing and deleting others apiservers allocator bitmap
 and Services.
 
 In order to be completely backwards compatible, the bootstrap process will remain the same, the
 difference is that instead of creating a bitmap based on the flags, it will create a new
 ServiceCIDR object from the flags (flags configuration removal is out of scope of this KEP)
-with a special label `networking.kubernetes.io/service-cidr-from-flags` set to `"true"`.
+ ...
+
+```
+<<[UNRESOLVED bootstrap>>
+Option 1:
+... with a special well-known name `kubernetes`.
+
+The new bootstrap process will be:
+
+```
+at startup:
+ read_flags
+ if invalid flags
+  exit
+ run default-service-ip-range controller
+ run kubernetes.default service loop (it uses the first ip from the subnet defined in the flags)
+ run service-repair loop (reconcile services, ipaddresses)
+ run apiserver
+
+controller:
+  if ServiceCIDR `kubernetes` does not exist
+    create it and create the kubernetes.default service (avoid races)
+  else
+    keep watching to handle finalizers and recreate if needed
+```
+
+All the apiservers will be synchronized on the ServiceCIDR and default Service created by the first to win.
+Changes on the configuration imply manual removal of the ServiceCIDR and default Service, automatically
+the rest of the apiservers will race and the winner will set the configuration of the cluster.
+
+Pros:
+- Simple to implement
+- Align with current behavior of kubernetes.default, though this can be a Con as well, since this
+doesn't be the expected
+Cons:
+- Requires manual intervention
+
+Option 2:
+... with a special label `networking.kubernetes.io/service-cidr-from-flags` set to `"true"`.
 
 It now has to handle the possibility of multiple ServiceCIDR with the special label, and
 also updating the configuration, per example, from single-stack to dual-stack.
@@ -287,6 +330,8 @@ at startup:
  if invalid flags
   exit
  run default-service-ip-range controller
+ run kubernetes.default service loop (it uses the first ip from the subnet defined in the flags)
+ run service-repair loop (reconcile services, ipaddresses)
  run apiserver
 
 controller:
@@ -309,6 +354,14 @@ controller on_event:
  endif
  if kubernetes.default does not exist
   create it
+```
+
+Pros:
+- Automatically handles conflicts, no admin operation required
+Cons:
+- Complex to implement
+
+<<[/UNRESOLVED]>>
 ```
 
 #### The special "default" ServiceCIDR
