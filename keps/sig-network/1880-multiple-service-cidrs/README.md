@@ -353,16 +353,7 @@ In [keps/sig-network/3070-reserved-service-ip-range](https://github.com/kubernet
 of the Service CIDR for dynamically allocation, the range size for dynamic allocation depends
 ont the size of the CIDR.
 
-The new allocation logic has to be compatible, but in this case we have more flexibility and
-there are different possibilities, that should be resolved before Beta.
-
-```
-<<[UNRESOLVED keps/sig-network/3070-reserved-service-ip-range]>>
-Option 1: Maintain the same formula and behavior per ServiceCIDR
-Option 2: Define a new "allocationMode: (Dynamic | Static | Mixed)" field
-Option 3: Define a new "allocationStaticThreshold: int" field
-<<[/UNRESOLVED]>>
-```
+The new allocation logic has to be compatible with current implementation.
 
 #### Edge cases
 
