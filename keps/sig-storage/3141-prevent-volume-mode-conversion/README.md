@@ -403,7 +403,7 @@ mode when creating a `PVC` from a `VolumeSnapshot`:
   - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
     annotation present.
   - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
-    annotation.
+    annotation - https://github.com/kubernetes-csi/external-provisioner/pull/832: https://testgrid.k8s.io/sig-storage-csi-external-provisioner#canary
   - With `Spec.SourceVolumeMode` set to `nil`.
 
 ### Graduation Criteria
@@ -676,11 +676,15 @@ The latency of CSI's `CreateVolume` may increase due to this change, when the
 `Spec.DataSource` field points to a `VolumeSnapshot` instance. This is because
 there is an additional check to determine whether volume provisioning must 
 continue. However, this increase is expected to be minimal as there are no new
-API calls. 
+API calls and the volume spec has already been loaded into memory of the external-provisioner.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature does not introduce any resource exhaustive operations.
 
 ### Troubleshooting
 
