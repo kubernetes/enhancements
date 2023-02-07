@@ -30,6 +30,7 @@
     - [CEL Expression Composition](#cel-expression-composition)
       - [Use Cases](#use-cases)
       - [Policy Predicates](#policy-predicates)
+      - [Match Conditions](#match-conditions)
       - [Variables](#variables)
     - [Secondary Authz](#secondary-authz)
     - [Access to namespace metadata](#access-to-namespace-metadata)
@@ -1100,7 +1101,8 @@ takes a significant amount of time to execute), it would be nice to only run
 it when necessary. For instance, if multiple validation expressions used the
 same expensive expression, that expression could be refactored out into a
 variable.
-##### Policy Predicates
+
+##### Match Conditions
 
 Note that the syntax of the `matchConditions` resource is intended to
 align with the [Admission Webhook Match Conditions KEP #3716](https://github.com/kubernetes/enhancements/pull/3717),
