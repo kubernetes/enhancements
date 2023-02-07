@@ -1,4 +1,4 @@
-# KEP-NNNN: Backoff Limits Per Index For Indexed Jobs
+# KEP-3850: Backoff Limits Per Index For Indexed Jobs
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -71,14 +71,14 @@ When the job reaches this shared backoff limit, the job controller marks the ent
 job as failed, and the resources are cleaned up, including indices that have yet
 to run to completion. 
 
-This implementation does not cover the situation where the workload is truly embarrassingly
-parallel and each index is completely independent of other indices. For instance, if
-indexed jobs were used as the basis for a suite of long-running integration tests,
+As a result, the current implementation does not cover the situation where the workload
+is truly embarrassingly parallel and each index is completely independent of other indices. 
+
+For instance, if indexed jobs were used as the basis for a suite of long-running integration tests,
 then each test run would only be able to find a single test failure.
 
-More generally, this use case is for any situation when all the indices in an indexed job 
-are independent.
-
+Other popular batch services like AWS Batch use a separate backoff limit for each index,
+showing that this is a common use case that should be supported by Kubernetes.
 
 ### Goals
 
