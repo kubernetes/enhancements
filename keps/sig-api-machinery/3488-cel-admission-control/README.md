@@ -948,8 +948,11 @@ The type check may fail in one of the three reasons:
 
 If `TypeChecking` is set to Evaluation, and either 2 or 3 happens, the compilation will fall back to unstructured as if TypeCheckingMode was set to Never. This allows the evaluation to continue before the referred CRDs are created or published.
 
-In the next releases, the modes are to be implemented in the order of
-`Never`, `Informative`, `Evaluation`, and `Always`.
+The implementation plan is as follows
+- In release 1.27, the policy API will add support for the `TypeChecking` field, with support of
+  both `Never` and `Informative` modes.
+- In release 1.28, add support for `Evaluation` and `Always` modes.
+- During the development and graduation process, gather feedback and update this KEP and implementation as needed, all time.
 
 #### Failure Policy
 
