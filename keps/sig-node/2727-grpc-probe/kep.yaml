@@ -19,7 +19,7 @@ approvers:
   - "@dchen1107"
 see-also:
 stage: "stable"
-latest-milestone: "v1.24"
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.23"
   beta: "v1.24"
