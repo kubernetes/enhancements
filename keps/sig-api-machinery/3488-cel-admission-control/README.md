@@ -1102,6 +1102,12 @@ same expensive expression, that expression could be refactored out into a
 variable.
 ##### Policy Predicates
 
+Note that the syntax of the `matchConditions` resource is intended to
+align with the [Admission Webhook Match Conditions KEP #3716](https://github.com/kubernetes/enhancements/pull/3717),
+so that KEP should be controlling with regard to deviations in the schema.
+This section is focused specifically on how the `matchConditions` concept can
+be applied to in-process admission.
+
 The match criteria in bindings are not expected to be able to cover all possible
 ways users may want to scope their policies. For example, there is no way to
 match off of kind, only resource. To provide extensibility for the match criteria
