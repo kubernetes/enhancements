@@ -973,6 +973,33 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+The kubelet is spliting the host UID/GID space for different pods, to use for
+their user namespace mapping. The design allows for 65k pods per node, and the
+resource is limited in the alpha phase to the min between maxPods per node
+kubelet setting and 1024. This guarantees we are not inadvertly exhausting the
+resource.
+
+For container runtimes, they might use more disk space or inodes to chown the
+rootfs. This is if they chose to support this feature without relying on new
+Linux kernels (or supporting old kernels too), as new kernels allow idmap mounts
+and no overhead (space nor inodes) is added with that.
+
+For CRIO and containerd, we are working to incrementally support all variations
+(idmap mounts, no overhead;overlyafs metacopy param, that gives us just inode
+overhead; and a full rootfs chown, that has space overhead) and document them
+appropiately.
+
 ### Troubleshooting
 
 <!--
