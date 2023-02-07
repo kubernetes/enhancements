@@ -1077,8 +1077,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-We will maintain tests for "prune v2" and "prune v1", until
-such time as prune v1 (technically still in alpha) is removed.
+We'll add unit tests (or cases) that cover ApplySet-based apply/prune and maintain it alongside existing coverage for "prune v1", until such time as prune v1 (technically still in alpha) is removed.
+We'll make sure there's test coverage for any modification of or interaction with the v1 implementation to make sure it doesn't regress. We will also include coverage for the supported flag permutations when the ApplySet alpha is enabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
