@@ -438,9 +438,11 @@ Feature is promoted to GA in 1.27.
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+See [Motivation](#motivation) on why gRPC was picked as another RPC framework
+to support natively.
+
+Adding gRPC is a small increment to k8s functionality with very little side
+effects. But providing a lot of "quaity of life improvements" to gRPC apps.
 
 ## Alternatives
 
