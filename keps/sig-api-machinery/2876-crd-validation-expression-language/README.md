@@ -262,20 +262,20 @@ Example Validation Rules:
 will be surfaced when the validation rule evaluates to false.
 - As an alternative to the `message` field, there is also a
 `messageExpression` field that represents a CEL expression that evaluates to a
-string that will be used when the validation rule evaluates to false. If the
-`messageExpression` field does not statically evaluate to a string, then the CRD write will fail. If the
-runtime cost limit is exceeded during `messageExpression` execution, then the write will fail. Additionally,
-if `messageExpression` fails during evaluation, then `message` will be used instead if non-empty. If `message`
-is empty, then the default error message is used instead. In either case (if `message` or the default error message
-is  used) the CEL error that `messageExpression` failed with will be logged.
-- There are several compile-time checks performed on CEL's `string.format` function that can affect `messageExpression`:
-  - If the formatting string passed to `string.format` is a constant, then the formatting string will be checked at
-  compile-time that it parses correctly.
-  - If the `arg` array passed to `string.format` is a literal, and the formatting string is a constant, then
-  at compile-time `arg`'s cardinality will be checked against the formatting string. Passing too few/too many arguments
-  compared to what the formatting string expects is not allowed.
-  - If the CEL expression is compiled, then type checking of each individual argument in `arg` will be done against
-  what is expected in the formatting string to ensure the proper formatting clauses are used on each member of arg.
+string that will be used when the validation rule evaluates to false. There are several validation rules for the `messageExpression` field:
+  - The  `messageExpression` field must statically evaluate to a string.
+  - There are several compile-time checks performed on CEL's `string.format` function that can affect `messageExpression`:
+    - If the formatting string passed to `string.format` is a constant, then the formatting string will be checked at
+      compile-time that it parses correctly.
+    - If the `arg` array passed to `string.format` is a literal, and the formatting string is a constant, then
+      at compile-time `arg`'s cardinality will be checked against the formatting string. Passing too few/too many arguments
+      compared to what the formatting string expects is not allowed.
+    - Type checking of each individual  argument in `arg` will be done against what is expected in the formatting string 
+      to ensure the proper formatting clauses are used on each member of arg.
+- The runtime cost limit must not be exceeded during `messageExpression` execution (executing `messageExpression` counts towards that limit). 
+- If `messageExpression` results in a runtime error, then `message` will be used instead if non-empty. If `message`
+  is empty, then the default error message is used instead. In either case (if `message` or the default error message is used) the CEL error that `messageExpression` failed with will be logged.
+
 - If both `message` and `messageExpression` are present, `messageExpression` will take priority.
 
 - The validator will be scoped to the location of the `x-kubernetes-validations`
