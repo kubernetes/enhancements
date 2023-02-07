@@ -44,6 +44,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -1113,6 +1114,11 @@ We plan to add e2e test under api-machinery for crd expression validation:
 - Demonstrate adoption and successful feature usage in the community
 - Optimization on super-linear complexity growth
 - Adding metric of the latency of CEL evaluation for CRD evaluation
+
+#### GA
+
+- Formatted message. This targets in 1.27 and ideally should be in at least one release before going to GA.
+- Scalability evaluation. Evaluate CRD scalability with validation rules against [previous scale target](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/95-custom-resource-definitions/README.md#scale-targets-for-ga).
 
 ## Production Readiness Review Questionnaire
 

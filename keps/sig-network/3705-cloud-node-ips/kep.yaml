@@ -6,15 +6,17 @@ owning-sig: sig-network
 participating-sigs:
   - sig-node
   - sig-cloud-provider
-status: provisional
+status: implementable
 creation-date: 2022-11-29
 reviewers:
+  - "@aojea"
+  - "@JoelSpeed"
   - "@mdbooth"
   - "@khenidak"
   - "@thockin"
-  - TBD
 approvers:
-  - TBD
+  - "@thockin"
+  - TBD from sig-cloud-provider
 
 see-also:
   - "https://github.com/kubernetes/enhancements/issues/1664"
@@ -45,4 +47,3 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - my_feature_metric

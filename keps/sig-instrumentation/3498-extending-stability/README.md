@@ -85,6 +85,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Semantic of Stability Levels](#semantic-of-stability-levels)
+    - [Internal Metrics](#internal-metrics)
+    - [Alpha Metrics](#alpha-metrics)
+    - [Beta Metrics](#beta-metrics)
+    - [Stable Metrics](#stable-metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -128,20 +133,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -185,6 +190,7 @@ Additionally we propose forced upgrades of metrics stability classes in the simi
 ### Risks and Mitigations
 
 The primary risk is that these changes break our existing (and working) metrics infrastructure. The mitigation should straightfoward, i.e. rollback the changes to the metrics framework. 
+
 ## Design Details
 
 Our plan is to add functionality to our static analysis framework which is hosted in the main `k8s/k8s` repo, under `test/instrumentation`. Specifically, we will need to support:
@@ -203,6 +209,35 @@ We will not attempt to parse metrics which:
 
 As an aside, much of this work has already been done, but is stashed in a local repo. 
 
+### Semantic of Stability Levels
+
+#### Internal Metrics
+
+`Internal` metrics have no stability guarantees and are **not** parseable by the static analysis framework. As such, `Internal` metrics will NOT be included in metric auto-documentation.
+
+#### Alpha Metrics
+
+Alpha metrics have no stability guarantees but are parseable by the static analysis framework. As such, `Alpha` metrics will be included in metric auto-documentation.
+
+#### Beta Metrics
+
+`Beta` metrics have *some* stability guarantees. Specifically, we guarantee that:
+
+ - `Beta` metrics will not be removed without first being explicitly deprecated. 
+    + you can deprecate Beta metrics at any point:
+      * if because of changes in underlying code/feature it's impossible to compute such metric the metric can be removed after one release
+      * if the metric is still possible to expose (we just think it's not the right one, e.g. we want to remove some label), but technically can still expose it, we leave it deprecated for 3 releases
+ - Furthermore, `Beta` metrics are guaranteed to be **forward compatible** in respect to alerts and queries which may be written against them. By "forward compatible", we mean that queries and alerts which are written against the metric and its labels will continue to work in the future. We ensure forward compatibility by ensuring that **labels can only be added**, *and not removed*, from `Beta` metrics.
+ - `Beta` metrics will be included in metric auto-documentation
+
+#### Stable Metrics
+
+`Stable` metrics have stability guarantees. Specifically, we guarantee that:
+
+ - `Stable` metrics will not be removed without first being explicitly deprecated. After deprecation, the metric will be removed in 12 months or 3 releases.
+ - Furthermore, `Stable` metrics are guaranteed to **not change** in respect to labels. This means labels can neither be added nor removed from a `Stable` metric.
+ - `Stable` metrics will be included in metric auto-documentation
+
 ### Test Plan
 
 We have static analysis testing for stable metrics, we will extend our test coverage 
@@ -218,12 +253,12 @@ We already have thorough testing for the stability framework which has been GA f
 
 ##### Unit tests
 
-[ ] parsing variables
-[ ] multi-line strings
-[ ] evaluating buckets
-[ ] buckets which are defined via variables and consts
-[ ] evaluation of simple consts
-[ ] evaluation of simple variables
+[X] parsing variables
+[X] multi-line strings
+[X] evaluating buckets
+[X] buckets which are defined via variables and consts
+[X] evaluation of simple consts
+[X] evaluation of simple variables
 
 - `test/instrumentation`: `09/20/2022` - `full coverage of existing stability framework`
 
@@ -245,11 +280,9 @@ The statis analysis tooling runs in a precommit pipeline and is therefore exempt
 
 #### Beta
 
-- All instances of `Alpha` metrics will be converted to `Internal`
-- Kubernetes metrics framework will be enhanced to support marking `Alpha` and `Beta` metrics with a date. The semantics of this are yet to be determined. This date will be used to statically determine whether or not that metric should be decrepated automatically or promoted.
-- Kubernetes metrics framework will be enhanced with a script to auto-deprecate metrics which have passed their window of existence as an `Alpha` or `Beta` metric
-- We will determine the semantics for `Alpha` and `Beta` metrics
-- The `beta` stage for this framework will be a few releases. During this time, we will evaluate the utility and the ergonomics of the framework, making adjustments as necessary
+- Kubernetes metrics framework will be enhanced to support marking `Alpha` and `Beta` metrics with release version. The semantics of this are yet to be determined. This version will be used to statically determine whether or not that metric should be deprecated automatically or promoted.
+
+For the beta version of this KEP, we begin permitting metrics to be promoted to the `Beta` stability class.
 
 #### GA
 
@@ -295,6 +328,10 @@ N/A
 
 No. 
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
@@ -317,12 +354,11 @@ This should not affect upgrade/rollback paths.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-You can determine this by seeing if workloads depend on any Kubernetes control-plane metrics. If they do, they are using this feature.
+We've introduced a metric (i.e. `registered_metrics_total`) which should serve to indicate this feature is enabled.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 They will be able to see metrics. 
-
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -334,7 +370,7 @@ N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-`registered_metrics_total` will be used to calculate the number of registered stable metrics.
+No.
 
 ### Dependencies
 
@@ -342,7 +378,7 @@ Prometheus and the Kubernetes metric framework.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-In order to ingest these metrics, one needs a prometheus scraping agent and some backend to persist the metric data.
+No.
 
 ### Scalability
 

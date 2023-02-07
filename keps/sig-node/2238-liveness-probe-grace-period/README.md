@@ -18,7 +18,8 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (1.21)](#alpha-121)
     - [Beta (1.22)](#beta-122)
-    - [Graduation (1.27)](#graduation-127)
+    - [GA (1.27)](#ga-127)
+    - [Removal of feature flag (1.29)](#removal-of-feature-flag-129)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -251,9 +252,13 @@ Unit buckets need to be added to `TestKillContainer` to test the [various scenar
 
 _Below graduation criteria are tentative._
 
-#### Graduation (1.27)
+#### GA (1.27)
 
-- Feature flag is removed, feature is graduated (1.27).
+- Graduate to GA
+
+#### Removal of feature flag (1.29)
+
+- Feature flag is removed
 
 ### Upgrade / Downgrade Strategy
 
@@ -581,7 +586,8 @@ _This section must be completed when targeting beta graduation to a release._
   ([kubernetes/kubernetes#99375](https://github.com/kubernetes/kubernetes/pull/99375))
 - 2021-07-13: Beta updates ([k/k#103168](https://github.com/kubernetes/kubernetes/pull/103168))
 - 2021-07-13: Add validation ([k/k#103245](https://github.com/kubernetes/kubernetes/pull/103245))
-- 1.25 cycle: default feature flag to true ([k/k#108541](https://github.com/kubernetes/kubernetes/pull/108541))
+- 2022-07-30: 1.25 cycle: default feature flag to true ([k/k#108541](https://github.com/kubernetes/kubernetes/pull/108541))
+- Default to GA in 1.27 [k/k#114307](https://github.com/kubernetes/kubernetes/pull/114307)
 
 ## Drawbacks
 

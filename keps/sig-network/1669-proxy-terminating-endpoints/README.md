@@ -26,6 +26,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -190,6 +191,7 @@ and internalTrafficPolicy.
 - E2E test validating fallback behavior for terminating endpoints when `externalTrafficPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L3145
 - E2E test validating fallback behaviro for terminating endpoints when `internalTrafficPolicy: Cluster`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2889
 - E2E test validating fallback behaviro for terminating endpoints when `internalTrafficPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2972
+- E2E test performing rolling update with an LB using `externalTrafficiPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/f333e5b4c5a174c63ac8e71f2c187f434ce56b1b/test/e2e/network/loadbalancer.go#L1283-L1299
 
 ### Graduation Criteria
 
@@ -205,6 +207,11 @@ and internalTrafficPolicy.
 * E2E tests are in place, exercising all permutations of internalTrafficPolicy and externalTrafficPolicy (see [Test Plan](#test-plan) section)
 * Metrics to publish how many Services/Endpoints are routing traffic to terminating endpoints.
 * Manual or automated rollback testing (see [Test Plan](#test-plan) section)
+
+#### GA
+
+* Feedback from users in issue [85643](https://github.com/kubernetes/kubernetes/issues/85643) that enabling ProxyTerminatingEndpoints can achieve zero downtime rolling updates when using `externalTrafficPolicy: Local`
+* E2E tests demonstrating that rolling updates can be performed with negligible downtime (ideally 100%, but may not feasible without flakiness) with a Service LoadBalancer when using externalTrafficPolicy: Local
 
 ### Upgrade / Downgrade Strategy
 

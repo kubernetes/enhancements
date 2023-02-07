@@ -407,7 +407,7 @@ spec:
   validations:
     - name: max-replicas
       expression: "object.spec.replicas <= params.maxReplicas"
-      messageExpression: "'object.spec.replicas must be no greater than ' + string(params.maxReplicas)"
+      messageExpression: "'object.spec.replicas must be no greater than %d'.format([params.maxReplicas])"
       reason: Invalid
       # ...other rule related fields here...
 ```
@@ -850,6 +850,11 @@ Policy definitions:
 - Each validation may define a message:
   - `message` - plain string message
   - `messageExpression: "<cel expression>"` (mutually exclusive with `message`)
+    - As part of [the KEP update to add expression composition](https://github.com/kubernetes/enhancements/pull/3669/files),
+      expressions defined under `variables` will be accessible from `messageExpression`
+    - `messageExpression` is a CEL expression and thus factors into the runtime cost limit.
+    If the runtime cost limit is exceeded during `messageExpression` execution, then this is logged.
+    Whether or not the action is admitted after that depends upon failure policy.
   - If `message` and `messageExpression` are absent, `expression` and `name`
     will be included in the failure message
   - If `messageExpression` results in an error: `expression` and `name` will be
@@ -871,7 +876,7 @@ spec:
   validations:
     - expression: "self.name.startsWith('xyz-')"
       name: name-prefix
-      messageExpression: "self.name + ' must start with xyz-'"
+      message: "self.name must start with xyz-"
       reason: Unauthorized
     - expression: "self.name.contains('bad')"
       name: bad-name
@@ -880,7 +885,7 @@ spec:
       reason: Invalid
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
-      messageExpression: "self.name + ' contains suspicious'"
+      message: "'self.name contains suspicious'"
       code: 400
       reason: Invalid
 ```
@@ -907,7 +912,7 @@ Problem examples:
 | CRD is in multiple clusters, but schema differs        | If policy author is aware of the schema variations, can they write policies that work for all the variations? |
 | Validation of an aggregated API server type            | Main API server does not have type definitions |
 
-Due to these complications, we have decided to evalute CEL expressions
+Due to these complications, we have decided to evaluate CEL expressions
 dynamically. Informational type checking will be provided (except for aggregated
 API server types), but will be surfaced only as warnings. See "Alternatives
 Considered" section for details of all the alternatives we reviewed when
@@ -1165,7 +1170,7 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
 
 - CEL estimated cost limits
 - CEL runtime cost limits
-- Go context cancelation as a way of halting CEL execution if the request
+- Go context cancellation as a way of halting CEL execution if the request
   context is canceled for any reason.
 
  Estimated cost is, unfortunately, not something we can offer for admission with
@@ -1174,11 +1179,11 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
  for the same cases where we provide informational type checking, in which case
  we can report any cost limit violations in the same way we report type checking
  violations. Note that for built-in types, where `max{Length,Items,Properties}`
- value valiations are not available, estimated cost calculations will not be
- nearly as helpful or actionable. I recommend we do not attempt any estimated
- cost calculations on built-in types until the value validations are available.
+ value validations are not available, estimated cost calculations will not be
+ nearly as helpful or actionable. We do not plan to enforce any estimated
+ cost calculations on ValidatingAdmissionPolicy.
 
- Runtime cost limits can should be established and enforced. Exceeding the cost
+ Runtime cost limits should be established and enforced. Exceeding the cost
  limit will trigger the `FailurePolicy`, so this will need to be documented, but
  unlike webhooks, runtime cost is deterministic (it is purely a function of the
  input data and the CEL expression and is independent of underlying hardware or
@@ -1186,7 +1191,7 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
  webhook timeouts.
 
  The request's Go context will be passed in to all CEL evaluations such that
- cancelation halts CEL evaluation, if, for any reason, the context is canceled.
+ cancellation halts CEL evaluation, if, for any reason, the context is canceled.
 
 #### Safety Features
 
@@ -1223,7 +1228,10 @@ Plan:
 To consider:
 
 - labelSelector evaluation functions or other match evaluator functions ([original comment thread](https://github.com/kubernetes/enhancements/pull/3492#discussion_r981747317))
-- `string.format(string, list(dyn))` to make `messageExpression` more convenient.
+
+To implement:
+
+- `string.format` into CEL upstream ([tracking PR](https://github.com/google/cel-go/pull/617)) (TODO @DangerOnTheRanger: add tracking cel-go issue once available)
 
 #### Audit Annotations
 
@@ -2872,7 +2880,7 @@ For example, to validate all containers:
   validations:
     - scope: "spec.containers[*]"
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "scope.name + 'does not start with \'xyz\''"
+      message: "scope.name does not start with 'xyz'"
 ```
 
 To make it possible to access the path information in the scope, we can offer a
@@ -2886,7 +2894,7 @@ spec.x[xKey].y[yIndex].field
   validations:
     - scope: "x[xKey].y[yIndex].field"
       expression: "scope.startsWith('xyz-')"
-      messageExpression: "scopePath.xKey + ', ' + scopePath.yIndex + ': some problem'"
+      messageExpression: "'%s, %d: some problem'.format([scopePath.xKey, scopePath.yIndex])"
 ```
 
 Prior art:
@@ -2907,7 +2915,7 @@ Note: We considered extending to a list of scopes, e.g.:
   validations:
     - scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "scope.name + ' does not start with \'xyz\''"
+      message: "scope.name does not start with 'xyz'"
 ```
 
 But feedback was this is signficantly more difficult to understand.

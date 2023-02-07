@@ -2024,22 +2024,36 @@ message NodePrepareResourceResponse {
 }
 ```
 
-CRI protocol MUST be extended for this purpose, e.g. list of CDI
-device ids should be added to the CRI Device structure:
+CRI protocol MUST be extended for this purpose:
 
+ * CDIDevice structure should be added to the CRI specification
 ```protobuf
-// Device specifies a host device to mount into a container.
-message Device {
-    ...
-    string permissions = 3;
-    // Set of fully qualified CDI device names in the following
-    // format: <kind>=<name>,
-    //  where
-    //    kind (string) is a device vendor identifier
-    //    name (string) is a device name
+// CDIDevice specifies a CDI device information.
+message CDIDevice {
+    // Fully qualified CDI device name
     // for example: vendor.com/gpu=gpudevice1
-    // see more details in the [CDI specification](https://github.com/container-orchestrated-devices/container-device-interface/blob/master/SPEC.md)
-    repeated string cdi_device = 4;
+    // see more details in the CDI specification:
+    // https://github.com/container-orchestrated-devices/container-device-interface/blob/main/SPEC.md
+    string name = 1;
+}
+```
+ * CDI devices should be added to the ContainerConfig structure:
+```protobuf
+// ContainerConfig holds all the required and optional fields for creating a
+// container.
+message ContainerConfig {
+    // Metadata of the container. This information will uniquely identify the
+    // container, and the runtime should leverage this to ensure correct
+    // operation. The runtime may also use this information to improve UX, such
+    // as by constructing a readable name.
+    ContainerMetadata metadata = 1 ;
+    // Image to use.
+    ImageSpec image = 2;
+    // Command to execute (i.e., entrypoint for docker)
+    repeated string command = 3;
+...
+    // CDI devices for the container.
+    repeated CDIDevice cdi_devices = 17;
 }
 ```
 

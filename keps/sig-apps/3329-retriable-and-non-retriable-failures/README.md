@@ -230,7 +230,7 @@ thousands of nodes requires usage of pod restart policies in order
 to account for infrastructure failures.
 
 Currently, kubernetes Job API offers a way to account for infrastructure
-failures by setting `.backoffLimit > 0`. However, this mechanism intructs the
+failures by setting `.backoffLimit > 0`. However, this mechanism instructs the
 job controller to restart all failed pods - regardless of the root cause
 of the failures. Thus, in some scenarios this leads to unnecessary
 restarts of many pods, resulting in a waste of time and computational
@@ -354,7 +354,7 @@ As a machine learning researcher, I run jobs comprising thousands
 of long-running pods on a cluster comprising thousands of nodes. The jobs often
 run at night or over weekend without any human monitoring. In order to account
 for random infrastructure failures we define `.backoffLimit: 6` for the job.
-However, a signifficant portion of the failures happen due to bugs in code.
+However, a significant portion of the failures happen due to bugs in code.
 Moreover, the failures may happen late during the program execution time. In
 such case, restarting such a pod results in wasting a lot of computational time.
 
@@ -729,7 +729,7 @@ in different messages for pods.
 - Reproduction: Run kube-controller-manager with disabled taint-manager (with the
   flag `--enable-taint-manager=false`). Then, run a job with a long-running pod and
   disconnect the node
-- Comments: handled by node lifcycle controller in: `controller/nodelifecycle/node_lifecycle_controller.go`.
+- Comments: handled by node lifecycle controller in: `controller/nodelifecycle/node_lifecycle_controller.go`.
   However, the pod phase remains `Running`.
 - Pod status:
   - status: Unknown
@@ -762,7 +762,7 @@ In Alpha, there is no support for Pod conditions for failures or disruptions ini
 
 For Beta we introduce handling of Pod failures initiated by Kubelet by adding
 the pod disruption condition (introduced in Alpha) in case of disruptions
-initiated by kubetlet (see [Design details](#design-details)).
+initiated by Kubelet (see [Design details](#design-details)).
 
 Kubelet can also evict a pod in some scenarios which are not covered with
 adding a pod failure condition:
@@ -863,7 +863,7 @@ dies) between appending a pod condition and deleting the pod.
 In particular, scheduler can possibly decide to preempt
 a different pod the next time (or none). This would leave a pod with a
 condition that it was preempted, when it actually wasn't. This in turn
-could lead to inproper handling of the pod by the job controller.
+could lead to improper handling of the pod by the job controller.
 
 As a solution we implement a worker, part of the disruption
 controller, which clears the pod condition added if `DeletionTimestamp` is
@@ -1218,7 +1218,7 @@ the pod failure does not match any of the specified rules, then default
 handling of failed pods applies.
 
 If we limit this feature to use `onExitCodes` only when `restartPolicy=Never`
-(see: [limitting this feature](#limitting-this-feature)), then the rules using
+(see: [limiting this feature](#limitting-this-feature)), then the rules using
 `onExitCodes` are evaluated only against the exit codes in the `state` field
 (under `terminated.exitCode`) of `pod.status.containerStatuses` and
 `pod.status.initContainerStatuses`. We may also need to check for the exit codes
@@ -1279,9 +1279,9 @@ the following scenarios will be covered with unit tests:
 - handling of a pod failure, in accordance with the specified `spec.podFailurePolicy`,
   when the failure is associated with
   - a failed container with non-zero exit code,
-  - a dedicated Pod condition indicating termmination originated by a kubernetes component
+  - a dedicated Pod condition indicating termination originated by a kubernetes component
 - adding of the `DisruptionTarget` by Kubelet in case of:
-  - eviciton due to graceful node shutdown
+  - eviction due to graceful node shutdown
   - eviction due to node pressure
 <!--
 Additionally, for Alpha try to enumerate the core package you will be touching
@@ -1313,7 +1313,7 @@ The following scenarios will be covered with integration tests:
 - pod failure is caused by a failed container with a non-zero exit code
 
 More integration tests might be added to ensure good code coverage based on the
-actual implemention.
+actual implementation.
 
 <!--
 This question should be filled when targeting a release.
@@ -1338,8 +1338,22 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage
 
 -->
-The following scenario will be covered with e2e tests:
-- early job termination when a container fails with a non-retriable exit code
+The following scenario are covered with e2e tests:
+- [sig-apps#gce](https://testgrid.k8s.io/sig-apps#gce):
+  - Job Using a pod failure policy to not count some failures towards the backoffLimit Ignore DisruptionTarget condition
+  - Job Using a pod failure policy to not count some failures towards the backoffLimit Ignore exit code 137
+  - Job should allow to use the pod failure policy on exit code to fail the job early
+  - Job should allow to use the pod failure policy to not count the failure towards the backoffLimit
+- [sig-scheduling#gce-serial](https://testgrid.k8s.io/sig-scheduling#gce-serial):
+  - SchedulerPreemption [Serial] validates pod disruption condition is added to the preempted pod
+- [sig-release-master-informing#gce-cos-master-serial](https://testgrid.k8s.io/sig-release-master-informing#gce-cos-master-serial):
+  - NoExecuteTaintManager Single Pod [Serial] pods evicted from tainted nodes have pod disruption condition
+
+The following scenarios are covered with node e2e tests
+([sig-node-presubmits#pr-kubelet-gce-e2e-pod-disruption-conditions](https://testgrid.k8s.io/sig-node-presubmits#pr-kubelet-gce-e2e-pod-disruption-conditions) and
+[sig-node-presubmits#pr-node-kubelet-serial-containerd](https://testgrid.k8s.io/sig-node-presubmits#pr-node-kubelet-serial-containerd)):
+  - GracefulNodeShutdown [Serial] [NodeFeature:GracefulNodeShutdown] [NodeFeature:GracefulNodeShutdownBasedOnPodPriority] graceful node shutdown when PodDisruptionConditions are enabled [NodeFeature:PodDisruptionConditions] should add the DisruptionTarget pod failure condition to the evicted pods
+  - PriorityPidEvictionOrdering [Slow] [Serial] [Disruptive][NodeFeature:Eviction] when we run containers that should cause PIDPressure; PodDisruptionConditions enabled [NodeFeature:PodDisruptionConditions] should eventually evict all of the correct pods
 
 More e2e test scenarios might be considered during implementation if practical.
 
@@ -1439,7 +1453,7 @@ N/A
 An upgrade to a version which supports this feature should not require any
 additional configuration changes. In order to use this feature after an upgrade
 users will need to configure their Jobs by specifying `spec.podFailurePolicy`. The
-only noticeable difference in behaviour, without specifying `spec.podFailurePolicy`,
+only noticeable difference in behavior, without specifying `spec.podFailurePolicy`,
 is that Pods terminated by kubernetes components will have an additional
 condition appended to `status.conditions`.
 
@@ -1654,7 +1668,7 @@ Manual test performed to simulate the upgrade->downgrade->upgrade scenario:
   - Scenario 2:
     - Create a job with a long running containers and `backoffLimit=0`.
     - Verify that the job continues after the node in uncordoned
-1. Disable the feature gates. Verify that the above scenarios result in default behaviour:
+1. Disable the feature gates. Verify that the above scenarios result in default behavior:
   - In scenario 1: the job restarts pods failed with exit code `42`
   - In scenario 2: the job is failed due to exceeding the `backoffLimit` as the failed pod failed during the draining
 1. Re-enable the feature gates
@@ -1953,7 +1967,7 @@ technics apply):
   is an increase of the Job controller processing time.
 - Inspect the Job controller's `job_pods_finished_total` metric for the
   to check if the numbers of pod failures handled by specific actions (counted
-  by the `failure_policy_action` label) agree with the expetations.
+  by the `failure_policy_action` label) agree with the expectations.
   For example, if a user configures job failure policy with `Ignore` action for
   the `DisruptionTarget` condition, then a node drain is expected to increase
   the metric for `failure_policy_action=Ignore`.
@@ -1963,7 +1977,7 @@ technics apply):
 
 - 2022-06-23: Initial KEP merged
 - 2022-07-12: Preparatory PR "Refactor gc_controller to do not use the deletePod stub" merged
-- 2022-07-14: Preparatory PR "efactor taint_manager to do not use getPod and getNode stubs" merged
+- 2022-07-14: Preparatory PR "Refactor taint_manager to do not use getPod and getNode stubs" merged
 - 2022-07-20: Preparatory PR "Add integration test for podgc" merged
 - 2022-07-28: KEP updates merged
 - 2022-08-01: Additional KEP updates merged
@@ -1972,7 +1986,7 @@ technics apply):
 - 2022-08-04: PR "Support handling of pod failures with respect to the configured rules" merged
 - 2022-09-09: Bugfix PR for test "Fix the TestRoundTripTypes by adding default to the fuzzer" merged
 - 2022-09-26: Prepared PR for KEP Beta update. Summary of the changes:
-  - propsal to extend kubelet to add the following pod conditions when evicting a pod (see [Design details](#design-details)):
+  - proposal to extend kubelet to add the following pod conditions when evicting a pod (see [Design details](#design-details)):
     - DisruptionTarget for evictions due graceful node shutdown, admission errors, node pressure or Pod admission errors
     - ResourceExhausted for evictions due to OOM killer and exceeding Pod's ephemeral-storage limits
   - extended the review of pod eviction scenarios by kubelet-initiated pod evictions:

@@ -89,6 +89,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Beta](#beta)
     - [GA](#ga)
@@ -334,9 +337,22 @@ proposal will be implemented, this is the place to discuss them.
 ### Test Plan
 
 - Unit and integration tests veryfing that:
-  - pod template's node affinity, node selector, tolerations, annotations and labels not mutable for jobs that have been unsuspended before
-  - pod template's node affinity, node selector tolerations, annotations or labels not mutable for apps other than jobs
-  - job controller observes the update and creates pods with the new scheduling directives
+  - pod template's node affinity, node selector, tolerations, annotations and labels not mutable for jobs that have been unsuspended before.
+  - pod template's node affinity, node selector tolerations, annotations or labels not mutable for apps other than jobs.
+  - job controller observes the update and creates pods with the new scheduling directives.
+
+#### Unit tests
+
+- `k8s.io/kubernetes/pkg/registry/batch/job/`: `1/30/2023` - `76.8%`
+
+#### Integration tests
+
+Available under [Job integrations tests](https://github.com/kubernetes/kubernetes/blob/457341c3d408097025af5a9b6f5917439c0debdd/test/integration/job/job_test.go#L1397)
+
+#### e2e tests
+
+Integration tests offer enough coverage.
+
 
 <!--
 **Note:** *Not required until targeted at a release.*

@@ -48,10 +48,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -602,6 +602,8 @@ No.
 - 2020-11-11: PR introducing this feature at alpha stage was merged https://github.com/kubernetes/kubernetes/pull/94196
 - 2021-07-02: PR improving concurrency and cache for kubelet credential provider was merged https://github.com/kubernetes/kubernetes/pull/102168
 - 2021-09-27: PR adding metrics for kubelet credential provider was merged https://github.com/kubernetes/kubernetes/pull/102802
+- v1.26: e2e tests added authenticating to GCR
+- v1.26: v1 APIs added and feature graduated to GA
 
 ## Drawbacks
 

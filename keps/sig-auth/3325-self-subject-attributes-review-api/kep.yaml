@@ -10,12 +10,14 @@ reviewers:
 - "@enj"
 - "@deads2k"
 - "@mikedanese"
+- "@liggitt"
 approvers:
-- TBD
+- "@deads2k"
+- "@liggitt"
 creation-date: "2022-05-30"
 status: implementable
-stage: alpha
-latest-milestone: "v1.26"
+stage: beta
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.26"
   beta: "v1.27"
