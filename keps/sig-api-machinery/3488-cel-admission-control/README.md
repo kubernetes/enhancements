@@ -695,8 +695,8 @@ Matching is performed in quite a few systems across Kubernetes:
 | exclude                                  | Audit (level=None)           | phase 1                                |
 | apiVersion + kind                        |                              | phase 1                                |
 | NonResourceURLs                          | Audit/RBAC/P&F               | No                                     |
-| user/userGroup                           | Audit                        | phase 2 see "Secondary Authz" section  |
-| user.Extra                               | (in WH AdmissionReview)      | phase 2 see "Secondary Authz" section  |
+| user/userGroup                           | Audit                        | phase 1 - request.userInfo.groups      |
+| user.Extra                               | (in WH AdmissionReview)      | phase 1 - request.userInfo.extra       |
 | permissions (RBAC verb)                  | RBAC                         | phase 2 see "Secondary Authz" section  |
 
 WH = Admission webhooks, P&F = Priority and Fairness
@@ -1094,7 +1094,7 @@ repeated evaluations if they are shared across validations.
 
 #### Secondary Authz
 
-TODO: background and motivation
+We will support admission control use cases requiring permission checks:
 
 - Validate that only a user with a specific permission can set a particular field.
 - Validate that only a controller responsible for a finalizer can remove it from the finalizers
@@ -1104,33 +1104,41 @@ To depend on an authz decision, validation expressions can reference the identif
 which will be bound at evaluation time to an Authorizer object supporting receiver-style function
 overloads:
 
-| Symbol      | Type                                                 | Description |
-|-------------|------------------------------------------------------|-------------|
-| path        | Authorizer.(string) -> PathCheck                     | todo        |
-| check       | PathCheck.(string) -> Decision                       | todo        |
-| resource    | Authorizer.(string, string, string) -> ResourceCheck | todo        |
-| subresource | ResourceCheck.(string) -> ResourceCheck              | todo        |
-| namespace   | ResourceCheck.(string) -> ResourceCheck              | todo        |
-| name        | ResourceCheck.(string) -> ResourceCheck              | todo        |
-| check       | ResourceCheck.(string) -> Decision                   | todo        |
-| allowed     | Decision.() -> bool                                  | todo        |
-| denied      | Decision.() -> bool                                  | todo        |
+| Symbol      | Type                                                                    | Description                                                                                     |
+|-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| path        | Authorizer.(path string) -> PathCheck                                   | Defines a check for an non-resource request path (e.g. /healthz)                                |
+| check       | PathCheck.(httpRequestVerb string) -> Decision                          | Checks if the user is authorized for the HTTP request verb on the path                          |
+| resource    | Authorizer.(kind string, group string, version string) -> ResourceCheck | Defines a check for API resources                                                               |
+| subresource | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies thath the check is for a subresource                                                  |
+| namespace   | ResourceCheck.(namespace string) -> ResourceCheck                       | Specifies that the check is for a namespace (if not called, the check is for the cluster scope) |
+| name        | ResourceCheck.(name string) -> ResourceCheck                            | Specifies that the check is for a specific resource name                                        |
+| check       | ResourceCheck.(apiVerb string) -> Decision                              | Checks if the user is authorized for the API verb on the resource                               |
+| allowed     | Decision.() -> bool                                                     | Is the user authorized?                                                                         |
+| denied      | Decision.() -> bool                                                     | Is the user denied authorization?                                                               |
+
+xref: https://kubernetes.io/docs/reference/access-authn-authz/authorization/#review-your-request-attributes for a details on
+authorization attributes.
 
 Example expressions using `authorizer`:
 
-- `authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed()`
-- `authorizer.path('/metrics').check('get').denied()`
+- `authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).allowed('approve')`
+- `authorizer.path('/metrics').denied('get')`
 
 Note that this API:
 
 - Produces errors at compilation time when parameters are missing or improperly combined
   (e.g. subresource with non-resource path, missing path or resource).
 - Is open to the addition of future knobs (e.g. impersonation).
+- Will have a limit on the number of authz checks generated during expression
+  evaluation, this will be enforced by setting a CEL evaluation cost to
+  performing each authz check that is high enough serve as an effective limit to
+  the total authz checks that can be performed. The limit will be picked
+  emperically by evaluating the resource costs (CPU cost primarily) of authz
+  checks. This will need to be set high enough to handle policies like "You must
+  be authorized to read every secret your pod mounts".
 
 Other considerations:
 
-- Does there need to be a special limit on the number of authz checks generated during expression
-  evaluation, or is it sufficient to assign an appropriate fixed cost?
 - Since authorization decisions depend on an apiserver's authorizer, and the
   ValidatingAdmissionPolicy plugin is supported on [aggregated API
   servers](#aggregated-api-servers), the evaluation result of any validation expression involving
@@ -1142,11 +1150,14 @@ Other considerations:
   object bound to the exposed `authorizer` object (i.e. caching decisions for identical checks
   within a single policy evaluation) in order to prevent duplicate checks across multiple validation
   expressions.
+- Authorization checks that require information from resources other than the
+  resource being admitted are possible but will be limited by eventual
+  consistency. Information from other resources can be accumulated by a controller
+  and written to a custom resources which can then be referenced by the `paramSource`
+  of a policy binding and accessed in CEL expressions via the `params` variable.
 
-Use cases in existing admission plugins:
 
-- PodSecurityPolicy (kube)
-- CertificateApproval (kube)
+CertificateApproval use case:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1alpha1
@@ -1163,9 +1174,12 @@ spec:
   validations:
   - expression: "authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed() || authorizer.resource('signers', 'certificates.k8s.io', '*').name([oldObject.spec.signerName.split('/')[0], '*'].join('/')).check('approve').allowed()"
     reason: Forbidden
-    messageExpression: "user not permitted to approve requests with signerName %q".format([oldObject.spec.signerName])"
+    messageExpression: "user not permitted to approve requests with signerName %s".format([oldObject.spec.signerName])"
 ```
 
+Other use cases in existing admission plugins:
+
+- PodSecurityPolicy (kube)
 - CertificateSigning (kube)
 - OwnerReferencesPermissionEnforcement (kube)
 - network.openshift.io/ExternalIPRanger
@@ -1175,7 +1189,7 @@ spec:
 - security.openshift.io/SecurityContextConstraint
 - security.openshift.io/SCCExecRestrictions
 
-From deads2k:
+Restricted Service Account use case (from deads2k):
 
 > Note that user.Extra in AdmissionReview has pod claims, which are valuable.
 
@@ -1191,9 +1205,25 @@ From deads2k:
 > permission, then its probably better to create something specifically for the
 > purpose.
 
-Looking up the pod (or any other additional resources) is not something we are
-currently planning to support in this KEP, but the use case is interesting and
-we should investigate with sig-auth.
+This enhancement makes
+`request.userInfo.extra['authentication.kubernetes.io/pod-uid']` available to
+admission policies. Looking up the pod (or any other additional resources) is
+makes this use case challenging. A controller that accumulates a `pod-uid ->
+node-name` map in a custom resource by watching all pods could then make the
+mapping available in a custom resource for the admission policy to consume using
+`paramSource`. 
+
+This would result in a CEL expression like:
+
+```
+object.spec.NodeName == params.nodeNamebyPodUID[request.userInfo.extra['authentication.kubernetes.io/pod-uid']]
+```
+
+But this would not scale well to clusters with large pod counts.
+
+If we were to offer a way to lookup arbitrary other resources, or even if
+we provided selective access to just some resources, this might become
+easier. This can explored as future work.
 
 #### Access to namespace metadata
 
