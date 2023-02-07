@@ -69,12 +69,12 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation phases](#implementation-phases)
   - [Phase 1](#phase-1)
   - [Future work](#future-work)
-    - [Update sandbox-level QoS-class resources](#update-sandbox-level-qos-class-resources)
     - [In-place pod vertical scaling](#in-place-pod-vertical-scaling)
     - [Access control](#access-control)
     - [Scheduler improvements](#scheduler-improvements)
     - [Kubelet-initiated pod eviction](#kubelet-initiated-pod-eviction)
     - [Default and limits](#default-and-limits)
+    - [Implicit defaults](#implicit-defaults)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -90,10 +90,10 @@ SIG Architecture for cross-cutting KEPs).
     - [PodSandboxConfig](#podsandboxconfig)
     - [ContainerStatus](#containerstatus)
     - [RuntimeStatus](#runtimestatus)
-    - [Consts](#consts)
   - [Kubernetes API](#kubernetes-api)
     - [PodSpec](#podspec)
     - [NodeStatus](#nodestatus)
+    - [Consts](#consts)
   - [Kubelet](#kubelet)
   - [API server](#api-server)
   - [Scheduler](#scheduler)
@@ -101,7 +101,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Container runtimes](#container-runtimes)
   - [Open Questions](#open-questions)
     - [Pod QoS class](#pod-qos-class)
-    - [Default class](#default-class)
+    - [Other Kubernetes-managed QoS-class resources](#other-kubernetes-managed-qos-class-resources)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -263,8 +263,6 @@ kubelet to the container runtime.
   resource types in the future.
 - Make QoS-class resources opqaue (as possible) to the CRI client
 - Discovery of the available QoS-class resources
-- API changes to support updating Pod-level (sandbox-level) QoS-class resource
-  assignment of running pods
 - Resource status/capacity
 - Access control ([future work](#future-work))
 
@@ -272,7 +270,9 @@ kubelet to the container runtime.
 
 - Interface or mechanism for configuring the QoS-class resources (responsibility of
   the container runtime).
-- Enumerating possible (QoS-class) resource types or their detailed behavior
+- Specifying available (QoS-class) resource types or their detailed behavior
+- API changes to support updating Pod-level (sandbox-level) QoS-class resource
+  assignment of running pods (will be subject to a separate KEP)
 
 ## Implementation phases
 
@@ -320,27 +320,6 @@ are currently listed as "future work" in [Goals](#goals).
 
 In practice, the future work mostly consists of changes to the Kubernetes API
 and control plane components.
-
-#### Update sandbox-level QoS-class resources
-
-This future step would be a second extension to the CRI API.
-
-Currently there is no endpoint in the CRI API to update the configuration of
-pod sandboxes. In contrast, container-level resources can be updated with the
-UpdateContainerResources API endpoint. In order to make container and pod
-(sandbox) level QoS-class resources symmetric we want to make it possible to
-update of pod-level resource assignments, too.
-
-This will likely require a new API endpoint in CRI:
-
-```diff
-@@ -38,6 +38,8 @@ service RuntimeService {
-     // RunPodSandbox creates and starts a pod-level sandbox. Runtimes must ensure
-     // the sandbox is in the ready state on success.
-     rpc RunPodSandbox(RunPodSandboxRequest) returns (RunPodSandboxResponse) {}
-+    // UpdatePodSandboxConfig updates the configuration of an existing pod sandbox.
-+    rpc UpdatePodSandboxConfig(UpdatePodSandboxConfigŔequest) returns (UpdatePodSandboxConfigŔesponse) {}
-```
 
 #### In-place pod vertical scaling
 
@@ -472,6 +451,26 @@ usage of container-level QoS-class resources.
 
 Just using LimitRanges for specifying defaults could simplify the API.
 
+#### Implicit defaults
+
+If nothing is requested for a QoS-class resource, a pod/container still
+implicitly belongs to some class. By design there is no such thing as being in
+no QoS class. What this "unnamed" default class means or how it is handled is
+considered an implementation detail of the runtime. However, it would be
+potentially desirable for the user to be able to see what was classes the
+application was implicitly assigned to (even if nothing was explicitly
+requested). The first implementation phase contains no mechanism for this.
+
+Some considerations/questions:
+
+- where can user see what was implicitly given? new field in PodStatus?
+- how to communicate what is effective for each pod and container
+- implicit default might change after runtime re-configuration
+- new QoS resource types might be added e.g. because of re-configuration of the
+  runtime
+- PodSandboxStatus and ContainerStatus messages in CRI API could be used to
+  communicate selected/effextive defaults to the client (kubelet)
+
 ## Proposal
 
 This section currently covers [implementation phase 1](#phase-1) (see
@@ -507,16 +506,18 @@ that can be assigned to a specific class (of one QoS-class resource) on a node
 can be limited. This limit is configuratble on a per-class (and per-node)
 basis. This can be used to e.g. limit access to a high-tier class.
 
-Pod-level and container-level QoS-class resources are completely independent
-resource types. E.g. specifying something in the pod-level request does not
-mean specifying a pod-level default for all containers of the pod.
+Pod-level and container-level QoS-class resources are independent resource
+types. However, specifying a container-level QoS-class resource something in
+the pod-level request in PodSpec will be regarded by Kubernetres as a default
+for all containers of the pod.
 
 Currently we identify two types of container-level QoS-class resources (RDT and
 blockio) but the API changes will be generic so that it will serve other
-similar resources in the future. Currently there are no immediately enabled
-pod-level QoS-class resources but we see usage scenarios for those in the
-future (communicating the pod QoS class to the runtime and enabling pod-level
-cgroup controls for blockio).
+similar resources in the future. Currently there are no pod-level QoS-class
+resources that would be enabled immediately after the new APIs are available
+but we see usage scenarios for those in the future (communicating the pod QoS
+class to the runtime and enabling pod-level cgroup controls for blockio,
+network QoS).
 
 We introduce a feature gate that enables Kubernetes components (kubelet,
 kube-apiserver, kube-scheduler) to support QoS-class resources.
@@ -571,6 +572,16 @@ Consider including folks who also work outside the SIG or subproject.
 - User assigning container to “unauthorized” class, causing interference and
   access to unwanted set/amount of resources. This will be addressed in future
   KEP introducing permission controls.
+- Cross-registering pod and container-level QoS-class resources: it would be
+  possible to register a resource name as a pod-level resource on one node and
+  as a container-level resource on one node. This would obviously be confusing
+  for the user but also cause surprises in scheduling in some cases as
+  container-level QoS-class resources may be specified in pod-level request
+  field to denote pod-wide defaults for all containers within. This will be
+  mitigated in the future with "official" reqource names (we know which names
+  are pod-level resources and which container-level) but there is still
+  possibility to mix-up vendor-specific QoS-class resources, although the risk
+  for this is relatively small (severe misconfiguration)
 
 ## Design Details
 
@@ -588,6 +599,18 @@ Summary of the proposed design details:
   - no overprovisioning (or auto-promotion to free classes) exists (considered
     as implementation detail of specific QoS-class resource, outside
     Kubernetes)
+  - not requesting anything implies a "default" that is an implementation
+    detail on the container runtime side
+- Pod and container level QoS-class resources are separate concepts
+  - Pod-level QoS-class resources are meant for sandbox-level QoS
+  - Pod-level QoS-class resources cannot be specified in container resources field
+  - container-level QoS-class resources are meant for per-container QoS
+  - container-level QoS-class resources can be specified in pod-level request
+    field (in PodSpec) in which case it is regarded as a default for all
+    containers within that pod
+  - resource names across pod and container level QoS-class resource names
+    must be unique - i.e. the runtime cannot register a pod-level and
+    container-level resource with the same name
 - runtime advertises available QoS resources to kubelet
   - QoS resources are dynamic i.e. can change during the lifetime of the node
   - CRI [RuntimeStatus](#runtimestatus) message is used for carrying the information
@@ -713,6 +736,10 @@ This information is dynamic i.e. the available QoS-class resources (or their
 properties like available classes or per-class capacity) may change over time,
 e.g. after re-configuration of the runtime.
 
+Names of the QoS-class resources must be unique, also across pod-level and
+container-level resources. I.e. the same name must not be advertised as both a
+pod-level and container-level resource.
+
 ```diff
  message RuntimeStatus {
      // List of current observed runtime conditions.
@@ -732,7 +759,8 @@ e.g. after re-configuration of the runtime.
 
 +// QoSResourceInfo contains information about one type of QoS resource.
 +message QoSResourceInfo {
-+    // Name of the QoS resources.
++    // Name of the QoS resources. Name must be unique, also across pod and
++    // container level QoS resources.
 +    string Name = 1;
 +    // Mutable is set to true if this resource supports in-place updates i.e.
 +    // the class of a running container or sandbox can be changed.
@@ -750,20 +778,6 @@ e.g. after re-configuration of the runtime.
 +    // Zero means "infinite" capacity i.e. the usage is not restricted.
 +    uint64 capacity = 2;
  }
-```
-
-#### Consts
-
-Also, define "known" QoS-class resource types to more easily align container
-runtime implementations:
-
-```diff
-+const (
-+       // QoSResourceRdt is the name of the RDT QoS-class resource
-+       QoSResourceRdt = "rdt"
-+       // QoSResourceBlockio is the name of the blockio QoS-class resource
-+       QoSResourceBlockio = "blockio"
-+)
 ```
 
 ### Kubernetes API
@@ -784,13 +798,21 @@ struct. This will enable the assignment of QoS resources for containers.
         // +featureGate=DynamicResourceAllocation
         // +optional
         Claims []ResourceClaim
-+       // QoSResources specifies the QoS resources.
++       // QoSResources specifies the requested QoS resources.
 +       // +optional
-+       QoSResources map[QoSResourceName]string
++       QoSResources []QoSResourceRequest
  }
 
 +// QoSResourceName is the name of a QoS resource.
 +type QoSResourceName string
+
++// QoSResourceRequest specifies a request for one QoS resource type.
++type QoSResourceRequest struct {
++       // Name of the QoS resource.
++       Name QoSResourceName
++       // Name of the class (inside the QoS resource type specified by Name field).
++       Class string
++}
 ```
 
 Also, we add a Resources field to the PodSpec, to enable assignment of
@@ -804,17 +826,28 @@ API.
  type PodSpec struct {
 @@ -3062,6 +3069,10 @@ type PodSpec struct {
         ResourceClaims []PodResourceClaim
-+       // Pod-level resources. Claims, requests and limits are not allowed
-+       // to be specified for pods.
++       // QoSResources specifies the Pod-level requests of QoS resources.
++       // Container-level QoS resources may be specified in which case they
++       // are considered as a default for all containers within the Pod.
++       // +featureGate=QoSResources
 +       // +optional
-+       Resources ResourceRequirements
++       QoSResources []PodQoSResourceRequest
  }
+
++// PodQoSResourceRequest specifies a request for one QoS resource type for a
++// Pod.
++type PodQoSResourceRequest struct {
++       // Name of the QoS resource.
++       Name QoSResourceName
++       // Name of the class (inside the QoS resource type specified by Name field).
++       Class string
++}
 ```
 
-There is already an ongoing effort to add [Pod level resource limits][kep-2837]
-that aims at adding a pod level `Resources` field in a similar fashion. Thus,
-we opt for adding ResourceRequirements insted of QoSResources directly into the
-PodSpec.
+There is an ongoing effort to add [Pod level resource limits][kep-2837] that
+aims at adding a pod level `Resources`. However, we propose to add a distinct
+QoSResources field (with a distinct PodQoSResourceRequest type) in the PodSpec
+in order to decouple dependencies between types and fields.
 
 As an example, a Pod requesting class "fast" of a (exemplary) pod-level QoS
 resource named "network", with one container requesting class "gold" of
@@ -834,7 +867,8 @@ spec:
     image: nginx
     resources:
       qosResources:
-        rdt: gold
+      - name: rdt
+        class: gold
 ```
 
 #### NodeStatus
@@ -891,6 +925,39 @@ available within each of these resource types.
 +}
 ```
 
+#### Consts
+
+We define standard well-known QoS-class resource types in the API. These are
+considered as the canonical list of "official" QoS-class resource names. In
+addition to the name the API documents the expected high-level behavior and
+semantics of these canonical QoS-class resources to provide common standards
+across different implementations.
+
+<<[UNRESOLVED @sftim]>>
+The canonical Kubernetes names for QoS-class resources are non-namespaced (i.e.
+without a `<namespace>/` prefix). Namespaced (or fully qualified) names like
+`example.com/acme-qos` are not controlled and are meant for e.g. vendor or
+application specific QoS implementations.
+<<[/UNRESOLVED]>>
+
+```diff
++const (
++       // QoSResourceRdt is the name of the QoS-class resource named IntelRDT
++       // in the OCI runtime spec and interfaced through the resctrlfs
++       // pseudp-filesystem in Linux. This is a container-level reosurce.
++       QoSResourceIntelRdt = "rdt"
++       // QoSResourceBlockio is the name of the blockio QoS-class resource.
++       // This is a container-level resource.
++       QoSResourceBlockio = "blockio"
++)
+```
+
+In later implementation phases (GA) admission control (validation) is added to
+reject requests for unknown QoS-class resources in the "official" namespace.
+Also, kubelet will reject the registration of unknown QoS-class resources in
+the "official" namespace. Custom/vendor-specific QoS-class resources will still
+be allowed outside the "official" namespace.
+
 ### Kubelet
 
 Kubelet gets QoS-class resource assignment from the [PodSpec](#podspec) and
@@ -905,7 +972,9 @@ Resources field in [RuntimeStatus](#runtimestatus) message). The kubelet
 updates the new QoSResources field in [NodeStatus](#nodestatus) accordingly,
 making QoS-class resources on the node visible to users and the kube-scheduler.
 This information is dynamic, i.e. the available QoS-class resources (or their
-properties) may change over time.
+properties) may change over time. QoS-class resource names must be unique, i.e.
+kubelet will refuse to register pod-level and container-level QoS-class
+resource with the same name.
 
 An admission handler is added into kubelet to validate the QoS-class resource
 request against the resource availability on the node. Pod is rejected if
@@ -931,7 +1000,11 @@ labels is implemented: keys (`QoSResourceName`) and values must be non-empty,
 less than 64 characters long, must start and end with an alphanumeric character
 and may contain only alphanumeric characters, dashes, underscores or dots (`-`,
 `_` or `.`). Also similar to labels, a namespace prefix (FQDN subdomain separated
-with a slash) in the key is allowed (e.g. `vendor/qos-resource`).
+with a slash) in the key is allowed (e.g. `vendor.example/qos-resource`).
+
+Official canonical names for well-known QoS-class resources are specified in
+the API. In later implementation phases admission (validation) for their usage
+is implemented (see [Consts](#consts) for more details).
 
 ### Scheduler
 
@@ -958,6 +1031,25 @@ The kubectl describe command will be extended to:
 
 - available QoS-class resources of nodes
 - display QoS-class resource requests of pods
+
+For example, regarding available QoS-class resources on a node, `kubectl
+describe node` could show output something like this:
+
+```
+...
+Pod QoS resources:
+  Name      Classes (capacity)
+  ----      ------------------
+  net       slow(inf)    normal (8)  fast (2)
+  qoz-xyz   cls-1 (inf)  cls-2 (1)   cls-3 (5)  cls-4 (10)
+
+Container QoS resources:
+  Name     Mutable  Classes (capacity)
+  ----     -------  ------------------
+  blockio  No       low-prio (inf)   normal (10)   high-prio (3)
+  rdt      No       bronze (inf)     gold (1)      silver (2)
+...
+```
 
 ### Container runtimes
 
@@ -995,12 +1087,17 @@ the pod qos class in the future.  The runtime could provide a set of OOM
 classes, making it possible for the user to specify a burstable pod with low
 oom priority (low chance of being killed).
 
-#### Default class
+#### Other Kubernetes-managed QoS-class resources
 
-A mechanism for indicating that the (runtime) default class should be used. The
-default class would/should be a node/runtime specific attribute. How should
-this be specified in the CRI protocol/`cri-api` and Pod spec?
+In addition to the Pod QoS class it would be possible to specify other
+QoS-class resources that would be managed by Kubernetes/kubelet. If we specify
+and manage official well-known QoS-class resource names in the API it would be
+possible to specify Kubernetes-internal names that the container runtime would
+know to ignore (or not try to manage itself).
 
+One possible usage-scenario would be pod-level cgroup controls, e.g. cgroup v2
+memory knobs in linux (see
+[KEP-2570: Support Memory QoS with cgroups v2][kep-2570].
 
 ### Test Plan
 
@@ -1164,7 +1261,10 @@ in back-to-back releases.
 
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
-
+- In addition to beta:
+  - enforce admission control on "official" QoS-class resource names
+  - kubelet rejects registration of unknown QoS-class resorce names in the
+    "official" namespace
 
 ### Upgrade / Downgrade Strategy
 
@@ -1687,14 +1787,14 @@ Specifically, annotations for specifying RDT and blockio class would be
 supported. These are the two types of QoS-class resources that already have
 basic support in the container runtimes.
 
-- `rdt.resources.alpha.kubernetes.io/default` for setting a Pod-level default RDT
+- `rdt.resources.kubernetes.io/default` for setting a Pod-level default RDT
   class for all containers
-- `rdt.resources.alpha.kubernetes.io/container.<container-name>` for
+- `rdt.resources.kubernetes.io/container.<container-name>` for
   container-specific RDT class settings
   blockio class for all containers
-- `blockio.resources.alpha.kubernetes.io/default` for setting a Pod-level default
+- `blockio.resources.kubernetes.io/default` for setting a Pod-level default
   blockio class for all containers
-- `blockio.resources.alpha.kubernetes.io/container.<container-name>` for
+- `blockio.resources.kubernetes.io/container.<container-name>` for
   container-specific blockio class settings
 
 #### Kubelet
@@ -1796,3 +1896,4 @@ required.
 [intel-rdt]: https://www.intel.com/content/www/us/en/architecture-and-technology/resource-director-technology.html
 [linux-resctrl]: https://www.kernel.org/doc/html/latest/x86/resctrl.html
 [kep-2837]: https://github.com/kubernetes/enhancements/pull/1592
+[kep-2570]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2570-memory-qos
