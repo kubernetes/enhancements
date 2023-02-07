@@ -263,7 +263,8 @@ will be surfaced when the validation rule evaluates to false.
 - As an alternative to the `message` field, there is also a
 `messageExpression` field that represents a CEL expression that evaluates to a
 string that will be used when the validation rule evaluates to false. If the
-`messageExpression` field does not evaluate to a string, then the CRD write will fail. If the
+`messageExpression` field does not statically evaluate to a string, then the CRD write will succeed, but
+an error message will be logged and the `messageExpression` will be discarded from the CRD. If the
 runtime cost limit is exceeded during `messageExpression` execution, then the write will fail.
 - There are several compile-time checks performed on CEL's `string.format` function that can affect `messageExpression`:
   - If the formatting string passed to `string.format` is a constant, then the formatting string will be checked at
