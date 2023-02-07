@@ -935,10 +935,10 @@ The modes can be summarized as follows.
 
 | Mode        | Value & Param Type | Warning status | Set Policy as misconfigured | Reject on creation/update |
 |-------------|--------------------|----------------|-----------------------------|---------------------------|
-| Never       | Unstructured       | No             | No                          | No                        |
-| Informative | Unstructured       | Yes            | No                          | No                        |
-| Evaluation  | Structured         | Yes            | Yes                         | No                        |
-| Always      | Structured         | Yes            | Yes                         | Yes                       |
+| Never       | Dynamic            | No             | No                          | No                        |
+| Informative | Dynamic            | Yes            | No                          | No                        |
+| Evaluation  | Define             | Yes            | Yes                         | No                        |
+| Always      | Define             | Yes            | Yes                         | Yes                       |
 
 
 The type check may fail in one of the three reasons:
