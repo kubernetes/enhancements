@@ -885,7 +885,9 @@ the pod is actually in the terminal phase (`Failed`), to ensure their state is
 not modified while Job controller matches them against the pod failure policy.
 
 However, there are scenarios in which a pod gets stuck in a non-terminal phase,
-but is doomed to be failed, as it is terminating (has `deletionTimestamp` set).
+but is doomed to be failed, as it is terminating (has `deletionTimestamp` set, also
+known as the `DELETING` state, see:
+[The API Object Lifecycle](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/object-lifecycle.md)).
 In order to workaround this issue, Job controller, when pod failure policy is
 disabled, considers any terminating pod that is in a non-terminal phase as failed.
 Note that, it is important that when Job controller considers such pods as failed
@@ -974,7 +976,7 @@ spec:
     rules: []
   backoffLimit: 0
 ```
-2. delete the pod with `k delete pods -l job-name=invalid-image`
+2. delete the pod with `kubectl delete pods -l job-name=invalid-image`
 
 The relevant fields of the pod:
 
@@ -1047,7 +1049,7 @@ spec:
     rules: []
   backoffLimit: 0
 ```
-2. delete the pod with `k delete pods -l job-name=invalid-configmap-ref`
+2. delete the pod with `kubectl delete pods -l job-name=invalid-configmap-ref`
 
 The relevant fields of the pod:
 
@@ -1099,12 +1101,12 @@ spec:
       - name: huge-image
         image: sagemathinc/cocalc # this is around 20GB
         command: ["bash"]
-        args: ["-c", 'echo "Hello world"']
+        args: ["-c", 'sleep 60 && echo "Hello world"']
   podFailurePolicy:
     rules: []
   backoffLimit: 0
 ```
-2. delete the pod with `k delete pods -l job-name=huge-image`
+2. delete the pod with `kubectl delete pods -l job-name=huge-image`
 
 The relevant fields of the pod:
 
@@ -1131,9 +1133,10 @@ The relevant fields of the pod:
 
 Here, the pod is not stuck, however it transitions to `Running` and fails
 soon after, making the interim transition to `Running` unnecessary. Also, there
-is a race condition, in some situations the running pod may complete with the
-`Succeeded` status before its containers are killed and in transitions in the
-`Failed` phase. This is already problematic for the Job controller, which might
+is a race condition, if the container succeeds before the graceful period for
+pod termination (if not for the `sleep 60` in the example above) the running pod may complete with the
+`Succeeded` status before its containers are killed (and it transitions in the
+`Failed` phase). This is already problematic for the Job controller, which might
 count the pod as failed, despite the pod eventually succeeding. With the proposed
 change, in the scenario, the pod transitions directly from the `Pending` phase
 to `Failed`.
@@ -2207,6 +2210,19 @@ This through this both in small and large cases, again with respect to the
 [supported limits].
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature does not introduce any resource exhaustive operations.
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
 -->
 
 ### Troubleshooting
