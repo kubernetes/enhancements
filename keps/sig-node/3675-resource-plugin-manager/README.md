@@ -227,7 +227,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Users are requiring more varied workloads; the current set of available configurations
+Users have varied workloads; the current set of available configurations
 for CPU, memory, and topology remain limited.  Additionally, the number of managers
 becoming internal to the Kubelet continues to increase; we should find a more 
 dynamic and pluggable way of handling these resources.  
@@ -420,7 +420,7 @@ plugins.
 ##### Example 1: Attributed-based resource specification
 
 One realization of such an API can be achieved by an attribute-based 
-mechanism for compute resources that resembles the Dynamic Resource 
+mechanism for compute resources that generalizes the Dynamic Resource 
 Allocation (DRA) claim mechanism. The attribute-based compute resource 
 request model is a step towards improved semantic workload portability 
 that can be tried in a progressive manner with CCI. 
@@ -444,12 +444,18 @@ per-core attributes that enable precision beyond a policy-only based approach:
       namespace: default
     data:
       cores: |
+    # number of core type 1
     2
-    6
+    # number of core type 2
     4
+    # number of core type 3
+    6
       compute_attributes: |
+    # Attributes of core type 1
         exclusive, smt-sibling-required, 2.1Ghz, 1.0 priority, no-irq
+    # Attributes of core type 2
         exclusive
+    # Attributes of core type 3
         shared
     apiVersion: resource.k8s.io/v1alpha1
     kind: ResourceClaimTemplate
