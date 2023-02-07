@@ -229,7 +229,7 @@ kind: CustomResourceDefinition
         spec:
           x-kubernetes-validations: 
             - rule: "self.minReplicas <= self.maxReplicas"
-              messageExpression: "'minReplicas ({}) cannot be larger than maxReplicas ({})'.format([self.minReplicas, self.maxReplicas])"
+              messageExpression: "'minReplicas (%d) cannot be larger than maxReplicas (%d)'.format([self.minReplicas, self.maxReplicas])"
           type: object
           properties:
             minReplicas:
@@ -257,7 +257,6 @@ Example Validation Rules:
 
 
 - Each validator may have multiple validation rules.
-
 - Each validation rule has an optional 'message' field for the error message that
 will be surfaced when the validation rule evaluates to false.
 - As an alternative to the `message` field, there is also a
