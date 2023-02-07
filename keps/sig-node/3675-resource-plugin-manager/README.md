@@ -88,7 +88,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -265,9 +264,9 @@ Users would like to be able to address the following use cases:
   API server, which may not have updated information. 
 * Be able to do research, with minimum toil, on new policies and resource management strategies
 
-This design will also use the already tried and true gRPC, which is used for many other
-pluggable components within Kubernetes.  The hope is that it will also, as a side effect, allow a 
-path to simplify the Kubelet as it is today and move the complexity into external plugins.
+This design will also use gRPC, which is used for many other pluggable components within Kubernetes.  
+The hope is that it will also, as a side effect, allow a path to simplify the Kubelet as it is 
+today and move the complexity into external plugins.
 
 ### Goals
 
@@ -342,11 +341,11 @@ bogged down.
 
 #### Custom workloads, such as HPC/AI/ML
 
-Custom workloads often have a desire to mix types of cores.  For instance, a workload
+Custom workloads often have a desire for a mix of types of cores.  For instance, a workload
 should be able to have some number of static cores and some number of shared cores.
 A node should be able to allow both types of cores, without having to have one setting
-or another, and be able to pull from these pulls accordingly.  Additionally, there may 
-be a need to have some high-priority cores for higher performance and other lower-priority
+or another, and be able to pull from these pulls accordingly.  Additionally, there is
+a need to have some high-priority cores for higher performance and other lower-priority
 cores for other less-sensitive parts of a workloads.  In these use cases, the workloads 
 may also have particular types of NUMA splits required.
 
@@ -361,24 +360,15 @@ performance cores within newer architectures, according to workload requirements
 
 There are a variety of modifiers that can be placed around cores.  Static cores,
 isolated cores, shared cores, efficiency cores, and performance cores are only the
-beginning of unexplored spaces.  Being able to play with various patterns in research
-without having to be an expert in how to modify Kubelet and it's multiple internal
-managers is a big benefit to the research community.
+beginning of unexplored spaces.  Being able to experiment with various patterns in 
+research without having to be an expert in how to modify Kubelet and its multiple 
+internal managers is a decisive benefit to the research community.
 
 #### User-specific plugins
 
 A user may have very specific allocation patterns they require.  This sort of capability
 may be rare and not belong upstream in mainstream Kubernetes, but there should still
 be a simple way to do allow users to do their specific experiments.
-
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
 
 ### Risks and Mitigations
 
@@ -610,32 +600,32 @@ will be sufficient the cover plugin registration, status and health-check functi
 
 Admission and adding a Container:<br>
 ![image](CCIAllocationSequenceDiagram.jpg)<br>
-Fig. 3.: Sequence of container allocation which uses CCI driver<br><br>
+Figure 3: Sequence of container allocation which uses CCI driver<br><br>
 
 
 The lifetime events are triggered by the container manager and internal lifecycle manager in 
-exact order for admitting, adding, and removing containers. As shown on Fig . 3  an admit 
-container is invoked for containers inside Pods requiring a resource driver before calling 
+exact order for admitting, adding, and removing containers. As shown on Figure 3, an admit 
+container is invoked for containers inside pods requiring a resource driver before calling 
 the admit on the cpu manager side. On success the resource set result is added to the CCI 
 store. The admit call on cpu manager side will trigger the CCI policy which will execute a 
 lookup inside the store to get the assigned cpuset for the new container.  If the operation 
-fails an error will be reported back to the user. On success the data will be stored in the 
+fails an error will be reported back to the user. On success, the data will be stored in the 
 cpu manager state which then gets accessed by add container call. All blocking rpc calls are 
 configured in alpha with a reasonable timeout. 
 
 Container Removal:<br>
 ![image](CCIRemovalSequenceDiagram.jpg)<br>
 
-Fig.4.: Container removal sequence diagram involving cci plugins<br><br>
+Figure 4: Container removal sequence diagram involving cci plugins<br><br>
 The container removal case is described as a sequence in Fig.4. After registering
-a removal event in the internal container lifecycle the cci manager is triggered 
-and it invokes the CCI Driver to free any resources takes by the container. On
-success the cci store will be also cleaned and a new available resource set will 
-be computed. Directly after this action a remove container call is triggered on 
-the cpu manager side and this invokes the cci policy. The cci policy will remove the
+a removal event in the internal container lifecycle, the CCI manager is triggered 
+and invokes the CCI Driver to free any resources takes by the container. On
+success, the CCI store will be also cleaned and a new available resource set will 
+be computed. Directly after this action, a remove container call is triggered on 
+the cpu manager side and invokes the CCI policy. The CCI policy will remove the
 container also from the cpu manager state and update the available cpus based on the
-available resources returned by the cci store. All blocking rpc calls are configured in
-alpha with a reasonable timeout.
+available resources returned by the CCI store. All blocking rpc calls are configured with
+a reasonable timeout in alpha.
 
 
 ### Test Plan
