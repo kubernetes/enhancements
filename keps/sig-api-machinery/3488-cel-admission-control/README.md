@@ -1042,19 +1042,19 @@ The enum options will be:
 - `Warn`: Validation failures are reported as warnings to the client. (xref: [Admisssion Webhook Warnings](https://kubernetes.io/blog/2020/09/03/warnings/#admission-webhooks))
 - `Audit`: Validation failures are published as audit events (see below Audit
   Annotations section for details).
-- `Log`: The apiserver handling the admission request logs the validation failure.
 
 If, in the future, `ValidatingAdmissionPolicy` also introduces enforcement
-action fields, this `validationActions` field on
-`ValidatingAdmissionPolicyBinding` will specify the "maximum" enforcement (at
-most the enforcement will be what `validationActions` specifies).
+action fields, this effective enforcement will be the set intersection of the
+the policy enforcement actions and the binding enforcement actions.
 
 Systems that need to aggregate validation failures may implement an [audit
 webhook
 backend](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/#webhook-backend). See
 below "Audit Events" for details.
 
-For singleton policies, the `validationActions` field will be set on the policy definition.
+For singleton policies, since there is no separate binding resource, the
+`validationActions` field will be set on the policy definition in the same way
+that other binding fields.
 
 Metrics will include validation action so that cluster administrators can monitor the
 validation failures of a binding before setting `validationActions` to `Deny`.
@@ -1086,10 +1086,12 @@ Future work:
   ValidatingAdmissionPolicy authors to declare a expression as non-enforcing
   regardless of `validationActions`.
 
-- ValidatingAdmissionPolicy resources, might, in the future, offer per-expression
-  enforcement actions (instead of a separate `warnings` field) and combine these
-  enforcement actions with the ValidatingAdmissionPolicyBinding enforcement action
-  to determine the effective enforcement.
+- ValidatingAdmissionPolicy resources, might, in the future, offer
+  per-expression enforcement actions (instead of a separate `warnings` field)
+  and combine these enforcement actions with the
+  ValidatingAdmissionPolicyBinding enforcement action to determine the effective
+  enforcement. This would be designed to simplify the workflow required to add
+  or update expression on an existing ValidatingAdmissionPolicy.
 
 #### Audit Annotations
 
@@ -1129,9 +1131,10 @@ types will be supported.
 
 All audit event keys are prefixed by `<ValidatingPolicyDefinition name>/`.
 
-At Metadata audit level or higher, when a validating admission binding fails any
-validation expression, details are included in the audit annotations
-for the audit event under the key `validation_failures`. E.g.:
+At Metadata audit level or higher, when a validating admission binding fails,
+and the binding's `validationActions` includes `Audit`, any validation
+expression, details are included in the audit annotations for the audit event
+under the key `validation_failures`. E.g.:
 
 ```yaml
 # the audit event recorded
@@ -1139,7 +1142,7 @@ for the audit event under the key `validation_failures`. E.g.:
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "annotations": {
-        "mypolicy.mygroup.example.com/validation_failure": "{\"expression\": 1, \"message\": \"x must be greater than y\", \"enforcement\": \"Deny\", \"binding\": \"mybinding.mygroup.example.com\"}"
+        "ValidatingAdmissionPolicy/mypolicy.mygroup.example.com/validation_failure": "{\"expression\": 1, \"message\": \"x must be greater than y\", \"enforcement\": \"Deny\", \"binding\": \"mybinding.mygroup.example.com\"}"
         # other annotations
         ...
     }
@@ -1157,7 +1160,7 @@ are included with the key provided. E.g.:
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "annotations": {
-        "mypolicy.mygroup.example.com/myauditkey": "my audit value"
+        "ValidatingAdmissionPolicy/mypolicy.mygroup.example.com/myauditkey": "my audit value"
         # other annotations
         ...
     }
