@@ -2,13 +2,19 @@
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
-- [Goals](#goals)
-- [Non-Goals](#non-goals)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Test Plan](#test-plan)
   - [Alternative Considerations](#alternative-considerations)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -23,11 +29,13 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
-- [Implementation History](#implementation-history-1)
   - [Alpha](#alpha-1)
   - [Beta](#beta-1)
+  - [GA](#ga-1)
+- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [References](#references)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 
@@ -52,7 +60,25 @@
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
 
-## Goals
+## Summary
+
+Add gRPC probe to Pod.Spec.Container.{Liveness,Readiness,Startup}Probe.
+
+## Motivation
+
+gRPC is wide spread RPC framework. Existing solutions to add
+probes to gRPC apps like exposing additional http endpoint
+for health checks or packing external gRPC client as part of
+an image and use exec probes have many limitations and overhead.
+
+Many load balancers support gRPC natively so adding it to
+Kubernetes aligns well with the industry.
+
+Finally, Kubernetes project actively uses gRPC so adding built-in
+support for gRPC endpoints does not introduce any new dependencies
+to the project.
+
+### Goals
 
 Enable gRPC probe natively from Kubelet without requiring users to package a
 gRPC healthcheck binary with their container.
@@ -60,9 +86,9 @@ gRPC healthcheck binary with their container.
 - https://github.com/grpc-ecosystem/grpc-health-probe
 - https://github.com/grpc/grpc/blob/master/doc/health-checking.md
 
-## Non-Goals
+### Non-Goals
 
-Add gRPC support in other areas of K8s (e.g. Services).
+- Add gRPC support in other areas of K8s (e.g. Services).
 
 ## Proposal
 
@@ -141,11 +167,6 @@ Note that `GRPCAction.Port` is an int32, which is inconsistent with
 the other existing probe definitions. This is on purpose -- we want to
 move users away from using the (portNum, portName) union type.
 
-### Test Plan
-
-- Unit test: Add unit tests to `pkg/kubelet/prober/...`
-- e2e: Add test case and conformance test to `e2e/common/node/container_probe.go`.
-
 ### Alternative Considerations
 
 Note that `readinessProbe.grpc.service` may be confusing, some
@@ -157,6 +178,47 @@ alternatives considered:
 - `grpcServiceName`
 
 There were no feedback on the selected name being confusing in the context of a probe definition.
+
+### Test Plan
+
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/probe/grpc`: `2023/02/06` -  `78.1%`
+
+##### Integration tests
+
+N/A, only unit tests and e2e coverage.
+
+##### e2e tests
+
+Tests in `test/e2e/common/node/container_probe.go`:
+
+- should *not* be restarted with a GRPC liveness probe: [results](https://storage.googleapis.com/k8s-triage/index.html?test=Probing%20container%20should%20%5C*not%5C*%20be%20restarted%20with%20a%20GRPC%20liveness%20probe)
+- should be restarted with a GRPC liveness probe: [results](https://storage.googleapis.com/k8s-triage/index.html?test=should%20be%20restarted%20with%20a%20GRPC%20liveness%20probe)
+
+TODO: stress test to validate the scale (see GA requirements).
 
 ### Graduation Criteria
 
@@ -177,12 +239,14 @@ Depending on skew strategy:
 
 #### GA
 
-- Address feedback from beta usage
-- Validate that API is appropriate for users. There are some potential tunables:
+- [X] Address feedback from beta usage
+- [X] Validate that API is appropriate for users. There are some potential tunables:
   - `User-Agent`
   - connect timeout
   - protocol (HTTP, QUIC)
-- Close on any remaining open issues & bugs
+- [ ] Close on any remaining open issues & bugs
+- [ ] Promote tests to conformance
+- [ ] Implement a stress test
 
 ### Upgrade / Downgrade Strategy
 
@@ -198,37 +262,11 @@ Downgrade: gRPC probes will not be supported in a downgrade from Alpha.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
 
 Feature enablement will be guarded by a feature gate flag.
 
 ###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
--->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `GRPCContainerProbe`
@@ -250,42 +288,26 @@ It becomes enabled again after the `kubelet` restart.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Y
-es, unit tests for the feature when enabled and disabled will be
+Yes, unit tests for the feature when enabled and disabled will be
 implemented in both kubelet and api server.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+We passed the version skew problem for the new API. No planning is required.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+We passed the version skew problem - the API will be available on any supported
+version skew. So no issues are expected with rollout and rollback.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Rollback wouldn't address issues. Pods will need to stop using the new probe
+type.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+N/A
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -357,7 +379,26 @@ The overhead of executing probes is consistent with other probe types.
 We expect decrease of disk, RAM, and CPU use for many scenarios where the https://github.com/grpc-ecosystem/grpc-health-probe
 was used to probe gRPC endpoints.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+Yes, gRPC probes use node resources to establish connection.
+This may lead to issue like [kubernetes/kubernetes#89898](https://github.com/kubernetes/kubernetes/issues/89898).
+
+The node resources for gRPC probes can be exhausted by a Pod with HostPort
+making many connections to different destinations or any other process on a node.
+This problem cannot be addressed generically.
+
+However, the design where node resources are being used for gRPC probes works
+for the most setups. The default pods maximum is `110`. There are currently
+no limits on number of containers. The number of containers is limited by the
+amount of resources requested by these containers. With the fix limiting
+the `TIME_WAIT` for the socket to 1 second,
+[this calculation](https://github.com/kubernetes/kubernetes/issues/89898#issuecomment-1383207322)
+demonstrates it will be hard to reach the limits on sockets.
+
 ### Troubleshooting
+
+Logs and Pod events can be used to troubleshoot probe failures.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
@@ -378,19 +419,6 @@ None
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
-## Implementation History
-
 * Original PR for k8 Prober: https://github.com/kubernetes/kubernetes/pull/89832
 * 2020-04-04: MR for k8 Prober
 * 2021-05-12: Cloned to this KEP to move the probe forward.
@@ -404,6 +432,18 @@ Alpha feature was implemented in 1.23.
 
 Feature is promoted to beta in 1.24.
 
+### GA
+
+Feature is promoted to GA in 1.27.
+
+## Drawbacks
+
+See [Motivation](#motivation) on why gRPC was picked as another RPC framework
+to support natively.
+
+Adding gRPC is a small increment to k8s functionality with very little side
+effects. But providing a lot of "quaity of life improvements" to gRPC apps.
+
 ## Alternatives
 
 * 3rd party solutions like https://github.com/grpc-ecosystem/grpc-health-probe
@@ -411,3 +451,11 @@ Feature is promoted to beta in 1.24.
 ## References
 
 * GRPC healthchecking: https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+
+## Infrastructure Needed (Optional)
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->

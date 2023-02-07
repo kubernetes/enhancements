@@ -3,26 +3,27 @@ kep-number: 2727
 authors:
   - "@bowei"
   - "@PxyUp"
+  - "@SergeyKanzhelev"
 owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-network
 status: implementable
 creation-date: 2020-04-04
-last-updated: 2021-05-12
+last-updated: 2023-01-31
 reviewers:
   - "@thockin"
   - "@mrunalp"
-  - "@SergeyKanzhelev"
 approvers:
   - "@thockin"
   - "@dchen1107"
 see-also:
-stage: "beta"
-latest-milestone: "v1.24"
+stage: "stable"
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.23"
   beta: "v1.24"
+  stable: "v1.27"
 feature-gates:
   - name: GRPCContainerProbe
     components:
