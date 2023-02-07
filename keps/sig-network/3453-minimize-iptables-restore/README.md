@@ -474,6 +474,10 @@ usage, since kube-proxy will be waking up to resync more often. But
 this is a CPU usage increase that the administrator is more-or-less
 explicitly requesting.)
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
