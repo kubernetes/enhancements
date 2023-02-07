@@ -52,3 +52,4 @@ disable-supported: true
 metrics:
   - topology_manager_admission_requests_total
   - topology_manager_admission_errors_total
+  - topology_manager_admission_duration_seconds

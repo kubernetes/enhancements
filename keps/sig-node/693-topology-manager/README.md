@@ -797,23 +797,24 @@ Monitor the following metrics:
 
 "topology_manager_admission_requests_total"
 "topology_manager_admission_errors_total"
+"topology_manager_admission_duration_seconds"
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-The operator can look at `topology_manager_admission_requests_total` and `topology_manager_admission_errors_total`
-metrics to determine if topology manager is performing its admission check.
+The operator can look at `topology_manager_admission_requests_total`, `topology_manager_admission_errors_total` and
+`topology_manager_admission_duration_seconds` metrics to determine if topology manager is performing its admission check.
 In addition to that, kubelet configuration of the nodes can be inspected to check feature gates and the policies
 configured.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] Other (treat as last resort)
-  - Details: check the kubelet metric `topology_manager_admission_requests_total`
+  - Details: check the kubelet metric `topology_manager_admission_requests_total` or "topology_manager_admission_duration_seconds"
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-"topology_manager_admission_requests_total" can be used to determine if topology manager is
-performing its admission check.
+"topology_manager_admission_duration_seconds" (which will be added as this release) can be used to determine
+if the resource alignment logic performed at pod admission time is taking longer than expected.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -821,6 +822,7 @@ performing its admission check.
   - Metric name:
     - topology_manager_admission_requests_total
     - topology_manager_admission_errors_total
+    - topology_manager_admission_duration_seconds
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
