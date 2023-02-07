@@ -159,9 +159,13 @@ Note: In the following, we will use VolumeGroupSnapshot Controller to refer to t
 * The controller will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 * CreateVolumeGroupSnapshot CSI function response
   * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The VolumeGroupSnapshot controller can use the returned list of snapshots to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update SnapshotList in the VolumeGroupSnapshot Status and SnapshotContentList in the VolumeGroupSnapshotContent Status.
+ * Individual VolumeSnapshots will be named in this format:
+   * snap+<the first 4 letters of VolumeGroupSnapshot name>+<PVC name>
+     (truncate if it exceeds the max length)
+   * If the exact same name already exists, append a "1" at the end. If that still exists, replace the suffix "1" with "2", and so on.
 
-apiVersion: snapshot.storage.k8s.io/v1
 ```
+apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshot
 metadata:
   name: snapshot1
@@ -172,14 +176,14 @@ status:
   volumeGroupSnapshotName: groupSnapshot1
 ```
 
-* An admissions controller or finalizer should be added to prevent an individual snapshot from being deleted that belongs to a VolumeGroupSnapshot.
+* An admissions controller or finalizer should be added to prevent an individual snapshot from being deleted that belongs to a VolumeGroupSnapshot. Note that there is a [KEP](https://github.com/kubernetes/enhancements/pull/2840/files) that is proposing the Liens feature which could potentially be used for this purpose.
 * In the CSI spec, it is specified that it is required for individual snapshots to be returned along with the group snapshot.
 
 #### Pre-provisioned VolumeGroupSnapshot
 
 Admin can create a VolumeGroupSnapshotContent, specifying an existing VolumeGroupSnapshotHandle in the storage system and specifying a VolumeGroupSnapshot name and namespace. Then the user creates a VolumeGroupSnapshot that points to the VolumeGroupSnapshotContent name.
 
-The controller will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the storage system, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
+The controller will call the CSI GetVolumeGroupSnapshot method to retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the storage system, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 
 ### Delete VolumeGroupSnapshot
 
@@ -339,12 +343,19 @@ type VolumeGroupSnapshot struct {
 
 // VolumeGroupSnapshotSpec describes the common attributes of a group snapshot
 type VolumeGroupSnapshotSpec struct {
+        // VolumeGroupSnapshotClassName may be left nil to indicate that
+        // the default class will be used.
+        // Empty string is not allowed for this field.
         // +optional
-        VolumeSnapshotClassName *string
+        VolumeGroupSnapshotClassName *string
 
         // A label query over persistent volume claims to be grouped together
         // for snapshotting.
         // This labelSelector will be used to match the label added to a PVC.
+        // Note that if volumes are added/removed from the label after a group snapshot
+        // is created, the existing snapshots won't be modified.
+        // Once a VolumeGroupSnapshotContent is created and the sidecar starts to process it,
+        // the volume list will not change with retries.
         Selector *metav1.LabelSelector
 
         // VolumeGroupSnapshotSecretRef is a reference to the secret object containing
@@ -368,22 +379,12 @@ Type VolumeGroupSnapshotStatus struct {
         CreationTime *metav1.Time
 
         // +optional
-        Error *VolumeGroupSnapshotError
+        Error *VolumeSnapshotError
 
-        // List of volume snapshots
+        // List of volume snapshot refs
+        // The max number of snapshots in the group is 100
         // +optional
-        SnapshotList []VolumeSnapshot
-}
-
-// Describes an error encountered on the group snapshot
-type VolumeGroupSnapshotError struct {
-        // time is the timestamp when the error was encountered.
-        // +optional
-        Time *metav1.Time
-
-        // message details the encountered error
-        // +optional
-        Message *string
+        VolumeSnapshotRefList []core_v1.ObjectReference
 }
 ```
 
@@ -418,6 +419,8 @@ type VolumeGroupSnapshotContentSpec struct {
         // Required
         Driver string
 
+        // This field may be unset for pre-provisioned snapshots.
+        // For dynamic provisioning, this field must be set.
         // +optional
         VolumeGroupSnapshotClassName *string
 
@@ -427,7 +430,7 @@ type VolumeGroupSnapshotContentSpec struct {
 
 // OneOf
 type VolumeGroupSnapshotContentSource struct {
-        // Dynamical provisioning of VolumeGroupSnapshot
+        // Dynamic provisioning of VolumeGroupSnapshot
         // A list of PersistentVolume names to be snapshotted together
         // +optional
         PersistentVolumeNames []string
@@ -453,11 +456,12 @@ Type VolumeGroupSnapshotContentStatus struct {
         CreationTime *int64
 
         // +optional
-        Error *VolumeGroupSnapshotError
+        Error *VolumeSnapshotError
 
-         // List of volume group snapshot contents
+        // List of volume snapshot content refs
+        // The max number of snapshots in a group is 100
         // +optional
-        VolumeSnapshotContentList []VolumeSnapshotContent
+        VolumeSnapshotContentRefList []core_v1.ObjectReference
 }
 ```
 
@@ -1460,22 +1464,11 @@ Type VolumeGroupSnapshotStatus struct {
        CreationTime *metav1.Time
 
         // +optional
-        Error *VolumeGroupSnapshotError
+        Error *VolumeSnapshotError
 
         // List of volume snapshots
         // +optional
         SnapshotList []VolumeSnapshot
-}
-
-// Describes an error encountered on the group snapshot
-type VolumeGroupSnapshotError struct {
-        // time is the timestamp when the error was encountered.
-        // +optional
-        Time *metav1.Time
-
-        // message details the encountered error
-        // +optional
-        Message *string
 }
 ```
 
@@ -1544,7 +1537,7 @@ Type VolumeGroupSnapshotContentStatus struct {
         CreationTime *int64
 
         // +optional
-        Error *VolumeGroupSnapshotError
+        Error *VolumeSnapshotError
 
          // List of volume group snapshot contents
         // +optional
