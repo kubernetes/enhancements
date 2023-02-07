@@ -920,9 +920,11 @@ Problem examples:
 Due to these complications, Type checking will be optional which can be activated by an expression-level
 `TypeChecking` field. Possible modes are:
 
-- `Never` Do not type check the referred object or the param any time.
+- `Never` Do not type check the referred objects or the params any time.
   Treat `object`, `oldObject`, and `params` as dynamic-typed unstructured objects.
   This is the default and the current behavior of Kubernetes 1.26.
+- `Informative` type check the referred `object`, `oldObject`, and `params` when the expression is being compiled.
+  Add any errors to the `status` of the given policy. Discard any type information during evaluation and treat referred objects and params unstructured. 
 - `Evaluation` Type check the referred `object`, `oldObject`, and `params` when the expression is being compiled and evaluated after the policy is created. 
   If the type check fails, mark the policy as misconfigured. Do not type check when the policy is being created or updated.
 - `Always` Type check the referred `object`, `oldObject`, and `params` immediately when the policy is being created or updated. 
@@ -931,11 +933,12 @@ Due to these complications, Type checking will be optional which can be activate
 
 The modes can be summarized as follows.
 
-| Mode       | Value & Param Type | Set Policy as misconfigured | Reject on creation/update |
-|------------|--------------------|-----------------------------|---------------------------|
-| Never      | Unstructured       | No                          | No                        |
-| Evaluation | Structured         | Yes                         | No                        |
-| Always     | Structured         | Yes                         | Yes                       |
+| Mode        | Value & Param Type | Warning status | Set Policy as misconfigured | Reject on creation/update |
+|-------------|--------------------|----------------|-----------------------------|---------------------------|
+| Never       | Unstructured       | No             | No                          | No                        |
+| Informative | Unstructured       | Yes            | No                          | No                        |
+| Evaluation  | Structured         | Yes            | Yes                         | No                        |
+| Always      | Structured         | Yes            | Yes                         | Yes                       |
 
 
 The type check may fail in one of the three reasons:
@@ -945,7 +948,8 @@ The type check may fail in one of the three reasons:
 
 If `TypeChecking` is set to Evaluation, and either 2 or 3 happens, the compilation will fall back to unstructured as if TypeCheckingMode was set to Never. This allows the evaluation to continue before the referred CRDs are created or published.
 
-In the next releases, the modes are to be implemented in the order of `Never`, `Evaluation`, and `Always`.
+In the next releases, the modes are to be implemented in the order of
+`Never`, `Informative`, `Evaluation`, and `Always`.
 
 #### Failure Policy
 
