@@ -279,7 +279,7 @@ know that this has succeeded?
 
 1.	Provide Initial infrastructure to support CCI Plugins and k8s Deployments requiring CCI Drivers
 2.	Support seamless k8s start ( no plugins required) through the CCI CPU management policy
-3.	Support minimal set of plugin-less Pod-deployment through CPU Manager – equivalent to best-effort QoS (if sufficient time – static handling of burstable and guaranteed QoS)
+3.	Support minimal set of plugin-less Pod-deployment through CPU Manager – equivalent to best-effort QoS (stretch goal will include static handling of burstable and guaranteed QoS)
 4.	Resource sets support cpu and memory
 5.	Consistent state handling between CCI Driver and CPU Manager
 6.	Support proper fail mechanisms of Pods if CCI driver is not available
@@ -288,10 +288,9 @@ know that this has succeeded?
 
 #### Beta & Post-Beta Goals
 
-1.	Interoperability with Device Plugins, DRA .. 
+1.	Interoperability with Device Plugins, DRA, et cetera. 
 2.	Identify minimal in-cluster operational core (from existing CPU Manager, Memory Manager, Topology Manager)
 3.	E2E testing including other components
-
 
 
 ### Non-Goals
@@ -312,7 +311,8 @@ extensibility in the future, the current pod specs will still work.
 
 #### Not In Scope for Alpha
 
-1.	Standard Pods (not handled by a driver) which require Topology and Memory management will not be covered by the alpha release and new cci cpu management policy (target for beta). 
+1.	Standard Pods (not handled by a driver) which require Topology and Memory management 
+will not be covered by the alpha release and new CCI cpu management policy (target for beta). 
 2.	Full E2E testing with other components such as Device Manager, DRA .. (target for beta).
 3.	Scheduler validation (target for beta)
 
@@ -368,7 +368,7 @@ internal managers is a decisive benefit to the research community.
 
 A user may have very specific allocation patterns they require.  This sort of capability
 may be rare and not belong upstream in mainstream Kubernetes, but there should still
-be a simple way to do allow users to do their specific experiments.
+be a simple way to allow users to meet their specific experiments.
 
 ### Risks and Mitigations
 
@@ -493,7 +493,7 @@ manager which can query the compute resource store for any allocations and alloc
 done by the plugin.
 
 ![image](ExternallyManagedResourceExtension.jpg)<br>
-Fig. 2.: CCI Resource Manager Architecture inside Kubelet
+Figure 2: CCI Resource Manager Architecture inside Kubelet
 
     Pod Spec “CCIDriverName Extension”
     type PodSpec {
@@ -552,7 +552,7 @@ of three functions:
         +cciRemoveContainerResource (containerid): err
 
 `cciAdmit` function provides information if a given container belonging to a
-Pod and having a specific cci spec can be admitted to next stage of the allocation 
+Pod and having a specific CCI spec can be admitted to next stage of the allocation 
 pipeline. The admission will return a reserved resource-set or error. In case of 
 successful admission the resource set will be stored in the CCI Store and made 
 available to the cpu manager policy. In the case of failure the error is reported
@@ -568,10 +568,10 @@ by a container. The functions returns nil if the operation was successful or an
 error if the operation failed on the plugin side.
 
     /* 
-    CCIDriver a grpc service interface for cci resour ubelet d ent drivers.
+    CCIDriver is a grpc service interface for CCI resource kubelet drivers.
     The interface provides admission, allocation and cleanup entrypoints.
-    Drivers are registered  ubeletlet plugins and will be called by the 
-    cci resource manager for Pods which are associated with this driver.
+    Drivers are registered as plugins and will be called by the 
+    CCI resource manager for pods associated with this driver.
     */
     service CCIDriver {
       //cciAdmit admission function to reserve resources for a given container
@@ -616,7 +616,7 @@ configured in alpha with a reasonable timeout.
 Container Removal:<br>
 ![image](CCIRemovalSequenceDiagram.jpg)<br>
 
-Figure 4: Container removal sequence diagram involving cci plugins<br><br>
+Figure 4: Container removal sequence diagram involving CCI plugins<br><br>
 The container removal case is described as a sequence in Fig.4. After registering
 a removal event in the internal container lifecycle, the CCI manager is triggered 
 and invokes the CCI Driver to free any resources takes by the container. On
@@ -752,7 +752,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 -	Proven cross-components consistency (ideally via tests)
 -	Handling of topology manager and memory manager use-cases
 -	Finish Identified Code refactoring of common building blocks (look at common pieces in all plugin-frameworks  in kubelet) 
--	Look to what makes sense to leave inside Kubelet due to latency and use case requirementsIntroduce community cci drivers repo
+-	Look to what makes sense to leave inside Kubelet due to latency and use case requirementsIntroduce community CCI drivers repo
 -	Similar to Kubernetes Scheduler Plugin repo
 -	Have plugins specific to common use cases or environments
 -	Smooth integration with scheduler extensions/ plugins …
@@ -917,7 +917,7 @@ can be implemented where such Pods fallback to a given std. QoS Model.
 
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
-Failure of CCI drivers will have impact only over pods requiring cci driver for 
+Failure of CCI drivers will have impact only over pods requiring CCI driver for 
 resource management. All other pods will not be impacted. THe impacted pods will
 an error message showing failure of the driver.
 <!--
@@ -1037,7 +1037,7 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
-A CCI Driver (daemonset) will be required to handle pods which need cci driver resource managment
+A CCI Driver (daemonset) will be required to handle pods which need CCI driver resource managment
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
 as node-level agents (e.g. specific version of CRI). Focus on external or
