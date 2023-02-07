@@ -29,6 +29,7 @@
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit Tests](#unit-tests)
+    - [Integration tests](#integration-tests)
     - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
     - [CRI E2E Tests](#cri-e2e-tests)
     - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
@@ -744,6 +745,12 @@ and the policy controls that are introduced as part of this feature.
 CRI unit tests are updated to reflect use of ContainerResources object in
 UpdateContainerResources and ContainerStatus APIs.
 
+#### Integration tests
+
+Comprehensive E2E tests provide good coverage for alpha. We may replicate and/or move
+some of the E2E tests functionality into integration tests before Beta using data from
+any issues we uncover that are not covered by planned and implemented tests.
+
 #### Pod Resize E2E Tests
 
 End-to-End tests resize a Pod via PATCH to Pod's Spec.Containers[i].Resources.
@@ -1125,6 +1132,8 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?** No
   volume), significant amount of data sent and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits].
+
+* **Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?** No
 
 ### Troubleshooting
 
