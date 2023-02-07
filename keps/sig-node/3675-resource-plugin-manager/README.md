@@ -315,6 +315,7 @@ extensibility in the future, the current pod specs will still work.
 4.	Identify minimal in-cluster operational core (from existing CPU Manager, Memory Manager, Topology Manager)
 5.  Replace CCI policy with a component integrated in None and Static CPU Manager policies
 6.	E2E testing including other components
+7.  Defragmentation improvements of resources.
 
 
 ### Non-Goals
@@ -329,6 +330,7 @@ device manager.
 * Creating any more latency than there is today for scheduling:  We should be 
 careful not to add any latency into scheduling over what exists today for default behavior.
 * CPU & Memory Management on scheduler side.
+* Optimal binpacking of resources (we will still consider defragmentation approaches in Beta).
 
 
 ## Proposal
@@ -546,9 +548,20 @@ following interface to manage resource sets.
         +RemoveResource(container)
         +AvailablResources(): resourceset
 
-3. Integration The Container Compute Interface “CCI” inside None and Static CPU Manager policies<br>
+3. Integration the Container Compute Interface “CCI” inside Cpu Manager Policies<br>
 The synchronization of cpuset state is done by a new policy component inside the 
-cpu manager which will be integrated inside the None and Static policies. For simplicity in alpha version we plan to support best-effort QoS for all Pods not requiring a resource management driver (equivalent to none policy). In later phases we plan to support Pods requiring the static policy without the need of resource driver (goal for Beta). The component acts as a bridge between CCI drivers and CPU manager. The drivers provide a decision (resource set stored in CCI Store) about a certain allocation and and cpu manager applies the given cpuset. Similar appoach could be followed with memory management.
+cpu manager which will cover both behaviours: none and static behaviour. The component acts also as
+a bridge between CCI drivers and CPU manager. The drivers provide a decision (resource set stored
+in CCI Store) about a certain allocation and cpu manager applies the given cpuset. 
+The component also ensures the mutual exclusive pod admission process for 
+applications requiring CCI drivers and applications without such requirements. 
+
+As the policy is new, existing policy behavior will not change and there will not be a need 
+to revalidate existing applications. For simplicity in alpha version we plan to support best-effort
+ QoS for all Pods not requiring a resource management driver (equivalent to none policy). 
+In later phases we plan to support Pods requiring the static policy capabilities. 
+Similar approach could be followed for the integration with memory management in Beta
+phase.
 
 4. CCI Drivers Plugin Interface<br>
 The initial interface of resource management plugins is very simple and consists 
@@ -591,6 +604,59 @@ error if the operation failed on the plugin side.
       //cciRemoveContainerResource clea ubelet dted resources for a given container
       rpc CCIRemoveContainerResource (RemoveResourceRequest)
         returns (RemoveResourceResponse) {}
+    }
+
+    message AdmitRequest{
+        // currently available cpus
+        string availablecpus = 1;
+        // pod identfier 
+        string pod = 2;
+        // container identfier
+        string container = 3;
+        // cci spec for the container, subset of podspec
+        string cci_spec = 4;
+    }
+
+    message ResourceSet{
+        // admitted cpuset
+        string cpuset = 1;
+        // flag if exclisve
+        bool exclusive = 2;
+    }
+
+    message AdmitResponse {
+      // allocated resource set
+      ResourceSet rset = 1;
+      // error object 
+      string err = 2;
+    }
+
+    message AddResourceRequest{
+        // pod cgroup
+        string cgroup = 1;
+        // pod identifier
+        string pod = 2;
+        // container identifier
+        string container = 3;
+        // container id
+        string container_id = 4;
+    }
+
+
+
+    message AddResourceResponse {
+      // error object 
+      string err = 1;
+    }
+
+    message RemoveResourceRequest {
+        // id of the container to be removed
+        string container_id = 1;
+    }
+
+    message RemoveResourceResponse {
+        // error object
+        string err = 1;
     }
 
 5.	CCI Drivers Factory API<br>
@@ -695,6 +761,7 @@ extending the production code to implement this enhancement.
 ###### BETA
 
 *	CPU Manager None and Static Policy Integration with CCI
+* Pod Admission Race tests
 * Introduce fail-safety tests
 *	Performance/Scalabilty tests
 
@@ -1036,7 +1103,7 @@ question.
 <!--
 Pick one more of these and delete the rest.
 -->
-TBD
+TBD in Beta
 - [ ] Metrics
   - Metric name:
   - [Optional] Aggregation method:
