@@ -72,6 +72,9 @@ SIG Architecture for cross-cutting KEPs).
     - [Update sandbox-level QoS-class resources](#update-sandbox-level-qos-class-resources)
     - [In-place pod vertical scaling](#in-place-pod-vertical-scaling)
     - [Access control](#access-control)
+    - [Scheduler improvements](#scheduler-improvements)
+    - [Kubelet-initiated pod eviction](#kubelet-initiated-pod-eviction)
+    - [Default and limits](#default-and-limits)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -405,9 +408,70 @@ would implement restrictions based on the namespace.
 +       // +optional
 +       QoSResources QoSResourceQuota
  }
-
-
 ```
+
+#### Scheduler improvements
+
+The first implementation phase only adds basic filtering of nodes based on
+QoS-class resources and node scoring is not altered. However, the relevant
+scheduler plugins (e.g. NodeResourcesFit and NodeResourcesBalancedAllocation)
+could be extended to do scoring based on the capacity, availability and usage
+of QoS-class resources on the nodes.
+
+#### Kubelet-initiated pod eviction
+
+QoS-class resources available on a node are dynamic in the sense that they may
+change over the lifetime of the node. E.g. re-configuration of the container
+runtime may make new types of QoS-class resources available, properties of
+existing resources may changes (e.g. the set of available classes) or some
+resources might be removed completely. It might be desirable that kubelet could
+evicts running pod that request QoS-class resources that are no more available
+on the node. This should be relatively straightforward to implement as kubelet
+knows what QoS-class resources are available on the node and also monitors all
+running pods.
+
+#### Default and limits
+
+LimitRanges is a way to specify per-container resource constraints. They might
+have limited applicability also in the context of QoS-class resources. In
+particular, LimitRanges could be used for specifying defaults for QoS-class
+resources. An additional possible usage would be to set per-pod limits on the
+usage of container-level QoS-class resources.
+
+```diff
+ // LimitRangeItem defines a min/max usage limit for any resource that matches on kind
+ type LimitRangeItem struct {
+@@ -5167,6 +5167,28 @@ type LimitRangeItem struct {
+        // MaxLimitRequestRatio represents the max burst value for the named resource
+        // +optional
+        MaxLimitRequestRatio ResourceList
++       //  QoSResources specifies the limits for QoS resources.
++       QoSResources []LimitQoSResource
++}
++
++// LimitQoSResource specifies limits of one QoS resources type.
++type LimitQoSResource struct {
++       // Name of the resource.
++       Name QoSResourceName
++       // Default specifies the default class to be assigned.
++       // +optional
++       Default string
++       // Max usage of classes
++       // +optional
++       Max []QoSResourceClassLimit
++}
++
++// QoSResourceClassLimit specifies a limit for one class of a QoS resource.
++type QoSResourceClassLimit struct {
++       // Name of the class.
++       Name string
++       // Capacity is the limit for usage of the class.
++       Capacity int64
+ }
+```
+
+Just using LimitRanges for specifying defaults could simplify the API.
+
 ## Proposal
 
 This section currently covers [implementation phase 1](#phase-1) (see
@@ -512,11 +576,36 @@ Consider including folks who also work outside the SIG or subproject.
 
 The detailed design presented here covers [implementation phase 1](#phase-1)
 (see [implementation phases](#implementation-phases) for an outline of all
-planned changes).
+planned changes). Configuration and management of the QoS-class resources is
+fully handled by the underlying container runtime and is invisible to kubelet.
 
-Configuration and management of the QoS-class resources is fully handled by the
-underlying container runtime and is invisible to kubelet. An error to the CRI
-client is returned if the specified class is not available.
+Summary of the proposed design details:
+
+- QoS resources are opaque (just names) to kubernetes, configuration and
+  management of QoS resources is handled in the container runtime
+  - no "system reserved" (or equivalent) exists (considered as configuration
+    detail outside Kubernetes)
+  - no overprovisioning (or auto-promotion to free classes) exists (considered
+    as implementation detail of specific QoS-class resource, outside
+    Kubernetes)
+- runtime advertises available QoS resources to kubelet
+  - QoS resources are dynamic i.e. can change during the lifetime of the node
+  - CRI [RuntimeStatus](#runtimestatus) message is used for carrying the information
+- kubelet
+  - updates NodeStatus based on the available QoS-class resources advertised by
+    the runtimea
+  - relays QoS-class resource requests from PodSpec to the runtime at pod
+    startup via [ContainerConfig](#containerconfig) and
+    [PodSandboxConfig](#podsandboxconfig) messages
+  - implements admission handler that validates the availability of QoS-class resources
+  - pod eviction as a possible [future improvement](#kubelet-initiated-pod-eviction)
+- scheduler
+  - simple node filtering based on the availability of QoS-class resources in
+    the first implementation phase (with possible
+    [future improvements](#scheduler-improvements))
+  - pod priority based eviction is in effect
+- quota, limits and defaults are [future work](#future-work) items
+
 
 ### CRI API
 
@@ -620,10 +709,9 @@ resources.
 
 Extend the `RuntimeStatus` message with new `resources` field that is used to
 communicate the available QoS-class resources from the runtime to the client.
-
-This information can be used by the client (kubelet) to validate QoS-class
-resource assignments before starting a pod. In future steps kubelet will patch
-this information into node status.
+This information is dynamic i.e. the available QoS-class resources (or their
+properties like available classes or per-class capacity) may change over time,
+e.g. after re-configuration of the runtime.
 
 ```diff
  message RuntimeStatus {
@@ -816,10 +904,12 @@ types of reqources and their classes) from the runtime over the CRI API (new
 Resources field in [RuntimeStatus](#runtimestatus) message). The kubelet
 updates the new QoSResources field in [NodeStatus](#nodestatus) accordingly,
 making QoS-class resources on the node visible to users and the kube-scheduler.
+This information is dynamic, i.e. the available QoS-class resources (or their
+properties) may change over time.
 
 An admission handler is added into kubelet to validate the QoS-class resource
 request against the resource availability on the node. Pod is rejected if
-sufficient resources do not exist.
+sufficient resources do not exist. This also applies to static pods.
 
 Invalid class assignments will cause an error in the container runtime which
 causes the corresponding CRI RuntimeService request (e.g.  RunPodSandbox or
@@ -828,9 +918,11 @@ check, e.g. when the requested QoS-class resource is not available on the
 runtime (e.g. kubelet sends the pod or container start request before getting
 an update of changed QoS-class resource availability from the runtime).
 
-A feature gate QoSResources enables kubelet to interpretthe specific pod
-annotations. If the feature gate is disabled the annotations are simply ignored
-by kubelet.
+No kubelet-initiated pod eviction is implemented in the first implementation
+phase.
+
+A feature gate QoSResources enables kubelet to update the QoS-class resources
+in NodeStatus and handle QoS-class resource requests in the PodSpec.
 
 ### API server
 
@@ -851,7 +943,14 @@ scheduled in the future when/if requests can be satisfied by some node.
 
 In principle, scheduling will behave similarly to native and extended
 resources. The kube-scheduler will also take in account the per-class capacity
-on the nodes if that is provided.
+on the nodes if that is provided. No QoS-class specific scoring is added in the
+the first implementation phase, thus all nodes satisfying the requests are
+equally good (in terms of QoS-class resources). More diverese scheduling is
+part of the [future work](#future-work).
+
+Pod eviction based on pod priority works similarly to other other resources:
+lower priority pod(s) are evicted if deleting them makes a higher priority pod
+schedulable (in this case by freeing up QoS-class resources).
 
 ### Kubectl
 
