@@ -254,9 +254,9 @@ The new allocation mode requires:
 
 - 2 new API objects ServiceCIDR and IPAddress in networking.k8s.io/v1alpha1, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
 - 1 new allocator implementing current `allocator.Interface`, that runs in each apiserver, and uses the new ServiceCIDRs objects to allocate IPs for Services.
-- 1 new repair loop that runs in the apiserver that reconciles the Services with the IPAddresses, repairing
-Services, garbage collecting orphan IPAddresses and handling the upgrade from the old allocators.
-- 1 new controller that handles the bootstrap process and the ServiceCIDR object, it participates on the ServiceCIDR deletion, the guarantee that each IPAddresses has a ServiceCIDR associated.
+- 1 new repair loop that runs in the apiserver that reconciles the Services with the IPAddresses: repair
+Services, garbage collecting orphan IPAddresses and handle the upgrade from the old allocators.
+- 1 new controller that handles the bootstrap process and the ServiceCIDR object. This controllers participates on the ServiceCIDR deletion, guaranteeing that the existing IPaddresses always have a ServiceCIDR associated.
 
 [![](https://mermaid.ink/img/pako:eNp9UstqwzAQ_BWxx5IcCqUHUwrFacGXYJLeqh620tpV0SNIcsAk_vfKjpNiJ3QvYmdGs7NIBxBOEmQgNIawUlh7NNyyVAPCtuT3StDhhPWV6yZE8kXJQvTK1jeYwD4-52RRvqFRWlFPjk17Rbel00q07G7av7c7Omm7G-HyYrXJna1UfYm5RkOzfEW5f7iGHifQxL0oX6T0FMJ_rhuqmPv6ScfE4VynbszJONxzYE_H5fL4PDaXIVkCUGsnMFLgMLn4t-DcYj23EM5GVHZwgAUY8gaVTA88LMEhfpMhDr1UUoWNjr2yS9JmJ9PoV6mi85BVqAMtAJvotq0VkEXf0Fk0_pNR1f0CyVS2dw)](https://mermaid.live/edit#pako:eNp9UstqwzAQ_BWxx5IcCqUHUwrFacGXYJLeqh620tpV0SNIcsAk_vfKjpNiJ3QvYmdGs7NIBxBOEmQgNIawUlh7NNyyVAPCtuT3StDhhPWV6yZE8kXJQvTK1jeYwD4-52RRvqFRWlFPjk17Rbel00q07G7av7c7Omm7G-HyYrXJna1UfYm5RkOzfEW5f7iGHifQxL0oX6T0FMJ_rhuqmPv6ScfE4VynbszJONxzYE_H5fL4PDaXIVkCUGsnMFLgMLn4t-DcYj23EM5GVHZwgAUY8gaVTA88LMEhfpMhDr1UUoWNjr2yS9JmJ9PoV6mi85BVqAMtAJvotq0VkEXf0Fk0_pNR1f0CyVS2dw)
 
@@ -312,7 +312,7 @@ the rest of the apiservers will race and the winner will set the configuration o
 Pros:
 - Simple to implement
 - Align with current behavior of kubernetes.default, though this can be a Con as well, since this
-doesn't be the expected
+the existing behavior was unexpected
 Cons:
 - Requires manual intervention
 
@@ -724,7 +724,7 @@ Service implementation (kube-proxy, ...) is able to handle those IPs.
 Example:
 
 - flags set to 10.0.0.0/20
-- upgrade to 1.25 with alpha gate
+- upgrade to N+1 with alpha gate
 - apiserver create a default ServiceCIDR object for 10.0.0.0/20
 - user creates a new ServiceCIDR for 192.168.1.0/24
 - create a Service which gets 192.168.1.1
