@@ -64,7 +64,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes the new v2alpha1 `KeyManagementService` service contract to:
-- enable fully automated key rotation for the latest key
+- enable partially automated key rotation for the latest key without API server restarts
 - improve KMS plugin health check reliability
 - improve observability of envelop operations between kube-apiserver, KMS plugins and KMS
 
@@ -113,21 +113,14 @@ Performance, Health Check, Observability and Rotation:
     - Watch on the `EncryptionConfiguration`
     - When changes are detected, process the `EncryptionConfiguration` resource, and add new transformers and update existing ones atomically.
     - If there is an issue with creating or updating any of the transformers, retain the current configuration in the kube-apiserver and generate an error in logs.
-- Enable fully automated rotation for `latest` key in KMS:
+- Enable partially automated rotation for `latest` key in KMS:
     > NOTE: Prerequisite: `EncryptionConfiguration` is set up to always use the `latest` key version in KMS and the values can be interpreted dynamically at runtime by the KMS plugin to hot reload the current write key. Rotation process sequence:
-    - record initial key ID across all API servers (this could be recorded in the `StorageVersionStatus` as a new field)
+    - record initial key ID across all API servers
     - cause key rotation in KMS (user action in the remote KMS)
-    - observe the change across the stack (wait for convergence of `StorageVersionStatus`)
+    - observe the change across the stack using metrics from API server
     - storage migration (run storage migrator)
 
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 ### v2 API
 
@@ -143,7 +136,7 @@ index d7d68d2584d..84c1fa6546f 100644
 +    APIVersion string `json:"apiVersion"`
 ```
 
-Support key hierarchy in KMS plugin that generates local KEK and add v2alpha1 `KeyManagementService` proto service contract in Kubernetes to include `key_id`, `annotations`, and `status`. 
+Support key hierarchy in KMS plugin that generates local KEK and add v2 `KeyManagementService` proto service contract in Kubernetes to include `key_id`, `annotations`, and `status`.
 
 ### Key Hierarchy
 
@@ -242,34 +235,7 @@ message StatusResponse {
 }
 ```
 
-The `key_id` may be funneled into the storage version status as another field that API servers can attempt to gain consensus on:
-
-```diff
-diff --git a/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go b/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go
-index bfa249e135c..e671fe599a9 100644
---- a/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go
-+++ b/staging/src/k8s.io/api/apiserverinternal/v1alpha1/types.go
-@@ -56,6 +56,8 @@ type StorageVersionStatus struct {
-	 // +optional
-	 CommonEncodingVersion *string `json:"commonEncodingVersion,omitempty" protobuf:"bytes,2,opt,name=commonEncodingVersion"`
- 
-+    CommonKeyID *string `json:"commonKeyID,omitempty" protobuf:"bytes,4,opt,name=commonKeyID"`
-+
-	 // The latest available observations of the storageVersion's state.
-	 // +optional
-	 // +listType=map
-@@ -77,6 +79,8 @@ type ServerStorageVersion struct {
-	 // The encodingVersion must be included in the decodableVersions.
-	 // +listType=set
-	 DecodableVersions []string `json:"decodableVersions,omitempty" protobuf:"bytes,3,opt,name=decodableVersions"`
-+
-+    KeyID *string `json:"keyID,omitempty" protobuf:"bytes,4,opt,name=keyID"`
- }
- 
- type StorageVersionConditionType string
-```
-
-> NOTE: Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields. The rotation feature will first be scoped to a single API server and will not be part of the graduation criteria for this KEP.
+The `key_id` will be funneled into API server metrics and audit annotations. *TODO: define metrics.*
 
 ### Observability
 
@@ -337,28 +303,60 @@ sequenceDiagram
 
 ### Test Plan
 
-[ ] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
+[x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-This section is incomplete and will be updated before the beta milestone.
-
 ##### Unit tests
 
-This section is incomplete and will be updated before the beta milestone.
+- Validate key hierarchy behavior in reference implementation
+  - Local KEK is generated for encryption
+  - Local KEK is rotated after a period of time/number of operations
+  - Remote KEK is only called when
+    - Cache is empty, so remote KEK is needed to decrypt local KEK
+    - Local KEK is generated or rotated
+  - When key hierarchy is not used, remote KEK is called for every encryption/decryption
+  - Ensure the logs and metrics are generated as expected
+  - At least 75% code coverage
+- Staleness check based on keyID in the `StatusResponse`
+- Unit test for gRPC request/response validation
+  - Serialize/Deserialize `EncryptedObject`
+  - Validate keyID in `StatusResponse` and `EncryptResponse`
+  - Validate annotations in `EncryptResponse`
+  - Validate logs are generated with the correct `UID` and additional metadata
 
 ##### Integration tests
 
-This section is incomplete and will be updated before the beta milestone.
+- Integration tests to validate
+  - Encryption of custom resources and custom resource definitions
+  - No-op writes cause rewrite of stale data (data that has correct schema but was encrypted with keyID that is not the latest)
+  - Health checks
+    - single health check for v2 at `/kms-providers`
+    - individual health checks for v1 and v2 with `/kms-provider-0` and `/kms-provider-1`
+- Integration tests with base64 plugin to validate the encryption and decryption of data
+- Integration tests with reference implementation
+  - Validate the encryption and decryption of data
+  - Validate the functionality of reference implementation
+- Integration tests to check rotation is possible without restarting API server
+- Integration tests that exercise the feature enablement/disablement flow
 
 ##### e2e tests
 
-This section is incomplete and will be updated before the beta milestone.
+With this e2e test suite, we want to do the following:
+1. Run the e2e suite against a kind cluster without kms encryption enabled.
+2. Run the e2e suite against a kind cluster that has kms v2 encryption enabled (as defined below).
+3. Compare `request_duration_seconds`, `request_terminations_total`, `request_aborts_total` API server metrics between the two runs. The acceptable delta should be less than 20%.
+4. Observe metrics from the reference implementation to determine time taken at each step of the encryption/decryption process.
+5. Observe API server startup time with and without kms encryption enabled.
 
+- KMSv2 config would use the reference implementation
+  - Validate all resources are encrypted
+  - The "remote" kms would be a local encryption key
+    - that adds 100 ms latency
+    - that has rate limiting
+  - Key hierarchy would be used
 
 ### Graduation Criteria
-
-Since the storage version API is still alpha, this KEP will simply aim to make it possible to have automated rotation when that API is enabled and has been updated to include the new fields.  The rotation feature will first be scoped to a single API server and will not be part of the graduation criteria for this KEP because the storage version API will take time to mature. However, testing of rotation will be part of the graduation criteria to confirm that the right information is being made available to allow for automated rotation when the storage version API graduates.
 
 #### Alpha
 
@@ -367,11 +365,21 @@ Since the storage version API is still alpha, this KEP will simply aim to make i
 
 #### Beta
 
-TBD
+- Feature is enabled by default
+- All of the above documented tests are complete
+- Precise documentation outlining how to build components that can do automatic rotation
+  - For example, how to write a controller that scrapes the API server metrics and uses that to trigger rotation with the storage migration controller.
+- Reference implementation is ready
+  - Provide an example implementation using pkcs11
+  - Metrics in the implementation to gauge performance
+  - Documentation of the metrics
+- Metrics in API server to gauge performance impact
 
 #### GA
 
-TBD
+- Tracing is added to the reference implementation
+- At least 2 KMSv2 plugin implementations are available
+  - We will gather feedback from these implementations to determine if API is sufficient
 
 ## Production Readiness Review Questionnaire
 
@@ -379,15 +387,12 @@ TBD
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
--->
-
 - Feature gate
   - Feature gate name: `KMSv2`
   - Components depending on the feature gate:
     - kube-apiserver
 
+**Alpha**
 ```go
 FeatureSpec{
 	Default: false,
@@ -396,18 +401,34 @@ FeatureSpec{
 }
 ```
 
+**Beta**
+```go
+FeatureSpec{
+	Default: true,
+	LockToDefault: false,
+	PreRelease: featuregate.Beta,
+}
+```
+
 ###### Does enabling the feature change any default behavior?
 
-No. The v2 API is new in the v1.25 release.
+No. The v2 API is new in the v1.25 release. Furthermore, even with the feature enabled by default, the user needs to explicitly configure a KMSv2 provider to use this.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, To disable encryption at rest using the v2 API:
-1. Disable encryption at rest with KMS provider by running through these [steps](https://kubernetes.io/docs/tasks/administer-cluster/kms-provider/#disabling-encryption-at-rest)
-   1. At the end of this step, all the data in etcd will be unencrypted.
-2. Disable the `KMSv2` feature gate.
+1. Add new `identity` provider at the top of encryption config
+1. Restart kube-apiserver
+1. Run storage migration to migrate all the existing encrypted data to use the `identity` provider
+   1. If running `kubectl get <resource> --all-namespaces -o json | kubectl replace -f -` to migrate data, the user can confirm that the migration is complete by observing the kube-apiserver metrics `apiserver_envelope_encryption_key_id_hash_last_timestamp_seconds` and `apiserver_envelope_encryption_key_id_hash_total`. These metrics will no longer contain the keyID hash of the old KEK after storage migration and kube-apiserver restart.
+   2. If running storage version migrator to migrate data, the user can confirm that the migration is complete by observing the conditions in `storageversionmigrations`. Refer to [doc](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/master/USER_GUIDE.md#check-if-migration-has-completed) for more details. Using the storage version migrator is recommended.
+1. Remove the KMS provider from the encryption config and restart kube-apiserver
+2. At the end of these steps, all the data in etcd will be unencrypted.
+
+More details are available [here](https://kubernetes.io/docs/tasks/administer-cluster/kms-provider/#disabling-encryption-at-rest)
 
 Disabling this gate without first doing a storage migration to use a different encryption at rest mechanism will result in data loss.
+- For secrets that are mounted in pods, if the DEK used to encrypt the secret is not present in the kube-apiserver cache, the pods will fail to start as the secret will not be able to be decrypted.
 
 Once the feature gate is disabled, if the plan is to use a different encryption at rest mechanism instead of KMS, then unset the `--encryption-provider-config` flag on the kube-apiserver.
 
@@ -419,72 +440,37 @@ After the feature is reenabled, if a v2 KMS provider is still configured in the 
 
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
-
+- We will add integration tests to validate the enablement/disablement flow.
 - When the feature is disabled, data stored in etcd will no longer be encrypted using the external kms provider with v2 API.
 - If the feature is disabled incorrectly (i.e without performing a storage migration), existing data that is encrypted with the external kms provider will be unable to be decrypted. This will cause list and get operations to fail for the resources that were encrypted.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
-This section is incomplete and will be updated before the beta milestone.
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
-
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
 
 - If a rollback of the feature is done without first doing a storage migration to use a different encryption at rest mechanism will result in data loss.
   - Workloads relying on existing data in etcd will no longer be able to access it.
   - The data can be retrieved by reenabling the feature gate or deleting and recreating the data.
+- The rollout of the feature can fail if there are too many calls to the external kms provider.
+  - API server will not report healthy.
+- For highly-available clusters, the feature can be enabled on some API servers only for read purpose.
+  - For rollout, add KMSv2 providers as read across all API servers first before adding the provider for write.
+  - For rollback, move KMSv2 providers from write to read position across all API servers.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-
-This section is incomplete and will be updated before the beta milestone.
+- Latency metrics `transformation_duration_seconds`
+- Transformation error count metric `apiserver_storage_transformation_duration_seconds_bucket{transformation_type="from_storage", transformer_prefix="k8s:enc:kms:v2:"}`
+- After rollback is complete, you should no longer see the keyID metric `apiserver_envelope_encryption_key_id_hash_total` increment.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
-
-This section is incomplete and will be updated before the beta milestone.
+This will be covered by integration tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
-
-N/A
+- The `cacheSize` field in `EncryptionConfiguration` is no longer valid for KMS v2.
+- When KMSv2 is used without KMSv1 provider, the health endpoints don't individually identify for each KMS provider.
 
 ### Monitoring Requirements
 
@@ -493,7 +479,8 @@ N/A
 - [x] Other (treat as last resort)
   - Details:
     - Logs in kube-apiserver, kms-plugin and KMS will be logged with the corresponding `key_id`, `annotations`, and `UID`.
-    - count of encryption/decryption requests by resource and version
+    - Number of times a keyID is used for encryption/decryption
+    - Metric recording the last time in seconds when a keyID was returned in the `StatusResponse` e.g. `apiserver_envelope_encryption_key_id_hash_status_last_timestamp_seconds{key_id_hash="sha256", provider_name="providerName"} 1.674865558833728e+09`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -510,7 +497,7 @@ There should be no impact on the SLO with this change.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No.
+This feature requires the KMS plugin to be running.
 
 ### Scalability
 
@@ -552,29 +539,16 @@ No.
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- 2022-05-09: Initial KEP draft submitted.
+- 2022-09-09: KMSv2 Alpha (v1.25) implemented https://github.com/kubernetes/kubernetes/pull/111126
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
 **Performance and rotation:**
 
 We considered the follow approaches and each has its own drawbacks:
 1. `cacheSize` field in `EncryptionConfiguration`. It is used by the API server to initialize a LRU cache of the given size with the encrypted ciphertext used as index. Having a higher value for the `cacheSize` will prevent calls to the plugin for decryption operations. However, this does not solve the issue with the number of calls to KMS plugin when encryption traffic is bursty.
-2. Reduce the number of trips to KMS by caching DEKs by allowing one DEK to be used to encrypt multiple objects within the configured TTL period. One issue with this approach is it will be very hard to inform the API server to rotate the DEKs when a KEK has been rotated. 
+1. Reduce the number of trips to KMS by caching DEKs by allowing one DEK to be used to encrypt multiple objects within the configured TTL period. One issue with this approach is it will be very hard to inform the API server to rotate the DEKs when a KEK has been rotated.
 
 **Observability**:
 
@@ -586,9 +560,5 @@ We considered using the `AuditID` from the kube-apiserver request that generated
 
 ## Infrastructure Needed
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
 We need a new git repo for the KMS plugin reference implementation. It will need to be synced from the k/k staging dir.
+- repo created: https://github.com/kubernetes/kms
