@@ -185,8 +185,13 @@ configuration.
 
 #### Beta to GA Graduation
 
-- [ ] Allowing time for feedback (3 releases)
-- [ ] Risks have been addressed by every common container runtime
+- [x] Allowing time for feedback (3 releases)
+- [x] Enabling the Kubelet feature flag by default
+- [x] Risks have been addressed by every common container runtime
+- [x] Documenting the seccomp performance impact on k/website as well as its
+      workarounds (disabling the feature completely, turning off spectre
+      mitigations for certain kernel versions or updating the kernel as well as
+      runc)
 
 ### Upgrade / Downgrade Strategy
 
@@ -421,6 +426,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
+- 2023-01-10: Updated KEP to stable
 - 2022-03-15: Updated KEP to beta
 - 2021-05-05: KEP promoted to implementable
 
