@@ -348,26 +348,26 @@ would implement restrictions based on the namespace.
      // object tracked by a quota but expressed using ScopeSelectorOperator in combination
      // with possible values.
      ScopeSelector *ScopeSelector
-+    // QoSResources contains the desired set of allowed class resources.
-+    // +featureGate=QoSResources
++    // QOSResources contains the desired set of allowed class resources.
++    // +featureGate=QOSResources
 +    // +optional
-+    QoSResources QoSResourceQuota
++    QOSResources QOSResourceQuota
  }
 
-+// QoSResourceQuota contains the allowed class resources.
-+type QoSResourceQuota struct {
++// QOSResourceQuota contains the allowed class resources.
++type QOSResourceQuota struct {
 +       // Pod contains the allowed class resources for pods.
 +       // +optional
-+       Pod []AllowedQoSResource
++       Pod []AllowedQOSResource
 +       // Container contains the allowed class resources for pods.
 +       // +optional
-+       Container []AllowedQoSResource
++       Container []AllowedQOSResource
 +}
 
-+// AllowedQoSResource specifies access to one QoS-class resources type.
-+type AllowedQoSResource struct {
++// AllowedQOSResource specifies access to one QoS-class resources type.
++type AllowedQOSResource struct {
 +       // Name of the resource.
-+       Name QoSResourceName
++       Name QOSResourceName
 +       // Allowed classes.
 +       Classes []string
 +       // Capacity is the hard limit for usage of the class.
@@ -382,10 +382,10 @@ would implement restrictions based on the namespace.
         // Used is the current observed total usage of the resource in the namespace
         // +optional
         Used ResourceList
-+       // QoSResources contains the enforced set of available class resources.
-+       // +featureGate=QoSResources
++       // QOSResources contains the enforced set of available class resources.
++       // +featureGate=QOSResources
 +       // +optional
-+       QoSResources QoSResourceQuota
++       QOSResources QOSResourceQuota
  }
 ```
 
@@ -424,24 +424,24 @@ usage of container-level QoS-class resources.
         // MaxLimitRequestRatio represents the max burst value for the named resource
         // +optional
         MaxLimitRequestRatio ResourceList
-+       //  QoSResources specifies the limits for QoS resources.
-+       QoSResources []LimitQoSResource
++       //  QOSResources specifies the limits for QoS resources.
++       QOSResources []LimitQOSResource
 +}
 +
-+// LimitQoSResource specifies limits of one QoS resources type.
-+type LimitQoSResource struct {
++// LimitQOSResource specifies limits of one QoS resources type.
++type LimitQOSResource struct {
 +       // Name of the resource.
-+       Name QoSResourceName
++       Name QOSResourceName
 +       // Default specifies the default class to be assigned.
 +       // +optional
 +       Default string
 +       // Max usage of classes
 +       // +optional
-+       Max []QoSResourceClassLimit
++       Max []QOSResourceClassLimit
 +}
 +
-+// QoSResourceClassLimit specifies a limit for one class of a QoS resource.
-+type QoSResourceClassLimit struct {
++// QOSResourceClassLimit specifies a limit for one class of a QoS resource.
++type QOSResourceClassLimit struct {
 +       // Name of the class.
 +       Name string
 +       // Capacity is the limit for usage of the class.
@@ -449,7 +449,8 @@ usage of container-level QoS-class resources.
  }
 ```
 
-Just using LimitRanges for specifying defaults could simplify the API.
+Not supporting Max (i.e. only supporting Default) in LimitRanges could simplify
+the API.
 
 #### Implicit defaults
 
@@ -463,13 +464,13 @@ requested). The first implementation phase contains no mechanism for this.
 
 Some considerations/questions:
 
-- where can user see what was implicitly given? new field in PodStatus?
-- how to communicate what is effective for each pod and container
+- new field in PodStatus could be used for this
 - implicit default might change after runtime re-configuration
 - new QoS resource types might be added e.g. because of re-configuration of the
   runtime
 - PodSandboxStatus and ContainerStatus messages in CRI API could be used to
-  communicate selected/effextive defaults to the client (kubelet)
+  communicate selected/effextive defaults to the client (kubelet) and kubelet
+  would update Pod status accordingly
 
 ## Proposal
 
@@ -593,7 +594,7 @@ fully handled by the underlying container runtime and is invisible to kubelet.
 Summary of the proposed design details:
 
 - QoS resources are opaque (just names) to kubernetes, configuration and
-  management of QoS resources is handled in the container runtime
+  management of QoS resources is handled in the node (container runtime, kubelet)
   - no "system reserved" (or equivalent) exists (considered as configuration
     detail outside Kubernetes)
   - no overprovisioning (or auto-promotion to free classes) exists (considered
@@ -651,12 +652,12 @@ resource assignments to the runtime.
      WindowsContainerConfig windows = 16;
 +
 +    // Configuration of QoS resources.
-+    ContainerQoSResources qos_resources = 17;
++    ContainerQOSResources qos_resources = 17;
  }
 
-+// ContainerQoSResources specifies the configuration of QoS resources of a
++// ContainerQOSResources specifies the configuration of QoS resources of a
 +// container.
-+message ContainerQoSResources {
++message ContainerQOSResources {
 +    // QoS resources the container will be assigned to.
 +    // Key-value pairs where key is name of the QoS resource and value is the
 +    // name of the class.
@@ -668,10 +669,15 @@ resource assignments to the runtime.
 
 Similar to `CreateContainerRequest`, the `UpdateContainerResourcesRequest`
 message will extended to allow updating of QoS-class resource configuration of
-a running container.  Depending on runtime-level support of a particular
-resource (and possibly the type of resource) UpdateContainerResourcesRequest
-might fail. Resource discovery (see [Runtime status](#runtime-status)) has
-the capability to distinguish immutable resource types.
+a running container. Depending on runtime-level support of a particular
+resource (and possibly the type of resource) in-place updates of running
+containers might not be possible. Resource discovery (see
+[Runtime status](#runtime-status)) has the capability to distinguish whether a
+particular QoS-class resource supports in-place updates (the Mutable field in
+QOSResourceInfo message). UpdateContainerResources must be atomic so the
+runtime must fail early (before e.g. calling the OCI runtime to make any
+changes to other resources) if an attempt to update an "immutable" QoS-class
+resource is requested.
 
 Note that neither of the existing QoS-class resource types (RDT or blockio)
 support updates because of runtime limitations, yet.
@@ -683,7 +689,7 @@ support updates because of runtime limitations, yet.
      // resources to update or other options to use when updating the container.
      map<string, string> annotations = 4;
 +    // Configuration of QoS resources.
-+    ContainerQoSResources qos_resources = 5;
++    ContainerQOSResources qos_resources = 5;
 }
 ```
 
@@ -701,11 +707,11 @@ assignments at sandbox creation time (`RunPodSandboxRequest`).
      // Optional configurations specific to Windows hosts.
      WindowsPodSandboxConfig windows = 9;
 +    // Configuration of QoS resources.
-+    PodQoSResources qos_resources = 10;
++    PodQOSResources qos_resources = 10;
  }
 
-+// PodQoSResources specifies the configuration of QoS resources of a pod.
-+message PodQoSResources {
++// PodQOSResources specifies the configuration of QoS resources of a pod.
++message PodQOSResources {
 +    // QoS resources the pod will be assigned to.
 +    // Key-value pairs where key is name of the QoS resource and value is the
 +    // name of the class.
@@ -725,7 +731,7 @@ resources.
      // Resource limits configuration specific to Windows container.
      WindowsContainerResources windows = 2;
 +    // Configuration of QoS resources.
-+    ContainerQoSResources qos_resources = 3;
++    ContainerQOSResources qos_resources = 3;
 ```
 
 #### RuntimeStatus
@@ -752,13 +758,13 @@ pod-level and container-level resource.
 +// runtime.
 +message ResourcesInfo {
 +    // Pod-level QoS resources available.
-+    repeated QoSResourceInfo pod_qos_resources = 1;
++    repeated QOSResourceInfo pod_qos_resources = 1;
 +    // Container-level QoS resources available.
-+    repeated QoSResourceInfo container_qos_resources = 2;
++    repeated QOSResourceInfo container_qos_resources = 2;
 +}
 
-+// QoSResourceInfo contains information about one type of QoS resource.
-+message QoSResourceInfo {
++// QOSResourceInfo contains information about one type of QoS resource.
++message QOSResourceInfo {
 +    // Name of the QoS resources. Name must be unique, also across pod and
 +    // container level QoS resources.
 +    string Name = 1;
@@ -766,12 +772,12 @@ pod-level and container-level resource.
 +    // the class of a running container or sandbox can be changed.
 +    bool Mutable = 2;
 +    // List of classes of this QoS resource.
-+    repeated QoSResourceClassInfo classes = 3;
++    repeated QOSResourceClassInfo classes = 3;
 +}
 
-+// QoSResourceClassInfo contains information about one class of certain
++// QOSResourceClassInfo contains information about one class of certain
 +// QoS resource.
-+message QoSResourceClassInfo {
++message QOSResourceClassInfo {
 +    // Name of the class
 +    string name = 1;
 +    // Capacity is the number of maximum allowed simultaneous assignments into this class
@@ -788,7 +794,7 @@ information about the available QoS-class resources on a node.
 
 #### PodSpec
 
-We introduce a new field, QoSResources into the existing ResourceRequirements
+We introduce a new field, QOSResources into the existing ResourceRequirements
 struct. This will enable the assignment of QoS resources for containers.
 
 ```diff
@@ -798,18 +804,18 @@ struct. This will enable the assignment of QoS resources for containers.
         // +featureGate=DynamicResourceAllocation
         // +optional
         Claims []ResourceClaim
-+       // QoSResources specifies the requested QoS resources.
++       // QOSResources specifies the requested QoS resources.
 +       // +optional
-+       QoSResources []QoSResourceRequest
++       QOSResources []QOSResourceRequest
  }
 
-+// QoSResourceName is the name of a QoS resource.
-+type QoSResourceName string
++// QOSResourceName is the name of a QoS resource.
++type QOSResourceName string
 
-+// QoSResourceRequest specifies a request for one QoS resource type.
-+type QoSResourceRequest struct {
++// QOSResourceRequest specifies a request for one QoS resource type.
++type QOSResourceRequest struct {
 +       // Name of the QoS resource.
-+       Name QoSResourceName
++       Name QOSResourceName
 +       // Name of the class (inside the QoS resource type specified by Name field).
 +       Class string
 +}
@@ -817,28 +823,28 @@ struct. This will enable the assignment of QoS resources for containers.
 
 Also, we add a Resources field to the PodSpec, to enable assignment of
 pod-level QoS resources. We will re-use the existing ResourceRequirements type
-but Limits and Requests and Claims must be left empty. QoSResources may be set
+but Limits and Requests and Claims must be left empty. QOSResources may be set
 and they represent the Pod-level assignment of QoS-class resources,
-corresponding the PodQoSResources message in PodSandboxConfig in the CRI
+corresponding the PodQOSResources message in PodSandboxConfig in the CRI
 API.
 
 ```diff
  type PodSpec struct {
 @@ -3062,6 +3069,10 @@ type PodSpec struct {
         ResourceClaims []PodResourceClaim
-+       // QoSResources specifies the Pod-level requests of QoS resources.
++       // QOSResources specifies the Pod-level requests of QoS resources.
 +       // Container-level QoS resources may be specified in which case they
 +       // are considered as a default for all containers within the Pod.
-+       // +featureGate=QoSResources
++       // +featureGate=QOSResources
 +       // +optional
-+       QoSResources []PodQoSResourceRequest
++       QOSResources []PodQOSResourceRequest
  }
 
-+// PodQoSResourceRequest specifies a request for one QoS resource type for a
++// PodQOSResourceRequest specifies a request for one QoS resource type for a
 +// Pod.
-+type PodQoSResourceRequest struct {
++type PodQOSResourceRequest struct {
 +       // Name of the QoS resource.
-+       Name QoSResourceName
++       Name QOSResourceName
 +       // Name of the class (inside the QoS resource type specified by Name field).
 +       Class string
 +}
@@ -846,7 +852,7 @@ API.
 
 There is an ongoing effort to add [Pod level resource limits][kep-2837] that
 aims at adding a pod level `Resources`. However, we propose to add a distinct
-QoSResources field (with a distinct PodQoSResourceRequest type) in the PodSpec
+QOSResources field (with a distinct PodQOSResourceRequest type) in the PodSpec
 in order to decouple dependencies between types and fields.
 
 As an example, a Pod requesting class "fast" of a (exemplary) pod-level QoS
@@ -877,45 +883,43 @@ We extend NodeStatus to list available QoS-class resources on a node, This
 consists of the list of the available QoS-class resource types and the classes
 available within each of these resource types.
 
-
-
 ```diff
  type NodeStatus struct {
 @@ -4444,6 +4482,11 @@ type NodeStatus struct {
         // Status of the config assigned to the node via the dynamic Kubelet config feature.
         Config *NodeConfigStatus
-+       // QoSResources contains information about the QoS resources that are
++       // QOSResources contains information about the QoS resources that are
 +       // available on the node.
-+       // +featureGate=QoSResources
++       // +featureGate=QOSResources
 +       // +optional
-+       QoSResources QoSResourceStatus
++       QOSResources QOSResourceStatus
  }
 
 ...
 
-+// QoSResourceStatus describes QoS resources available on the node.
-+type QoSResourceStatus struct {
-+       // PodQoSResources contains the QoS resources that are available for pods
++// QOSResourceStatus describes QoS resources available on the node.
++type QOSResourceStatus struct {
++       // PodQOSResources contains the QoS resources that are available for pods
 +       // to be assigned to.
-+       PodQoSResources []QoSResourceInfo
-+       // ContainerQoSResources contains the QoS resources that are available for
++       PodQOSResources []QOSResourceInfo
++       // ContainerQOSResources contains the QoS resources that are available for
 +       // containers to be assigned to.
-+       ContainerQoSResources []QoSResourceInfo
++       ContainerQOSResources []QOSResourceInfo
 +}
 
-+// QoSResourceInfo contains information about one QoS resource type.
-+type QoSResourceInfo struct {
++// QOSResourceInfo contains information about one QoS resource type.
++type QOSResourceInfo struct {
 +       // Name of the resource.
-+       Name QoSResourceName
++       Name QOSResourceName
 +       // Mutable is set to true if the resource supports in-place updates.
 +       Mutable bool
 +       // Classes available for assignment.
-+       Classes []QoSResourceClassInfo
++       Classes []QOSResourceClassInfo
 +}
 
-+// QoSResourceClassInfo contains information about single class of one QoS
++// QOSResourceClassInfo contains information about single class of one QoS
 +// resource.
-+type QoSResourceClassInfo struct {
++type QOSResourceClassInfo struct {
 +       // Name of the class.
 +       Name string
 +       // Capacity is the number of maximum allowed simultaneous assignments into this class
@@ -924,6 +928,10 @@ available within each of these resource types.
 +       Capacity int64
 +}
 ```
+
+<<[UNRESOLVED @thockin ]>>
+Class capacity i.e. Capacity field in QOSResourceClassInfo.
+<<[/UNRESOLVED]>>
 
 #### Consts
 
@@ -942,13 +950,13 @@ application specific QoS implementations.
 
 ```diff
 +const (
-+       // QoSResourceRdt is the name of the QoS-class resource named IntelRDT
++       // QOSResourceRdt is the name of the QoS-class resource named IntelRDT
 +       // in the OCI runtime spec and interfaced through the resctrlfs
 +       // pseudp-filesystem in Linux. This is a container-level reosurce.
-+       QoSResourceIntelRdt = "rdt"
-+       // QoSResourceBlockio is the name of the blockio QoS-class resource.
++       QOSResourceIntelRdt = "rdt"
++       // QOSResourceBlockio is the name of the blockio QoS-class resource.
 +       // This is a container-level resource.
-+       QoSResourceBlockio = "blockio"
++       QOSResourceBlockio = "blockio"
 +)
 ```
 
@@ -961,15 +969,15 @@ be allowed outside the "official" namespace.
 ### Kubelet
 
 Kubelet gets QoS-class resource assignment from the [PodSpec](#podspec) and
-translates these into corresponding `QoSResources` data in the CRI API. This is
+translates these into corresponding `QOSResources` data in the CRI API. This is
 ContainerConfig message at container creation time (CreateContainerRequest) and
 PodSandboxConfig at sandbox creation time (RunPodSandboxRequest). In practice,
-there is no translation, just copying key-value pairse.
+there is no translation, just copying key-value pairs.
 
 Kubelet will receive the information about available QoS-class resources (the
 types of reqources and their classes) from the runtime over the CRI API (new
 Resources field in [RuntimeStatus](#runtimestatus) message). The kubelet
-updates the new QoSResources field in [NodeStatus](#nodestatus) accordingly,
+updates the new QOSResources field in [NodeStatus](#nodestatus) accordingly,
 making QoS-class resources on the node visible to users and the kube-scheduler.
 This information is dynamic, i.e. the available QoS-class resources (or their
 properties) may change over time. QoS-class resource names must be unique, i.e.
@@ -990,13 +998,13 @@ an update of changed QoS-class resource availability from the runtime).
 No kubelet-initiated pod eviction is implemented in the first implementation
 phase.
 
-A feature gate QoSResources enables kubelet to update the QoS-class resources
+A feature gate QOSResources enables kubelet to update the QoS-class resources
 in NodeStatus and handle QoS-class resource requests in the PodSpec.
 
 ### API server
 
 Input validation of QoS-class resource names and class names, very similar to
-labels is implemented: keys (`QoSResourceName`) and values must be non-empty,
+labels is implemented: keys (`QOSResourceName`) and values must be non-empty,
 less than 64 characters long, must start and end with an alphanumeric character
 and may contain only alphanumeric characters, dashes, underscores or dots (`-`,
 `_` or `.`). Also similar to labels, a namespace prefix (FQDN subdomain separated
@@ -1342,7 +1350,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: QoSResources
+  - Feature gate name: QOSResources
   - Components depending on the feature gate:
     - Implementation Phase 1:
         - kubelet
@@ -1800,11 +1808,11 @@ basic support in the container runtimes.
 #### Kubelet
 
 Kubelet would interpret the specific [pod annotations](#pod-annotations) and
-translate them into corresponding `QoSResources` data in the CRI
+translate them into corresponding `QOSResources` data in the CRI
 ContainerConfig message at container creation time (CreateContainerRequest).
 Pod-level QoS-class would not supported at this point (via pod annotations).
 
-A feature gate QoSResources would enable kubelet to interpretthe specific pod
+A feature gate QOSResources would enable kubelet to interpretthe specific pod
 annotations. If the feature gate is disabled the annotations would simply be
 ignored by kubelet.
 
