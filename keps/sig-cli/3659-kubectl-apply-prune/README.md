@@ -100,7 +100,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details: ApplySet Specification](#design-details-applyset-specification)
-  - [ApplySet Naming](#applyset-naming)
+  - [ApplySet Identification](#applyset-identification)
   - [ApplySet Member Objects](#applyset-member-objects)
     - [Labels](#labels)
   - [ApplySet Parent Objects](#applyset-parent-objects)
@@ -440,22 +440,22 @@ Implicit in this proposal are a few assumptions:
 - An object can be part of at most one ApplySet.  This is a limitation, but seems to be a good one in that objects that are part of multiple ApplySets are complicated both conceptually for users and in terms of implementation behaviour.
 - An ApplySet object can be part of another ApplySet (sub-ApplySets).
 
-### ApplySet Naming
+### ApplySet Identification
 
-Each ApplySet MUST have an ID that can be used to uniquely identify the parent and member objects via the label selector conventions outlined in the following sections. As such, the name:
+Each ApplySet MUST have an ID that can be used to uniquely identify the parent and member objects via the label selector conventions outlined in the following sections. As such, the ID:
 * is subject to the normal limits of label values
-* MUST be the base64 encoding of the hash of the GKNN, in the form `base64(sha256(<name>.<namespace>.<kind>.<group>))`, using the URL safe encoding of RFC4648.
+* MUST be the base64 encoding of the hash of the GKNN of the parent object, in the form `base64(sha256(<name>.<namespace>.<kind>.<group>))`, using the URL safe encoding of RFC4648.
 
-The second restriction is intended to protect against "id impersonation" attacks;
+The second restriction is intended to protect against "ID impersonation" attacks;
 we will likely evaluate specifics here during alpha (for example whether to include
 an empty string for a namespace on cluster-scoped objects).
 
 When operating against an existing applyset, tooling MUST verify the applyset against
-the generation mechanism here.  Tooling MUST return an error if the applyset id does
-not match, though it MAY support some sort of force or repair operation instead, though
+the generation mechanism here.  Tooling MUST return an error if the applyset ID does
+not match the GKNN of the parent, though it MAY support some sort of force or repair operation instead, though
 this should require confirmation of some kind from the user ("type yes" or a flag).
 
-This applyset ID does not need to be used for the `metadata.name` of the parent object.
+This applyset ID clearly cannot be used for the `metadata.name` of the parent object since the ID is partially composed of that field's value.
 Tooling should likely allow end users to choose the `metadata.name` of the parent
 so that it is more intuitive for them to refer to.
 
