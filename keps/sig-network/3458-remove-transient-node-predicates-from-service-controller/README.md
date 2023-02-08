@@ -95,6 +95,24 @@ concerns cluster ingress connectivity. Users of Kubernetes will also see a
 reduction in the amount of cloud API calls, for what concerns calls stemming
 from syncing load balancers with the Kubernetes cluster state.
 
+Addressing b) is not useful for ingress load balancing. A load balancer needs to
+know if the networking data plane is running fine and this is determined by the
+configured health check. Cloud providers define their own health check, and no
+one does the same. The following describes what the health check looks like on
+the three major public cloud providers:
+
+- GCP: probes port 10256 (Kube-proxy's healthz port)
+- AWS: if ELB; probes the first `NodePort` defined on the service spec
+- Azure: probes all `NodePort` defined on the service spec.
+  
+All clouds take an approach of trying to ascertain if traffic can be forwarded
+to the endpoint, which is a completely valid health check for load balancer
+services. There are drawbacks to all of these ways of doing - but cloud
+providers themselves are deemed best suited for what concerns: determining what
+is the best mechanism to use for their load balancers / cloud's mode of
+operation. Their mechanism is beyond the scope of this KEP, i.e: this KEP does
+not attempt to "align them".
+
 ### Goals
 
 - Stop re-configuring the load balancers' node set for cases a) and b) above
@@ -169,6 +187,8 @@ from syncing load balancers with the Kubernetes cluster state.
 
 The service controller in the KCCM currently has a set of tests validating
 expected syncs caused by Node predicates, these will need to be updated.
+
+- `k8s.io/cloud-provider/controllers/service`: `08/Feb/2023` - `67.7%`
 
 #### Integration tests
 
@@ -248,21 +268,28 @@ Behavior will be restored back immediately.
 
 ###### Are there any tests for feature enablement/disablement?
 
-N/A
+Not needed since the enablement/disablement is triggered by changing a in-memory boolean
+variable.  
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Rollout and rollback are not expected to fail.
+If a cluster has a lot of Nodes which are currently `NotReady` (in the order of
+hundreds) and a rollout is triggered, it is expected that all of these nodes
+will be added at once to every load balancer. That might have cloud API rate
+limiting impacts on the service controller.
 
 ###### What specific metrics should inform a rollback?
 
-Performance degradation by the CA when downscaling / flat out inability to delete VMs.
+Performance degradation by the CA when downscaling / flat out inability to
+delete VMs. - this should be informed by the metric `nodesync_error_rate`
+mentioned in [Monitoring requirements](#monitoring-requirements)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+Once the change is implemented: the author will work with Kubernetes vendors to
+test the upgrade/downgrade scenario in a cloud environment.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -294,13 +321,22 @@ post the implementation and rollout of the change.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Yes, when a node transition from `Ready` <-> `NotReady` the load balancers are
-not re-synced and the load balancers' node set will remain unchanged for
-`externalTrafficPolicy: Cluster` services. On downscaling by the CA, the node
-will remain the the load balancers' set for a longer period of time, just until
-the Node object in Kubernetes is fully deleted.
+- By observing no change for the metric `load_balancer_sync_count` when a Node
+transitions between `Ready` <-> `NotReady` or when a Node is tainted with
+`ToBeDeletedByClusterAutoscaler`. This is because this KEP proposes that we stop
+syncing load balancer as a consequence of these events.
+
+- By observing no change w.r.t any active ingress connections for an
+  `externalTrafficPolicy: Cluster` service, which is passing through a Node
+  which is transitioning between `Ready` <-> `NotReady`. I.e: no impact on new
+  or established connections, given that Kube-proxy is healthy when the Node
+  transitions state like this and isn't impacted.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+No
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 Total amount of load balancer re-syncs should be reduced, leading to less cloud
 provider API calls. Also, and more subtle: connections will get a chance to
@@ -308,15 +344,10 @@ gracefully terminate when the CA downscales cluster nodes. For services of type
 `externalTrafficPolicy: Cluster` "traversing" connections through a "nexthop"
 node might not be impacted by that Node's readiness state anymore.
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-
-<!--
-Pick one more of these and delete the rest.
--->
-
 - [X] Metrics
   - Events: The KCCM triggers events when syncing load balancers. The amount of
     these events should be reduced.
+  - Metrics: `load_balancer_sync_count`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -326,9 +357,7 @@ N/A
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-It depends on:
-
-- having a `type: LoadBalancer` service with `externalTrafficPolicy: Cluster`
+No
 
 ### Scalability
 
@@ -353,6 +382,10 @@ No
 No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 No
 
