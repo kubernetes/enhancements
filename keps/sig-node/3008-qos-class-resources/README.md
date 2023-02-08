@@ -689,6 +689,9 @@ support updates because of runtime limitations, yet.
      // resources to update or other options to use when updating the container.
      map<string, string> annotations = 4;
 +    // Configuration of QoS resources.
++    // Note that UpdateContainerResourcesRequest must be atomic so that the
++    // runtime ensure that the requested update to QoS resources can be applied
++    // before e.g. updating other resources.
 +    ContainerQOSResources qos_resources = 5;
 }
 ```
