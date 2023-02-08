@@ -18,13 +18,13 @@ To get started with this template:
 - [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -144,18 +144,18 @@ tags, and then generate with `hack/update-toc.sh`.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -271,7 +271,7 @@ Options:
 ```
 </details>
 
-The reason for this stagnation is that the implementation has fundamental limitations that limit performance and cause unexpected behaviours.
+The reason for this stagnation is that the implementation has fundamental limitations that affect performance and cause unexpected behaviours.
 
 Acknowledging that pruning could not be progressed out of alpha in its current form, SIG CLI created a proof of concept for an alternative implmentation in the [cli-utils](https://github.com/kubernetes-sigs/cli-utils) repo in 2019 (initially [moved over](https://github.com/kubernetes-sigs/cli-utils/pull/1) from [cli-experimental#13](https://github.com/kubernetes-sigs/cli-experimental/pull/13)). This implementation was proposed in [KEP 810](https://github.com/kubernetes/enhancements/pull/810/files), which did not reach consensus and was ultimately closed. In the subsequent three years, work continued on the proof of concept, and other ecosystem tools (notably `kpt live apply`) have been using it successfully while the canonicial implementation in k/k has continued to stagnate.
 
@@ -654,7 +654,7 @@ Based on performance feedback, we can also consider switching to the alternative
 The intention of the proposed changes is to provide a supportable replacement for the current alpha `kubectl apply --prune` semantics.  Our intention is not to change the behavior of the existing `--prune` functionality, but rather to produce an alternative that users will happily and safely move to.  We can likely trigger the V2-semantics when the user specifies an ApplySet flag, so that this is intuitive and does not break existing prune users. The proposal may evolve at the coding/PR stage, but the current plan is as follows.
 
 Required for an MVP release:
-- `KUBECTL_APPLYSET_ALPHA=1` environment variable: Required to expose the new flags/commands during alpha.
+- `KUBECTL_APPLYSET=1` environment variable: Required to expose the new flags/commands during alpha.
 - `kubectl apply --prune --applyset=[resource.version.group/]name`: The `--applyset` flag MUST be used with `--prune` and MUST have a non-empty value when used. Its GVR component is defaulted to `secrets` when missing. This flag CANNOT be used with `-l/--selector` or with `--prune-allow-list`, and this will be validated at flag parsing time.
 - `kubectl apply --prune --applyset=<id> --dry-run`
 - `kubectl diff --prune --applyset=<id>`
@@ -703,7 +703,7 @@ kubectl apply view-applyset myset -n ns1
 ```
 
 
-We intend to treat the flag and any subcommands as alpha commands initially.  During alpha, users will need to set an environment variable (e.g. KUBECTL_APPLYSET_ALPHA) to make the flag available.
+We intend to treat the flag and any subcommands as alpha commands initially.  During alpha, users will need to set an environment variable (e.g. KUBECTL_APPLYSET) to make the flag available.
 
 Commands will verify that the value of `applyset.k8s.io/tooling` has the `kubectl/` prefix before making any mutation, failing with an error if the annotation is present with any other value. It will set this label to `kubectl/vX.XX` (e.g. kubectl/v1.27) when creating/adopting resources as parent objects and update the semver as needed. At least initially, a missing tooling label or blank label value will also be considered an error, though this is not strictly required by the proposed spec and could be relaxed in the future. We may implement a `--force` flag, but this would likely be logically equivalent in outcome to a full ApplySet deletion and recreation, though with the potential (but not the guarantee) to be less disruptive.
 
@@ -946,7 +946,7 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-Plan for alpha is that users must explicitly opt-in with `KUBECTL_APPLYSET_ALPHA`,
+Plan for alpha is that users must explicitly opt-in with `KUBECTL_APPLYSET`,
 existing functionality will remain.
 
 ### Version Skew Strategy
@@ -1017,7 +1017,7 @@ well as the [existing list] of feature gates.
   - Describe the mechanism:
 
      Functionality is client-side only.  Plan for alpha is that users must explicitly
-     opt-in with `KUBECTL_APPLYSET_ALPHA`, existing functionality will remain.
+     opt-in with `KUBECTL_APPLYSET`, existing functionality will remain.
 
   - Will enabling / disabling the feature require downtime of the control
     plane?
@@ -1353,6 +1353,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- Feb 2023: KEP accepted and alpha implementation started
 
 ## Drawbacks
 
