@@ -1013,9 +1013,7 @@ Problem examples:
 | CRD is in multiple clusters, but schema differs  | If policy author is aware of the schema variations, can they write policies that work for all the variations?         |
 | Validation of an aggregated API server type      | Main API server does not have type definitions                                                                        |
 
-Because of these complications, the type checking would remain informational rather than forced. 
-The type system is not designed to solve or mitigate any of the mentioned complications.
-This design is temporary, and will be revisited when any of the issues is addressed.
+Until the design is extended to handle these situations, the type checking will remain informational.
 
 Informational type checking will be performed against all expressions where a GVK can be resolved to
 type check against. The result of type checking will be part of the status of the performed policy.
