@@ -239,6 +239,11 @@ No
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
 No
 
+* **Can enabling / using this feature result in resource exhaustion of some node
+  resources (PIDs, sockets, inodes, etc.)?**
+
+No
+
 ### Troubleshooting
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
@@ -252,7 +257,9 @@ Not applicable
 
 ## Implementation History
 
-v1.20: Launch `Alpha` state
+- v1.27: Updated KEP to stable
+- v1.21: Updated KEP to beta
+- v1.20: Launch `Alpha` state
 
 ## Drawbacks
 
