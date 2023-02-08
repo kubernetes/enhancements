@@ -102,7 +102,7 @@ Additionally, we propose adding a `Get()` method to the existing gRPC service
 to allow querying specific pods for their allocated resources.
 
 **Note:** The new `Get()` call is a strict subset of the `List()` call (which
-returns the list of PodResources for *all* pods acrosss *all* namespaces in the
+returns the list of PodResources for *all* pods across *all* namespaces in the
 cluster). That is, it allows one to specify a specific pod and namespace to
 retrieve PodResources from, rather than having to query all of them all at
 once.
@@ -286,10 +286,22 @@ Kubelet will always be backwards compatible, so going forward existing plugins a
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name for retrieving resources allocated by DRA: `DynamicResourceAllocation` and `PodResourcesDynamicResources`.
-  - Feature gate name for Get method: `PodResourcesGet`. In case `DynamicResourceAllocation` or the `PodResourcesDynamicResources`
-    are disabled and `PodResourcesGet` is enabled, the Get method will retrieve resources allocated by device plugins, memory and cpus (but omit those allocated by DRA resource drivers).
-    In case `PodResourcesGet`, `DynamicResourceAllocation` and `PodResourcesDynamicResources` are all enabled, the Get method will also retrieve the resources allocated via DRA.
+  - Feature gate name: `DynamicResourceAllocation` is existing feature gate to
+  enable / disable DRA feature.
+  - Components depending on the feature gate: kube-apiserver, kube-controller-manager,
+  kube-scheduler, kubelet
+  - Feature gate name: `PodResourcesDynamicResources` new feature gate to
+  enable / disable PodResources API List method to populate `DynamicResource`
+  information from the `DRAManager`.
+  `DynamicResourceAllocation` feature gate has to be enabled as well.
+  - Components depending on the feature gate: kubelet, 3rd party consumers.
+  - Feature gate name: `PodResourcesGet` new feature gate to enable / disable
+    PodResources API Get method. In case `DynamicResourceAllocation` or
+    the `PodResourcesDynamicResources` are disabled and `PodResourcesGet`
+    is enabled, the Get method will retrieve resources allocated by device plugins,
+    memory and cpus (but omit those allocated by DRA resource drivers).
+    In case `PodResourcesGet`, `DynamicResourceAllocation` and `PodResourcesDynamicResources`
+    are all enabled, the `Get()` method will also retrieve the resources allocated via DRA.
   - Components depending on the feature gate: kubelet, 3rd party consumers.
 
 ###### Does enabling the feature change any default behavior?
@@ -333,23 +345,15 @@ No.
 Look at the `pod_resources_endpoint_requests_list` and `pod_resources_endpoint_requests_get` metric exposed by the kubelet.
 
 ###### How can someone using this feature know that it is working for their instance?
-
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
+Call the PodResources API and see the result.
 
 - [ ] Events
   - Event Reason:
 - [ ] API .status
   - Condition name:
   - Other field:
-- [X] Other (treat as last resort)
-  - Details: check the kubelet metric `pod_resources_endpoint_requests_total`, `pod_resources_endpoint_requests_list` and `pod_resources_endpoint_requests_get`.
+- [ ] Other (treat as last resort)
+  - Details:
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -357,7 +361,7 @@ N/A.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [X ] Metrics
+- [X] Metrics
   - Metric name:  `pod_resources_endpoint_requests_total`, `pod_resources_endpoint_requests_list` and `pod_resources_endpoint_requests_get`.
   - Components exposing the metric: kubelet
 
@@ -367,9 +371,11 @@ As part of this feature enhancement, per-API-endpoint resources metrics are bein
 
 ### Dependencies
 
+The container runtime must support CDI.
+
 ###### Does this feature depend on any specific services running in the cluster?
 
-No.
+A third-party resource driver is required for allocating resources.
 
 ### Scalability
 
