@@ -24,9 +24,9 @@ approvers:
 see-also:
 replaces:
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.26"
+latest-milestone: "v1.27"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -40,5 +40,4 @@ feature-gates:
   - name: PodDisruptionBudgetPodHealthyPolicy
     components:
       - kube-apiserver
-      - kube-controller-manager
 disable-supported: true

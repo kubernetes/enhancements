@@ -277,6 +277,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 - <test>: <link to test coverage>
 -->
 
+[TestEvictionWithUnhealthyPodEvictionPolicy](https://github.com/kubernetes/kubernetes/blob/c8010537913422cc221cdd784936ff99817f621c/test/integration/evictions/evictions_test.go#L417): https://storage.googleapis.com/k8s-triage/index.html?test=UnhealthyPodEvictionPolicy
 
 ##### e2e tests
 
@@ -306,13 +307,15 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Feature gate enabled by default.
 - Existing E2E and conformance tests passing.
-- Consider whether we want to keep the `spec.unhealthyPodEvictionPolicy` field null by default when not specified
-  or default it to `IfHealthyBudget` value. Both of these should preserve original behavior and handle null
-  values. This should be tested and documented.
+- We want to keep the `spec.unhealthyPodEvictionPolicy` field null by default when not specified.
+  This should preserve the original behavior and behave the same as the `IfHealthyBudget` value.
+  This should be tested and documented.
+- manual test for upgrade->downgrade->upgrade path will be performed once 1.27 is released
 
 #### GA
 
 - Every bug report is fixed.
+- Introduce E2E tests for this field and confirm their stability.
 - The eviction API ignores the feature gate.
 
 #### Deprecation
@@ -359,22 +362,27 @@ The eviction API will again start using the `unhealthyPodEvictionPolicy` if prov
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, but they will be added for alpha.
+- [TestPodDisruptionBudgetStrategy](https://github.com/kubernetes/kubernetes/blob/06914bdaf51fc1b91501c332bd69d439cd370581/pkg/registry/policy/poddisruptionbudget/strategy_test.go#L96-L114)
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-It does not change the default behavior. Users will have to specify a policy
-on the PDB for behavior to be affected.
+Bugs could affect `/evictions` endpoint which would return server error in that case.
+It cannot directly affect workloads, but could potentially cause node drain to stall,
+which would have an effect on the cluster during an upgrade.
+
+When the rollback occurs, existing filled `.spec.unhealthyPodEvictionPolicy` fields will be ignored
+and the old eviction behavior will be enforced for these PDBs.
 
 ###### What specific metrics should inform a rollback?
 
-Unexpected failing eviction requests.
+Failing eviction requests could be an indicator. `apiserver_request_total{resource = "pods", subresource = "eviction"}` metric
+can be observed to detect increased rate of failing evictions.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-A manual test will be performed, as follows:
+A manual test was performed, as follows:
 
 1. Create a cluster in 1.25.
 2. Upgrade to 1.26.
@@ -383,8 +391,21 @@ A manual test will be performed, as follows:
 5. Verify that the eviction continue to work without using the UnhealthyPodEvictionPolicy.
 6. Create another StatefulSet B and PDB B targeting the pods of StatefulSet B.
 7. Upgrade to 1.26.
-8. Verify that eviction of pods for Deployment A uses the `UnhealthyPodEvictionPolicy` UnhealthyPodEvictionPolicy and eviction of pods for
-StatefulSet B uses the default behavior.
+8. Verify that eviction of pods for Deployment A and StatefulSet B use the default behavior.
+   Verify that the `AlwaysAllow` UnhealthyPodEvictionPolicy can be set again to a PDB of Deployment A and test the eviction behavior
+
+TODO:
+A manual test will be performed, as follows:
+
+1. Create a cluster in 1.26.
+2. Upgrade to 1.27.
+3. Create Deployment A and PDB A targeting the pods of Deployment A using the `AlwaysAllow` UnhealthyPodEvictionPolicy.
+4. Downgrade to 1.26.
+5. Verify that the eviction continue to work without using the UnhealthyPodEvictionPolicy (PDBUnhealthyPodEvictionPolicy feature gate disabled by default).
+6. Create another StatefulSet B and PDB B targeting the pods of StatefulSet B.
+7. Upgrade to 1.27.
+8. Verify that eviction of pods for Deployment A uses the `AlwaysAllow` UnhealthyPodEvictionPolicy and eviction of pods for
+   StatefulSet B uses the default behavior.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -392,73 +413,38 @@ N/A
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+By checking `.spec.unhealthyPodEvictionPolicy` field of the PodDisruptionBudget.
+Pods belonging to this PDB should be evicted according to this policy.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-    - Event Reason:
-- [ ] API .status
-    - Condition name:
-    - Other field:
-- [ ] Other (treat as last resort)
-    - Details:
+- [x] Other (treat as last resort)
+    - Details: kube-apiserver logs and audit logs that track eviction requests can be examined to see
+      if the `UnhealthyPodEvictionPolicy` feature is working properly.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+This feature should not have an impact on the eviction request latency or availability.
+Eviction requests should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos)
+for serving mutating or read-only API calls.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+The following indicators should conform to the existing kube-apiserver SLIs.
 
-- [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-- [ ] Other (treat as last resort)
-    - Details:
+- [x] Metrics
+    - Metric name: apiserver_request_total
+      - [Optional] Aggregation method: resource = "pods", subresource = "eviction"
+      - Components exposing the metric: kube-apiserver
+    - Metric name: apiserver_request_duration_seconds
+      - [Optional] Aggregation method: resource = "pods", subresource = "eviction"
+      - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No
 
 ### Dependencies
 
@@ -530,6 +516,7 @@ For each of them, fill in the following information by copying the below templat
 - 2021-10-24: Proposed KEP for adding the new behavior in alpha status in 1.24.
 - 2022-11-11: Initial alpha implementation merged into 1.26
 - 2022-12-07: KEP rewritten to match the implementation (PodHealthyPolicy was renamed to UnhealthyPodEvictionPolicy)
+- 2023-02-06: Update for beta promotion
 
 ## Drawbacks
 
