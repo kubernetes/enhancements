@@ -136,7 +136,7 @@ Note: In the following, we will use VolumeGroupSnapshot Controller to refer to t
 * This will trigger the VolumeGroupSnapshot controller to create a VolumeGroupSnapshotContent API object, and also call the CreateVolumeGroupSnapshot CSI function.
 * The controller will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 * CreateVolumeGroupSnapshot CSI function response
-  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The VolumeGroupSnapshot controller can use the returned list of snapshots to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update SnapshotList in the VolumeGroupSnapshot Status and SnapshotContentList in the VolumeGroupSnapshotContent Status.
+  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The VolumeGroupSnapshot controller can use the returned list of snapshots to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update SnapshotRefList in the VolumeGroupSnapshot Status and SnapshotContentList in the VolumeGroupSnapshotContent Status.
  * Individual VolumeSnapshots will be named in this format:
    * <snap>-<hash of VolumeGroupSnapshot UUID+PVC UUID+timestamp>
    * A label with VolumeGroupSnapshot name will also be added to the VolumeSnapshot
@@ -146,6 +146,8 @@ apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshot
 metadata:
   name: snapshot1
+  labels:
+    volumeGroupSnapshotName: groupSnapshot1
 spec:
   source:
     persistentVolumeClaimName: vsc1
