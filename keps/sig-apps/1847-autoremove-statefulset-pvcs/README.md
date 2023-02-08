@@ -57,10 +57,10 @@
   - [Scalability](#scalability)
       - [Will enabling / using this feature result in any new API calls?](#will-enabling--using-this-feature-result-in-any-new-api-calls)
       - [Will enabling / using this feature result in introducing new API types?](#will-enabling--using-this-feature-result-in-introducing-new-api-types)
-      - [Will enabling / using this feature result in any new calls to the cloud](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud)
-      - [Will enabling / using this feature result in increasing size or count of](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of)
-      - [Will enabling / using this feature result in increasing time taken by any](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any)
-      - [Will enabling / using this feature result in non-negligible increase of](#will-enabling--using-this-feature-result-in-non-negligible-increase-of)
+      - [Will enabling / using this feature result in any new calls to the cloud provider?](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud-provider)
+      - [Will enabling / using this feature result in increasing size or count of the existing API objects?](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects)
+      - [Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any-operations-covered-by-existing-slisslos)
+      - [Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?](#will-enabling--using-this-feature-result-in-non-negligible-increase-of-resource-usage-cpu-ram-disk-io--in-any-components)
   - [Troubleshooting](#troubleshooting)
       - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
       - [What are other known failure modes?](#what-are-other-known-failure-modes)
@@ -531,26 +531,22 @@ of this feature?
 ##### Will enabling / using this feature result in introducing new API types?
   No.
 
-##### Will enabling / using this feature result in any new calls to the cloud 
-provider?
+##### Will enabling / using this feature result in any new calls to the cloud provider?
   PVC deletion may cause PV deletion, depending on reclaim policy, which will result in
   cloud provider calls through the volume API. However, as noted above, these calls would
   have been happening anyway, manually.
 
-##### Will enabling / using this feature result in increasing size or count of 
-the existing API objects?
+##### Will enabling / using this feature result in increasing size or count of the existing API objects?
   - PVC, new ownerRef.
   - StatefulSet, new field
 
-##### Will enabling / using this feature result in increasing time taken by any 
-operations covered by existing SLIs/SLOs?
+##### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
   No. (There are currently no StatefulSet SLOs?)
   
   Note that scale-up may be slower when volumes were deleted by scale-down. This
   is by design of the feature.
 
-##### Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?
+##### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
