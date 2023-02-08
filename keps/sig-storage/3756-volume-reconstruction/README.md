@@ -687,7 +687,9 @@ The feature can be disabled without any issues.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Nothing interesting happens.
+Nothing interesting happens. This feature changes how kubelet starts and how it
+cleans volume mounts. It has no visible effect in any API object nor structure
+of data / mount table in the host OS.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -773,8 +775,6 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-TODO whole chapter before GA.
-
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -782,6 +782,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+They can check if the FeatureGate is enabled on a node, e.g. by monitoring
+`kubernetes_feature_enabled` metric. Or read kubelet logs.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -819,18 +822,30 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+These two metrics are populated during kubelet startup:
+
+* `reconstructed_volumes_total{result="error"}` should be zero. An error here
+means that kubelet was not able to reconstruct its cache of mounted volumes
+and appropriate volume plugin was not called to clean up a volume mount.
+There could be a leaked file or directory on the filesystem.
+
+* `force_cleaned_failed_volumes_total{result="error"}` should be zero. An error
+here means that kubelet was not able to unmount a volume even with all
+fallbacks it has. There *is* at least a leaked directory on the filesystem,
+there could be also a leaked mount.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [X] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `reconstructed_volumes_total`
+    - `force_cleaned_failed_volumes_total`
+    - `orphaned_volumes_cleanup_errors_total`
+  - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -838,6 +853,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No
 
 ### Dependencies
 
@@ -987,6 +1004,23 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check kubelet logs. There should be errors about a failed volume reconstruction,
+together with the directory where the volume was supposed to be mounted.
+Ensure that:
+
+1. There is no Pod that uses the volume on the node.
+2. The directory of the volume is not mounted there.
+3. The directory and all its parents up to `/var/lib/kubelet/pods/<uid>/volumes`
+   are removed.
+4. If possible, locate global mount of the volume (if it exists) in
+   `/var/lib/kubelet/plugins/<volume plugin name>` and unmount + remove it.
+   The actual directory varies by volume plugin.
+   * For CSI volumes, if the CSI driver supports `NodeStageVolume` CSI call,
+     the location is `/var/lib/kubelet/plugins/kubernetes.io/csi/<csi driver name>/<sha256sum of pv.spec.csi.volumeHandle>/globalmount`.
+     Otherwise, there is no global mount directory.
+   * EmptyDir, Projected, DownwardAPI, Secrets and ConfigMaps do not have global
+     mount directory.
 
 ## Implementation History
 
