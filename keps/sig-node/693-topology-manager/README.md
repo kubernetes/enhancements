@@ -710,7 +710,7 @@ This feature is kubelet specific, so version skew strategy is N/A.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: TopologyManager
-  - Components depending on the feature gate: Topology Manager
+  - Components depending on the feature gate: kubelet
 
 Kubelet Flag for the Topology Manager Policy, which is described above. The `none` policy will be the default policy.
  
@@ -743,15 +743,7 @@ Memory Manager and Device Manager to either admit a pod to the node or reject it
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, this feature can be disabled by specifying `TopologyManager` feature gate
-in the kubelet configuration. Note that disabling the feature gate requires
-kubelet restart for the changes to take effect. In case no pods consuming
-resources aligned by Topology Manager are running on the node, disabling
-feature gate won't cause any issue.
-
-If the feature gate is being disabled on a node where such pods are running,
-it is the responsibliity of the cluster admin to ensure that the node is
-appropriately drained.
+Since going to stable in 1.27, the feature gate is locked on as is the standard practice in Kubernetes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -809,12 +801,21 @@ configured.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] Other (treat as last resort)
-  - Details: check the kubelet metric `topology_manager_admission_requests_total` or "topology_manager_admission_duration_seconds"
+  - Details:
+
+  By design, NUMA information is hidden from the end users and is only known to kubelet running on the node. In order to validate that the allocated resources are NUMA aligned, we need this information to be exposed. The only possible way is with the help of external tools that inspect the resource topology information and either expose it external to the node (e.g. [NFD topology updater](https://github.com/kubernetes-sigs/node-feature-discovery/blob/master/docs/get-started/introduction.md#nfd-topology-updater)) or use it to perform validation themselves ([numaalign](https://github.com/ffromani/numalign)). Here are a few possible options (with external help):
+
+1. In case Topology manger is configured with `single-numa-node` policy and CPU Manager with `static policy`  Using NFD topology updater, we can learn about the number of allocatable CPUs on a NUMA node and deploy a pod with CPUs greater than we have available on a single NUMA node. In that case, the pod would return a `TopologyAffinityError` and is visible to the end user.
+2. Alternatively, we can use a tool like [numaalign](https://github.com/ffromani/numalign) and run that within a pod to determine if a set of resources are aligned on the same NUMA node.
+
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 "topology_manager_admission_duration_seconds" (which will be added as this release) can be used to determine
 if the resource alignment logic performed at pod admission time is taking longer than expected.
+
+Measurements haven't been performed to determine the latency as this metric will be introduced in 1.27
+development cycle but the duration is expected to be very short most likely in the ballpark of 50-100 ms.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -870,6 +871,13 @@ Also, the resource alignment logic is executed at pod admission time which is pr
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No reported or known increase in resource usage.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
+The feature is only responsble for alignment of resources. It does not use node resources like PIDs, sockets, inodes, etc.
+for running its alignment algorithm.
 
 ### Troubleshooting
 
