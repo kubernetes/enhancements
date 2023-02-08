@@ -1,67 +1,93 @@
-# Node Topology Manager
 
-_Authors:_
-
-* @ConnorDoyle - Connor Doyle &lt;connor.p.doyle@intel.com&gt;
-* @balajismaniam - Balaji Subramaniam &lt;balaji.subramaniam@intel.com&gt;
-* @lmdaly - Louise M. Daly &lt;louise.m.daly@intel.com&gt;
-
-_Reviewers:_
-* @klueska - Kevin Klues &lt;kklues@nvidia.com&gt;
-* @nolancon - Conor Nolan &lt;conor.nolan@intel.com&gt;
-
-## Table of Contents
+# KEP-693: Node Topology Manager
 
 <!-- toc -->
-- [Overview](#overview)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
-  - [User Stories](#user-stories)
 - [Proposal](#proposal)
-  - [Proposed Changes](#proposed-changes)
-    - [New Component: Topology Manager](#new-component-topology-manager)
-      - [The Effective Resource Request/Limit of a Pod](#the-effective-resource-requestlimit-of-a-pod)
-      - [Scopes](#scopes)
-      - [Policies](#policies)
-      - [Computing Preferred Affinity](#computing-preferred-affinity)
-      - [New Interfaces](#new-interfaces)
-    - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
-    - [Changes to Existing Components](#changes-to-existing-components)
-- [Graduation Criteria](#graduation-criteria)
-  - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
-  - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
-  - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
-  - [Beta (v1.20)](#beta-v120)
-  - [GA (stable)](#ga-stable)
-- [Test Plan](#test-plan)
+  - [Main idea: Two phase topology coherence protocol](#main-idea-two-phase-topology-coherence-protocol)
+  - [New Component: Topology Manager](#new-component-topology-manager)
+    - [The Effective Resource Request/Limit of a Pod](#the-effective-resource-requestlimit-of-a-pod)
+    - [Scopes](#scopes)
+    - [Policies](#policies)
+    - [Computing Preferred Affinity](#computing-preferred-affinity)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1: Fast virtualized network functions](#story-1-fast-virtualized-network-functions)
+    - [Story 2: Accelerated neural network training](#story-2-accelerated-neural-network-training)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Limitations](#limitations)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [New Interfaces](#new-interfaces)
+  - [Changes to Existing Components](#changes-to-existing-components)
+  - [Noteworthy developments since Topology Manager introduction](#noteworthy-developments-since-topology-manager-introduction)
+  - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
   - [Multi-NUMA Systems Tests](#multi-numa-systems-tests)
   - [Future Tests](#future-tests)
-- [Challenges](#challenges)
-- [Limitations](#limitations)
-- [Alternatives](#alternatives)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
+    - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
+    - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
+    - [Beta (v1.20) [COMPLETED]](#beta-v120-completed)
+    - [GA (stable) [COMPLETED]](#ga-stable-completed)
+    - [Deprecation](#deprecation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
 - [References](#references)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
-# Overview
+## Release Signoff Checklist
 
-An increasing number of systems leverage a combination of CPUs and
-hardware accelerators to support latency-critical execution and
-high-throughput parallel computation. These include workloads in fields
-such as telecommunications, scientific computing, machine learning,
-financial services and data analytics. Such hybrid systems comprise a
-high performance environment.
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-In order to extract the best performance, optimizations related to CPU
-isolation and memory and device locality are required. However, in
-Kubernetes, these optimizations are handled by a disjoint set of
-components.
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-This proposal provides a mechanism to coordinate fine-grained hardware
-resource assignments for different components in Kubernetes.
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
-# Motivation
+## Summary
+
+An increasing number of systems leverage a combination of CPUs and hardware accelerators to support latency-critical execution and high-throughput parallel computation. These include workloads in fields such as telecommunications, scientific computing, machine learning, financial services and data analytics. Such hybrid systems comprise a high performance environment.
+
+In order to extract the best performance, optimizations related to CPU isolation and memory and device locality are required. However, in Kubernetes, these optimizations are handled by a disjoint set of components.
+
+This proposal provides a mechanism to coordinate fine-grained hardware resource assignments for different components in Kubernetes.
+
+## Motivation
 
 Multiple components in the Kubelet make decisions about system
 topology-related assignments:
@@ -94,14 +120,14 @@ and 5.2.17 of the
 [ACPI Specification](http://www.acpi.info/DOWNLOADS/ACPIspec50.pdf) for more
 information.
 
-## Goals
+### Goals
 
 - Arbitrate preferred NUMA Node affinity for containers based on input from
   CPU Manager and Device Manager.
 - Provide an internal interface and pattern to integrate additional
   topology-aware Kubelet components.
 
-## Non-Goals
+### Non-Goals
 
 - _Inter-device connectivity:_ Decide device assignments based on direct
   device interconnects. This issue can be separated from socket
@@ -121,23 +147,9 @@ information.
   use the device plugin API as a stopgap solution for specialized
   networking requirements.
 
-## User Stories
+## Proposal
 
-*Story 1: Fast virtualized network functions*
-
-A user asks for a "fast network" and automatically gets all the various
-pieces coordinated (hugepages, cpusets, network device) in a preferred NUMA Node
-alignment, in most cases this will be the narrrowest possible set of NUMA Node(s).
-
-*Story 2: Accelerated neural network training*
-
-A user asks for an accelerator device and some number of exclusive CPUs
-in order to get the best training performance, due to NUMA Node alignment of
-the assigned CPUs and devices.
-
-# Proposal
-
-*Main idea: Two phase topology coherence protocol*
+### Main idea: Two phase topology coherence protocol
 
 Topology affinity is tracked at the container level, similar to devices and
 CPU affinity. At pod admission time, a new component called the Topology
@@ -146,8 +158,6 @@ Device Manager and the CPU Manager. The Topology Manager acts as an oracle
 for local alignment by those same components when they make concrete resource
 allocations. We expect the consulted components to use the inferred QoS class
 of each pod in order to prioritize the importance of fulfilling optimal locality.
-
-## Proposed Changes
 
 ### New Component: Topology Manager
 
@@ -218,22 +228,22 @@ The [debug][debug-container]/[ephemeral][ephemeral-container] containers are not
 
 The Topology Manager will attempt to align resources on either a pod-by-pod or a container-by-container basis depending on the value of a new kubelet flag, `--topology-manager-scope`. The values this flag can take on are detailed below:
 
-**container (default)**: The Topology Manager will collect topology hints from all Hint Providers on a container-by-container basis. Individual policies will then attempt to align resources for each container individually, and pod admission will be based on whether all containers were able to achieve their individual alignments or not.
+1. **container (default)**: The Topology Manager will collect topology hints from all Hint Providers on a container-by-container basis. Individual policies will then attempt to align resources for each container individually, and pod admission will be based on whether all containers were able to achieve their individual alignments or not.
 
-**pod**: The Topology Manager will collect topology hints from all Hint Providers on a pod-by-pod basis. Individual policies will then attempt to align resources for all containers collectively, and pod admission will be based on whether all containers are able to achieve a common alignment or not.
+1. **pod**: The Topology Manager will collect topology hints from all Hint Providers on a pod-by-pod basis. Individual policies will then attempt to align resources for all containers collectively, and pod admission will be based on whether all containers are able to achieve a common alignment or not.
 
 #### Policies
 
-**none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
+1. **none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
 
-**best-effort**: Topology Manager will provide the preferred allocation based
+1. **best-effort**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
 
-**restricted**: Topology Manager will provide the preferred allocation based
+1. **restricted**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. 
 This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
-**single-numa-node**: Topology mananager will enforce an allocation of all resources on a single NUMA Node. If such
+1. **single-numa-node**: Topology mananager will enforce an allocation of all resources on a single NUMA Node. If such
 an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
 The Topology Manager component will be disabled behind a feature gate until
@@ -278,7 +288,39 @@ The chosen Topology Manager policy then decides to admit or reject the pod based
 - **single-numa-node**:
     * Admits the pod to the node if the preferred field of the Topology is set to true **and** the bitmask is set to a single NUMA node.
 
-#### New Interfaces
+
+### User Stories (Optional)
+
+#### Story 1: Fast virtualized network functions
+A user asks for a "fast network" and automatically gets all the various
+pieces coordinated (hugepages, cpusets, network device) in a preferred NUMA Node
+alignment, in most cases this will be the narrrowest possible set of NUMA Node(s).
+
+#### Story 2: Accelerated neural network training
+A user asks for an accelerator device and some number of exclusive CPUs
+in order to get the best training performance, due to NUMA Node alignment of
+the assigned CPUs and devices.
+
+### Notes/Constraints/Caveats (Optional)
+
+#### Limitations
+
+* The maximum number of NUMA nodes that Topology Manager will allow is 8,
+  past this there will be a state explosion when trying to enumerate the
+  possible NUMA affinities and generating their hints.
+* The scheduler is not topology-aware, so it is possible to be scheduled
+  on a node and then fail on the node due to the Topology Manager.
+  
+### Risks and Mitigations
+
+* Testing the Topology Manager in a continuous integration environment
+  depends on cloud infrastructure to expose multi-node topologies
+  to guest virtual machines.
+* Implementing the `HintProvider` interface may prove challenging.
+
+## Design Details
+
+### New Interfaces
 
 ```go
 package bitmask
@@ -380,24 +422,7 @@ _Figure: Topology Manager components._
 ![topology-manager-instantiation](https://user-images.githubusercontent.com/379372/47447526-945a7580-d772-11e8-9761-5213d745e852.png)
 
 _Figure: Topology Manager instantiation and inclusion in pod admit lifecycle._
- 
-### Feature Gate and Kubelet Flags
- 
-A new feature gate will be added to enable the Topology Manager feature. This feature gate will be enabled in Kubelet, and will be disabled by default in the Alpha release.  
 
- * Proposed Feature Gate:  
-  `--feature-gate=TopologyManager=true`  
- 
- This will be also followed by a Kubelet Flag for the Topology Manager Policy, which is described above. The `none` policy will be the default policy.
- 
- * Proposed Policy Flag:  
- `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
-
-Based on the policy chosen, the following flag will determine the scope with which the policy is applied (i.e. either on a pod-by-pod or a container-by-container basis). The `container` scope will be the default scope.
-
- * Proposed Scope Flag:  
- `--topology-manager-scope=container|pod`  
- 
 ### Changes to Existing Components
 
 1. Kubelet consults Topology Manager for pod admission (discussed above.)
@@ -544,41 +569,15 @@ of devices are still available. Without this extra bit of information, the
 available after filtering by `TopologyHint`. This API, allows it to ultimately
 perform a much better allocation, with minimal cost.
 
-# Graduation Criteria
+### Noteworthy developments since Topology Manager introduction
 
-## Alpha (v1.16) [COMPLETED]
+1. [Update Topology Manager algorithm for selecting "best" non-preferred hint](https://github.com/kubernetes/kubernetes/pull/108154)
+In case of best-effort policy for Topology Manager, non-prefferered allocations are considered
+in cases where resources need to be allocated from multiple NUMA nodes. For determining the best non-preferred hint, simply selecting the narrowest possible hint is not ideal and an improvement was made to handle scenarios where perfect alignment from a single NUMA node is not possible.
+1. [Ability to take NUMA distances into consideration](https://github.com/kubernetes/kubernetes/pull/112914)
+A new topology manager option was introduced which when enabled with `prefer-closest-numa-nodes` option was fine tunes the behavior of existing `restricted` and `best-effort` policies. NUMA nodes with shorter distance between them would be favored when making admission decisions.
 
-* Feature gate is disabled by default.
-* Alpha-level documentation.
-* Unit test coverage.
-* CPU Manager allocation policy takes topology hints into account.
-* Device plugin interface includes NUMA Node ID.
-* Device Manager allocation policy takes topology hints into account.
-
-## Alpha (v1.17) [COMPLETED]
-
-* Allow pods in all QoS classes to request aligned resources.
-
-## Beta (v1.18) [COMPLETED]
-
-* Enable the feature gate by default.
-* Provide beta-level documentation.
-* Add node E2E tests.
-* Guarantee aligned resources for multiple containers in a pod.
-* Refactor to easily support different merge strategies for different policies.
-
-## Beta (v1.20)
-
-* Support pod-level resource alignment.
-
-## GA (stable)
-
-* Add support for device-specific topology constraints beyond NUMA.
-* Support hugepages alignment.
-* User feedback.
-* *TBD*
-
-# Test Plan
+### Test Plan
 
 There is a presubmit job for Topology Manager, that will be run on 
 all PRs. This job is here:
@@ -594,7 +593,7 @@ feature gate and set the CPU Manager policy to 'static'.
 At the beginning of the test, the code will determine if the system
 under test has support for single or multi-NUMA nodes. 
 
-## Single NUMA Systems Tests
+### Single NUMA Systems Tests
 For each of the four topology manager policies, the tests will
 run a subset of the current CPU Manager tests. This includes spinning 
 up non-guaranteed pods, guaranteed pods, and multiple guaranteed and 
@@ -602,7 +601,7 @@ non-guaranteed pods. As with the CPU Manager tests, CPU assignment is
 validated. Tests related to multi-NUMA systems will be skipped, and 
 a log will be generated indicating such.
 
-## Multi-NUMA Systems Tests
+### Multi-NUMA Systems Tests
 For each of the four topology manager policies, the tests will spin up
 guaranteed pods and non-guaranteed pods, requesting CPU and device 
 resources. When the policy is set to single-numa-node for guaranteed pods, 
@@ -610,33 +609,303 @@ the test will verify that guaranteed pods resources (CPU and devices)
 are aligned on the same NUMA node. Initially, the test will request 
 SR-IOV devices, utilizing the SR-IOV device plugin. 
 
-## Future Tests
+### Future Tests
 It would be good to add additional devices, such as GPU, in the multi-NUMA
 systems test.
 
-# Challenges
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
-* Testing the Topology Manager in a continuous integration environment
-  depends on cloud infrastructure to expose multi-node topologies
-  to guest virtual machines.
-* Implementing the `HintProvider` interface may prove challenging.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
 
-# Limitations
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
 
-* The maximum number of NUMA nodes that Topology Manager will allow is 8,
-  past this there will be a state explosion when trying to enumerate the
-  possible NUMA affinities and generating their hints.
-* The scheduler is not topology-aware, so it is possible to be scheduled
-  on a node and then fail on the node due to the Topology Manager.
-  
-# Alternatives
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-* [AutoNUMA][numa-challenges]: This kernel feature affects memory
-  allocation and thread scheduling, but does not address device locality.
+##### Prerequisite testing updates
 
-# References
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
 
-* *TBD*
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `20230116` - `92.6%`
+
+##### Integration tests
+
+Not Applicable.
+
+##### e2e tests
+
+Device Manager and Device plugin node e2e tests:
+* https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/topology_manager_test.go
+
+
+### Graduation Criteria
+
+#### Alpha (v1.16) [COMPLETED]
+
+- Feature gate is disabled by default.
+- Alpha-level documentation.
+- Unit test coverage.
+- CPU Manager allocation policy takes topology hints into account.
+- Device plugin interface includes NUMA Node ID.
+- Device Manager allocation policy takes topology hints into account
+
+#### Alpha (v1.17) [COMPLETED]
+
+- Allow pods in all QoS classes to request aligned resources.
+
+#### Beta (v1.18) [COMPLETED]
+
+- Enable the feature gate by default.
+- Provide beta-level documentation.
+- Add node E2E tests.
+- Additional tests are in Testgrid and linked in KEP
+- Guarantee aligned resources for multiple containers in a pod.
+- Refactor to easily support different merge strategies for different policies.
+
+#### Beta (v1.20) [COMPLETED]
+
+* Support pod-level resource alignment.
+
+#### GA (stable) [COMPLETED]
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing.
+- Allowing time for user feedback.
+- Support hugepages alignment.
+
+#### Deprecation
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+
+### Upgrade / Downgrade Strategy
+
+Not Applicable.
+
+### Version Skew Strategy
+
+This feature is kubelet specific, so version skew strategy is N/A.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: TopologyManager
+  - Components depending on the feature gate: kubelet
+
+Kubelet Flag for the Topology Manager Policy, which is described above. The `none` policy will be the default policy.
+ 
+- Proposed Policy Flag:  
+ `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
+
+Based on the policy chosen, the following flag will determine the scope with which the policy is applied (i.e. either on a pod-by-pod or a container-by-container basis). The `container` scope will be the default scope.
+
+- Proposed Scope Flag:  
+ `--topology-manager-scope=container|pod`  
+ 
+
+###### Does enabling the feature change any default behavior?
+
+If just the feature gate is enabled, there is no change in behavior as Topology Manager policy
+defaults to `none` policy. In this case, kubelet does not consult Topology Manager and does not influence
+the placement decision (which is the defult behavior).
+
+If Topology Manager is configured with `single-numa-node` or `restricted` policy, the admission flow
+changes for a pod where at least two of the following is true:
+
+* Node is using the static CPU manager policy (if true, implies pod is Guaranteed QoS )
+* Pod consumes some device A that exports locality hints
+* Pod consumes some device B that exports locality hints
+* Node is using the static Memory manager policy (if true, implies pod is Guaranteed QoS )
+* Pod consuming pre-allocated hugepages
+
+Topology Manager takes into account hints received from hint providers like CPU Manager,
+Memory Manager and Device Manager to either admit a pod to the node or reject it.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Since going to stable in 1.27, the feature gate is locked on as is the standard practice in Kubernetes.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+No impact on running pods in the cluster. Subsequent pods that meet the requirement
+as explained above would go through admission check and aligned based on the
+configured policy.
+
+###### Are there any tests for feature enablement/disablement?
+
+Yes, covered by node e2e tests:
+
+https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/topology_manager_test.go
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+A rollout can fail in case a bug is introduced in topology manager preventing already
+running pods from restarting or new pods to start.
+
+###### What specific metrics should inform a rollback?
+
+`topology_manager_admission_errors_total` can be used to determine the health of the
+feature and can be be used to determine if a rollback needs to be performed. It is
+worth noting that there could be valid cases where a pod is denied admission.
+
+Example of a valid error is `TopologyAffinityError` which is returned when topology
+manager is configured with `single-numa-node` but there are not enough resources
+available on a single numa node. 
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+No. Changes in behavior only affects pods meeting the conditions scheduled after the upgrade.
+Running pods will be unaffected by any change. This offers some degree of safety in both upgrade->rollback and upgrade->downgrade->upgrade scenarios.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No
+
+### Monitoring Requirements
+
+Monitor the following metrics:
+
+"topology_manager_admission_requests_total"
+"topology_manager_admission_errors_total"
+"topology_manager_admission_duration_seconds"
+
+###### How can an operator determine if the feature is in use by workloads?
+
+The operator can look at `topology_manager_admission_requests_total`, `topology_manager_admission_errors_total` and
+`topology_manager_admission_duration_seconds` metrics to determine if topology manager is performing its admission check.
+In addition to that, kubelet configuration of the nodes can be inspected to check feature gates and the policies
+configured.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [X] Other (treat as last resort)
+  - Details:
+
+  By design, NUMA information is hidden from the end users and is only known to kubelet running on the node. In order to validate that the allocated resources are NUMA aligned, we need this information to be exposed. The only possible way is with the help of external tools that inspect the resource topology information and either expose it external to the node (e.g. [NFD topology updater](https://github.com/kubernetes-sigs/node-feature-discovery/blob/master/docs/get-started/introduction.md#nfd-topology-updater)) or use it to perform validation themselves ([numaalign](https://github.com/ffromani/numalign)). Here are a few possible options (with external help):
+
+1. In case Topology manger is configured with `single-numa-node` policy and CPU Manager with `static policy`  Using NFD topology updater, we can learn about the number of allocatable CPUs on a NUMA node and deploy a pod with CPUs greater than we have available on a single NUMA node. In that case, the pod would return a `TopologyAffinityError` and is visible to the end user.
+2. Alternatively, we can use a tool like [numaalign](https://github.com/ffromani/numalign) and run that within a pod to determine if a set of resources are aligned on the same NUMA node.
+
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+"topology_manager_admission_duration_seconds" (which will be added as this release) can be used to determine
+if the resource alignment logic performed at pod admission time is taking longer than expected.
+
+Measurements haven't been performed to determine the latency as this metric will be introduced in 1.27
+development cycle but the duration is expected to be very short most likely in the ballpark of 50-100 ms.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [X] Metrics
+  - Metric name:
+    - topology_manager_admission_requests_total
+    - topology_manager_admission_errors_total
+    - topology_manager_admission_duration_seconds
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
+
+### Dependencies
+
+No.
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No.
+
+### Scalability
+
+Topology Manager is a component within kubelet for alignment of resources
+based on resource distribution across NUMA nodes and configured policy.
+Since this is a node-local feature, there are no calls to the API
+server or to the cloud provider and hence does not impact scalability.
+
+###### Will enabling / using this feature result in any new API calls?
+
+No, this is a node-local feature.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No, this is a node-local feature.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No, this is a node-local feature.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+Yes
+
+This feature would impact the pod startup latency as it is measured from the time pod object is created and the resource alignment logic is executed
+at pod admission time. The check at admission is to determine if the pod is suitable to be admitted on the node based on the configured policy.
+If considered suitable, the pod is deemed suitable to be admitted on a node followed by the pod startup where resources are allocated to it based
+on the NUMA node identified suitable to allocate resource.
+Since Topology Manager supports a maximum of 8 NUMA nodes, pod startup latency has an upper bound for the additional latency introduced by the
+Topology Manager admission check.
+
+This feature is not impacted by the scale of the cluster (number of nodes in the cluster) as that is not relevant and is not factored into the alignment algorithm. It is the scheduler that has to deal with the scalability aspect and determine nodes that can fulfill the resources requested by the pod. If this feature is turned off, the scheduler would still have to perform the same computation as it would if this feature was enabled. Hence, this feature is not impacted by scale or impacts the scalability of a cluster.
+
+
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No reported or known increase in resource usage.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
+The feature is only responsble for alignment of resources. It does not use node resources like PIDs, sockets, inodes, etc.
+for running its alignment algorithm.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+No impact. This feature is not impacted by unavailability of API Server and/or etcd as
+it is a node local feature.
+
+###### What are other known failure modes?
+
+No known failure modes.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+## Implementation History
+
+- **2018-01-25:** Topology Manager proposal submitted to the community repo (https://github.com/kubernetes/community/pull/1680).
+- **2019-01-08:** Topology Manager proposal merged.
+- **2019-01-30:** Proposal moved to enhancement repo (https://github.com/kubernetes/enhancements/pull/781).
+- **2023-01-16:** KEP ported to the most recent template and GA graduation.
+
+## References
 
 [k8s-issue-49964]: https://github.com/kubernetes/kubernetes/issues/49964
 [nfd-issue-84]: https://github.com/kubernetes-incubator/node-feature-discovery/issues/84
@@ -646,3 +915,17 @@ systems test.
 [the-rule-of-effective-request-limit]: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#resources
 [debug-container]: https://kubernetes.io/docs/tasks/debug-application-cluster/debug-running-pod/#ephemeral-container
 [ephemeral-container]: https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/
+
+## Drawbacks
+
+Not Applicable.
+
+## Alternatives
+
+[AutoNUMA][numa-challenges]: This kernel feature affects memory
+allocation and thread scheduling, but does not address device locality.
+
+## Infrastructure Needed (Optional)
+
+Multi-NUMA hardware is needed for testing of this feature. Recently, support for multi-NUMA
+harware was [added](https://github.com/kubernetes/test-infra/pull/28369) in Kubernetes test infrastructure.
