@@ -94,11 +94,20 @@ This API is read-only, which removes a large class of risks. The aspects that we
 
 ### Proposed API
 
+Our proposal is to extend the existing PodResources gRPC service of the Kubelet
+with a repeated `DynamicResource` field in the ContainerResources message. This
+new field will contain information about the DRA resource class, the DRA
+resource claim, and a list of CDI Devices allocated by a DRA driver.
+Additionally, we propose adding a `Get()` method to the existing gRPC service
+to allow querying specific pods for their allocated resources.
 
-Our proposal is to extend the existing PodResources gRPC service of the Kubelet with a repeated DynamicResource field in the ContainerResources message. This new field will contain information about the DRA resource class, the DRA resource claim and a list of CDI Devices allocated by a DRA driver.
-Additionally, we propose adding a Get method to the existing gRPC service to allow querying specific pods for their allocated resources.
+**Note:** The new `Get()` call is a strict subset of the `List()` call (which
+returns the list of PodResources for *all* pods acrosss *all* namespaces in the
+cluster). That is, it allows one to specify a specific pod and namespace to
+retrieve PodResources from, rather than having to query all of them all at
+once.
 
-The extended interface is shown in proto below:
+The full PodResources API (including our proposed extensions) can be seen below:
 ```protobuf
 // PodResourcesLister is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
@@ -193,6 +202,34 @@ message GetPodResourcesResponse {
 }
 ```
 
+Under the hood, retrieval of the information needed to populate the new
+`DynamicResource` field will be pulled from an in-memory cache stored within the
+`DRAManager` of the kubelet. This is similar to how the fields for
+`ContainerDevices` (from the `DeviceManager`) and `cpu_ids` (from the
+`CPUManager`) are populated today.
+
+The one difference being that the `DeviceManager` and `CPUManager` checkpoint
+the state necessary to fill their in-memory caches, so that it can be
+repopulated across a kubelet restart. We will need to add a similar
+checkpointing mechanism in the `DRAManager` so that it can repopulate its
+in-memory cache as well. This will ensure that the information needed by the
+PodResources API is available for all running containers without needing to call
+out to each DRA resource driver to retrieve this information on-demand. We will
+follow the same pattern used by the `DeviceManager` and `CPUManager` to
+implement this checkpointing mechanism.
+
+**Note:** Checkpointing is possible in the `DRAManager` because the set of CDI
+devices allocated to a container cannot change across its lifetime (just as the
+set of traditional devices injected into a container by the `DeviceMmanager`
+cannot change across its lifetime). Moreover, the set of CDI devices that have
+been injected into a container are not tied to the "availability" of the DRA
+driver that injected them -- i.e. once a DRA driver allocates a set of CDI
+devices to a container, that container will have full access to those devices
+for its entire lifetime (even if the DRA driver that injected them temporarily
+goes offline). In this way, the in-memory cache maintained by the `DRAManager`
+will always have the most up-to-date information for all running containers (so
+long as checkpointing is added as described to repopulate it across kubelet
+restarts).
 
 ##### Unit tests
 
