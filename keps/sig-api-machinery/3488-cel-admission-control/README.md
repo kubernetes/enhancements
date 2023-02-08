@@ -997,7 +997,6 @@ Some advantages of strongly typed objects and expressions over treating everythi
 - Guard against short-circuit evaluation. The user may make a mistake of one of the mentioned above but the code path is never covered in their test cases;
 - Support Kubernetes extensions. For example, IntOrString and map lists.
 
-
 However, enforcing types for every expression and object is not feasible because of:
 
 - Version skew
@@ -1014,42 +1013,22 @@ Problem examples:
 | CRD is in multiple clusters, but schema differs  | If policy author is aware of the schema variations, can they write policies that work for all the variations?         |
 | Validation of an aggregated API server type      | Main API server does not have type definitions                                                                        |
 
-Due to these complications, Type checking will be optional which can be activated by an expression-level
-`TypeChecking` field. Possible modes are:
+Because of these complications, the type checking would remain informational.
+Informational type checking will be performed against all expressions where a GVK can be resolved to
+type check against. The result of type checking will be part of the status of the performed policy.
 
-- `Never` Do not type check the referred objects or the params any time.
-  Treat `object`, `oldObject`, and `params` as dynamic-typed unstructured objects.
-  This is the default and the current behavior of Kubernetes 1.26.
-- `Informative` type check the referred `object`, `oldObject`, and `params` when the expression is being compiled.
-  Add any errors to the `status` of the given policy. Discard any type information during evaluation and treat referred objects and params unstructured.
-- `Evaluation` Type check the referred `object`, `oldObject`, and `params` when the expression is being compiled and evaluated after the policy is created.
-  If the type check fails, mark the policy as misconfigured. Do not type check when the policy is being created or updated.
-- `Always` Type check the referred `object`, `oldObject`, and `params` immediately when the policy is being created or updated.
-  If the type check fails, including the situation where the schema fails to resolve, the API server will reject the operation on the policy object.
-  The same type check will happen during compilation and evaluation.
+For example, accessing an unknown field will result a warning like this.
 
-The modes can be summarized as follows.
+```yaml
+...
+status:
+  expressionWarnings:
+    - expression: "object.replicas > 1" # should be "object.spec.replicas > 1"
+      warning: "no such field 'replicas'"
+```
 
-| Mode        | Value & Param Type | Warning status | Set Policy as misconfigured | Reject on creation/update |
-|-------------|--------------------|----------------|-----------------------------|---------------------------|
-| Never       | Dynamic            | No             | No                          | No                        |
-| Informative | Dynamic            | Yes            | No                          | No                        |
-| Evaluation  | Define             | Yes            | Yes                         | No                        |
-| Always      | Define             | Yes            | Yes                         | Yes                       |
-
-
-The type check may fail in one of the three reasons:
-1. The schema is resolved and parsed. The CEL library determines the expression is invalid;
-2. The schema is resolved, but cannot be parsed. This is considered an internal error and will be logged;
-3. The schema cannot be resolved because the referred type does not yet exist. This should be a transient error.
-
-If `TypeChecking` is set to Evaluation, and either 2 or 3 happens, the compilation will fall back to unstructured as if TypeCheckingMode was set to Never. This allows the evaluation to continue before the referred CRDs are created or published.
-
-The implementation plan is as follows
-- In release 1.27, the policy API will add support for the `TypeChecking` field, with support of
-  both `Never` and `Informative` modes.
-- In release 1.28, add support for `Evaluation` and `Always` modes.
-- During the development and graduation process, gather feedback and update this KEP and implementation as needed, all time.
+To address the version skew problem that can occur during upgrade/downgrade, the type checking is designed to
+never affect the verdict of the policy. This is useful when a new Kubernetes version adds a field that an expression refers to, which will continue to evaluate after the downgrade.
 
 #### Enforcement Actions
 
