@@ -715,7 +715,7 @@ In terms of Stable versions, users can choose to opt-out by not setting the
 HPA with `ContainerResource` type metric can be created and can be handled by HPA controller.
 
 If there have been HPAs with the `ContainerResource` type metric created before the roll back,
-those `ContainerResource` will be restarted to get handled by the HPA controller.
+those `ContainerResource` is ignored during the feature gate off, but will be handled by the HPA controller again after reenabling.
 
 ###### Are there any tests for feature enablement/disablement?
 
