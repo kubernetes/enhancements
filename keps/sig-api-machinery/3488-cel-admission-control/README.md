@@ -1100,9 +1100,10 @@ We will support admission control use cases requiring permission checks:
 - Validate that only a controller responsible for a finalizer can remove it from the finalizers
   field.
 
-To depend on an authz decision, validation expressions can reference the identifier `authorizer`,
-which will be bound at evaluation time to an Authorizer object supporting receiver-style function
-overloads:
+To depend on an authz decision, validation expressions can use the `authorizer`
+variable, which performs authz checks for the admission request user (the same
+use as identified by `request.userInfo`), and which will be bound at evaluation
+time to an Authorizer object supporting receiver-style function overloads:
 
 | Symbol      | Type                                                                    | Description                                                                                     |
 |-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
@@ -1112,9 +1113,9 @@ overloads:
 | subresource | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies thath the check is for a subresource                                                  |
 | namespace   | ResourceCheck.(namespace string) -> ResourceCheck                       | Specifies that the check is for a namespace (if not called, the check is for the cluster scope) |
 | name        | ResourceCheck.(name string) -> ResourceCheck                            | Specifies that the check is for a specific resource name                                        |
-| check       | ResourceCheck.(apiVerb string) -> Decision                              | Checks if the user is authorized for the API verb on the resource                               |
-| allowed     | Decision.() -> bool                                                     | Is the user authorized?                                                                         |
-| denied      | Decision.() -> bool                                                     | Is the user denied authorization?                                                               |
+| check       | ResourceCheck.(apiVerb string) -> Decision                              | Checks if the admission request user is authorized for the API verb on the resource             |
+| allowed     | Decision.() -> bool                                                     | Is the admission request user authorized?                                                       |
+| denied      | Decision.() -> bool                                                     | Is the admission request user denied authorization?                                             |
 
 xref: https://kubernetes.io/docs/reference/access-authn-authz/authorization/#review-your-request-attributes for a details on
 authorization attributes.
