@@ -401,6 +401,11 @@ previous answers based on experience in the field._
   applying a profile at all. There is also a very low overhead for checking the
   syscalls within the Linux Kernel.
 
+- **Can enabling / using this feature result in resource exhaustion of some
+  node resources (PIDs, sockets, inodes, etc.)?**
+
+  No
+
 ### Troubleshooting
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
