@@ -376,7 +376,8 @@ N/A.
 - [x] Other
   - Describe the mechanism:
 
-Feature is enabled on-demand, and can stop using it at any time.
+Feature is enabled on-demand, and can stop using it at any time. It also
+requires the `KUBECTL_AUTO_SERVER_SIDE` environment variable to be set.
 
   - Will enabling / disabling the feature require downtime of the control
     plane?
@@ -394,8 +395,7 @@ No, enabling the `auto` feature means actively selecting it.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-No. kubectl is distributed and we have no control over how it's used or
-way to configure it's default value.
+The feature can be disabled by unsetting the `KUBECTL_AUTO_SERVER_SIDE` environment variable.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
