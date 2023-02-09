@@ -84,10 +84,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [User Stories For Consuming PodHasNetwork Condition](#user-stories-for-consuming-podhasnetwork-condition)
-      - [Story 1: Consuming PodHasNetwork Condition Per Pod In A Monitoring Service](#story-1-consuming-podhasnetwork-condition-per-pod-in-a-monitoring-service)
-      - [Story 2: Consuming PodHasNetwork Condition In A Controller](#story-2-consuming-podhasnetwork-condition-in-a-controller)
-    - [PodHasNetwork Condition Fields In Different User Scenarios](#podhasnetwork-condition-fields-in-different-user-scenarios)
+    - [User Stories For Consuming PodReadyToStartContainers Condition](#user-stories-for-consuming-podreadytostartcontainers-condition)
+      - [Story 1: Consuming PodReadyToStartContainers Condition Per Pod In A Monitoring Service](#story-1-consuming-podreadytostartcontainers-condition-per-pod-in-a-monitoring-service)
+      - [Story 2: Consuming PodReadyToStartContainers Condition In A Controller](#story-2-consuming-podreadytostartcontainers-condition-in-a-controller)
+    - [PodReadyToStartContainers Condition Fields In Different User Scenarios](#podreadytostartcontainers-condition-fields-in-different-user-scenarios)
       - [Scenario 1: Stateless pod scheduled on a healthy node and cluster](#scenario-1-stateless-pod-scheduled-on-a-healthy-node-and-cluster)
       - [Scenario 2: Pods with startup delays due to problems with CSI, CNI or Runtime Handler plugins](#scenario-2-pods-with-startup-delays-due-to-problems-with-csi-cni-or-runtime-handler-plugins)
       - [Story 3: Pod unable to start due to problems with CSI, CNI or Runtime Handler plugins](#story-3-pod-unable-to-start-due-to-problems-with-csi-cni-or-runtime-handler-plugins)
@@ -97,7 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Determining status of sandbox creation for a pod](#determining-status-of-sandbox-creation-for-a-pod)
-  - [PodHasNetwork condition details](#podhasnetwork-condition-details)
+  - [PodReadyToStartContainers condition details](#podreadytostartcontainers-condition-details)
   - [Enhancements in Kubelet Status Manager](#enhancements-in-kubelet-status-manager)
   - [Unavailability of API Server or etcd along with Kubelet Restart](#unavailability-of-api-server-or-etcd-along-with-kubelet-restart)
   - [Test Plan](#test-plan)
@@ -149,8 +149,8 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -158,10 +158,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -194,20 +194,19 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Pod sandbox creation is a critical phase of a pod's lifecycle that the kubelet
-orchestrates across multiple components: in-tree volume plugins (ConfigMap,
-Secret, EmptyDir, etc), CSI plugins and container runtime (which in turn invokes
-a runtime handler and CNI plugins). Completion of all these phases is marked by
-the CRI runtime reporting a pod sandbox with networking configured. This KEP
-proposes a `PodHasNetwork` pod condition in pod status to indicate successful
-completion of pod sandbox creation (with networking configured) by Kubelet and
-the CRI container runtime. The `PodHasNetwork` condition will mark an important
-milestone in the pod's lifecycle similar to `ContainersReady` and the overall
-`Ready` conditions in pod status today. In the future, a dedicated
-`PodHasVolumes` condition may be considered to mark successful mounting and
-setup of all volumes in the pod spec. An alternate name like `SandboxReady` is
-avoided since Kubernetes does not directly surface low level sandbox related
-concepts to all users.
+Readiness to start the containers in a pod, marked by successful pod sandbox
+creation, is a critical phase in a pod's lifecycle that the kubelet orchestrates
+across multiple components: in-tree volume plugins (ConfigMap, Secret, EmptyDir,
+etc), CSI plugins and container runtime (which in turn invokes a runtime handler
+and CNI plugins). Completion of all these phases puts the pod sandbox in a
+state where the containers in a pod can be started. This KEP proposes a
+`PodReadyToStartContainers` condition in pod status to indicate a pod has
+reached a state where it's containers are ready to be started. The
+`PodReadyToStartContainers` condition will mark an important milestone in the
+pod's lifecycle similar to `ContainersReady` and the overall `Ready` conditions
+in pod status today. An alternate name like `SandboxReady` is avoided since
+Kubernetes does not directly surface low level sandbox related concepts to all
+users.
 
 ## Motivation
 
@@ -224,8 +223,8 @@ Today, the scheduler surfaces a specific pod condition: `PodScheduled` that
 clearly identifies whether a pod got scheduled by the scheduler and when
 scheduling completed. However, no specific conditions around initialization of
 successfully scheduled pods from the perspective of completion of pod sandbox
-creation (marked by the presence of a pod sandbox with networking configured) is
-surfaced to cluster administrators in a scoped and consumable fashion.
+creation is surfaced to cluster administrators in a scoped and consumable
+fashion.
 
 There is an existing pod condition: `Initialized` that tracks execution of init
 containers. For pods without init containers, the `Initialized` condition is set
@@ -233,44 +232,48 @@ when the Kubelet starts to process a pod before any sandbox creation activities
 start. For pods with init containers, the `Initialized` condition is set when
 init containers have been pulled and executed to completion. Therefore, the
 existing `Initialized` condition is insufficient and inaccurate for tracking
-completion of sandbox creation of all pods in a cluster. This distinction
-becomes especially relevant in multi-tenant clusters where individual tenants
-own the pod specs (including the set of init containers) while the cluster
-administrators are in charge of storage plugins, networking plugins and
-container runtime handlers.
+completion of sandbox creation and readiness to start containers for all pods in
+a cluster. This distinction becomes especially relevant in multi-tenant clusters
+where individual tenants own the pod specs (including the set of init
+containers) while the cluster administrators are in charge of storage plugins,
+networking plugins and container runtime handlers.
 
-Conclusion of the creation of the pod sandbox is marked by the presence of a
-sandbox with networking configured. A new dedicated condition marking this -
-`PodHasNetwork` - will benefit cluster operators (especially of multi-tenant
-clusters) who are responsible for configuration and operational aspects of the
-various components that play a role in pod sandbox creation: CSI plugins, CRI
-runtime and associated runtime handlers, CNI plugins, etc. The duration between
-`lastTransitionTime` field of the `PodHasNetwork` condition (with `status` set
-to `true` for a pod for the first time) and the existing `PodScheduled`
-condition will allow metrics collection services to compute total latency of all
-the components involved in pod sandbox creation as an SLI. Cluster operators can
-use this to publish SLOs around pod initialization to their customers who launch
-workloads on the cluster.
+The Kubelet can start to launch the containers specified in a pod immediately
+after pod sandbox creation is completed successfully. A new dedicated condition
+marking the successful creation of pod sandbox and readiness to start containers
+- `PodReadyToStartContainers` - will benefit cluster operators (especially of
+multi-tenant clusters) who are responsible for configuration and operational
+aspects of the various components that play a role in pod sandbox creation: CSI
+plugins, CRI runtime and associated runtime handlers, CNI plugins, etc. The
+duration between `lastTransitionTime` field of the `PodReadyToStartContainers`
+condition (with `status` set to `true` for a pod for the first time) and the
+existing `PodScheduled` condition will allow metrics collection services to
+compute total latency of all the components involved in pod sandbox creation as
+an SLI. Cluster operators can use this to publish SLOs around pod initialization
+to their customers who launch workloads on the cluster.
 
 Custom pod controllers/operators can use a dedicated condition indicating
-completion of pod sandbox creation to make better decisions around how to
-reconcile a pod failing to become ready. As a specific example, a custom
-controller for managing pods that refer to PVCs associated with node local
-storage (e.g. Rook-Ceph) may decide to recreate PVCs (based on a specified PVC
-template in the custom resource the controller is managing) if the sandbox
-creation is repeatedly failing to complete, indicated by the new `PodHasNetwork`
-condition reporting `false`. Such a controller can leave PVCs intact and only
-recreate pods if sandbox creation completes successfully (indicated by the new
-`PodHasNetwork` condition reporting `true`) but the pod's containers fail to
-become ready. Further details of this is covered in a [user story](#story-2-consuming-podhasnetwork-condition-in-a-controller) below.
+completion of pod sandbox creation and readiness to start containers to make
+better decisions around how to reconcile a pod failing to become ready. As a
+specific example, a custom controller for managing pods that refer to PVCs
+associated with node local storage (e.g. Rook-Ceph) may decide to recreate PVCs
+(based on a specified PVC template in the custom resource the controller is
+managing) if the sandbox creation is repeatedly failing to complete, indicated
+by the new `PodReadyToStartContainers` condition reporting `false`. Such a
+controller can leave PVCs intact and only recreate pods if sandbox creation
+completes successfully (indicated by the new `PodReadyToStartContainers`
+condition reporting `true`) but the pod's containers fail to become ready.
+Further details of this is covered in a
+[user-story](#story-2-consuming-podreadytostartcontainers-condition-in-a-controller) below.
 
-When a pod's sandbox no longer exists, the `status` of `PodHasNetwork` condition
-will be set to `false`. The duration between a pod's `DeletionTimeStamp` and
-subsequent `lastTransitionTime` of `PodHasNetwork` condition (with `status` set
-to `false`) will indicate the latency of pod termination. This can also be
-surfaced by metrics collection services as a SLI. Note that surfacing any
-dedicated conditions around termination of pod sandbox is unnecessary and beyond
-the scope of this KEP.
+When a pod's sandbox no longer exists, the `status` of
+`PodReadyToStartContainers` condition will be set to `false`. The duration
+between a pod's `DeletionTimeStamp` and subsequent `lastTransitionTime` of
+`PodReadyToStartContainers` condition (with `status` set to `false`) will
+indicate the latency of pod termination. This can also be surfaced by metrics
+collection services as a SLI. Note that surfacing any dedicated conditions
+around termination of pod sandbox is unnecessary and beyond the scope of this
+KEP.
 
 Individual container creation (including pulling images from a registry) takes
 place after the successful completion of pod sandbox creation. Updates to pod
@@ -283,12 +286,11 @@ containers within a pod is beyond the scope of this KEP.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- Surface a new pod condition `PodHasNetwork` to indicate the successful
-completion of pod sandbox creation (that concludes with configuration of
-networking for the pod) from Kubelet.
+- Surface a new pod condition `PodReadyToStartContainers` to indicate readiness
+to start containers immediately following the successful completion of pod
+sandbox creation by Kubelet.
 - Describe how the new pod condition can be consumed by external services to
-determine state and duration of pod sandbox creation (that concludes with
-successful configuration of networking for the pod).
+determine state and duration of pod sandbox creation.
 
 ### Non-Goals
 
@@ -298,9 +300,8 @@ and make progress.
 -->
 - Modify the meaning of the existing `Initialized` condition
 - Specify metrics collection based on the conditions around pod sandbox creation
-- Specify additional conditions (beyond `PodHasNetwork` with `status` set to `false`) to indicate sandbox (and networking) teardown
+- Specify additional conditions (beyond `PodReadyToStartContainers` with `status` set to `false`) to indicate sandbox teardown
 - Surface beginning and completion of creation of individual containers
-- Surface details around any intermediate networking configuration phases of the pod
 
 ## Proposal
 
@@ -313,16 +314,17 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-This KEP proposes enhancements to the Kubelet to report the completion of pod
-sandbox creation (that concludes with successful configuration of networking for
-the pod) as a pod condition with type: `PodHasNetwork`. Metric collection
-and monitoring services can use the fields associated with the `PodHasNetwork`
-condition to report sandbox creation state and latency either at a per-pod
-cardinality or aggregate the data based on various properties of the pod: number
-of volumes, storage class of PVCs, runtime class, custom annotations for CNI and
-IPAM plugins, arbitrary labels and annotations on pods, etc. Certain pod
-controllers can use the pod sandbox conditions to determine an optimal
-reconciliation strategy for pods and associated resources (like PVCs).
+This KEP proposes enhancements to the Kubelet to report the readiness to start
+containers of a pod (immediately following successful pod sandbox creation) as a
+new pod condition with type: `PodReadyToStartContainers`. Metric collection and
+monitoring services can use the fields associated with the
+`PodReadyToStartContainers` condition to report sandbox creation state and
+latency either at a per-pod cardinality or aggregate the data based on various
+properties of the pod: number of volumes, storage class of PVCs, runtime class,
+custom annotations for CNI and IPAM plugins, arbitrary labels and annotations on
+pods, etc. Certain pod controllers can use the pod sandbox conditions to
+determine an optimal reconciliation strategy for pods and associated resources
+(like PVCs).
 
 ### User Stories (Optional)
 
@@ -333,13 +335,13 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### User Stories For Consuming PodHasNetwork Condition
+#### User Stories For Consuming PodReadyToStartContainers Condition
 
-Surfacing the completion of pod sandbox creation (that concludes with successful
-configuration of networking for the pod) as a new pod condition -
-`PodHasNetwork` - in pod status can be consumed in different ways:
+Surfacing the readiness to start containers of a pod (immediately following
+successful pod sandbox creation) as a new pod condition -
+`PodReadyToStartContainers` - in pod status can be consumed in different ways:
 
-##### Story 1: Consuming PodHasNetwork Condition Per Pod In A Monitoring Service
+##### Story 1: Consuming PodReadyToStartContainers Condition Per Pod In A Monitoring Service
 
 A cluster operator may already depend on a service like [Kube State
 Metrics](https://github.com/kubernetes/kube-state-metrics) for monitoring the
@@ -347,11 +349,11 @@ state of their Kubernetes clusters. The cluster operator may want such a service
 to surface pod sandbox creation state and latency at a granular level for each
 pod (due to the ambiguity around `Initialized` state as described earlier). For
 this story, we are assuming the service has been enhanced to [1] consume the new
-`PodHasNetwork` pod condition as described in this KEP and [2] implement
-informers and state to distinguish between the first time a pod sandbox becomes
-ready (that concludes with successful configuration of networking for the pod)
-and a subsequent instance of sandbox becoming ready (after sandbox destruction)
-over the lifetime of a pod.
+`PodReadyToStartContainers` pod condition as described in this KEP and [2]
+implement informers and state to distinguish between the first time Kubelet is
+ready to launch containers in a pod and a subsequent instance of Kubelet being
+ready to launch containers in a pod (after sandbox destruction) over the
+lifetime of the pod.
 
 The operator can use PromQL queries to aggregate and analyze data (around pod
 sandbox creation) based on custom pod labels and annotations (already surfaced
@@ -388,16 +390,17 @@ like scheduling latency) for each specific workload type depending on specific
 user requirements such as: desired encryption of persistent data (if any),
 runtime isolation and network reachability (governed by different IPAM plugins).
 
-##### Story 2: Consuming PodHasNetwork Condition In A Controller
+##### Story 2: Consuming PodReadyToStartContainers Condition In A Controller
 
 A controller managing a set of pods along with associated resources like
 networking configuration, storage or arbitrary dynamic resources (in the future)
-can evaluate the `PodHasNetwork` condition to optimize the set of actions it
-executes when bringing up pods and encountering failures. Depending on whether
-the pod sandbox is ready (with networking configured), the controller may decide
-to destroy and re-create the associated resources that are required for the
-sandbox creation to complete or simply try to re-create the pod while keeping
-the resources intact.
+can evaluate the `PodReadyToStartContainers` condition to optimize the set of
+actions the controller needs to execute when bringing up pods and encountering
+failures in the process. Depending on whether the pod sandbox is ready to start
+containers, the controller may decide to destroy and re-create the associated
+resources that are required for the sandbox creation to complete (to start
+containers) or simply try to re-create the pod while keeping the resources
+intact.
 
 A specific example of the above would be a controller for stateful application
 pods that mount PVCs that bind to node local PVs. Let's assume the stateful
@@ -405,26 +408,28 @@ application has built-in data replication capabilities and the controller
 supports PVC templates to dynamically generate PVCs. When trying to bring up
 fresh pods (after earlier pods got terminated), there could be a problem with
 the CSI plugin that mounts the node local PV into the pod. In such a situation,
-the sandbox creation will not complete. Based on the `PodHasNetwork` condition,
-the controller may decided to create a fresh PVC. If sandbox creation does
-complete successfully (marked by `PodHasNetwork` reporting true) but the pod
-fails to enter a Ready state, the controller will retain the PVC (to avoid any
-data replication) and only try to recreate the pod. Having access to the new
-`PodHasNetwork` condition allows the controller to optimize it's reconciliation
-strategy and realize the desired state more efficiently.
+the sandbox creation will not complete. Based on the `PodReadyToStartContainers`
+condition, the controller may decided to create a fresh PVC. If sandbox creation
+does complete successfully (marked by `PodReadyToStartContainers` reporting
+true) but the pod fails to enter a Ready state, the controller will retain the
+PVC (to avoid any data replication) and only try to recreate the pod. Having
+access to the new `PodReadyToStartContainers` condition allows the controller to
+optimize it's reconciliation strategy and realize the desired state more
+efficiently.
 
-#### PodHasNetwork Condition Fields In Different User Scenarios
+#### PodReadyToStartContainers Condition Fields In Different User Scenarios
 
-In each of the scenarios below, nearly identical `PodHasNetwork` conditions that
-would result from different scenarios/problems are grouped together. The unique
-scenarios are detailed after describing the values associated with the fields of
-the `PodHasNetwork` condition. To make each scenario concrete, a specific set of
-timestamps in the future is chosen. The `PodScheduled` condition is mentioned in
-the stories but conditions after pod sandbox creation (e.g. `Initialized` and
-`Ready`) are skipped. A service monitoring latency of initial pod sandbox
-creation is assumed to implement a pod informer and appropriate state to
-distinguish between the first time a pod sandbox becomes ready versus a
-subsequent instance of readiness over the lifetime of the pod.
+In each of the scenarios below, nearly identical `PodReadyToStartContainers`
+conditions that would result from different scenarios/problems are grouped
+together. The unique scenarios are detailed after describing the values
+associated with the fields of the `PodReadyToStartContainers` condition. To make
+each scenario concrete, a specific set of timestamps in the future is chosen.
+The `PodScheduled` condition is mentioned in the stories but conditions after
+pod sandbox creation (e.g. `Initialized` and `Ready`) are skipped. A service
+monitoring latency of initial pod sandbox creation is assumed to implement a pod
+informer and appropriate state to distinguish between the first time a pod
+sandbox becomes ready to start containers versus a subsequent instance of
+readiness over the lifetime of the pod.
 
 ##### Scenario 1: Stateless pod scheduled on a healthy node and cluster
 
@@ -441,7 +446,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:47Z"
     status: "False"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
@@ -449,8 +454,8 @@ status:
 ```
 
 The pod will report the following conditions in pod status at
-2022-12-06T15:33:50Z (after pod sandbox creation is complete, marked by
-successful configuration of pod networking):
+2022-12-06T15:33:50Z (after pod sandbox creation is complete and containers are
+ready to start):
 ```
 status:
   conditions:
@@ -458,7 +463,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:49Z"
     status: "True"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
@@ -467,16 +472,16 @@ status:
 
 A service monitoring latency of initial pod sandbox creation will record a
 latency of three seconds in this scenario based on the delta between
-`lastTransitionTime` timestamp associated with `PodHasNetwork` and
+`lastTransitionTime` timestamp associated with `PodReadyToStartContainers` and
 `PodScheduled` conditions.
 
 ##### Scenario 2: Pods with startup delays due to problems with CSI, CNI or Runtime Handler plugins
 
 In each of the scenarios under this section, problems or delays with
 infrastructural plugins like CSI/CNI/CRI result in a ten second delay for pod
-sandbox creation (marked by successful configuration of pod networking) to
-complete. In each scenario, the pod gets successfully scheduled at
-2022-12-06T15:33:46Z, pod sandbox is ready after ten seconds at
+sandbox creation to complete after which, containers can be started. In each
+scenario, the pod gets successfully scheduled at 2022-12-06T15:33:46Z while pod
+sandbox is created and containers are ready to start after ten seconds at
 2022-12-06T15:33:56Z.
 
 For each scenario below, the pod will report the following conditions in pod
@@ -489,7 +494,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:47Z"
     status: "False"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
@@ -497,8 +502,8 @@ status:
 ```
 
 For each scenario, the pod will report the following conditions in pod status at
-2022-12-06T15:34:00Z (after pod sandbox is ready - marked by
-successful configuration of pod networking - after ten seconds):
+2022-12-06T15:34:00Z (after pod sandbox is ready - and containers are ready to
+start - after ten seconds):
 ```
 status:
   conditions:
@@ -506,21 +511,21 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:56Z"
     status: "True"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
     type: PodScheduled
 ```
 
-A service monitoring duration of pod sandbox creation (marked by
-successful configuration of pod networking) will record a latency of
-ten seconds in these scenarios based on the delta between `lastTransitionTime`
-timestamps associated with `PodHasNetwork` and `PodScheduled` conditions with
-`status` set to `true`. For each observation associated with a scenario below,
-the monitoring service also associates a label with the metric indicating
-RuntimeClass of the pods and StorageClass of PVCs referred by the pod. This
-enables further grouping of the data during analysis.
+A service monitoring duration of pod sandbox creation (marked by readiness to
+start containers) will record a latency of ten seconds in these scenarios based
+on the delta between `lastTransitionTime` timestamps associated with
+`PodReadyToStartContainers` and `PodScheduled` conditions with `status` set to
+`true`. For each observation associated with a scenario below, the monitoring
+service also associates a label with the metric indicating RuntimeClass of the
+pods and StorageClass of PVCs referred by the pod. This enables further grouping
+of the data during analysis.
 
 A cluster-wide SLO around initial pod sandbox creation latencies configured with
 a threshold of less than ten seconds will record a breach in these scenarios.
@@ -555,10 +560,10 @@ successfully after nine seconds.
 
 In each of the scenarios under this section, problems or delays with
 infrastructural plugins like CSI/CNI/CRI result in pod sandbox creation never
-completing. In each scenario, the pod gets successfully scheduled at
-2022-12-06T15:33:46Z, but pod sandbox creation runs into problems that do not
-eventually resolve and results in repeated failures as kubelet tries to start
-the pod.
+completing and the pod never being ready to start containers. In each scenario,
+the pod gets successfully scheduled at 2022-12-06T15:33:46Z, but pod sandbox
+creation runs into problems that do not eventually resolve and results in
+repeated failures as kubelet tries to start the pod.
 
 For each scenario below, the pod will report the following conditions in pod
 status at all times after 2022-12-06T15:33:47Z (after pod sandbox creation
@@ -570,7 +575,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:47Z"
     status: "False"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
@@ -628,7 +633,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:52Z"
     status: "True"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
@@ -644,7 +649,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T17:33:46Z"
     status: "False"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
@@ -660,7 +665,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T17:33:52Z"
     status: "True"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:46Z"
     status: "True"
@@ -704,7 +709,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T12:33:48Z"
     status: "True"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T12:33:46Z"
     status: "True"
@@ -720,7 +725,7 @@ status:
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T15:33:49Z"
     status: "False"
-    type: PodHasNetwork
+    type: PodReadyToStartContainers
   - lastProbeTime: null
     lastTransitionTime: "2022-12-06T12:33:46Z"
     status: "True"
@@ -737,20 +742,20 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 A monitoring service measuring duration of initial sandbox creation of a pod
-(based on successful network configuration of the pod)
-should differentiate between the initial and subsequent sandbox creations (if
-any due to node crash/sandbox crash) and track them separately.  This can be
-achieved using a pod informer whose event handler stores (in a persistent store
-or as custom annotations on the pod) the `lastTransitionTime` field for
-`PodHasNetwork` condition observed when it had `status` = `true` for the first
-time. Later, if the pod sandbox is recreated, the `lastTransitionTime` for the
-pod sandbox creation conditions can be differentiated from the data associated
-with initial sandbox creation based on whether the initial data exists (either
-in the persistent store or pod annotations).
+(based on readiness to launch containers in the pod) should differentiate
+between the initial and subsequent sandbox creations (if any due to node
+crash/sandbox crash) and track them separately.  This can be achieved using a
+pod informer whose event handler stores (in a persistent store or as custom
+annotations on the pod) the `lastTransitionTime` field for
+`PodReadyToStartContainers` condition observed when it had `status` = `true` for
+the first time. Later, if the pod sandbox is recreated, the `lastTransitionTime`
+for the condition to indicate readiness to start containers can be
+differentiated from the initial readiness to start containers based on whether
+the initial data exists (either in the persistent store or pod annotations).
 
 Measuring duration of sandbox creation accurately beyond the initial sandbox
-creation (marked by successful network configuration of the pod) is not
-possible with the `PodHasNetwork` condition alone. This is
+creation (based on readiness to launch containers in the pod) is not
+possible with the `PodReadyToStartContainers` condition alone. This is
 similar to other ready conditions like `ContainersReady` and overall pod `Ready`
 which gets updated after containers are restarted without a specific marker of
 when the process of restarting the containers or brining the pod back into a
@@ -786,10 +791,11 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-The main risk associated with `PodHasNetwork` is any potential confusion with
-the existing `Initialized` condition. Both the existing `Initialized` conditions
-and the new pod sandbox conditions refer to distinct stages in a pod's overall
-initialization. Documentation will help mitigate this risk.
+The main risk associated with `PodReadyToStartContainers` is any potential
+confusion with the existing `Initialized` condition. Both the existing
+`Initialized` condition and the new proposed condition refer to distinct
+stages in a pod's overall initialization. Documentation will help mitigate this
+risk.
 
 ## Design Details
 
@@ -800,11 +806,12 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-The Kubelet will set a new condition on a pod: `PodHasNetwork` to surface the
-successful completion of sandbox creation for a pod (which is marked by the
-successful configuration of pod networking). A new `PodConditionType`
-corresponding to `PodHasNetwork` will be added in `api/core/v1/types.go`. No
-changes are required in the Pod Status API for this enhancement.
+The Kubelet will set a new condition on a pod: `PodReadyToStartContainers` to
+surface that Kubelet is ready to start containers in a pod sandbox immediately
+following successful completion of sandbox creation for the pod. A new
+`PodConditionType` corresponding to `PodReadyToStartContainers` will be added in
+`api/core/v1/types.go`. No changes are required in the Pod Status API for this
+enhancement.
 
 ### Determining status of sandbox creation for a pod
 
@@ -812,31 +819,31 @@ Today, `syncPod()` in Kubelet is invoked with the `kubecontainer.PodStatus`
 (distinct from the `v1.PodStatus` API) associated with a given pod.
 `podSandboxChanged()` in `kubeGenericRuntimeManager` evaluates the
 `SandboxStatuses` field in `PodStatus` to determine whether a new pod sandbox
-will need to be created (and networking configured) for a pod. The same logic
-will be used to determine whether a sandbox (with networking configured) is
-ready for a pod in the Kubelet status manager.
+will need to be created for a pod. The same logic will be used to determine
+whether a sandbox is ready for a pod in the Kubelet status manager.
 
-### PodHasNetwork condition details
+### PodReadyToStartContainers condition details
 
-Kubelet will initially generate the `PodHasNetwork` condition as part of
-existing calls to `generateAPIPodStatus()` early during `syncPod()`. The
+Kubelet will initially generate the `PodReadyToStartContainers` condition as
+part of existing calls to `generateAPIPodStatus()` early during `syncPod()`. The
 `status` field will be set to `true` if a sandbox is ready (determined by
 invoking `podSandboxChanged()` as described
 [above](#determining-status-of-sandbox-creation-for-a-pod)). The `status` field
 will be set to `false` if a sandbox is found to be not ready.
 
-Kubelet will generate the `PodHasNetwork` condition for the final time (in the
-life of a pod) as part of existing calls to `generateAPIPodStatus()` early
-during `syncTerminatedPod()`. Prior invocations of `killPod()` (as part of
-`syncTerminatingPod`) will result in the absence of a sandbox corresponding to
-the pod. As a result, the `status` field of the `PodHasNetwork` condition will
-be set to `false` (determined by invoking `podSandboxChanged()` as described
+Kubelet will generate the `PodReadyToStartContainers` condition for the final
+time (in the life of a pod) as part of existing calls to
+`generateAPIPodStatus()` early during `syncTerminatedPod()`. Prior invocations
+of `killPod()` (as part of `syncTerminatingPod`) will result in the absence of a
+sandbox corresponding to the pod. As a result, the `status` field of the
+`PodReadyToStartContainers` condition will be set to `false` (determined by
+invoking `podSandboxChanged()` as described
 [above](#determining-status-of-sandbox-creation-for-a-pod)).
 
 During periods of API server or etcd unavailability combined with a Kubelet
 restart/crash (covered in more details
 [below](#unavailability-of-api-server-or-etcd-along-with-kubelet-restart)),
-the `lastTransitionTime` field of `PodHasNetwork` condition that
+the `lastTransitionTime` field of `PodReadyToStartContainers` condition that
 ultimately gets persisted upon Kubelet restarting and API server becoming
 available again is as close as possible to an actual change in the condition
 (that could not be persisted).
@@ -851,18 +858,19 @@ issue pod status updates. It caches the pod status and issues patches to the API
 server when necessary. This infrastructure will be used for managing the new pod
 conditions as well.
 
-The Kubelet Status Manager will surface a new `GeneratePodHasNetworkCondition`
-API. This will be invoked by Kubelet's `generateAPIPodStatus()` to populate the
-pod status that is passed to `setPodStatus`. This is similar to the existing pod
-conditions generator functions: `GeneratePodReadyCondition` and
-`GeneratePodInitializedCondition`. If updates through `generateAPIPodStatus()`
-is found to be inaccurate (for example if Kubelet is very busy), invocation of
-`GeneratePodHasNetworkCondition` could also be added right after `createSandbox`
-in `kubeGenericRuntimeManager` returns successfully.
+The Kubelet Status Manager will surface a new
+`GeneratePodReadyToStartContainers` API. This will be invoked by Kubelet's
+`generateAPIPodStatus()` to populate the pod status that is passed to
+`setPodStatus`. This is similar to the existing pod conditions generator
+functions: `GeneratePodReadyCondition` and `GeneratePodInitializedCondition`. If
+updates through `generateAPIPodStatus()` is found to be inaccurate (for example
+if Kubelet is very busy), invocation of `GeneratePodReadyToStartContainers`
+could also be added right after `createSandbox` in `kubeGenericRuntimeManager`
+returns successfully.
 
 `updateStatusInternal()` in the Kubelet Status Manager will be enhanced to mark
-`updateLastTransitionTime` for the new `PodHasNetwork` condition when changes in
-the `status` of the conditions are detected.
+`updateLastTransitionTime` for the new `PodReadyToStartContainers` condition
+when changes in the `status` of the conditions are detected.
 
 ### Unavailability of API Server or etcd along with Kubelet Restart
 
@@ -982,7 +990,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 E2E tests will be introduced to cover the user scenarios mentioned above. Tests
 will involve launching pods with characteristics mentioned below and
-examining the pod status has the new `PodHasNetwork` condition with `status` and `reason` fields populated with expected values:
+examining the pod status has the new `PodReadyToStartContainers` condition with
+`status` and `reason` fields populated with expected values:
 1. A basic pod that launches successfully without any problems.
 2. A pod with references to a configmap (as a volume) that has not been created causing the pod sandbox creation to not complete until the configmap is created later.
 3. A pod whose node is rebooted leading to the sandbox being recreated.
@@ -1059,7 +1068,7 @@ in back-to-back releases.
 
 #### Alpha
 
-- Kubelet will report pod sandbox conditions if the feature flag `PodHasNetworkCondition` is enabled.
+- Kubelet will report pod sandbox conditions if the feature flag `PodReadyToStartContainersCondition` is enabled.
 - Initial e2e tests completed and enabled.
 
 #### Beta
@@ -1152,7 +1161,7 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PodHasNetworkCondition
+  - Feature gate name: PodReadyToStartContainersCondition
   - Components depending on the feature gate: Kubelet
 
 ###### Does enabling the feature change any default behavior?
@@ -1200,8 +1209,6 @@ used to confirm that the new pod condition introduced is being:
 This section must be completed when targeting beta to a release.
 -->
 
-Skipping this section at the Alpha stage and will populate at Beta.
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -1214,12 +1221,38 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+This flag is only relevant for the Kubelet. Therefore, the new condition will be
+reported for pods scheduled on nodes that have the feature enabled.
+
+A controller or service that consumes the new pod condition should be enabled
+only after rollout of the new condition has succeeded on all nodes. Similarly,
+the controller or service that consumes the new pod condition should be disabled
+before the rollback. This helps prevent a controller/service consuming the
+condition getting the data from pods running in a subset of the nodes in the
+middle of a rollout or rollback.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+A sharp increase in the number of PATCH requests to API Server from Kubelets
+after enabling this feature is a sign of potential problem and can inform a
+rollback. A cluster operator may monitor
+```
+apiserver_request_total{verb="PATCH", resource="pods", subresource="status"}
+```
+for this.
+
+This may be the case in clusters that use a special runtime environment like
+microVM/Kata, where the sandbox may crash repeatedly (without ever getting a
+chance to start containers) resulting in lots of potential updates due to the
+new condition "flapping". However, in such environments, this may already be the
+case with existing pod conditions like ContainersReady and Ready (unless the
+sandbox environment/VM crashes very early before a single container is run).
+Batching of pod status updates from the Kubelet status manager will also help.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1229,19 +1262,25 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade/downgrade of Kubelet incorporating this feature (preceded with draining
+of pods) has been tested successfully.
+
+New pods scheduled on the node after un-cordoning following node
+upgrade/downgrade surface the expected pod conditions.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
+No
+
 ### Monitoring Requirements
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
-
-Skipping this section at the Alpha stage and will populate at Beta.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1250,6 +1289,13 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+This question isn't totally relevant for this feature, since this is an
+administrator-enabled feature controlled via kubelet flag, not something the
+user controls with an API server resource spec.
+
+Checking the Pod conditions on nodes with this feature enabled is the simplest
+way to check if the feature is enabled properly on a vanilla k8s cluster.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1264,8 +1310,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason:
-- [ ] API .status
-  - Condition name:
+- [x] API .status
+  - Condition name: PodReadyToStartContainers reported for pod
   - Other field:
 - [ ] Other (treat as last resort)
   - Details:
@@ -1293,12 +1339,8 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: There are no specific SLIs for the Kubelet Status Manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1306,6 +1348,15 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+New metrics may be added to the Kubelet status manager to surface fine grained
+information about updates to overall pod status as well as specific pod
+conditions. However, such a change affects the whole Kubelet Status Manager
+(rather than specific pod conditions) and thus beyond the scope of this KEP.
+
+A general Kubernetes metrics collector like Kube State Metrics (that already
+consume pod condifitions and surface those as metrics) will need to be enhanced
+to consume the new pod condition in this KEP.
 
 ### Dependencies
 
@@ -1436,15 +1487,17 @@ details). For now, we leave it here.
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 If etcd/API server is unavailable, pod status cannot be updated. So the
-`PodHasNetwork` condition associated with pod status cannot be updated either.
-The pod status manager already retries the API server requests later (based on
-data cached in the Kubelet) and that should help.
+`PodReadyToStartContainers` condition associated with pod status cannot be
+updated either. The pod status manager already retries the API server requests
+later (based on data cached in the Kubelet) and that should help.
 
-If pod sandbox creation completes for a pod on a node but API server becomes
-unavailable (before the sandbox creation condition can be patched) and Kubelet
+If the Kubelet is ready to start containers in a pod (right after pod sandbox
+creation completes) on a node but API server becomes unavailable (before the
+condition to indicate readiness to start containers can be patched) and Kubelet
 crashes or restarts (shortly after API server becoming and staying unavailable),
 the `lastTransitionTime` field may be inaccurate. This is described in the
-section [above](#unavailability-of-api-server-or-etcd-along-with-kubelet-restart).
+section
+[above](#unavailability-of-api-server-or-etcd-along-with-kubelet-restart).
 
 ###### What are other known failure modes?
 
@@ -1489,13 +1542,13 @@ Why should this KEP _not_ be implemented?
 
 The main drawback associated with the new pod sandbox conditions involves a
 slight potential increase in calls to the API Server from Kubelet to patch
-`status` = `true` for the new `PodHasNetwork` condition in a pod's status.
-Typically, this would involve an extra patch call for pod status in the lifetime
-of most pods (if the status manager does not batch them with other pod status
-updates): one when pod sandbox creation completes and another when the pod is
-terminated. However, there could be a higher number of patch calls to API Server
-if the pod sandbox environment (like a microvm) starts successfully and then
-crashes in a re-start loop.
+`status` = `true` for the new `PodReadyToStartContainers` condition in a pod's
+status. Typically, this would involve an extra patch call for pod status in the
+lifetime of most pods (if the status manager does not batch them with other pod
+status updates): one when pod sandbox creation completes and another when the
+pod is terminated. However, there could be a higher number of patch calls to API
+Server if the pod sandbox environment (like a microvm) starts successfully and
+then crashes in a re-start loop.
 
 Caching of updates to pod status by the pod status manager and batching pod
 status updates (which is already in place) can help mitigate frequent patch
@@ -1563,14 +1616,15 @@ aggregating the metrics.
 sandbox creation.
 
 Since the lookup of the pod fields and existing conditions is necessary for SLIs
-around pod sandbox creation latency, surfacing the `PodHasNetwork` condition in
-pod status will allow a metric collection service to directly access the
-relevant data without requiring the ability to collect and parse OpenTelemetry
-traces. As mentioned in the User Stories, popular community managed services
-like Kube State Metrics can consume the `PodHasNetwork` condition with a trivial
-set of changes. Enhancing them to collect and parse OpenTelemetry traces with no
-sampling and mapping the data to associated data from API server data will be
-complex from an engineering and operational perspective.
+around pod sandbox creation latency, surfacing the `PodReadyToStartContainers`
+condition in pod status will allow a metric collection service to directly
+access the relevant data without requiring the ability to collect and parse
+OpenTelemetry traces. As mentioned in the User Stories, popular community
+managed services like Kube State Metrics can consume the
+`PodReadyToStartContainers` condition with a trivial set of changes. Enhancing
+them to collect and parse OpenTelemetry traces with no sampling and mapping the
+data to associated data from API server data will be complex from an engineering
+and operational perspective.
 
 For controllers using the pod sandbox conditions to determine reconciliation
 strategy, access to the pod is typically necessary while collecting and parsing
@@ -1604,10 +1658,10 @@ is not preferred.
 ### Have Kubelet mark sandbox ready condition on a pod using extended conditions
 
 Instead of a "native" condition as proposed in this KEP, an "extended" condition
-maybe used by Kubelet to mark the PodHasNetwork condition. Such a condition may
-look like: `kubernetes.io/pod-has-network`. However, internal/core Kubernetes
-components (like Kubelet) do not use "extended" conditions today. So this
-approach may be unusual.
+maybe used by Kubelet to mark the PodReadyToStartContainers condition. Such a
+condition may look like: `kubernetes.io/pod-ready-to-start-containers`. However,
+internal/core Kubernetes components (like Kubelet) do not use "extended"
+conditions today. So this approach may be unusual.
 
 ## Infrastructure Needed (Optional)
 
