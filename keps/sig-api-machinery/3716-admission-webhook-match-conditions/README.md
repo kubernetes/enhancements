@@ -24,6 +24,8 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -358,8 +360,8 @@ Test cases to add:
 
 We will test the edge cases mostly in integration tests and unit tests.
 
-Once the feature graduates to GA, a single E2E test covering hte single-match-condition cases
-outlined above will be added.
+Once the feature is default enabled in beta, a single E2E test covering hte single-match-condition
+cases outlined above will be added.
 
 ### Graduation Criteria
 
@@ -367,6 +369,21 @@ outlined above will be added.
 
 - Feature implemented behind `AdmissionWebhookMatchConditions` feature flag
 - [Integration tests](#integration-tests) implemented
+
+#### Beta
+
+- Add E2E test coverage
+- Resolve resource constraints validation
+
+<<[UNRESOLVED resource constraints ]>>
+Additional beta requirements TBD
+<<[/UNRESOLVED]>>
+
+#### GA
+
+<<[UNRESOLVED resource constraints ]>>
+GA requirements TBD
+<<[/UNRESOLVED]>>
 
 ### Upgrade / Downgrade Strategy
 
