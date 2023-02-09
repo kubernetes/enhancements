@@ -1074,8 +1074,11 @@ No.
 Yes. Pods that had sidecars will need to be deleted and recreated without them.
 
 The feature gate disablement will require the kubelet restart. When kubelet will
-start, it will fail to reconcile the Pod with new fields and will clean up all
-running containers.
+start, it will fail to reconcile the Pod with the new fields and will clean up
+all running containers.
+
+If version downgrade is involved, the node must be drained. All Pods with the
+new field will not be accepted by kubelet once feature was disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
