@@ -1138,8 +1138,10 @@ Spec:
       operations:  ["CREATE", "UPDATE"]
       resources:   ["deployments"]
   matchConditions:
-    - expression: 'metadata.kind == "Deployment"'
-    - expression: '!(metadata.namespace in params.excludedNamespaces)'
+    - name: 'is-deployment'
+      expression: 'metadata.kind == "Deployment"'
+    - name: 'not-in-excluded-namespaces'
+      expression: '!(metadata.namespace in params.excludedNamespaces)'
   validations:
     - expression: "object.spec.replicas <= params.maxReplicas"
       reason: Invalid
