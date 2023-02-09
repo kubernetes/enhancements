@@ -577,6 +577,7 @@ in back-to-back releases.
 - The feature gate is enabled by default.
 - No negative feedback during alpha for a long-enough time.
 - No bug issues reported during alpha.
+- Implementing/exposing metrics in HPA so that users can monitor the HPA controller for this feature. 
 
 #### GA
 
@@ -766,7 +767,12 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-- Many HPAs are in `ScalingActive: false` condition with `FailedGetContainerResourceMetric` reason.
+- The container resource metric takes much longer time compared to other metrics.
+which can be monitored via the 1st metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
+- Increase the overall performance of HPA controller 
+which can be monitored via the 2nd metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
+- Many error occurrence on the container resource metrics
+which can be monitored via the 3rd metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -854,7 +860,14 @@ Pick one more of these and delete the rest.
   - Details:
 -->
 
-N/A
+HPA controller have no metrics in it now. 
+The following metrics will be implemented by beta. ([issue](https://github.com/kubernetes/kubernetes/issues/115639))
+1. How long does each metric type take to compute the ideal replica num.
+  - so that users can confirm the container resource metric doesn't take long time compared to other metrics.
+2. How long does the HPA controller take to complete reconcile one HPA object.
+  - so that users can confirm the container resource metric doesn't increse the whole time of scaling.
+3. Provide the metric to show error occurrence for each metric.
+  - so that users can confirm no much error occurrence on the container resource metric.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -863,7 +876,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-N/A
+Yes. We're planning to implement the metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
 
 ### Dependencies
 
@@ -888,7 +901,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-No.
+Yes.
+The HPA requires the `metrics.k8s.io` APIs to be available in the cluster to operate. This API is served by the Metrics Server,
+without Metrics Server autoscaling on container resource metrics will not work. 
+If there are multiple metrics defined and one is not available, scale up will
+continue but scale down will not (for safety).
 
 ### Scalability
 
