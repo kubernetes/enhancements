@@ -102,7 +102,8 @@ For maintainers:
   mechanisms. Removing the feature can greatly reduce the complexity of
   kubectl
 - Removes some ugly server-side code meant to deal with transition from
-  client-side apply to server-side apply.
+  client-side apply to server-side apply (see
+  https://kubernetes.io/blog/2022/10/20/advanced-server-side-apply/)
 
 ### Goals
 
@@ -132,7 +133,8 @@ The meaning of `auto` goes as follows:
   apply that resource
 - If the resource is new (GET returns 404), the resource is server-side applied
 - If the resource already exists but doesn't have the `last-applied`
-  annotation, the resource is server-side applied
+  annotation, the resource is server-side applied. Note that this will
+  treat previously "converted" objects as client-side apply.
 
 For the alpha phase, the auto value will only be visible and usable if
 the `KUBECTL_AUTO_SERVER_SIDE` is set. That variable will later be
@@ -243,14 +245,22 @@ somewhat incompatible with `--server-side=false` today, it will be
 possible to use the flag with `auto` (and we will entirely disallow it
 with `--server-side=false`).
 
-Some other commands might be impacted. `kubectl create` (and family)
-notably have a `--save-config` flag that create the last-applied
-annotation. While I don't know how many people actually use the flag,
-the idea of saving this as a config is confusing, since people don't
-actually have the file and so the situation doesn't really fit well the
-`apply` workflow. We suggest adding a warning when this flag is used, as
-well as updating its documentation to suggest not using it, and possibly
+Some other commands might be impacted, especially when/if we remove
+client-side apply altogether. This would deserve a full section once the
+details of this are carved out. `kubectl create` (and family) notably
+have a `--save-config` flag that create the last-applied annotation.
+While I don't know how many people actually use the flag, the idea of
+saving this as a config is confusing, since people don't actually have
+the file and so the situation doesn't really fit well the `apply`
+workflow. We suggest adding a warning when this flag is used, as well as
+updating its documentation to suggest not using it, and possibly
 deprecate it in the future.
+
+<<[UNRESOLVED More details needed on exhaustive CSA clean-up]>>
+Deprecating client-side apply from kubectl probably implies a LOT more
+clean-up that is actually described here, and we would have to go
+through the details when we decide the fate of client-side apply.
+<<[/UNRESOLVED]>>
 
 Because `kubectl diff` is supposed to map the behavior of `kubectl
 apply` as closely as possible, the change will also be done for that
@@ -331,12 +341,15 @@ outside of kubectl) have used it both as "clients" and in controllers.
 
 #### Beta
 
+The environment variable to protect `auto` will be removed in Beta based
+on feedback, so that the `auto` flag becomes available to all.
+
 <!--
 To be re-evaluated later:
 Server-Side Apply has a very limited set of bugs or feature requests as
 this point and is definitely mature. Enabling client-side will allow
 increased usage and reduce burden cost for kubectl to maintain both
-mechanisms. -->
+mechanisms, if we remove client-side apply. -->
 
 #### GA
 
@@ -349,11 +362,10 @@ migrate existing client-side usage to server-side. -->
 
 #### Deprecation
 
-We are not intending to deprecate the flag, but we might remove the
-`--server-side` flag in the long term.
-
-Same thing applies for `--save-config` and other client-side related
-flags in kubectl which we might remove.
+If we decide to remove the remove the `--server-side` flag, we would
+have a deprecation warning at least two releases before. Same thing
+applies for `--save-config` and other client-side related flags in
+kubectl which we might remove.
 
 ### Upgrade / Downgrade Strategy
 
@@ -362,6 +374,10 @@ currently have a upgrade (and somewhat downgrade) feature in kubectl to
 go from client-side to server-side apply. The upgrade and downgrade
 works well in the nominal cases but fail with special cases. Enabling
 server-side by default also intends to address that problem.
+
+Going back from `--server-side=auto` to `--server-side=false` or
+`--server-side=true` would trigger the same upgrade/downgrade strategy
+mentioned above for each object that don't match the new mode.
 
 ### Version Skew Strategy
 
@@ -405,18 +421,18 @@ that.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Since enablement is not done through a feature gate, tests are fairly
-easy to implement.
+Since enablement is not done through a feature gate and/or command-line
+flags, tests are fairly easy to implement.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 In the context of this change, a rollback would possibly be someone
-switching from server-side apply to client-side apply and vice-versa.
-This problem isn't new and is one of the reason that motivates this
-change. It mostly works well when the default fieldmanager is being
-used.
+switching from server-side apply to client-side apply and vice-versa (or
+from `auto` to another forced value) This problem isn't new and is one
+of the reason that motivates this change. It mostly works well when the
+default fieldmanager is being used.
 
 <<[UNRESOLVED bad description of the problems here ]>>
 We could certainly make a much better analysis of the problems we have
@@ -451,10 +467,9 @@ N/A. No monitoring in place.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-`kubectl apply -V8` can help identify what type of apply is used. Also
-checking the presence of the last applied annotation on the cluster
-resource indicates whether the resource was client-side or server-side
-applied.
+`kubectl apply -V8` can help identify what type of apply is used, or the
+output of the command when applying ("resource has been server-side
+applied").
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -494,6 +509,9 @@ It's important to note that server-side apply ALWAYS sends a patch while
 client-side could by-pass the send. This has an impact on the apiserver
 since all the requests need to be processed, including by webhooks which
 can increase the cluster load.
+
+As the server-side field becomes auto, the initial get could absolutely
+be removed saving an extra request.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
