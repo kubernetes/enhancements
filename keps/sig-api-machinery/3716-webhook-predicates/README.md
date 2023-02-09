@@ -34,6 +34,8 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
+- [Future Work](#future-work)
+  - [Cross-webhook match conditions](#cross-webhook-match-conditions)
 - [Alternatives](#alternatives)
   - [Exclusion Expressions](#exclusion-expressions)
   - [Resource Exclusions](#resource-exclusions)
@@ -85,12 +87,6 @@ avoid circular-dependencies and exclude critical system resources, a webhook out
 major impact on cluster availability. This proposal aims to mitigate (but not eliminate) these
 issues by allowing webhooks to be more narrowly scoped and targeted.
 
-
-The same benefits also apply to bootstrapping a new cluster, or in a disaster-recovery scenario
-where objects in a cluster need to be recreated from source code. Being able to define and deploy a
-webhook before any workload Pods are defined means that admins don't need to bypass security
-controls to fix things, and helps to ensure there's never a security gap when restoring service.
-
 **Performance:** Admission webhooks sit in the critical request path for write-requests. Validating
 webhooks can be run in parallel, but Mutating webhooks must be run in serial (up to 2 times!). This
 makes webhooks extremely latency sensitive, and even a webhook that doesn't do any work still needs
@@ -129,8 +125,8 @@ rules:
     apiVersions: '*'
     resources: '*'
 matchConditions:
-  # Exclude leases from the webhook
-  - expression: '!(request.resource.group == "coordination.k8s.io" && resource.resource == "leases")'
+  - name: 'exclude-leases'
+    expression: '!(request.resource.group == "coordination.k8s.io" && resource.resource == "leases")'
 ```
 
 #### Exempt system users from security policy
@@ -146,8 +142,8 @@ With `matchConditions`, a managed cluster could append system-exclusion rules to
 
 ```yaml
 matchConditions:
-  # Exclude node requests from the webhook
-  - expression: '!("system:nodes" in request.userInfo.groups)'
+  - name: 'exclude-kubelet-requests'
+    expression: '!("system:nodes" in request.userInfo.groups)'
 ```
 
 Since the expression will be evaluated using a common Kubernetes CEL library, these expressions
@@ -155,13 +151,11 @@ should also get automatic access to the secondary authorization check mechanism 
 [KEP-3488: CEL for Admission Control](/keps/sig-api-machinery/3488-cel-admission-control#secondary-authz).
 In practice, this means that RBAC bindings can be used to opt-out privileged users from security policy:
 
-_Note: The secondary authz mechanism has not yet been designed, and the example syntax here is just
-to illustrate how it might be used._
-
 ```yaml
 matchConditions:
-  # Exclude users with the 'breakglass' permission on the 'security-policy' webhook.
-  - expression: '!authorized(request.userInfo, "breakglass", "validatingwebhookconfigurations.admissionregistration.k8s.io/security-policy")'
+  # Requests by users without breakglass should be included.
+  - name: 'breakglass'
+    expression: 'authorizer.resource('admissionregistration.k8s.io', 'validatingwebhookconfigurations', '*').name('security-policy').check('breakglass').denied()'
 ```
 
 #### Scope an NFS access management webhook to Pods mounting NFS volumes
@@ -191,7 +185,8 @@ rules:
     resources: 'pods'
 matchConditions:
   # Only include pods with an NFS volume.
-  - expression: 'object.spec.volumes.exists(v, v.has(nfs))'
+  - name: 'nfs-volume-present'
+    expression: 'object.spec.volumes.exists(v, v.has(nfs))'
 ```
 
 ### Goals
@@ -219,6 +214,8 @@ type ValidatingWebhook struct {
   // for a request to be sent to this webhook. All conditions in the list must evaluate to TRUE for
   // the request to be matched.
   // +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
   MatchConditions []MatchCondition `json:"matchConditions,omitempty"`
 }
 
@@ -229,6 +226,12 @@ type MutatingWebhook struct {
 
 // MatchCondition represents a condition which must by fulfilled for a request to be sent to a webhook.
 type MatchCondition struct {
+  // Name is an identifier for this match condition, used for strategic merging of MatchConditions,
+  // as well as providing an identifier for logging purposes. A good name should be descriptive of
+  // the associated expression.
+  // Name must be a valid RFC 1123 DNS subdomain, and unique in a set of MatchConditions.
+  // Required.
+  Name string `json:"name"`
   // NOTE: Placeholder documentation, to be replaced by https://github.com/kubernetes/website/issues/39089.
   //
 	// Expression represents the expression which will be evaluated by CEL.
@@ -266,7 +269,7 @@ a CEL expression adds a potential failure point. This can be mitigated by testin
 ecosystem currently lacks some of the tools that would make this easier.
 
 Of particular significance are match conditions tied to non-functional properties of an object, such
-as using labels to decide whether to opt an object out of a policy. Without additional admition
+as using labels to decide whether to opt an object out of a policy. Without additional admission
 controls on who can set those non-functional aspects, exempting the policy based on that could be a
 security vulnerability. In contrast, the
 [NFS example usecase](#scope-an-nfs-access-management-webhook-to-pods-mounting-nfs-volumes) exempts
@@ -449,32 +452,18 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Downgrading in a way that disables match conditions after it is already in use can increase the
+scope of requests evaluated by a webhook. See
+[Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement)
+for more details
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+The new field is only evaluated by the apiserver, so only HA apiserver version skew is relevant. In
+this case, if the feature is enabled in one apiserver and not another, a request could
+non-deterministically be sent to a webhook. Enabling match conditions without setting
+`matchConditions` on an webhooks is a no-op, so the version skew non-determinism is best avoided by
+waiting until it has been enabled in all apiservers before starting to use the new field.
 
 ## Production Readiness Review Questionnaire
 
@@ -589,6 +578,14 @@ Even if applying deprecation policies, they may still surprise some users.
 -->
 
 ### Monitoring Requirements
+
+A new per-webhook metric will measure the number of requests excluded by match conditions:
+
+Metric name: `webhook_admission_match_condition_exclusions_total`
+Labels:
+- `name`: webhook name
+- `type`: `validate` or `admit`
+- `operation`: the admission operation
 
 <!--
 This section must be completed when targeting beta to a release.
@@ -762,6 +759,8 @@ This through this both in small and large cases, again with respect to the
 
 ### Troubleshooting
 
+See [Debuggability](#debuggability).
+
 <!--
 This section must be completed when targeting beta to a release.
 
@@ -810,6 +809,20 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+## Future Work
+
+### Cross-webhook match conditions
+
+In the future, we should explore ways to apply common match conditions across multiple webhooks.
+
+Example use cases:
+- Apply a [break-glass exemption](#exempt-system-users-from-security-policy) across many (or all) webhooks.
+- Managed cluster provider wants to exempt provider-managed resources from user-managed webhooks.
+
+Considerations:
+- Access by managed cluster provider vs. cluster admin
+- Side effects & mutations
 
 ## Alternatives
 
