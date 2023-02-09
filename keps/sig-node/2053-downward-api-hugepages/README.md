@@ -10,6 +10,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -113,7 +117,24 @@ and or container cgroup.
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes
+necessary to implement this enhancement.
+
+##### Prerequisite testing updates
+
+No further additional tests needed to be added prior implementing this
+enhancement.
+
+##### Unit tests
+
 Unit and e2e testing will be added consistent with other resources in downward API.
+
+##### Integration tests
+
+There are no integration tests, only e2e tests.
+
+##### e2e tests
 
 e2e testing will only function if a node in the cluster exposes hugepages, otherwise,
 it will gracefully skip (as expected).
