@@ -211,13 +211,18 @@ spans propagated from kubelet to API server match what is expected from the requ
 
 ##### Unit tests
 
-- `k8s.io/component-base/traces`: no test grid results - k8s.io/component-base/traces/config_test.go
+- https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go#L503-#L532
+- https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cri/remote/remote_runtime_test.go#L65-#L97
+- https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go
+- https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/component-base/tracing/api/v1/config_test.go
 
 ##### Integration tests
 
-An integration test will verify that spans exported by the kubelet match what is
-expected from the request. We will also add an integration test that verifies
+Integration tests verify that spans exported by the kubelet match what is
+expected from the request. Also an integration test that verifies
 spans propagated from kubelet to API server match what is expected from the request.
+
+- _component-base tracing/api/v1 integration test_ https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/tracing/tracing_test.go
 
 ##### e2e tests
 
@@ -230,18 +235,14 @@ Alpha
 
 - [X] Implement tracing of incoming and outgoing gRPC, HTTP requests in the kubelet
 - [X] Integration testing of tracing
-  - _component-base tracing/api/v1 integration test_ https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/tracing/tracing_test.go
 - [X] Unit testing of kubelet tracing and tracing configuration
-  - https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go#L503-#L532
-  - https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cri/remote/remote_runtime_test.go#L65-#L97
-  - https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go
-  - https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/component-base/tracing/api/v1/config_test.go
 
 Beta
 
 - [X] OpenTelemetry reaches GA
 - [X] Publish examples of how to use the OT Collector with kubernetes
 - [X] Allow time for feedback
+- [ ] Test and document results of upgrade and rollback while feature-gate is enabled.
 - [ ] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
 - [ ] Unit/integration test to verify connected traces in kubelet.
 - [ ] Revisit the format used to export spans.
@@ -283,7 +284,7 @@ GA
       of a node? **No, restarting the kubelet with feature-gate disabled will disable tracing**
 
 ##### Does enabling the feature change any default behavior?
-  No. The feature is disabled unlesss the feature gate is enabled and the TracingConfiguration is populated in Kubelet Configuration.
+  No. The feature is disabled unless the feature gate is enabled and the TracingConfiguration is populated in Kubelet Configuration.
   When the feature is enabled, it doesn't change behavior from the users' perspective; it only adds tracing telemetry.
 
 ##### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -293,8 +294,8 @@ GA
   It will start generating and exporting traces again.
 
 ##### Are there any tests for feature enablement/disablement?
-  Unit tests switching feature gates will be added. Manual testing of disabling, reenabling the feature on nodes, ensuring the kubelet comes up w/out error will
-  also be performed.
+  Enabling and disabling kubelet tracing is an in-memory switch. Explicit enablement/disablement tests will not provide value so will not be added.
+  Manual testing of disabling, reenabling the feature on nodes, ensuring the kubelet comes up w/out error will be performed and documented.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -344,7 +345,7 @@ _This section must be completed when targeting beta graduation to a release._
 ##### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [] Metrics
-  - Metric name: tbd
+  - Metric name: tbd [opentelemetry-go issue #2547](https://github.com/open-telemetry/opentelemetry-go/issues/2547)
   - Components exposing the metric: kubelet
 
 ##### Are there any missing metrics that would be useful to have to improve observability 

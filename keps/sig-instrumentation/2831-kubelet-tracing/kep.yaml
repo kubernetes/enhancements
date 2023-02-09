@@ -12,9 +12,11 @@ status: implementable
 creation-date: 2021-07-21
 reviewers:
   - "@dashpole"
+  - "@ehashman"
   - "@wojtek-t"
 approvers:
   - "@dashpole"
+  - "@ehashman"
   - "@wojtek-t"
 see-also:
   - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/647-apiserver-tracing"
