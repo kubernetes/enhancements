@@ -19,12 +19,12 @@
       - [Policy Configuration](#policy-configuration)
       - [Match Criteria](#match-criteria)
     - [Decisions and Enforcement](#decisions-and-enforcement)
-    - [Informational type checking](#informational-type-checking)
     - [Failure Policy](#failure-policy)
     - [Safety measures](#safety-measures)
     - [Singleton Policies](#singleton-policies)
     - [Limits](#limits)
   - [Phase 2](#phase-2)
+    - [Informational type checking](#informational-type-checking)
     - [Enforcement Actions](#enforcement-actions)
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
@@ -895,41 +895,6 @@ xref:
 
 - https://open-policy-agent.github.io/gatekeeper/website/docs/next/violations/
 
-#### Informational type checking
-
-This is complicated by:
-
-- Version skew
-- CRDs
-- Aggregated API servers
-
-Problem examples:
-
-| Problem                                                | Summary                                     |
-| ------------------------------------------------------ | ------------------------------------------- |
-| version skew: ephemeralContainers case                 | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
-| version skew: Migration from annotation to field       | Need to be able to validate annotation (if present) or field (if it exists and is populated) |
-| CRD is deleted                                         | Nothing to type check against, but also means there are no coresponding custom resources |
-| CRD is in multiple clusters, but schema differs        | If policy author is aware of the schema variations, can they write policies that work for all the variations? |
-| Validation of an aggregated API server type            | Main API server does not have type definitions |
-
-Due to these complications, we have decided to evaluate CEL expressions
-dynamically. Informational type checking will be provided (except for aggregated
-API server types), but will be surfaced only as warnings. See "Alternatives
-Considered" section for details of all the alternatives we reviewed when
-selecting this approach.
-
-Type checking is still performed for all expressions where a GVK can be matched
-to type check against, resulting in warnings, e.g.:
-
-```yaml
-...
-status:
-  expressionWarnings:
-    - expression: "object.foo"
-      warning: "no such field 'foo'"
-```
-
 #### Failure Policy
 
 Because failure policy is most often selected based on the need to guarantee
@@ -1026,6 +991,48 @@ We will put limits on:
 All these capabilities are required before Beta, but will not be implemented in
 the first alpha release of this enhancement due to the size and complexity of
 this enhancement.
+
+#### Informational type checking
+
+Some advantages of strongly typed objects and expressions over treating everything as unstructured are:
+
+- Checks against missing/misspelled fields.
+  The user may write an expression that refers to a missing/misspelled field that
+  does not exist in their test cases but appears later. A type check can detect this kind of error while an evaluation-time check may not.
+- Checks against type confusions. Similarly, the user may confuse the type of field but their test cases never touch wrongly typed fields.
+- Guard against short-circuit evaluation. The user may make a mistake of one of the mentioned above but the code path is never covered in their test cases;
+- Support Kubernetes extensions. For example, IntOrString and map lists.
+
+However, enforcing types for every expression and object is not feasible because of:
+
+- Version skew
+- CRDs
+- Aggregated API servers
+
+Problem examples:
+
+| Problem                                          | Summary                                                                                                               |
+|--------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| version skew: ephemeralContainers case           | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
+| version skew: Migration from annotation to field | Need to be able to validate annotation (if present) or field (if it exists and is populated)                          |
+| CRD is deleted                                   | Nothing to type check against, but also means there are no coresponding custom resources                              |
+| CRD is in multiple clusters, but schema differs  | If policy author is aware of the schema variations, can they write policies that work for all the variations?         |
+| Validation of an aggregated API server type      | Main API server does not have type definitions                                                                        |
+
+Until the design is extended to handle these situations, the type checking will remain informational.
+
+Informational type checking will be performed against all expressions where a GVK can be resolved to
+type check against. The result of type checking will be part of the status of the performed policy.
+
+For example, accessing an unknown field will result a warning like this.
+
+```yaml
+...
+status:
+  expressionWarnings:
+    - expression: "object.replicas > 1" # should be "object.spec.replicas > 1"
+      warning: "no such field 'replicas'"
+```
 
 #### Enforcement Actions
 
