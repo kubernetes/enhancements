@@ -1115,6 +1115,9 @@ spec:
 `auditAnnotations` are independent of `validations`. A `ValidatingAdmissionPolicy`
 may contain only `validations`, only `auditAnnotations` or both.
 
+Auudit annotations are recorded regardless of whether a
+ValidatingAdmissionPolicyBinding's `validationActions` include `Audit`.
+
 The published annotation key will be of the form `<ValidatingPolicyDefinition
 name>/<auditAnnotation key>` and will be validated as a
 [QualifiedName](https://github.com/kubernetes/kubernetes/blob/dfa4143086bf504c6c72d5eee8a2210b8ed41b9a/staging/src/k8s.io/apimachinery/pkg/util/validation/validation.go#L43).
