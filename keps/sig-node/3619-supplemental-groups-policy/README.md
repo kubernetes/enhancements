@@ -1,6 +1,35 @@
-# KEP-3619: Fine-grained SupplementalGroups control
-
 <!--
+**Note:** When your KEP is complete, all of these comment blocks should be removed.
+
+To get started with this template:
+
+- [ ] **Pick a hosting SIG.**
+  Make sure that the problem space is something the SIG is interested in taking
+  up. KEPs should not be checked in without a sponsoring SIG.
+- [ ] **Create an issue in kubernetes/enhancements**
+  When filing an enhancement tracking issue, please make sure to complete all
+  fields in that template. One of the fields asks for a link to the KEP. You
+  can leave that blank until this KEP is filed, and then go back to the
+  enhancement and add the link.
+- [ ] **Make a copy of this template directory.**
+  Copy this template into the owning SIG's directory and name it
+  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
+  leading-zero padding) assigned to your enhancement above.
+- [ ] **Fill out as much of the kep.yaml file as you can.**
+  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
+  "Status", and date-related fields.
+- [ ] **Fill out this file as best you can.**
+  At minimum, you should fill in the "Summary" and "Motivation" sections.
+  These should be easy if you've preflighted the idea of the KEP with the
+  appropriate SIG(s).
+- [ ] **Create a PR for this KEP.**
+  Assign it to people in the SIG who are sponsoring this process.
+- [ ] **Merge early and iterate.**
+  Avoid getting hung up on specific details and instead aim to get the goals of
+  the KEP clarified and merged quickly. The best way to do this is to just
+  start with the high-level sections and fill out details incrementally in
+  subsequent PRs.
+
 Just because a KEP is merged does not mean it is complete or approved. Any KEP
 marked as `provisional` is a working document and subject to change. You can
 denote sections that are under active debate as follows:
@@ -10,6 +39,41 @@ denote sections that are under active debate as follows:
 Stuff that is being argued.
 <<[/UNRESOLVED]>>
 ```
+
+When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
+focused. If you disagree with what is already in a document, open a new PR
+with suggested changes.
+
+One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
+You do not need a new KEP to move from beta to GA, for example. If
+new details emerge that belong in the KEP, edit the KEP. Once a feature has become
+"implemented", major changes should get new KEPs.
+
+The canonical place for the latest set of instructions (and the likely source
+of this file) is [here](/keps/NNNN-kep-template/README.md).
+
+**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
+it is marked `implementable`, must be approved by each of the KEP approvers.
+If none of those approvers are still appropriate, then changes to that list
+should be approved by the remaining approvers and/or the owning SIG (or
+SIG Architecture for cross-cutting KEPs).
+-->
+# KEP-3619: Fine-grained SupplementalGroups control
+
+<!--
+This is the title of your KEP. Keep it short, simple, and descriptive. A good
+title can help communicate what the KEP is and should be considered as part of
+any review.
+-->
+
+<!--
+A table of contents is helpful for quickly jumping to sections of a KEP and for
+highlighting any additional information provided beyond the standard KEP
+template.
+
+Ensure the TOC is wrapped with
+  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
+tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
@@ -27,7 +91,7 @@ Stuff that is being argued.
   - [CRI](#cri)
     - [SupplementalGroupsPolicy in SecurityContext](#supplementalgroupspolicy-in-securitycontext)
     - [user in ContainerStatus](#user-in-containerstatus-1)
-  - [User Stories](#user-stories)
+  - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Deploy a Security Policy to enforce <code>SupplementalGroupsPolicy</code> field](#story-1-deploy-a-security-policy-to-enforce--field)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -106,6 +170,25 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
+<!--
+This section is incredibly important for producing high-quality, user-focused
+documentation such as release notes or a development roadmap. It should be
+possible to collect this information before implementation begins, in order to
+avoid requiring implementors to split their attention between writing release
+notes and implementing the feature itself. KEP editors and SIG Docs
+should help to ensure that the tone and content of the `Summary` section is
+useful for a wide audience.
+
+A good summary is probably at least a paragraph in length.
+
+Both in this section and below, follow the guidelines of the [documentation
+style guide]. In particular, wrap lines to a reasonable length, to make it
+easier for reviewers to cite specific portions, and to minimize diff churn on
+updates.
+
+[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
+-->
+
 The KEP seeks to provide a way to choose correct behavior with how Container Runtimes (Containerd and CRI-O) are applying `SupplementalGroups` to the first container processes. The KEP describes the work needed to be done in Kubernetes or connected projects to make sure customers have a clear migration path - including detection and safe upgrade - if any of their workflows took a dependency on this arguably erroneous behavior.
 
 ### The issue
@@ -160,6 +243,15 @@ uid=1000(alice) gid=1000(alice) groups=1000(alice),50000(group-in-image),60000
 ```
 
 ## Motivation
+
+<!--
+This section is for explicitly listing the motivation, goals, and non-goals of
+this KEP.  Describe why the change is important and the benefits to users. The
+motivation section can optionally provide links to [experience reports] to
+demonstrate the interest in a KEP within the wider Kubernetes community.
+
+[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
+-->
 
 As described above, how supplemental groups attached to the first container process is complicated and not OCI image spec compliant.
 
@@ -254,7 +346,7 @@ message ContainerUser {
 }
 ```
 
-### User Stories
+### User Stories (Optional)
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -262,6 +354,7 @@ Include as much detail as possible so that people can understand the "how" of
 the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
+
 
 #### Story 1: Deploy a Security Policy to enforce `SupplementalGroupsPolicy` field
 
@@ -294,6 +387,8 @@ As described in [Summary](#summary) section, `alice` can bypass the restriction 
 
 Please note that a security policy without `supplementalGroupsPolicy` would lead to unexpected groups for the first process in the containers.
 
+<!-- #### Story 2 -->
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -324,6 +419,13 @@ Consider including folks who also work outside the SIG or subproject.
 - How to feature-gate this feature in CRI implementations?
 
 ## Design Details
+
+<!--
+This section should contain enough information that the specifics of your
+change are understandable. This may include API specs (though not always
+required) or even code snippets. If there's any ambiguity about HOW your
+proposal will be implemented, this is the place to discuss them.
+-->
 
 ### Kubernetes API
 
@@ -626,7 +728,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-- CRI must support this feature, especially when using `SupplementalGroupsPolicy=IgnoreGroupsInImage`.
+- CRI must support this feature, especially when using `SupplementalGroupsPolicy=Strict`.
 - kubelet must be at least the version of control-plane components.
 
 ## Production Readiness Review Questionnaire
@@ -687,6 +789,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
 No. Just introducing new API fields in Pod spec and CRI which does NOT change the default behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -702,11 +805,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. It can be disabled after enabled. However, users should pay attention that gids of container processes in pods with `IgnoreGroupsInImage` policy would change. It means the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
+Yes. It can be disabled after enabled. However, users should pay attention that gids of container processes in pods with `Strict` policy would change. It means the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Just the policy `IgnoreGroupsInImage` is reenabled. Users should pay attention that gids of containers in pods with `IgnoreGroupsInImage` policy would change. It means that the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
+Just the policy `Stcict` is reenabled. Users should pay attention that gids of containers in pods with `Stcict` policy would change. It means that the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -919,7 +1022,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No.
+Precisely, yes because the kep introduces new API fields in Pods. But the increasing size can be negligible.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -947,6 +1050,18 @@ This through this both in small and large cases, again with respect to the
 -->
 
 No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
 
 ### Troubleshooting
 
@@ -998,6 +1113,8 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+N/A
 
 ## Alternatives
 
