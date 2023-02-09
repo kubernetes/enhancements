@@ -102,8 +102,11 @@ For maintainers:
   mechanisms. Removing the feature can greatly reduce the complexity of
   kubectl
 - Removes some ugly server-side code meant to deal with transition from
-  client-side apply to server-side apply (see
-  https://kubernetes.io/blog/2022/10/20/advanced-server-side-apply/)
+  client-side apply to server-side apply
+
+A lot of the benefits of using server-side apply has already been
+discussed in blog-posts, see
+https://kubernetes.io/blog/2022/10/20/advanced-server-side-apply/.
 
 ### Goals
 
