@@ -200,6 +200,8 @@ covered by e2e tests
 - [X] Multiple real world examples ([Multus CNI](https://github.com/intel/multus-cni)).
 - [X] Allowing time for feedback (2 years).
 - [X] [Start Deprecation of Accelerator metrics in kubelet](https://github.com/kubernetes/kubernetes/pull/91930).
+- [X] The API endpoint should be available on all the platforms kubelet runs and supports device plugins (linux, windows, ...).
+- [X] Rate limiting mechanisms are implemented in the server to prevent excessive load from malfunctioning/rogue clients.
 - [X] Risks have been addressed.
 
 ### Upgrade / Downgrade Strategy
@@ -323,7 +325,9 @@ No. Feature is out of existing any paths in kubelet.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-In 1.18, DDOSing the API can lead to resource exhaustion. It is planned to be addressed as part of G.A.
+In 1.18, DOSing the API can lead to resource exhaustion. It is planned to be addressed as part of G.A.
+The API is exposed only through a unix-domain socket local to the node, so malicious agents can only be among pods running on the same node (e.g.
+no network access) which have been granted permission to access the unix domain socket with volume mounts and filesystem permissions.
 Feature only collects data when requests comes in, data is then garbage collected. Data collected is proportional to the number of pods on the node.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
