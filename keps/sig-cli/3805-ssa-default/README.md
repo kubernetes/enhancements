@@ -147,9 +147,9 @@ trade-off: Are conflicts worth breaking people? We would also have to
 change the value of `--force-conflict`, which will break some people,
 but arguably a much smaller set of people.
 
-We don't know yet, but I'll assume we don't flip the switch in the rest
-of the document since that use-case is more complicated.
-<<[/UNRESOLVED]>>
+We don't know yet, but I'll assume we don't flip the force-conflict
+switch (keep it to false) in the rest of the document since that
+use-case is more complicated. <<[/UNRESOLVED]>>
 
 <<[UNRESOLVED Removal of CSA]>>
 We considered removing the
