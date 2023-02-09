@@ -16,7 +16,7 @@ approvers:
 editor: Connor Doyle
 creation-date: 2017-05-23
 last-updated: 2022-10-03
-status: implementable
+status: implemented
 see-also:
 replaces:
   - "kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
