@@ -2,7 +2,7 @@ title: "Fine grained SupplementalGroups control"
 kep-number: 3619
 authors:
   - "@everpeace"
-owning-sig: sig-xyz
+owning-sig: sig-node
 participating-sigs:
   - sig-node
 status: implementable
