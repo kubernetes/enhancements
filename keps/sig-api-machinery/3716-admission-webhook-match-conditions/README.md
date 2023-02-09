@@ -339,52 +339,26 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+TBD - unit tests will be added as this feature is implemented.
 
 ##### Integration tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+Test cases to add:
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+- [ ] Feature gate enablement / disablement is a no-op when no `matchConditions` are set
+- [ ] Feature gate enablement / disablement works as expected when `matchConditions` are set
+- [ ] Single match condition:
+    - [ ] Request out of scope without `matchConditions`
+    - [ ] Request in scope without `matchConditions`, but not matching
+    - [ ] Request in scope without `matchConditions`, and also matching
+- [ ] Multiple match conditions, covering the same cases as the single-condition case
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+We will test the edge cases mostly in integration tests and unit tests.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+Once the feature graduates to GA, a single E2E test covering hte single-match-condition cases
+outlined above will be added.
 
 ### Graduation Criteria
 
