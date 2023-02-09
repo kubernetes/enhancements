@@ -135,8 +135,8 @@ The meaning of `auto` goes as follows:
   annotation, the resource is server-side applied
 
 We are also planning on switch the `--server-side` flag to `true` in
-three releases, by adding a warning message (and a blog-post) in kubectl
-1.27 to let people know that the change will happen.
+three releases, and while we would like to add a warning and blog-post
+as early as 1.27, we have not agreed on all the terms of the change yet.
 
 <<[UNRESOLVED What default value for --force-conflict]>>
 We're not entirely sure what the value of `--force-conflict` should be
@@ -149,7 +149,14 @@ but arguably a much smaller set of people.
 
 We don't know yet, but I'll assume we don't flip the force-conflict
 switch (keep it to false) in the rest of the document since that
-use-case is more complicated. <<[/UNRESOLVED]>>
+use-case is more complicated.
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED Can we add the flag if we agree on terms before
+code-freeze?]>> We know we want a warning, but since we don't know what
+value of force-conflict we want yet, we don't know what the warning will
+look like, we would still love to insert the warning in 1.27 if we can.
+<<[/UNRESOLVED]>>
 
 <<[UNRESOLVED Removal of CSA]>>
 We considered removing the
