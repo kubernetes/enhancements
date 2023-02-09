@@ -1012,8 +1012,6 @@ However, enforcing types for every expression and object is not feasible because
 
 Problem examples:
 
- create mode 100644 keps/sig-network/3458-remove-transient-node-predicates-from-service-controller/README.md
-
 | Problem                                          | Summary                                                                                                               |
 |--------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
 | version skew: ephemeralContainers case           | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
