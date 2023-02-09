@@ -15,12 +15,12 @@ approvers:
 see-also:
   - "/keps/sig-api-machinery/555-server-side-apply"
 replaces:
-stage: beta
+stage: alpha
 latest-milestone: "v1.27"
 milestone:
-  alpha: "v1.22" # Feature is alpha since SSA is GA
-  beta: "v1.27"
-  stable: "v1.30" # Provisional
+  alpha: "v1.27"
+  beta: "v1.30" # Provisional
+  stable: "v1.32" # Provisional
 feature-gates: # N/A
 disable-supported: false
 metrics: # N/A

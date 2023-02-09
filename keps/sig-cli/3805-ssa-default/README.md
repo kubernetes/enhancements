@@ -80,7 +80,6 @@ apply` now would come with a cost.
 We’re proposing a way forward toward toggling the `--server-side` flag
 by default.
 
-
 ## Motivation
 
 While changing from client-side to server-side is difficult because it
@@ -102,23 +101,29 @@ For maintainers:
 - kubectl has a lot of code to maintain SMP and other client-side apply
   mechanisms. Removing the feature can greatly reduce the complexity of
   kubectl
+- Removes some ugly server-side code meant to deal with transition from
+  client-side apply to server-side apply.
 
 ### Goals
 
 The goal is to increase usage of Server-Side Apply so that users can
 benefits from the feature, mostly by turning the feature on by default.
+We also want to reach that goal by making the transition as smooth as
+possible, and limit the risk of converting objects from client-side to
+server-side mode.
 
 ### Non-Goals
 
-Good question.
+N/A
 
 ## Proposal
 
-The feature consists of adding a new `auto` value to the `--server-side`
-flag for `kubectl apply` (and corresponding `kubectl diff`) and make
-this the default value. All the other values for the flag would continue
-to work as expected (for reference, `false` continues to client-side
-apply, and `true` continues to server-side apply).
+The feature, in its alpha phase, consists of adding a new `auto` value
+to the `--server-side` flag for `kubectl apply` (and corresponding
+`kubectl diff`) while keeping `false` as the default value. All the
+other values for the flag would continue to work as expected (for
+reference, `false` continues to client-side apply, and `true` continues
+to server-side apply).
 
 The meaning of `auto` goes as follows:
 - Resources continue to be fetched (GET) before-hand
@@ -129,36 +134,64 @@ The meaning of `auto` goes as follows:
 - If the resource already exists but doesn't have the `last-applied`
   annotation, the resource is server-side applied
 
+We are also planning on switch the `--server-side` flag to `true` in
+three releases, by adding a warning message (and a blog-post) in kubectl
+1.27 to let people know that the change will happen.
+
+<<[UNRESOLVED What default value for --force-conflict]>>
+We're not entirely sure what the value of `--force-conflict` should be
+when we switch to `server-side=true`.
+
+A few thoughts. The question can be summarized with the following
+trade-off: Are conflicts worth breaking people? We would also have to
+change the value of `--force-conflict`, which will break some people,
+but arguably a much smaller set of people.
+
+We don't know yet, but I'll assume we don't flip the switch in the rest
+of the document since that use-case is more complicated.
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED Removal of CSA]>>
+We considered removing the
+`--server-side` flag altogether 2-3 releases after `true` becomes the
+default. Curious if other folks think this is an option.
+<<[/UNRESOLVED]>>
+
 ### User Stories (Optional)
 
 #### Story 1
 
-User 1 starts using `kubectl` for the first time or on a new
-project, everything will always be server-side applied, they will get
-conflicts and all the good things about server-side apply.
+User 1 uses `--server-side=auto` and starts using `kubectl` for the
+first time, creates a new project, everything will always be server-side
+applied, they will never have any object to migrate from client-side to
+server-side apply. When the flag eventually fips, they
+already have the hard-coded auto value so they don't really see a
+change, but they can decide to remove the flag if they want.
 
 #### Story 2
 
-User 2 only uses server-side apply all the time, they may have
-`--server-side` inserted in some scripts or configuration, or they must
-remember to always include the flag. Thanks the feature, forgetting the
-flag is now doing the right thing by server-side applying all their
-resources as expected, causing less confusion and risks of messing up.
+User 2 uses `--server-side=auto` and periodically re-creates their
+project, at first, their project might have a mix of server-side applied
+and client-side applied resources, but they will eventually have only
+server-side applied resources, without ever having to migrate any
+resource from one to the other. When the flag eventually fips, they
+already have the hard-coded auto value so they don't really see a
+change, but they can decide to remove the flag if they want.
 
 #### Story 3
 
-User 3 has never used server-side apply and always used the default
-value of `--server-side`. Applying their existing resources will
-continue to work as expected. New resources, on the other hand, will at
-first apply the same but may eventually show-up with a conflict. They
-may have to update scripts to continue to work with
-`--server-side=false` if they want to, or they can update their
-scripts/workflow to address the conflicts properly.
+Users 3 who use either the default value of `--server-side` or an
+existing value will see no immediate change to the behavior. They will
+get the warning if running manually and possibly try it out, or they may
+miss the warning in scripts. In 3 releases, people who have completely
+missed the warning will see their thing break, they can either fix it by
+changing the value of `--server-side=false` or the value of
+`--force-conflict=true`, a fairly easy change.
 
 ### Risks and Mitigations
 
 This design has no impact on security, but some consequences on UX, since the
-default UX of `kubectl apply` will change:
+default UX of `kubectl apply` will change, 3 releases from now:
 - Currently, it can never fail because of conflict, since they are
   overridden by default. The new default for Server-Side Apply is to
   fail on conflicts, unless the `--force-conflict` flag is used. While
@@ -174,7 +207,9 @@ default UX of `kubectl apply` will change:
   object on the server. SSA has more complicated semantics for removing
   fields (e.g. if another user manages fields)
 
-<!-- Missing mitigation here -->
+This will be mitigated by laying out a plan to address these issues for
+people who meet them, through a blog-post. Actual mitigation is to set
+`--server-side=false` or `--force-conflict=true`.
 
 ## Design Details
 
@@ -187,13 +222,13 @@ applied by default.
 The `last-applied` annotation is used to detect previous client-side
 applied object, hence it is not inserted for server-side objects.
 
-The interaction with other `kubectl apply` flags can be described as
-follows:
-- `--force-conflicts` only applies to existing resources that are
-  server-side applied
-- `--fieldmanager` applies to all resources
-- The `--prune` family of flags, I have no idea
-- `--overwrite` only applies to client-side applied resources
+`kubectl apply` flags that are specific to client-side apply will
+continue to work for client-side applied objects (prune, overwrite),
+while server-side apply flags will apply to existing server-side applied
+resources and new resources. Notably, the `--force-conflict` flag is
+somewhat incompatible with `--server-side=false` today, it will be
+possible to use the flag with `auto` (and we will entirely disallow it
+with `--server-side=false`).
 
 Some other commands might be impacted. `kubectl create` (and family)
 notably have a `--save-config` flag that create the last-applied
@@ -201,7 +236,8 @@ annotation. While I don't know how many people actually use the flag,
 the idea of saving this as a config is confusing, since people don't
 actually have the file and so the situation doesn't really fit well the
 `apply` workflow. We suggest adding a warning when this flag is used, as
-well as updating its documentation to suggest not using it.
+well as updating its documentation to suggest not using it, and possibly
+deprecate it in the future.
 
 Because `kubectl diff` is supposed to map the behavior of `kubectl
 apply` as closely as possible, the change will also be done for that
@@ -277,23 +313,26 @@ Alpha is the current level of the feature since server-side apply is
 currently enabled by default in Kubernetes, but enabled on-demand by
 kubectl users.
 
-The feature already has a fair amount of usage though since tools
-(sometimes outside of kubectl) have used it both as "clients" and in
-controllers.
+The feature already has a fair amount of usage since tools (sometimes
+outside of kubectl) have used it both as "clients" and in controllers.
 
 #### Beta
 
+<!--
+To be re-evaluated later:
 Server-Side Apply has a very limited set of bugs or feature requests as
 this point and is definitely mature. Enabling client-side will allow
 increased usage and reduce burden cost for kubectl to maintain both
-mecahnisms.
+mechanisms. -->
 
 #### GA
 
+<!--
+To be re-evaluated later:
 Kubectl doesn't have real-time metrics for usage. The decision to move
 to server-side entirely by default (if ever enabled) will be driven by
 bug reports and complaints from customers. Also by the ability to
-migrate existing client-side usage to server-side.
+migrate existing client-side usage to server-side. -->
 
 #### Deprecation
 
@@ -302,8 +341,6 @@ We are not intending to deprecate the flag, but we might remove the
 
 Same thing applies for `--save-config` and other client-side related
 flags in kubectl which we might remove.
-
-No deprecation is planned at that time though.
 
 ### Upgrade / Downgrade Strategy
 
@@ -326,8 +363,7 @@ N/A.
 - [x] Other
   - Describe the mechanism:
 
-People can actively use the `--server-side=false` flag to disable the
-feature entirely and go back to the former behavior.
+Feature is enabled on-demand, and can stop using it at any time.
 
   - Will enabling / disabling the feature require downtime of the control
     plane?
@@ -341,8 +377,7 @@ Feature is client-side only, no.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. The feature is a change to the default behavior, which can be
-reverted by using the former value of the flag.
+No, enabling the `auto` feature means actively selecting it.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -352,7 +387,7 @@ way to configure it's default value.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Toggling the flag value can have impact, but that's already the case.
-Changing the default to an automatic detection will actually help with
+Changing the value to an automatic detection will actually help with
 that.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -390,12 +425,12 @@ I need to add the tests here.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-This will change the default behavior of `kubectl apply` in possibly
-surprising way. `kubectl apply` can now fail because of a conflict,
-which it wouldn't before on newly created objects. Another surprising
-behavior is that since fields can be owned by multiple actors, removing
-a field will not necessarily remove the field from the cluster's
-resource.
+This will eventually change the default behavior of `kubectl apply` in
+possibly surprising way. `kubectl apply` can now fail because of a
+conflict, which it wouldn't before on newly created objects. Another
+surprising behavior is that since fields can be owned by multiple
+actors, removing a field will not necessarily remove the field from the
+cluster's resource.
 
 ### Monitoring Requirements
 
@@ -509,9 +544,10 @@ There are basically three different alternatives to the current design:
    server-side applied. The drawback of this approach is that the baby
    step doens't really get us anywhere close to where we want: having
    server-side apply enabled by default.
-3. Enable `--server-side=true` by default, this is what we're aiming for
-   in GA, but we think we should ease things by first going with
-   `--server-side=auto` to help the transition.
+3. Make `--server-side=auto` the default, but that doesn't get us closer
+   to what we want: have the feature enabled by default, or test the
+   migration.
+
 
 ## Infrastructure Needed (Optional)
 
