@@ -1044,7 +1044,7 @@ The enum options will be:
   Annotations section for details).
 
 If, in the future, `ValidatingAdmissionPolicy` also introduces enforcement
-action fields, this effective enforcement will be the set intersection of the
+action fields, this effective enforcement will be the set to the intersection of the
 the policy enforcement actions and the binding enforcement actions.
 
 Systems that need to aggregate validation failures may implement an [audit
