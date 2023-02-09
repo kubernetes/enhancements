@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-auth
-status: provisional
+status: implementable
 creation-date: 2023-01-09
 reviewers:
   - jpbetz
@@ -14,6 +14,7 @@ reviewers:
 approvers:
   - jpbetz
   - deads2k
+  - lavalamp
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location

@@ -214,8 +214,8 @@ type ValidatingWebhook struct {
   // for a request to be sent to this webhook. All conditions in the list must evaluate to TRUE for
   // the request to be matched.
   // +optional
-	// +patchMergeKey=name
-	// +patchStrategy=merge
+  // +patchMergeKey=name
+  // +patchStrategy=merge
   MatchConditions []MatchCondition `json:"matchConditions,omitempty"`
 }
 
