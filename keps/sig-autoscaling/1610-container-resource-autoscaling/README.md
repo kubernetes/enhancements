@@ -810,7 +810,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-The operator can query HPAs with `hpa.spec.metrics.containerResource` field set.
+- The operator can observe the execution of the computation for the container metrics through the 1st metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
+- The operator can query HPAs with `hpa.spec.metrics.containerResource` field set.
 
 ###### How can someone using this feature know that it is working for their instance?
 
