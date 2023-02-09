@@ -300,7 +300,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/apply`: `2023-01-24` - `76.5%`
 
 ##### Integration tests
 
@@ -312,7 +312,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+CLI tests will be added to both `test/cmd/diff.sh` and `test/cmd/apply.sh`.
 
 ##### e2e tests
 
@@ -326,7 +326,10 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+e2e tests will be added to check that:
+- Migration from `auto` to `true` or `false` works as expected
+- Auto behaves properly both on client-side applied and server-side applied objects
+- As we add the deprecation, it is exposed given the right circumstances
 
 ### Graduation Criteria
 
