@@ -29,7 +29,6 @@
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
       - [Use Cases](#use-cases)
-      - [Policy Predicates](#policy-predicates)
       - [Match Conditions](#match-conditions)
       - [Variables](#variables)
     - [Secondary Authz](#secondary-authz)
@@ -1119,7 +1118,7 @@ the policy will be ignored. In order to keep bindings language-agnostic and to s
 singleton policies, the logic should live in the policy definition resource. To enable
 customization per-binding, the CEL statements should have access to the parameter resource.
 
-Here is an example of a policy definition using policy predicates (under the `matchConditions` field):
+Here is an example of a policy definition using match conditions (under the `matchConditions` field):
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1alpha1
