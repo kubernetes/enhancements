@@ -575,7 +575,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -607,7 +607,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `<date>(t.b.d.)` - `<test coverage>(t.b.d.)`
+  - validation tests for `PodSecurityContext.SupplementalGroups`, `ContainerStatus.User`
 
 ##### Integration tests
 
@@ -619,7 +620,12 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- Kubernetes API
+  - When `SupplementalGroupsPolicy=Strict`, groups of the container process must be ones specified by API: <link to test coverage(t.b.d.)>
+  - When `SupplementalGroupsPolicy=Merge`, groups of the container process contains both groups specified by API and groups of the primary user from the image: <link to test coverage(t.b.d.)>
+  - For running pods, `ContainerStatus.User` contains the correct identities of the containers: <link to test coverage(t.b.d.)>
+- CRI
+  - I will also add symmetrical integration tests to https://github.com/kubernetes-sigs/cri-tools
 
 ##### e2e tests
 
@@ -633,7 +639,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- When creating a Pod with `SupplementalGroupsPolicy=Strict`, the pods will run with only groups specified by API: <link to test coverage(t.b.d.)>
+- When creating a Pod with `SupplementalGroupsPolicy=Merge`, the pods will run with groups specified by API and groups from the image: <link to test coverage(t.b.d.)>
+- When creating a Pod and it starts, each `ContainerStatus.User` contain the correct identities of the containers: <link to test coverage(t.b.d.)>
 
 ### Graduation Criteria
 
