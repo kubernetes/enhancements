@@ -1363,8 +1363,9 @@ time to an Authorizer object supporting receiver-style function overloads:
 |-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
 | path        | Authorizer.(path string) -> PathCheck                                   | Defines a check for an non-resource request path (e.g. /healthz)                                |
 | check       | PathCheck.(httpRequestVerb string) -> Decision                          | Checks if the user is authorized for the HTTP request verb on the path                          |
-| resource    | Authorizer.(kind string, group string, version string) -> ResourceCheck | Defines a check for API resources                                                               |
-| subresource | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies thath the check is for a subresource                                                  |
+| resource    | Authorizer.(resource string) -> ResourceCheck                           | Defines a check for an API resource                                                             |
+| group       | ResourceCheck.(group string) -> ResourceCheck                           | Specifies the group for the API resource check                                                  |
+| subresource | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies that the check is for a subresource                                                   |
 | namespace   | ResourceCheck.(namespace string) -> ResourceCheck                       | Specifies that the check is for a namespace (if not called, the check is for the cluster scope) |
 | name        | ResourceCheck.(name string) -> ResourceCheck                            | Specifies that the check is for a specific resource name                                        |
 | check       | ResourceCheck.(apiVerb string) -> Decision                              | Checks if the admission request user is authorized for the API verb on the resource             |
@@ -1376,7 +1377,7 @@ authorization attributes.
 
 Example expressions using `authorizer`:
 
-- `authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed()`
+- `authorizer.resource('signers').group('certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed()`
 - `authorizer.path('/metrics').denied('get')`
 
 Note that this API:
@@ -1410,6 +1411,12 @@ Other considerations:
   consistency. Information from other resources can be accumulated by a controller
   and written to a custom resources which can then be referenced by the `paramSource`
   of a policy binding and accessed in CEL expressions via the `params` variable.
+- `version()` is deliberately excluded from the CEL `ResourceCheck`
+  type. SubjectAccessReview is the only authz mode that is aware of version
+  (with most implementations ignoring version anyway). And most notably, RBAC is
+  not aware of version. If in the future we identify use cases where version is
+  needed, we can add it, but it seems simpler and more consistent with the authz
+  system (as it exists in practice), to always set it to "*".
 
 
 CertificateApproval use case:
@@ -1427,7 +1434,7 @@ spec:
       operations:  ["UPDATE"]
       resources:   ["certificatesigningrequests/approval"]
   validations:
-  - expression: "authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed() || authorizer.resource('signers', 'certificates.k8s.io', '*').name([oldObject.spec.signerName.split('/')[0], '*'].join('/')).check('approve').allowed()"
+  - expression: "authorizer.resource('signers').group('certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed() || authorizer.resource('signers').group('certificates.k8s.io', '*').name([oldObject.spec.signerName.split('/')[0], '*'].join('/')).check('approve').allowed()"
     reason: Forbidden
     messageExpression: "user not permitted to approve requests with signerName %s".format([oldObject.spec.signerName])"
 ```
