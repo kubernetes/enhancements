@@ -29,6 +29,7 @@
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
       - [Use Cases](#use-cases)
+      - [Match Conditions](#match-conditions)
       - [Variables](#variables)
     - [Secondary Authz](#secondary-authz)
     - [Access to namespace metadata](#access-to-namespace-metadata)
@@ -1097,6 +1098,63 @@ takes a significant amount of time to execute), it would be nice to only run
 it when necessary. For instance, if multiple validation expressions used the
 same expensive expression, that expression could be refactored out into a
 variable.
+
+##### Match Conditions
+
+Note that the syntax of the `matchConditions` resource is intended to
+align with the [Admission Webhook Match Conditions KEP #3716](https://github.com/kubernetes/enhancements/pull/3717),
+so that KEP should be controlling with regard to deviations in the schema.
+This section is focused specifically on how the `matchConditions` concept can
+be applied to in-process admission.
+
+The match criteria in bindings are not expected to be able to cover all possible
+ways users may want to scope their policies. For example, there is no way to
+match off of kind, only resource. To provide extensibility for the match criteria
+without requiring modifying every validation rule individually, a global predicate
+system is needed. These predicates contain CEL statements that must be satisfied, otherwise
+the policy will be ignored. In order to keep bindings language-agnostic and to support
+singleton policies, the logic should live in the policy definition resource. To enable
+customization per-binding, the CEL statements should have access to the parameter resource.
+
+Here is an example of a policy definition using match conditions (under the `matchConditions` field):
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "replicalimit-policy.example.com"
+Spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: rules.example.com/v1
+    kind: ReplicaLimit
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["apps"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE", "UPDATE"]
+      resources:   ["deployments"]
+  matchConditions:
+    - name: 'is-deployment'
+      expression: 'metadata.kind == "Deployment"'
+    - name: 'not-in-excluded-namespaces'
+      expression: '!(metadata.namespace in params.excludedNamespaces)'
+  validations:
+    - expression: "object.spec.replicas <= params.maxReplicas"
+      reason: Invalid
+```
+
+For demonstration purposes, we assume `match` has no support for `excludedNamespaces`.
+
+Note that `matchConditions` and `validations` look similar, but `matchConditions` entries only have the
+`expression` field: their only function is to gate whether the expressions in `validations` are evaluated.
+
+`matchConditions` has the following behaviors:
+
+* Only the request object and parameters are accessible (no referential lookup)
+* All match conditions must be satisfied (evaluate to `true`) before `validations` are tested
+* If there is an error executing a match condition, the failure policy for the (definition, binding) tuple is invoked
+
 
 ##### Variables
 
