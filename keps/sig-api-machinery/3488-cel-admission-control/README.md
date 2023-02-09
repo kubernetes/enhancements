@@ -1054,7 +1054,7 @@ below "Audit Events" for details.
 
 For singleton policies, since there is no separate binding resource, the
 `validationActions` field will be set on the policy definition in the same way
-that other binding fields.
+that other binding fields are.
 
 Metrics will include validation action so that cluster administrators can monitor the
 validation failures of a binding before setting `validationActions` to `Deny`.
