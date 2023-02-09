@@ -134,9 +134,15 @@ The meaning of `auto` goes as follows:
 - If the resource already exists but doesn't have the `last-applied`
   annotation, the resource is server-side applied
 
-We are also planning on switch the `--server-side` flag to `true` in
-three releases, and while we would like to add a warning and blog-post
-as early as 1.27, we have not agreed on all the terms of the change yet.
+For the alpha phase, the auto value will only be visible and usable if
+the `KUBECTL_AUTO_SERVER_SIDE` is set. That variable will later be
+removed once the flag is available for everyone, without breaking any
+compatibility.
+
+Our ultimate goal is to switch the `--server-side` flag to `true` as
+early as permissible by Kubernetes deprecation policies. If the terms of
+the change are finalized in time for code freeze, we will add a warning
+and blog-post about this as part of the 1.27 release.
 
 <<[UNRESOLVED What default value for --force-conflict]>>
 We're not entirely sure what the value of `--force-conflict` should be
@@ -152,10 +158,10 @@ switch (keep it to false) in the rest of the document since that
 use-case is more complicated.
 <<[/UNRESOLVED]>>
 
-<<[UNRESOLVED Can we add the flag if we agree on terms before
-code-freeze?]>> We know we want a warning, but since we don't know what
-value of force-conflict we want yet, we don't know what the warning will
-look like, we would still love to insert the warning in 1.27 if we can.
+<<[UNRESOLVED Can we add the flag if we agree on terms before code-freeze?]>>
+We know we want a warning, but since we don't know what value of
+force-conflict we want yet, we don't know what the warning will look
+like, we would still love to insert the warning in 1.27 if we can.
 <<[/UNRESOLVED]>>
 
 <<[UNRESOLVED Removal of CSA]>>
