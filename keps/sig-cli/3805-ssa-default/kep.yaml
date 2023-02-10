@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-cli
 participating-sigs:
   - sig-api-machinery
-status: provisional
+status: implementable
 creation-date: 2023-02-02
 reviewers:
   - "@knverey"
