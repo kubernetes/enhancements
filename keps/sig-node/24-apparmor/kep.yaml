@@ -14,9 +14,11 @@ reviewers:
   - "@liggitt"
   - "@pjbgf"
   - "@tallclair"
+  - "@dchen1107"
 approvers:
   - "@tallclair"
   - "@liggitt"
+  - "@dchen1107"
 see-also:
   - "/keps/sig-node/20190717-seccomp-ga.md"
 
