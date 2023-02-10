@@ -76,10 +76,13 @@ SIG Architecture for cross-cutting KEPs).
     - [Default and limits](#default-and-limits)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-    - [Story 3](#story-3)
-    - [Story 4](#story-4)
+    - [Mitigating noisy neighbors](#mitigating-noisy-neighbors)
+    - [Vendor-specific QoS](#vendor-specific-qos)
+    - [Defaults and limits](#defaults-and-limits)
+    - [Possible future scenarios](#possible-future-scenarios)
+      - [Kubernetes-managed QoS-class resources](#kubernetes-managed-qos-class-resources)
+      - [Container-level memory QoS](#container-level-memory-qos)
+      - [Runtime classes](#runtime-classes)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -102,8 +105,6 @@ SIG Architecture for cross-cutting KEPs).
   - [Scheduler](#scheduler)
   - [Kubectl](#kubectl)
   - [Container runtimes](#container-runtimes)
-  - [Open Questions](#open-questions)
-    - [Other Kubernetes-managed QoS-class resources](#other-kubernetes-managed-qos-class-resources)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -507,26 +508,168 @@ kube-apiserver, kube-scheduler) to support QoS-class resources.
 
 ### User Stories (Optional)
 
-#### Story 1
+#### Mitigating noisy neighbors
 
 As a user I want to minimize the interference of other applications to my
-workload by assigning it to a class with exclusive cache allocation.
+main application by assigning it to a class with exclusive cache allocation. I
+also want to boost it's local disk I/O priority over other containers within
+the pod. At the same time, I want to make sure my low-priority, I/O-intensive
+background task running in a side-car container does not disturb the main
+application.
 
-#### Story 2
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qos-resource-example
+spec:
+  containers:
+  - name: main-app
+    image: my-app
+    resources:
+      qosResources:
+      - name: rdt
+        class: exclusive
+      - name: blockio
+        class: high-prio
+  - name: sidecar
+    image: my-sidecar
+    resources:
+      qosResources:
+      - name: rdt
+        class: limited
+      - name: blockio
+        class: throttled
+  ...
+```
 
-As a user I want to make sure my low-priority, I/O-intensive background task
-will not disturb more important workloads running on the same node.
+#### Vendor-specific QoS
 
-#### Story 3
+As a vendor I want to implement custom QoS controls as an extension of the
+container runtime. I want my QoS control to be visible in the cluster and
+integrated e.g. in the Kubernetes sheduler and not rely e.g. on Pod annotations
+to communicate QoS requests.
 
-As a cluster administrator I want to throttle I/O bandwidths of certain
-DaemonSets, and I want that exact throttling values depend on the SSD model in
-my heterogenous cluster.
+#### Defaults and limits
 
-#### Story 4
+As a cluster administrator I want to set control what is the default QoS of
+applications. I also want to configure different defaults for certain
+Kubernetes namespaces. In addition I want to limit access to high-priority QoS
+on certain namespaces.
 
-As a user I want to assign a low priority task into an (RDT) class that limits
-the available memory bandwidth.
+I set per-node defaults for in the node's system-level and runtime
+configuration, outside Kubernetes.
+
+I set per-namespace defaults using LimitRanges:
+
+```yaml
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: qos-defaults
+spec:
+  limits:
+  - type: Pod
+    qosResources:
+    - name: network
+      default: slow
+  - type: Container
+    qosResources:
+    - name: qos-foo
+      default: low-prio
+    - name: vendor.example/xyz-qos
+      default: normal
+```
+
+I set per-namespace constraints on the overall usage of QoS-class resources:
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: qos-constraints
+spec:
+  qosResources:
+    pod:
+      - name: network
+        classes:
+          - name: slow      # unlimited access
+          - name: normal
+            capacity: 2     # only two pods with this is allowed
+          #- name: high     # class "high" is not allowed at all
+    container:
+      - name: qos-foo
+        classes:
+          - name: low-prio
+          - name: normal-prioa
+          #- name: high-prio    # high-prio is not allowed at all
+      - name: vendor.example/xyz-qos
+        classes:
+          - name: low-prio
+          - name: normal
+          - name: high-prio
+            capacity: 1     # high-prio is allowed but with very limited usage
+```
+
+#### Possible future scenarios
+
+This section speculates on possible future uses of the QoS-class resources
+mechanism.
+
+##### Kubernetes-managed QoS-class resources
+
+It would be possible to have QoS-class resources that would be managed by
+Kubernetes/kubelet instead of the container runtime. If we specify and manage
+official well-known QoS-class resource names in the API it would be possible to
+specify Kubernetes-internal names that the container runtime would know to
+ignore (or not try to manage itself).
+
+One possible usage-scenario would be pod-level cgroup controls, e.g. cgroup v2
+memory knobs in linux (see
+[KEP-2570: Support Memory QoS with cgroups v2][kep-2570].
+
+##### Container-level memory QoS
+
+Container runtimes could implement an admin-configurable support for memory
+QoS, as an alternative to
+[KEP-2570: Support Memory QoS with cgroups v2][kep-2570].
+
+It would be easy to enable also for example `memory.swap.*` control knobs
+available in Linux cgroups v2 to control swap-usage on a per-container basis.
+
+##### Runtime classes
+
+The QoS-class resources mechanism could be "abused" to replace (or
+re-implement) the current runtime classes.
+
+One benefit of using a QoS-class resource to represent runtime classes would be
+the "automatic" visibility to what runtime classes are available on each node.
+E.g. adding a new runtime class on a node by re-configuration of the runtime
+would be immediately reflected in the node status without any additional admin
+tasks (like node labeling or manual creation of RuntimeClass objects).
+
+###### Splitting Pod QoS Class
+
+Currently the Pod QoS class is an implicit property of a Pod, tied to how the
+resource requests and limits of its containers are specified. QoS-class
+resources would make it possible for users to explicitly specify the Pod QoS
+class in the PodSpec, making it possible e.g. to create a guaranteed pod with a
+container whose memory limit is higher than the requests.
+
+Taking this idea further, QoS-class resources would also make it possible to
+split several properties implicit in the Pod QoS class (like eviction behavior
+or OOM scoring) into separate properties. For example, in the case of OOM
+scoring make it possible for the user to specify a burstable pod with low OOM
+priority (low chance of being killed).
+
+###### Pod priority class
+
+One wild idea would be to implement pod priority class mechanism (or part of
+it) as a QoS-class resource. This would be a
+[Kubernetes-managed](#kubernetes-managed-qos-class-resources) pod-level
+QoS-class resource. Likely benefits of using the QoS-class resources mechanism
+would be to be able to set per-namespace defaults with LimitRanges and allow
+permission-control to high-priority classes with ResourceQuotas.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -1197,20 +1340,6 @@ done via OCI. User interface is provided through pod and container annotations.
 
 Container runtimes will be updated to support the
 [CRI API extensions](#cri-api)
-
-### Open Questions
-
-#### Other Kubernetes-managed QoS-class resources
-
-In addition to the Pod QoS class it would be possible to specify other
-QoS-class resources that would be managed by Kubernetes/kubelet. If we specify
-and manage official well-known QoS-class resource names in the API it would be
-possible to specify Kubernetes-internal names that the container runtime would
-know to ignore (or not try to manage itself).
-
-One possible usage-scenario would be pod-level cgroup controls, e.g. cgroup v2
-memory knobs in linux (see
-[KEP-2570: Support Memory QoS with cgroups v2][kep-2570].
 
 ### Test Plan
 
