@@ -74,7 +74,6 @@ SIG Architecture for cross-cutting KEPs).
     - [Scheduler improvements](#scheduler-improvements)
     - [Kubelet-initiated pod eviction](#kubelet-initiated-pod-eviction)
     - [Default and limits](#default-and-limits)
-    - [Implicit defaults](#implicit-defaults)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -85,13 +84,16 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [CRI API](#cri-api)
+    - [Implicit defaults](#implicit-defaults)
     - [ContainerConfig](#containerconfig)
     - [UpdateContainerResourcesRequest](#updatecontainerresourcesrequest)
     - [PodSandboxConfig](#podsandboxconfig)
+    - [PodSandboxStatus](#podsandboxstatus)
     - [ContainerStatus](#containerstatus)
     - [RuntimeStatus](#runtimestatus)
   - [Kubernetes API](#kubernetes-api)
     - [PodSpec](#podspec)
+    - [PodStatus](#podstatus)
     - [NodeStatus](#nodestatus)
     - [Consts](#consts)
   - [Kubelet](#kubelet)
@@ -452,26 +454,6 @@ usage of container-level QoS-class resources.
 Not supporting Max (i.e. only supporting Default) in LimitRanges could simplify
 the API.
 
-#### Implicit defaults
-
-If nothing is requested for a QoS-class resource, a pod/container still
-implicitly belongs to some class. By design there is no such thing as being in
-no QoS class. What this "unnamed" default class means or how it is handled is
-considered an implementation detail of the runtime. However, it would be
-potentially desirable for the user to be able to see what was classes the
-application was implicitly assigned to (even if nothing was explicitly
-requested). The first implementation phase contains no mechanism for this.
-
-Some considerations/questions:
-
-- new field in PodStatus could be used for this
-- implicit default might change after runtime re-configuration
-- new QoS resource types might be added e.g. because of re-configuration of the
-  runtime
-- PodSandboxStatus and ContainerStatus messages in CRI API could be used to
-  communicate selected/effextive defaults to the client (kubelet) and kubelet
-  would update Pod status accordingly
-
 ## Proposal
 
 This section currently covers [implementation phase 1](#phase-1) (see
@@ -621,6 +603,8 @@ Summary of the proposed design details:
   - relays QoS-class resource requests from PodSpec to the runtime at pod
     startup via [ContainerConfig](#containerconfig) and
     [PodSandboxConfig](#podsandboxconfig) messages
+  - updates Pod status to reflect the assignment of QoS-class resources, based
+    on pod/container status reveived from the runtime
   - implements admission handler that validates the availability of QoS-class resources
   - pod eviction as a possible [future improvement](#kubelet-initiated-pod-eviction)
 - scheduler
@@ -634,6 +618,26 @@ Summary of the proposed design details:
 ### CRI API
 
 The following additions to the CRI protocol are suggested.
+
+#### Implicit defaults
+
+Any defaults imposed by the runtime, i.e. for resources that the user didn't
+request anything, must be reflected in the PodSandboxStatus and ContainerStatus
+messages. This information (about implicit defaults) can change during the
+lifetime of the Pod e.g. because of re-configuration of the runtime:
+
+- new QoS resource types might be added in which case a Pod/Container is
+  assigned to the default class of this new resource and this information must
+  be reflected in PodSandboxStatus/ContainerStatus
+- the default class of an existing QoS resource type might change and the
+  Pod/Container migrated to this class and this information must be reflected
+  in PodSandboxStatus/ContainerStatus
+
+An empty value (empty string) denotes "system default" i.e. the runtime did not
+enforce any QoS for this specific type of QoS-class resource. An example can be
+for example Linux cgroup controls where "system default" would mean that the
+runtime did not enforce any changes so they will be set to the default values
+determined by the system configuration.
 
 #### ContainerConfig
 
@@ -722,11 +726,30 @@ assignments at sandbox creation time (`RunPodSandboxRequest`).
 +}
 ```
 
+#### PodSandboxStatus
+
+The `PodSandboxStatus` message will be extended to report back assignment of
+pod-level QoS-class resources. The runtime must report back assignment of all
+supported QoS-class resources, also defaults for resources that the client
+didn't request anythin (see [implicit defaults](#implicit-defaults))
+
+```diff
+@@ -545,6 +545,8 @@ message PodSandboxStatus {
+     // runtime configuration used for this PodSandbox.
+     string runtime_handler = 9;
++    // Configuration of QoS resources.
++    PodQOSResources qos_resources = 10;
+ }
+
+```
+
 #### ContainerStatus
 
 The `ContainerResources` message (part of `ContainerStatus`) will be extended
 to report back QoS-class resource assignments of a container, similar to other
-resources.
+resources. The runtime must report back assignment of all supported QoS-class
+resources, also defaults for resources that the client didn't request anythin
+(see [implicit defaults](#implicit-defaults))
 
 ```diff
 @@ -1251,6 +1269,8 @@ message ContainerResources {
@@ -868,9 +891,9 @@ kind: Pod
 metadata:
   name: qos-resource-example
 spec:
-  resources:
-    qosResources:
-      network: fast
+  qosResources:
+  - name: network
+    class: fast
   containers:
   - name: cnt
     image: nginx
@@ -879,6 +902,41 @@ spec:
       - name: rdt
         class: gold
 ```
+
+#### PodStatus
+
+PodStatus and ContainerStatus types are extended to include information of
+QoS-class resource assignments. The main motivation for this change is to
+communicate to the user "implicit defaults", i.e. report back what was assigned
+for QoS-class resources for which nothing was requested (see
+[implicit defaults](#implicit-defaults))
+
+```diff
+type PodStatus struct {
+@@ -3534,6 +3537,10 @@ type PodStatus struct {
+        // Status for any ephemeral containers that have run in this pod.
+        // +optional
+        EphemeralContainerStatuses []ContainerStatus
++
++       // QOSResources shows the assignment of pod-level QoS resources.
++       // +optional
++       QOSResources []PodQOSResourceRequest
+ }
+```
+
+```diff
+type ContainerStatus struct {
+@@ -2437,6 +2437,9 @@ type ContainerStatus struct {
+        Started     *bool
++
++       // QOSResources shows the assignment of QoS resources.
++       // +optional
++       QOSResources []QOSResourceRequest
+ }
+```
+
+Status will re-use the PodQOSResourceRequest and QOSResourceRequest that are
+specified as part of [PodSpec](#podspec) update.
 
 #### NodeStatus
 
@@ -932,10 +990,6 @@ available within each of these resource types.
 +}
 ```
 
-<<[UNRESOLVED @thockin ]>>
-Class capacity i.e. Capacity field in QOSResourceClassInfo.
-<<[/UNRESOLVED]>>
-
 #### Consts
 
 We define standard well-known QoS-class resource types in the API. These are
@@ -986,6 +1040,14 @@ This information is dynamic, i.e. the available QoS-class resources (or their
 properties) may change over time. QoS-class resource names must be unique, i.e.
 kubelet will refuse to register pod-level and container-level QoS-class
 resource with the same name.
+
+Kubelet receives information about actual QoS-class resource assignment of pods
+and containers from the runtime over the CRI API
+([PodSandboxStatus](#podsandboxstatus) and [ContainerStatus](#containerstatus)
+messages). Kubelet updates [PodStatus](#podstatus) accordingly. This is
+especially to communicate defaults applied by the runtime back to the user
+(see [implicit defaults](#implicit-defaults)). Note that this information may
+change over the lifetime of the pod.
 
 An admission handler is added into kubelet to validate the QoS-class resource
 request against the resource availability on the node. Pod is rejected if
