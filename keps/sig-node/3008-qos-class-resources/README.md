@@ -1382,6 +1382,29 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
+It is possible to run control plane and worker nodes with mismatched versions.
+However, these scenarios should be handled by the API(s).
+
+If control plane has the feature enabled but some nodes have it disabled, those
+nodes are simply seen as having no QoS-class resources available.
+
+If control plane has the feature disabled but some nodes have it enabled the
+nodes are simply unable to advertise the QoS-class resources available on the
+nodes to the control plane. One potential gap is that users have no visibility
+to implicit defaults imposed by the runtime (see
+[implicit defaults](#implicit-defaults)).
+
+If a worker node has a container runtime with QoS-class resources enabled but
+the kubelet on the node has the feature disabled the node is not able to
+advertise the resources to the control plane, making them effectively
+unavailable to the users. Also in this case users have no visibility to
+implicit defaults imposed by the runtime (see
+[implicit defaults](#implicit-defaults)).
+
+If a worker node is running a container runtime that does not support QoS-class
+resources the node is simply seen in the Kubernetes API as one having no
+QoS-class resources available.
+
 ## Production Readiness Review Questionnaire
 
 <!--
