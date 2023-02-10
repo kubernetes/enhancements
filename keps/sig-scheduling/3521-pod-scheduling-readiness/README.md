@@ -827,11 +827,17 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-It will be tested manually prior to beta launch.
-
-<<UNRESOLVED>>
-Add detailed scenarios and result here, and cc @wojtek-t.
-<</UNRESOLVED>>
+- Start a local Kubernetes 1.26 cluster (`PodSchedulingReadiness` defaulted to false)
+- Create a Pod `pause` with one scheduling gate
+- The Pod's scheduling gate gets dropped as expected due to disabled feature gate
+- Delete the Pod
+- Re-start API Server and scheduler with version 1.27, and specify `PodSchedulingReadiness=true`
+- Create the same Pod `pause` with one scheduling gate
+- The Pod stays in `SchedulingGated` state, and its `.spec.schedulingGate` is persisted
+- Re-start API Server and scheduler with version 1.26
+- The Pod `pause` enters `Pending` state, with old `.spec.schedulingGate` reserved
+- Re-start API Server and scheduler with version 1.27, and specify `PodSchedulingReadiness=true`
+- The Pod stays in `Pending` state, with old `.spec.schedulingGate` reserved
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
