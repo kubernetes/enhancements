@@ -416,7 +416,7 @@ initCommand:
 - --cluster
 - my-cluster
 ---
-apiVersion: core.k8s.io/v1alpha1
+apiVersion: core.k8s.io/v1alpha2
 kind: ResourceClass
 metadata:
   name: acme-gpu
@@ -443,7 +443,7 @@ metadata:
   name: device-consumer-gpu-parameters
 memory: "2Gi"
 ---
-apiVersion: resource.k8s.io/v1alpha1
+apiVersion: resource.k8s.io/v1alpha2
 kind: ResourceClaimTemplate
 metadata:
   name: device-consumer-gpu-template
@@ -698,7 +698,7 @@ of corner cases will follow):
 Several components must be implemented or modified in Kubernetes:
 - The new API must be added to kube-apiserver. The ResourceQuota admission
   plugin needs to check the new quota limits when ResourceClaims get created.
-- A new controller in kube-controller-manager which creates 
+- A new controller in kube-controller-manager which creates
   ResourceClaims from ResourceClaimTemplates, similar to
   https://github.com/kubernetes/kubernetes/tree/master/pkg/controller/volume/ephemeral.
   It also removes the reservation entry for a user in `claim.status.reservedFor`,
@@ -740,10 +740,10 @@ proposed in this KEP.
 
 All relevant state of a ResourceClaim is captured inside that object
 itself. For additional information that is needed only during pod scheduling, a
-separate PodScheduling object gets created by the scheduler if needed.  The
-PodScheduling object has the same name and namespace as the pod and the pod as
-its as owner. This ownership must be checked before using a PodScheduling
-object to detect stale objects that do not match a recreated pod. Such stale
+separate PodSchedulingContext gets created by the scheduler if needed.  The
+PodSchedulingContext has the same name and namespace as the pod and the pod as
+its as owner. This ownership must be checked before using a PodSchedulingContext
+to detect stale objects that do not match a recreated pod. Such stale
 objects get deleted by the garbage collector or the scheduler, depending on who
 gets to it first.
 
@@ -765,9 +765,9 @@ parameters.
 The entire state of a resource can be determined by looking at its
 ResourceClaim (see [API below](#api) for details), for example:
 
-- It is **allocated** if and only if `claim.status.allocated` is non-nil and
-  points to the `AllocationResult`, the struct where the resource drivers stores
-  information about a successful allocation.
+- It is **allocated** if and only if `claim.status.allocation` is non-nil and
+  points to the `AllocationResult`, i.e. the struct where resource drivers
+  store information about a successful allocation.
 
 - It is in use if and only if `claim.status.reservedFor` contains one or
   more users.  It does not matter whether those users, usually pods, are
@@ -976,8 +976,8 @@ For delayed allocation, a node is selected tentatively by the scheduler
 in an iterative process where the scheduler suggests some potential nodes
 that fit the other resource requirements of a Pod and resource drivers
 respond with information about whether they can allocate claims for those
-nodes. This exchange of information happens through the `PodScheduling`
-object for a Pod. The scheduler has to involve the drivers because it
+nodes. This exchange of information happens through the `PodSchedulingContext`
+for a Pod. The scheduler has to involve the drivers because it
 doesn't know what claim parameters mean and where suitable resources are
 currently available.
 
@@ -1021,10 +1021,10 @@ selector is static and typically will use labels that determine which nodes may
 have resources available.
 
 To gather information about the current state of resource availability and to
-trigger allocation of a claim, the scheduler creates one PodScheduling object
+trigger allocation of a claim, the scheduler creates one PodSchedulingContext
 for each pod that uses claims. That object is owned by the pod and
 will either get deleted by the scheduler when it is done with pod scheduling or
-through the garbage collector. In the PodScheduling object, the scheduler posts
+through the garbage collector. In the PodSchedulingContext, the scheduler posts
 the list of all potential nodes that it was left with after considering all
 other pod constraints and requirements. Resource drivers involved in the
 scheduling of the pod respond by adding which of these nodes currently don't
@@ -1065,15 +1065,15 @@ else changes in the system, like for example deleting objects.
     which includes constraints imposed by already allocated resources
   * if *delayed allocation and resource not allocated yet*:
     * if *at least one node fits pod*:
-      * **scheduler** creates or updates a `PodScheduling` object with `podScheduling.spec.potentialNodes=<nodes that fit the pod>`
+      * **scheduler** creates or updates a `PodSchedulingContext` with `podSchedulingContext.spec.potentialNodes=<nodes that fit the pod>`
       * if *exactly one claim is pending (see below)* or *all drivers have provided information*:
-        * **scheduler** picks one node, sets `podScheduling.spec.selectedNode=<the chosen node>`
+        * **scheduler** picks one node, sets `podSchedulingContext.spec.selectedNode=<the chosen node>`
         * if *resource is available for this selected node*:
           * **resource driver** adds finalizer to claim to prevent deletion -> allocation in progress
           * **resource driver** finishes allocation, sets `claim.status.allocation` and the
             pod in `claim.status.reservedFor` -> claim ready for use and reserved for the pod
         * else *scheduler needs to know that it must avoid this and possibly other nodes*:
-          * **resource driver** sets `podScheduling.status.claims[name=name of claim in pod].unsuitableNodes`
+          * **resource driver** sets `podSchedulingContext.status.claims[name=name of claim in pod].unsuitableNodes`
     * else *pod cannot be scheduled*:
       * **scheduler** may trigger deallocation of some claim with delayed allocation by setting `claim.status.deallocationRequested` to true
       (see [pseudo-code above](#coordinating-resource-allocation-through-the-scheduler)) or wait
@@ -1081,7 +1081,7 @@ else changes in the system, like for example deleting objects.
     * **scheduler** adds it to `claim.status.reservedFor`
   * if *resource allocated and reserved*:
     * **scheduler** sets node in Pod spec -> Pod ready to run
-    * **scheduler** deletes `PodScheduling` object if one exists
+    * **scheduler** deletes `PodSchedulingContext` if one exists
 * if *node is set for pod*:
   * if `resource not reserved for pod` (user might have set the node field):
     * **kubelet** refuses to start the pod -> permanent failure
@@ -1115,8 +1115,8 @@ supported by the driver). The resource remains allocated as long as the
 ResourceClaim doesn't get deleted by the user.
 
 If a Pod references multiple claims managed by the same driver, then the driver
-can combine updating `podScheduling.claims[*].unsuitableNodes` for all of them, after considering all
-claims.
+can combine updating `podSchedulingContext.claims[*].unsuitableNodes` for all
+of them, after considering all claims.
 
 ### API
 
@@ -1129,7 +1129,7 @@ are alpha, changes to their schema are discouraged and would have to be done by
 using new field names.
 
 ResourceClaim, ResourceClass and ResourceClaimTemplate are new built-in types
-in `resource.k8s.io/v1alpha1`. This alpha group must be explicitly enabled in
+in `resource.k8s.io/v1alpha2`. This alpha group must be explicitly enabled in
 the apiserver's runtime configuration. Using builtin types was chosen instead
 of using CRDs because core Kubernetes components must interact with the new
 objects and installation of CRDs as part of cluster creation is an unsolved
@@ -1271,9 +1271,9 @@ type ResourceClaimStatus struct {
 	// +optional
 	DriverName string
 
-	// Allocation is set by the resource driver once a resource has been
-	// allocated successfully. If this is not specified, the resource is
-	// not yet allocated.
+	// Allocation is set by the resource driver once a resource or set of
+	// resources has been allocated successfully. If this is not specified, the
+	// resources have not been allocated yet.
 	// +optional
 	Allocation *AllocationResult
 
@@ -1309,21 +1309,27 @@ claim was allocated for a node for which some other pending claims
 cannot be allocated because that node ran out of resources for those.
 
 ```
-// AllocationResult contains attributed of an allocated resource.
+// AllocationResult contains attributes of an allocated resource.
 type AllocationResult struct {
-	// ResourceHandle contains arbitrary data returned by the driver after a
-	// successful allocation. This is opaque for
-	// Kubernetes. Driver documentation may explain to users how to
-	// interpret this data if needed.
+	// ResourceHandles contain the state associated with an allocation that
+	// should be maintained throughout the lifetime of a claim. Each
+	// ResourceHandle contains data that should be passed to a specific kubelet
+	// plugin once it lands on a node. This data is returned by the driver
+	// after a successful allocation and is opaque to Kubernetes. Driver
+	// documentation may explain to users how to interpret this data if needed.
 	//
-	// The maximum size of this field is 16KiB. This may get
-	// increased in the future, but not reduced.
-	// +optional
-	ResourceHandle string
+	// Setting this field is optional. It has a maximum size of 32 entries.
+	// If null (or empty), it is assumed this allocation will be processed by a
+	// single kubelet plugin with no ResourceHandle data attached. The name of
+	// the kubelet plugin invoked will match the DriverName set in the
+	// ResourceClaimStatus this AllocationResult is embedded in.
+	//
+	// +listType=atomic
+	ResourceHandles []ResourceHandle
 
-	// This field will get set by the resource driver after it has
-	// allocated the resource driver to inform the scheduler where it can
-	// schedule Pods using the ResourceClaim.
+	// This field will get set by the resource driver after it has allocated
+	// the resource to inform the scheduler where it can schedule Pods using
+	// the ResourceClaim.
 	//
 	// Setting this field is optional. If null, the resource is available
 	// everywhere.
@@ -1346,11 +1352,36 @@ type AllocationResult struct {
 	<<[/UNRESOLVED]>>
 }
 
-// ResourceHandleMaxSize is the maximum size of allocation.resourceHandle.
-const ResourceHandleMaxSize = 16 * 1024
+// AllocationResultResourceHandlesMaxSize represents the maximum number of
+// entries in allocation.resourceHandles.
+const AllocationResultResourceHandlesMaxSize = 32
+
+// ResourceHandle holds opaque resource data for processing by a specific kubelet plugin.
+type ResourceHandle struct {
+	// DriverName specifies the name of the resource driver whose kubelet
+	// plugin should be invoked to process this ResourceHandle's data once it
+	// lands on a node. This may differ from the DriverName set in
+	// ResourceClaimStatus this ResourceHandle is embedded in.
+	DriverName string
+
+	// Data contains the opaque data associated with this ResourceHandle. It is
+	// set by the controller component of the resource driver whose name
+	// matches the DriverName set in the ResourceClaimStatus this
+	// ResourceHandle is embedded in. It is set at allocation time and is
+	// intended for processing by the kubelet plugin whose name matches
+	// the DriverName set in this ResourceHandle.
+	//
+	// The maximum size of this field is 16KiB. This may get increased in the
+	// future, but not reduced.
+	// +optional
+	Data string
+}
+
+// ResourceHandleDataMaxSize represents the maximum size of resourceHandle.data.
+const ResourceHandleDataMaxSize = 16 * 1024
 ```
 
-Resource drivers can use the `ResourceHandle` to store some data directly or
+Resource drivers can use each `ResourceHandle` to store data directly or
 cross-reference some other place where information is stored.
 This data is guaranteed to be available when a Pod is about
 to run on a node, in contrast to the ResourceClass which
@@ -1358,42 +1389,42 @@ may have been deleted in the meantime. It's also protected from
 modification by a user, in contrast to an annotation.
 
 ```
-// PodScheduling objects hold information that is needed to schedule
+// PodSchedulingContext holds information that is needed to schedule
 // a Pod with ResourceClaims that use "WaitForFirstConsumer" allocation
 // mode.
 //
 // This is an alpha type and requires enabling the DynamicResourceAllocation
 // feature gate.
-type PodScheduling struct {
+type PodSchedulingContext struct {
 	metav1.TypeMeta
 	// Standard object metadata
 	// +optional
 	metav1.ObjectMeta
 
 	// Spec describes where resources for the Pod are needed.
-	Spec PodSchedulingSpec
+	Spec PodSchedulingContextSpec
 
 	// Status describes where resources for the Pod can be allocated.
-	Status PodSchedulingStatus
+	Status PodSchedulingContextStatus
 }
 ```
 
-PodScheduling objects get created by a scheduler when it processes
+PodSchedulingContexts get created by a scheduler when it processes
 a pod which uses one or more unallocated ResourceClaims with delayed
 allocation.
 
-The name of a PodScheduling object must be the same as the corresponding Pod.
-That Pod must be listed as owner in OwnerReferences
-to ensure that the PodScheduling object gets deleted
-when no longer needed. Normally the scheduler will delete it.
+The name of a PodSchedulingContext must be the same as the corresponding Pod.
+That Pod must be listed as an owner in OwnerReferences to ensure that the
+PodSchedulingContext gets deleted when no longer needed. Normally the scheduler
+will delete it.
 
-Drivers must ignore PodScheduling objects where the owning
+Drivers must ignore PodSchedulingContexts where the owning
 pod already got deleted because such objects are orphaned
 and will be removed soon.
 
 ```
-// PodSchedulingSpec describes where resources for the Pod are needed.
-type PodSchedulingSpec struct {
+// PodSchedulingContextSpec describes where resources for the Pod are needed.
+type PodSchedulingContextSpec struct {
 	// SelectedNode is the node for which allocation of ResourceClaims that
 	// are referenced by the Pod and that use "WaitForFirstConsumer"
 	// allocation is to be attempted.
@@ -1446,8 +1477,8 @@ adding nodes here that the driver then would need to
 reject through UnsuitableNodes.
 
 ```
-// PodSchedulingStatus describes where resources for the Pod can be allocated.
-type PodSchedulingStatus struct {
+// PodSchedulingContextStatus describes where resources for the Pod can be allocated.
+type PodSchedulingContextStatus struct {
 	// ResourceClaims describes resource availability for each
 	// pod.spec.resourceClaim entry where the corresponding ResourceClaim
 	// uses "WaitForFirstConsumer" allocation mode.
@@ -1480,16 +1511,16 @@ type ResourceClaimSchedulingStatus struct {
 	// allocated for.
 	//
 	// The size of this field is limited to 128, the same as for
-	// PodSchedulingSpec.PotentialNodes. This may get increased in the
+	// PodSchedulingContextSpec.PotentialNodes. This may get increased in the
 	// future, but not reduced.
 	// +optional
 	UnsuitableNodes []string
 }
 
-// PodSchedulingNodeListMaxSize defines the maximum number of entries in the
-// node lists that are stored in PodScheduling objects. This limit is part
+// PodSchedulingContextNodeListMaxSize defines the maximum number of entries in
+// the node lists that are stored in PodSchedulingContexts. This limit is part
 // of the API.
-const PodSchedulingNodeListMaxSize = 256
+const PodSchedulingContextNodeListMaxSize = 256
 ```
 
 UnsuitableNodes lists nodes that the claim cannot be allocated for.
@@ -1498,7 +1529,7 @@ node for a Pod. All other nodes are potential candidates, either
 because no information is available yet or because allocation might
 succeed.
 
-A change to the PodSchedulingSpec.PotentialNodes field and/or a failed
+A change to the PodSchedulingContextSpec.PotentialNodes field and/or a failed
 allocation attempt triggers an update of this field: the driver
 then checks all nodes listed in PotentialNodes and UnsuitableNodes
 and updates UnsuitableNodes.
@@ -1748,14 +1779,14 @@ were already allocated.
 
 For unallocated ResourceClaims with delayed allocation, only those nodes are
 filtered out that are explicitly listed in their UnsuitableNodes field of their
-PodScheduling.Claims entry (if such an entry already exists) or that don't match
-the optional ResourceClass.SuitableNodes node selector.
+PodSchedulingContext.Claims entry (if such an entry already exists) or that
+don't match the optional ResourceClass.SuitableNodes node selector.
 
 There are several
 reasons why such a deny list is more suitable than an allow list:
 - Nodes for which no information is available must pass the filter phase to be
   included in the list that will be passed to pre-score and to get copied
-  into the PodScheduling.PotentialNodes field there.
+  into the PodSchedulingContext.PotentialNodes field there.
 - A node can already be chosen while there is no information yet and, if
   allocation for that node actually works, the Pod can get scheduled sooner.
 - Some resource drivers might not have any unsuitable nodes, for example
@@ -1797,11 +1828,11 @@ might attempt to improve this.
 
 This is passed a list of nodes that have passed filtering by the claim
 plugin and the other plugins. That list is stored by the claim plugin and will
-be copied to PodSchedulingSpec.PotentialNodes when the claim plugin creates or updates
-the object in Reserve.
+be copied to PodSchedulingContextSpec.PotentialNodes when the claim plugin
+creates or updates the object in Reserve.
 
 Pre-score is not called when there is only a single potential node. In that
-case Reserve will store the selected node in PodSchedulingSpec.PotentialNodes.
+case Reserve will store the selected node in PodSchedulingContextSpec.PotentialNodes.
 
 #### Reserve
 
@@ -1809,13 +1840,13 @@ A node has been chosen for the Pod.
 
 If using delayed allocation and one or more claims have not been allocated yet,
 the claim plugin now needs to decide whether it wants to trigger allocation by
-setting the PodSchedulingSpec.SelectedNode field. For a single unallocated
+setting the PodSchedulingContextSpec.SelectedNode field. For a single unallocated
 claim that is safe even if no information about unsuitable nodes is available
 because the allocation will either succeed or fail. For multiple such claims
 allocation only gets triggered when that information is available, to minimize
 the risk of getting only some but not all claims allocated.  In both cases the
-PodScheduling object gets created or updated as needed. This is also where the
-PodSchedulingSpec.PotentialNodes field gets set.
+PodSchedulingContext gets created or updated as needed. This is also where the
+PodSchedulingContextSpec.PotentialNodes field gets set.
 
 If all resources have been allocated already,
 the claim plugin ensures that the Pod is listed in the `claim.status.reservedFor` field
@@ -1965,17 +1996,18 @@ with “volume” replaced by “resource” and volume specific parts removed.
 
 ##### `NodePrepareResource`
 
-This RPC is called by kubelet when a Pod that wants to use the
-specified resource is scheduled on a node.  The Plugin SHALL assume
-that this RPC will be executed on the node where the resource will be
-used.  ResourceClaim.meta.Namespace, ResourceClaim.meta.UID,
-ResourceClaim.Name, ResourceClaim.meta.Namespace and
-ResourceClaimStatus.AllocationResult should be passed to the Plugin
-as parameters to identify the claim and perform resource preparation.
+This RPC is called by the kubelet when a Pod that wants to use the specified
+resource is scheduled on a node. The Plugin SHALL assume that this RPC will be
+executed on the node where the resource will be used.
+ResourceClaim.meta.Namespace, ResourceClaim.meta.UID, ResourceClaim.Name,
+ResourceClaim.meta.Namespace and one of the ResourceHandles from the
+ResourceClaimStatus.AllocationResult with a matching DriverName should be
+passed to the Plugin as parameters to identify the claim and perform resource
+preparation.
 
-ResourceClaim parameters(namespace, UUID, name) are useful for debugging
-and enable the resource driver to retrieve the full ResourceClaim object,
-should that ever be needed (normally it shouldn't).
+ResourceClaim parameters (namespace, UUID, name) are useful for debugging.
+They enable the Plugin to retrieve the full ResourceClaim object, should it
+ever be needed (normally it shouldn't).
 
 The Plugin SHALL return fully qualified device name[s].
 
@@ -2011,7 +2043,7 @@ message NodePrepareResourceRequest {
   // The name of the Resource claim (ResourceClaim.meta.Name)
   // This field is REQUIRED.
   string claim_name = 3;
-  // Data provided by the resource driver controller during allocation (AllocationResult.ResourceHandle)
+  // Resource handle (AllocationResult.ResourceHandles[*].Data)
   // This field is REQUIRED.
   string resource_handle = 4;
 }
@@ -2069,7 +2101,7 @@ code.
 | Condition | gRPC Code | Description | Recovery Behavior |
 |-----------|-----------|-------------|-------------------|
 | Resource does not exist | 5 NOT_FOUND | Indicates that a resource corresponding to the specified `resource_id` does not exist. | Caller MUST verify that the `resource_id` is correct and that the resource is accessible and has not been deleted before retrying with exponential back off. |
- 
+
 
 ##### `NodeUnprepareResource`
 
@@ -2098,9 +2130,9 @@ message NodeUnprepareResourceRequest {
   // The name of the Resource claim (ResourceClaim.meta.Name)
   // This field is REQUIRED.
   string claim_name = 3;
-  // List of fully qualified CDI device names
-  // Kubelet plugin returns them in the NodePrepareResourceResponse
-  repeated string cdi_device = 4;
+  // Resource handle (AllocationResult.ResourceHandles[*].Data)
+  // This field is REQUIRED.
+  string resource_handle = 4;
 }
 
 message NodeUnprepareResourceResponse {
@@ -2414,7 +2446,7 @@ Pod scheduling and startup are more important. However, expected performance
 will depend on how resources are used (for example, how often new Pods are
 created), therefore it is impossible to predict what reasonable SLOs might be.
 
-The resource manager component will do its work similarly to the 
+The resource manager component will do its work similarly to the
 existing volume manager, but the overhead and complexity should
 be lower:
 
@@ -2423,11 +2455,11 @@ be lower:
   deleting CDI file, so it should be quick as well.
 
 * The complexity is lower than in the volume manager
-  because there is only one global operation needed (prepare vs. 
+  because there is only one global operation needed (prepare vs.
   attach + publish for each pod).
-  
-* Reconstruction after a kubelet restart is simpler (call 
-  NodePrepareResource again vs. trying to determine whether 
+
+* Reconstruction after a kubelet restart is simpler (call
+  NodePrepareResource again vs. trying to determine whether
   volumes are mounted).
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -2659,7 +2691,7 @@ ResourceClaim objects.
 
 Similar to CSIDriver for storage, a separate object describing a resource
 driver might be useful at some point. At the moment it is not needed yet and
-therefore not part of the v1alpha1 API. If it becomes necessary to describe
+therefore not part of the v1alpha2 API. If it becomes necessary to describe
 optional features of a resource driver, such a ResourceDriver type might look
 like this:
 
