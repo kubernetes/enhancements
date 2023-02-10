@@ -1377,7 +1377,7 @@ authorization attributes.
 
 Example expressions using `authorizer`:
 
-- `authorizer.resource('signers').group('certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed()`
+- `authorizer.resource('signers').group('certificates.k8s.io').name(oldObject.spec.signerName).check('approve').allowed()`
 - `authorizer.path('/metrics').denied('get')`
 
 Note that this API:
