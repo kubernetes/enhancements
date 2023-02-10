@@ -1363,8 +1363,8 @@ time to an Authorizer object supporting receiver-style function overloads:
 |-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
 | path        | Authorizer.(path string) -> PathCheck                                   | Defines a check for an non-resource request path (e.g. /healthz)                                |
 | check       | PathCheck.(httpRequestVerb string) -> Decision                          | Checks if the user is authorized for the HTTP request verb on the path                          |
-| resource    | Authorizer.(resource string) -> ResourceCheck                           | Defines a check for an API resource                                                             |
-| group       | ResourceCheck.(group string) -> ResourceCheck                           | Specifies the group for the API resource check                                                  |
+| group       | Authorizer.(group string) -> GroupCheck                                 | Defines a check for a API group, core is identified by ''                                       |
+| resource    | GroupCheck.(resource string) -> ResourceCheck                           | Defines a check for an API resource                                                             |
 | subresource | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies that the check is for a subresource                                                   |
 | namespace   | ResourceCheck.(namespace string) -> ResourceCheck                       | Specifies that the check is for a namespace (if not called, the check is for the cluster scope) |
 | name        | ResourceCheck.(name string) -> ResourceCheck                            | Specifies that the check is for a specific resource name                                        |
