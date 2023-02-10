@@ -96,13 +96,13 @@ SIG Architecture for cross-cutting KEPs).
     - [PodStatus](#podstatus)
     - [NodeStatus](#nodestatus)
     - [Consts](#consts)
+  - [Pod QoS class](#pod-qos-class)
   - [Kubelet](#kubelet)
   - [API server](#api-server)
   - [Scheduler](#scheduler)
   - [Kubectl](#kubectl)
   - [Container runtimes](#container-runtimes)
   - [Open Questions](#open-questions)
-    - [Pod QoS class](#pod-qos-class)
     - [Other Kubernetes-managed QoS-class resources](#other-kubernetes-managed-qos-class-resources)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -1023,6 +1023,35 @@ Also, kubelet will reject the registration of unknown QoS-class resources in
 the "official" namespace. Custom/vendor-specific QoS-class resources will still
 be allowed outside the "official" namespace.
 
+### Pod QoS class
+
+<<[UNRESOLVED]>>
+The [Pod QoS class][pod-qos-class] will be communicated to the container
+runtime as a special Kubernetes-specific QoS-class resource.
+
+Information about Pod QoS class is currently internal to kubelet and not
+visible to the container runtime. However, container runtimes (CRI-O, at least)
+are already depending on this information and currently determining it
+indirectly by evaluating other CRI parameters.
+
+This change makes the information about Pod QoS explicit and allows elimination
+of unreliable code paths in runtimes, for example.
+
+Pod QoS class will not advertised as one of the available QoS-class resources
+in NodeStatus. Also, users are not allowed to request it in the PodSpec which
+will be enforced by admission checks in the api-server and kubelet.
+
+```diff
++ // Kubernetes-managed QoS resources. These are only informational to the runtime
++ // and no CRI requests should fail because of these.
++const (
++       // QOSResourcePodQOS is the Kubernetes Pod Quality of Service Class.
++       // Possible values are "Guaranteed", "Burstable" and "BestEffort".
++       QOSResourcePodQOS = "pod-qos"
++)
+```
+<<[/UNRESOLVED]>>
+
 ### Kubelet
 
 Kubelet gets QoS-class resource assignment from the [PodSpec](#podspec) and
@@ -1144,21 +1173,6 @@ Container runtimes will be updated to support the
 [CRI API extensions](#cri-api)
 
 ### Open Questions
-
-#### Pod QoS class
-
-The Pod QoS class could be communicated to the container runtime as a QoS-class
-resource, too. This information is currently internal to kubelet. However,
-container runtimes (CRI-O, at least) are already depending on this information
-and currently determining it indirectly by evaluating other CRI parameters. It
-would be better to explicitly state the Pod QoS class and QoS-class resources would
-look like a logical place for that. This also makes it techically possible to
-have container-specific QoS classes (as a possible future enhancement of K8s).
-
-Making this change, it would also be possible to separate `oom_score_adj` from
-the pod qos class in the future.  The runtime could provide a set of OOM
-classes, making it possible for the user to specify a burstable pod with low
-oom priority (low chance of being killed).
 
 #### Other Kubernetes-managed QoS-class resources
 
@@ -1970,3 +1984,4 @@ required.
 [linux-resctrl]: https://www.kernel.org/doc/html/latest/x86/resctrl.html
 [kep-2837]: https://github.com/kubernetes/enhancements/pull/1592
 [kep-2570]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2570-memory-qos
+[pod-qos-class]: https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/
