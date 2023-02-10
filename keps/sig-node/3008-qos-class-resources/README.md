@@ -552,6 +552,9 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+The identified risks are mainly related to usability or unfriendly users
+hogging all available high-priority QoS.
+
 - User assigning container to “unauthorized” class, causing interference and
   access to unwanted set/amount of resources. This will be addressed in future
   KEP introducing permission controls.
@@ -565,6 +568,29 @@ Consider including folks who also work outside the SIG or subproject.
   are pod-level resources and which container-level) but there is still
   possibility to mix-up vendor-specific QoS-class resources, although the risk
   for this is relatively small (severe misconfiguration)
+- A node can only serve a limited amount of users of high-priority QoS. This
+  is mitigated by the Capacity attribute of classes, limiting the number of
+  simultaneous users of a class. This information if per-node and it is
+  determined by the system and/or runtime contiguration of the node, outside
+  Kubernetes. It is the  responsibility of the node administrator to configure
+  meaningful capacity limits for QoS-class resources that require it.
+- User does not request any QoS but the runtime applies some defaults on the
+  application, limiting service level. This is mitigated by user being able
+  to see the effective assignments in Pod status.
+- User accidentally specifies pod-level QoS-class resources for a container.
+  For "official" well-known QoS-class resources (see [Consts](#consts)) this
+  will be mitigated by admission check, rejecting the Pod. For vendor-specific
+  QoS-class resources the Pod will stay in pending state, with Pod status
+  indicating that no nodes are available with a message describing the detailed
+  reason of unavailable container-level QoS-class resource type.
+- User mistakenly specifies a scontainer-level QoS-class resources as a
+  pod-level request. This is not regarded as an error or misconfiguration
+  but the request is regarded as a pod-wide default for all containers.
+  However, an unintended consequence may be that some containers are run
+  at on unintended QoS level or the pod becomes unschedulable because no nodes
+  have enough capacity to satisfy a high-priority QoS-class for all containers.
+  In the latter case the Pod stays in pending state with Pod status
+  describing the details of insufficient QoS-class resources.
 
 ## Design Details
 
