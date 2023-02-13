@@ -401,10 +401,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 The feature flag will be enabled for e2e tests. The tests will attempt to convert volume 
 mode when creating a `PVC` from a `VolumeSnapshot`:
   - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
-    annotation present.
+    annotation present - https://github.com/kubernetes-csi/external-provisioner/pull/867/files: https://testgrid.k8s.io/sig-storage-csi-external-provisioner#canary
   - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
     annotation - https://github.com/kubernetes-csi/external-provisioner/pull/832: https://testgrid.k8s.io/sig-storage-csi-external-provisioner#canary
-  - With `Spec.SourceVolumeMode` set to `nil`.
+  - With `Spec.SourceVolumeMode` set to `nil` - https://github.com/kubernetes-csi/external-provisioner/pull/867/files: https://testgrid.k8s.io/sig-storage-csi-external-provisioner#canary
 
 ### Graduation Criteria
 
