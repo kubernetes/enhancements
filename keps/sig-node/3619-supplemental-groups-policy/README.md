@@ -1,76 +1,6 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-3619: Fine-grained SupplementalGroups control
 
 <!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
 Ensure the TOC is wrapped with
   <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
 tags, and then generate with `hack/update-toc.sh`.
@@ -173,25 +103,6 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-
 The KEP seeks to provide a way to choose correct behavior with how Container Runtimes (Containerd and CRI-O) are applying `SupplementalGroups` to the first container processes. The KEP describes the work needed to be done in Kubernetes or connected projects to make sure customers have a clear migration path - including detection and safe upgrade - if any of their workflows took a dependency on this arguably erroneous behavior.
 
 ### The issue
@@ -247,15 +158,6 @@ uid=1000(alice) gid=1000(alice) groups=1000(alice),50000(group-in-image),60000
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
-
 As described above, how supplemental groups attached to the first container process is complicated and not OCI image spec compliant.
 
 Moreover, this causes security considerations as follows. When a cluster enforces some security policy for pods that protects the value of `RunAsGroup` and `SupplementalGroups`, the effect of its enforcement is limited, i.e., cluster users can easily bypass the policy enforcement just by using a custom image. If such a bypass happened, it would be unexpected behavior for most cluster administrators because the enforcement is almost useless. Moreover, the bypass will cause unexpected file access permission. In some use cases, the unexpected file access permission will be a security concern. For example, using `hostPath` volumes could be a severe problem because UID/GIDs matter in accessing files/directories in the volumes.
@@ -266,35 +168,16 @@ Thus, this KEP proposes to offer a new API field named `SupplementalGroupsPolicy
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
 - To Provide a new API field to control exactly which groups the container process belongs to
 - Ensure there are clear steps documented for end users to detect if their workload is affected 
 - (Optional) provide helper APIs and/or tooling to simplify the detection
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
-
 - To provide a cluster-wide control method.
 - To change the default behavior (a potentially breaking change)
 
 ## Proposal
-
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
 
 This KEP proposes changes both on Kubernets API and CRI levels.
 
@@ -351,14 +234,6 @@ message ContainerUser {
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
-
 #### Story 1: Deploy a Security Policy to enforce `SupplementalGroupsPolicy` field
 
 Assume a multi-tenant kubernetes cluster with `hostPath` volumes below situations:
@@ -394,41 +269,15 @@ Please note that a security policy without `supplementalGroupsPolicy` would lead
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
-
 The proposal affects to the CRI implementations (e.g., containerd, cri-o, gVisor, etc.)
 
 ### Risks and Mitigations
-
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
 
 - How to track the support status in CRI implementations of this proposal?
   - This feature is mainly implemented inside each CRI implementation.
 - How to feature-gate this feature in CRI implementations?
 
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 ### Kubernetes API
 
@@ -648,34 +497,6 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
--->
-
 Because this KEP's core implementation(i.e. `SupplementalGroupsPolicy` handling) lies inside of CRI implementations(e.g. containerd, cri-o), the graduation criteria contains the support statuses of the updated CRI by container runtimes.
 
 #### Alpha
@@ -700,32 +521,7 @@ Because this KEP's core implementation(i.e. `SupplementalGroupsPolicy` handling)
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-
 ### Version Skew Strategy
-
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
 
 - CRI must support this feature, especially when using `SupplementalGroupsPolicy=Strict`.
 - kubelet must be at least the version of control-plane components.
@@ -1117,12 +913,6 @@ N/A
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
 ### Introducing `RutimeClass`
 
 As described in the [Motivation](#motivation) section, cluster administrators would need to deploy a custom low-level container runtime(e.g., [pfnet-research/strict-supplementalgroups-container-runtime](https://github.com/pfnet-research/strict-supplementalgroups-container-runtime)) that modifies OCI container runtime spec(`config.json`) produced by CRI implementations (e.g., containerd, cri-o). A custom `RuntimeClass` would be introduced for it.
@@ -1136,11 +926,5 @@ Users could modify their container images to control the supplemental groups (i.
 We could just fix CRI implementations directly without introducing new APIs.  The advantage is no API changes both on Kubernetes and CRI levels. However, the main downside of this approach is a breaking change that makes users confused.
 
 ## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
 
 N/A
