@@ -1025,7 +1025,7 @@ well as the [existing list] of feature gates.
       No
 
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
 
       No
 

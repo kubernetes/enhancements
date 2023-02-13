@@ -684,7 +684,7 @@ _This section must be completed when targeting alpha to a release._
       plane?
       From the controller side, it only affects the external controller sidecars.
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
       No.
 
 * **Does enabling the feature change any default behavior?**

@@ -743,7 +743,7 @@ Pick one of these and delete the rest.
         -   Yes. Changing the kube-controller-manager flags will require
             restarting the component (which runs other controllers).
     -   Will enabling / disabling the feature require downtime or reprovisioning
-        of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+        of a node?
         -   No. With the caveat that if the kube-proxy is in use, it must set
             the appropriate flags, as [described above](#pre-requisites).
 

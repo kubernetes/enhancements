@@ -295,7 +295,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 * **Does enabling the feature change any default behavior?**
   Allow users to reduce size of pvc in `pvc.spec.resources`. In general this was not permitted before,

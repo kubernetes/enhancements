@@ -407,7 +407,7 @@ requires the `KUBECTL_AUTO_SERVER_SIDE` environment variable to be set.
 Feature is client-side only, no.
 
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
 
 Feature is client-side only, no.
 

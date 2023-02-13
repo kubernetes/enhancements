@@ -238,7 +238,7 @@ This feature is not impacted by version skew. API Servers of different versions 
     - Will enabling / disabling the feature require downtime of the control
       plane?  Yes, it will require restarting the API Server.
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
+      of a node? No.
 
 ###### Does enabling the feature change any default behavior?
   No. The feature is disabled unlesss both the feature gate and `--opentelemetry-config-file` flag are set.  When the feature is enabled, it doesn't change behavior from the users' perspective; it only adds tracing telemetry based on API Server requests.

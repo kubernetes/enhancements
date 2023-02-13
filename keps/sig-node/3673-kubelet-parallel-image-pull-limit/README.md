@@ -522,7 +522,7 @@ well as the [existing list] of feature gates.
     plane?
     - No
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
     - Yes, it requires restarting kubelet.
 
 ###### Does enabling the feature change any default behavior?

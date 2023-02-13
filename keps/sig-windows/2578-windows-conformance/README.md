@@ -417,7 +417,7 @@ Not applicable because this KEP is focused on building Windows focused test suit
   - Will enabling / disabling the feature require downtime of the control
     plane? yes
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). yes
+    of a node? yes
 
 ###### Does enabling the feature change any default behavior?
 

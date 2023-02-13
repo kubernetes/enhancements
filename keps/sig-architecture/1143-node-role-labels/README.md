@@ -214,7 +214,7 @@ Controllers are updated after the control plane, so consumers must update the la
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
