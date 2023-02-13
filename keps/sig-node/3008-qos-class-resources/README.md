@@ -74,6 +74,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Scheduler improvements](#scheduler-improvements)
     - [Kubelet-initiated pod eviction](#kubelet-initiated-pod-eviction)
     - [Default and limits](#default-and-limits)
+    - [API objects for resources and classes](#api-objects-for-resources-and-classes)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Mitigating noisy neighbors](#mitigating-noisy-neighbors)
@@ -224,8 +225,9 @@ hardware class share a portion of cache lines and memory bandwidth. RDT
 provides a way for mitigating noisy neighbors and fulfilling SLAs. In Linux
 control happens via resctrl -- a pseudo-filesystem provided by the kernel which
 makes it virtually agnostic of the hardware architecture. The OCI runtime-spec
-has supported Intel RDT for a while already. Other hardware vendors have
-comparable technologies which use the same [resctrl interface][linux-resctrl].
+has supported Intel RDT for a while already (see the
+[OCI runtime-spec][oci-runtime-rdt]). Other hardware vendors have comparable
+technologies which use the same [resctrl interface][linux-resctrl].
 
 The Linux Block IO controller parameters depend very heavily on the underlying
 hardware and system configuration (device naming/numbering, IO scheduler
@@ -319,6 +321,8 @@ are currently listed as "future work" in [Goals](#goals).
 
 In practice, the future work mostly consists of changes to the Kubernetes API
 and control plane components.
+
+All the sub-sections below should be considered as `<<[UNRESOLVED]>>`.
 
 #### In-place pod vertical scaling
 
@@ -450,6 +454,19 @@ usage of container-level QoS-class resources.
 
 Not supporting Max (i.e. only supporting Default) in LimitRanges could simplify
 the API.
+
+#### API objects for resources and classes
+
+`<<[UNRESOLVED]>>`
+
+There has been discussion that QoS-class resources and their classes could be
+represented as separate Kubernetes API objects (say QOSResource and QOSClass).
+These could serve as a second level of configuration what is made
+available/visible/what can be registered on the cluster, in addition to the
+runtime configuration. They could also be used to store documentation
+(description) of different resources and their classes.
+
+`<<[/UNRESOLVED]>>`
 
 ## Proposal
 
@@ -822,18 +839,26 @@ resource assignments to the runtime.
      WindowsContainerConfig windows = 16;
 +
 +    // Configuration of QoS resources.
-+    ContainerQOSResources qos_resources = 17;
++    repeated ContainerQOSResource qos_resources = 17;
  }
 
-+// ContainerQOSResources specifies the configuration of QoS resources of a
++// ContainerQOSResource specifies the assignment of one QoS resource for a
 +// container.
-+message ContainerQOSResources {
-+    // QoS resources the container will be assigned to.
-+    // Key-value pairs where key is name of the QoS resource and value is the
-+    // name of the class.
-+    map<string, string> classes = 1;
++message ContainerQOSResource {
++    // Name of the QoS resource.
++    string name = 1;
++    // Name of the class.
++    string class = 2;
 +}
 ```
+
+`<<[UNRESOLVED @haircommander @mrunalp]>>`
+
+Instead of separate types (ContainerQOSResource ans PodQOSResource) use shared
+type (say QOSResource) for assignment/status of both container and pod level
+resources.
+
+`<<[/UNRESOLVED]>>`
 
 #### UpdateContainerResourcesRequest
 
@@ -862,7 +887,7 @@ support updates because of runtime limitations, yet.
 +    // Note that UpdateContainerResourcesRequest must be atomic so that the
 +    // runtime ensure that the requested update to QoS resources can be applied
 +    // before e.g. updating other resources.
-+    ContainerQOSResources qos_resources = 5;
++    repeated ContainerQOSResource qos_resources = 5;
 }
 ```
 
@@ -880,15 +905,16 @@ assignments at sandbox creation time (`RunPodSandboxRequest`).
      // Optional configurations specific to Windows hosts.
      WindowsPodSandboxConfig windows = 9;
 +    // Configuration of QoS resources.
-+    PodQOSResources qos_resources = 10;
++    repeated PodQOSResource qos_resources = 10;
  }
 
-+// PodQOSResources specifies the configuration of QoS resources of a pod.
-+message PodQOSResources {
-+    // QoS resources the pod will be assigned to.
-+    // Key-value pairs where key is name of the QoS resource and value is the
-+    // name of the class.
-+    map<string, string> classes = 1;
++// PodQOSResource specifies the assignment of one QoS resource for a
++// pod.
++message PodQOSResource {
++    // Name of the QoS resource.
++    string name = 1;
++    // Name of the class.
++    string class = 2;
 +}
 ```
 
@@ -904,7 +930,7 @@ didn't request anythin (see [implicit defaults](#implicit-defaults))
      // runtime configuration used for this PodSandbox.
      string runtime_handler = 9;
 +    // Configuration of QoS resources.
-+    PodQOSResources qos_resources = 10;
++    repeated PodQOSResource qos_resources = 10;
  }
 
 ```
@@ -923,7 +949,7 @@ explicitly (see [implicit defaults](#implicit-defaults))
      // Resource limits configuration specific to Windows container.
      WindowsContainerResources windows = 2;
 +    // Configuration of QoS resources.
-+    ContainerQOSResources qos_resources = 3;
++    repeated ContainerQOSResource qos_resources = 3;
 ```
 
 #### RuntimeStatus
@@ -1205,12 +1231,14 @@ addition to the name the API documents the expected high-level behavior and
 semantics of these canonical QoS-class resources to provide common standards
 across different implementations.
 
-<<[UNRESOLVED @sftim]>>
+`<<[UNRESOLVED @sftim]>>`
+
 The canonical Kubernetes names for QoS-class resources are non-namespaced (i.e.
 without a `<namespace>/` prefix). Namespaced (or fully qualified) names like
 `example.com/acme-qos` are not controlled and are meant for e.g. vendor or
 application specific QoS implementations.
-<<[/UNRESOLVED]>>
+
+`<<[/UNRESOLVED]>>`
 
 ```diff
 +const (
@@ -1232,7 +1260,8 @@ be allowed outside the "official" namespace.
 
 ### Pod QoS class
 
-<<[UNRESOLVED]>>
+`<<[UNRESOLVED]>>`
+
 The [Pod QoS class][pod-qos-class] will be communicated to the container
 runtime as a special Kubernetes-specific QoS-class resource.
 
@@ -1257,7 +1286,8 @@ will be enforced by admission checks in the api-server and kubelet.
 +       QOSResourcePodQOS = "pod-qos"
 +)
 ```
-<<[/UNRESOLVED]>>
+
+`<<[/UNRESOLVED]>>`
 
 ### Kubelet
 
@@ -2201,4 +2231,5 @@ required.
 [linux-resctrl]: https://www.kernel.org/doc/html/latest/x86/resctrl.html
 [kep-2837]: https://github.com/kubernetes/enhancements/pull/1592
 [kep-2570]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2570-memory-qos
+[oci-runtime-rdt]: https://github.com/opencontainers/runtime-spec/blob/v1.0.2/config-linux.md#IntelRdt
 [pod-qos-class]: https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/
