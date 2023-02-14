@@ -1,4 +1,4 @@
-# KEP-3638: Enable built-in command shadowing by plugins 
+# KEP-3638: Improve kubectl plugin resolution for non-shadowing subcommands 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
 highlighting any additional information provided beyond the standard KEP
