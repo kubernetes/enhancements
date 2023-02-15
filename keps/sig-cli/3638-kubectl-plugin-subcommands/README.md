@@ -274,7 +274,7 @@ in back-to-back releases.
 
 - Gather feedback from developers and surveys
 - Add integration tests
-- Enable shadowing for all commands
+- Enable shadowing for all non-existent subcommands
 
 #### GA
 

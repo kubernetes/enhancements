@@ -1,4 +1,4 @@
-title: Add built-in command shadowing support by plugins
+title: Improve kubectl plugin resolution for non-shadowing subcommands
 kep-number: 3638
 authors:
   - "@ardaguclu"
