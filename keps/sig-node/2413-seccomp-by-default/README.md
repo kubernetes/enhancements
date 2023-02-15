@@ -186,7 +186,9 @@ configuration.
 #### Beta to GA Graduation
 
 - [x] Allowing time for feedback (3 releases)
-- [x] Enabling the Kubelet feature flag by default
+- [x] Lock the Kubelet feature gate to be locked to the default value `true`
+      Note, the enablement of a feature gate doesn't mean the default
+      behavior will change. No default profile will be applied unless configured.
 - [x] Risks have been addressed by every common container runtime
 - [x] Documenting the seccomp performance impact on k/website as well as its
       workarounds (disabling the feature completely, turning off spectre
