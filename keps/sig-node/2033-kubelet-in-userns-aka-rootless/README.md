@@ -499,11 +499,15 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-Testing needs cgroup v2 CI infra.
+Tests are present in several subproject repos and third party repos:
+- https://github.com/kubernetes-sigs/kind/blob/v0.17.0/.github/workflows/cgroup2.yaml#L24
+- https://github.com/kubernetes/minikube/blob/v1.29.0/.github/workflows/pr.yml#L293-L410
+- https://github.com/k3s-io/k3s/blob/v1.26.1+k3s1/.github/workflows/cgroup.yaml#L92-L99
+- https://github.com/rootless-containers/usernetes/blob/v20221007.0/.cirrus.yml
 
-The most easiest way to test Rootless Kubernetes would be to run `kind` with Rootless Docker provider.
-
-Alternatively we could use [Usernetes smoke tests](https://github.com/rootless-containers/usernetes/blob/v20201118.0/.github/workflows/main.yaml#L49-L50) as well.
+Tests will be added to `kubernetes/test-infra` as well when the [`k8s-infra-prow-build`](https://github.com/kubernetes/k8s.io/blob/a071c4ed0823f193ee29e2f14e191be42dc1a1f0/infra/gcp/terraform/k8s-infra-prow-build/main.tf#L78) cluster
+is upgraded to use cgroup v2.
+This will probably automatically happen when [GKE bumps up their "regular" channel to Kubernetes v1.26 or later](https://cloud.google.com/kubernetes-engine/docs/how-to/node-system-config).
 
 ### Graduation Criteria
 
