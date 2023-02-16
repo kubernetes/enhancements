@@ -14,13 +14,15 @@
   - [Changes to the <code>provided-node-ip</code> annotation](#changes-to-the--annotation)
   - [Changes to cloud providers](#changes-to-cloud-providers)
   - [Example of <code>--node-ip</code> possibilities](#example-of--possibilities)
+  - [UPDATE: Late-breaking change for 1.27...](#update-late-breaking-change-for-127)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
+    - [Alpha (1?)](#alpha-1)
+    - [Alpha 2?](#alpha-2)
     - [Beta](#beta)
     - [GA](#ga)
     - [Deprecation](#deprecation)
@@ -229,12 +231,12 @@ a long time. We should fix this. So:
      whether the feature gate is enabled or not, to avoid problems
      with rollback and skew).
 
-  2. When the `CloudNodeIPs` feature is enabled and `--node-ip` is
+  2. When the `CloudDualStackNodeIPs` feature is enabled and `--node-ip` is
      set, kubelet will set both the legacy annotation and the new
      annotation. (It always sets them both to the same value, even if
      that's a value that old cloud providers won't understand).
 
-  2. When the `CloudNodeIPs` feature is enabled, the cloud provider
+  2. When the `CloudDualStackNodeIPs` feature is enabled, the cloud provider
      will use the new `kubernetes.io/provided-node-ip` annotation _if
      the legacy alpha annotation is not set_. (But if both annotations
      are set, it will prefer the legacy annotation, so as to handle
@@ -339,6 +341,62 @@ In this case, kubelet would be even more confused in the
 `--node-ip ::` case, and some things would likely not work.
 By contrast, with `--node-ip IPv6`, the user would get a clear error.
 
+### UPDATE: Late-breaking change for 1.27...
+
+While implementing the above behavior, it became clear that retaining
+backward compatibility with old `--node-ip` values means the overall
+behavior is idiosyncratic and full of loopholes. For example, given
+the initial NodeAddress list:
+
+```yaml
+addresses:
+  - type:    InternalIP
+    address: 10.0.0.1
+  - type:    InternalIP
+    address: 10.0.0.2
+  - type:    InternalIP
+    address: fd00::1
+  - type:    InternalIP
+    address: fd00::2
+  - type:    ExternalIP
+    address: 192.168.0.1
+```
+
+You can request to get a single-stack IPv4 cluster with any of the
+three IPv4 IPs as the node IP (`--node-ip 10.0.0.1`, `--node-ip
+10.0.0.2`, `--node-ip 192.168.0.1`); a dual-stack IPv4-primary cluster
+with any combination of the IPv4 and IPv6 IPs (`--node-ip
+10.0.0.2,fd00::2`, etc); a dual-stack IPv6-primary cluster with any
+combination of IPs (`--node-ip fd00::1,192.168.0.1`, etc); or an IPv6
+single-stack cluster using the _first_ IPv6 IP (`--node-ip IPv6`).
+
+But there is no way to get a single-stack IPv6 cluster using the
+second IPv6 IP, because passing `--node-ip fd00::2` results in a
+_dual-stack_ cluster, because the current, backward-compatible
+semantics of single-valued `--node-ip` values means that the IPv4
+`ExternalIP` will be preserved.
+
+There are various ways this might be fixed (assuming we want to fix
+it), but we might decide that the best way is something incompatible
+with (or redundant with) the proposal above. Given that there is
+already an UNRESOLVED section about the behavior of the `"IPv4"` and
+`"IPv6"` literals anyway, I have decided to ignore them for the
+(first?) alpha release, and implement _only_ the "two specific IPs"
+behavior for now (since it is more straightforward, and already
+implemented for non-cloud-provider clusters anyway).
+
+Likewise, if we decide that the best way forward is to deprecate
+`--node-ip` in favor of a new `--node-ips` option with better
+semantics, then we might also have different ideas about the best way
+to move forward with changing the annotation name (and semantics), so
+I am ignoring the "new annotation" part of the KEP for now as well.
+
+<<[UNRESOLVED]>>
+
+Figure out the plan.
+
+<<[/UNRESOLVED]>>
+
 ### Test Plan
 
 <!--
@@ -434,9 +492,10 @@ test job should fail.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Alpha (1?)
 
-- New `--node-ip` handling and annotation implemented behind a feature flag
+- Dual-stack `--node-ip` handling implemented behind a feature flag
+
 - Unit tests updated
 
 - Initial e2e tests completed and enabled? Unless maybe the e2e tests
@@ -444,11 +503,17 @@ test job should fail.
   cloud-provider CI infrastructure, in which case we might decide to
   pass on e2e testing in Alpha?
 
+#### Alpha 2?
+
+- Depending on discussions during the 1.28 cycle there may be another
+  Alpha release with additional changes, or we may proceed directly to
+  Beta...
+
 #### Beta
 
 - Positive feedback / no bugs
 - At least one release after Alpha
-- Decision made about whether `--node-ip IPv4` means 1 IPv4 IP or all IPv4 IPs
+- No UNRESOLVED sections in the KEP
 - e2e tests definitely completed and enabled if they weren't already in Alpha
 - e2e test that new annotation gets cleared on rollback
 
