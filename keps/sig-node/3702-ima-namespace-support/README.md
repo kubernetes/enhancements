@@ -26,7 +26,8 @@
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+- [Production Readiness Review
+  Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -52,7 +53,8 @@ Check these off as they are completed for the Release Team to track. These
 checklist items _must_ be updated for the enhancement to be released.
 -->
 
-Items marked with (R) are required *prior to targeting to a milestone / release*.
+Items marked with (R) are required *prior to targeting to a milestone /
+release*.
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -71,7 +73,19 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-IMA namespaces allow to check the file integrity. This proposal adds regular file integrity inside containers deployed in kubernetes.
+IMA namespaces allow to check the file integrity. This proposal adds regular
+file integrity inside containers deployed in kubernetes.
+
+IMA has been around for quite a bit, however it is not practical for containers.
+IMA works with the underlying TPM cryptographic chip in order to record the so
+called Measurement Logs into the chip. In the chip, we have a 24 records, so
+called PCR (Platform Configuration Register), where the ML are recorded.
+
+In case any container is compromised, we will have to recompute all the hashes
+in order to find which container is compromised.
+
+Also, IMA namespaces will allow us to have different security policies for each
+pod.
 
 
 ## Motivation
@@ -83,12 +97,16 @@ File integrity is a way to improve security in systems allowing to:
 * Verify the status and health of the system
 * Comply with access rules
 
-This can be achieved using IMA (Integrity Measurement Architecture) and EVM (Extended Verification Module), which can use a TPM chip as Hardware Root of Trust for high security environments.
+This can be achieved using IMA (Integrity Measurement Architecture) and EVM
+(Extended Verification Module), which can use a TPM chip as Hardware Root of
+Trust for high security environments.
 
 ### Goals
 
-* Check integrity of regular files inside containers, and hence check POD integrity
-* Using remote attestation mechanism, check the integrity of a given POD or all PODS in the cluster deployed with IMA namespace enabled periodically
+* Check integrity of regular files inside containers, and hence check POD
+  integrity
+* Using remote attestation mechanism, check the integrity of a given POD or all
+  PODS in the cluster deployed with IMA namespace enabled periodically
 * Alert about corrupted or compromised pods
 
 ### Non-Goals
@@ -103,22 +121,32 @@ IMA and EVM can use a TPM chip as a hardware root of trust. Hence we can verify 
 ### User Stories (Optional)
 
 #### Story 1
-As a cluster admin, I want to detect undesired file changes, so that I can take out pods that have been compromised.
+As a cluster admin, I want to detect undesired file changes, so that I can take
+out pods that have been compromised.
 
-An intruder perform some malicious changes inside a certain pod's files. The system should be able to detect those changed and alert about the inconsistent pod. The remote attestation framework could keep this pod running or make a copy (for forensic analysis) and delete it.
+An intruder perform some malicious changes inside a certain pod's files. The
+system should be able to detect those changed and alert about the inconsistent
+pod. The remote attestation framework could keep this pod running or make a copy
+(for forensic analysis) and delete it.
 
 #### Story 2
-As a cluster admin, I want to deploy a only proven and certified pods, so that I can comply with internal policies as well as security regulations.
+As a cluster admin, I want to deploy a only proven and certified pods, so that I
+can comply with internal policies as well as security regulations.
 
-Let's say that we are working in a high security environment where only approved images can be deployed. In this scenario we can make sure that the pod deploy used an imaged that hasn't been tampered.
+Let's say that we are working in a high security environment where only approved
+images can be deployed. In this scenario we can make sure that the pod deploy
+used an imaged that hasn't been tampered.
 
 #### Story 3
-As a cluster admin, I want to deny access to certain files inside the pod, so that a potential intruder can't access sensitive information.
+As a cluster admin, I want to deny access to certain files inside the pod, so
+that a potential intruder can't access sensitive information.
 
-In some cases, we should not even allow root to modify certain files inside the container.
+In some cases, we should not even allow root to modify certain files inside the
+container.
 
 ### Notes/Constraints/Caveats (Optional)
-We need to enable IMA in the kernel and container runtimes (runC, CRI-O, docker, containerd, etc.). 
+We need to enable IMA in the kernel and container runtimes (runC, CRI-O, docker,
+containerd, etc.). 
 
 ### Risks and Mitigations
 
@@ -134,15 +162,25 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-In order for the this feature to work, the nodes where the pods will be deploy should have IMA enabled and a recent kernel that supports IMA namespaces (WIP, it should be merged soon). The nodes should also have a TPM chip. We could use nodAffinity of labels and annotations in nodes in order to select where to deploy the pods.
+In order for the this feature to work, the nodes where the pods will be deploy
+should have IMA enabled and a recent kernel that supports IMA namespaces (WIP,
+it should be merged soon). The nodes should also have a TPM chip. We could use
+nodAffinity of labels and annotations in nodes in order to select where to
+deploy the pods.
 
-The linux kernel IMA namespace support is based on user namespaces. Therefore, the container runtime should first create a user namespace and then create an IMA namespaces. In order to use IMA namespaces it is necessary to enable user namespaces as well.
+The linux kernel IMA namespace support is based on user namespaces. Therefore,
+the container runtime should first create a user namespace and then create an
+IMA namespaces. In order to use IMA namespaces it is necessary to enable user
+namespaces as well.
 
 Should we enable IMA namespaces by default when enabling user namespaces?
 
 ### Linux kernel
 
-IMA is only available in Linux hosts and Linux containers. Unfortunately, IMA is not a separate namespace, which is needed in order to isolate it and be used inside containers. Upcoming kernel patches should add support for IMA namespaces.
+IMA is only available in Linux hosts and Linux containers. Unfortunately, IMA is
+not a separate namespace, which is needed in order to isolate it and be used
+inside containers. Upcoming kernel patches should add support for IMA
+namespaces.
 
 
 ### Runtime specification
@@ -196,12 +234,17 @@ spec:
     - containerPort: 80
 ```
 
-The item pod.spec.ima.policy will automatically enable IMA for all the container in the pod with a given policy. Since all containers in a pod share the same namespaces, we need to have this policy in advance when creating the pod and its infrastructure container.
+The item pod.spec.ima.policy will automatically enable IMA for all the container
+in the pod with a given policy. Since all containers in a pod share the same
+namespaces, we need to have this policy in advance when creating the pod and its
+infrastructure container.
 
 
 ### Monitoring and alerting
 
-This features will integrate with a future remote attestation procedure, which will monitor pods and in case of a violation take some actions like pod revocation, alerting, etc.
+This features will integrate with a future remote attestation procedure, which
+will monitor pods and in case of a violation take some actions like pod
+revocation, alerting, etc.
 
 ### Test Plan
 
