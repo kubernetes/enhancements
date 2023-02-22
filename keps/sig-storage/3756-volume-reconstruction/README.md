@@ -426,14 +426,14 @@ then periodically does:
 Today, any errors during volume reconstruction are exposed only as log messages.
 We propose adding these new metrics, both to the old and new VolumeManager code:
 
-* `reconstructed_volumes_total` with label `result={success, error}`: nr. of
-  successfully / unsuccessfully reconstructed volumes.
+* `reconstruct_volume_operations_total` / `reconstruct_volume_operations_errors_total`:
+  nr. of all / unsuccessfully reconstructed volumes.
   * In the new VolumeManager code, this will include all volume mounts in
     `/var/lib/kubelet/pods/*/volumes`
   * In the old VolumeManager it will include only volumes that were not already
     in ASW (those are not reconstructed).
-* `force_cleaned_failed_volumes_total` with label `result={success, error}`: nr.
-  of successful / unsuccessful cleanups of volumes that failed reconstruction.
+* `force_cleaned_failed_volume_operations_total` / `force_cleaned_failed_volume_operation_errors_total`: nr.
+  of all / unsuccessful cleanups of volumes that failed reconstruction.
 * `orphaned_volumes_cleanup_errors_total`: nr. of reports
   like `orphaned pod "<uid>" found, but XYZ failed`
   ([example](https://github.com/kubernetes/kubernetes/blob/4fac7486d41c033d6bba9dfeda2356e8189035cd/pkg/kubelet/kubelet_volumes.go#L215)).
@@ -740,7 +740,10 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-`reconstructed_volumes_total`, `force_cleaned_failed_volumes_total`,
+`reconstruct_volume_operations_total`,
+`reconstruct_volume_operations_errors_total`,
+`force_cleaned_failed_volume_operations_total`,
+`force_cleaned_failed_volume_operation_errors_total`,
 `orphaned_volumes_cleanup_errors_total`
 
 See Observability in the detail design section. All newly introduced metrics
@@ -824,12 +827,12 @@ question.
 
 These two metrics are populated during kubelet startup:
 
-* `reconstructed_volumes_total{result="error"}` should be zero. An error here
+* `reconstruct_volume_operations_errors_total` should be zero. An error here
 means that kubelet was not able to reconstruct its cache of mounted volumes
 and appropriate volume plugin was not called to clean up a volume mount.
 There could be a leaked file or directory on the filesystem.
 
-* `force_cleaned_failed_volumes_total{result="error"}` should be zero. An error
+* `force_cleaned_failed_volume_operation_errors_total` should be zero. An error
 here means that kubelet was not able to unmount a volume even with all
 fallbacks it has. There *is* at least a leaked directory on the filesystem,
 there could be also a leaked mount.
@@ -842,8 +845,10 @@ Pick one more of these and delete the rest.
 
 - [X] Metrics
   - Metric name:
-    - `reconstructed_volumes_total`
-    - `force_cleaned_failed_volumes_total`
+    - `reconstruct_volume_operations_total`
+    - `reconstruct_volume_operations_errors_total`
+    - `force_cleaned_failed_volume_operations_total`
+    - `force_cleaned_failed_volume_operation_errors_total`
     - `orphaned_volumes_cleanup_errors_total`
   - Components exposing the metric: kubelet
 

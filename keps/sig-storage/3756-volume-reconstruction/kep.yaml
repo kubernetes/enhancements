@@ -42,6 +42,8 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - reconstructed_volumes_total
-  - force_cleaned_failed_volumes_total
+  - reconstruct_volume_operations_total
+  - reconstruct_volume_operations_errors_total
+  - force_cleaned_failed_volume_operations_total
+  - force_cleaned_failed_volume_operation_errors_total
   - orphaned_volumes_cleanup_errors_total
