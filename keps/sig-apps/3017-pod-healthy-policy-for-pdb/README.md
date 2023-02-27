@@ -306,7 +306,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Beta
 
 - Feature gate enabled by default.
-- Existing E2E and conformance tests passing.
+- Integration test which exercises the functionality.
 - We want to keep the `spec.unhealthyPodEvictionPolicy` field null by default when not specified.
   This should preserve the original behavior and behave the same as the `IfHealthyBudget` value.
   This should be tested and documented.
