@@ -11,6 +11,8 @@ participating-sigs:
 status: implementable
 creation-date: 2021-07-21
 reviewers:
+  - "@saschagrunert"
+  - "@vrutkovs"
   - "@dashpole"
   - "@ehashman"
   - "@wojtek-t"
