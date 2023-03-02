@@ -233,9 +233,18 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-* A new integer field `maxParallelImagePulls` will be added to Kubelet Configuration. `maxParallelImagePulls` is the maximum number of inflight image pulls.
-* The default value of `maxParallelImagePulls` will be set to 0, which applies no limit on parallel pulls, the same as current behavior.
-* When `serialize-image-pulls` is true, `maxParallelImagePulls` will be ignored. A warning message will be logged by kubelet if `serialize-image-pulls` is true and `maxParallelImagePulls` is larger than 1.
+Before this proposal, `serialize-image-pulls` is by default true.
+
+This proposal includes some defaulting and validation logics.
+
+- A new integer field `maxParallelImagePulls` will be added to Kubelet Configuration. `maxParallelImagePulls` is the maximum number of inflight image pulls.
+- If both `serialize-image-pulls` and `maxParallelImagePulls` are not set, the default value of `serialize-image-pulls` will be true by default, which applies no limit on parallel pulls, the same as current behavior.(It indicates that maxParallelImagePulls is 1.)
+- If `serialize-image-pulls` is not set and `maxParallelImagePulls` is set, the default value of `serialize-image-pulls` will depend on `maxParallelImagePulls`.
+  - If `maxParallelImagePulls` is 1, `serialize-image-pulls` will be set to true by default.
+  - If `maxParallelImagePulls` is larger than 1, `serialize-image-pulls` will be set to false by default.
+- If both `serialize-image-pulls` and `maxParallelImagePulls` are set, there would be some validations.
+  - If `serialize-image-pulls` is set to true, `maxParallelImagePulls` should be nil or 1. If `maxParallelImagePulls` is larger than 1, the configuration validation will fail.
+  - If `serialize-image-pulls` is set to false, `maxParallelImagePulls` should be larger than 0. If `maxParallelImagePulls` is less than 1, the configuration validation will fail.
 
 ### User Stories (Optional)
 
