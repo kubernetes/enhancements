@@ -300,15 +300,12 @@ _For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs
 
 ### `ClusterProperty` CRD
 
-The `ClusterProperty` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterProperty`s, each holding a different identification related value. Each property contains the following information:
+The `ClusterProperty` Kind provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterProperty`s, each holding a different identification related value. Each property contains the following information:
 
-*   **Name** - a well known or custom name to identify the property.
-*   **Value** - a property-dependent string, up 128k Unicode code points (see _Note_).
+*   **Name** - a well known or custom name to identify the property. This is the metadata.Name of the resource.
+*   **Value** - a property-dependent string, up 128k Unicode code points (see _Notes/Constraints/Caveats_ section). This is the one and only field in this Kind.
 
 The schema for `ClusterProperty` is intentionally loose to support multiple forms of information, including arbitrary additional identification related properties described by users (see "Additional Properties", below), but certain well-known properties will add additional schema constraints, such as those described in the next section.
-
-_Note: While prior Kubernetes API constructs containing arbitrary string values, such as annotations, are limited by a byte length, the OpenAPI validation this CRD depends on defines string length as Unicode code points at validation time. The encoded length of the string in bytes as observed on input or output by the user may vary depending on which of the valid JSON encodings are used (UTF-8, UTF-16, or UTF-32). Therefore, the value limit of 128k code points could take up to 512KB using the least space efficient allowable encoding, UTF-32, which uses 4 bytes per code point._
-
 
 ### Well known properties
 
@@ -395,14 +392,16 @@ Contains an identifier that relates the containing cluster to the ClusterSet in 
 Implementers are free to add additional properties as they see fit, so long as they do not conflict with the well known properties _and_ utilize a suffix. The following suffixes are reserved for Kubernetes and related projects: `.k8s.io`, `.kubernetes.io`. For example, an implementation may utilize the `Kind` `ClusterProperty` to store objects with the name `fingerprint.coolmcsimplementation.com` but not `fingerprint.k8s.io` and not simply `fingerprint`.
 
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+#### Note: On ClusterProperty.value max length validation
+
+Prior Kubernetes API constructs in core k/k containing arbitrary string values, such as annotations, are limited by a byte length. The CRD system exposes two built-in (as in, non-webhook) methods for expressing validation rules against CRDs: `CustomResourceValidation`, also known as structural schema, via OpenAPIv3 schema validation (as of Kubernetes version [1.14.7](https://relnotes.k8s.io/?areas=custom-resources&releaseVersions=1.14.7)), and CEL, also known as the `x-kubernetes-validations` extension (as of Kubernetes version [1.25](https://relnotes.k8s.io/?markdown=CEL&areas=custom-resources&releaseVersions=1.23.0)). Both systems define strings as Unicode code points, so any validation for maxLength will be based on number of code points, NOT on input byte count.  As a result, this specification can only express the limits on `ClusterProperty.value` length in terms of Unicode code points, regardless of which of these two validation methods are used (and, to maximize Kubernetes version compatability, using structural schema over CEL is advised). Note that this may not be the same as number of percieved characters (for example, flag emojis such as "🇺🇸" appear as 1 character but take up 2 code points) nor the number of bytes used to represent it in a given encoding (that same emoji uses 8 and 10 bytes in UTF-8 and UTF-16, respectively).
+
+Practically, the encoded length of the string in bytes as observed on input or output by the user may vary depending on which of the valid JSON encodings are used (UTF-8, UTF-16, or UTF-32). Therefore, the value limit of 128k code points could take up to 512KB using the least space efficient allowable encoding, UTF-32, which uses 4 bytes per code point.
+
+Strings must be at their encoded length in bytes at storage and while transmitting over REST. Regarding storage limits, the 512KB is within the [1.5 MiB default maximum request size for etcd](https://etcd.io/docs/v3.5/dev-guide/limit/). There is no apparent enforcement of request limit sizes to a vanilla Kubernetes API server outside of the PodSecurity admission controller (which only applies to `Pod.Spec`, and for reference is [3MiB](https://github.com/kubernetes/pod-security-admission/blob/0974ff50151ba9de2c2fd388e003770058df4756/cmd/webhook/server/server.go#L55)). The most comparable upstream limit is for resource annotation values, which must be within 256KB (enforced [with custom validation in k/k](https://github.com/kubernetes/apimachinery/blob/b0dd9ec43221ddbefe546df779c58995e7aa3a24/pkg/api/validation/objectmeta.go#L58)), and which is supporting a use case amenable to smaller value sizes than `ClusterProperty.value`.
+
 
 ### Risks and Mitigations
 
