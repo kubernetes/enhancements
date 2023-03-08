@@ -11,7 +11,7 @@ approvers:
   - "@thockin"
 creation-date: "2022-08-07"
 last-updated: v1.27
-status: implementeable
+status: implementable
 stage: beta
 latest-milestone: "v1.27"
 milestone:

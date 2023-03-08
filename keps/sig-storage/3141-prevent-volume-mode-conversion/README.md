@@ -464,7 +464,7 @@ unauthorized conversion of the volume mode.
   seconds of downtime until the newer Pods are Running. There will not be any 
   effect on the previously running applications.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
     No
 
 ###### Does enabling the feature change any default behavior?

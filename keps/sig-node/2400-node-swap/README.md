@@ -643,7 +643,7 @@ Pick one of these and delete the rest.
     restarted. Hence, there would be brief control component downtime on a
     given node.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
     Yes. See above; disabling would require brief node downtime.
 
 ###### Does enabling the feature change any default behavior?

@@ -210,7 +210,7 @@ you need any help or guidance.
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 * **Does enabling the feature change any default behavior?**
   Enabling this feature-gate could result in `CSIDriver.Spec.FSGroupPolicy` to be ignored for a driver that now has
