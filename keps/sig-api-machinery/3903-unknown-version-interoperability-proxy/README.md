@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Unknown Version Interoperability Proxy
+# KEP-3903: Unknown Version Interoperability Proxy
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -185,6 +185,7 @@ incorrectly or objects being garbage collected mistakenly.
 ### Non-Goals
 
 * Change cluster installation procedures (no new certs etc)
+* Lock particular clients to particular versions
 
 
 ## Proposal
@@ -193,7 +194,7 @@ API change: To the apiservices API, add an "alternates" clause, a list of
 apiservers which believe they can serve the group-version.
 
 API server change:
-* A controller adds the apiserver to the list of alternates for its built-in 
+* A controller adds the apiserver to the list of alternates for its built-in
   group-versions.
 * The same controller removes expired apiservers from the list. (Enabled by the
   apiserver identity work.)
