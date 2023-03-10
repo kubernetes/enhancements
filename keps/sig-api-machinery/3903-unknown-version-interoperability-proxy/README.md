@@ -190,8 +190,10 @@ incorrectly or objects being garbage collected mistakenly.
 
 ## Proposal
 
-API change: To the apiservices API, add an "alternates" clause, a list of
-apiservers which believe they can serve the group-version.
+API changes:
+* To the apiservices API, add an "alternates" clause, a list of
+  apiservers which believe they can serve the group-version.
+* To ??? API, add ability to tell which apiservers can serve a resource.
 
 API server change:
 * A controller adds the apiserver to the list of alternates for its built-in
@@ -202,22 +204,34 @@ API server change:
   - If the request is for a group/version the apiserver doesn't have locally, it
     will proxy the request to one of the alternates instead.
 
-Unsolved problem: to be completely accurate and achive the goals in this KEP, we
-will need to track what resources apiservers can serve, not just what
-group-versions.
-
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+#### Garbage Collector
 
-#### Story 1
+The garbage collector makes decisions about deleting objects when all
+referencing objects are deleted. A discovery gap / apiserver mismatch, as
+described above, could result in GC seeing a 404 and assuming an object has been
+deleted; this could result in it deleting a subsequent object that it should
+not.
 
-#### Story 2
+This proposal will cause the GC to see either the correct object or get a 503
+(which it handles safely).
+
+#### Namespace Lifecycle Controller
+
+This controller seeks to empty all objects from a namespace when it is deleted.
+Discovery failures cause NLC to be unable to tell if objects of a given resource
+are present in a namespace. It fails safe, meaning it refuses to delete the
+namespace until it can verify it is empty: this causes slowness deleteing
+namespaces that is a common source of complaint.
+
+Additionally, if the NLC knows about a resource that the apiserver it is talking
+to does not, it may incorrectly get a 404, assume a collection is empty, and
+delete the namespace too early, leaving garbage behind in etcd. This is a
+correctness problem, the garbage will reappear if a namespace of the same name
+is recreated.
+
+This proposal addresses both problems.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -230,26 +244,32 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+Cluster admins might not read the release notes and realize they should enable
+network/firewall connectivity between apiservers. In this case clients will
+recieve 503s instead of transparently being proxied. 503 is still safer than
+today's behavior.
 
-How will security be reviewed, and by whom?
+Requests will consume egress bandwidth for 2 apiservers when proxied. We can cap
+the number if needed, but upgrades aren't that frequent and few resources are
+changed on releases, so these requests should not be common. We will count them
+with a metric.
 
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+TODO: security / cert stuff.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+TODO: specific API change (x2)
+
+TODO: explanation of how the handler will determine a request is for a resource
+that should be proxied.
+
+TODO: explanation of how the security handshake between apiservers works.
+* What we need to fix: random processes / external users / etc should not be
+  able to proxy requests, so the receiving apiserver needs to be able to verify
+  the source apiserver.
+* generate self-signed cert on startup, put pubkey in apiserver identity lease
+  object?
+
 
 ### Test Plan
 
