@@ -705,12 +705,13 @@ type LimitedPriorityLevelConfiguration struct {
 
 Prior to the introduction of borrowing, the `assuredConcurrencyShares`
 field had two meanings that amounted to the same thing: the total
-shares of the level, and the non-lendable shares of the level.
-While it is somewhat unnatural to keep the meaning of "total shares"
-for a field named "assured" shares, rolling out the new behavior into
+shares of the level, and the non-lendable shares of the level.  While
+it is somewhat unnatural to keep the meaning of "total shares" for a
+field named "assured" shares, rolling out the new behavior into
 existing systems will be more continuous if we keep the meaning of
-"total shares" for the existing field.  In the next version we should
-rename the `AssuredConcurrencyShares` to `NominalConcurrencyShares`.
+"total shares" for the existing field.  In `v1beta3`
+`AssuredConcurrencyShares` has been renamed to
+`NominalConcurrencyShares`.
 
 The limits on borrowing are two-sided: a given priority level has a
 limit on how much it may borrow and a limit on how much may be
@@ -787,9 +788,9 @@ immediately tracks EnvelopeSeatDemand when it exceeds
 SmoothSeatDemand.  The rule for updating priority level `i`'s
 SmoothSeatDemand at the end of an adjustment period is
 `SmoothSeatDemand(i) := max( EnvelopeSeatDemand(i),
-A*SmoothSeatDemand(i) + (1-A)*EnvelopeSeatDemand(i) )`.  The command
-line flag `--seat-demand-history-fraction` with a default value of 0.9
-configures A.
+A*SmoothSeatDemand(i) + (1-A)*EnvelopeSeatDemand(i) )`.  The value of
+`A` is fixed at 0.977 in the code, which means that the half-life of
+the exponential decay is about 5 minutes.
 
 Adjustment is also done on configuration change, when a priority level
 is introduced or removed or its NominalCL, LendableCL, or BorrowingCL
