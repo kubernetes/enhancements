@@ -175,7 +175,7 @@ updates.
 
 ## Motivation
 
-In High Performance Computing and other specialized enviroments container
+In High Performance Computing and other specialized environments container
 images often get extremely big. Pulling such images even over high speed
 links can take a lot of time, tens of minutes or more. This often results
 in a bad user experience when deploying a workload triggers pulling such
@@ -261,7 +261,7 @@ bogged down.
 #### Story 1
 
 The user is deploying an application to the k8s cluster, the Pod is being
-scheduled and creation of the Pod beginning. The only event occuring on the Pod
+scheduled and creation of the Pod beginning. The only event occurring on the Pod
 object events list is "Pulling image", with no progress indicator, or ETA.
 
 If CRI had a possility to expose the progress and / or ETA for completing the
@@ -337,7 +337,7 @@ every n. percent) or the amount of bytes downloaded which is the default one.
         PodSandboxConfig sandbox_config = 3;
         // Granularity type of the progress reports
         PullImageProgressGranularity granularity_type = 4;
-        // The interval value of the choosen granularity.
+        // The interval value of the chosen granularity.
         // For time based granularity, this is the number of seconds between reports. If time interval is 0, then report is done every 60s.
         // For percent based granularity, this is the number of percent value between reports. If percent interval is 0, then report is done every 10%
         // For the default byte based granularity, this is the number of bytes received between reports. If set to 0, then runtime will report progress as image is downloaded.
