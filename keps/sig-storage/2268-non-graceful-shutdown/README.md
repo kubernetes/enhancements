@@ -232,59 +232,98 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
+<!--
+This section must be completed when targeting alpha to a release.
+-->
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: NodeOutOfServiceVolumeDetach
-    - Components depending on the feature gate: kube-controller-manager
+###### How can this feature be enabled / disabled in a live cluster?
+
+<!--
+Pick one of these and delete the rest.
+
+Documentation is available on [feature gate lifecycle] and expectations, as
+well as the [existing list] of feature gates.
+
+[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
+-->
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+      - `NodeOutOfServiceVolumeDetach`
+    - Components depending on the feature gate:
+      - `kube-controller-manager`
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
       plane?
-      Yes.
+      - Yes.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node?
-      No.
+      - No.
 
-* **Does enabling the feature change any default behavior?**
-  <!--
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
-  -->
+###### Does enabling the feature change any default behavior?
+
+<!--
+Any change of default behavior may be surprising to users or break existing
+automations, so be extremely careful here.
+-->
   Yes. If this feature is enabled, the pod gc controller in kube-controller-manager
   would need to ensure that `out-of-service` taint is applied on a node before
   forcefully deleting pods.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+<!--
+Describe the consequences on existing workloads (e.g., if this is a runtime
+feature, can it break the existing applications?).
+
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
+
+NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+-->
   Yes. If this feature is disable once it has been enabled, it falls back to
   default behavior before the feature is enabled, meaning the pod gc controller
   will not check the `out-of-service` taint and make decision depending on that.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
   If we reenable the feature if it was previously rolled back, the pod gc controller
   will again check the `out-of-service` taint before forcefully deleting pods.
 
-* **Are there any tests for feature enablement/disablement?**
-  <!--
-  The e2e framework does not currently support enabling or disabling feature
-  gates. However, unit tests in each component dealing with managing data, created
-  with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
-  -->
+###### Are there any tests for feature enablement/disablement?
+
+<!--
+The e2e framework does not currently support enabling or disabling feature
+gates. However, unit tests in each component dealing with managing data, created
+with and without the feature, are necessary. At the very least, think about
+conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
+-->
   We will add unit test for feature enablement/disablement.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
+<!--
+This section must be completed when targeting beta to a release.
+-->
 
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
   The rollout should not fail. Feature gate only needs to be enabled on `kube-controller-manager`. So it is either enabled or disabled.
   In an HA cluster, assume a 1.N kube-controller-manager has feature gate enabled
   and takes the lease first, and the GC Controller has already forcefully deleted
@@ -296,7 +335,12 @@ _This section must be completed when targeting beta graduation to a release._
   forcefully delete the pods. So the Attach Detach Controller will not be triggered
   to force detach. In the later case, it will still keep the old behavior.
 
-* **What specific metrics should inform a rollback?**
+###### What specific metrics should inform a rollback?
+
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
   If for some reason, the user does not want the workload to failover to a
   different running node after the original node is shutdown and the `out-of-service`  taint is applied, a rollback can be done. I don't see why it is needed though as
   user can prevent the failover from happening by not applying the `out-of-service`
@@ -304,47 +348,80 @@ _This section must be completed when targeting beta graduation to a release._
   Since use of this feature requires applying a taint manually by the user,
   it should not specifically require rollback.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
   We will manually test upgrade from 1.25 to 1.26 and rollback from 1.26 to 1.25.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+<!--
+Even if applying deprecation policies, they may still surprise some users.
+-->
   No.
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+<!--
+This section must be completed when targeting beta to a release.
 
-* **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+<!--
+Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+checking if there are objects with field X set) may be a last resort. Avoid
+logs or events for this purpose.
+-->
   An operator, the person who operates the cluster, can check if the
   `NodeOutOfServiceVolumeDetach` feature gate is enabled and if there is an
   `out-of-service` taint on the shutdown node.
   The usage of this feature requires the manual step of applying a taint
   so the operator should be the one applying it.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
-  - [ ] Metrics
-    - Metric name: We can add new metrics deleting_pods_total, deleting_pods_error_total
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+  - [X] Metrics
+    - Metric name: 
+      - We can add new metrics `deleting_pods_total`, `deleting_pods_error_total`
       in Pod GC Controller.
       For Attach Detach Controller, there's already a metric:
       attachdetach_controller_forced_detaches
       It is also useful to know how many nodes have taints. We can explore with [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) which generates metrics about the state of the objects.
     - [Optional] Aggregation method:
     - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details: Check whether the workload moved to a different running node
+  - [X] Other (treat as last resort)
+    - Details:
+      - Check whether the workload moved to a different running node
       after the original node is shutdown and the `out-of-service` taint
       is applied on the shutdown node.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
   At a high level, this usually will be in the form of "high percentile of SLI
   per day <= X". It's impossible to provide comprehensive guidance, but at the very
   high level (needs more precise definitions) those may be things like:
@@ -359,21 +436,35 @@ the health of the service?**
   attachdetach_controller_forced_detaches_taint metric in the Attach Detach
   Controller.
 
-* **Are there any missing metrics that would be useful to have to improve observability
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
+<!--
+This section must be completed when targeting beta to a release.
+-->
 
-* **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
+###### Does this feature depend on any specific services running in the cluster?
+
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
   This feature relies on the kube-controller-manager being running. If the
   workload is running on a StatefulSet, it also depends on the CSI driver.
 
@@ -389,89 +480,132 @@ _This section must be completed when targeting beta graduation to a release._
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
 
-_For beta, this section is required: reviewers must answer these questions._
+For beta, this section is required: reviewers must answer these questions.
 
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
 
-* **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
+###### Will enabling / using this feature result in any new API calls?
+
+<!--
+Describe them, providing:
   - API call type (e.g. PATCH pods)
   - estimated throughput
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
+Focusing mostly on:
   - components listing and/or watching resources they didn't before
-  Nothing new.
   - API calls that may be triggered by changes of some Kubernetes resources
     (e.g. update of object X triggers new updates of object Y)
-  This feature will trigger pods deletion, volume detachment, new pods
-  creation, and volume attachment calls if the new taint is applied.
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
-  Nothing new.
+-->
+Nothing new.
 
-* **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
+###### Will enabling / using this feature result in introducing new API types?
+
+<!--
+Describe them, providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
+-->
   No.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+<!--
+Describe them, providing:
+  - Which API(s):
+  - Estimated increase:
+-->
   Volume detach/attach could trigger cloud provider calls.
 
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
-  Describe them, providing:
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+<!--
+Describe them, providing:
   - API type(s):
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+-->  
   No.
 
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+<!--
+Look at the [existing SLIs/SLOs].
+
+Think about adding additional work or introducing new steps in between
+(e.g. need to do X to start a container), etc. Please describe the details.
+
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+-->
   No.
 
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+<!--
+Things to keep in mind include: additional in-memory state, additional
+non-trivial computations, excessive access to disks (including increased log
+volume), significant amount of data sent and/or received over network, etc.
+This through this both in small and large cases, again with respect to the
+[supported limits].
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
   No.
 
 ### Troubleshooting
 
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
 The Troubleshooting section currently serves the `Playbook` role. We may consider
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
+-->
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **How does this feature react if the API server and/or etcd is unavailable?**
+###### How does this feature react if the API server and/or etcd is unavailable?
   If API server or etcd is not available, we can't get accurate status of node or pod.
   However the usage of this feature is very manual so an operator can verify
   before applying the taint.
 
-* **What are other known failure modes?**
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
   For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
     - Detection: How can it be detected via metrics? Stated another way:
       how can an operator troubleshoot without logging into a master or worker node?
+
       After applying the `out-of-service` taint, if the workload does not move
       to a different running node, that is an indicator something might be wrong.
       Note that since we removed the 6 minute wait in the Attach Detach controller,
       force detach will happen if the feature gate is enabled and the taint is
       applied without delay.
+
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
+
       So if the workload does not failover, it behaves the same as when this
       feature is not enabled. The operator should try to find out why the
       failover didn't happen. Check messages from GC Controller and Attach Detach
@@ -481,9 +615,11 @@ _This section must be completed when targeting beta graduation to a release._
       "Garbage collecting <number> pods that are terminating on node tainted with node.kubernetes.io/out-of-service".
       Check if there is the following message from Attach Detach Controller:
       "failed to get taint specs for node <node name>: <error>"
+
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue?
       Not required until feature graduated to beta.
+
       Set log level to at least 2.
       For example, the following message is in GC Controller if the feature is
       enabled and `out-of-service` taint is applied. If the pods are forcefully
@@ -493,10 +629,12 @@ _This section must be completed when targeting beta graduation to a release._
       If the taint is applied and feature gate is enabled, it force detaches the
       volume without waiting for 6 minutes.
       klog.V(2).Infof("node %q has out-of-service taint", attachedVolume.NodeName)
+
     - Testing: Are there any tests for failure mode? If not, describe why.
+
       We have unit tests that cover different combination of pod and node statuses.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+###### What steps should be taken if SLOs are not being met to determine the problem?
   In that case, we need to go through the logs and find out the root cause.
   Check messages from GC Controller and Attach Detach Controller in the
   kube-controller-manager logs as described in the above section.
