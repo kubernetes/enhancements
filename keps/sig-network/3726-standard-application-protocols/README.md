@@ -50,7 +50,7 @@ tags, and then generate with `hack/update-toc.sh`.
 <!--
 **ACTION REQUIRED:** In order to merge code into a release, there must be an
 issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.kubernetes.io/sig-release/releases)
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
 of the targeted release**.
 
 For enhancements that make changes to code or processes/procedures in core
@@ -75,17 +75,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [k8s.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
 -->
 
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.kubernetes.io/enhancements
-[kubernetes/kubernetes]: https://git.kubernetes.io/kubernetes
-[kubernetes/website]: https://git.kubernetes.io/website
+[k8s.io]: https://k8s.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -133,7 +133,7 @@ That creates a problem where users with GKE and Istio in their cluster can have 
 
 Kubernetes `appProtocol` field is used as a hint for implementations to configure the protocol used between the implementation and the application it exposes.
 
-The [documentation](https://kubernetes.io/docs/concepts/services-networking/service/#application-protocol) for this field says that:
+The [documentation](https://k8s.io/docs/concepts/services-networking/service/#application-protocol) for this field says that:
 
 ```Values should either be IANA standard service names or domain prefixed names such as mycompany.com/my-custom-protocol.```
 
