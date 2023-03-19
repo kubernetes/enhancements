@@ -97,7 +97,9 @@ This API is read-only, which removes a large class of risks. The aspects that we
 Our proposal is to extend the existing PodResources gRPC service of the Kubelet
 with a repeated `DynamicResource` field in the ContainerResources message. This
 new field will contain information about the DRA resource class, the DRA
-resource claim, and a list of CDI Devices allocated by a DRA driver.
+claim name, claim namespace, and a list of claimed resources allocated by a DRA driver.
+Currently, the claim resources only contain a list of CDI Devices but in the future they
+may be extended to support plugins that allocate different types of resource (not just CDI Devices).
 Additionally, we propose adding a `Get()` method to the existing gRPC service
 to allow querying specific pods for their allocated resources.
 
@@ -178,7 +180,13 @@ message NUMANode {
 message DynamicResource {
     string class_name = 1;
     string claim_name = 2;
-    repeated CDIDevice cdi_devices = 3;
+    string claim_namespace = 3;
+    repeated ClaimResource claim_resources = 4;
+}
+
+// ClaimResource contains per plugin resource information
+message ClaimResource {
+    repeated CDIDevice cdi_devices = 1 [(gogoproto.customname) = "CDIDevices"];
 }
 
 // CDIDevice specifies a CDI device information
@@ -290,17 +298,17 @@ Kubelet will always be backwards compatible, so going forward existing plugins a
   enable / disable DRA feature.
   - Components depending on the feature gate: kube-apiserver, kube-controller-manager,
   kube-scheduler, kubelet
-  - Feature gate name: `PodResourcesDynamicResources` new feature gate to
+  - Feature gate name: `KubeletPodResourcesDynamicResources` new feature gate to
   enable / disable PodResources API List method to populate `DynamicResource`
   information from the `DRAManager`.
   `DynamicResourceAllocation` feature gate has to be enabled as well.
   - Components depending on the feature gate: kubelet, 3rd party consumers.
-  - Feature gate name: `PodResourcesGet` new feature gate to enable / disable
+  - Feature gate name: `KubeletPodResourcesGet` new feature gate to enable / disable
     PodResources API Get method. In case `DynamicResourceAllocation` or
-    the `PodResourcesDynamicResources` are disabled and `PodResourcesGet`
+    the `KubeletPodResourcesDynamicResources` are disabled and `KubeletPodResourcesGet`
     is enabled, the Get method will retrieve resources allocated by device plugins,
     memory and cpus (but omit those allocated by DRA resource drivers).
-    In case `PodResourcesGet`, `DynamicResourceAllocation` and `PodResourcesDynamicResources`
+    In case `KubeletPodResourcesGet`, `DynamicResourceAllocation` and `KubeletPodResourcesDynamicResources`
     are all enabled, the `Get()` method will also retrieve the resources allocated via DRA.
   - Components depending on the feature gate: kubelet, 3rd party consumers.
 
@@ -328,7 +336,7 @@ Kubelet may fail to start. The new API may report inconsistent data, or may caus
 
 ###### What specific metrics should inform a rollback?
 
-`pod_resources_endpoint_errors_get` - but only with feature gate `PodResourcesGet` enabled. Otherwise the API will always return a known error.
+`pod_resources_endpoint_errors_get` - but only with feature gate `KubeletPodResourcesGet` enabled. Otherwise the API will always return a known error.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
