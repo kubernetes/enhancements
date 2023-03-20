@@ -738,9 +738,17 @@ the dispatching for non-exempt priority levels.
 	Exempt *ExemptPriorityLevelConfiguration
 ```
 
-At the same time, the relevant new datatype was added.  It is shown below.
+At the same time, the relevant new datatype was added.  It is shown
+below.  The default number of nominal concurrency shares is set to the
+minimal value (i.e., 1) so as to minimize disruption as this feature
+is rolled into existing clusters; authorized administrators can choose
+to set it higher.
 
 ```go
+// ExemptPriorityLevelConfiguration describes the configurable aspects
+// of the handling of exempt requests.
+// In the mandatory exemp configuration object the values in the fields
+// here can be modified by authorized users, unlike the rest of the `spec`.
 type ExemptPriorityLevelConfiguration struct {
   // `nominalConcurrencyShares` (NCS) contributes to the computation of the
   // NominalConcurrencyLimit (NominalCL) of this level.
@@ -755,7 +763,7 @@ type ExemptPriorityLevelConfiguration struct {
   //
   // Bigger numbers mean a larger nominal concurrency limit,
   // at the expense of every other Limited priority level.
-  // This field has a default value of 30.
+  // This field has a default value of 1.
   // +optional
   NominalConcurrencyShares int32
 
