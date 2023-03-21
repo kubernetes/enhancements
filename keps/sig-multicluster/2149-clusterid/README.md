@@ -546,11 +546,11 @@ These tests will be provided in such a way that implementers can expose one or m
 
 ### Upgrade / Downgrade Strategy
 
-Any changes to the API definition will follow the official Kubernetes API groups and versioning guidance [here](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-groups-and-versioning) and [here](https://kubernetes.io/docs/reference/using-api/#api-versioning). In short, the API will be provided in order through `v1alphaX`, `v1betaX`, to `v1`, where compatability will be preserved from `v1beta1` and onwards; clients will be expected to eventually migrate to the `v1` implementation of the API as the prior versions are deprecated.
+Any changes to the API definition will follow the official Kubernetes API groups and versioning guidance [here](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-groups-and-versioning) and [here](https://kubernetes.io/docs/reference/using-api/#api-versioning). In short, the API will be provided in order through `v1alphaX`, `v1betaX`, to `v1`, where compatibility will be preserved from `v1beta1` and onwards; clients will be expected to eventually migrate to the `v1` implementation of the API as the prior versions are deprecated.
 
 ### Version Skew Strategy
 
-As a CRD, this API is dependent on any changes in the version and compatability of the CRD feature itself on which it is built. As the CRD system is in `v1` as of Kubernetes 1.14, and the Kubernetes versioning guarantees `v1` APIs to be maintained through the Kubernetes major release, and as the About API does not depend on any new features of the CRD system since then, there is no expected coordination required with any core Kubernetes components until and unless Kubernetes proceeds to version 2.X.
+As a CRD, this API is dependent on any changes in the version and compatibility of the CRD feature itself on which it is built. As the CRD system is in `v1` as of Kubernetes 1.14, and the Kubernetes versioning guarantees `v1` APIs to be maintained through the Kubernetes major release, and as the About API does not depend on any new features of the CRD system since then, there is no expected coordination required with any core Kubernetes components until and unless Kubernetes proceeds to version 2.X.
 
 This CRD /is/ a direct dependency of the MCS API and any mcs-controller implementation as defined by that KEP. As discussed later in the PRR, it is expected that the mcs-controller (or any other controller taking this CRD as its dependency) would manage the lifecycle of this CRD, including any version skew.
 
