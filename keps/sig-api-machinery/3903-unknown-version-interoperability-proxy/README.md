@@ -187,13 +187,11 @@ incorrectly or objects being garbage collected mistakenly.
 * Change cluster installation procedures (no new certs etc)
 * Lock particular clients to particular versions
 
-
 ## Proposal
 
-API changes:
+API change:
 * To the apiservices API, add an "alternates" clause, a list of
   apiservers which believe they can serve the group-version.
-* To ??? API, add ability to tell which apiservers can serve a resource.
 
 API server change:
 * A controller adds the apiserver to the list of alternates for its built-in
@@ -201,8 +199,9 @@ API server change:
 * The same controller removes expired apiservers from the list. (Enabled by the
   apiserver identity work.)
 * A new handler is added to the stack:
-  - If the request is for a group/version the apiserver doesn't have locally, it
-    will proxy the request to one of the alternates instead.
+  - If the request is for a group/version the apiserver doesn't have locally (we
+    can use the StorageVersion API), it will proxy the request to one of the
+    alternates instead.
 
 ### User Stories (Optional)
 
@@ -258,7 +257,7 @@ TODO: security / cert stuff.
 
 ## Design Details
 
-TODO: specific API change (x2)
+TODO: specific API change(s)
 
 TODO: explanation of how the handler will determine a request is for a resource
 that should be proxied.
