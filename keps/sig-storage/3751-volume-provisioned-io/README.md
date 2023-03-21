@@ -68,14 +68,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Cloud providers and storage vendors offer volumes which allow specifying IO performance parameters like IOPS or throughput and tuning them as workloads operate. ([1](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/requesting-ebs-volume-modifications.html), [2](https://cloud.google.com/compute/docs/disks/extreme-persistent-disk), [3](https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#premium-ssd-v2), [4](https://www.alibabacloud.com/help/en/elastic-compute-service/latest/essd-autopl)). While these parameters can be specified as storage class parameters to be set at provisioning time, Kubernetes has no API which allows changing them. Only capacity can be changed through the volume expansion API. This KEP proposes an extension to the Kubernetes Persistent Volume API to allow users to dynamically control these volume options.
+Cloud providers and storage vendors offer volumes which allow specifying IO performance parameters like IOPS or throughput independently from capacity and tuning them as workloads operate. ([1](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/requesting-ebs-volume-modifications.html), [2](https://cloud.google.com/compute/docs/disks/extreme-persistent-disk), [3](https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#premium-ssd-v2), [4](https://www.alibabacloud.com/help/en/elastic-compute-service/latest/essd-autopl)). While these parameters can be specified as storage class parameters to be set at provisioning time, Kubernetes has no API which allows changing them. Only capacity can be changed through the volume expansion API. This KEP proposes an extension to the Kubernetes Persistent Volume API to allow users to dynamically control these volume options.
 
 ## Motivation
 
+In practice, workloads may scale vertically up to a certain point but then must partition horizontally. The system scales up and down horizontally with partition and at the same time provides a software layer to manage key attributes iops/throughput independently from capacity.
+
+Currently after CreateVolume with provider specific parameters pass in storage class, Kubernetes does not handle update of QoS related parameters. The only way to achieve this is to use the cloud provider's API directly to modify iops and throughput. This creates frictions of managing storage resources on k8s. Allowing Resources to be changed without managing it through different provider's APIs directly simplifies this whole process.
 
 ### Goals
 
 * Cloud-provider and storage vendor independent specification of basic QoS parameters
+* QoS enforcement performed by the storage
 * Specifying QoS at volume creation
 * Changing QoS parameters on-line for existing volumes
 * Specify quotas in a similar way to that of volume capacity
@@ -86,13 +90,14 @@ Cloud providers and storage vendors offer volumes which allow specifying IO perf
 * Inter-pod QoS. This KEP is restricted to what QoS can be defined on a volume.
 * Volume QoS classes. This proposal is for fine-grained provisioned IO control, and not for defining general classes of volume performance. Currently, storage vendors may accomplish this by adding custom parameters to a storage class. A future KEP may codify such behavior with common storage class parameter names, but that is out of scope of this KEP.
 * Scheduling based on total IO limits of a node. For example, total throughput for many cloud provider network attached storage volumes is limited by instance network bandwidth and may prevent achieving the provisioned IO. Scheduling to mitigate these factors is out of scope but it should be considered as a future extension of this KEP.
+* Volume conversions is not in scope because IO provisioning and volume conversions are treated as two separate problems.
 
 ## Proposal
 
 ### Kubernetes API
 Add two well-known ResourceName keys to the existing ResourceList type used in PersistentVolumeClaim.Spec.Resources.{Limits,Requests} and PersistentVolume.Spec.Capacity:
-* ProvisionedIOPS
-* ProvisionedThroughput
+* (ReadWrite) IOPS independent from capacity
+* (ReadWrite) Throughput
 These values can be changed on a PersistentVolumeClaim, and will be reconciled against the storage provider in the same way as storage capacity resizing. The status of a PVC will reflect the currently provisioned IO as reported by the storage provider (in the same way that the status states the current size of the volume during a resize operation).
 
 ```
@@ -103,9 +108,9 @@ spec:
   ...
   resources:
 requests:
-  storage: 4Gi
-  throughput: "1.2M" // MiB/s as unit
-  iops: "160000"     // IO/s as unit
+  storage: 1024Gi
+  throughput: 100 // MiB/s as unit
+  iops: 1000     // IO/s as unit
 // Vendors may add additional resources using Device Plugin syntax: vendor-domain/resourcetype
 ```
 
@@ -114,25 +119,80 @@ requests:
 Add PVC Status field; change ResizeStatus alpha field to AllocatedResourceStatus map.
 
 ### CSI API
-The CSI create request will be extended to add provisioned IO parameters. A new ControllerUpdateIOProvisioning RPC will be added.
+The CSI create request will be extended to add provisioned IO parameters. For volume creation, cloud providers can add iops and throughput field in parameters and process in the csi driver, an example:
 
 ```
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-gcepd
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+  provisioned-iops-on-create: '1000'
+  provisioned-throughput-on-create: '100Mi'
+volumeBindingMode: WaitForFirstConsumer
+```
+
+You can request iops and throughput similar to storage for a pvc:
+```
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: example-pv-claim
+spec:
+  storageClassName: csi-gcepd
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2048Gi
+      iops: 1000
+      throughput: 50Mi
+```
+
+A new ControllerModifyVolume RPC will be added. The current spec requires ["If a volume corresponding to the specified volume ID is already larger than or equal to the target capacity of the expansion request, the plugin SHOULD reply 0 OK"](https://github.com/container-storage-interface/spec/blob/master/spec.md). The change here will be if the capacity change is for iops and throughput, we will not require that to be larger than the current configuration.
+
+#### ControllerModifyVolume
+
+A Controller plugin SHALL implement this RPC call. This RPC allows the CO to change key QoS parameters(iops and throughput) of a volume. 
+
+This operation MUST be idempotent. The requested  iops and  throughput values can be greater than or less than the current values.
+
+In physically-limited environments, updating performance parameters independently from capacity may result in underutilized resources. The SP MAY enforce limits on the allowed values. If the requested iops, throughput and capacity are not compatible with each other, the SP MUST return the OUT_OF_RANGE error code.
+
+The provider SHOULD provide independent performance fine tuning of read/write iops and read/write throughput defined in this API. Current cloud providers like AWS, GCP and Azure have already provided APIs to fine tune independent iops and throughput. An example is iops per GB. A provider may link these parameters but this is not encouraged due to the change cannot be counted for k8s quota and limit. Instead they should use capacity like it is done today.
+
+```protobuf
 // ControllerServer is the server API for Controller service.
 type ControllerServer interface {
         ...
-        ControllerUpdateIOProvisioning(context.Context, *ControllerUpdateIOProvisioningRequest) (*ControllerUpdateIOProvisioningResponse, error)
+        ControllerModifyVolume(context.Context, *ControllerModifyVolumeRequest) (*ControllerModifyVolumeResponse, error)
         ...
 }
 
-type ControllerUpdateIOProvisioningRequest struct {
-        // The ID of the volume to expand. This field is REQUIRED.
-        VolumeId string
-        Iops string 
-        Throughput string
+message ModifyVolumeRequest {
+  // Contains identity information for the existing volume.
+  // This field is REQUIRED.
+  int64 volume_id = 1
+  // This field is OPTIONAL.This allows the CO to specify the
+  // iops of the volume to be updated to. The unit is IO per
+  // second per volume. 
+  // If specified it MUST always be honored.
+  // A value of 0 is equal to an unspecified field value.
+  int64 iops = 2
+  // This field is OPTIONAL.This allows the CO to specify the
+  // throughput of the volume to be updated to. The unit is Mib per
+  // second per volume. 
+  // If specified it MUST always be honored.
+  // A value of 0 is equal to an unspecified field value.
+  string throughput = 3
 }
-type ControllerUpdateIOProvisioningResponse struct {
-        Iops int64
-        Throughput int64
+message ModifyVolumeResponse {
+  // The iops of the volume is set. This field is OPTIONAL.
+  google.protobuf.Int64Value iops = 1
+  // The throughput of the volume is set. This field is OPTIONAL.
+  google.protobuf.Int64Value throughput = 2
 }
 ```
 
@@ -142,13 +202,15 @@ The according errors:
 |-----------|-----------|-------------|-------------------|
 | Exceeds capabilities | 3 INVALID_ARGUMENT | Indicates that the CO has specified capabilities not supported by the volume. | Caller MAY verify volume capabilities by calling ValidateVolumeCapabilities and retry with matching capabilities. |
 | Volume does not exist | 5 NOT FOUND | Indicates that a volume corresponding to the specified volume_id does not exist. | Caller MUST verify that the volume_id is correct and that the volume is accessible and has not been deleted before retrying with exponential back off. |
-| Volume in use | 9 FAILED_PRECONDITION | Indicates that the volume corresponding to the specified `volume_id` could not be updated because it is currently published on a node but the plugin does not have ONLINE expansion capability. | Caller SHOULD ensure that volume is not published and retry with exponential back off. |
-| Unsupported `capacity_range` | 11 OUT_OF_RANGE | Indicates that the capacity range is not allowed by the Plugin. More human-readable information MAY be provided in the gRPC `status.message` field. | Caller MUST fix the capacity range before retrying. |
+| Volume in use | 9 FAILED_PRECONDITION | Indicates that the volume corresponding to the specified `volume_id` could not be updated because it is currently published on a node but the plugin does not have ONLINE modification capability. | Caller SHOULD ensure that volume is not published and retry with exponential back off. |
+| Unsupported `iops_range` | 11 OUT_OF_RANGE | Indicates that the iops range is not allowed by the Plugin. More human-readable information MAY be provided in the gRPC `status.message` field. | Caller MUST fix the iops range before retrying. |
+| Unsupported `throughput_range` | 11 OUT_OF_RANGE | Indicates that the throughput range is not allowed by the Plugin. More human-readable information MAY be provided in the gRPC `status.message` field. | Caller MUST fix the throughput range before retrying. |
 
-The current spec requires ["If a volume corresponding to the specified volume ID is already larger than or equal to the target capacity of the expansion request, the plugin SHOULD reply 0 OK"](https://github.com/container-storage-interface/spec/blob/master/spec.md). The change here will be if the capacity change is for iops and throughput, we will not require that to be larger than the current configuration.
 
 ### Quota
 Resize quota works by using Kubernetes resource quotas, which makes sure the cluster administrators and operators can restrict consumption and creation of cluster resources (such as CPU time, memory, and persistent storage) within a specified namespace. The LimitRange admission controller tracks usage to ensure the storage resource does not exceed resource minimum, maximum and ratio defined in any LimitRange present in the namespace.
+
+The current configuration of iops and throughput in GCP, AWS and Azure maps to the concept of request and limit in Kubernetes LimitRanger.
 
 ```
 apiVersion: v1
@@ -188,6 +250,7 @@ spec:
 
 IO provisioning should have similar issues to resize (except that we have to solve reducing IO). Please see [limit storage consumption](https://kubernetes.io/docs/tasks/administer-cluster/limit-storage-consumption/). Quota validation should be part of [`func ValidatePersistentVolumeClaimUpdate`](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/validation/validation.go#L2257) flow by using [func ValidateResourceQuota](https://github.com/kubernetes/kubernetes/blob/5bb7326c3643f52a7b615e6f63911add4bbcab3b/pkg/apis/core/validation/validation.go#L6113) and [func ValidateLimitRange](https://github.com/kubernetes/kubernetes/blob/5bb7326c3643f52a7b615e6f63911add4bbcab3b/pkg/apis/core/validation/validation.go#L5594). 
 
+For ResourceQuota, we will erify that sum of spec.resources[iops] and spec.resources[throughput] for all PVCs in the Namespace from DSW don't exceed quota, for LimitRanger we check that a modify request does not violate the min and max limits specified in LimitRange for the pvc's namespace.
 
 ### User Stories (Optional)
 
@@ -218,6 +281,7 @@ In addition to the IO provisioned per-volume, there may be per-instance IO limit
 Currently, most cloud storage services provide updates of [size/iops/throughput](https://docs.google.com/document/d/1x19sofRvRNmQ15E0pj8OygSevkTVhtv_H8zDJ9CqERM/edit#heading=h.dd9ldgf6fddu).
 The proposed integration here is only covering first class, non provider-specific QoS parameters(capacity, iops, throughput). It does not cover changing provider-specific parameters and first class QoS parameters all at once. The mitigation proposed is that providers can create their own CRD to address provider-specific change logic.
 
+
 ## Design Details
 
 As part of this proposal, we are mainly proposing the following changes:
@@ -226,36 +290,43 @@ As part of this proposal, we are mainly proposing the following changes:
 
 2. Relax API validation on PVC update so that updating ResourceProvisionedIOPS and ResourceProvisionedThroughput pvc.Spec.Resoures is allowed, as long as requested size is within the range specified by the cluster admin. This includes the current ``ValidateVolumeCapabilities`` to allow increase/decrease iops and throughput.
 
-3. Add new statuses in PVC API called - pvc.Status.AllocatedResourceStatus for the purpose of tracking status of ProvisionedIOPS and ProvisionedThroughput change. Existing fields can be found [here](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L520-L534). The new statuses will be added are:
+3. Add new statuses in PVC API called - pvc.Status.AllocatedResourceStatus([pr#116335](https://github.com/kubernetes/kubernetes/pull/116335)) for the purpose of tracking status of ProvisionedIOPS and ProvisionedThroughput change. Existing fields can be found [here](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L520-L534). The new statuses will be added are:
 
 ```go
 type ClaimResourceStatus string
 const (
-    PersistentVolumeClaimControllerUpdateIopsProgress ClaimResourceStatus = "ControllerUpdateIopsInProgress"
-    PersistentVolumeClaimControllerUpdateIopsPending ClaimResourceStatus = "ControllerUpdateIopsPending"
-    PersistentVolumeClaimControllerUpdateIopsFailed ClaimResourceStatus = "ControllerUpdateIopsFailed"
-    PersistentVolumeClaimControllerUpdateThroughputInProgress ClaimResourceStatus = "ControllerUpdateThroughputInProgress"
-    PersistentVolumeClaimControllerUpdateThroughputPending ClaimResourceStatus = "ControllerUpdateThroughputPending"
-    PersistentVolumeClaimControllerUpdateThroughputFailed ClaimResourceStatus = "ControllerUpdateThroughputFailed"
+    PersistentVolumeClaimControllerModifyVolumeProgress ClaimResourceStatus = "ControllerModifyVolumeInProgress"
+    PersistentVolumeClaimControllerModifyVolumePending ClaimResourceStatus = "ControllerModifyVolumePending"
+    PersistentVolumeClaimControllerModifyVolumeFailed ClaimResourceStatus = "ControllerModifyVolumeFailed"
 )
 // PersistentVolumeClaimStatus represents the status of PV claim
-type PersistentVolumeClaimStatus struct {
+type ClaimResourceStatus struct {
     ...
-    // AllocatedResourceStatus stores a map of resource that is being expanded
+    // AllocatedResourceStatuses stores status of resource being resized for the given PVC
     // and possible status that the resource exists in.
     // Some examples may be:
     //  pvc.status.allocatedResourceStatus["storage"] = "ControllerResizeInProgress"
-    //  pvc.status.allocatedResourceStatus["iops"] = "ControllerUpdateIopsInProgress/ControllerUpdateIopsPending/ControllerUpdateIopsFailed"
-    //  pvc.status.allocatedResourceStatus["throughput"] = "ControllerUpdateThroughputInProgress/ControllerUpdateThroughputPending/ControllerUpdateThroughputFailed"
-    AllocatedResourceStatus map[ResourceName]ClaimResourceStatus
+    //  pvc.status.allocatedResourceStatus["iops"] = "ControllerModifyVolumeInProgress/ControllerModifyVolumePending/ControllerModifyVolumeFailed"
+    //  pvc.status.allocatedResourceStatus["throughput"] = "ControllerModifyVolumeInProgress/ControllerModifyVolumePending/ControllerModifyVolumeFailed"
+    AllocatedResourceStatuses map[ResourceName]ClaimResourceStatus
 }
 ```
 
-4. Add new CSI API ControllerUpdateIOProvisioning, when there is a change of iops/throughput in PVC, external-resizer triggers a ControllerUpdateIOProvisioning operations against a CSI endpoint.
+4. Add new CSI API ControllerModifyVolume, when there is a change of iops/throughput in PVC, external-resizer triggers a ControllerModifyVolume operations against a CSI endpoint. 
+
+The current error reporting process is that the csi driver and the external resizer both publish to the HTTP path where prometheus metrics will be exposed. This stays the same for the new CSI api ControllerModifyVolume. If there is a new cloud provider API required for the update, the cloud provider should add an extra metrics in kube-controller-manager, for example [cloudprovider_gce_api_request_duration_seconds { request = "disk_update"}](https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/#component-metrics).
+
+Accordingly, new events related to this API should be added to [external-resizer](https://github.com/kubernetes-csi/external-resizer/blob/master/pkg/util/events.go):
+
+```
+VolumeModifyInProgress = "VolumeModifyInProgress"  // EventTypeNormal
+VolumeModifyFailed     = "VolumeModifyFailed"      // EventTypeWarning
+VolumeModifySuccess    = "VolumeModifySuccess"     // EventTypeNormal
+```
 
 5. Update quota code to use min and max(pvc.Spec.Resources, pvc.Status.AllocatedResources) for ProvisionedIOPS and ProvisionedThroughput when evaluating usage for PVC.
 
-![Update Provisioned IO Flow](./qos_flow.png)
+![Modify Volume Flow](./qos_update_flow.png)
 
 Whenever resize controller or kubelet modifies pvc.Status (such as when setting both AllocatedResources and AllocatedResourceStatus) - it is expected that all changes to pvc.Status are submitted as part of same patch request to avoid race conditions.
 
@@ -289,9 +360,11 @@ type Metrics struct {
 
 ```
 
+![QoS Flow Diagram](./qos_flow_diagram.png)
+
 ### Test Plan
 
-* Basic unit tests for QoS and quota system.
+* Basic unit tests for QoS and quota system
 * E2e tests using mock driver to cause failure on create, update and recovering cases
 * Test coverage of quota usage with ResourceQuota and LimitRange
 
@@ -416,7 +489,7 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 A counter metric will be present in external-resizer metric endpoint, it will show total
-count of successful and failed ControllerUpdateIOProvisioning.
+count of successful and failed ControllerModifyVolume.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -464,7 +537,7 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No.
+external-resizer.
 
 ### Scalability
 
@@ -490,12 +563,12 @@ Yes.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes. ControllerUpdateIOProvisioning.
+Yes. ControllerModifyVolume.
 
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-Yes. ControllerUpdateIOProvisioning.
+Yes. ControllerModifyVolume.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -556,6 +629,7 @@ Major milestones might include:
 
 ## Drawbacks
 
+None that we are aware of
 
 ## Alternatives
 
@@ -565,13 +639,3 @@ Major milestones might include:
 ## Infrastructure Needed (Optional)
 
 Not needed.
-
-## Open Items
-
-* Create a diagram of which components are responsible for handing which parts of the flow
-* Error handling - where and how do errors get reported
-* Clarify expected behavior in case of unsupported configurations
-* Cover how to solve the shrink case in detailed design
-* Cover how to expand first class QoS parameters in the future
-* Cover the flow of updating both first class QoS parameters and cloud provider specific parameters
-* Update QoS staus according to [pr#116335](https://github.com/kubernetes/kubernetes/pull/116335)
