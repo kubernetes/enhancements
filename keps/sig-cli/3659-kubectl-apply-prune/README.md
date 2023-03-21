@@ -1,74 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [x] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [x] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [x] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [x] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [x] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [x] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [x] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-3659: ApplySet: kubectl apply --prune redesign and graduation strategy
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -115,6 +45,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Supported ApplySet Parent Kinds](#supported-applyset-parent-kinds)
   - [Efficient Listing of ApplySet Contents](#efficient-listing-of-applyset-contents)
   - [Kubectl Commands and Flags](#kubectl-commands-and-flags)
+    - [ApplySet subcommands](#applyset-subcommands)
+  - [Kubectl implementation details](#kubectl-implementation-details)
   - [Security Considerations](#security-considerations)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -169,25 +101,6 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 [kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
-
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
 
 When creating objects with `kubectl apply`, it is frequently desired to make changes to the config that remove objects and then re-apply and have those objects deleted. Since Kubernetes v1.5, an alpha-stage `--prune` flag exists to support this workflow: it deletes objects previously applied that no longer exist in the source config. However, the current implementation has fundamental design flaws that limit its performance and lead to surprising behaviours. This KEP proposes a safer and more performant implementation for this feature as a second, independent alpha. The new implementation is based on a low-level concept called "ApplySet" that other, higher-level ecosystem tooling can build on top of to enhance their own higher-level object groupings with improved interoperability.
 
@@ -390,7 +303,7 @@ A v2-prunable "apply set" is associated with an object on the cluster. We define
 
 The specification aims to be very lightweight, so that it is as easy as possible for tools with their own existing grouping mechanisms to opt in for greater interoperability. By using the standardized labels proposed here, tools can interoperate with other tooling and enjoy protection against their resources being changed by another tool (such as kubectl).  Tooling is not required to implement these labels, and we are not introducing new behaviours for “unenlightened” objects.
 
-Under [Design Details: ApplySet Specification](#design-details-applyset-specification), we set out this label-based design, which is capable of encompassing the object groupings that kubectl and other tools need while avoiding the pitfalls explained in the background section. Under [Design Details: Kubectl Pruning](#design-details-kubectl-pruning), we explain how this specification can be used by `kubectl apply` to achieve the primary goal of this KEP: fixing the existing pruning functionality without turning kubectl into a "porcelain" tool itself.
+Under [Design Details: ApplySet Specification](#design-details--applyset-specification), we set out this label-based design, which is capable of encompassing the object groupings that kubectl and other tools need while avoiding the pitfalls explained in the background section. Under [Design Details: Kubectl Pruning](#design-details--kubectl-pruning), we explain how this specification can be used by `kubectl apply` to achieve the primary goal of this KEP: fixing the existing pruning functionality without turning kubectl into a "porcelain" tool itself.
 
 ### User Stories (Optional)
 
@@ -433,7 +346,7 @@ Consider including folks who also work outside the SIG or subproject.
 
 "Apply set" refers to a group of resources that are applied to the cluster by a tool. An apply set has a “parent” object of the tool’s preference. This “parent” object can be implemented using a Kind of the tool’s choice.
 
-“ApplySet” is used to refer to the parent object in this design document, though the actual concrete resource on the cluster will typically be of a different Kind.  We might think of ApplySet as a “duck-type” based on the `applyset.k8s.io/id` label proposed here.
+“ApplySet” is used to refer to the parent object in this design document, though the actual concrete resource on the cluster will typically be of a different Kind.  We might think of ApplySet as a “duck-type” based on the `applyset.kubernetes.io/id` label proposed here.
 
 Implicit in this proposal are a few assumptions:
 
@@ -444,11 +357,13 @@ Implicit in this proposal are a few assumptions:
 
 Each ApplySet MUST have an ID that can be used to uniquely identify the parent and member objects via the label selector conventions outlined in the following sections. As such, the ID:
 * is subject to the normal limits of label values
-* MUST be the base64 encoding of the hash of the GKNN of the parent object, in the form `base64(sha256(<name>.<namespace>.<kind>.<group>))`, using the URL safe encoding of RFC4648.
+* MUST be the base64 encoding of the hash of the GKNN of the parent object, in the form `applyset-base64(sha256(<name>.<namespace>.<kind>.<group>)-v1)`, using the URL safe encoding of RFC4648. Note that:
+  * All segments are required, even if empty (as may be the case for namespace).
+  * The purpose of the `applyset-` prefix and the `-v1` suffix is to ensure that a valid label value is produced, given that some base64 characters cannot start or end a label.
+  * The `-v1` suffix value in particular is intended to allow for iteration on the data portion of the ID, if necessary.
 
 The second restriction is intended to protect against "ID impersonation" attacks;
-we will likely evaluate specifics here during alpha (for example whether to include
-an empty string for a namespace on cluster-scoped objects).
+we will likely evaluate specifics here during alpha.
 
 When operating against an existing applyset, tooling MUST verify the applyset against
 the generation mechanism here.  Tooling MUST return an error if the applyset ID does
@@ -466,10 +381,10 @@ so that it is more intuitive for them to refer to.
 Objects that are part of an ApplySet MUST carry the following label:
 
 ```yaml
-applyset.k8s.io/part-of: <applysetid> # REQUIRED
+applyset.kubernetes.io/part-of: <applysetid> # REQUIRED
 ```
 
-This `applyset.k8s.io/part-of` label is the source of truth for membership in a set. Its `<applysetid>` value MUST match the value of `applyset.k8s.io/id` on the parent (see [ApplySet Parent Objects](#labels-and-annotations)) and comply with the naming constraints outlined in [ApplySet Naming](#applyset-naming).
+This `applyset.kubernetes.io/part-of` label is the source of truth for membership in a set. Its `<applysetid>` value MUST match the value of `applyset.kubernetes.io/id` on the parent (see [ApplySet Parent Objects](#labels-and-annotations).
 
 Where objects in a provided manifest already have a label with this key, tooling SHOULD
 treat this manifest as invalid and return an error.
@@ -479,7 +394,7 @@ treat this manifest as invalid and return an error.
 Although ApplySet parent objects can (in theory) be of any type, for both performance and simplicity, we choose to limit supported types to the following:
 - ConfigMap
 - Secret
-- custom resources, where the CRD registering them is labeled with `applyset.k8s.io/role/parent` (The value is currently ignored, but implementors should set an empty value to be forwards-compatible with future evolution of this convention.)
+- custom resources, where the CRD registering them is labeled with `applyset.kubernetes.io/is-parent-type` (The value is currently ignored, but implementors should set it to "true" to be forwards-compatible with future evolution of this convention.)
 
 This list may be extended in the future as use cases are presented. Keeping it minimal has significant benefits for the performance of any commands that list the parent objects themselves. Specific tools may further limit the types they support, but any tooling designed to identify all ApplySets must consider the exact list set out above.
 
@@ -487,18 +402,18 @@ While a purpose-made cluster-scoped CRD is a logical choice, the specification h
 
 #### Labels and annotations
 
-ApplySets MUST also have a “parent object” in the cluster. The ApplySet object MUST be labeled with:
+ApplySet parent objects MUST carry the following label:
 
 ```yaml
-applyset.k8s.io/id: <applysetid> # REQUIRED
+applyset.kubernetes.io/id: <applysetid> # REQUIRED
 ```
 
-The `applyset.k8s.io/id` label is what makes the object an ApplySet parent object. Its value MUST match the value of `applyset.k8s.io/part-of` on the member objects (see [ApplySet Member Objects](#labels)), and MUST comply with the naming constraints outlined in [ApplySet Naming](#applyset-naming).
+The `applyset.kubernetes.io/id` label is what makes the object an ApplySet parent object. Its value MUST match the value of `applyset.kubernetes.io/part-of` on the member objects (see [ApplySet Member Objects](#labels)), and MUST use the format outlined in [ApplySet Identification](#applyset-identification).
 
-Additionally, ApplySet parents MUST be labelled with:
+Additionally, ApplySet parents MUST be annotated with:
 
 ```yaml
-applyset.k8s.io/tooling: <toolId> # REQUIRED
+applyset.kubernetes.io/tooling: <toolId> # REQUIRED
 ```
 
 The value should be something like `kubectl/v1.27` or `helm/v3` or `kpt/v1.0.0`,
@@ -508,12 +423,12 @@ For more background and guidance on this topic, see the [interoperability](#tool
 ApplySets MAY have an annotation extending their scope, which MUST be respected by all tools if present:
 
 ```yaml
-applyset.k8s.io/additional-namespaces: <ns>[,] # OPTIONAL
+applyset.kubernetes.io/additional-namespaces: <ns>[,] # OPTIONAL
 ```
 
-The `applyset.k8s.io/additional-namespaces` annotation extends the scope of the ApplySet. By default, the scope of an ApplySet is its parent object's namespace. When the parent is cluster-scoped but refers to namespace kinds (see below), or when the set spans multiple namespaces (which is not recommended, but allowed), this annotation can be used to extend the ApplySet's scoped to the listed namespaces. As cross-namespace ApplySets are not particularly encouraged, we do not currently optimize this further.  In particular, we do not specify the GKs per namespace.  We can add more annotations in future should the need arise.
+The `applyset.kubernetes.io/additional-namespaces` annotation extends the scope of the ApplySet. By default, the scope of an ApplySet is its parent object's namespace. When the parent is cluster-scoped but refers to namespace kinds (see below), or when the set spans multiple namespaces (which is not recommended, but allowed), this annotation can be used to extend the ApplySet's scoped to the listed namespaces. As cross-namespace ApplySets are not particularly encouraged, we do not currently optimize this further.  In particular, we do not specify the GKs per namespace.  We can add more annotations in future should the need arise.
 
-The value of this annotation is a comma-separated list of the names of the namespaces (other than the ApplySet namespace) in which objects are found, for example `default,kube-system,ns1,ns2`. We reserve the empty value. As with `applyset.k8s.io/contains-group-kinds`, this list of namespaces must be sorted alphabetically, and should be minimal (other than transiently during ApplySet mutations).
+The value of this annotation is a comma-separated list of the names of the namespaces (other than the ApplySet namespace) in which objects are found, for example `default,kube-system,ns1,ns2`. We reserve the empty value. This list of namespaces must be sorted alphabetically, and should be minimal (other than transiently during ApplySet mutations).
 
 #### Optional "hint" annotations
 
@@ -528,40 +443,40 @@ We may revisit this and converge on a single, mandatory hint annotation before t
 When a tool that wants to list the members of an ApplySet and cannot determine the list of GKs (i.e. because neither hint annotation is used), it may support “discovery”, likely warning that a full cluster crawl is being attempted. Insufficient permissions errors are likely with such functionality, and when they are encountered, the tool should warn that the membership list may be incomplete.
 
 ```yaml
-applyset.k8s.io/contains-group-kinds: <kind>.<group>[,]` # OPTIONAL
+applyset.kubernetes.io/contains-group-resources: <resource>.<group>[,]` # OPTIONAL
 ```
 
-The `applyset.k8s.io/contains-group-kinds` annotation is an optional "hint" annotation tools can populate and use to optimize listing of member objects. Tooling not using this annotation may safely ignore it. Since the annotation on the member objects themselves remains the source of truth for set membership, tools making use of this optimization should consider also providing or periodically automating a resync of the hint annotation.
+The `applyset.kubernetes.io/contains-group-resources` annotation is an optional "hint" annotation tools can populate and use to optimize listing of member objects. Tooling not using this annotation may safely ignore it. Since the annotation on the member objects themselves remains the source of truth for set membership, tools making use of this optimization should consider also providing or periodically automating a resync of the hint annotation.
 
-When present, the value of this annotation shall be a comma separated list of the group-kinds, in the fully-qualified name format, i.e. `<resourcename>.<group>`.  An example annotation value might therefore look like: `certificates.cert-manager.io,configmaps,deployments.apps,secrets,services`.  Note that we do not include the version; formatting is a different concern from “ApplySet membership”.
+When present, the value of this annotation shall be a comma separated list of the group-resources, in the fully-qualified name format, i.e. `<resourcename>.<group>`.  An example annotation value might therefore look like: `certificates.cert-manager.io,configmaps,deployments.apps,secrets,services`.  Note that we do not include the version; formatting is a different concern from “ApplySet membership”.
 
-To avoid spurious updates and conflicts, the list must be sorted alphabetically.  The list may include GKs where there are no resources actually labeled with the ApplySet-id, but to avoid churn this should be avoided and ideally only be a transitional step during ApplySet mutations.
+To avoid spurious updates and conflicts, the list must be sorted alphabetically.  The list may include GRs where there are no resources actually labeled with the ApplySet-id, but to avoid churn this should be avoided and ideally only be a transitional step during ApplySet mutations.
 
 ```yaml
-applyset.k8s.io/inventory: <kind>.<group>/<name>.<namespace>[,] # OPTIONAL
+applyset.kubernetes.io/inventory: <kind>.<group>/<name>.<namespace>[,] # OPTIONAL
 ```
 
-The `applyset.k8s.io/inventory` annotation is an alternative optional "hint" annotation tools can populate and use to optimize listing of member objects. Tooling not using this annotation may safely ignore it. Since the annotation on the member objects themselves remains the source of truth for set membership, tools making use of this optimization should consider also providing or periodically automating a resync of the hint annotation.
+The `applyset.kubernetes.io/inventory` annotation is an alternative optional "hint" annotation tools can populate and use to optimize listing of member objects. Tooling not using this annotation may safely ignore it. Since the annotation on the member objects themselves remains the source of truth for set membership, tools making use of this optimization should consider also providing or periodically automating a resync of the hint annotation.
 
 When used, its value must be a comma separated list of all the GKNNs in use in the ApplySet. To avoid spurious updates and conflicts, the list must be sorted alphabetically.
 
-Tooling using this annotation should take care to ensure that all listed GKNNs are in fact valid members of the ApplySet based on its scope. For instance, a cluster-scoped parent without a `applyset.k8s.io/additional-namespaces` annotation cannot reference namespace-scoped GKNNs, and a namespace-scoped parent without that annotation cannot reference GKNNs in other namespaces.
+Tooling using this annotation should take care to ensure that all listed GKNNs are in fact valid members of the ApplySet based on its scope. For instance, a cluster-scoped parent without a `applyset.kubernetes.io/additional-namespaces` annotation cannot reference namespace-scoped GKNNs, and a namespace-scoped parent without that annotation cannot reference GKNNs in other namespaces.
 
-To remain compliant with the specification, tools using this particular annotation should still refrain from operating on (e.g. deleting) a member object before verifying its `applyset.k8s.io/part-of` and `applyset.k8s.io/controller-ref` annotations.
+To remain compliant with the specification, tools using this particular annotation should still refrain from operating on (e.g. deleting) a member object before verifying its `applyset.kubernetes.io/part-of` and `applyset.kubernetes.io/tooling` annotations.
 
 #### Parent object management
 
-How the ApplySet object is specified is a tooling decision.  Gitops based tooling may choose to make the ApplySet object explicit in the source git repo.  Other tooling may choose to leverage their existing concepts, for example mapping to a Secret or ConfigMap that they are creating already.  The tooling is responsible for consistently specifying the ApplySet object across apply invocations, so that pruning can be done consistently.
+How the ApplySet object is specified is a tooling decision.  Gitops-based tooling may choose to make the ApplySet object explicit in the source git repo.  Other tooling may choose to leverage their existing concepts, for example mapping to a Secret or ConfigMap that they are creating already.  The tooling is responsible for consistently specifying the ApplySet object across apply invocations, so that pruning can be done consistently.
 
 ### ApplySet scopes
 
-Tooling MUST have some way to optimize the queries it makes to identify member objects within scope, and it MAY opt into using one of the [standard hint annotations](#optional-hint-annotations) for that purpose, for better interoperability. We may revisit this and converge on a single, mandatory hint annotation during alpha.
+Tooling MUST have some way to optimize the queries it makes to identify member objects within scope, and it MAY opt into using one of the [standard hint annotations](#optional--hint--annotations) for that purpose, for better interoperability. We may revisit this and converge on a single, mandatory hint annotation during alpha.
 
 Although the best practice is generally to constrain ApplySets to a single scope where possible, sometimes multi-scoped sets are unavoidable in the real world. Therefore, the mechanisms we have defined here allow for ApplySets that are cluster-scoped, multi-namespace or mixed-scoped (for example ApplySets that include installation of CRDs such as cert-manager).
 
-If the parent object is namespaced, member objects may be in that same namespace or at the cluster scope. The `applyset.k8s.io/additional-namespaces` annotation can be used to allow members in additional namespaces. This is purely additive; it is not possible to create a namespaced parent object that excludes its own namespace.
+If the parent object is namespaced, member objects may be in that same namespace or at the cluster scope. The `applyset.kubernetes.io/additional-namespaces` annotation can be used to allow members in additional namespaces. This is purely additive; it is not possible to create a namespaced parent object that excludes its own namespace.
 
-If the parent object is cluster-scoped, member objects by default are at the cluster scope. The `applyset.k8s.io/additional-namespaces` annotation can be used to allow member objects in one or more namespaces.
+If the parent object is cluster-scoped, member objects by default are at the cluster scope. The `applyset.kubernetes.io/additional-namespaces` annotation can be used to allow member objects in one or more namespaces.
 
 ### Tooling Interoperability
 
@@ -573,7 +488,7 @@ For write operations, we need to be more careful.  Deleting an ApplySet using th
 
 We do not believe that update operations are safe if using the “wrong tool”, because that tooling may have additional metadata that would then not be updated.  Tooling should generally reject applying on top of unknown ApplySets.  Porcelain tooling may choose to recognize other tooling and implement specific logic there; in particular this may be useful for moving between different major versions of the same tooling.
 
-In order to identify usage of the "wrong tool", we rely on the `applyset.k8s.io/tooling` annotation,
+In order to identify usage of the "wrong tool", we rely on the `applyset.kubernetes.io/tooling` annotation,
 which tooling can set to protect their ApplySets.
 Specification-compliant porcelain tooling MUST recognize that
 a different tool is managing the ApplySet and provide an appropriate error or warning.
@@ -594,7 +509,9 @@ or to considering owner references orthogonal and ignoring them entirely.
 
 ### Versioning
 
-The labels and annotations proposed here are not versioned.  Putting a version
+The only label or annotation that is currently versioned is the `applyset.kubernetes.io/id` annotation, which has a version suffix to allow for iteration on the embedded data portion of the ID. (See [ApplySet Identification](#applyset-identification) for details.)
+
+The rest of the labels and annotations proposed here are not versioned.  Putting a version
 into the key would forever complicate label-selection (because we would have to
 query over multiple labels).  However, if we do need versioning, we can introduce
 versions to annotation values by including a prefix like `v2:` (and we would likely do
@@ -606,18 +523,18 @@ tokens and thus seems unlikely to need versioning.
 
 ## Design Details: Kubectl Pruning
 
-This KEP describes both a lightweight specification and a way to use that specification as the machinery backing an improved `kubectl apply --prune`. The specification itself is described in the [ApplySet Specification](#design-details-applyset-specification) section. This section focuses on how it will be put to use in kubectl.
+This KEP describes both a lightweight specification and a way to use that specification as the machinery backing an improved `kubectl apply --prune`. The specification itself is described in the [ApplySet Specification](#design-details--applyset-specification) section. This section focuses on how it will be put to use in kubectl.
 
 ### Supported ApplySet Parent Kinds
 
 Since kubectl operates on the plumbing-layer concept directly, it will support the exact list of types set out in [ApplySet Parent Objects](#applyset-parent-objects). A `kubectl apply list-applysets -n ns` command would therefore do the following queries:
 
 ```bash
-kubectl get secret -n ns -l applyset.k8s.io/id # --only-partial-object-metadata
-kubectl get configmap -n ns -l applyset.k8s.io/id # --only-partial-object-metadata
+kubectl get secret -n ns -l applyset.kubernetes.io/id # --only-partial-object-metadata
+kubectl get configmap -n ns -l applyset.kubernetes.io/id # --only-partial-object-metadata
 
-for cr in $(kubectl get crd -l applyset.k8s.io/role/parent); do
-kubectl get $cr -n ns -l applyset.k8s.io/id  # --only-partial-object-metadata
+for cr in $(kubectl get crd -l applyset.kubernetes.io/is-parent-type); do
+kubectl get $cr -n ns -l applyset.kubernetes.io/id  # --only-partial-object-metadata
 done
 ```
 
@@ -627,128 +544,171 @@ In future, we may define additional “index” mechanisms here to further optim
 
 ### Efficient Listing of ApplySet Contents
 
-We want to support efficient listing of the objects that belong to a particular ApplySet.  In theory, this again requires the all-GK listing (with a label filter).  An advantage of this approach is that this remains an option: as we implement optimizations we may also periodically run a “garbage collector” to verify that our optimizations have not leaked objects, perhaps `kubectl apply verify-applyset` or a plugin.
+We want to support efficient listing of the objects that belong to a particular ApplySet.  In theory, this again requires the all-GR listing (with a label filter).  An advantage of this approach is that this remains an option: as we implement optimizations we may also periodically run a “garbage collector” to verify that our optimizations have not leaked objects, perhaps `kubectl apply verify-applyset` or a plugin.
 
-We already know the label selector for a given ApplySet, by convention: we take the id from the value of the `applyset.k8s.io/id` label, and that becomes the required value of the `applyset.k8s.io/part-of` label.
+We already know the label selector for a given ApplySet, by convention: we take the id from the value of the `applyset.kubernetes.io/id` label, and that becomes the required value of the `applyset.kubernetes.io/part-of` label.
 
-In order to narrow the list of GKs, kubectl will use the optional `applyset.k8s.io/contains-group-kinds` annotation described in the [optional parent object annotations](#optional-hint-annotations) section to store the list of GKs in use. Whether those kinds are cluster-scoped or namespace-scoped are found using the normal API discovery mechanisms.
+In order to narrow the list of GRs, kubectl will use the optional `applyset.kubernetes.io/contains-group-resources` annotation described in the [optional parent object annotations](#optional--hint--annotations) section to store the list of GRs in use. Whether those resources are cluster-scoped or namespace-scoped are found using the normal API discovery mechanisms.
 
 In pseudo-code, to discover the existing members of an ApplySet:
 
 ```bash
-for-each gk in $(split group-kind-annotation); do
-kubectl get $gk -n ns -l  applyset.k8s.io/id  # --only-partial-object-metadata
+for-each gk in $(split group-resources-annotation); do
+kubectl get $gk -n ns -l  applyset.kubernetes.io/id  # --only-partial-object-metadata
 done
 ```
 
-If the `applyset.k8s.io/additional-namespaces` annotation is present, any namespaced queries will need to be repeated for each target namespace.
+If the `applyset.kubernetes.io/additional-namespaces` annotation is present, any namespaced queries will need to be repeated for each target namespace.
 
-If the list in the `contains-group-kinds` annotation includes namespaced-scoped GKs on a cluster-scoped parent with no `applyset.k8s.io/additional-namespaces` annotation, kubectl will output an error.
+If the list in the `contains-group-resources` annotation includes namespaced-scoped GRs on a cluster-scoped parent with no `applyset.kubernetes.io/additional-namespaces` annotation, kubectl will output an error.
 
-If the contains-group-kinds annotation is missing, kubectl will initially consider this an error. Based on feedback, we can consider either falling back on a (very slow) full-GK scan to populate the annotation (after confirming kubectl owns the parent), or pointing users to a separate command (similar in spirit to `fsck`) that will do so. We will add warnings/suggestions to the main "apply" flow when we detect problems that might require a full-scan / discovery.  We may extend this based on user-feedback from the alpha.
+If the contains-group-resources annotation is missing, kubectl will initially consider this an error. Based on feedback, we can consider either falling back on a (very slow) full-GR scan to populate the annotation (after confirming kubectl owns the parent), or pointing users to a separate command (similar in spirit to `fsck`) that will do so. If we do the latter, we will add warnings/suggestions to the main "apply" flow when we detect problems that might require a full-scan / discovery.  We may extend this based on user-feedback from the alpha.
 
-Based on performance feedback, we can also consider switching to the alternative `applyset.k8s.io/inventory` hint annotation. Even if we do not trust the GKNN list for deletion purposes (we cannot, as it is not the source of truth), it could be used to optimize certain specific cases, most notably the no-op scenario where the current set exactly matches the list.
+Based on performance feedback, we can also consider switching to the alternative `applyset.kubernetes.io/inventory` hint annotation. Even if we do not trust the GKNN list for deletion purposes (we cannot, as it is not the source of truth), it could be used to optimize certain specific cases, most notably the no-op scenario where the current set exactly matches the list.
 
 ### Kubectl Commands and Flags
 
-The intention of the proposed changes is to provide a supportable replacement for the current alpha `kubectl apply --prune` semantics.  Our intention is not to change the behavior of the existing `--prune` functionality, but rather to produce an alternative that users will happily and safely move to.  We can likely trigger the V2-semantics when the user specifies an ApplySet flag, so that this is intuitive and does not break existing prune users. The proposal may evolve at the coding/PR stage, but the current plan is as follows.
+The intention of the proposed changes is to provide a supportable replacement for the current alpha `kubectl apply --prune` semantics.  Our intention is not to change the behavior of the existing `--prune` functionality, but rather to produce an alternative that users will happily and safely move to.  The two will be documented as separate pruning "modes". The proposal may evolve at the coding/PR stage, but the current plan is as follows.
 
-Required for an MVP release:
+The flag and any subcommands will be treated as alpha initially.  During alpha, users will need to set an environment variable, `KUBECTL_APPLYSET=1`, to make them available.
+
+Included in kubectl v1.27:
 - `KUBECTL_APPLYSET=1` environment variable: Required to expose the new flags/commands during alpha.
-- `kubectl apply --prune --applyset=[resource.version.group/]name`: The `--applyset` flag MUST be used with `--prune` and MUST have a non-empty value when used. Its GVR component is defaulted to `secrets` when missing. This flag CANNOT be used with `-l/--selector` or with `--prune-allow-list`, and this will be validated at flag parsing time.
-- `kubectl apply --prune --applyset=<id> --dry-run`
-- `kubectl diff --prune --applyset=<id>`
+- `kubectl apply --prune --applyset=[RESOURCE][.GROUP]/NAME`: The `--applyset` flag MUST be used with `--prune` and MUST have a non-empty value when used. Its GR component is defaulted to `secrets` when missing. This flag CANNOT be used with `-l/--selector` or with `--prune-allow-list`, and is validated at flag parsing time.
+- `kubectl apply --prune --applyset=[RESOURCE][.GROUP]/NAME --dry-run`
 
-Tentatively proposed for future iterations (more specific design details to follow after MVP):
-- `kubectl apply generate-applyset <id> --selector=[key=val] --legacy-allow-list=[]`: command to migrate from the legacy pruning system to this new one.
-- `kubectl apply verify-applyset [<id>] [--fix]`: `fsck`-style functionality to update the annotations on the parent ApplySet objects.
-- `kubectl apply view-applyset <id> -o name|json|yaml`: A command for viewing ApplySet membership, ideally in a way that can be programmatically chained.
-- `kubectl apply disband-applyset <id>`: removes the `applyset.k8s.io/id` from all members and then deletes the parent ApplySet object.
-- `kubectl apply list-applysets`: view apply sets, including those managed by other tools.
+To be included in v1.28:
+- `kubectl diff --prune --applyset=[RESOURCE][.GROUP]/NAME`
 
-Examples:
 
 ```bash
 # Simple namespace-scoped apply with prune.
 # The parent object will be a Secret named "set1" in the "foo" namespace.
 kubectl apply -n foo --prune --applyset=set1  -f .
 
-# Simple apply with prune, with cluster-scoped ApplySet
-# The parent object will be the "myapp" Namespace itself.
-kubectl apply -n myapp --prune --applyset=namespaces/myapp -f .
+# Simple apply with prune, with a ConfigMap parent object.
+# The parent object will be the "myapp" ConfigMap  in the "myapp" namespace.
+kubectl apply -n myapp --prune --applyset=configmaps/myapp -f .
 
-# Simple apply with prune, with cluster-scoped custom resource ApplySet
+# Simple apply with prune, with custom resource ApplySet
 # The parent object will be a VPA named "tracker" in the "foo" namespace.
 kubectl apply -n foo --prune --applyset=verticalpodautoscalers.autoscaling.k8s.io/tracker -f .
+
+# Simple apply with prune, with a cluster-scoped custom resource ApplySet
+# The parent object will be a MyCoApp named "my-app"
+kubectl apply -n foo --prune --applyset=mycoapps.platform.example.com/my-app -f .
 
 # Preview apply-with-prune
 kubectl apply -n foo --prune --applyset=set1 --dry-run -f .
 
 # Diff
 kubectl diff -n foo --prune --applyset=set1 -f .
+```
 
-# Optional commands follow:
+#### ApplySet subcommands
 
-# Extension command to verify correspondence of annotations
-kubectl apply verify-applyset configmap/myset -n foo
+All the following subcommands will also be gated by the `KUBECTL_APPLYSET=1` environment variable during alpha.
 
-# Extension command to verify all ApplySets in the cluster
-kubectl apply verify-applyset
+- To migrate from the allowlist-based pruning mode to the new one:
+  - `kubectl apply generate-applyset [RESOURCE][.GROUP]/NAME --selector=[key=val] --legacy-allowlist=[]`: migration command if previously using selectors. Allowlist is defaulted if missing.
+  - `kubectl apply generate-applyset [RESOURCE][.GROUP]/NAME --all --legacy-allowlist=[]`: migration command if previously using `--all`. Allowlist is defaulted if missing.
+ - To verify the validity and completeness of applyset parent metadata (e.g. ID format, completeness of optional hint annotations, ownership by current tooling):
+   - `kubectl apply verify-applyset [RESOURCE][.GROUP]/NAME [--fix]`: verify and optionally fix the specified applyset.
+   - `kubectl apply verify-applyset [--fix]`: verify and optionally fix all applysets in the cluster.
+- To view the details and optionally members of applysets (note: this is the only subcommand that will not be subject to the tooling check and will therefore work for applysets managed by any tool):
+  - `kubectl apply get-applyset [RESOURCE][.GROUP]/NAME --include-members=BOOL`: human-readable output, by default including metadata sourced exclusively from the parent objects. Optionally, can include metadata from the children of the applyset, possibly in a tree-like format.
+  - `kubectl apply get-applyset [RESOURCE][.GROUP]/NAME --output=name|json|yaml --include-members=BOOL`: programatically chainable version of the above. When members are included, they will be part of a single flat list that also includes the parent object.
+  - `kubectl apply get-applyset --include-members=BOOL --output=''|name|json|yaml`: Same as the above, but for all applysets in the cluster. For performance reasons, if children are to be fetched, all parents will be fetched first and an aggregate list of GRs will be used to fetch all potential children in a minimum number of queries before final sorting for display.
+- To delete an applyset and (optionally) its members:
+  - `kubectl apply delete-applyset [RESOURCE][.GROUP]/NAME -i=BOOL`: deletes the parent ApplySet object after removing the `applyset.kubernetes.io/id` from all members. By default, requires user confirmation.
+  - `kubectl apply delete-applyset [RESOURCE][.GROUP]/NAME --cascade=foreground -i=BOOL` deletes the parent ApplySet object after deleting all member objects using the strategy specified in `--cascade` (which is defaulted to `orphan`, i.e. no deletion). By default, requires user confirmation.
 
-# Extension command to fix correspondence of annotations
-kubectl apply verify-applyset myset -n foo --fix
+```bash
+# Subcommand to verify the validity and completeness of applyset parent metadata
+$ kubectl apply verify-applyset configmaps/myset -n foo
+Error: configmap "myset" in namespace "foo" is invalid:
+  - applyset.kubernetes.io/id: Label value must use the format ...
+  - applyset.kubernetes.io/tooling: Annotation value must have prefix "kubectl/" to be managed by kubectl
+  - applyset.kubernetes.io/contains-group-resources: Annotation is required.
 
-# Extension command to list objects in namespace
+# Subcommand to verify all ApplySets in the cluster
+$ kubectl apply verify-applyset
+Applyset configmaps/foo in namespace bar is valid
+Applyset secrets/bar in namespace baz is invalid:
+  - applyset.kubernetes.io/contains-group-resources: Annotation is required.
+Applyset secrets/baz in namespace bar is valid
+
+# Subcommand to fix the metadata of an applyset parent, if possible
+$ kubectl apply verify-applyset bar -n baz --fix
+Repairing Applyset secrets/bar in namesapce baz...
+Added missing annotation applyset.kubernetes.io/contains-group-resources annotation.
+Applyset secrets/bar in namesapce baz fixed.
+
+# Subcommand to view an applyset
 kubectl apply view-applyset myset -n ns1
+NAME             TYPE     NAMESPACE   AGE
+myset            Secret   ns1         1d
+
+# Subcommand to list objects in applyset, including children
+$ kubectl apply view-applyset myset -n ns1 --include-members
+NAME                TYPE         NAMESPACE   AGE
+myset               Secret       ns1         1d
+  ∟ myapp           Deployment   ns1         1d
+  ∟ myapp-svc       Service      ns1         1d
+  ∟ myapp-config    ConfigMap    ns1         1d
+
+# Subcommand to delete an applyset and its members
+$ kubectl apply delete-applyset myset -n ns1 --cascade=foreground
+Are you sure you want to delete applyset "myset" in namespace "ns1" and all its members? This will delete the following objects:
+    - Secret/myset
+    - Deployment/myapp
+    - Service/myapp-svc
+    - ConfigMap/myapp-config
+This action cannot be undone. (y/n): y
+Deleting applyset "myset" in namespace "ns1" and all its members...
+Secret/myset deleted
+Deployment/myapp deleted
+Service/myapp-svc deleted
+ConfigMap/myapp-config deleted
+Secret/myset deleted
+
+# Subcommand to migrate from the allowlist-based pruning mode to the new one
+$ kubectl apply generate-applyset myset -n ns1 --selector=app=myapp --legacy-allowlist=apps/v1/Deployment,core/v1/Service,core/v1/ConfigMap
+ApplySet parent Secret "myset" created in namespace "ns1"
+Found and added 3 members to applyset "myset" in namespace "ns1":
+    - Deployment/myapp
+    - Service/myapp-svc
+    - ConfigMap/myapp-config
 ```
 
 
-We intend to treat the flag and any subcommands as alpha commands initially.  During alpha, users will need to set an environment variable (e.g. KUBECTL_APPLYSET) to make the flag available.
+### Kubectl implementation details
 
-Commands will verify that the value of `applyset.k8s.io/tooling` has the `kubectl/` prefix before making any mutation, failing with an error if the annotation is present with any other value. It will set this label to `kubectl/vX.XX` (e.g. kubectl/v1.27) when creating/adopting resources as parent objects and update the semver as needed. At least initially, a missing tooling label or blank label value will also be considered an error, though this is not strictly required by the proposed spec and could be relaxed in the future. We may implement a `--force` flag, but this would likely be logically equivalent in outcome to a full ApplySet deletion and recreation, though with the potential (but not the guarantee) to be less disruptive.
+Commands will verify that the value of `applyset.kubernetes.io/tooling` has the `kubectl/` prefix before making any mutation, failing with an error if the annotation is present with any other value. It will set this label to `kubectl/vX.XX` (e.g. kubectl/v1.27) when creating/adopting resources as parent objects and update the semver as needed. At least initially, a missing tooling label or blank label value will also be considered an error, though this is not strictly required by the proposed spec and could be relaxed in the future.
 
-When `--applyset=<name>` is used (with no GVR), kubectl will automatically default the GVR to "secret", and will use server-side apply to create or update a Secret by that name in the targeted namespace, with the labels/annotations described here. If no namespace is specified, this is an error. Secret creation will happen at the beginning of the pruning phase rather than during the main apply operation. Server-side apply (SSA) will be used to create the Secret even if the main operation used client-side apply, and conflict forcing will be disabled regardless of its status on the main operation. Taking over an existing Secret is allowed, as long as it does not have any conflicting fields (no special criteria vs subsequent operations).
+When `--applyset=<name>` is used (with no GR), kubectl will automatically default the GR to "secret", and will use server-side apply to create or update a Secret by that name in the targeted namespace, with the labels/annotations described here. If no namespace is specified, this is an error. Secret creation will happen at the beginning of the pruning phase rather than during the main apply operation.
 
-Since there is no obvious choice for a cluster-scoped built-in resource that could be similarly chosen as the default ApplySet kind, we will allow the kind to optionally be specified in the `--applyset` flag itself: `--applyset=mykind.v1.mygroup/name`. This is the same format used by `kubectl get`. When a GVR is specified in this manner, kubectl will look up the referenced object and attempt to use it as the parent (using SSA as described above for the Secret case). The referenced object MUST already exist on the cluster by the time the pruning phase begins (it may be created by the main apply operation), as it is not possible for kubectl to sanely construct arbitrary object types from scratch.
+Server-side apply (SSA) will be used to create the Secret even if the main operation used client-side apply. The first request will disable conflict forcing, and output any errors encountered. If a conflict is encountered, a second request will be made with conflicts forced and an additional warning message. Taking over an existing Secret is allowed, as long as it does not have any conflicting fields (no special criteria vs subsequent operations). We may revisit this in the release in which the applyset verification and repair subcommand is introduced.
 
-In future, we may support a ApplySet object being provided as part of the input resources. For example, if the input resources contain an object with the `applyset.k8s.io/id=<id>` label, this could be interpreted as the parent, and the `--applyset` flag could be made optional. However, this adds complexity and has potential downsides and edge cases to handle (e.g. multiple labelled objects), so we will do so in response to user feedback, if at all.
+Since there is no obvious choice for a cluster-scoped built-in resource that could be similarly chosen as the default ApplySet kind, we will allow a GR to optionally be specified in the `--applyset` flag itself: `--applyset=[RESOURCE][.GROUP]/NAME`. This is one of the formats accepted by `kubectl get`. When a GR is specified in this manner, kubectl will look up the referenced object and attempt to use it as the parent (using SSA as described above for the Secret case). The referenced object MUST already exist on the cluster by the time the pruning phase begins (it may be created by the main apply operation), as it is not possible for kubectl to sanely construct arbitrary object types from scratch.
 
-When pruning with `--applyset`, kubectl will delete objects that are labeled as part of the ApplySet of objects, but are not in the list of objects being applied.  We expect to reuse the existing prune logic and behavior here, except that we will select objects differently (although as existing prune is also based on label selection, we may be able to reuse the bulk of the label-selection logic also).  Dry-run will be supported, as will `kubectl diff --prune --applyset=id`.
+In future, we may support a ApplySet object being provided as part of the input resources. For example, if the input resources contain an object with the `applyset.kubernetes.io/id=<id>` label, this could be interpreted as the parent, and the `--applyset` flag could be made optional. However, this adds complexity and has potential downsides and edge cases to handle (e.g. multiple labelled objects), so we will do so in response to user feedback, if at all.
+
+When pruning with `--applyset`, kubectl will delete objects that are labeled as part of the ApplySet of objects, but are not in the list of objects being applied. Dry-run will be supported initially, and `kubectl diff --prune --applyset=id` support will be added before beta.
 
 The `--prune` flag will continue to be required for all pruning operations to ensure communication of intent for this destructive feature. The `--applyset` flag has no meaning on its own and specifying it without `--prune` is an error. We will not support any of the scoping flags used by the previous pruning feature, that is, `--prune-allowlist`, `-l/--selector` and `--all`. These are considered conflicting pruning "modes", and specifying them alongside `--applyset` will fail flag validation. Our goal is to support the existing safe workflows, not the full permutations of all flags. The allowlist function in particular should be redundant with our improved discovery. What meaning the label selector flag would have if allowed is unclear, and we will need to collaborate with kubectl users to understand their true intent if there is demand for compatibility with that flag.
 
-The `--namespace` flag will be required when using any namespaced parent, including the default Secret. Because that flag throws a mismatch error when the set contains resources with heterogeneous namespaces, this limits the scope of ApplySet-based pruning in kubectl specifically beyond what the spec proposed strictly requires. Specifically, in kubectl, ApplySets spanning multiple namespaces MUST use a cluster-scoped parent object. We believe this limitation is reasonable and encourages best practices, but we could consider relaxing this position (e.g. using the ApplySet-in-input option described above) based on user feedback. When applicable, kubectl will ensure that all "visited" namespaces (as defined in the current operational code) are named by the sum of the parent's own namespace (if any) and the `applyset.k8s.io/additional-namespaces` annotation.
+The `--namespace` flag will be required when using any namespaced parent, including the default Secret. Because that flag throws a mismatch error when the set contains resources with heterogeneous namespaces, this limits the scope of ApplySet-based pruning in kubectl specifically beyond what the spec proposed strictly requires. Specifically, in kubectl, ApplySets spanning multiple namespaces MUST use a cluster-scoped parent object. We believe this limitation is reasonable and encourages best practices, but we could consider relaxing this position (e.g. using the ApplySet-in-input option described above) based on user feedback. When applicable, kubectl will ensure that all "visited" namespaces (as defined in the current operational code) are named by the sum of the parent's own namespace (if any) and the `applyset.kubernetes.io/additional-namespaces` annotation.
 
-We will detect “overlapping” ApplySets where objects already have a different ApplySet label, and initially treat this
-an error. During implementation of the alpha we will explore to what extent we can
-optimize this overlap discovery, particularly in conjunction with
-server-side-apply which does not require an object read before applying.
-A richer apply tooling than kubectl does will likely establish watches
-on the objects before applying them, to monitor object health and status.
-However, this is out of scope for kubectl and thus we will likely have to
-optimize differently for kubectl.  In the worst case, we will have to fetch
-the objects before applying (with a set of label-filtered LIST requests),
-we will explore to what extent that can be amortized over other kubectl
-operations in alpha.  One interesting option may be to use the fieldManager,
-choosing a fieldManager that includes the ApplySet ID to automatically
-detect conflicts (by _not_ specifying force); we intend to explore
-how this looks in practice and whether other options present themselves.
+In the initial implementation, the initial apply operation will overwrite the `applyset.kubernetes.io/part-of` annotation (unless this is automatically prevented, e.g. by a conflict caused by SSA use on that label by two different tools). This effectively allows the set to thrash, which is undesirable. Before beta, we will explore whether it is possible to detect such "overlapping" ApplySets with acceptable performance, particularly in conjunction with server-side-apply, which does not require an object read before applying.
+The two most readily apparent options both increase requests made by O(N). The first is to fetch the objects before applying (which may not share any particular labels a priori); the second is to do an additional SSA on each object using the applyset field manager prior to the main operation (instead of injecting our labels into the data used for that main operation, which may be a client-side apply).
 
 We differentiate between "adoption" (taking over management of a set of
 objects created by another tool), vs "migration" (taking over management of
 a set of objects created with the existing pruning mechanism).
 
 We will not support "adoption" of existing ApplySets initially, other than
-by re-applying "over the top".  Based on user feedback, we may require a flag
-to adopt existing objects / ApplySets.
-
-In the alpha scope, we will explore suitable "migration" tooling for moving
-from existing `--prune` objects.  Note that migration is not trivial, in that
-different users may expect different behaviors with regard to the GKs selected
-or the treatment of objects having/lacking the `last-application-configuration`
-annotation.  We intend to create an explicit migration subcommand on `apply`, e.g.
-`kubectl apply generate-applyset <id> --selector=[key=val] --legacy-allow-list=[]`,
-rather than trying to overload the "normal flow" apply command.
+by re-applying "over the top".  Based on user feedback, we may introduce a subcommand to enable this, or a flag on the repair command. In the alpha scope, we will explore suitable "migration" tooling for creating ApplySets from the inferred sets used by allowlist-based pruning, as illustrated in the [subcommands section](#applyset-subcommands).
 
 
 ### Security Considerations
@@ -766,55 +726,37 @@ will now cause a mismatch and tooling will report an error.  (Thank you to @ligg
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+Basic unit test coverage for allowlist-based pruning in `kubectl diff` is missing and must be added to ensure it is not accidentally broken by this feature work.
 
 ##### Unit tests
-
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
 
 We will strive for a reasonable trade-off between agility
 and code coverage, consistent with the high standards of
 the kubernetes projects.
 
+Tests (search for "applyset" in the following links):
+https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubectl/pkg/cmd/apply/apply_test.go
+
 <!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
 The data can be easily read from:
 https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=kubectl
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
 -->
 
+As of 1.26:
 - `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/apply`: `2023-01-24` - `76.5%`
 - `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/diff`: `2023-01-24` - `33%` (and reportedly 0% for prune.go!)
+
+As of 1.27:
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/apply`: `2023-03-21` - `82%`
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/apply/applyset.go`: `2023-03-21` - `91.1%`
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/apply/applyset_pruner.go`: `2023-03-21` - `90.2%`
+- (no change on diff; we did not yet modify it)
 
 ##### Integration tests
 
@@ -840,15 +782,22 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-We will add e2e tests to verify the core operational flows,
-in particular:
+Tests:
+- https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/kubectl.go#L852
+
+We will add e2e tests to verify the core operational flows.
+The test added in 1.27 covers the following flow:
 
 * applying a set of objects ("set1") as an applyset and with pruning (no changes)
-* applying a partially overlapping set of objects ("set2") as an applyset with dry-run pruning (no changes made but differences reported)
-* applying set2 without pruning (new objects added, no pruning)
-* applying set2 as an applyset with dry-run pruning (no changes made but pruning reported)
 * applying set2 as an applyset with pruning (pruning operates as expected)
 * applying set2 as an applyset with pruning again (no changes)
+
+The following coverage will be added in the next release:
+* applying a partially overlapping set of objects ("set2") as an applyset with dry-run pruning (no changes made but differences reported)
+* successful addition of a new object in the same operation as pruning
+* correct pruning of objects of multiple types, where at least one type to be pruned is not present in the new set of objects.
+
+Not planned for e2e coverage: custom resource parents, or cross-namespace references (which are only possible in kubectl with cluster-scoped parents, which in kubectl must be custom resources).
 
 ### Graduation Criteria
 
@@ -934,85 +883,21 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-
 Plan for alpha is that users must explicitly opt-in with `KUBECTL_APPLYSET`,
 existing functionality will remain.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
-
 Functionality is client-side only.  The functionality does not reference
-versioned fields or kinds (i.e. uses group-kinds, not group-version-kinds;
+versioned fields or kinds (i.e. uses group-resources, not group-version-resources;
 uses metadata.labels instead of dedicated fields).
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
 - [X] Other
   - Describe the mechanism:
 
@@ -1031,28 +916,12 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
-
 If the user opts-in, then they will get the new functionality.  For alpha,
 the existing functionality will remain the default for alpha.  We do not
-plan to replace the existing functionality, users will always need to
-opt-in by specifying an applyset-id flag.
+plan to affect existing functionality, and users will always need to
+opt-in by specifying an --applyset flag.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
 
 Yes, this is client-side only.
 
@@ -1064,21 +933,9 @@ modes.
 
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
+Alpha enablement test: https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubectl/pkg/cmd/apply/apply_test.go#L99-L119
 
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
-
-We'll add unit tests (or cases) that cover ApplySet-based apply/prune and maintain it alongside existing coverage for "prune v1", until such time as prune v1 (technically still in alpha) is removed.
-We'll make sure there's test coverage for any modification of or interaction with the v1 implementation to make sure it doesn't regress. We will also include coverage for the supported flag permutations when the ApplySet alpha is enabled.
+Flag compatibility tests: https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubectl/pkg/cmd/apply/apply_test.go#L193-L231
 
 ### Rollout, Upgrade and Rollback Planning
 
