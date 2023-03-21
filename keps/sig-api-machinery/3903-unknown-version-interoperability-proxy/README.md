@@ -149,7 +149,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 When a cluster has multiple apiservers at mixed versions (such as during an
-upgrade or downgrate), not every apiserver can serve every resource at every
+upgrade or downgrade), not every apiserver can serve every resource at every
 version.
 
 To fix this, we will add a filter to the handler chain in the aggregator which
@@ -189,19 +189,18 @@ incorrectly or objects being garbage collected mistakenly.
 
 ## Proposal
 
-API change:
-* To the apiservices API, add an "alternates" clause, a list of
-  apiservers which believe they can serve the group-version.
+We will use the existing `StorageVersion` API to figure out which group, versions,
+and resources an apiserver can serve.
 
 API server change:
-* A controller adds the apiserver to the list of alternates for its built-in
-  group-versions.
-* The same controller removes expired apiservers from the list. (Enabled by the
-  apiserver identity work.)
 * A new handler is added to the stack:
-  - If the request is for a group/version the apiserver doesn't have locally (we
-    can use the StorageVersion API), it will proxy the request to one of the
-    alternates instead.
+  - If the request is for a group/version/resource the apiserver doesn't have
+    locally (we can use the StorageVersion API), it will proxy the request to
+    one of the `serviceableBy`s if one is available. If one is not available,
+    then we will return a 503 (there is a small possibility of a race between
+    the controller registering the apiserver with the resources it can serve
+    and receiving a request for a resource that is not yet available on that
+    apiserver).
 
 ### User Stories (Optional)
 
