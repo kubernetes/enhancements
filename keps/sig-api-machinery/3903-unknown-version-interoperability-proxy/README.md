@@ -192,15 +192,31 @@ incorrectly or objects being garbage collected mistakenly.
 We will use the existing `StorageVersion` API to figure out which group, versions,
 and resources an apiserver can serve.
 
+We will also need to make discover reports the same set of resources everywhere. We propose
+routing discovery requests from old-apiservers to the new api-server, so that all discovery
+requests reflect the newest one. We specifically rule out merging discovery docs, because
+merging discovery is:
+
+* complicated 
+* represents an intermediate state which may not even make sense
+* the problems that merging discovery solves (i.e. preventing orphaned objects) can actually
+  be solved by the dynamic feature flag KEP, so solving it here would be redundant and 
+  unnecessarily complex. 
+
+By routing all discovery requests to the newest apiserver, we can ensure that namespace and gc
+controllers do what they would be doing if the upgrade happened instantaneously. 
+
+
 API server change:
 * A new handler is added to the stack:
+
   - If the request is for a group/version/resource the apiserver doesn't have
     locally (we can use the StorageVersion API), it will proxy the request to
-    one of the `serviceableBy`s if one is available. If one is not available,
-    then we will return a 503 (there is a small possibility of a race between
-    the controller registering the apiserver with the resources it can serve
-    and receiving a request for a resource that is not yet available on that
-    apiserver).
+    one of the apiservers that is listed in the object. If an apiserver fails
+    to respond is not available, then we will return a 503 (there is a small
+    possibility of a race between the controller registering the apiserver
+    with the resources it can serve and receiving a request for a resource
+    that is not yet available on that apiserver).
 
 ### User Stories (Optional)
 
@@ -255,8 +271,6 @@ with a metric.
 TODO: security / cert stuff.
 
 ## Design Details
-
-TODO: specific API change(s)
 
 TODO: explanation of how the handler will determine a request is for a resource
 that should be proxied.
