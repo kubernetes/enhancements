@@ -192,20 +192,6 @@ incorrectly or objects being garbage collected mistakenly.
 We will use the existing `StorageVersion` API to figure out which group, versions,
 and resources an apiserver can serve.
 
-We will also need to make discover reports the same set of resources everywhere. We propose
-routing discovery requests from old-apiservers to the new api-server, so that all discovery
-requests reflect the newest one. We specifically rule out merging discovery docs, because
-merging discovery is:
-
-* complicated 
-* represents an intermediate state which may not even make sense
-* the problems that merging discovery solves (i.e. preventing orphaned objects) can actually
-  be solved by the dynamic feature flag KEP, so solving it here would be redundant and 
-  unnecessarily complex. 
-
-By routing all discovery requests to the newest apiserver, we can ensure that namespace and gc
-controllers do what they would be doing if the upgrade happened instantaneously. 
-
 
 API server change:
 * A new handler is added to the stack:
@@ -281,6 +267,24 @@ TODO: explanation of how the security handshake between apiservers works.
   the source apiserver.
 * generate self-signed cert on startup, put pubkey in apiserver identity lease
   object?
+
+### Unresolved (how we will make discovery consistent)
+
+One option is routing discovery requests from old-apiservers to the new api-server,
+so that all discovery requests reflect the newest one. We specifically rule out
+merging discovery docs, because merging discovery is:
+
+* complicated 
+* represents an intermediate state which may not even make sense
+* the problems that merging discovery solves (i.e. preventing orphaned objects) can actually
+  be solved by the dynamic feature flag KEP, so solving it here would be redundant and 
+  unnecessarily complex. 
+
+By routing all discovery requests to the newest apiserver, we can ensure that namespace and gc
+controllers do what they would be doing if the upgrade happened instantaneously. 
+
+Alternatively, we can use the storage version objects to reconstruct a merged discovery
+document and serve that in all apiservers.
 
 
 ### Test Plan
