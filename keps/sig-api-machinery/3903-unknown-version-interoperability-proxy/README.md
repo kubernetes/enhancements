@@ -149,7 +149,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 When a cluster has multiple apiservers at mixed versions (such as during an
-upgrade or downgrate), not every apiserver can serve every resource at every
+upgrade or downgrade), not every apiserver can serve every resource at every
 version.
 
 To fix this, we will add a filter to the handler chain in the aggregator which
@@ -189,19 +189,20 @@ incorrectly or objects being garbage collected mistakenly.
 
 ## Proposal
 
-API change:
-* To the apiservices API, add an "alternates" clause, a list of
-  apiservers which believe they can serve the group-version.
+We will use the existing `StorageVersion` API to figure out which group, versions,
+and resources an apiserver can serve.
+
 
 API server change:
-* A controller adds the apiserver to the list of alternates for its built-in
-  group-versions.
-* The same controller removes expired apiservers from the list. (Enabled by the
-  apiserver identity work.)
 * A new handler is added to the stack:
-  - If the request is for a group/version the apiserver doesn't have locally (we
-    can use the StorageVersion API), it will proxy the request to one of the
-    alternates instead.
+
+  - If the request is for a group/version/resource the apiserver doesn't have
+    locally (we can use the StorageVersion API), it will proxy the request to
+    one of the apiservers that is listed in the object. If an apiserver fails
+    to respond is not available, then we will return a 503 (there is a small
+    possibility of a race between the controller registering the apiserver
+    with the resources it can serve and receiving a request for a resource
+    that is not yet available on that apiserver).
 
 ### User Stories (Optional)
 
@@ -257,8 +258,6 @@ TODO: security / cert stuff.
 
 ## Design Details
 
-TODO: specific API change(s)
-
 TODO: explanation of how the handler will determine a request is for a resource
 that should be proxied.
 
@@ -268,6 +267,24 @@ TODO: explanation of how the security handshake between apiservers works.
   the source apiserver.
 * generate self-signed cert on startup, put pubkey in apiserver identity lease
   object?
+
+### Unresolved (how we will make discovery consistent)
+
+One option is routing discovery requests from old-apiservers to the new api-server,
+so that all discovery requests reflect the newest one. We specifically rule out
+merging discovery docs, because merging discovery is:
+
+* complicated 
+* represents an intermediate state which may not even make sense
+* the problems that merging discovery solves (i.e. preventing orphaned objects) can actually
+  be solved by the dynamic feature flag KEP, so solving it here would be redundant and 
+  unnecessarily complex. 
+
+By routing all discovery requests to the newest apiserver, we can ensure that namespace and gc
+controllers do what they would be doing if the upgrade happened instantaneously. 
+
+Alternatively, we can use the storage version objects to reconstruct a merged discovery
+document and serve that in all apiservers.
 
 
 ### Test Plan
