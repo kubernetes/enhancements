@@ -139,29 +139,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 Kubernetes uses feature gates for a wide variety of features. Unfortunately,
-there are many problems and missing ablities with the current system (see
-below). This KEP solves these problems. Since it is wide reaching, we break
-implementation into several stages:
-
-Stage 1:
-* Add a Feature API
-* Components report their use of the feature (i.e., how it is set on their
-  command line)
-* Add a control-plane enablement/disablement flow (example: clearing fields in
-  etcd)
-
-Stage 2:
-* Add a cluster upgrade / downgrade flow beside the enablement flow (example:
-  clearing a collection where the alpha and beta schemas are incompatible)
-* For selected features, get the desired state from the API (it is set on
-  apiserver's command line)
-
-Stage 3:
-* If opted in on apiserver's command line, a feature may be set dynamically in
-  the API.
-
-This functionality needs both stages 1 and 2 to proceed to beta or GA. Stage 3 is
-optional but will be easy.
+there are many problems (see motivation section) making features unsafe or
+unfit. We describe a desireable state for Kubernetes (see goals) and propose an
+API and supporting libraries and techniques for achieving the goals (see
+design).
 
 ## Motivation
 
@@ -169,7 +150,7 @@ A list of problems:
 * It's mostly unsafe to turn a feature on, use it, and turn it back off. This is
   because state stored while the feature was on is not cleaned up. So instead of
   going back into a pristine state, the cluster goes into a third state,
-  on-with-dangling-references. This third state is tested less well than either
+  off-with-dangling-references. This third state is tested less well than either
   the on or off states.
 * Because of this, it's risky to try alpha features with important clusters.
 * It's not very useful or convenient to make disposable clusters to try alpha
@@ -233,6 +214,20 @@ First we will discuss all the pieces with minimal detail. Probably this section
 will leave you with questions which hopefully are answered in the "detailed
 design" section.
 
+Below we will talk about various actors in the system:
+* Clients: Clients exist today, they read feature gate values from the command
+  line, and check various features to see if they are enabled.
+* Devs: developers write implementations for features.
+* APIs: Kubernetes APIs.
+* "Servers": Today there isn't really a server or anything like it involved in
+  features.
+* Users: end users of a Kubernetes cluster without special permissions.
+* Cluster admins: users with admin rights over the cluster, but possibly not
+  access to the command line of binaries like apiserver, especially on managed
+  clouds.
+* Platform admins: this person has command line access to binaries. They
+  probably don't use the cluster but are responsible for it staying healthy.
+
 #### Client Flow
 
 Let's call the current use of feature gates the "client flow". Things that are
@@ -277,7 +272,8 @@ transitions.
 
 To explain what the server flow does, we will first assume for this overview
 that all servers are at the same version. In Kubernetes, the server flow logic
-will run in kube-apiserver. We will go through its responsibilities one at a
+will run in kube-apiserver. (Note that kube-apiserver is *also* a client! It
+will run both flows.) We will go through its responsibilities one at a
 time.
 
 Selecting a leader. Since multiple apiservers are running, we will pick one to
@@ -395,6 +391,32 @@ downgrades. If some part of this design fails to live up to that we will fix it
 when it is pointed out.
 
 ## Design Details
+
+### Implementation order-of-execution
+
+Since it is wide reaching, we break implementation into several stages:
+
+Stage 1:
+* Add a Feature API
+* Components report their use of the feature (i.e., how it is set on their
+  command line)
+* Add a control-plane enablement/disablement flow (example: clearing fields in
+  etcd)
+
+Stage 2:
+* Add a cluster upgrade / downgrade flow beside the enablement flow (example:
+  clearing a collection where the alpha and beta schemas are incompatible)
+* For selected features, get the desired state from the API (it is set on
+  apiserver's command line)
+
+Stage 3:
+* If opted in on apiserver's command line, a feature may be set dynamically in
+  the API.
+
+This functionality needs both stages 1 and 2 to proceed to beta or GA. Stage 3 is
+optional but will be easy.
+
+### More details about everything
 
 TODO
 
