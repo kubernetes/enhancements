@@ -526,6 +526,12 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+This KEP proposes and out-of-tree CRD that is not expected to integrate with any of the Kubernetes CI infrastructure. In addition, it explicitly provides only the CRD definition and generated clients for use by third party implementers, and does not provide a controller or any other binary with business logic to test. For these reasons, we only expect to provide unit tests for a dummy controller to confirm that the generated CRD can be installed and the generated clients can be instantiated. Today those tests are available [here](https://github.com/kubernetes-sigs/about-api/blob/master/clusterproperty/controllers/suite_test.go).
+
+However, similar to other out-of-tree CRDs that serve third party implementers, such as Gateway API and MCS API, there is rationale for the project to provide conformance tests for implementers to use to confirm they adhere to the restrictions set forth in this KEP that are not otherwise enforced by the CRD definition; in thise case, the constraints defined on the well-known properties `clusterset.k8s.io` and `cluster.clusterset.k8s.io`. Providing these tests are not considered blocking graduation requirements for the maturity level of this API.
+
+These tests will be provided in such a way that implementers can expose one or more clusters that have the About API CRD installed in them, and run a series of tests that confirms any well-known properties stored in those clusters' `ClusterProperty` objects conform to the constraints in [Well known properties](#well-known-properties). 
+
 ### Graduation Criteria
 
 #### Alpha -> Beta Graduation
@@ -538,89 +544,17 @@ when drafting this test plan.
 
 - At least one headless implementation using clusterID for MCS DNS
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-#### Beta -> GA Graduation
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-#### Removing a Deprecated Flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include 
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
--->
-
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Any changes to the API definition will follow the official Kubernetes API groups and versioning guidance [here](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-groups-and-versioning) and [here](https://kubernetes.io/docs/reference/using-api/#api-versioning). In short, the API will be provided in order through `v1alphaX`, `v1betaX`, to `v1`, where compatibility will be preserved from `v1beta1` and onwards; clients will be expected to eventually migrate to the `v1` implementation of the API as the prior versions are deprecated.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+As a CRD, this API is dependent on any changes in the version and compatibility of the CRD feature itself on which it is built. As the CRD system is in `v1` as of Kubernetes 1.14, and the Kubernetes versioning guarantees `v1` APIs to be maintained through the Kubernetes major release, and as the About API does not depend on any new features of the CRD system since then, there is no expected coordination required with any core Kubernetes components until and unless Kubernetes proceeds to version 2.X.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+This CRD /is/ a direct dependency of the MCS API and any mcs-controller implementation as defined by that KEP. As discussed later in the PRR, it is expected that the mcs-controller (or any other controller taking this CRD as its dependency) would manage the lifecycle of this CRD, including any version skew.
+
+As also mentioned below, we are aware that other features (in or out of tree) may want to use this CRD (as debated in "To CRD or Not to CRD" section, above) but we believe it is in the scope of those future features to assess the impact of this CRD's version strategy on their component's version skew and their feature's stability if they do.
 
 ## Production Readiness Review Questionnaire
 
@@ -710,69 +644,50 @@ _This section must be completed when targeting alpha to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+  
+   CRDs themselves are Kubernetes objects, and can fail to be applied if the schema definition is corrupt or incompatible with the CustomResourceDefinition schema. Unit tests and manual tests continuously confirm that as the built CRD yaml produced by this project is valid against the stable `v1 CustomResourceDefinition`. (It also could fail if the CRD is applied to a version of Kubernetes that does not have the CRD system is used (<1.14), or the API Server is unreachable, but these are both considered catastrophic failures out of scope of this KEP.) 
+  
+  Ultimately, the failure of a rollout of any CRD has the potential to disrupt all features or workloads that depend on it. Watches in controllers will fail to receive updates as the client would fail to find the CRD; a concrete known example for this CRD, the CoreDNS multicluster DNS plugin, would fail to program new DNS records and CoreDNS will answer SERVFAIL to any request made for a Kubernetes record that has not yet been synchronized. Features or workloads that depend on this CRD should plan to manage the lifecycle of this CRD or to provide transparent failure modes if the CRD is not present.
 
 * **What specific metrics should inform a rollback?**
 
+  Metrics should be configured using a metrics solutions implementing the [Custom Metrics API](https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-usage-monitoring/#full-metrics-pipeline), for example, the [metrics plugin for Custom Resources in kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/customresourcestate-metrics.md). Kubernetes does not provide default metrics for CRDs.
+
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+Unit tests and manual tests confirm that the CRD is capable of being uninstalled and reinstalled.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  Kubernetes does not provide default metrics for CRDs so an operator would need to depend on custom metrics, or filter 404s from Kubernetes API server against this CRD.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+
+  N/A: This KEP does not propose a service, only leverages the existing Kuebernetes API service and CRD extension mechanism.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+
+  N/A: This KEP does not propose a service, only leverages the existing Kuebernetes API service and CRD extension mechanism.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+  
+  Default metrics for CRDs in general for number of requests by workload source would improve 
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+    This feature depends only on the CustomResourceDefinition v1 in Kubernetes API server, available in Kubernetes versions 1.14+.
 
 
 ### Scalability
@@ -786,45 +701,32 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+
+  Installing the CRD will require a single API call to POST the new `CustomResourceDefinition` resource that represents it.
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+
+  Yes, installing the CRD introduces the cluster-scoped `ClusterProperty` Kind. As there is no related service proposed as part of this KEP, there are no specific limits on the supported number of objects per cluster outside of Kubernetes API server storage limits. 
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
 
+  No.
+
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+
+  Besides the trivial single `CustomResourceDefinition` required to install this CRD, no other size or count of existing API objects will be affected by this KEP.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+
+  No, this KEP does not affect any of the operations covered by existing SLIs/SLOs, particularly since CustomResourceDefinitions are excluded from those SLOs.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+
+  This CRD will utilize the validation mechanism provided by the CRD extension for validation of structural schemas of CRDs which requires some amount of resources to validate on create or update of a CR. However, the number of expected resources (2 as of this KEP) and their rate of change (related to clusterset membership changes, itself expected to be a human decision and rarely changing state) is expected to be trivial.
 
 ### Troubleshooting
 
@@ -836,19 +738,22 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  This KEP itself proposes a CRD applied to the API server; if the API server and/or etcd is unavailable, so is this CRD. Features dependent on this CRD must assess the impact of this CRD's availability on their component's availability. Most concretely today, components of the mcs-controller are expected to serve as an admission controller to this CRD or are dependent on this CRD to program DNS. If the API server and/or etcd is unavailable, those controllers will be unable to update a cluster's ClusterProperty data regarding its well-known properties as part of a ClusterSet, or to program any updates to DNS, respectively.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
+
+  - [CRD cannot be installed]
+    - Detection: Custom metrics or dependent feature metrics; increased 404 rate on Kube API server for the CRD.
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+      Warning and above, as this is the level that 404s against the CRD will be seen.
+    - Testing: Unit tests against generated CRD schema installation and usage of generated client.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  N/A: SLOs are not defined as there is no service provided by this KEP.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
