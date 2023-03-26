@@ -1,0 +1,37 @@
+title: Topology Resource Scoring
+kep-number: 3924
+authors:
+  - "@uniemimu"
+owning-sig: sig-scheduling
+status: provisional
+creation-date: 2023-03-26
+reviewers:
+  - "@alice.doe"
+approvers:
+  - "@alice.doe"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone:
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha:
+  beta:
+  stable:
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name:
+    components:
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - plugin_execution_duration_seconds{plugin="TopologyResourceScoring"}
