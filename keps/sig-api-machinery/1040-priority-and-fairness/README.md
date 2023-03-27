@@ -827,7 +827,7 @@ configuration.
 
 | Name | Nominal Shares | Lendable |
 | ---- | -------------- | -------- |
-| exempt |           30 | 50%      |
+| exempt |            0 | 50%      |
 
 Every priority level `i` has two concurrency limits: its
 NominalConcurrencyLimit (`NominalCL(i)`) as defined above by
