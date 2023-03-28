@@ -204,6 +204,14 @@ API server change:
     with the resources it can serve and receiving a request for a resource
     that is not yet available on that apiserver).
 
+* Discovery merging.
+
+  - During upgrade or downgrade, it may be the case that no apiserver has a
+    complete list of available resources. To fix the problems mentioned, it's
+    necessary that discovery exactly matches the capability of the system. So,
+    we will use the storage version objects to reconstruct a merged discovery
+    document and serve that in all apiservers.
+
 ### User Stories (Optional)
 
 #### Garbage Collector
@@ -268,24 +276,7 @@ TODO: explanation of how the security handshake between apiservers works.
 * generate self-signed cert on startup, put pubkey in apiserver identity lease
   object?
 
-### Unresolved (how we will make discovery consistent)
-
-One option is routing discovery requests from old-apiservers to the new api-server,
-so that all discovery requests reflect the newest one. We specifically rule out
-merging discovery docs, because merging discovery is:
-
-* complicated 
-* represents an intermediate state which may not even make sense
-* the problems that merging discovery solves (i.e. preventing orphaned objects) can actually
-  be solved by the dynamic feature flag KEP, so solving it here would be redundant and 
-  unnecessarily complex. 
-
-By routing all discovery requests to the newest apiserver, we can ensure that namespace and gc
-controllers do what they would be doing if the upgrade happened instantaneously. 
-
-Alternatively, we can use the storage version objects to reconstruct a merged discovery
-document and serve that in all apiservers.
-
+TODO: detailed description of discovery merging. (not scheduled until beta.)
 
 ### Test Plan
 
@@ -361,6 +352,19 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 
 ### Graduation Criteria
+
+#### Alpha
+
+- Proxying implemented (behind feature flag)
+
+#### Beta
+
+- Discovery document merging implemented
+- mTLS or other secure system used for proxying
+
+#### GA
+
+- TODO: wait for beta to determine any further criteria
 
 <!--
 **Note:** *Not required until targeted at a release.*
