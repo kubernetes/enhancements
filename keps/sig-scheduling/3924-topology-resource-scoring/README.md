@@ -77,6 +77,7 @@ tags, and then generate with `hack/update-toc.sh`.
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
+- [Terms](#terms)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
