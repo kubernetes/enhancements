@@ -182,11 +182,11 @@ func (l *persistentVolumeLabel) Admit(a admission.Attributes) (err error) {
 
 ### StorageClass
 
-Note that the above interfaces are only applied to AzureDisk persistent volumes, not StorageClass. For AzureDisk StorageClass, we should add a few new options for zone-aware and [topology-aware](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md) provisioning. The following three new options will be added in AzureDisk StorageClass:
+Note that the above interfaces are only applied to AzureDisk persistent volumes, not StorageClass. For AzureDisk StorageClass, we should add a few new options for zone-aware and [topology-aware](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/volume-topology-scheduling.md) provisioning. The following three new options will be added in AzureDisk StorageClass:
 
 - `zoned`: indicates whether new disks are provisioned with AZ. Default is `true`.
 - `zone` and `zones`: indicates which zones should be used to provision new disks (zone-aware provisioning). Only can be set if `zoned` is not false and `allowedTopologies` is not set.
-- `allowedTopologies`: indicates which topologies are allowed for [topology-aware](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md) provisioning. Only can be set if `zoned` is not false and `zone`/`zones` are not set.
+- `allowedTopologies`: indicates which topologies are allowed for [topology-aware](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/volume-topology-scheduling.md) provisioning. Only can be set if `zoned` is not false and `zone`/`zones` are not set.
 
 An example of zone-aware provisioning storage class is:
 

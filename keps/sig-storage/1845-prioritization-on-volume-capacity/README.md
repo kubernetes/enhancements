@@ -54,13 +54,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 With [volume topology-aware
-scheduling](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md) in place,
+scheduling](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/volume-topology-scheduling.md) in place,
 the scheduler filters nodes considering volume topology constraints. However, scheduler picks
 the smallest matching volumes in each topology but does not try to prioritize
 nodes in different topologies based on volume capacity. This leads to a waste
 of resources which we should avoid.
 
-This KEP continues the work proposed [here](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md#priority), to enable the scheduler to favor the node which has the most fit PV.
+This KEP continues the work proposed [here](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/volume-topology-scheduling.md#priority), to enable the scheduler to favor the node which has the most fit PV.
 
 ## Motivation
 

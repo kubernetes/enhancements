@@ -75,11 +75,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This proposal aims at extending the current pod specification with support
 for namespaced kernel parameters (sysctls) set for each pod.
 
-See the [abstract and motivation](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#abstract) from the original proposal in v1.4.
+See the [abstract and motivation](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#abstract) from the original proposal in v1.4.
 
 ## Motivation
 
-See the original design proposal's [motivation section](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#motivation).
+See the original design proposal's [motivation section](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#motivation).
 
 As mentioned in [contributors/devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version):
 
@@ -102,11 +102,11 @@ of the feature.
 
 ### Goals/Non-Goals
 
-See: original [constraints and assumptions](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#constraints-and-assumptions)
+See: original [constraints and assumptions](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#constraints-and-assumptions)
 
 ## Proposal
 
-See the [original design proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#proposed-design) for alpha.
+See the [original design proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#proposed-design) for alpha.
 
 ### Promote annotations to fields (beta)
 
@@ -151,7 +151,7 @@ in the following way:
     ...
   ```
 
-The `sysctl` design document with more details and rationals is available at [design-proposals/node/sysctl.md](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#pod-api-changes)
+The `sysctl` design document with more details and rationals is available at [design-proposals/node/sysctl.md](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#pod-api-changes)
 
 * Introduce native `sysctl` fields in pods through `spec.securityContext.sysctl` field as:
 
@@ -176,7 +176,7 @@ The `sysctl` design document with more details and rationals is available at [de
     - net.*
   ```
 
-  More examples at [design-proposals/node/sysctl.md#allowing-only-certain-sysctls](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#allowing-only-certain-sysctls)
+  More examples at [design-proposals/node/sysctl.md#allowing-only-certain-sysctls](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#allowing-only-certain-sysctls)
 
 ### Promote `--experimental-allowed-unsafe-sysctls` kubelet flag to kubelet config api option
 
@@ -211,7 +211,7 @@ If disabled, the fields and the whitelist are just ignored.
 
 ### User Stories (Optional)
 
-See also: [original sysctl proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#abstract-use-cases)
+See also: [original sysctl proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#abstract-use-cases)
 
 * As a cluster admin, I want to have `sysctl` feature versioned so I can assure backward compatibility
   and proper transformation between versioned to internal representation and back..
@@ -431,7 +431,7 @@ SLOs do not apply, N/A.
 
 ## Drawbacks / Alternatives
 
-See also: [original design alternatives and considerations](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/sysctl.md#design-alternatives-and-considerations)
+See also: [original design alternatives and considerations](https://github.com/kubernetes/design-proposals-archive/blob/master/node/sysctl.md#design-alternatives-and-considerations)
 
 ## Infrastructure Needed (Optional)
 

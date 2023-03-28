@@ -703,4 +703,4 @@ If both seccomp annotations _and_ fields are specified in the updated PSP, the v
 
 ## References
 
-- [Original seccomp proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md)
+- [Original seccomp proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/node/seccomp.md)

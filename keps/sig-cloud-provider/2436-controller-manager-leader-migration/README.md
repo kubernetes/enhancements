@@ -89,7 +89,7 @@ the respective out-of-tree cloud-controller-manager.
 
 * Removing cloud provider code from the core Kubernetes tree, this effort is separate and is covered in [KEP-removing-in-tree-providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md)
 * Improving the scalability of controllers by running controllers across multiple components (with or without leader election).
-* Migrating cloud-based volume plugins to CSI. This is a separate effort led by SIG Storage. See [this proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md) for more details.
+* Migrating cloud-based volume plugins to CSI. This is a separate effort led by SIG Storage. See [this proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/csi-migration.md) for more details.
 
 ## Proposal
 

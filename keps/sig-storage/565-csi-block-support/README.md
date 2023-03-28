@@ -31,7 +31,7 @@ the CSI specification. This feature is specifically to add raw block support
 to kubelet for volumes of the "csi" type by taking advantage of the
 now-standardized CSI RPCs.
 
-https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md
+https://github.com/kubernetes/design-proposals-archive/blob/master/storage/raw-block-pv.md
 
 ## Motivation
 

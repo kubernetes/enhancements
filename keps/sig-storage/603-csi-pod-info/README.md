@@ -15,7 +15,7 @@
 
 This document presents a design to allow Kubernetes to pass metadata such as Pod name and namespace to the CSI `NodePublishVolume` call if a CSI driver requires it.
 
-The detailed design was originally implemented as a [design proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-pod-information.md).
+The detailed design was originally implemented as a [design proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/container-storage-interface-pod-information.md).
 
 This KEP contains details that are missing from the design proposal.
 

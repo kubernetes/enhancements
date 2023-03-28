@@ -35,7 +35,7 @@ Enable users to increase the size of a PVC which is already in use (mounted). Th
 
 ### Non-Goals
 
-* Offline file system resizing is not included. If we find a volume needs file system resizing but is not mounted to the node yet, we will do nothing. This situation will be dealt with by the existing [offline file system resizing handler](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/grow-volume-size.md).
+* Offline file system resizing is not included. If we find a volume needs file system resizing but is not mounted to the node yet, we will do nothing. This situation will be dealt with by the existing [offline file system resizing handler](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/grow-volume-size.md).
 
 * Extending resize tools: we only support the most common file systems' offline resizing in current release, and we prefer to stay the same for online resizing: ext3, ext4, & xfs.
 

@@ -17,7 +17,7 @@ This document presents a design to be able to skip the attach/detach flow in
 Kubernetes for CSI plugins that don't support attaching.
 
 The detailed design was originally implemented as a [design
-proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-skip-attach.md).
+proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/container-storage-interface-skip-attach.md).
 
 This KEP contains details that are missing from the design proposal.
 

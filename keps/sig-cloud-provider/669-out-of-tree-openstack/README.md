@@ -52,7 +52,7 @@ This KEP is specifically tracking progress for the OpenStack cloud provider.
 The OpenStack Cloud Provider is implemented, tested and documented, It is being released with matching kubernetes version from [release v1.11](https://github.com/kubernetes/cloud-provider-openstack/releases). cloud-provider-openstack release 1.14, 1.15, 1.16 has been running in production.
 
 ### Implementation Details/Notes/Constraints [optional]
-OpenStack Cloud Provider is implemented [here](https://github.com/kubernetes/cloud-provider-openstack/releases). This repository also hosts other drivers like CSI, ingress-controller etc. Cloud Provider OpenStack is in feature parity with the intree version. Removal of intree cloud providers is dependent on [In-tree Storage Migration to CSI Plugin Migration](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md). The migration work for intree OpenStack Volume driver to CSI Driver is in progress.
+OpenStack Cloud Provider is implemented [here](https://github.com/kubernetes/cloud-provider-openstack/releases). This repository also hosts other drivers like CSI, ingress-controller etc. Cloud Provider OpenStack is in feature parity with the intree version. Removal of intree cloud providers is dependent on [In-tree Storage Migration to CSI Plugin Migration](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/csi-migration.md). The migration work for intree OpenStack Volume driver to CSI Driver is in progress.
 
 ### Risks and Mitigations
 

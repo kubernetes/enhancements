@@ -71,7 +71,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 The KEP aims at fixing few issues in the current way Events are structured and implemented. This effort has two main goals - reduce the performance impact that Events have on the rest of the cluster and add more structure to the Event object which is the first and necessary step to make it possible to automate Event analysis.
 
-Most sections and design details are copied from the original design doc: [Make Kubernetes Events Useful and Safe](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/events-redesign.md).
+Most sections and design details are copied from the original design doc: [Make Kubernetes Events Useful and Safe](https://github.com/kubernetes/design-proposals-archive/blob/master/instrumentation/events-redesign.md).
 
 The new Event API has been promoted from v1beta1 to v1 in 1.19 and currently only scheduler was migrated to use it.
 
@@ -692,7 +692,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-- 2017-10-7 design proposal merged under [kubernetes/community](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/events-redesign.md)
+- 2017-10-7 design proposal merged under [kubernetes/community](https://github.com/kubernetes/design-proposals-archive/blob/master/instrumentation/events-redesign.md)
 - 2017-11-23 Event API group is [merged](https://github.com/kubernetes/kubernetes/pull/49112)
 - New Event API [staging/src/k8s.io/client-go/kubernetes/typed/events/v1beta1](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/client-go/kubernetes/typed/events/v1beta1)
 - Scheduler migration: [#78447](https://github.com/kubernetes/kubernetes/pull/78447/files), [#83692](https://github.com/kubernetes/kubernetes/pull/83692)

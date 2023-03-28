@@ -21,7 +21,7 @@ approvers:
   - "@wojtek-t"
 see-also:
 replaces:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/apps/cronjob.md"
+  - "https://github.com/kubernetes/design-proposals-archive/blob/master/apps/cronjob.md"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

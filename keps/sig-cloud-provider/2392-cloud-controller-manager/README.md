@@ -230,7 +230,7 @@ config maps.
 
 There are two entirely different approach to refactoring volumes -
 [Flex Volumes](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-storage/flexvolume.md) and
-[CSI Container Storage Interface](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md). There is an undergoing effort to move all
+[CSI Container Storage Interface](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/container-storage-interface.md). There is an undergoing effort to move all
 of the volume logic from the controller-manager into plugins called Flex Volumes. In the Flex volumes world, all of the
 vendor specific code will be packaged in a separate binary as a plugin. After discussing with @thockin, this was
 decidedly the best approach to remove all cloud provider dependency for volumes out of kubernetes core. Some of the discovery

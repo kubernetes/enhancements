@@ -1026,7 +1026,7 @@ In beta, we may want to revisit this.
 See the [Pod Resource Management design proposal] for more background on the
 cgroup limits the kubelet currently sets based on each QoS class.
 
-[Pod Resource Management design proposal]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/pod-resource-management.md#pod-level-cgroups
+[Pod Resource Management design proposal]: https://github.com/kubernetes/design-proposals-archive/blob/master/node/pod-resource-management.md#pod-level-cgroups
 
 ## Infrastructure Needed (Optional)
 

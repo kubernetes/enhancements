@@ -770,10 +770,10 @@ The Memory Manager sets and enforces cgroup memory limit for ("on behalf of") a 
 
 [sig-node-memory-manager-presentation]: https://docs.google.com/presentation/d/1WLHbEdm3vO94eu5QyQGkutXfbfWcci4-kEDmp8ty8Ho/edit?usp=sharing 
 [topology-manager]: https://github.com/kubernetes/enhancements/blob/dcc8c7241513373b606198ab0405634af643c500/keps/sig-node/0035-20190130-topology-manager.md
-[cpu-manager]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/cpu-manager.md
-[device-manager]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/resource-management/device-plugin.md
+[cpu-manager]: https://github.com/kubernetes/design-proposals-archive/blob/master/node/cpu-manager.md
+[device-manager]: https://github.com/kubernetes/design-proposals-archive/blob/master/resource-management/device-plugin.md
 [hugepages]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/20190129-hugepages.md
-[node-allocatable-feature]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/node-allocatable.md
+[node-allocatable-feature]: https://github.com/kubernetes/design-proposals-archive/blob/master/node/node-allocatable.md
 [numa-issue]: https://github.com/kubernetes/kubernetes/issues/49964
 [hugepage-issue]: https://github.com/kubernetes/kubernetes/issues/80716
 [memory-issue]: https://github.com/kubernetes/kubernetes/issues/81009

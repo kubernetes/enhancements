@@ -16,7 +16,7 @@ creation-date: 2019-02-07
 last-updated: 2019-02-13
 status: implemented
 see-also:
-  - "[Validation for CustomResources design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresources-validation.md)"
+  - "[Validation for CustomResources design doc](https://github.com/kubernetes/design-proposals-archive/blob/master/api-machinery/customresources-validation.md)"
 
 latest-milestone: "1.19"
 stage: "stable"

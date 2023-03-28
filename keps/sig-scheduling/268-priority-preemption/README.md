@@ -80,5 +80,5 @@ End to end tests for priority and preemption are [found here](https://github.com
 ## Implementation History
 
 Pod Priority and Preemption are tracked as part of [enhancement#564](https://github.com/kubernetes/enhancements/issues/564).
-The proposal for Pod Priority can be [found here](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-priority-api.md)
-and Preemption proposal is [here](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-preemption.md).
+The proposal for Pod Priority can be [found here](https://github.com/kubernetes/design-proposals-archive/blob/master/scheduling/pod-priority-api.md)
+and Preemption proposal is [here](https://github.com/kubernetes/design-proposals-archive/blob/master/scheduling/pod-preemption.md).

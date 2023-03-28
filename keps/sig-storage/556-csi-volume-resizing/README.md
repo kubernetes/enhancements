@@ -72,7 +72,7 @@ A general mechanism for recovering from resize failure will be implemented via: 
 A CSI volume may require expansion on the node to finish volume resizing. In some cases - the entire resizing operation can happen on the node and
 plugin may choose to not implement `ControllerExpandVolume` CSI RPC call at all.
 
-Currently Kubernetes supports two modes of performing volume resize on kubelet. We will describe each mode here. For more information , please refer to original volume resize proposal - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/grow-volume-size.md.
+Currently Kubernetes supports two modes of performing volume resize on kubelet. We will describe each mode here. For more information , please refer to original volume resize proposal - https://github.com/kubernetes/design-proposals-archive/blob/master/storage/grow-volume-size.md.
 
 
 #### Offline volume resizing on kubelet:

@@ -63,7 +63,7 @@ For other tools, each maintainer would have to add the upgrade to CoreDNS.
 
 ### Use Cases
 
-* CoreDNS supports all functionality of kube-dns and also addresses [several use-cases kube-dns lacks](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/network/coredns.md#use-cases). Some of the Use Cases are as follows: 
+* CoreDNS supports all functionality of kube-dns and also addresses [several use-cases kube-dns lacks](https://github.com/kubernetes/design-proposals-archive/blob/master/network/coredns.md#use-cases). Some of the Use Cases are as follows: 
     * Supporting [Autopath](https://coredns.io/plugins/autopath/), which reduces the high query load caused by the long DNS search path in Kubernetes.
     * Making an alias for an external name [#39792](https://github.com/kubernetes/kubernetes/issues/39792)
     

@@ -17,7 +17,7 @@
 
 ## Summary
 
-This KEP is written after the original design doc has been approved and implemented. Design for CSI Volume Topology Support in Kubernetes is incorporated as part of the [CSI Volume Plugins in Kubernetes Design Doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md).
+This KEP is written after the original design doc has been approved and implemented. Design for CSI Volume Topology Support in Kubernetes is incorporated as part of the [CSI Volume Plugins in Kubernetes Design Doc](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/container-storage-interface.md).
 
 The rest of the document includes required information missing from the original design document: test plan and graduation criteria.
 

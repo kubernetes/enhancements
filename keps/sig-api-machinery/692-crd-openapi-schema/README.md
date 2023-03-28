@@ -20,7 +20,7 @@
 ## Summary
 
 In CustomResourceDefinition (CRD) we allow CRD author to define OpenAPI v3 schema, to
-enable server-side [validation for CustomResources (CR)](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresources-validation.md).
+enable server-side [validation for CustomResources (CR)](https://github.com/kubernetes/design-proposals-archive/blob/master/api-machinery/customresources-validation.md).
 The validation schema format is compatible for creating OpenAPI documentation for CRs,
 which can be used by clients like kubectl to perform client-side validation
 (e.g. `kubectl create` and `kubectl apply`),
@@ -34,7 +34,7 @@ Publishing CRD OpenAPI enables client-side validation, schema explanation and
 client generation for CRs. It covers the gap between CR and native Kubernetes
 APIs, which already support OpenAPI documentation.
 
-Publishing CRD OpenAPI is also noted as potential followup in [Validation for CustomResources Implementation Plan](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresources-validation.md#implementation-plan).
+Publishing CRD OpenAPI is also noted as potential followup in [Validation for CustomResources Implementation Plan](https://github.com/kubernetes/design-proposals-archive/blob/master/api-machinery/customresources-validation.md#implementation-plan).
 
 ### Goals
 

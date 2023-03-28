@@ -43,7 +43,7 @@ Dynamic Kubelet Configuration allows a new Kubelet configurations to be rolled
 out in a live cluster.
 
 The feature predates the KEP process as it is defined today. Please find
-motivation, goals, and design section in [community repository](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/dynamic-kubelet-configuration.md).
+motivation, goals, and design section in [community repository](https://github.com/kubernetes/design-proposals-archive/blob/master/node/dynamic-kubelet-configuration.md).
 
 Dynamic Kubelet Configuration feature is deprecated at the version v1.22 due to
 lack of interest in promoting it to stable. See [Deprecation](#deprecation).
