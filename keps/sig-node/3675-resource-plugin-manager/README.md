@@ -80,9 +80,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Kubernetes compute management is tightly integrated with the Kubelet and the 
-existing suite of resources managers including the topology manager, CPU manager, 
-memory manager, and device manager. While these managers have added functionality that 
+Kubernetes compute management is tightly integrated with the Kubelet and the
+existing suite of resources managers including the topology manager, CPU manager,
+memory manager, and device manager. While these managers have added functionality that
 address a varied set of use cases, they also present the community with challenges.
 
 Adding a new capability to one of these managers is slow moving and difficult
@@ -104,29 +104,29 @@ compute focused drivers for resource assignment capabilities, such as CPU and me
 
 We propose an iterative implementation approach:
 
-In the first stage (alpha) we propose adding a new component to the kubelet called the CCIResourceManager
+In the first stage (alpha) we propose adding a new component to the Kubelet called the CCIResourceManager
 that focuses exclusively on providing a mechanism for pluggable CPU management policies (as a replacement
-to the builtin CPUManager and its corresponding policies). Enablement of the CCIResourceManager will be blocked by a feature gate 
-which, when enabled, will trigger all CPU Management decisions to flow through the CCIResourceManager instead of the builtin CPUManager. 
+to the builtin CPUManager and its corresponding policies). Enablement of the CCIResourceManager will be blocked by a feature gate
+which, when enabled, will trigger all CPU Management decisions to flow through the CCIResourceManager instead of the builtin CPUManager.
 For this, the CPUManager policy MUST be set to none if this new feature gate is enabled. This will
-be enforced by the kubelet, causing it to "fail fast" if this invariant does not hold true.
+be enforced by the Kubelet, causing it to "fail fast" if this invariant does not hold true.
 
-For alpha, only a single driver will be allowed to run on a node at any given time. Details of how 
-we plan to enforce this requirement as well as how we plan to (temporarily) handle bootstrapping a 
-node that does not yet have a pluggable CPU Management policy running can be found in Section [Throubleshooting]. 
-In a later phase, we will provide a proper mechanism to handle bootstrapping in cases where a driver 
+For alpha, only a single driver will be allowed to run on a node at any given time. Details of how
+we plan to enforce this requirement as well as how we plan to (temporarily) handle bootstrapping a
+node that does not yet have a pluggable CPU Management policy running can be found in Section [Throubleshooting].
+In a later phase, we will provide a proper mechanism to handle bootstrapping in cases where a driver
 becomes temporarily unavailable.
 
-The implication of CCI and the addition of the proposed CCI Resource Manager will be to allow compute 
-capabilities such as CPU and memory to be managed outside of the Kubelet via pluggable CCI Drivers. 
-This will allow users to augment the current implementation of Kubelet managed resources with 
-support for more complex use-cases without having to modify the Kubelet. The CCI extensions can coexist 
+The implication of CCI and the addition of the proposed CCI Resource Manager will be to allow compute
+capabilities such as CPU and memory to be managed outside of the Kubelet via pluggable CCI Drivers.
+This will allow users to augment the current implementation of Kubelet managed resources with
+support for more complex use-cases without having to modify the Kubelet. The CCI extensions can coexist
 with the existing CPU and memory allocation technique available to Kubernetes users today.
 
-Although our alpha implementation provides an alternate route for managing CPUs through pluggable 
-CPU management drivers, the long-term goal is to allow these drivers to be used side-by-side with 
-the built-in policies. Pods will be able to choose which policy they want their CPUs allocated with, 
-and the machinery in the kubelet will take care to ensure the proper CPU Management policy is invoked 
+Although our alpha implementation provides an alternate route for managing CPUs through pluggable
+CPU management drivers, the long-term goal is to allow these drivers to be used side-by-side with
+the built-in policies. Pods will be able to choose which policy they want their CPUs allocated with,
+and the machinery in the Kubelet will take care to ensure the proper CPU Management policy is invoked
 (be that from a builtin policy or from a driver).
 
 These changes will allow the community to disaggregate the long-term
@@ -139,29 +139,29 @@ specialized use cases and the advancements in the compute vendor ecosystem.
 Users have varied workloads; the current set of available configurations
 for CPU, memory, and topology remain limited.  Additionally, the number of managers
 becoming internal to the Kubelet continues to increase; we should find a more
-dynamic and pluggable way of handling these resources.
+dynamic and plugable way of handling these resources.
 
-Operating systems work by allowing drivers and pluggable resources, including varied
-policies for CPU, memory, and devices allocation.  Kubernetes can be viewed as the operating 
+Operating systems work by allowing drivers and plugable resources, including varied
+policies for CPU, memory, and devices allocation.  Kubernetes can be viewed as the operating
 system of the cloud.  Allowing specialty modules to address the use cases
-directly, rather than continuing to add complexity by continuing to modify the kubelet, 
-will allow the greatest scope of abilities while halting continued increases of complexity 
+directly, rather than continuing to add complexity by continuing to modify the ubelet,
+will allow the greatest scope of abilities while halting continued increases of complexity
 within the core of the Kubelet.
 
 This KEP aims to address the following challenges:
 
 * Differentiate between types of cores and memory. <br>
-  Note - Dynamic resouce allocation does this with regular resources today. We seek to
+  Note - Dynamic resource allocation does this with regular resources today. We seek to
   extend this ability.
 * Differentiate between different configurations of cores and memory, for instance cores
   designated as performance versus those designated as efficiency cores
 * Have custom driver to optimize for particular types of workloads.  These drivers
   may be built for performance, power reduction, cpu savings, et cetera.  <br>
   Note:  Currently, there are very limited sets of available topology policies.  Every
-  new policy must be approved and be lockstep with the Kuberenetes release process.
+  new policy must be approved and be lockstep with the kubernetes release process.
 * Allow vendors to release vendor-specific managers for their hardware
   and provide an interface, keeping vendor-specific code external to the Kubelet.
-* Be able to hot-plug and test new resource managers.  
+* Be able to hot-plug and test new resource managers.
 * Be able to remove some of the complexity with current setup and, over time, reduce
   the amount of code contained within Kubelet.  Instead, build a library with specific
   needs.
@@ -172,7 +172,7 @@ This KEP aims to address the following challenges:
   and overriding current Kubelet allocation, such as [CPU Pooler](https://github.com/nokia/CPU-Pooler).
   We should provide a path otherwise. Many of these solutions are custom to particular companies.
   Many are not open source. The community should give a process to allow this functionality in core
-  kubelet at a granular level, same as we have in many systems, such as HPC or telco.
+  kubelet at a granular level, same as we have in many systems, such as HPC or Telco.
 * Leverage additional parts from the pod spec information which could help make allocation decisions
 without the need to query the k8s controlplane.
 * Be able to do research, with minimum toil, on new policies and resource management strategies
@@ -187,7 +187,7 @@ today and move the complexity into external drivers.
 
 1.  Provide Initial infrastructure to support CCI Drivers and k8s Deployments requiring CCI Drivers.
 1.  Provide a feature gate to enable CCI Resource Manager. The feature will require CPU Manager policy set to None.
-1.  Provide a CCI test driver which can demonstrate CCI Driver implementation requirementes and several resource management use-cases for cpu.
+1.  Provide a CCI test driver which can demonstrate CCI Driver implementation requirements and several resource management use-cases for cpu.
 1.  Provide documentation of the CCI Resource Manager and the provided test driver plus illustration of the currently covered use-cases, including a sample driver.
 1.  Provide end-to-end tests using the sample driver.
 1.  Support seamless k8s start.
@@ -206,16 +206,16 @@ extensibility in the future, the current pod specs will still work.
 1.  Support hint providers for topology manager
 1.  Interoperability with Device Plugins, DRA, et cetera.
 1.  Identify and provide a minimal in-cluster operational core (from existing CPU Manager, Memory Manager, Topology Manager) either through in-tree libraries or through further KEPs.
+1.  Guarantee that cpu and memory resources managed by CCI are visible for the scheduler to be able to
+    correctly assign nodes.  This will be expanded as necessary, dependant on use cases, from the base
+    group for alpha (topology, type, et cetera).
 1.  Gather feedback on the feature through surveys.
 1.  E2E testing including any new components, such as memory and topology.
 1.  Adding support for e2e tests in testgrid.
 1.  Health identification mechanisms and automatic health-repair procedures for CCI Drivers.
 1.  Optimize on-node resource usage (approaches to avoid waste of resources because of fragmentation).
 1.  Consider whether useful to support multiple CCI drivers.
-1.  Consider optimal binpacking of resources (we may optimize resource utilization in Beta).
-1.  Guarantee that cpu and memory resources managed by CCI are visible for the scheduler to be able to
-    correctly assign nodes.  This will be expanded as necessary, dependant on use cases, from the base
-    group for alpha (topology, type, et cetera).
+
 
 ### Non-Goals
 
@@ -223,7 +223,6 @@ extensibility in the future, the current pod specs will still work.
 device manager.
 * Creating any more latency than there is today for scheduling:  We should be
 careful not to add any latency into scheduling over what exists today for default behavior.
-* This KEP does not cover reservation of CPU and memory resources on the scheduler side.
 
 
 ## Proposal
@@ -234,7 +233,7 @@ The proposed Container Compute Interface gives users a way to manage these
 resources without having to either bypass or hack the kubelet cpu and memory
 controllers. The CCI will allow for seamless integration of new and interesting
 cpu and memory policies; this allows for innovation for better workload performance
-and sustainability for datacenters.
+and sustainability for data centers.
 
 ### User Stories
 
@@ -398,30 +397,32 @@ The following code snippet provides initial specification for allowed CCI comput
     “mem attributes" : [
       “NUMA-MEM-AFFINITY-BIND-REQUIRED”, // If memory affinity requested, the CPU cores SHALL be from the same NUMA zone.
       "NUMA-MEM-AFFINITY-BIND-PREFERRED”, // If memory affinity requested, the CPU cores SHOULD be from the same NUMA zone.
-      “NUMA-MEM-AFFINITY-INTERLEAVE-REQUIRED”   
+      “NUMA-MEM-AFFINITY-INTERLEAVE-REQUIRED” // If memory affinity requested, the CPU cores SHALL be from the all NUMA zone.   
       ]
     // Possible memory attributes:  “NO-MEM-AFFINITY”, “NUMA-MEM-AFFINITY-INTERLEAVE-PREFERRED”, “HUGE_PAGE_SIZE_1M”, etc..
 
     // cpu and smt attributes
     “cpu attributes" : [
-              ["EXCLUSIVE", “CORE-SIBLING-REQUIRED"],
-              [“EXCLUSIVE“, “CORE-SIBLING-DENIED],
+              ["EXCLUSIVE", “CORE-SIBLING-REQUIRED"], // Use all logical cores on given physical cores to pack the processes.
+              [“EXCLUSIVE“, “CORE-SIBLING-DENIED], // 
               ["SHARED"]
             ]   
-    //Possible CPU attributes:
-    // “CORE-SIBLING-PREFERRED“, “CORE-SIBLING-DENIED“ // Single use only. Full cores. Noting else on the platform will have access to this set of core(s).
-    // “EXCLUSIVE” // Full cores. Exclusively allocated to one pod. System services may use the cores too.
-    // “SHARED” // Default setting. Set of core(s) or portions of cores shared with all users of the platform.
+    // Possible CPU attributes:
+    // "CORE-SIBLING-REQUIRED"  Use all logical cores on given physical cores to pack the processes, require sufficient siblings.
+    // “CORE-SIBLING-PREFERRED“ Maximize usage of sibling pairs on given physical cores.
+    // "CORE-SIBLING-DENIED" Single logical core use only. Full cores. Noting else on the platform will have access to this set of core(s).
+    // “EXCLUSIVE” Full cores. Exclusively allocated to one pod. System services may use the cores too.
+    // “SHARED” Default setting. Set of core(s) or portions of cores shared with all users of the platform.
 
 ##### CCI Resource Manager Architecture
 
 CCI Resource Manager Architecture uses DRA resource class mechanism to identify drivers
-for a pod which has a resource claim. To ensure conflict-free coexistance of DRA drivers
-and CCI drivers, the registration of CCI drivers inside kubelet has to happen
-on separate socket - /var/run/cci.
+for a pod which has a resource claim. To ensure conflict-free co-existence of DRA drivers
+and CCI drivers, the registration of CCI drivers has to happen through unique registration handler
+analogue to other plugin frameworks (device plugins, dra, etc..).
 
 In the alpha version CCI will rely on DRA controller to handle scheduling of resource allocation
-requests expresed by the means of resource claim as described in  Sec. [Compute Specification Option].
+requests expressed by the means of resource claim as described in  Sec. [Compute Specification Option].
 To ensure a correct functioning of the kubernetes scheduler CCI Resource manager will feed the pod resource
 server with the correct number of allocatable cpu and memory resources. In alpha phase pods which require CCI
 Drivers will provide cpu and memory resource specifications only through the claim mechanism. In post-alpha
@@ -429,7 +430,7 @@ we will consider integration with standard cpu and memory resource requests and 
 
 In the alpha version of the Resource Manager applies drivers to manage resource
 allocations for Pods which use Resource Claims. The association to a driver happens through the already provided resourceclass mechanisms in DRA. The overall architecture consists of a manager component – the Resource Manager inside the container manager, a compute resource store – a component used to store
-the resource sets (cpusets, memory affinity configuration) for the pods handled via resource drivers or via CCI Manager. The CCI Manager keeps track of pods without claims (standard pods) in the resource store. In alpha version the cpusets of those pods are mapped to all avaialable cores. In the case of exclusive cores request the cpusets of the standard pods have to be adjusted to guarantee exclusivity. The CCI Manager is enabled via a feature gate. After turning on the feature gate all pod allocation requets for cpu
+the resource sets (cpusets, memory affinity configuration) for the pods handled via resource drivers or via CCI Manager. The CCI Manager keeps track of pods without claims (standard pods) in the resource store. In alpha version the cpusets of those pods are mapped to all available cores. In the case of exclusive cores request the cpusets of the standard pods have to be adjusted to guarantee exclusivity. The CCI Manager is enabled via a feature gate. After turning on the feature gate all pod allocation requests for cpu
 and memory will be handled by the CCI Manager.
 
 ![image](CCIArchAlpha.jpg)<br>
@@ -450,16 +451,16 @@ claim associated that container and it's parameters.
 2. CCI Resource Store<br>
 The Resource Manager uses a store to keep track of resourcesets which can include
 cpusets, etc ..  allocated by CCI Drivers. This information is gathered
-per container. The gathered information will be used to provide data for on-node available resources. The store offers thefollowing interface to manage resource sets.
+per container. The gathered information will be used to provide data for on-node available resources. The store offers the following interface to manage resource sets.
 
         +AddResource(pod, container, resourceset)
         +RemoveResource(container)
-        +AvailablResources(): resourceset
+        +AvailableResources(): resourceset
         +Save(path)
         +Load(path)
 
 The resource sets are getting stored in a map where the lookup
-is done via pod id and container name. For alpha verions the resource set includes the cpuset. In later stage the resource set will be extended with memory affinity information. The map together with the currently available resource will be serialized to the file system to ensure proper covarage of kubelet restart and recovery scenarios through the Save and Load functons (/var/lib/kubelet/cci_manager_state).
+is done via pod id and container name. For alpha versions the resource set includes the cpuset. In later stage the resource set will be extended with memory affinity information. The map together with the currently available resource will be serialized to the file system to ensure proper coverage of kubelet restart and recovery scenarios through the Save and Load functions (/var/lib/kubelet/cci_manager_state).
 
 4. CCI Driver Interface<br>
 The initial interface of resource management drivers is very simple and consists
@@ -471,11 +472,11 @@ of three functions:
 
 `CCIAdmit` function provides information if a given container belonging to a
 Pod and having a specific CCI spec can be admitted to next stage of the allocation
-pipeline. The requested resources get reserved in the case of success. The user input which was defined in the resource claim is passed as claim paramter (analogue to DRA) to the function (see Sec. [Compute Specification Option]). The admission will return a reserved resource-set or error. In case of successful admission the resource set will be stored in the CCI Store. In the case of exclusive reservations the cpusets of standard pods might change based on the updated list of avaialbe cores. In the case of failure the error is reported back to user and the Pod allocation is cancelled. In the admission function we pass a list of available cpusets which allow us to inform drivers about system-reserved resources.
+pipeline. The requested resources get reserved in the case of success. The user input which was defined in the resource claim is passed as claim parameter (analogue to DRA) to the function (see Sec. [Compute Specification Option]). The admission will return a reserved resource-set or error. In case of successful admission the resource set will be stored in the CCI Store. In the case of exclusive reservations the cpusets of standard pods might change based on the updated list of available cores. In the case of failure the error is reported back to user and the Pod allocation is cancelled. In the admission function we pass a list of available cpusets which allow us to inform drivers about system-reserved resources.
 
 `CCIAddContainerResource` function is called before container start with a given
 Pod name and container name, cgroup of Pod and the container id. The driver than
-performs an allocation of the admitted resource-set. The cpuset gets allocted via the runtime. In case of failure of the driver and error is returned.
+performs an allocation of the admitted resource-set. The cpuset gets allocated via the runtime. In case of failure of the driver and error is returned.
 
 `CCIRemoveContainerResource` function is called to free the cpu resources taken
 by a container and the underlying claim. The functions returns nil if the operation was successful or an
@@ -485,7 +486,7 @@ CCI Drivers GRPC Protocol:
 
     /*
     CCIDriver is a grpc service interface for CCI resource kubelet drivers.
-    The interface provides admission, allocation and cleanup entrypoints.
+    The interface provides admission, allocation and cleanup entry points.
     Drivers are registered  as kubelet plugins and will be called by the
     CCI Resource Manager for pods which are associated with this driver.
     */
@@ -511,10 +512,10 @@ CCI Drivers GRPC Protocol:
         // This field is REQUIRED.
         string claim_name = 3;
         // currently available cpus
-        string availablecpus = 4;
-        // pod identfier
+        string availableCpus = 4;
+        // pod identifier
         string pod = 5;
-        // container identfier
+        // container identifier
         string container = 6;
         // cci Resource handle
         string resource_handle = 7;
@@ -523,13 +524,13 @@ CCI Drivers GRPC Protocol:
     message ResourceSet{
         // admitted cpuset
         string cpuset = 1;
-        // flag if exclisve
+        // flag if exclusive
         bool exclusive = 2;
     }
 
     message AdmitResponse {
       // allocated resource set
-      ResourceSet rset = 1;
+      ResourceSet rSet = 1;
       // error object
       string err = 2;
     }
@@ -571,12 +572,17 @@ CCI Drivers GRPC Protocol:
         string err = 1;
     }
 
-5.	CCI Drivers Factory API<br>
+5. Scheduling<br>
+In the alpha version of the CCI Resource Manager, scheduling decisions will be taken by DRA Controllers based
+on claim specification. To ensure the correct scheduling of both kind of pods:
+pods without claim (scheduled by k8s scheduler) and claim-based pods, all pods have to provide resource request and limit fields. <br><br> &emsp;As the kubernetes scheduler works as a stateless component, for alpha version the cores/memory requests provided in the CCI configuration as part of the resource claim have to match pod resource requests and limits provided in pod spec. Further CCI-awareness and requests validation can be provided by the DRA controller implementation. Post-alpha we will consider adding an extension to the scheduler which can propagate further information from CCI spec down to the scheduler.
+
+6. CCI Drivers Factory API<br>
 The KEP includes a new staged API which enabled the CCI driver creation. The
 API can be used by a driver implementor to start a driver and automatically
 register it against Kubelet's CCI Resource Manager.
 
-6.	CCI Drivers Registration<br>
+7.	CCI Drivers Registration<br>
 The CCI driver registration can be handled by the kubelet plugin framework.
 This approach is already used with device plugins and DRA plugins. The approach
 will be sufficient the cover drivers registration, status and health-check functionality. The framework also provides a versioning mechanism for plugins (similar to DRA approach).
@@ -590,7 +596,7 @@ Figure 2: Sequence of container allocation which uses CCI driver<br><br>
 
 The lifetime events are triggered by the container manager and internal lifecycle manager in
 exact order for admitting, adding, and removing containers. As shown on Figure 2 an admit
-container is invoked for containers inside pods requiring a resource drivere.
+container is invoked for containers inside pods requiring a resource driver.
 On success, the resource set result is added to the CCI
 store. If the operation fails an error will be reported back to the user (in alpha we will go back to best-effort QoS).
 All blocking rpc calls are configured in alpha with a reasonable timeout. After getting an actual container id, the internal
@@ -610,12 +616,12 @@ a reasonable timeout in alpha.
 ##### Post-Alpha & GA Architectural Considerations
 
 After the initial alpha implementation we will consider the integration of the
-Container Compute Interface “CCI” with exisiting CPU and Memory manager stack
+Container Compute Interface “CCI” with existing CPU and Memory manager stack
 This can be achieved either by using already existing managers and introducing state
 synchronization or through a common code base which can be invoked
 from within the CCI Resource Manager.
 
-A possible integation with topology manager could follow by implementing the topology hints
+A possible integration with topology manager could follow by implementing the topology hints
 interface for the CCI Resource Manager which will use data extracted from CCI Store. This will
 require such data to be provided by CCI Drivers and the CCI store has to be extended to
 be able to handle it correctly for serving the corresponding topology hints calls.
@@ -631,14 +637,14 @@ to implement this enhancement.
 ###### Alpha
 
 * CCI Resource Manager (CPU, Feature Gate): target code cvg >=80%
-* CCI Store (CPU, persistancy): target code cvg >=80%
+* CCI Store (CPU, persistency): target code cvg >=80%
 * CCI Drivers Factory API: target code cvg >=80%
 * Scheduling on nodes running CCI (policy based) cvg >=80%
 
 ###### BETA
 
 * CCI Pod Association tests: target code cvg >=80%
-* CCI Resource Manager (CPU + Memory, persistancy, Feature Gate): target code cvg >=80%
+* CCI Resource Manager (CPU + Memory, persistency, Feature Gate): target code cvg >=80%
 * CCI Store (CPU + Memory): target code cvg >=80%
 * Scheduling on nodes running CCI (policy based and attribute-based) with and without drivers cvg >=80%
 * Pod Admission Race tests
@@ -667,7 +673,7 @@ to implement this enhancement.
 
 ###### BETA
 * End-to-End tests to cover all cci resource allocation use-cases
-* End-to-End tests to cover CCI Driver associtation mechanism
+* End-to-End tests to cover CCI Driver association mechanism
 * End-to_End tests with device plugins and DRA
 * End-to_End Scheduling on nodes running CCI (policy based and attribute-based) with and without drivers cvg >=80%
 * Performance and resource utilization tests
@@ -735,7 +741,7 @@ enhancement:
 #### Alpha
 Before having a driver in the system, or if one is not available, we default to
 best effort QoS for incoming pods. This will ensure that we can start
-the cluser initial pods such as cni-pods, dns-pods and CCI Driver pod.
+the cluster initial pods such as cni-pods, dns-pods and CCI Driver pod.
 
 A newly installed CCI Driver becomes responsible to handle incoming pods.  It is
 responsible for reading the state from the kubelet on startup.
@@ -872,8 +878,8 @@ Further performance benchmarks will be done in Beta Phase.
 ###### Will enabling / using this feature result in any new API calls?
 
 In alpha phase: no
-In post-alpha pahase:
-For Pods requiring CCI Driver the admission, container add and container removal operations will be handled via 
+In post-alpha phase:
+For Pods requiring CCI Driver the admission, container add and container removal operations will be handled via
 api call to external CCI Driver. Remaining pods should be handled as before (post alpha phase).
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -907,18 +913,18 @@ provide allocation for this pod without and driver invocations, which will allow
 
 ![image](CCITroubleshooting.jpg)<br>
 
-Figure 4: Troubleshooting Flows: Handling of pods requiring CCI driver and standard pods wihtout CCI Driver requirements in the case of unhealthy driver.<br><br>
+Figure 4: Troubleshooting Flows: Handling of pods requiring CCI driver and standard pods without CCI Driver requirements in the case of unhealthy driver.<br><br>
 
 After alpha phase if a CCI Driver fails, Pods associated with a driver which were about to be allocated will fail.
-To illustrate this lets consider some of the flows described on Figure 4. We distriguish
-between pods handled by CCI drivers(group 1 pods) and standard Pods(group 2 pods). Until the CCI driver is not started the pod admission of group 1 pods will fail with an admission error due to driver unavailabilty. Group 2 pods are not impaceted by and they
+To illustrate this lets consider some of the flows described on Figure 4. We distinguish
+between pods handled by CCI drivers(group 1 pods) and standard Pods(group 2 pods). Until the CCI driver is not started the pod admission of group 1 pods will fail with an admission error due to driver unavailability. Group 2 pods are not impacted by and they
 can be deployed on the cluster. After the CCI Driver comes online  the admission of
 group 1 pods can continue. The admission transactions of group 1 and 2 are mutually exclusive. In later time the driver becomes unhealthy and the admission of second pod
 from group 1 will fail.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Feature lives completly in kubelet and will not be impacted directly.
+Feature lives completely in kubelet and will not be impacted directly.
 
 ###### What are other known failure modes?
 
@@ -953,26 +959,26 @@ TBD in Beta.
   odd changes particular for particular chipsets.  Rather, we should choose to reduce
   complexity within the Kubelet over time.
 
-  One example how current managers could be lavareged for that can be seen in the [CPU Pooler](https://github.com/nokia/CPU-Pooler)
+  One example how current managers could be leveraged for that can be seen in the [CPU Pooler](https://github.com/nokia/CPU-Pooler)
   project where a device plugin is used to handle cpu and memory management. In contrast
   to this work our CCI approach concentrates on CPU and memory and will not require to do initial reservation of system resources to handle user applications.
-  The realisation of CCI is clearly separated from other components and will enable a functional and seamless integration with other device plugins and DRA plugins.
+  The realization of CCI is clearly separated from other components and will enable a functional and seamless integration with other device plugins and DRA plugins.
   In later phase of CCI development will consider handling cpu and memory resources also for pods
   not requiring drivers to run, by leveraging existing code base (post-alpha goal -
   it can also include refactoring of existing code base). Further, CCI approach will cover required interfaces
   to identify available cpu and memory resource so that correct scheduling can be performed.
 
 ### Alternatives for API Handling
-There different alternative methodologies how to enabled further configuration capbilities for the user in kubernetes,
+There different alternative methodologies how to enabled further configuration capabilities for the user in kubernetes,
 each with some pro and cons.
 
 One option here could be to suggest a change or extension of the pod spec interface to define cpu and
 memory resources. This option has the drawback that it will need to touch the pod specification mechanisms and the
-change might have impact to different groups using kubernetes. In this KEP we would like to follow less distruptive approaches.
+change might have impact to different groups using kubernetes. In this KEP we would like to follow less disruptive approaches.
 
-An alternative which does not requeire pod spec changes is to define a resource allocation configuration for Kubernetes
+An alternative which does not require pod spec changes is to define a resource allocation configuration for Kubernetes
 Pods through policy mechanism as annotation. The CCI Driver will process the policy for each pod/container.
-The policy mechanism can't offer the same level of granularity as the attributed-based configuration methodlogy.
+The policy mechanism can't offer the same level of granularity as the attributed-based configuration methodology.
 
 Example with 4 containers in the pod:
 
@@ -1041,7 +1047,7 @@ Pros:
 Cons:
   * Better suited for specialized use-cases
   * No attribute awareness in the scheduler (could be addressed through DRA driver-subject of post alpha)
-  * Attributes are CCI driver specific (consider standartization within sig-node)
+  * Attributes are CCI driver specific (consider standardization within sig-node)
 
 
 ## Infrastructure Needed
