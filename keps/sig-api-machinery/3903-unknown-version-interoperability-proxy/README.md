@@ -177,10 +177,9 @@ incorrectly or objects being garbage collected mistakenly.
 
 * Ensure discovery reports the same set of resources everywhere (not just group
   versions, as it does today)
-* Proxy client traffic to an apiserver that can service the request
-* If traffic can't be proxied (e.g. if no network connection between
-  apiservers), return a 503 and not a 404 so clients can make the right
-  decision.
+* Ensure that every resource in discovery can be accessed successfully
+* In the failure case (e.g. network not routable between apiservers), ensure
+  that unreachable resources are served 503 and not 404.
 
 ### Non-Goals
 
@@ -212,6 +211,17 @@ API server change:
     we will use the storage version objects to reconstruct a merged discovery
     document and serve that in all apiservers.
 
+Why so much work?
+* Note that merely serving 503s at the right times does not solve the problem,
+  for two reasons: controllers might get an incomplete discovery and therefore
+  not ask about all the correct resources; and when they get 503 responses,
+  although the controller can avoid doing something destructive, it also can't
+  make progress and is stuck for the duration of the upgrade.
+* Likewise proxying but not merging the discovery document, or merging the
+  discovery document but serving 503s instead of proxying, doesn't fix the
+  problem completely. We need both safety against destructive actions and the
+  ability for controllers to proceed and not block.
+
 ### User Stories (Optional)
 
 #### Garbage Collector
@@ -222,8 +232,9 @@ described above, could result in GC seeing a 404 and assuming an object has been
 deleted; this could result in it deleting a subsequent object that it should
 not.
 
-This proposal will cause the GC to see either the correct object or get a 503
-(which it handles safely).
+This proposal will cause the GC to see the complete list of resources in
+discovery, and when it requests specific objects, see either the correct object
+or get a 503 (which it handles safely).
 
 #### Namespace Lifecycle Controller
 
