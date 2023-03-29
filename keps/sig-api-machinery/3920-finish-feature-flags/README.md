@@ -165,17 +165,23 @@ A list of problems:
 * It is difficult to know if a feature has been turned on for every relevant
   binary. Yes, there are metrics, but you have to know which binaries are
   relevant for what features and your particular cluster's metrics collection
-  system.
+  system. This problem is especially insidious when there are multiple
+  apiservers in the cluster and they are not configured the same way.
 * It is especially difficult to know if use of a feature at some point makes
   cluster upgrade unsafe now; for example, an alpha object being written while
   the feature was briefly on which is incompatable with the default-on beta.
 * It is not easy to test the feature on -> use -> feature off lifecycle.
+* It is not possible to know if a workload with a feature dependency will
+  successfully run on a given cluster.
 
 ### Goals
 
 Primary goals:
 * Minimize codebase churn, existing feature authors do little-to-no work
-* Expose the feature states in use in the cluster
+* Expose the in-use feature states in use in the cluster, and make it easy to
+  read them
+* Make it easy for admins to know when all binaries in the cluster agree about
+  feature states.
 * Make it possible to get the cluster back into the "off" state
 * Expose the "off but dangling references / uses" state
 * Make it easy to add enablement and disablement code
@@ -349,14 +355,16 @@ features like this would benefit from being dynamically settable, so cluster
 admins without access to apiserver's command line could turn it on. (Secondary
 goals)
 
-#### Story: Feature which takes additional config on command line
+#### Story: NodeSwap
 
-TODO: find actual example
+NodeSwap is a Kubelet feature. If it is enabled, then the command line flag
+`--failSwapOn` must be `false` (or kubelet will fail to start).
 
-Feature X requires or permits additional command line flags. If these flags are
-present when the feature isn't on, the binary fails to start. Therefore Feature
-X and others like it are not good candidates for reading their desired state
-live from the API, as this could cause the binary to be unable to start.
+Generally, this case is when some Feature X has some requirement for other
+command line flags. If these flags don't correspond to the feature state, the
+binary fails to start. Such features are not good candidates for reading their
+desired state live from the API, as this could cause the binary to be unable to
+start.
 
 #### Story: New Volume Source type
 
@@ -366,6 +374,38 @@ in the TurningOff state until all such volumes have been removed -- but we don't
 do the removal, as that might be destructive. A cluster admin has to do the
 removal(s) if they wish to complete the feature state transition.
 
+#### Story: Misconfiguration (apiservers don't agree)
+
+Now we turn to more general stories.
+
+In this case, imagine the three apiservers in a cluster have different settings
+for a particular feature. Today, this means API requests will be treated
+differently depending on which apiserver they arrive at -- this will cause
+surprising and hard to debug occasional failures for clients.
+
+When this KEP is implemented, instead it will work like this:
+
+* Some apiserver will be leader, and it will put its configured state in the API
+  object as the desired state (server flow).
+* All apiservers will put their configured state as a use in the API (client
+  flow).
+* Since apiservers don't all agree, there will be uses of the "wrong" state and
+  the feature will be stuck in some transitional state, either TurningOn or
+  TurningOff.
+* Admins can notice the incorrect uses from apiserver and correct the command
+  line(s).
+
+And for features marked as safe to be set centrally, then whichever apiserver is
+the leader will determine the setting for the whole cluster.
+
+Misconfiguration as described here is currently possible for all components of
+the cluster; we describe apiserver in detail because it is the most confusing
+(it runs both server and client flows).
+
+#### Story: ?
+
+TODO: please leave comments on this KEP if I have failed to include some
+important or confusing story.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -971,3 +1011,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+
