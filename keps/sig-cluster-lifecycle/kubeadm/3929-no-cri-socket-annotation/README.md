@@ -128,9 +128,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -202,6 +202,16 @@ cri socket in kubelet configuration.
 
 ## Design Details
 
+We should introduce a `/var/lib/kubelet/kubeadm-config.yaml` to maintain node specific configuration.
+It is similar to `/var/lib/kubelet/kubeadm-flags.env`.
+
+```text
+KUBELET_KUBEADM_ARGS="--container-runtime-endpoint=unix:///var/run/containerd/containerd.sock --pod-infra-container-image=k8s.m.daocloud.io/pause:3.9"
+```
+
+[To be discussed] Another proposal is using a strategy like `--patch`. A file like `/var/lib/kubelet/kubeadm-config.patch`
+or a `kubelet.yaml`/`config.ayml` file under `/var/lib/kubelet/patch/`. (This should be removed if we make a decision).
+
 ### init: upload a global kubelet configuration with cri socket
 
 - `kubeadm init` will not add the annotation to node.
@@ -239,9 +249,14 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
+
+Install/Join/Upgrade test in <https://testgrid.k8s.io/sig-cluster-lifecycle-kubeadm>
+
+- upgrade v1.(n-1) to v1.n.
+- upgrade v1.n to v1.n.
 
 ##### Prerequisite testing updates
 
@@ -301,49 +316,20 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
+- The upgrade will still respect the CRI annotation
 - Initial e2e tests completed and enabled
 
 #### Beta
 
+- Use the local kubelet configuration or global configuration, ignore the CRI annotation
 - Gather feedback from developers and surveys
-- Complete features A, B, C
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Remove the CRI annotation during upgrade(this may be not urgent or have to)
 - Allowing time for feedback
 
 **Note:** Generally we also wait at least two releases between beta and
@@ -357,25 +343,9 @@ in back-to-back releases.
 
 #### Deprecation
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+See above.
 
 ### Version Skew Strategy
 
@@ -435,14 +405,14 @@ well as the [existing list] of feature gates.
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+  - Feature gate name: No
   - Components depending on the feature gate:
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? No.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node? No.
 
 ###### Does enabling the feature change any default behavior?
 
