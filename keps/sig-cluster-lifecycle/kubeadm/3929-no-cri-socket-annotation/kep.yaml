@@ -1,0 +1,16 @@
+title: "Remove CRI Socket Annotation from Node Object"
+kep-number: 3929
+authors:
+  - "@pacoxu"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+status: provisional
+creation-date: 2023-03-30
+last-updated: 2022-03-30
+reviewers:
+  - "@neolit123"
+approvers:
+  - "@neolit123"
+latest-milestone: "0.0"
+stage: "alpha"
