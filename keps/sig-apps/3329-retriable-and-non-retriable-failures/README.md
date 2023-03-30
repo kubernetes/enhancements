@@ -87,6 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Job-level vs. pod-level spec](#job-level-vs-pod-level-spec)
     - [Relationship with Pod.spec.restartPolicy](#relationship-with-podspecrestartpolicy)
@@ -108,6 +109,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Resource limits exceeded](#resource-limits-exceeded)
     - [JobSpec API alternatives](#jobspec-api-alternatives)
     - [Failing delete after a condition is added](#failing-delete-after-a-condition-is-added)
+    - [Waiting for pods to be marked as Failed](#waiting-for-pods-to-be-marked-as-failed)
     - [Marking pods as Failed](#marking-pods-as-failed)
       - [Review of example steps for the 3rd scenario](#review-of-example-steps-for-the-3rd-scenario)
       - [Proposed solution for the 3rd scenario](#proposed-solution-for-the-3rd-scenario)
@@ -483,6 +485,27 @@ Here we count all disruptions in the counter towards `.spec.backoffLimit`. All
 Pod failures caused by exceeding the configured limits or with non-zero exit code
 are categorized as user errors and result in termination of the entire job.
 
+#### Story 4
+
+As a machine learning user, ML frameworks allow scheduling of multiple pods.  
+The Job controller does not typically wait for terminating pods to be marked as failed.  Tensorflow and other ML frameworks may have a requirement that they only want Pods to be started once the other pods are fully terminated.  The following yaml can fit these needs:
+
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  template:
+    spec:
+      containers:
+      - name: main-job-container
+        image: job-image
+        command: ["./program"]
+  backoffLimit: 3
+  podFailurePolicy:
+    delayPodRecreationUntilTerminal: true
+```
+
+This case was added due to a bug discovered with running IndexedJobs with Tensorflow.  See [Jobs create replacement Pods as soon as a Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844) for more details.
 ### Notes/Constraints/Caveats (Optional)
 
 #### Job-level vs. pod-level spec
@@ -878,6 +901,12 @@ As a solution we implement a worker, part of the disruption
 controller, which clears the pod condition added if `DeletionTimestamp` is
 not added to the pod for a long enough time (for example 2 minutes).
 
+#### Waiting for pods to be marked as Failed
+
+We discovered that the Job controller will start new pods as soon as they are marked for deletion. [Jobs create replace pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)).
+
+This is being treated as a bug but we have to enhance the API to allow this.  We are adding `DelayPodRecreationUntilTerminal` to the PodFailurePolicy spec.
+
 #### Marking pods as Failed
 
 When matching a failed pod against Job pod failure policy it is important that
@@ -1188,6 +1217,8 @@ feature documentation to explain this change. In particular, we are going to
 provide a list of example scenarios impacted by this change, including:
 invalid image reference, invalid config map reference.
 
+For the third iteration of Beta (1.28), we plan to fix a bug where the job controller does not wait for the terminating pods to be fully terminated (see Issue: [Jobs create replace pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)) and the section: [Waiting for pods to be marked as Failed](#waiting-for-pods-to-be-marked-as-failed)
+
 One release after the `PodDisruptionCondition` feature gate graduates to GA
 we plan to simplify Job controller to consider as failed (and count as such)
 pods which are in terminal phase regardless of the fact if the `podFailurePolicy`
@@ -1442,6 +1473,10 @@ type PodFailurePolicy struct {
 	// the backoffLimit. At most 20 elements are allowed.
 	// +listType=atomic
 	Rules []PodFailurePolicyRule
+	// Only allow pods to be started once the terminating pods have a terminal state
+  // (Succeeded, Failed).
+	// +optional
+	DelayPodRecreationUntilTerminal *bool
 }
 
 // JobSpec describes how the job execution will look like.
