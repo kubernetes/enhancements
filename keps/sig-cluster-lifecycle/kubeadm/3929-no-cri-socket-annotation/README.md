@@ -176,9 +176,9 @@ cri socket in kubelet configuration.
 ### Goals
 
 - Remove the use of CRI socket annotation on Node object
-- For node customized kubelet configuration, it can be saved locally on disk with file path
-  `/var/lib/kubelet/kubeadm-config.yaml` and we will prioritize respecting the local
-  setting over the global one.
+- We will prioritize respecting the local setting over the global one.
+- [Not decided yet] For further node customized kubelet configuration, it can be saved locally
+  on disk with file path `/var/lib/kubelet/kubeadm-config.yaml`. (If not used, I will move it to Non-Goals)
 
 ### Non-Goals
 
@@ -202,16 +202,6 @@ cri socket in kubelet configuration.
 
 ## Design Details
 
-We should introduce a `/var/lib/kubelet/kubeadm-config.yaml` to maintain node specific configuration.
-It is similar to `/var/lib/kubelet/kubeadm-flags.env`.
-
-```text
-KUBELET_KUBEADM_ARGS="--container-runtime-endpoint=unix:///var/run/containerd/containerd.sock --pod-infra-container-image=k8s.m.daocloud.io/pause:3.9"
-```
-
-[To be discussed] Another proposal is using a strategy like `--patch`. A file like `/var/lib/kubelet/kubeadm-config.patch`
-or a `kubelet.yaml`/`config.ayml` file under `/var/lib/kubelet/patch/`. (This should be removed if we make a decision).
-
 ### init: upload a global kubelet configuration with cri socket
 
 - `kubeadm init` will not add the annotation to node.
@@ -229,11 +219,35 @@ or a `kubelet.yaml`/`config.ayml` file under `/var/lib/kubelet/patch/`. (This sh
 
 - `kubeadm upgrade` will download the kubelet configuration from apiserver and respect local one.
 
+### Proposal 1: respect a list of configuration in local kubelet configuration, and in v1.27, CRI socket is the only one
+
+During `kubeadm ugprade`, kubeadm will read the local kubelet configuration in `/var/lib/kubelet/config.yaml`.
+kubeadm also download the kubelet configuration from configmap and replace the `containerRuntimeEndpoint` and
+`imageServiceEndpoint`(This maybe empty and I prefer to respect it as well) with the local configuration.
+
+A node-specific kubelet configuration list should be maintained in kubeadm code.
+
+- containerRuntimeEndpoint
+- imageServiceEndpoint
+
+### Proposal 2: introduce a `/var/lib/kubelet/kubeadm-config.yaml` to maintain node specific configuration
+
+We should introduce a `/var/lib/kubelet/kubeadm-config.yaml` to maintain node specific configuration.
+It is similar to `/var/lib/kubelet/kubeadm-flags.env`.
+
+```text
+KUBELET_KUBEADM_ARGS="--container-runtime-endpoint=unix:///var/run/containerd/containerd.sock --pod-infra-container-image=k8s.m.daocloud.io/pause:3.9"
+```
+
+[To be discussed] Another proposal is using a strategy like `--patch`. A file like `/var/lib/kubelet/kubeadm-config.patch`
+or a `kubelet.yaml`/`config.ayml` file under `/var/lib/kubelet/patch/`. (This should be removed if we make a decision).
+
 ### old version handling
 
 For old version cluster upgradation with the annotation, we will not touch the annotation at first.
 
-1. in v1.28, `kubeadm upgrade` will respect the annotation and save it to `/var/lib/kubelet/kubeadm-config.yaml`.
+1. in v1.28, `kubeadm upgrade` will respect the annotation and save it to local kubelet configuration or node
+   specific configuration `/var/lib/kubelet/kubeadm-config.yaml`. [TODO update according to the final decision]
 2. in v1.29, `kubeadm upgrade` will ignore the annotation.
 
 ### Test Plan
