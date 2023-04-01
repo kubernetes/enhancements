@@ -142,9 +142,8 @@ indicates if tracking is enabled in the cluster. It is similar to the existing
 
   - the controller creates/updates a configmap in `kube-system` namespace that
     stores the current date as `tracked-since`.
-  - when a legacy token is used, issue a warning, annotate/update the
-    `last-used` on the secret at date granularity, and record in a metric.
-    optionally, add a label `in-use` for fast query.
+  - when a legacy token is used, issue a warning, update the label `last-used`
+    on the secret at date granularity, and record in a metric.
 
 - When LegacyServiceAccountTokenTracking is disabled in any apiserver,
   - the controller ensures the configmap in `kube-system` namespace is deleted
@@ -199,7 +198,7 @@ None
 
 | Alpha | Beta | GA   |
 | ----- | ---- | ---- |
-| -     | 1.24 | 1.25 |
+| -     | 1.24 | 1.26 |
 
 Since in 1.24, all pods should be admitted in 1.22+ and they should be using
 bound tokens. One release ahead to enable this features would help to reduce
@@ -207,16 +206,16 @@ legacy tokens for security practices.
 
 #### Beta -> GA Graduation
 
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
-- [ ] Tests passing
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
 
 #### Alpha -> Beta Graduation
 
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
-- [ ] Tests passing
-- [ ] Document and communicate the available actions that consumers of
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
+- [x] Document and communicate the available actions that consumers of
       auto-generated secret-based tokens should take. (migrate to either use
       tokenrequest or explicitly request secret-based tokens)
 
@@ -224,7 +223,7 @@ legacy tokens for security practices.
 
 | Alpha | Beta | GA   |
 | ----- | ---- | ---- |
-| 1.24  | 1.25 | 1.26 |
+| 1.26  | 1.27 | 1.28 |
 
 #### Beta -> GA Graduation
 
@@ -235,16 +234,15 @@ legacy tokens for security practices.
 
 #### Alpha -> Beta Graduation
 
-- [ ] In use by multiple distributions
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
-- [ ] Tests passing
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
 
 #### LegacyServiceAccountTokenCleanUp
 
 | Alpha | Beta | GA   |
 | ----- | ---- | ---- |
-| 1.24  | 1.25 | 1.26 |
+| 1.27  | 1.28 | 1.29 |
 
 #### Beta -> GA Graduation
 
@@ -255,7 +253,6 @@ legacy tokens for security practices.
 
 #### Alpha -> Beta Graduation
 
-- [ ] In use by multiple distributions
 - [ ] Approved by PRR and scalability
 - [ ] Any known bugs fixed
 - [ ] Tests passing
@@ -286,7 +283,7 @@ The only touches control plane, so version skew strategy is not applicable.
 ###### Does enabling the feature change any default behavior?
 
 - LegacyServiceAccountTokenNoAutoGeneration: no legacy tokens are auto-generated.
-- LegacyServiceAccountTokenTracking: legacy tokens would have new annotation and a configmap would be created in kube-system.
+- LegacyServiceAccountTokenTracking: legacy tokens would have new label and a configmap would be created in kube-system.
 - LegacyServiceAccountTokenCleanUp: unused auto-generated legacy tokens will be removed.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -299,7 +296,7 @@ yes for all feature gates.
   before the reenablement, Token Controller would create tokens for
   serviceaccounts while the feature was off.
 - LegacyServiceAccountTokenTracking: during this sequence of operations,
-  only the annotation `last-used` is persisted, but there is no impact on the
+  only the label `last-used` is persisted, but there is no impact on the
   functionality of this feature.
 - LegacyServiceAccountTokenCleanUp: the same as enable the feature.
 

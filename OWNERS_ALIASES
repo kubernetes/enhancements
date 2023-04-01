@@ -38,6 +38,7 @@ aliases:
     - cblecker
     - mrbobbytables
     - nikhita
+    - jberkus
   sig-docs-leads:
     - divya-mohan0209
     - jimangel
@@ -58,8 +59,8 @@ aliases:
     - jeremyot
     - pmorie
   sig-network-leads:
-    - caseydavenport
     - dcbw
+    - shaneutt
     - thockin
   sig-node-leads:
     - dchen1107
@@ -89,7 +90,10 @@ aliases:
   sig-testing-leads:
     - BenTheElder
     - alvaroaleman
+    - aojea
     - cjwagner
+    - michelle192837
+    - pohly
     - spiffxp
     - stevekuznetsov
   sig-ui-leads:
@@ -101,6 +105,7 @@ aliases:
     - morengab
     - tashimi
   sig-windows-leads:
+    - aravindhp
     - claudiubelu
     - jayunit100
     - jsturtevant
@@ -138,26 +143,26 @@ aliases:
     - mylesagray
     - phenixblue
   committee-code-of-conduct:
-    - celestehorgan
-    - karenhchu
-    - palnabarun
-    - tpepper
-    - vllry
+    - detiber
+    - endocrimes
+    - hlipsig
+    - jeremyrickard
+    - salaxander
   committee-security-response:
     - cjcullen
+    - enj
     - joelsmith
     - lukehinds
     - micahhausler
-    - swamymsft
     - tabbysable
     - tallclair
   committee-steering:
+    - BenTheElder
     - cblecker
-    - dims
+    - cpanato
     - justaugustus
-    - liggitt
     - mrbobbytables
-    - parispittman
+    - palnabarun
     - tpepper
 ## BEGIN CUSTOM CONTENT
   enhancements-approvers:

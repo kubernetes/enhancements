@@ -23,8 +23,13 @@
     - [KubeConfig addition](#kubeconfig-addition)
     - [CRI Changes](#cri-changes)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Alpha2](#alpha2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -392,6 +397,79 @@ message LinuxContainerResources {
 
 ### Test Plan
 
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+All existing tests needs to pass with and without swap enabled.
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+This KEP introduces minor additions of memory swap controlling configuration parameters.
+
+- Kubelet configuration parameters are tested in the package `k8s.io/kubernetes/pkg/kubelet/apis/config/validation`
+- Passing parameters to runtime is tested in `k8s.io/kubernetes/pkg/kubelet/kuberuntime`
+
+Both packages has near 100% coverage and new functionality was covered.
+
+In alpha2, tests will be extended in these packages to support kube-reserved swap settings.
+
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+No new tests added for Alpha and Alpha2 releases.
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
 For alpha:
 
 - Swap scenarios are enabled in test-infra for at least two Linux
@@ -401,14 +479,25 @@ For alpha:
   and further development efforts.
   - Focus should be on supported user stories as listed above.
 
-For beta:
+Test grid tabs enabled:
+- [kubelet-gce-e2e-swap-ubuntu](https://testgrid.k8s.io/sig-node-kubelet#kubelet-gce-e2e-swap-ubuntu): Green
+- [kubelet-gce-e2e-swap-ubuntu-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-gce-e2e-swap-ubuntu-serial): Green
+- [kubelet-gce-e2e-swap-fedora](https://testgrid.k8s.io/sig-node-kubelet#kubelet-gce-e2e-swap-fedora): Degraded
+- [kubelet-gce-e2e-swap-fedora-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-gce-e2e-swap-fedora-serial): Degraded
+
+No new e2e tests introduced.
+
+For alpha2 [Current stage]:
 
 - Add e2e tests that exercise all available swap configurations via the CRI.
+- Verify MemoryPressure behavior with swap enabled and document any changes
+  for configuring eviction.
+- Verify new system-reserved settings for swap memory.
+
+For beta [Future]:
+
 - Add e2e tests that verify pod-level control of swap utilization.
 - Add e2e tests that verify swap performance with pods using a tmpfs.
-- Verify new system-reserved settings for swap memory.
-- Verify MemoryPressure behaviour with swap enabled and document any changes
-  for configuring eviction.
 
 ### Graduation Criteria
 
@@ -420,21 +509,45 @@ For beta:
   default, workloads will not be allocated any swap.
 - e2e test jobs are configured for Linux systems with swap enabled.
 
-#### Beta
+#### Alpha2
 
-- Add support for controlling swap consumption at the pod level [via cgroups].
-  - Handle usage of swap during container restart boundaries for writes to tmpfs
-    (which may require pod cgroup change beyond what container runtime will do at
-    container cgroup boundary).
+In alpha2 the focus will be on making sure that the feature can be used on
+subset of production scenarios to collect more feedback before entering beta.
+Specifically, security and test coverage will be increased. As well as the new
+setting that will split swap between kubelet and workload will be introduced.
+
+Once functionality part is resolved while in alpha, beta will be more about
+performance and feedback on wider range of scenarios.
+
+This will allow to collect feedback from the following scenarios reasonably safe:
+
+- on cgroupv2: allow host system processes to use swap to increase
+  system reliability under memory pressure.
+- enable swap for the workload in "single large pod per node" scenarios.
+
+Here are specific improvements to be made:
+
+- Address swap impact on memory-backed volumes: https://github.com/kubernetes/kubernetes/issues/105978.
+- Investigate swap security when enabling on system processes on the node.
+- Improve coverage for appropriate scenarios in testgrid.
 - Add the ability to set a system-reserved quantity of swap from what kubelet
   detects on the host.
 - Consider introducing new configuration modes for swap, such as a node-wide
   swap limit for workloads.
+- Investigate eviction behavior with swap enabled.
+
+
+#### Beta
+
+- Add support for controlling swap consumption at the pod level [via cgroups].
+- Handle usage of swap during container restart boundaries for writes to tmpfs
+  (which may require pod cgroup change beyond what container runtime will do at
+  container cgroup boundary).
 - Add swap memory to the Kubelet stats api.
 - Determine a set of metrics for node QoS in order to evaluate the performance
   of nodes with and without swap enabled.
-  - Better understand relationship of swap with memory QoS in cgroup v2
-    (particularly `memory.high` usage).
+- Better understand relationship of swap with memory QoS in cgroup v2
+  (particularly `memory.high` usage).
 - Collect feedback from test user cases.
 - Improve coverage for appropriate scenarios in testgrid.
 
@@ -530,7 +643,7 @@ Pick one of these and delete the rest.
     restarted. Hence, there would be brief control component downtime on a
     given node.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
     Yes. See above; disabling would require brief node downtime.
 
 ###### Does enabling the feature change any default behavior?
@@ -871,6 +984,7 @@ nodes that do not use swap memory.
 - **2017-10-06:** Discussed in [#53533](https://github.com/kubernetes/kubernetes/issues/53533).
 - **2021-01-05:** Initial design discussion document for swap support and use cases.
 - **2021-04-05:** Alpha KEP drafted for initial node-level swap support and implementation (KEP-2400).
+- **2021-08-09:** New in Kubernetes v1.22: alpha support for using swap memory: https://kubernetes.io/blog/2021/08/09/run-nodes-with-swap-alpha/
 
 ## Drawbacks
 

@@ -15,6 +15,7 @@
   - [Current Services ClusterIPs allocation model](#current-services-clusterips-allocation-model)
   - [Proposed Services ClusterIPs allocation model](#proposed-services-clusterips-allocation-model)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -281,6 +282,17 @@ type randomScanReservedStrategy struct {
 This feature doesn't modify the cluster behavior, only the order on which dynamic IP are assigned to Services,
 there is no need for e2e or integration tests, unit tests are enough.
 
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Unit tests
+
+
+- pkg/registry/core/service/allocator/bitmap_test.go - 84.2
+- pkg/registry/core/service/ipallocator/allocator_test.go - 87
+
 ### Graduation Criteria
 
 #### Alpha
@@ -346,8 +358,8 @@ This only affects the creation of new Services without an IP specified, there is
 
 ###### What specific metrics should inform a rollback?
 
-The allocation logic already has the following metrics, that will be expanded with a new label containing information about the
-type of allocation requested (dynamic or static):
+The allocation logic already has the following metrics, [some metrics have been extended with a
+new label to contain information about the allocation scope requested](#monitoring-requirements):
 
   - allocated_ips
   - available_ips
@@ -358,11 +370,12 @@ The increase of the errors metrics or the trend of the allocated_ips and availab
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+Since it is a purely in-memory feature the upgrade or downgrande doesn't have any impact.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 ### Monitoring Requirements
 
-Following allocator metrics will be expanded with a new label to each metric containing information about the
+Following allocator metrics have been expanded with a new label to each metric containing information about the
 type of allocation requested (dynamic or static):
 
   - allocation_total
@@ -375,20 +388,7 @@ The other allocator the metrics can not use the additional label because, when a
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-A new metric will be added containing the information of the range configuration in the allocator.
-
-```go
-	allocatorInfo = metrics.NewGaugeVec(
-		&metrics.GaugeOpts{
-			Name:           "allocator_info",
-			Help:           "A metric with a constant '1' value labeled by Service CIDR, ",
-			StabilityLevel: metrics.ALPHA,
-		},
-		[]string{"cidr", "allocator_size", "dynamic_range_offset"},
-	)
-```
-
-The allocator using this feature will have a `dynamic_range_offset` value different than 0.
+An operator will only observe that the change in behavior described for dynamically assigned ClusterIP for Services.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -397,14 +397,14 @@ The allocator using this feature will have a `dynamic_range_offset` value differ
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
+- [X] Other (treat as last resort)
   - Details:
   - Create services without setting the ClusterIP and observe that all the services IPs allocated belong the upper band of the range,
     and once the upper band is exhausted it keep assigning IPs on the lower band until the whole range is exhausted.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-
+N/A
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 
@@ -417,37 +417,53 @@ The allocator using this feature will have a `dynamic_range_offset` value differ
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
+We could have a metric exposing the configuration parameters of the allocator, but that will collide
+and is incompatible with a new KEP that expand the Service allocators to make the dynamically configurable.
+
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
 
+No
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-
+No
 ###### Will enabling / using this feature result in introducing new API types?
 
+No
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
+No
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+No
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A
 ###### What are other known failure modes?
+
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
+
 ## Drawbacks
 
+- v1.24 - Initial implementation https://github.com/kubernetes/kubernetes/pull/106792
+- v1.25 - Beta
 ## Alternatives
 
 - Replace current allocation implementation based on bitmaps https://github.com/kubernetes/enhancements/pull/1881

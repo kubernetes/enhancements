@@ -1,0 +1,29 @@
+title: Move ReferenceGrant to sig-auth API Group
+kep-number: 3766
+authors:
+  - "@robscott"
+  - "@youngnick"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-network
+  - sig-storage
+status: provisional
+creation-date: 2023-01-20
+reviewers:
+  - "@enj"
+  - "@deads2k"
+  - "@liggitt"
+  - "@msau42"
+  - "@thockin"
+approvers:
+  - "@enj"
+  - "@liggitt"
+
+stage: alpha
+
+latest-milestone: "v1.27"
+
+milestone:
+  alpha: "v1.27"
+
+disable-supported: true

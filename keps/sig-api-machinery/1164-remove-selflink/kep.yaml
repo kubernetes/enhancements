@@ -11,8 +11,6 @@ reviewers:
 approvers:
   - "@lavalamp"
   - "@deads2k"
-prr-approvers:
-  - "@deads2k"
 creation-date: 2019-07-11
 last-updated: 2022-05-09
 status: implemented

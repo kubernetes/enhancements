@@ -16,12 +16,15 @@
   - [Maintaining Compatible Interworking between Old and New Clients](#maintaining-compatible-interworking-between-old-and-new-clients)
   - [Container Environment Variables](#container-environment-variables)
   - [Test Plan](#test-plan)
-    - [Expected behavior](#expected-behavior)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-    - [Removing a Deprecated Flag](#removing-a-deprecated-flag)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -46,7 +49,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -178,10 +181,26 @@ MY_HOST_IPS=
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+N/A
+
+##### Unit tests
+
+Every added code should have complete unit test coverage
+
+##### Integration tests
+
+N/A
+
+##### e2e tests
+
 Test whether FeatureGate behaves as expected when it is turned on or off
 Test whether Downward API supports `status.hostIPs`
-
-#### Expected behavior
 
 - If PodHostIPs FeatureGate is enabled:
   - `status.hostIPs` there will be all host IPs (IPv4 and IPv6)
@@ -198,18 +217,18 @@ Test whether Downward API supports `status.hostIPs`
   - Downward API support for `status.hostIPs`
 - Basic units and e2e tests completed and enabled
 
-#### Alpha -> Beta Graduation
+#### Beta
 
 - Gather feedback from developers and users
 - Expand the e2e tests with more scenarios
 - Tests are in Testgrid and linked in the KEP
 
-#### Beta -> GA Graduation
+#### GA
 
 - 2 examples of end users using this field
 - Allowing time for feedback
 
-#### Removing a Deprecated Flag
+#### Deprecation
 
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
@@ -238,7 +257,7 @@ N/A
   - Will enabling / disabling the feature require downtime of the control
     plane?
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -325,7 +344,7 @@ No
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Yes.
-  
+
 - API type(s): Pod
 - Estimated increase in size:
   - New field in Status about 8 bytes, additional bytes based on whether IPv4(about 4 bytes) or IPv6(about 16 bytes) exists

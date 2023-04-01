@@ -1,0 +1,30 @@
+name: 3325-self-subject-attributes-review-api
+title: Review attibutes of a current user
+kep-number: "3325"
+authors:
+- "@nabokihms"
+owning-sig: sig-auth
+participating-sigs:
+- sig-auth
+reviewers:
+- "@enj"
+- "@deads2k"
+- "@mikedanese"
+- "@liggitt"
+approvers:
+- "@deads2k"
+- "@liggitt"
+creation-date: "2022-05-30"
+status: implementable
+stage: beta
+latest-milestone: "v1.27"
+milestone:
+  alpha: "v1.26"
+  beta: "v1.27"
+  stable: "v1.28"
+feature-gates:
+- name: APISelfSubjectReview
+  components:
+  - kube-apiserver
+disable-supported: true
+metrics: []

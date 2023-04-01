@@ -15,8 +15,6 @@ reviewers:
 approvers:
   - "@thockin"
   - "@apelisse"
-prr-approvers:
-  - "@deads2k"
 see-also:
   - "https://groups.google.com/g/kubernetes-sig-architecture/c/UmPwm-J3ztE/m/QckZWJAABQAJ"
 replaces: []

@@ -1,0 +1,26 @@
+id: "3515"
+name: kubectl-explain-openapiv3
+title: Kubectl Explain OpenAPIv3
+kep-number: 3515
+authors: ['@alexzielenski']
+owning-sig: sig-cli
+participating-sigs: [sig-api-machinery, sig-cli]
+reviewers:
+  - "@KnVerey"
+  - "@seans3"
+  - "@apelisse"
+approvers:
+  - "@KnVerey"
+  - "@seans3"
+creation-date: "2022-09-14"
+last-updated: v1.27
+status: implementable
+stage: beta
+latest-milestone: "1.27"
+milestone:
+    alpha: "1.26"
+    beta: "1.27"
+    stable: "1.29"
+feature-gates: []
+disable-supported: true
+metrics: []

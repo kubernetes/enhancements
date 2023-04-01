@@ -1,0 +1,23 @@
+title: Graduate IPv6 to beta
+kep-number: 1138
+authors:
+  - "@aojea"
+owning-sig: sig-network
+participating-sigs:
+reviewers:
+  - "@bentheelder"
+  - "@andrewsykim"
+  - "@khenidak"
+approvers:
+  - "@lachie83"
+  - "@thockin"
+editor: TBD
+creation-date: 2019-07-14
+last-updated: 2019-07-27
+status: implementable
+see-also:
+replaces:
+superseded-by:
+
+latest-milestone: "0.0"
+stage: "beta"

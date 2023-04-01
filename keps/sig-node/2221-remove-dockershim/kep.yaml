@@ -5,7 +5,7 @@ authors:
   - "@dims"
 owning-sig: sig-node
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2020-09-14
 reviewers:
   - "@yujuhong"
@@ -16,8 +16,6 @@ reviewers:
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
-prr-approvers:
-  - johnbelamaric
 see-also:
 replaces:
 

@@ -453,7 +453,7 @@ you need any help or guidance.
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 * **Does enabling the feature change any default behavior?**
 
@@ -512,6 +512,16 @@ collector.
 
 Administrators and visualization tools are the primary target of these metrics and
 so polling and canvassing of Kube distributions is one source of feedback.
+
+* **How can someone using this feature know that it is working for their instance?**
+
+- [ ] Events
+  - Event Reason:
+- [ ] API .status
+  - Condition name:
+  - Other field:
+- [x] Other (treat as last resort)
+  - Details: By scraping the /metrics/resources endpoint of the scheduler and getting metrics about pods resource requests and limits.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
@@ -580,6 +590,10 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 Negligible CPU use is expected and some increase in network transmit when the scheduler
 is scraped.
+
+* **Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?**
+
+No.
 
 ### Troubleshooting
 

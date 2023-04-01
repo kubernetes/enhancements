@@ -15,8 +15,6 @@ reviewers:
 approvers:
   - "@tallclair"
   - "@lavalamp"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
   - "https://github.com/kubernetes/kubernetes/issues/97110"
 

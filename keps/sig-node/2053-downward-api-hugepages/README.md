@@ -10,6 +10,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -113,7 +117,24 @@ and or container cgroup.
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes
+necessary to implement this enhancement.
+
+##### Prerequisite testing updates
+
+No further additional tests needed to be added prior implementing this
+enhancement.
+
+##### Unit tests
+
 Unit and e2e testing will be added consistent with other resources in downward API.
+
+##### Integration tests
+
+There are no integration tests, only e2e tests.
+
+##### e2e tests
 
 e2e testing will only function if a node in the cluster exposes hugepages, otherwise,
 it will gracefully skip (as expected).
@@ -239,6 +260,11 @@ No
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
 No
 
+* **Can enabling / using this feature result in resource exhaustion of some node
+  resources (PIDs, sockets, inodes, etc.)?**
+
+No
+
 ### Troubleshooting
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
@@ -252,7 +278,9 @@ Not applicable
 
 ## Implementation History
 
-v1.20: Launch `Alpha` state
+- v1.27: Updated KEP to stable
+- v1.21: Updated KEP to beta
+- v1.20: Launch `Alpha` state
 
 ## Drawbacks
 

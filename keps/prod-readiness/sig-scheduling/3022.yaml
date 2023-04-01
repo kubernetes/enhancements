@@ -4,3 +4,5 @@
 kep-number: 3022
 alpha:
   approver: "@wojtek-t"
+beta:
+  approver: "@johnbelamaric"

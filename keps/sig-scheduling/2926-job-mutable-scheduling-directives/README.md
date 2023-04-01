@@ -89,6 +89,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Beta](#beta)
     - [GA](#ga)
@@ -162,8 +165,8 @@ specific partition (e.g., preemptibles) or a specific location (e.g., zone x).
 
 This is a proposal to relax update validation on jobs that have never been unsuspended to 
 allow mutating node scheduling directives, namely the pod template's node affinity, 
-node selector, tolerations, annotations and labels of the job's pod template. This enables 
-a higher-level queue controller to inject such directives before un-suspending a job to
+node selector, tolerations, schedulingGates, annotations and labels of the job's pod template. This 
+enables a higher-level queue controller to inject such directives before un-suspending a job to
 influence its placement.
 
 <!--
@@ -334,9 +337,22 @@ proposal will be implemented, this is the place to discuss them.
 ### Test Plan
 
 - Unit and integration tests veryfing that:
-  - pod template's node affinity, node selector, tolerations, annotations and labels not mutable for jobs that have been unsuspended before
-  - pod template's node affinity, node selector tolerations, annotations or labels not mutable for apps other than jobs
-  - job controller observes the update and creates pods with the new scheduling directives
+  - pod template's node affinity, node selector, tolerations, annotations and labels not mutable for jobs that have been unsuspended before.
+  - pod template's node affinity, node selector tolerations, annotations or labels not mutable for apps other than jobs.
+  - job controller observes the update and creates pods with the new scheduling directives.
+
+#### Unit tests
+
+- `k8s.io/kubernetes/pkg/registry/batch/job/`: `1/30/2023` - `76.8%`
+
+#### Integration tests
+
+Available under [Job integrations tests](https://github.com/kubernetes/kubernetes/blob/457341c3d408097025af5a9b6f5917439c0debdd/test/integration/job/job_test.go#L1397)
+
+#### e2e tests
+
+Integration tests offer enough coverage.
+
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -505,7 +521,7 @@ Pick one of these and delete the rest.
   - Will enabling / disabling the feature require downtime of the control
     plane?
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -534,7 +550,8 @@ kube-apiserver will accept node affinity/tolerations updates of jobs.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, unit and integration tests will be added prior to Beta graduation.
+Tests are in place. See [Job integrations tests](https://github.com/kubernetes/kubernetes/blob/457341c3d408097025af5a9b6f5917439c0debdd/test/integration/job/job_test.go#L1397).
+The tests do not directly test switching between enable/disable, that was tested manually (see below).
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -551,7 +568,8 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The change is opt-in, it doesn't impact already running workloads.
+The change is opt-in, it doesn't impact already running workloads. But problems with the 
+updated validation logic may cause crashes in the apiserver.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -565,7 +583,7 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+Crashes in the apiserver because of potential problems with the updated validation logic.
 
 <!--
 What signals should users be paying attention to when the feature is young
@@ -574,7 +592,16 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-It will be tested manually prior to beta launch.
+Tested manually. 
+1. Cluster on 1.22 was upgraded to 1.23
+2. Created a suspended job
+3. Mutated scheduling directives and checked that mutation was successful
+4. Started the job, verifying that the mutation took effect in practice as well
+5. Created a suspended job
+6. Downgraded the cluster back to 1.22
+7. Attempt to mutate the scheduling directives was rejected.
+
+Findings: the feature and the cluster are behaving as expected.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -820,7 +847,9 @@ N/A.
 ## Implementation History
 
 - 2021-09-01: Proposed KEP starting in beta status.
-- 2021-10-28: Updated the KEP to include annotations and labels of the pod template
+- 2021-10-28: Updated the KEP to include annotations and labels of the pod template.
+- 2023-01-03: Updated the KEP to include schedulingGates of the pod template and graduated the feature to stable.
+
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

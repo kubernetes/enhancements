@@ -1,0 +1,29 @@
+title: Freezing `k8s.gcr.io` image registry
+kep-number: 3720
+authors:
+  - "@upodroid"
+owning-sig: sig-release
+participating-sigs:
+  - sig-k8s-infra
+  - sig-release
+status: implementable
+creation-date: 2023-01-10
+reviewers:
+  - "@ameukam"
+  - "@cpanato"
+  - "@dims"
+  - "@jeremyrickard"
+  - "@justaugustus"
+  - "@saschagrunert"
+approvers:
+  - "@ameukam"
+  - "@cpanato"
+  - "@dims"
+  - "@jeremyrickard"
+  - "@justaugustus"
+  - "@saschagrunert"
+stage: stable
+latest-milestone: "v1.27"
+milestone:
+  stable: "v1.27"
+disable-supported: true

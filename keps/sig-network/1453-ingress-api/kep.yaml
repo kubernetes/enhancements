@@ -14,8 +14,6 @@ approvers:
   - "@caseydavenport"
   - "@ligitt"
   - "@thockin"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
 replaces:
   - "/keps/sig-network/20190125-ingress-api-group.md "

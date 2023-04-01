@@ -19,8 +19,6 @@ approvers:
   - "@janetkuo"
   - "@liggitt"
   - "@wojtek-t"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
 replaces:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/apps/cronjob.md"

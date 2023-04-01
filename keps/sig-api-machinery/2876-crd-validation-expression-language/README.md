@@ -44,6 +44,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -58,10 +59,9 @@
   - [Rego](#rego)
   - [Expr](#expr)
   - [WebAssembly](#webassembly)
-  - [Starlark (formeraly known as Skylark)](#starlark-formeraly-known-as-skylark)
+  - [Starlark (formerly known as Skylark)](#starlark-formerly-known-as-skylark)
   - [Build our own](#build-our-own)
   - [Make it easier to validate CRDs using webhooks](#make-it-easier-to-validate-crds-using-webhooks)
-  - [Starlark](#starlark)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -230,7 +230,7 @@ kind: CustomResourceDefinition
         spec:
           x-kubernetes-validations: 
             - rule: "self.minReplicas <= self.maxReplicas"
-              message: "minReplicas cannot be larger than maxReplicas"
+              messageExpression: "'minReplicas (%d) cannot be larger than maxReplicas (%d)'.format([self.minReplicas, self.maxReplicas])"
           type: object
           properties:
             minReplicas:
@@ -258,9 +258,26 @@ Example Validation Rules:
 
 
 - Each validator may have multiple validation rules.
-
 - Each validation rule has an optional 'message' field for the error message that
 will be surfaced when the validation rule evaluates to false.
+- As an alternative to the `message` field, there is also a
+`messageExpression` field that represents a CEL expression that evaluates to a
+string that will be used when the validation rule evaluates to false.
+  - There are several validation rules for the `messageExpression` field:
+    - The  `messageExpression` field must statically evaluate to a string.
+    - There are several compile-time checks performed on CEL's `string.format` function that can affect `messageExpression`:
+      - If the formatting string passed to `string.format` is a constant, then the formatting string will be checked at
+        compile-time that it parses correctly.
+      - If the `arg` array passed to `string.format` is a literal, and the formatting string is a constant, then
+        at compile-time `arg`'s cardinality will be checked against the formatting string. Passing too few/too many arguments
+        compared to what the formatting string expects is not allowed.
+      - Type checking of each individual  argument in `arg` will be done against what is expected in the formatting string 
+        to ensure the proper formatting clauses are used on each member of arg.
+  - The runtime cost limit must not be exceeded during `messageExpression` execution (executing `messageExpression` counts towards that limit). 
+  - If `messageExpression` results in a runtime error, then `message` will be used instead if non-empty. If `message`
+    is empty, then the default error message is used instead. In either case (if `message` or the default error message is 
+    used) the CEL error that `messageExpression` failed with will be logged.
+  - If both `message` and `messageExpression` are present, `messageExpression` will take priority.
 
 - The validator will be scoped to the location of the `x-kubernetes-validations`
 extension in the schema. In the above example, the validator is scoped to the
@@ -1115,6 +1132,11 @@ We plan to add e2e test under api-machinery for crd expression validation:
 - Optimization on super-linear complexity growth
 - Adding metric of the latency of CEL evaluation for CRD evaluation
 
+#### GA
+
+- Formatted message. This targets in 1.27 and ideally should be in at least one release before going to GA.
+- Scalability evaluation. Evaluate CRD scalability with validation rules against [previous scale target](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/95-custom-resource-definitions/README.md#scale-targets-for-ga).
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
@@ -1319,7 +1341,11 @@ The biggest problems with WebAssembly are:
 
 See also github.com/chimera-kube/chimera-admission
 
-### Starlark (formeraly known as Skylark)
+### Starlark (formerly known as Skylark)
+
+See https://github.com/google/starlark-go/.
+Starlark is an untyped dynamic language with high-level data types, first-class functions with lexical scope, and automatic memory management or garbage collection.
+It is mostly used in build system and has been added as a dependency in k/k.
 
 Python dialect designed for scripts embedded in the Bazel build system. It is designed to allow for
 determinstic and hermetic execution. Implementations exist in Go, Java and Rust. It is used
@@ -1352,12 +1378,6 @@ is a time consuming way to solve what should be a simple problem.
 
 For cluster operators, regardless of what extensions they install in their cluster,
 it is to their advantage to install the fewest webhooks possible since.
-
-### Starlark
-
-See https://github.com/google/starlark-go/. 
-Starlark is an untyped dynamic language with high-level data types, first-class functions with lexical scope, and automatic memory management or garbage collection.
-It is mostly used in build system and has been added as a dependency in k/k.
 
 ## Infrastructure Needed (Optional)
 

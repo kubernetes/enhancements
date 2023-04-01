@@ -11,8 +11,6 @@ status: a non-empty string
 #   - "@beth"
 approvers:
   - "@dorothy"
-# prr-approvers:
-#   - "@carolyn"
 # stage: stable
 # latest-milestone: v1.4
 # milestone:

@@ -1,0 +1,26 @@
+title: Kubectl Server-Side Apply by default
+kep-number: 3805
+authors:
+  - "@apelisse"
+owning-sig: sig-cli
+participating-sigs:
+  - sig-api-machinery
+status: implementable
+creation-date: 2023-02-02
+reviewers:
+  - "@knverey"
+  - "@alexzielenski"
+approvers:
+  - "@knverey"
+see-also:
+  - "/keps/sig-api-machinery/555-server-side-apply"
+replaces:
+stage: alpha
+latest-milestone: "v1.27"
+milestone:
+  alpha: "v1.27"
+  beta: "v1.30" # Provisional
+  stable: "v1.32" # Provisional
+feature-gates: # N/A
+disable-supported: false
+metrics: # N/A

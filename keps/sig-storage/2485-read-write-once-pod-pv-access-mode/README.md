@@ -94,17 +94,23 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Kubernetes Changes, Access Mode](#kubernetes-changes-access-mode)
     - [Scheduler Enforcement](#scheduler-enforcement)
+      - [Alpha](#alpha)
+      - [Beta](#beta)
     - [Mount Enforcement](#mount-enforcement)
   - [CSI Specification Changes, Volume Capabilities](#csi-specification-changes-volume-capabilities)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
     - [Validation of PersistentVolumeSpec Object](#validation-of-persistentvolumespec-object)
     - [Mounting and Mapping with ReadWriteOncePod](#mounting-and-mapping-with-readwriteoncepod)
     - [Mounting and Mapping with ReadWriteOnce](#mounting-and-mapping-with-readwriteonce)
     - [Mapping Kubernetes Access Modes to CSI Volume Capability Access Modes](#mapping-kubernetes-access-modes-to-csi-volume-capability-access-modes)
     - [End to End Tests](#end-to-end-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
+    - [Alpha](#alpha-1)
+    - [Beta](#beta-1)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -112,6 +118,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [API Server Version N / Scheduler Version N-1 / Kubelet Version N-1 or N-2](#api-server-version-n--scheduler-version-n-1--kubelet-version-n-1-or-n-2)
     - [API Understands ReadWriteOncePod, CSI Sidecars Do Not](#api-understands-readwriteoncepod-csi-sidecars-do-not)
     - [CSI Controller Service Understands New CSI Access Modes, CSI Node Service Does Not](#csi-controller-service-understands-new-csi-access-modes-csi-node-service-does-not)
+    - [API Server Has Feature Enabled, Scheduler and Kubelet Do Not](#api-server-has-feature-enabled-scheduler-and-kubelet-do-not)
+    - [API Server Has Feature Enabled, Scheduler Does not, Kubelet Does](#api-server-has-feature-enabled-scheduler-does-not-kubelet-does)
+    - [API Server Has Feature Enabled, Scheduler Does, Kubelet Does Not](#api-server-has-feature-enabled-scheduler-does-kubelet-does-not)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -389,6 +398,8 @@ This access mode will be enforced in two places:
 
 #### Scheduler Enforcement
 
+##### Alpha
+
 First is at the time a pod is scheduled. When scheduling a pod, if another pod
 is found using the same PVC and the PVC uses ReadWriteOncePod, then scheduling
 will fail and the pod will be considered UnschedulableAndUnresolvable.
@@ -406,6 +417,26 @@ marked UnschedulableAndUnresolvable.
 
 [volume restrictions plugin]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/scheduler/framework/plugins/volumerestrictions/volume_restrictions.go#L29
 [node info cache]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/scheduler/framework/types.go#L357
+
+##### Beta
+
+Support for pod preemption is enforced in beta.
+
+When a pod (A) with a ReadWriteOncePod PVC is scheduled, if another pod (B) is
+found using the same PVC and pod (A) has higher priority, the scheduler will
+return an "Unschedulable" status and attempt to preempt pod (B).
+
+The implementation goes like follows:
+
+In the PreFilter phase of the volume restrictions scheduler plugin, we will
+build a cache of the ReadWriteOncePod PVCs for the pod-to-be-scheduled and the
+number of conflicting PVC references (pods already using any of these PVCs).
+This cache will be saved as part of the scheduler's cycleState and forwarded to
+the following step. During AddPod and RemovePod, if there is a conflict we will
+add or subtract from the number of conflicting references. During the Filter
+phase, if the cache contains a non-zero amount of conflicting references then
+return "Unschedulable". If the pod has a PVC that cannot be found, return
+"UnschedulableAndUnresolvable".
 
 #### Mount Enforcement
 
@@ -487,14 +518,7 @@ external-attacher, and external-resizer.
 
 <!--
 **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+The goal is to ensure that we don't accept enhancements with inadequate testing.
 
 All code is expected to have adequate tests (eventually with coverage
 expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
@@ -502,6 +526,119 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
+
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes
+necessary to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+None. New tests will be added for the transition to beta to support scheduler
+changes.
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+In alpha, the following unit tests were updated. See
+https://github.com/kubernetes/kubernetes/pull/102028 and
+https://github.com/kubernetes/kubernetes/pull/103082 for more context.
+
+- `k8s.io/kubernetes/pkg/apis/core/helper`: `09-22-2022` - `26.2`
+- `k8s.io/kubernetes/pkg/apis/core/v1/helper`: `09-22-2022` - `56.9`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `09-22-2022` - `82.3`
+- `k8s.io/kubernetes/pkg/controller/volume/persistentvolume`: `09-22-2022` - `79.4`
+- `k8s.io/kubernetes/pkg/kubelet/volumemanager/cache`: `09-22-2022` - `66.3`
+- `k8s.io/kubernetes/pkg/volume/csi/csi_client.go`: `09-22-2022` - `76.2`
+- `k8s.io/kubernetes/pkg/scheduler/apis/config/v1beta2`: `09-22-2022` -  `76.8`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumerestrictions`: `09-22-2022` -  `85`
+- `k8s.io/kubernetes/pkg/scheduler/framework`: `09-22-2022` -  `77.1`
+
+In beta, there will be additional unit test coverage for
+`k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumerestrictions` to cover
+preemption logic.
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+Integration tests for scheduler plugin behavior are available here:
+
+- [test/integration/scheduler/filters/filters_test.go] : [testgrid]
+<!-- TODO(chrishenzie): Link preemption integration test once merged -->
+
+[test/integration/scheduler/filters/filters_test.go]: https://github.com/kubernetes/kubernetes/blob/v1.25.2/test/integration/scheduler/filters/filters_test.go
+[testgrid]: https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=k8s.io/kubernetes/test/integration/scheduler/filters.TestUnschedulablePodBecomesSchedulable/scheduled_pod_uses_read-write-once-pod_pvc
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+For alpha, to test this feature end to end, we will need to check the following cases:
+
+- A ReadWriteOncePod volume will succeed mounting when consumed by a single pod
+  on a node
+- A ReadWriteOncePod volume will fail to mount when consumed by a second pod on
+  the same node
+- A ReadWriteOncePod volume will fail to attach when consumed by a second pod on
+  a different node
+
+For testing the mapping for ReadWriteOnce, we will update the CSI hostpath
+driver to support the new volume capability access modes and cut a release. The
+existing Kubernetes end to end tests will be updated to use this version which
+will test the K8s to CSI access mode mapping behavior because most storage end
+to end tests rely on the ReadWriteOnce access mode, which now maps to the
+SINGLE_NODE_MULTI_WRITER CSI access mode.
+
+E2E tests for alpha behavior can be found here:
+
+- [test/e2e/storage/testsuites/readwriteoncepod.go] : [k8s-triage]
+
+For beta, we will want to cover the additional cases for preemption:
+
+- A high-priority pod requesting a ReadWriteOncePod volume that's already in-use
+  will result in the preemption of the pod previously using the volume
+- A low-priority (or no priority) pod requesting a ReadWriteOncePod volume
+  that's already in-use will result in it being UnschedulableAndUnresolvable
+
+[test/e2e/storage/testsuites/readwriteoncepod.go]: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/testsuites/readwriteoncepod.go
+[k8s-triage]: https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=read-write-once-pod
 
 #### Validation of PersistentVolumeSpec Object
 
@@ -538,20 +675,6 @@ well as in CSI sidecars.
 
 #### End to End Tests
 
-To test this feature end to end, we will need to check the following cases:
-
-- A ReadWriteOncePod volume will succeed mounting when consumed by a single pod
-  on a node
-- A ReadWriteOncePod volume will fail to mount when consumed by a second pod on
-  the same node
-- A ReadWriteOncePod volume will fail to attach when consumed by a second pod on
-  a different node
-
-For testing the mapping for ReadWriteOnce, we should update the mock CSI driver
-to support the new volume capability access modes and cut a release. The
-existing Kubernetes end to end tests will be updated to use this version which
-will test the mapping behavior because most storage end to end tests rely on the
-ReadWriteOnce access mode.
 
 ### Graduation Criteria
 
@@ -623,8 +746,6 @@ in back-to-back releases.
 - Scheduler enforces ReadWriteOncePod access mode by marking pods as
   Unschedulable, preemption logic added
 - ReadWriteOncePod access mode has end to end test coverage
-- Mock CSI driver supports `SINGLE_NODE_*_WRITER` access modes, relevant end to
-  end tests updated to use this driver
 - Hostpath CSI driver supports `SINGLE_NODE_*_WRITER` access modes, relevant end
   to end tests updated to use this driver
 
@@ -653,8 +774,11 @@ feature gate enabled.  Additionally they will need to update their CSI drivers
 and sidecars to versions that depend on the new Kubernetes API and CSI spec.
 
 When downgrading a cluster to disable this feature, the user will need to
-restart the kube-apiserver with the ReadWriteOncePod feature gate disabled. When
-disabling this feature gate, any existing volumes with the ReadWriteOncePod
+disable the ReadWriteOncePod feature gate in kube-apiserver, kube-scheduler, and
+kubelet. They may also roll back their CSI sidecars if they are encountering
+errors.
+
+When disabling this feature gate, any existing volumes with the ReadWriteOncePod
 access mode will continue to exist, but can only be deleted. An alternative is
 to allow these volumes to be treated as ReadWriteOnce, however that would
 violate the intent of the user and so it is not recommended.
@@ -734,6 +858,45 @@ modes, then volumes will be provisioned and attached using these access modes
 node service does not understand these access modes, the behavior will depend on
 the CSI driver and how it treats unknown access modes. The recommendation is to
 upgrade the CSI drivers for the controller and node services together.
+
+#### API Server Has Feature Enabled, Scheduler and Kubelet Do Not
+
+In this scenario, the kube-scheduler will not enforce the ReadWriteOncePod
+access mode and proceed to schedule pods sharing the same ReadWriteOncePod PVCs.
+
+If you have two pods sharing the same ReadWriteOncePod PVC and they land on
+separate nodes, the volume will [only be able to attach to a single node]. The
+other pod will be stuck because the volume is already attached elsewhere.
+
+However, if both pods land on the same node, kubelet will not enforce the access
+mode and allow both pods to mount the same ReadWriteOncePod volume.
+
+[only be able to attach to a single node]: https://github.com/kubernetes/kubernetes/blob/v1.26.1/pkg/volume/util/util.go#L716-L718
+
+#### API Server Has Feature Enabled, Scheduler Does not, Kubelet Does
+
+In this scenario, the kube-scheduler will not enforce the ReadWriteOncePod
+access mode and proceed to schedule pods sharing the same ReadWriteOncePod PVCs.
+
+If you have two pods sharing the same ReadWriteOncePod PVC and they land on
+separate nodes, the volume will [only be able to attach to a single node]. The
+other pod will be stuck because the volume is already attached elsewhere.
+
+If both pods land on the same node, kubelet will enforce the access mode and
+only allow one pod to mount the volume.
+
+[only be able to be attached to a single node]: https://github.com/kubernetes/kubernetes/blob/v1.26.1/pkg/volume/util/util.go#L716-L718
+
+#### API Server Has Feature Enabled, Scheduler Does, Kubelet Does Not
+
+In this scenario, the kube-scheduler will enforce the ReadWriteOncePod access
+mode and ensure only a single pod may use a ReadWriteOncePod PVC.
+
+If you have two pods sharing the same ReadWriteOncePod PVC and they both have
+`spec.nodeName` set, then scheduling will be bypassed. See [the above scenario]
+on the expected behavior.
+
+[the above scenario]: #api-server-has-feature-enabled-scheduler-and-kubelet-do-not
 
 ## Production Readiness Review Questionnaire
 
@@ -832,12 +995,30 @@ Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
 -->
 
+Rolling out this feature involves enabling the ReadWriteOncePod feature gate
+across kube-apiserver, kube-scheduler, kubelet, and updating CSI driver and
+sidecar versions. The order in which these are performed does not matter.
+
+The only way this rollout can fail is if a user does not update all components,
+in which case the feature will not work. See the above section on version skews
+for behavior in this scenario.
+
+Rolling out this feature does not impact any running workloads.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+If pods using ReadWriteOncePod PVCs fail to schedule, you may see an increase in
+`scheduler_unschedulable_pods{plugin="VolumeRestrictions"}`.
+
+For enforcement in kubelet, if there are issues you may see changes in metrics
+for "volume_mount" operations. For example, an increase in
+`storage_operation_duration_seconds_bucket{operation_name="volume_mount"}` for
+larger buckets may indicate issues with mount.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -847,11 +1028,45 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Manual tests were performed to test the whole end to end flow.
+
+Starting with the upgrade path:
+
+- Unsuccessfully create workloads using ReadWriteOncePod PVCs prior to upgrade
+- Perform the upgrade in two stages:
+  - First, update CSI sidecars
+  - Second, enable feature flag
+- Successfully create workloads (1) and (2) using ReadWriteOncePod PVCs (1) and
+  (2).
+- Unsuccessfully create workload (3) using ReadWriteOncePod PVC (2) (already
+  in-use)
+- Observe the workloads and PVCs are healthy
+
+For the downgrade path:
+
+- Perform the downgrade in two stages:
+  - First, disable feature flag
+  - Second, downgrade CSI sidecars
+- Observe the workloads and PVCs are still healthy
+- Successfully delete workload (1) and ReadWriteOncePod PVC (1)
+
+And re-upgrading the feature again:
+
+- Perform the upgrade in two stages:
+  - First, update CSI sidecars
+  - Second, enable feature flag
+- Successfully create workload (1) using ReadWriteOncePod PVC (1)
+- Unsuccessfully create workload (3) using ReadWriteOncePod PVC (2) (already
+  in-use)
+- Observe the workloads and PVCs are still healthy
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -867,18 +1082,21 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+An operator can query for PersistentVolumeClaims and PersistentVolumes in the
+cluster with the ReadWriteOncePod access mode. If any exist then the feature is
+in use.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [X] Metrics
+  - Metric name: `scheduler_unschedulable_pods{plugin="VolumeRestrictions"}`
   - [Optional] Aggregation method:
   - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - kube-scheduler
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
@@ -892,12 +1110,31 @@ high level (needs more precise definitions) those may be things like:
   - 99,9% of /health requests per day finish with 200 code
 -->
 
+Defining an SLO for this metric is difficult because a pod may be
+"Unschedulable" due to user error; they mistakenly scheduled a workload that has
+volume conflicts. Additionally, this metric captures volume conflicts for some
+legacy in-tree drivers that do not support the ReadWriteOncePod feature but are
+part of the same scheduler plugin.
+
+Any unexpected increases in
+`scheduler_unschedulable_pods{plugin="VolumeRestrictions"}` should be
+investigated by checking the status of pods failing scheduling.
+
+If there are failures during attach, detach, mount, or unmount, you may see an
+increase in the `storage_operation_duration_seconds` metric exported by
+kubelet.
+
+You may also see an increase in the `csi_sidecar_operations_seconds_bucket`
+metric exported by CSI sidecars if there are issues performing CSI operations.
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No.
 
 ### Dependencies
 
@@ -921,6 +1158,18 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+This feature depends on the cluster having CSI drivers and sidecars that use CSI
+spec v1.5.0 at minimum.
+
+- [CSI drivers and sidecars]
+  - Usage description:
+    - Impact of its outage on the feature: Inability to perform CSI storage
+      operations on ReadWriteOncePod PVCs and PVs (for example, provisioning
+      volumes)
+    - Impact of its degraded performance or high-error rates on the feature:
+      Increase in latency performing CSI storage operations (due to repeated
+      retries)
 
 ### Scalability
 
@@ -1026,6 +1275,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Existing ReadWriteOncePod volumes will continue working, however users will not
+be able to make any changes to them.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1041,7 +1293,13 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Delete any unhealthy pods / PVCs using ReadWriteOncePod
+- Disable the feature gate (target the API server first to prevent creation of new PVCs)
+- Downgrade CSI sidecars and drivers if you're seeing elevated errors there
 
 ## Implementation History
 

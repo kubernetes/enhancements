@@ -16,8 +16,6 @@ reviewers:
   - "@sftim"
 approvers:
   - TBD
-prr-approvers:
-  - "@ehashman"
 see-also:
   # `add KEP for cgroups v2 support`
   - "https://github.com/kubernetes/enhancements/pull/1370"

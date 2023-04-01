@@ -1,0 +1,49 @@
+title: Cloud Dual-Stack --node-ip Handling
+kep-number: 3705
+authors:
+  - "@danwinship"
+owning-sig: sig-network
+participating-sigs:
+  - sig-node
+  - sig-cloud-provider
+status: implementable
+creation-date: 2022-11-29
+reviewers:
+  - "@aojea"
+  - "@JoelSpeed"
+  - "@mdbooth"
+  - "@khenidak"
+  - "@thockin"
+approvers:
+  - "@thockin"
+  - TBD from sig-cloud-provider
+
+see-also:
+  - "https://github.com/kubernetes/enhancements/issues/1664"
+  - "https://github.com/kubernetes/enhancements/pull/1665"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.27"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.27"
+  beta: "v1.28"
+  stable: "v1.29"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CloudNodeIPs
+    components:
+      - kubelet
+      - cloud-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:

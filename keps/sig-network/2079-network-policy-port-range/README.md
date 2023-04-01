@@ -16,10 +16,13 @@
 - [Design Details](#design-details)
   - [Validations](#validations)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
-    - [GA Graduation](#ga-graduation)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -138,7 +141,7 @@ and also to the range 49152-65535 without allowing any other ports.
 
 ### Notes/Constraints/Caveats
 
-*  The technology used by the CNI provider might not support port range in a 
+* The technology used by the CNI provider might not support port range in a 
 trivial way as described in [#drawbacks]
 
 ### Risks and Mitigations
@@ -151,25 +154,25 @@ of the new field.
 
 API changes to NetworkPolicy:
 * Add a new field called `EndPort` inside `NetworkPolicyPort` as the following:
-```
+```go
 // NetworkPolicyPort describes a port to allow traffic on
 type NetworkPolicyPort struct {
-	// The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
-	// field defaults to TCP.
-	// +optional
-	Protocol   *v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,1,opt,name=protocol,casttype=k8s.io/api/core/v1.Protocol"`
-
-	// The port on the given protocol. This can either be a numerical or named 
+  // The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
+  // field defaults to TCP.
+  // +optional
+  Protocol   *v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,1,opt,name=protocol,casttype=k8s.io/api/core/v1.Protocol"`
+  
+  // The port on the given protocol. This can either be a numerical or named 
   // port on a pod. If this field is not provided, this matches all port names and
   // numbers, whether an endPort is defined or not.
-	// +optional
-	Port       *intstr.IntOrString `json:"port,omitempty" protobuf:"bytes,2,opt,name=port"`
-
-	// EndPort defines the last port included in the port range.
-	// Example:
-  //    endPort: 12345
-	// +optional
-	EndPort    int32 `json:"port,omitempty" protobuf:"bytes,2,opt,name=endPort"`
+  // +optional
+  Port       *intstr.IntOrString `json:"port,omitempty" protobuf:"bytes,2,opt,name=port"`
+  
+  // EndPort defines the last port included in the port range.
+  // Example:
+  //  endPort: 12345
+  // +optional
+  EndPort    int32 `json:"port,omitempty" protobuf:"bytes,2,opt,name=endPort"`
 }
 ```
 
@@ -181,6 +184,12 @@ The `NetworkPolicyPort` will need to be validated, with the following scenarios:
 
 ### Test Plan
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
 Unit tests:
 * test API validation logic
 * test API strategy to ensure disabled fields
@@ -189,6 +198,16 @@ E2E tests:
 * Add e2e tests exercising only the API operations for port ranges. Data-path 
 validation should be done by CNIs.
 
+##### Unit tests
+
+- `pkg/apis/networking/validation/validation`: `14/Jun/2022` - `92.5%`
+- `pkg/registry/networking/networkpolicy/strategy`: `14/Jun/2022` - `75.9%`
+
+##### e2e tests
+
+- Feature:NetworkPolicyEndPort: https://storage.googleapis.com/k8s-triage/index.html?text=EndPort#eaa4b8cdb7b461dccfa9
+
+The flakes shown here are not related to this feature, per the tests logs
 
 ### Graduation Criteria
 
@@ -203,10 +222,16 @@ validation should be done by CNIs.
 with generally positive feedback on its usage.
 - Feature Gate is enabled by Default.
 
-#### GA Graduation
+#### GA
 
 - At least **four** NetworkPolicy providers (or CNI providers) support the `EndPort` field
 - `EndPort` has been enabled by default for at least 1 minor release
+
+The following are the CNIs that implement this feature:
+- Calico
+- Antrea
+- Openshift SDN
+- Kuberouter
 
 ### Upgrade / Downgrade Strategy
 
@@ -221,17 +246,16 @@ start working incorrectly. This is a fail-closed failure, so it is acceptable.
 ### Feature Enablement and Rollback
 
 
-* **How can this feature be enabled / disabled in a live cluster?**
+###### How can this feature be enabled / disabled in a live cluster?
   - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: NetworkPolicyEndPort
     - Components depending on the feature gate: Kubernetes API Server
   
-* **Does enabling the feature change any default behavior?**
+###### Does enabling the feature change any default behavior?
   No
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
   Yes. One caveat here is that NetworkPolicies created with EndPort field set 
   when the feature was enabled will continue to have that field set when the 
   feature is disabled unless user removes it from the object. 
@@ -247,40 +271,61 @@ start working incorrectly. This is a fail-closed failure, so it is acceptable.
   port range, which may break users, which is inevitable but satisfies the 
   fail-closed requirement.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
+
   Nothing. 
 
-* **Are there any tests for feature enablement/disablement?**
+###### Are there any tests for feature enablement/disablement?
  
   Yes and they can be found [here](https://github.com/kubernetes/kubernetes/blob/release-1.21/pkg/registry/networking/networkpolicy/strategy_test.go#L284)
 
  ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-* **How can a rollout fail? Can it impact already running workloads?**
+###### How can a rollout or rollback fail? Can it impact already running workloads?
   Not probably, but still there's the risk of some bug that fails validation, 
   or conversion function crashes.
 
-* **What specific metrics should inform a rollback?**
+###### What specific metrics should inform a rollback?
   The increase of 5xx http error count on Network Policies Endpoint
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Yes, with unit tests.
-  There's still some need to make manual tests, that will be done in a follow up.
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+  Yes, with unit tests.
+  Manual tests were also executed as the following:
+  * Created a KinD cluster in v1.24 and Calico as a CNI
+  * Created a Network Policy with `endPort` field to allow a Pod egress to ports from 70 to 90
+  * Did a test against a target in port 80 - Worked
+  * Disabled the Feature Gate
+  * The Network Policy still worked fine
+  * Changed the Network Policy so the range is 70 to 79, and the Network Policy was changed fine
+  * Traffic started to be blocked, but could call port 78 as it is still within range
+  * Removed `endPort` field, and wasn't able to re-add it as Feature gate was disabled
+  * Re-enabled feature gate
+  * Re-added `endPort` field with value of 90
+  * Traffic started to flow/be accepted again
+
+  Per the manual tests, all worked as desired.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
   None
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
-* **How can an operator determine if the feature is in use by workloads?**
+###### How can an operator determine if the feature is in use by workloads?
+
   
   Operators can determine if NetworkPolicies are making use of EndPort creating
   an object specifying the range and validating if the traffic is allowed within 
-  the specified range
+  the specified range.
 
-* **How can someone using this feature know that it is working for their instance?
+  Also Network Policy object now supports (as alpha) status/condition fields, so 
+  Network Policy providers can add a feedback to the user whether the policy was processed
+  correctly or not. Providing this feedback is optional and depends on implementation
+  by each NPP.
+
+###### How can someone using this feature know that it is working for their instance?
+
   - [x] Other
    - Details:
       The API Field must be present when a NetworkPolicy is created with that field.
@@ -288,16 +333,20 @@ _This section must be completed when targeting beta graduation to a release._
       look into CNI metrics to check if the rules are being applied correctly, like Calico 
       that provides metrics like `felix_iptables_restore_errors` that can be used to 
       verify if the amount of restoring errors raised after the feature being applied.
-      We might need in a future to add some Status field that allows CNI providers to provide
-      feedback about the functionality
+      For NetworkPolicy Providers that doesn't support this feature, a new status field was added
+      in Network Policy object allowing the providers to give feedback to users using conditions. 
+      Any NPP that does not support this feature should add a condition on the Network Policy 
+      object.
  
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
+ 
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
   Operators can use metrics provided by the CNI to use as SLI, like 
   `felix_iptables_restore_errors` from Calico to verify if the errors rate
   has raised.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
  - per-day percentage of API calls finishing with 5XX errors <= 1% is a reasonable SLO
 
 * **Are there any missing metrics that would be useful to have to improve observability 
@@ -307,52 +356,55 @@ of this feature?**
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?**
-  Yes, a CNI supporting the new feature 
+###### Does this feature depend on any specific services running in the cluster?
 
+  Yes, a CNI supporting the new feature 
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?**
+###### Will enabling / using this feature result in any new API calls?
   No
 
-* **Will enabling / using this feature result in introducing new API types?**
+###### Will enabling / using this feature result in introducing new API types?
+
   No
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
   No
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
 
   - API type(s): NetworkPolicyPorts
   - Estimated increase in size: 2 bytes for each new `EndPort` value specified + the field name/number in its serialized format 
   - Estimated amount of new objects: N/A
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
   N/A
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   It might get some increase of resource usage by the CNI while parsing the 
   new field.
 
 ### Troubleshooting
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
+###### How does this feature react if the API server and/or etcd is unavailable?
+
   As this feature is mainly used by CNI providers, the reaction with API server 
   and/or etcd being unavailable will be the same as before.
 
-* **What are other known failure modes?**
+###### What are other known failure modes?
   N/A
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
   Remove EndPort field and check if the number of errors reduce, although this might 
   lead to undesired Network Policy, blocking previously working rules. 
 
 ## Implementation History
+- 2022-06-14 Propose GA graduation
 - 2021-05-11 Propose Beta graduation and add more Performance Review data
 - 2020-10-08 Initial [KEP PR](https://github.com/kubernetes/enhancements/pull/2079)
 

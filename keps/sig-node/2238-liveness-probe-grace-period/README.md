@@ -11,10 +11,15 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (1.21)](#alpha-121)
     - [Beta (1.22)](#beta-122)
-    - [Graduation (1.25)](#graduation-125)
+    - [GA (1.27)](#ga-127)
+    - [Removal of feature flag (1.29)](#removal-of-feature-flag-129)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -33,16 +38,21 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [X] (R) KEP approvers have approved the KEP status as `implementable`
-- [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [X] (R) Graduation criteria is in place
-- [X] (R) Production readiness review completed
-- [X] (R) Production readiness review approved
-- [X] "Implementation History" section is up-to-date for milestone
-- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -149,7 +159,8 @@ This field is not valid for readiness probes. We will add validation to ensure
 
 We expect that the `livenessProbe.terminationGracePeriodSeconds` (or
 `startupProbe.*`) will not be greater than the pod-level
-`terminationGracePeriodSeconds`, but we will not explicitly validate this.
+`terminationGracePeriodSeconds`, but we will not explicitly validate this (we will 
+perform a soft validation and log when this condition occurs).
 
 `initialDelaySeconds` is not relevant to this value; it indicates how long we
 should wait before probing the container, but does not have any relation to how
@@ -168,6 +179,12 @@ down upon failure.
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+#### Prerequisite testing updates
+
 This change will be unit tested for the API changes and
 backwards-compatibility.
 
@@ -180,6 +197,40 @@ use case, where a `terminationGracePeriodSeconds` is set to a
 large value, a probe fails, and with
 `livenessProbe.terminationGracePeriodSeconds` set, the container terminates
 quickly.
+
+Update `test/e2e_node/eviction_test.go` to include pods with probes that have this feature 
+set to ensure the feature causes no issues with pod eviction and that the eviction
+process doesn't interfere with the grace period for pods not being evicted.
+
+#### Unit tests
+
+Coverage prior to merging:
+
+- `pkg/api/pod`: 2021-03-11 - 54.8% of statements
+- `pkg/apis/core/validation`: 2021-03-11 - 81.0% of statements
+- `pkg/kubelet/kuberuntime`: 2021-03-11 - 65.2% of statements
+
+(these numbers were obtained by checking out the prior commit [`7b7c842eeccf5da90607abf6ec7c59935fe828ef`](https://github.com/kubernetes/kubernetes/tree/7b7c842eeccf5da90607abf6ec7c59935fe828ef) and running `go test -cover` against it)
+
+Coverage after merging:
+
+- `pkg/api/pod`: 57.0% of statements - increase of 2.2%
+- `pkg/apis/core/validation`: 81.0% of statements - no change in coverage
+- `pkg/kubelet/kuberuntime`: 65.0% of statements - decrease of 0.2%
+
+(these numbers were obtained by checking out the commit after the code had merged [06e634e2162b16e2196395e3a232c01a558f0463](https://github.com/kubernetes/kubernetes/tree/06e634e2162b16e2196395e3a232c01a558f0463) and running `go test -cover` against it)
+
+Unit buckets need to be added to `TestKillContainer` to test the [various scenarios and sequences](https://github.com/kubernetes/kubernetes/blob/02462739ca544dc61f4bf00a290d247c453030ef/pkg/kubelet/kuberuntime/kuberuntime_container.go#L683-L695) for setting the grace period from the various `terminationGracePeriodSeconds` values
+
+#### Integration tests
+
+- Set terminationGracePeriodSeconds for livenessProbe: [link to test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20override%20timeoutGracePeriodSeconds%20when%20LivenessProbe%20field%20is%20set%20%5BFeature%3AProbeTerminationGracePeriod%5D)
+- Set terminationGracePeriodSeconds for startupProbe: [link to test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20override%20timeoutGracePeriodSeconds%20when%20StartupProbe%20field%20is%20set%20%5BFeature%3AProbeTerminationGracePeriod%5D)
+
+#### e2e tests
+
+- Set terminationGracePeriodSeconds for livenessProbe: [link to test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20override%20timeoutGracePeriodSeconds%20when%20LivenessProbe%20field%20is%20set%20%5BFeature%3AProbeTerminationGracePeriod%5D)
+- Set terminationGracePeriodSeconds for startupProbe: [link to test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20override%20timeoutGracePeriodSeconds%20when%20StartupProbe%20field%20is%20set%20%5BFeature%3AProbeTerminationGracePeriod%5D)
 
 ### Graduation Criteria
 
@@ -196,14 +247,18 @@ quickly.
 - Ensure that when feature gate is off in API server, probe-level
   `TerminationGracePeriodSeconds` is blanked out.
 - Add validation to ensure `terminationGracePeriodSeconds` is non-negative.
-- Feature flag is defaulted to on after kube-apiserver is +2 versions of the
-  kubelet having the support (1.24).
+- Feature flag is defaulted to on after kube-apiserver is +3 versions of the
+  kubelet having the support (1.25).
 
 _Below graduation criteria are tentative._
 
-#### Graduation (1.25)
+#### GA (1.27)
 
-- Feature flag is removed, feature is graduated (1.25).
+- Graduate to GA
+
+#### Removal of feature flag (1.29)
+
+- Feature flag is removed
 
 ### Upgrade / Downgrade Strategy
 
@@ -242,8 +297,8 @@ enhancement:
 n-2 kubelet without this feature will default to the old behaviour, using the
 pod-level `terminationGracePeriodSeconds`.
 
-Feature gate will be removed from kubelet in 1.22, ensuring support for n-2
-version skew on a 1.24+ API server.
+Feature gate will be removed from kubelet in 1.25, ensuring support for n-2
+version skew on a 1.27+ API server.
 
 Only when feature gate is enabled for all components will we use the new field,
 so we delay defaulting the feature flag on until then.
@@ -286,7 +341,7 @@ _This section must be completed when targeting alpha to a release._
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing
@@ -485,6 +540,10 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
   No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature improves probe behavior, and should not lead to resource exhaustion on the node.
+
 ### Troubleshooting
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
@@ -531,7 +590,8 @@ _This section must be completed when targeting beta graduation to a release._
   ([kubernetes/kubernetes#99375](https://github.com/kubernetes/kubernetes/pull/99375))
 - 2021-07-13: Beta updates ([k/k#103168](https://github.com/kubernetes/kubernetes/pull/103168))
 - 2021-07-13: Add validation ([k/k#103245](https://github.com/kubernetes/kubernetes/pull/103245))
-- 1.25 cycle: default feature flag to true ([k/k#108541](https://github.com/kubernetes/kubernetes/pull/108541))
+- 2022-07-30: 1.25 cycle: default feature flag to true ([k/k#108541](https://github.com/kubernetes/kubernetes/pull/108541))
+- Default to GA in 1.27 [k/k#114307](https://github.com/kubernetes/kubernetes/pull/114307)
 
 ## Drawbacks
 

@@ -57,7 +57,7 @@ RBD in k/k repository.
 
 ##### Unit tests
 
-The unit tests for RBD translation lib available [here](https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/rbd_test.go)
+- `k8s.io/csi-translation-lib/blob/master/plugins/rbd_test.go`: `2022-06-27` - `69.7`
 will be validated.
 
 ##### Integration tests
@@ -85,6 +85,6 @@ Major milestones for Ceph RBD in-tree plugin CSI migration:
 
 - 1.23
   - Ceph RBD CSI migration to Alpha
-- 1.25
+- 1.26
   - Ceph RBD CSI migration to Beta, off by default
 

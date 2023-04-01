@@ -450,6 +450,7 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - 2022-02-01 Initial KEP
+- 2023-01-12 Feature has been withdrawn and will be removed from the code
 
 ## Drawbacks
 

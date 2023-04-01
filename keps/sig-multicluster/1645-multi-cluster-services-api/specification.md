@@ -47,7 +47,7 @@ endpoint's `hostname` field, or b) a unique, system-assigned identifier for the
 endpoint. Of importance to highlight is that since the [default hostname of an
 endpoint is the Pod's `metadata.name`
 field](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-s-hostname-and-subdomain-fields),
-this will likely often be the podname, but not always, and implementations must
+this will likely often be the pod name, but not always, and implementations must
 prefer a directly specified `hostname` value.
 
 clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A
@@ -63,7 +63,7 @@ namespace.”
 `<clusterset-zone>` = domain for multi-cluster services in the clusterset, which
 must be `clusterset.local`; as this may become configurable in the future, this
 specification refers to it by the placeholder `<clusterset-zone>`, but per the
-MCS API it currently must be defined to be `clusterset.local`. 
+MCS API it currently must be defined to be `clusterset.local`.
 
 ClusterSetIP / `<clusterset-ip>` / clusterset IP = as defined in [KEP-1645:
 Multi-Cluster Services API](README.md): “A non-headless ServiceImport is
@@ -76,11 +76,10 @@ the aggregated Service.”
 
 Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io
 ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet
-identification](../2149-clusterid/README.md). Though this can be any valid DNS
-label, the recommended value is  a kube-system namespace uid ( such as
-`721ab723-13bc-11e5-aec2-42010af0021e`). For ease of KEP readability, this
-document uses human readable names `cluster-a` and `cluster-b` to represent the
-cluster IDs of two clusters in a ClusterSet.
+identification](../2149-clusterid/README.md). The recommended value is a
+kube-system namespace uid ( such as `721ab723-13bc-11e5-aec2-42010af0021e`). For
+ease of KEP readability, this document uses human readable names `cluster-a` and
+`cluster-b` to represent the cluster IDs of two clusters in a ClusterSet.
 
 
 ### 2.2 - Record for Schema Version

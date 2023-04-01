@@ -77,7 +77,7 @@ portworx-volume in k/k.
 
 ##### Unit tests
 
-See tests in the [https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/portworx_test.go](https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/portworx_test.go)
+- `k8s.io/csi-translation-lib/plugins/portworx.go`: `6-20` - `80.6`
 
 ##### Integration tests
 
@@ -85,4 +85,4 @@ N/A
 
 ##### e2e tests
 
-To ensure the implementation correctness, I/we have manually run the e2e tests, [located in the main k8s repository](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/drivers/in_tree.go). Test results are attached to the pull requests 
+- `sig-storage` `Driver: portworx-volume` To ensure the implementation correctness, I/we have manually run the e2e tests, [located in the main k8s repository](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/drivers/in_tree.go). Test results are attached to the pull requests 

@@ -1,0 +1,7 @@
+sequenceDiagram
+    Title: Evented PLEG
+    Runtime-->>+Evented PLEG: Send CRI Event
+    Evented PLEG-->>Evented PLEG: Generate PodStatus from received Event
+    Evented PLEG-->>Evented PLEG: Set pod cache update time to the Event creation time
+    Evented PLEG-->>Evented PLEG: Update the PodStatus in the cache
+    Evented PLEG-->>PLEG Channel: Send PodLifeCycleEvent

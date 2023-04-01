@@ -1,0 +1,20 @@
+title: Kube-proxy improved ingress connectivity reliability
+kep-number: "3836"
+authors: ['@alexanderConstantinescu']
+owning-sig: sig-network
+participating-sigs: [sig-network]
+reviewers: ['@thockin', '@danwinship', "@aojea"]
+approvers: ['@thockin']
+creation-date: "2023-02-03"
+status: implementable
+stage: alpha
+latest-milestone: "v1.27"
+milestone:
+    alpha: "v1.27"
+    beta: "v1.28"
+    stable: "v1.29"
+feature-gates:
+  - name: KubeProxyDrainingTerminatingNodes
+    components:
+      - kube-proxy
+disable-supported: true

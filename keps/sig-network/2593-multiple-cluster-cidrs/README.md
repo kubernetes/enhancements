@@ -28,14 +28,15 @@
       - [Node Added](#node-added)
       - [Node Updated](#node-updated)
       - [Node Deleted](#node-deleted)
-      - [ClusterCIDRConfig Added](#clustercidrconfig-added)
-      - [ClusterCIDRConfig Updated](#clustercidrconfig-updated)
-      - [ClusterCIDRConfig Deleted](#clustercidrconfig-deleted)
+      - [ClusterCIDR Added](#clustercidr-added)
+      - [ClusterCIDR Updated](#clustercidr-updated)
+      - [ClusterCIDR Deleted](#clustercidr-deleted)
   - [kube-controller-manager](#kube-controller-manager)
   - [Test Plan](#test-plan)
-    - [Unit Tests and Benchmarks](#unit-tests-and-benchmarks)
-    - [Integration Tests](#integration-tests)
-    - [End-to-End Tests](#end-to-end-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
     - [Beta to  GA Graduation](#beta-to--ga-graduation)
@@ -109,7 +110,7 @@ Kubernetes out of the box. It is not required for Kubernetes to function, and
 users may use alternate mechanisms.
 
 This proposal enhances how pod CIDRs are allocated for nodes by adding a new
-CIDR allocator that can be controlled by a new resource `ClusterCIDRConfig`.
+CIDR allocator that can be controlled by a new resource `ClusterCIDR`.
 This would enable users to dynamically allocate more IP ranges for pods. The new
 functionality would remain optional, and be an enhancement for those using the
 built-in IPAM functionality.
@@ -152,7 +153,7 @@ and cannot be modified later on. This has multiple disadvantages:
 ## Proposal
 
 This proposal enhances how pod CIDRs are allocated for nodes by adding a new
-CIDR allocator that can be controlled by a new resource 'ClusterCIDRConfig'.
+CIDR allocator that can be controlled by a new resource 'ClusterCIDR'.
 This enables users to dynamically allocate more IP ranges for pods. In addition,
 it gives users the capability to control what ranges are allocated to specific
 nodes as well as the size of the pod CIDR allocated to these nodes.
@@ -198,7 +199,7 @@ ranges to the nodes and the user can now create the cluster.
 This feature does not expand the ability of the NodeIPAM controller to change
 the `Node.Spec.PodCIDRs` field. Once that field is set, either by the controller
 or a third party, it will be treated as immutable. This is particularly relevant
-in situtaitons where users start modifying or deleting the `ClusterCidrConfig`.
+in situtaitons where users start modifying or deleting the `ClusterCIDR`.
 Under no circumstances will the controller attempt to revoke the allocated
 CIDRs (more details on this are discussed below).
 
@@ -225,80 +226,74 @@ do not assume Kubernetes has a single continguous Pod CIDR.
 
 ### New Resource
 
-This KEP proposes adding a new built-in API called `ClusterCIDRConfig`.
+This KEP proposes adding a new built-in API called `ClusterCIDR`.
 
 ```go
-type ClusterCIDRConfig struct {
+type ClusterCIDR struct {
   metav1.TypeMeta
   metav1.ObjectMeta
 
-  Spec ClusterCIDRConfigSpec
-  Status ClusterCIDRConfigStatus
+  Spec ClusterCIDRSpec
+  Status ClusterCIDRStatus
 }
 
-type ClusterCIDRConfigSpec struct {
+type ClusterCIDRSpec struct {
     // This defines which nodes the config is applicable to. A nil selector can
     // be applied to any node.
     // +optional
     NodeSelector *v1.NodeSelector
 
-    // This defines the IPv4 CIDR assignable to nodes selected by this config.
+    // PerNodeHostBits defines the number of host bits to be configured per node.
+    // A subnet mask determines how much of the address is used for network bits
+    // and host bits. For example an IPv4 address of 192.168.0.0/24, splits the
+    // address into 24 bits for the network portion and 8 bits for the host portion.
+    // For a /24 mask for IPv4 or a /120 for IPv6, configure PerNodeHostBits=8
+    // This field is immutable.
     // +optional
-    IPv4 *ClusterCIDRSpec
+    PerNodeHostBits int32
 
-    // This defines the IPv6 CIDR assignable to nodes selected by this config.
+    // IPv4CIDR defines an IPv4 IP block in CIDR notation(e.g. "10.0.0.0/8").
+    // This field is immutable.
     // +optional
-    IPv6 *ClusterCIDRSpec
+    IPv4CIDR string
+
+    // IPv6CIDR defines an IPv6 IP block in CIDR notation(e.g. "fd12:3456:789a:1::/64").
+    // This field is immutable.
+    // +optional
+    IPv6CIDR string
 }
 
-type ClusterCIDRSpec struct {
-    // An IP block in CIDR notation ("10.0.0.0/8", "fd12:3456:789a:1::/64")
-    // +required
-    CIDR string
-
-    // Netmask size (e.g. 25 -> "/25") to allocate to a node.
-    // Users would have to ensure that the kubelet doesn't try to schedule more
-    // pods than are supported by the node's netmask (i.e. the kubelet's
-    // --max-pods flag)
-    // +required
-    PerNodeMaskSize int
-}
-
-type ClusterCIDRConfigStatus struct {
+type ClusterCIDRStatus struct {
 }
 ```
 
 #### Expected Behavior
 
--   `NodeSelector`, `IPv4`, and `IPv6` are immutable after creation.
+- `NodeSelector`, `PerNodeHostBits`, `IPv4CIDR`, and `IPv6CIDR` are immutable after creation.
 
--   `IPv4.PerNodeMaskSize` and `IPv6.PerNodeMaskSize` must specify the same
-    number of IP addresses:
+- `PerNodeHostBits` is used to calculate the mask size PerNode for the specified CIDRs:
 
-    ```32 - IPv4.PerNodeMaskSize == 128 - IPv6.PerNodeMaskSize```
+    ```IPv4CIDR.PerNodeMaskSize = 32 - PerNodeHostBits```
 
--   Each node will be assigned all Pod CIDRs from a matching config. That is to
-    say, you cannot assing only IPv4 addresses from a `ClusterCIDRConfig` which
+    ```IPv6CIDR.PerNodeMaskSize = 128 - PerNodeHostBits```
+
+- Each node will be assigned all Pod CIDRs from a matching config. That is to
+    say, you cannot assign only IPv4 addresses from a `ClusterCIDR` which
     specifies both IPv4 and IPv6. Consider the following example:
 
     ```go
     {
-        IPv4: {
-            CIDR:            "10.0.0.0/20",
-            PerNodeMaskSize: "22",
-        },
-        IPv6: {
-            CIDR:            "fd12:3456:789a:1::/64"
-            PerNodeMaskSize: "118",
-        },
+        PerNodeHostBits:     10,
+        IPv4CIDR:            "10.0.0.0/20",	
+        IPv6CIDR:            "fd12:3456:789a:1::/64",
     }
     ```
-    Only 4  nodes may be allocated from this `ClusterCIDRConfig` as only 4 IPv4
+    Only 4  nodes may be allocated from this `ClusterCIDR` as only 4 IPv4
     Pod CIDRs can be partitioned from the IPv4 CIDR. The remaining IPv6 Pod
-    CIDRs may be used if referenced in another `ClusterCIDRConfig`.
+    CIDRs may be used if referenced in another `ClusterCIDR`.
 
--   When there are multiple `ClusterCIDRConfig` resources in the cluster, first
-    collect the list of applicable `ClusterCIDRConfig`. A `ClusterCIDRConfig` is
+- When there are multiple `ClusterCIDR` resources in the cluster, first
+    collect the list of applicable `ClusterCIDR`. A `ClusterCIDR` is
     applicable if its `NodeSelector` matches the `Node` being allocated, and if
     it has free CIDRs to allocate.
 
@@ -307,23 +302,23 @@ type ClusterCIDRConfigStatus struct {
     If there are multiple default ranges, ties are broken using the scheme
     outlined below.
 
-    In ths case of multiple matching ranges, attempt to break ties with the
+    In the case of multiple matching ranges, attempt to break ties with the
     following rules:
-    1.  Pick the `ClusterCIDRConfig` whose `NodeSelector` matches the most
+    1.  Pick the `ClusterCIDR` whose `NodeSelector` matches the most
         labels/fields on the `Node`. For example,
         `{'node.kubernetes.io/instance-type': 'medium', 'rack': 'rack1'}` before
         `{'node.kubernetes.io/instance-type': 'medium'}`.
-    1.  Pick the `ClusterCIDRConfig` with the fewest Pod CIDRs allocatable. For
-        example, `{CIDR: "10.0.0.0/16", PerNodeMaskSize: "16"}` (1 possible Pod
-        CIDR) is picked before `{CIDR: "192.168.0.0/20", PerNodeMaskSize: "22"}`
+    1.  Pick the `ClusterCIDR` with the fewest Pod CIDRs allocatable. For
+        example, `{CIDR: "10.0.0.0/16", PerNodeHostBits: "16"}` (1 possible Pod
+        CIDR) is picked before `{CIDR: "192.168.0.0/20", PerNodeHostBits: "10"}`
         (4 possible Pod CIDRs)
-    1.  Pick the `ClusterCIDRConfig` whose `PerNodeMaskSize` is the fewest IPs.
-        For example, `27` (32 IPs) picked before `25` (128 IPs).
+    1.  Pick the `ClusterCIDR` whose `PerNodeHostBits` is the fewest IPs.
+        For example, `5` (32 IPs) picked before `7` (128 IPs).
     1.  Break ties arbitrarily.
 
--   When breaking ties between matching `ClusterCIDRConfig`, if the most
+- When breaking ties between matching `ClusterCIDR`, if the most
     applicable (as defined by the tie-break rules) has no more free allocations,
-    attempt to allocate from the next highest matching `ClusterCIDRConfig`. For
+    attempt to allocate from the next highest matching `ClusterCIDR`. For
     example consider a node with the labels:
     ```go
     {
@@ -331,48 +326,41 @@ type ClusterCIDRConfigStatus struct {
         "rack": "rack1",
     }
     ```
-    If the following `ClusterCIDRConfig` are programmed on the cluster, evaluate
+    If the following `ClusterCIDR` are programmed on the cluster, evaluate
     them from first to last using the first config with allocatable CIDRs. In
-    the example below, the `CluserCIDRConfig` have already been sorted according
+    the example below, the `ClusterCIDR` have already been sorted according
     to the tie-break rules.
     ```go
     {
-        NodeSelector: { MatchExpressions: { "node": "n1", "rack": "rack1" } },
-        IPv4: {
-            CIDR:            "10.5.0.0/16",
-            PerNodeMaskSize: 26,
-        }
+        NodeSelector:        { MatchExpressions: { "node": "n1", "rack": "rack1" } },
+        PerNodeHostBits:     6,
+        IPv4CIDR:            "10.5.0.0/16",
+				
     },
     {
         NodeSelector: { MatchExpressions: { "node": "n1" } },
-        IPv4: {
-            CIDR:            "192.168.128.0/17",
-            PerNodeMaskSize: 28,
-        }
+        PerNodeHostBits:      4,
+        IPv4CIDR:            "192.168.64.0/20",
     },
     {
         NodeSelector: { MatchExpressions: { "node": "n1" } },
-        IPv4: {
-            CIDR:            "192.168.64.0/20",
-            PerNodeMaskSize: 28,
-        }
+        PerNodeHostBits:      4,
+        IPv4CIDR:            "192.168.128.0/17",
     },
     {
         NodeSelector: nil,
-        IPv4: {
-            CIDR:            "10.0.0.0/8",
-            PerNodeMaskSize: 26,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "10.0.0.0/8",
     }
     ```
 
--   The controller will add a finalizer to the `ClusterCIDRConfig` object
+- The controller will add a finalizer to the `ClusterCIDR` object
     when it is created.
 
--   On deletion of the `ClusterCIDRConfig`, the controller checks to see if any
+- On deletion of the `ClusterCIDR`, the controller checks to see if any
     Nodes are using `PodCIDRs` from this range -- if so it keeps the finalizer
     in place and waits for the Nodes to be deleted. When all Nodes using this
-    `ClusterCIDRConfig` are deleted, the finalizer is removed.
+    `ClusterCIDR` are deleted, the finalizer is removed.
 
 #### Example: Allocations
 
@@ -381,45 +369,31 @@ type ClusterCIDRConfigStatus struct {
     {
         // Default for nodes not matching any other rule
         NodeSelector: nil,
-        IPv4: {
-            // For existing clusters this is the same as ClusterCIDR
-            CIDR:            "10.0.0.0/8",
-            // For existing API this is the same as NodeCIDRMaskSize
-            PerNodeMaskSize: 24,
-        }
+        PerNodeHostBits:      8,
+        // For existing clusters this is the same as ClusterCIDR
+        IPv4CIDR:            "10.0.0.0/8",
     },
     {
         // Another range, also allocate-able to any node
-        NodeSelector: nil,
-        IPv4: {
-            CIDR:            "172.16.0.0/14",
-            PerNodeMaskSize: 24,
-        }
+        NodeSelector: nil, 
+        PerNodeHostBits:      8,
+        IPv4CIDR:            "172.16.0.0/14",
     },
     {
         NodeSelector: { "node": "n1" },
-        IPv4: {
-            CIDR:            "10.0.0.0/8",
-            PerNodeMaskSize: 26,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "10.0.0.0/8",
     },
     {
         NodeSelector: { "node": "n2" },
-        IPv4: {
-            CIDR:            "192.168.0.0/16",
-            PerNodeMaskSize: 26,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "192.168.0.0/16",
     },
     {
         NodeSelector: { "node": "n3" },
-        IPv4: {
-            CIDR:            "5.2.0.0/16",
-            PerNodeMaskSize: 26,
-        }
-        IPv6: {
-            CIDR:            "fd12:3456:789a:1::/64",
-            PerNodeMaskSize: 122,
-        }
+        PerNodeHostBits:      6,
+        IPv4CIDR:            "5.2.0.0/16",
+        IPv6CIDR:            "fd12:3456:789a:1::/64",
     },
   ...
 ]
@@ -438,7 +412,7 @@ Given the above config, a valid potential configuration might be:
 
 Implement a new
 [NodeIPAM controller](https://github.com/kubernetes/kubernetes/tree/master/pkg/controller/nodeipam)
-The controller will set up watchers on the `ClusterCIDRConfig` objects and the
+The controller will set up watchers on the `ClusterCIDR` objects and the
 `Node` objects.
 
 This controller relies on being a single writer (just as the current NodeIPAM
@@ -460,10 +434,10 @@ nodes we expect.
 #### Dual-Stack Support
 
 The decision of whether to assign only IPv4, only IPv6, or both depends on the
-CIDRs configured in a `ClusterCIDRConfig` object. As described
+CIDRs configured in a `ClusterCIDR` object. As described
 [above](#expected-behavior), the controller creates an ordered list of
-`ClusterCIDRConfig` resources which apply to a given `Node` and allocates from
-the first matching `ClusterCIDRConfig` with CIDRs available.
+`ClusterCIDR` resources which apply to a given `Node` and allocates from
+the first matching `ClusterCIDR` with CIDRs available.
 
 The controller makes no guarantees that all Nodes are single-stack or that all
 Nodes are dual-stack. This is to specifically allow users to upgrade existing
@@ -496,9 +470,9 @@ from the existing NodeIPAM controller:
 
 #### Startup
 
--   Fetch list of `ClusterCIDRConfig` and build internal data structure
+-   Fetch list of `ClusterCIDR` and build internal data structure
 -   If they are set, read the `--cluster-cidr` and `--node-cidr-mask-size` flags
-    and attempt to create `ClusterCIDRConfig` with the name
+    and attempt to create `ClusterCIDR` with the name
     "created-from-flags-\<hash\>".
     -   In the dual-stack case, the flags `--node-cidr-mask-size-ipv4` and
         `--node-cidr-mask-size-ipv6` are used instead, they will also be used as
@@ -508,14 +482,14 @@ from the existing NodeIPAM controller:
     -   If an un-deleted object with the name "created-from-flags-*" already
         exists, but it does not match the flag values, the controller will
         delete it and create a new object. The controller will ensure (on
-        startup) that there is only one non-deleted `ClusterCIDRConfig` with the
+        startup) that there is only one non-deleted `ClusterCIDR` with the
         name "create-from-flags-\<hash>". The "\<hash>" at the end of the name
         allows the controller to have multiple "created-from-flags" objects
         present (e.g. blocked on deletion because of the finalizer), without
         blocking startup.
     -   If some `Node`s were allocated Pod CIDRs from the old
         "created-from-flags-\<hash>" object, they will follow the standard
-        lifecycle for deleting a `ClusterCIDRConfig` object. The
+        lifecycle for deleting a `ClusterCIDR` object. The
         "created-from-flag-\<hash>" object the `Nodes` are allocated from will
         remain pending deletion (waiting for its finalizer to be cleared) until
         all `Nodes` using those ranges are re-created.
@@ -523,7 +497,7 @@ from the existing NodeIPAM controller:
     -   If `PodCIDR` is set, mark the allocation in the internal data structure
         and store this association with the node.
     -   If `PodCIDR` is set, but is not part of one of the tracked
-        `ClusterCIDRConfig`, emit a K8s event but do nothing.
+        `ClusterCIDR`, emit a K8s event but do nothing.
     -   If `PodCIDR` is not set, save Node for allocation in the next step.
         After processing all nodes, allocate ranges to any nodes without Pod
         CIDR(s) [Same logic as Node Added event]
@@ -531,7 +505,7 @@ from the existing NodeIPAM controller:
 #### Processing Queue
 
 The controller will maintain a queue of events that it is processing. `Node`
-additions and `ClusterCIDRConfig` additions will be appended to the queue.
+additions and `ClusterCIDR` additions will be appended to the queue.
 Similarly, Node allocations which failed due to insufficient CIDRs can be
 retried by adding them back on to the queue (with exponential backoff).
 
@@ -541,13 +515,13 @@ retried by adding them back on to the queue (with exponential backoff).
 
 If the Node already has a `PodCIDR` allocated, mark the CIDRs as used.
 
-Otherwise, go through the list of `ClusterCIDRConfig`s and find ranges matching
+Otherwise, go through the list of `ClusterCIDR`s and find ranges matching
 the node selector from each family. Attempt to allocate Pod CIDR(s) with the
-given per-node size. If that `ClusterCIDRConfig` cannot fit a node, search for
-another `ClusterCIDRConfig`.
+given per-node size. If that `ClusterCIDR` cannot fit a node, search for
+another `ClusterCIDR`.
 
-If no `ClusterCIDRConfig` matches the node, or if all matching
-`ClusterCIDRConfig`s are full, raise a K8s event and put the Node on the
+If no `ClusterCIDR` matches the node, or if all matching
+`ClusterCIDR`s are full, raise a K8s event and put the Node on the
 reconciliation queue (infinite retries). Upon successfully allocating CIDR(s),
 update the node object with the podCIDRs.
 
@@ -558,7 +532,7 @@ Check that its Pod CIDR(s) match internal allocation.
 -   If node.spec.PodCIDRs is already filled up, honor that allocation and mark
     those ranges as allocated.
 -   If the node.spec.PodCIDRs is filled with a CIDR not from any
-    `ClusterCIDRConfig`, raise a K8sEvent.
+    `ClusterCIDR`, raise a K8sEvent.
 -   If the ranges are already marked as allocated for some other node, raise
     another error event (there isn’t an obvious reconciliation step the
     controller can take unilaterally).
@@ -567,24 +541,24 @@ Check that its Pod CIDR(s) match internal allocation.
 
 Release said Node’s allocation from the internal data-structure.
 
-If this Node is the last one using a particular `ClusterCIDRConfig` that has
+If this Node is the last one using a particular `ClusterCIDR` that has
 been slated for deletion, trigger the deletion flow again (so that the finalizer
 is removed and internal data structures are cleaned up).
 
-##### ClusterCIDRConfig Added
+##### ClusterCIDR Added
 
-Install a finalizer on the `ClusterCIDRConfig` called "networking.kubernetes.io/cluster-cidr-config-finalizer".
+Install a finalizer on the `ClusterCIDR` called "networking.kubernetes.io/cluster-cidr-config-finalizer".
 
 Update internal representation of CIDRs to include the new range. Every failed
 Node Allocation is stored in a queue, that will be tried again with the new
 range by the reconciliation loop.
 
-##### ClusterCIDRConfig Updated
+##### ClusterCIDR Updated
 
 _`NodeSelector`, `IPv4`, and `IPv6` are immutable so any updates should be
 rejected_
 
-##### ClusterCIDRConfig Deleted
+##### ClusterCIDR Deleted
 
 1.  Update internal data structures to mark the range as terminating (so new
     nodes won't be added to it)
@@ -598,33 +572,43 @@ rejected_
 ### kube-controller-manager
 
 The flag `--cidr-allocator-type` will be amended to include a new type
-"ClusterCIDRConfigAllocator".
+"MultiCIDRRangeAllocator".
 
 The list of current valid types is
 [here](https://github.com/kubernetes/kubernetes/blob/1ff18a9c43f59ffed3b2d266b31e0d696d04eaff/pkg/controller/nodeipam/ipam/cidr_allocator.go#L38).
 
 ### Test Plan
 
-#### Unit Tests and Benchmarks
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
--   Ensure that the controller scales to ~5,000 nodes -- memory usage and
-    reasonable allocation times
+##### Prerequisite testing updates
 
-#### Integration Tests
+N/A
 
--   Verify finalizers and statuses are persisted appropriately
--   Test watchers
--   Ensure that the controller handles the feature being disabled and re-enabled:
-    -   Test with some Nodes already having `PodCIDR` allocations
+##### Unit tests
 
-#### End-to-End Tests
+- Ensure that the controller scales to ~5,000 nodes -- memory usage and
+    reasonable allocation times. 
+- k8s.io/kubernetes/pkg/controller/nodeipam: 06/21/2022 - 51.2
+
+##### Integration tests
+
+- `TestIPAMMultiCIDRRangeAllocatorCIDRAllocate`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L44
+- `TestIPAMMultiCIDRRangeAllocatorCIDRRelease`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L131
+- `TestIPAMMultiCIDRRangeAllocatorClusterCIDRDelete`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L208
+- `TestIPAMMultiCIDRRangeAllocatorClusterCIDRTerminate`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L304
+- `TestIPAMMultiCIDRRangeAllocatorClusterCIDRTieBreak`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L389
+
+##### e2e tests
 
 -   Run through some sample workflows. Just a few for example:
     -   Adding a node
-    -   Adding a ClusterCIDRConfig
-    -   Deleting a ClusterCIDRConfig that is in use
+    -   Adding a ClusterCIDR
+    -   Deleting a ClusterCIDR that is in use
 -   Run through the [user stories](#user-stories):
-    -   Expand the ClusterCIDR (existing nodes without alloations are
+    -   Expand the ClusterCIDR (existing nodes without allocations are
         allocated and new nodes also get ranges.
     -   Use `NodeSelector` to allocate different sized CIDRs to different nodes.
     -   Create and use discontiguous ranges.
@@ -643,13 +627,13 @@ The list of current valid types is
 #### Make the Controller the new default
 
 After the GA graduation, change the default NodeIPAM allocator from
-RangeAllocator to ClusterCIDRConfigAllocator. This will involve changing the
+RangeAllocator to MultiCIDRRangeAllocator. This will involve changing the
 default value of the flag on the kube-controller-manager
 (`--cidr-allocator-type`).
 
 #### Mark the RangeAllocator as deprecated
 
-In the same release that the ClusterCIDRConfigAllocator is made the default,
+In the same release that the MultiCIDRRangeAllocator is made the default,
 mark the RangeAllocator as deprecated.
 
 After 2 releases, the code can be removed.
@@ -679,10 +663,10 @@ Users may "downgrade" by switching back the `--cidr-allocator-type` to
 allocations will persist even after the downgrade, and the old controller can
 start allocating PodCIDRs
 
-If users use the `ClusterCIDRConfig` resource to specify CIDRs, switching to the
+If users use the `ClusterCIDR` resource to specify CIDRs, switching to the
 old controller will maintain any Node `PodCIDR` allocations that have already
 been created. Users will have to manually remove the finalizer from the
-`ClusterCIDRConfig` objects before they can be deleted.
+`ClusterCIDR` objects before they can be deleted.
 
 ### Version Skew Strategy
 
@@ -745,7 +729,7 @@ Pick one of these and delete the rest.
 -->
 
 -   [X] Feature Gate
-    -   Feature gate name: ClusterCIDRConfig
+    -   Feature gate name: MultiCIDRRangeAllocator
     -   Components depending on the feature gate: kube-controller-manager
         -   The feature gate will control whether the new controller can even be
             used, while the kube-controller-manager flag below will pick the
@@ -753,13 +737,13 @@ Pick one of these and delete the rest.
 -   [X] Other
     -   Describe the mechanism:
         -   The feature is enabled by setting the kube-controller-manager flag
-            `--cidr-allocator-type=ClusterCIDRConfigController`.
+            `--cidr-allocator-type=MultiCIDRRangeAllocator`.
     -   Will enabling / disabling the feature require downtime of the control
         plane?
         -   Yes. Changing the kube-controller-manager flags will require
             restarting the component (which runs other controllers).
     -   Will enabling / disabling the feature require downtime or reprovisioning
-        of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+        of a node?
         -   No. With the caveat that if the kube-proxy is in use, it must set
             the appropriate flags, as [described above](#pre-requisites).
 
@@ -768,33 +752,33 @@ Pick one of these and delete the rest.
 No, simply switching to the new controller will not change any behavior. The
 controller will continue to respect the old controller's flags.
 
-Only after creating some `ClusterCIDRConfig` objects will behavior change (that
+Only after creating some `ClusterCIDR` objects will behavior change (that
 too only for nodes created after that point).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, users can switch back to the old controller and delete the
-`ClusterCIDRConfig` objects. However, if any Nodes were allocated `PodCIDR` by
+`ClusterCIDR` objects. However, if any Nodes were allocated `PodCIDR` by
 the new controller, those allocation will persist for the lifetime of the Node.
 Users will have to recreate their Nodes to trigger another `PodCIDR` allocation
 (this time performed by the old controller).
 
-The should not be any effect on running workloads. The nodes will continue to
-use their allocated `PodCIDR` even if the underlying `ClusterCidrConfig` object
+There should not be any effect on running workloads. The nodes will continue to
+use their allocated `PodCIDR` even if the underlying `ClusterCIDR` object
 is forceably deleted.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The controller is expected to read the existing set of `ClusterCIDRConfig` as
+The controller is expected to read the existing set of `ClusterCIDR` as
 well as the existing Node `PodCIDR` allocations and allocate new PodCIDRs
 appropriately. 
 
 ###### Are there any tests for feature enablement/disablement?
 
-Not yet, they will be added as part of the graduation to alpha. They will test
+Not yet, they will be added as part of the graduation to beta. They will test
 the scenario where some Nodes already have PodCIDRs allocated to them
-(potentially from CIDRs not tracked by any `ClusterCIDRConfig`). This should be
-sufficient to cover the enablement/disablment scenarios.
+(potentially from CIDRs not tracked by any `ClusterCIDR`). This should be
+sufficient to cover the enablement/disablement scenarios.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -808,6 +792,15 @@ This section must be completed when targeting beta to a release.
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
 -->
+kube-controller-manager needs to be restarted, the CIDR allocator will be switched 
+to the new range allocator based on `--cidr-allocator-type=MultiCIDRRangeAllocator` 
+flag. Rollout can fail if the `--cluster-cidr` field is updated during the 
+kube-controller-manager restart. kube-controller-manager will crashloop and new
+nodes will not have any PodCIDRs assigned and thus will not be ready. This
+behavior is consistent with the existing reange-allocator behavior. The mitigation
+is to set `--cluster-cidr` back to the original value.
+
+Already running workloads will not be impacted.
 
 ###### What specific metrics should inform a rollback?
 
@@ -815,6 +808,9 @@ mid-rollout?
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+multicidrset_allocation_tries_per_request metric must be monitored, if the value
+is high(>25) in the buckets greater than 125 would indicate a large number of
+failures while allocating the cidrs.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -824,11 +820,113 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+Build and run the latest version of Kubernetes using Kind:
+```
+$ kind build node-image
+$ kind create cluster --image kindest/node:latest --config ~/k8sexample/kind/cluster-config-without-multipod.yaml 
+...
+...
+sarveshr@sarveshr:~$ kubectl --context kind-multi-pod-cidr get node
+NAME                           STATUS   ROLES           AGE   VERSION
+multi-pod-cidr-control-plane   Ready    control-plane   21m   v1.27.0-alpha.1.226+1ded677b2a77a7
+```
+
+Initially the feature gate `MultiCIDRRangeAllocator` is set to `false`
+
+```
+$ vi cluster-config-without-multipod.yaml 
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: multi-pod-cidr
+featureGates:
+  "MultiCIDRRangeAllocator": false
+runtimeConfig:
+  "api/alpha": "true"
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+```
+
+Make sure no ClusterCIDR objects are created
+
+```
+$ kubectl --context kind-multi-pod-cidr get cc -A                                                                                              
+No resources found    
+```
+
+Upgrade to use MultiCIDRRangeAllocator, by logging into the Control plane node
+and updating the kubeadm manifests as follows:
+
+1. Update `/etc/kubernetes/manifests/kube-apiserver.yaml` by modifying
+`--feature-gates=MultiCIDRRangeAllocator=false` to `--feature-gates=MultiCIDRRangeAllocator=true`
+2. Update `/etc/kubernetes/manifests/kube-controller-manager.yaml` by modifying
+`--cidr-allocator-type=RangeAllocator` to `--cidr-allocator-type=MultiCIDRRangeAllocator` and
+`--feature-gates=MultiCIDRRangeAllocator=false` to `--feature-gates=MultiCIDRRangeAllocator=true`
+
+kubelet will restart the kube-apiserver and kube-controller-manager pods as these are static manifests.
+
+Validate that all pods are Running
+
+```
+$ kubectl --context kind-multi-pod-cidr get po -A                                                                                              
+NAMESPACE            NAME                                                   READY   STATUS    RESTARTS      AGE                                                   
+kube-system          coredns-56f4c55bf9-b7bds                               1/1     Running   0             3m26s                                                 
+kube-system          coredns-56f4c55bf9-bgcxk                               1/1     Running   0             3m26s                                                 
+kube-system          etcd-multi-pod-cidr-control-plane                      1/1     Running   0             3m38s                                                 
+kube-system          kindnet-cj5sg                                          1/1     Running   2 (71s ago)   3m26s                                                 
+kube-system          kube-apiserver-multi-pod-cidr-control-plane            1/1     Running   0             72s                                                   
+kube-system          kube-controller-manager-multi-pod-cidr-control-plane   1/1     Running   0             19s                                                   
+kube-system          kube-proxy-gwh45                                       1/1     Running   0             3m26s
+kube-system          kube-scheduler-multi-pod-cidr-control-plane            1/1     Running   1 (95s ago)   3m38s
+local-path-storage   local-path-provisioner-c8855d4bb-qxw7g                 1/1     Running   0             3m26s
+```
+
+Validate whether the Default ClusterCIDR object is created
+
+```
+$ kubectl --context kind-multi-pod-cidr get cc -A
+NAME                   PERNODEHOSTBITS   IPV4            IPV6     AGE
+default-cluster-cidr   8                 10.244.0.0/16   <none>   21s
+```
+
+Rollback to use RangeAllocator, by logging into the Control plane node
+and updating the kubeadm manifests as follows:
+
+1. Update `/etc/kubernetes/manifests/kube-apiserver.yaml` by modifying
+   `--feature-gates=MultiCIDRRangeAllocator=true` to `--feature-gates=MultiCIDRRangeAllocator=false`
+2. Update `/etc/kubernetes/manifests/kube-controller-manager.yaml` by modifying
+   `--cidr-allocator-type=MultiCIDRRangeAllocator` to `--cidr-allocator-type=RangeAllocator` and
+   `--feature-gates=MultiCIDRRangeAllocator=true` to `--feature-gates=MultiCIDRRangeAllocator=false`
+
+kubelet will restart the kube-apiserver and kube-controller-manager pods as these are static manifests.
+
+Validate that all pods are Running
+
+```
+$ kubectl --context kind-multi-pod-cidr get po -A
+NAMESPACE            NAME                                                   READY   STATUS    RESTARTS      AGE
+kube-system          coredns-56f4c55bf9-b7bds                               1/1     Running   0             16m
+kube-system          coredns-56f4c55bf9-bgcxk                               1/1     Running   0             16m
+kube-system          etcd-multi-pod-cidr-control-plane                      1/1     Running   0             16m
+kube-system          kindnet-cj5sg                                          1/1     Running   4 (24s ago)   16m
+kube-system          kube-apiserver-multi-pod-cidr-control-plane            1/1     Running   0             24s
+kube-system          kube-controller-manager-multi-pod-cidr-control-plane   1/1     Running   0             11s
+kube-system          kube-proxy-gwh45                                       1/1     Running   0             16m
+kube-system          kube-scheduler-multi-pod-cidr-control-plane            1/1     Running   2 (49s ago)   16m
+local-path-storage   local-path-provisioner-c8855d4bb-qxw7g                 1/1     Running   0             16m
+```
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No
 
 ### Monitoring Requirements
 
@@ -844,15 +942,28 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+`multicidrset_cidrs_allocations_total` metric with value > 0 will indicate enablement. 
+The operator can also check if ClusterCIDR objects are created, this can be done
+using `kubectl get cc -A`
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-We will carry-over existing metrics to the new controller: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/nodeipam/ipam/cidrset/metrics.go#L26-L68
+We have carried-over existing metrics to the new controller: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/nodeipam/ipam/cidrset/metrics.go#L26-L68
 
 They are:
--   cidrset_cidrs_allocations_total - Count of total number of CIDR allcoations
--   cidrset_cidrs_releases_total - Count of total number of CIDR releases
--   cidrset_usage_cidrs - Gauge messuring the percentage of the provided CIDRs
-    that have been allocated
+- multicidrset_cidrs_allocations_total - Count of total number of CIDR allocations
+- multicidrset_cidrs_releases_total - Count of total number of CIDR releases
+- multicidrset_usage_cidrs - Gauge measuring the percentage of the provided CIDRs
+    that have been allocated.
+- multicidrset_allocation_tries_per_request - Histogram measuring CIDR allocation
+    tries per request.
+
+The health of the service can be determined if the *_total metrics increase with
+the number of nodes and the multicidrset_usage_cidrs metric is greater or equal
+than the number of nodes.
+
+Note that this service is optional and would allocate the CIDRs only when
+`--allocate-node-cidrs` is set to true in kube-controller-manager.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
@@ -865,6 +976,7 @@ high level (needs more precise definitions) those may be things like:
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 -->
+N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -872,6 +984,7 @@ high level (needs more precise definitions) those may be things like:
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+TBD
 
 ### Dependencies
 
@@ -895,6 +1008,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No
 
 ### Scalability
 
@@ -911,8 +1025,8 @@ previous answers based on experience in the field.
 ###### Will enabling / using this feature result in any new API calls?
 
 By adding a new resource type, we will increase the number of API calls to watch
-the `ClusterCIDRConfig` objects. The new controller, which will replace the
-existing NodeIPAM controller, will register a watch for `ClusterCIDRConfig`s
+the `ClusterCIDR` objects. The new controller, which will replace the
+existing NodeIPAM controller, will register a watch for `ClusterCIDR`s
 
 On the write side, the current NodeIPAM controllers already make PATCH calls to
 the `Node` objects to add PodCIDR information. That traffic should remain unchanged.
@@ -931,11 +1045,11 @@ Focusing mostly on:
 -->
 
 ###### Will enabling / using this feature result in introducing new API types?
-Yes, the new `ClusterCIDRConfig` type will be a pre-requisite for using this
+Yes, the new `ClusterCIDR` type will be a pre-requisite for using this
 feature.
 
-In the worst case, there may as many `ClusterCIDRConfig` objects as there are
-nodes, so we intend to support hundreds of `ClusterCIDRConfig` objects per
+In the worst case, there may as many `ClusterCIDR` objects as there are
+nodes, so we intend to support hundreds of `ClusterCIDR` objects per
 cluster. The resources are cluster scoped, not namespace-scoped.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
@@ -955,7 +1069,7 @@ for the Node.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 We expect resource usage of the kube-controller-manager to scale with the number
-of nodes and `ClusterCIDRConfigs` in the cluster. Specifically CPU and RAM use
+of nodes and `ClusterCIDRs` in the cluster. Specifically CPU and RAM use
 will increase as more nodes and more CIDRs need to be tracked.
 
 We will have unit tests to ensure that such growth is "reasonable" --
@@ -972,6 +1086,13 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+MultiCIDRRangeAllocator is a part of the kube-controller-manager and if the
+kube-controller-manager is not able to connect to the apiserver, the cluster
+might have greater problems.
+
+The MultiCIDRRangeAllocator will not be able to fetch node objects and thus the
+node will remain in NotReady state as it will have no PodCIDRs assigned. This is
+in line with the current RangeAllocator behavior.
 
 ###### What are other known failure modes?
 
@@ -1014,14 +1135,14 @@ Why should this KEP _not_ be implemented?
 ### Share Resources with Service API
 
 There have also been discussions about updating the service API to have multiple
-ranges. One proposal is to share a common `ClusterCIDRConfig` resource between
+ranges. One proposal is to share a common `ClusterCIDR` resource between
 both APIs.
 
 The potential for divergence between Service CIDRs and Pod CIDRs is quite high,
 as discussed in the cons section below.
 
 ```
-ClusterCIDRConfig {
+ClusterCIDR {
   Type      CIDRType
   CIDR string # Example "10.0.0.0/8" or "fd12:3456:789a:1::/64"
   Selector  v1.LabelSelector # Specifies which Services or Nodes can be
@@ -1059,7 +1180,7 @@ controllers would watch this resource and attempt to fulfill these requests.
 
 The major goals behind this design is to provide more flexibility in IPAM.
 Additionally, it ensures that nodes ask for what they need and users don’t need
-to ensure that the `ClusterCIDRConfig` and the Node’s `--max-pods` value are in
+to ensure that the `ClusterCIDR` and the Node’s `--max-pods` value are in
 alignment.
 
 A major factor in not recommending this strategy is the increased complexity to

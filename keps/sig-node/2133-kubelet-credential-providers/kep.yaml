@@ -7,7 +7,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-auth
   - sig-cloud-provider
-status: implementable
+status: implemented
 creation-date: 2020-11-12
 reviewers:
   - "@cheftako"
@@ -17,24 +17,22 @@ approvers:
   - "@cheftako"
   - "@liggitt"
   - "@derekwaynecarr"
-prr-approvers:
-  - "@deads2k"
 replaces:
   - "/keps/sig-cloud-provider/20191004-out-of-tree-credential-providers.md"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.25"
+latest-milestone: "v1.26"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.20"
   beta: "v1.24"
-  stable: "v1.25"
+  stable: "v1.26"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

@@ -16,8 +16,6 @@ reviewers:
 approvers:
   - "@janetkuo"
   - "@kow3ns"
-prr-approvers:
-  - "wojtek-t"
 see-also:
   - "/keps/sig-apps/1828-delete-priority-annotations"
 replaces:

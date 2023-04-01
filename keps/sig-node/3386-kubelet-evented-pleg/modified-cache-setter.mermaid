@@ -1,0 +1,5 @@
+sequenceDiagram
+    Title: Modified Cache Setter
+    Evented PLEG->>Cache: Set PodStatus
+    Generic PLEG->>Cache: Set PodStatus
+    Note over  Cache: Update the PodStatus only if it is newer than Cache

@@ -14,6 +14,7 @@
   - [Scenarios](#scenarios)
   - [Implementation Details/Design](#implementation-detailsdesign)
     - [Naming Conventions](#naming-conventions)
+    - [Shell Completion Support](#shell-completion-support)
   - [Implementation Notes/Constraints](#implementation-notesconstraints)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
@@ -155,6 +156,40 @@ syscall.Exec(foundBinaryPath, append([]string{foundBinaryPath}, cmdArgs[len(rema
 Under this proposal, `kubectl` would identify plugins by looking for filenames beginning with the `kubectl-` prefix.
 A search for these names would occur on a user's `PATH`. Only files that are executable and begin with this prefix
 would be identified.
+
+#### Shell Completion Support
+
+As an extension to this proposal, this section describes how shell completion support can be added to the implementation
+of a `kubectl` plugin.
+
+For a plugin to support shell completion, it will need to provide an independent executable file using the prefix
+`kubectl_complete-` followed by the plugin name.  For example, a plugin named `kubectl-foo` would
+provide a completion executable named `kubectl_complete-foo`.
+
+Similarly to the plugin executable, the completion executable will need to be found on `PATH`. When
+`kubectl` requires shell completions for the plugin, it will look for and execute the
+`kubectl_complete-<plugin>` file, passing it the command-line that needs to be completed as multiple
+arguments. The `kubectl_complete-<plugin>` executable will need to have the logic to determine what the
+proper completion choices are and output them to standard output to be consumed by `kubectl`.
+
+For a richer completion experience, `kubectl` will support Cobra's shell completion directive system which will
+allow plugins to optionally control certain behaviors of the shell when it performs shell completion.  Please refer to 
+[the Cobra documentation](https://github.com/spf13/cobra/blob/master/shell_completions.md#dynamic-completion-of-nouns) for details.
+
+Supporting shell completion and therefore providing a `kubectl_complete-<plugin>` executable is entirely
+optional. If it is not provided, `kubectl` will simply not perform any special shell completion for the
+plugin and will instead default to file completion. Note that providing a `kubectl_complete-<plugin>`
+executable is backwards-compatible and will simply be ignored when using older versions of `kubectl`.
+
+It is worth mentioning that if a `kubectl` plugin is implemented using [the Cobra project](https://github.com/spf13/cobra),
+it can use Cobra's built-in shell completion support directly.  As an example, if we have a plugin named `myplugin`
+which uses Cobra, its `kubectl_complete-myplugin` executable can simply be:
+```sh
+#!/usr/bin/env sh
+
+kubectl myplugin __complete "$@"
+```
+Then all that is needed is to name this file `kubectl_complete-myplugin`, put it somewhere on `$PATH` and give it executable permissions.
 
 ### Implementation Notes/Constraints
 

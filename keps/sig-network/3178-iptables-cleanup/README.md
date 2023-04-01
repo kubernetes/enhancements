@@ -22,6 +22,10 @@
     - [GA + 2](#ga--2)
     - [Indeterminate Future](#indeterminate-future)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -348,7 +352,7 @@ because it is more of a cleanup/bugfix than a new feature.) We should
 also ensure that kpng gets updated.
 
 Kubelet's behavior will not change by default, but if you enable the
-`IPTablesCleanup` feature gate, then:
+`IPTablesOwnershipCleanup` feature gate, then:
 
   1. It will stop creating `KUBE-MARK-DROP`, `KUBE-MARK-MASQ`,
      `KUBE-POSTROUTING`, and `KUBE-KUBELET-CANARY`. (`KUBE-FIREWALL`
@@ -399,22 +403,63 @@ Kubelet, but there is no specific plan for this at this time.
 
 ### Test Plan
 
-We discovered a while back that our existing e2e tests do not properly
-test the cases that are expected to result in dropped packets
-([kubernetes #85572]). Attempting to fix this resulted in the
-discovery that [there is not any easy way to test these rules]; in any
-of the scenarios we can easily create in our e2e environment, it is
-either impossible to hit kube-proxy's "drop" rules, or else the
-connection would end up getting dropped for other reasons even if
-kube-proxy failed to drop it.
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-Thus, the new code (like the existing code), will primarily be tested
-by the unit tests in `pkg/proxy/iptables/proxier_test.go`, not by e2e
-tests. We will need to extend those tests to test the functionality
-both with the feature gate disabled and enabled.
+##### Prerequisite testing updates
+
+We discovered a while back that our existing e2e tests do not properly
+test the cases that are expected to result in dropped packets. (The
+tests still pass even when we don't drop the packets: [kubernetes
+#85572]). However, attempting to fix this resulted in the discovery
+that [there is not any easy way to test these rules]. In the
+`LoadBalancerSourceRanges` case, the drop rule will never get hit on
+GCP (unless there is a bug in the GCP CloudProvider or the cloud load
+balancers). (The drop rule _can_ get hit in a bare-metal environment
+when using a third-party load balancer like MetalLB, but we have no
+way of testing this in Kubernetes CI). In the traffic policy case, the
+drop rule is needed during periods when kube-proxy and the cloud load
+balancers are out of sync, but there is no good way to reliably
+trigger this race condition for e2e testing purposes.
+
+However, we can manually test the new rules (eg, by killing kube-proxy
+before updating a service to ensure that kube-proxy and the cloud load
+balancer will remain out of sync), and then once we are satisfied that
+the rules do what we expect them to do, we can use the unit tests to
+ensure that we continue to generate the same (or functionally
+equivalent) rules in the future.
 
 [kubernetes #85572]: https://github.com/kubernetes/kubernetes/issues/85572
 [there is not any easy way to test these rules]: https://github.com/kubernetes/kubernetes/issues/85572#issuecomment-1031733890
+
+##### Unit tests
+
+The unit tests in `pkg/proxy/iptables/proxier_test.go` ensure that we
+are generating the iptables rules that we expect to, and the [new
+tests already added in 1.25] allow us to assert specifically that
+particular packets would behave in particular ways.
+
+Thus, for example, although we can't reproduce the race conditions
+mentioned above in an e2e environment, we can at least confirm that if
+a packet arrived on a node which it shouldn't have because of this
+race condition, that the iptables rules we generate would [route it to
+a `DROP` rule], rather than delivering or rejecting it.
+
+- `pkg/proxy/iptables`: `06-21` - `65.1%`
+
+[new tests already added in 1.25]: https://github.com/kubernetes/kubernetes/pull/107471
+[route it to a `DROP` rule]: https://github.com/kubernetes/kubernetes/blob/v1.25.0-alpha.1/pkg/proxy/iptables/proxier_test.go#L5974
+
+##### Integration tests
+
+There are no existing integration tests of the proxy code and no plans
+to add any.
+
+##### e2e tests
+
+As discussed above, it is not possible to test this functionality via
+e2e tests in our CI environment.
 
 ### Graduation Criteria
 
@@ -473,7 +518,7 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in valuesin `kep.yaml`)
-  - Feature gate name: IPTablesCleanup
+  - Feature gate name: IPTablesOwnershipCleanup
   - Components depending on the feature gate:
     - kubelet
 
@@ -507,19 +552,47 @@ This section must be completed when targeting beta to a release.
 
 The most likely cause of a rollout failure would be a third-party
 component that depended on one of the no-longer-existing IPTables
-chains. It is impossible to predict exactly how this third-party
-component would fail in this case, but it would likely impact already
-running workloads.
+chains; most likely this would be a CNI plugin (either the default
+network plugin or a chained plugin) or some other networking-related
+component (NetworkPolicy implementation, service mesh, etc).
+
+It is impossible to predict exactly how this third-party component
+would fail in this case, but it would likely impact already running
+workloads.
 
 ###### What specific metrics should inform a rollback?
 
-Any failures would be the result of third-party components being
-incompatible with the change, so no core Kubernetes metrics are likely
-to be relevant.
+If the default network plugin (or plugin chain) depends on the missing
+iptables chains, it is possible that all `CNI_ADD` calls would fail
+and it would become impossible to start new pods, in which case
+kubelet's `started_pods_errors_total` would start to climb. However,
+"impossible to start new pods" would likely be noticed quickly without
+metrics anyway...
+
+For the most part, since failures would likely be in third-party
+components, it would be the metrics of those third-party components
+that would be relevant to diagnosing the problem. Since the problem is
+likely to manifest in the form of iptables calls failing because they
+reference non-existent chains, a metric for "number of iptables
+errors" or "time since last successful iptables update" might be
+useful in diagnosing problems related to this feature. (However, it is
+also quite possible that the third-party components in question would
+have no relevant metrics, and errors would be exposed only via log
+messages.)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD
+Yes.
+
+When considering only core kubernetes components, and only
+alpha-or-later releases, upgrade/downgrade and enablement/disablement
+create no additional complications beyond clean installs; kube-proxy
+simply doesn't care about the additional rules that kubelet may or may
+not be creating any more.
+
+Upgrades from pre-alpha to beta-or-later or downgrades from
+beta-or-later to pre-alpha are not supported, and for this reason we
+waited 2 releases after alpha to go to beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -534,16 +607,14 @@ This section must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-There is no simple way to do this because if the feature is working
-correctly there will be no difference in externally-visible behavior.
-(The generated iptables rules will be different, but the _effect_ of
-the generated iptables rules will be the same.)
+The feature is not "used by workloads"; when enabled, it is always in
+effect and affects the cluster as a whole.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] Other (treat as last resort)
 
-  - Details: As above, the feature is not supposed to have any
+  - Details: The feature is not supposed to have any
     externally-visible effect. If anything is not working, it is
     likely to be a third-party component, so it is impossible to say
     what a failure might look like.
@@ -598,6 +669,10 @@ No
 
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
 
 <!--
@@ -639,6 +714,12 @@ Major milestones might include:
 
 - Initial proposal: 2022-01-23
 - Updated: 2022-03-27, 2022-04-29
+- Merged as `implementable`: 2022-06-10
+- Updated: 2022-07-26 (feature gate rename)
+- Alpha release (1.25): 2022-08-23
+- [Blog post about upcoming changes]: 2022-09-07
+
+[Blog post about upcoming changes]: https://kubernetes.io/blog/2022/09/07/iptables-chains-not-api/
 
 ## Drawbacks
 

@@ -133,7 +133,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -470,7 +470,7 @@ well as the [existing list] of feature gates.
   - Will enabling / disabling the feature require downtime of the control
     plane?
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -718,6 +718,18 @@ This through this both in small and large cases, again with respect to the
 [supported limits].
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
 -->
 
 ### Troubleshooting

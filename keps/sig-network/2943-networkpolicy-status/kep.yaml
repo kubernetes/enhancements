@@ -3,7 +3,7 @@ kep-number: 2943
 authors:
   - "@rikatz"
 owning-sig: sig-network
-status: implementable
+status: withdrawn
 creation-date: 2021-09-06
 reviewers:
   - "@thockin"
@@ -17,20 +17,13 @@ approvers:
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha 
 
-##### WARNING !!! ######
-# prr-approvers has been moved to its own location
-# You should create your own in keps/prod-readiness
-# Please make a copy of keps/prod-readiness/template/nnnn.yaml
-# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
-#prr-approvers:
-
 see-also:
   - "/keps/sig-network/2079-network-policy-port-range"
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.24"
+latest-milestone: "v1.27"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:

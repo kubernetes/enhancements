@@ -2,6 +2,7 @@ title: Kubectl events
 kep-number: 1440
 authors:
   - "@hpandeycodeit"
+  - "soltysh"
 owning-sig: sig-cli
 participating-sigs:
   - sig-cli
@@ -10,6 +11,7 @@ creation-date: 2019-10-08
 reviewers:
   - "@soltysh"
   - "@pwittrock"
+  - "@ardaguclu"
 approvers:
   - "@soltysh"
   - "@pwittrock"
@@ -18,14 +20,14 @@ see-also:
   - https://docs.google.com/document/d/1w-HRLtMncDAL_yQQJdHDasyCZRdJTOV1N6y22fGsKkY/edit#
 replaces: []
 
-stage: "alpha"
+stage: "beta"
 
-latest-milestone: "1.23"
+latest-milestone: "1.26"
 
 milestone:
   alpha: "v1.23"
-  beta: "v1.25"
-  stable: "v1.26"
+  beta: "v1.26"
+  stable: "v1.27"
 
 feature-gates: []
 disable-supported: false

@@ -11,8 +11,6 @@ reviewers:
   - "@jsafrane"
 approvers:
   - "@saad-ali"
-prr-approvers:
-  - "@wojtek-t"
 stage: stable
 latest-milestone: "v1.23"
 milestone:

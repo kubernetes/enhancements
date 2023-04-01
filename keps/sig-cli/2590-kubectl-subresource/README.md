@@ -7,17 +7,21 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-- [Notes](#notes)
-- [Examples](#examples)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+  - [Examples](#examples)
     - [get](#get)
     - [patch](#patch)
 - [Design Details](#design-details)
   - [Subresource support](#subresource-support)
   - [Table printer](#table-printer)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -40,11 +44,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -95,12 +99,12 @@ to a different value is *expected behavior*.
 If `--subresource` flag is used for a resource that doesn't support the subresource, 
 a `NotFound` error will be returned.
 
-## Notes
+### Notes/Constraints/Caveats
 
-The alpha stage of this KEP does not change any behavior of the `apply` command.
-The support for `--subresource` in this command will be added later.
+Due to additional complexity and the general purpose of `apply` being a
+declarative command, `--subresource` will not be expanded to the `apply` command.
 
-## Examples
+### Examples
 
 #### get
 
@@ -197,17 +201,41 @@ For custom resources:
 
 ### Test Plan
 
-- Unit tests, integration and e2e tests will be added.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/printers/internalversion`: `2023-01-12` - 71.2
+- `k8s.io/kubernetes/vendor/k8s.io/cli-runtime/pkg/resource`: `2023-01-12` - 70.9
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/edit`: `2023-01-12` - 100
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/get`: `2023-01-12` - 80.7
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/patch`: `2023-01-12` - 56.3
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/replace`: `2023-01-12` - 63.6
+
+##### Integration tests
+
+- `kubectl get`: [link to test coverage](https://github.com/kubernetes/kubernetes/blob/4802d7bb62c2623be8e4f940f6b5c1fcddd6c744/test/cmd/get.sh#L178-L184)
+
+##### e2e tests
 
 ### Graduation Criteria
 
-#### Alpha -> Beta Graduation
+#### Alpha
 
-- [ ] Collect user feedback on adding support of `--subresource` for `apply`
+- Add the `--subresource` flag to get, patch, edit and replace commands.
+- Unit tests and integration tests are added.
 
-#### Beta -> GA Graduation
+#### Beta
 
-- [ ] User feedback gathered for atleast 1 cycle
+- Gather feedback from users.
+- e2e tests are added.
+
+#### GA
+
+- User feedback gathered for at least 1 cycle.
+
 
 ### Upgrade / Downgrade Strategy
 
@@ -239,7 +267,7 @@ Pick one of these and delete the rest.
     - Will enabling / disabling the feature require downtime of the control
       plane? No, disabling the feature would be a client behaviour.
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node? 
       No, disabling the feature would be a client behaviour.
 
 ###### Does enabling the feature change any default behavior?
@@ -378,11 +406,12 @@ N/A
 
 2021-03-01: Initial [POC PR] created  
 2021-04-06: KEP proposed
+2021-04-07: [Demo] in SIG CLI meeting
+2022-05-25: PR for alpha implementation merged
 
 [POC PR]: https://github.com/kubernetes/kubernetes/pull/99556
+[Demo]: https://youtu.be/zUa7dudYCQM?t=299
 
 ## Alternatives
 
 Alternatives would be to use curl commands directly to update subresources.
-
-

@@ -1,0 +1,41 @@
+title: Stay on supported go versions
+kep-number: 3744
+authors:
+  - "@liggitt"
+owning-sig: sig-release
+participating-sigs:
+  - sig-architecture
+status: implementable
+creation-date: 2023-01-17
+reviewers:
+  - "@cpanato" # sig-release
+  - "@dims" # sig-architecture / code-organization
+  - "@justaugustus" # sig-release
+  - "@micahhausler" # security-response committee
+  - "@puerco" # sig-release
+  - "@Verolop" # sig-release
+  - "@xmudrii" # sig-release
+approvers:
+  - "@cpanato" # sig-release
+  - "@dims" # sig-architecture / code-organization
+  - "@Verolop" # sig-release
+
+see-also:
+  - "/keps/sig-release/1498-kubernetes-yearly-support-period/"
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.27"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  stable: "v1.27"
+
+feature-gates: []
+disable-supported: false
+metrics: []

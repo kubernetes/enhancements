@@ -185,8 +185,15 @@ configuration.
 
 #### Beta to GA Graduation
 
-- [ ] Allowing time for feedback (3 releases)
-- [ ] Risks have been addressed by every common container runtime
+- [x] Allowing time for feedback (3 releases)
+- [x] Lock the Kubelet feature gate to be locked to the default value `true`
+      Note, the enablement of a feature gate doesn't mean the default
+      behavior will change. No default profile will be applied unless configured.
+- [x] Risks have been addressed by every common container runtime
+- [x] Documenting the seccomp performance impact on k/website as well as its
+      workarounds (disabling the feature completely, turning off spectre
+      mitigations for certain kernel versions or updating the kernel as well as
+      runc)
 
 ### Upgrade / Downgrade Strategy
 
@@ -396,6 +403,11 @@ previous answers based on experience in the field._
   applying a profile at all. There is also a very low overhead for checking the
   syscalls within the Linux Kernel.
 
+- **Can enabling / using this feature result in resource exhaustion of some
+  node resources (PIDs, sockets, inodes, etc.)?**
+
+  No
+
 ### Troubleshooting
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
@@ -421,6 +433,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
+- 2023-01-10: Updated KEP to stable
 - 2022-03-15: Updated KEP to beta
 - 2021-05-05: KEP promoted to implementable
 

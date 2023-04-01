@@ -14,13 +14,13 @@ approvers:
   - "@smarterclayton"
 replaces:
   - "/keps/sig-auth/3130-kms-observability"
-stage: alpha
-latest-milestone: "v1.25"
+stage: beta
+latest-milestone: "v1.27"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.25"
-  beta: "v1.26"
-  stable: "v1.27"
+  beta: "v1.27"
+  stable: "v1.28"
 feature-gates:
   - name: KMSv2
     components:

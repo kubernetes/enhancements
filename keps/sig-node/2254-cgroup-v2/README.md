@@ -11,7 +11,10 @@
 - [Implementation Details](#implementation-details)
 - [Design](#design)
   - [Test Plan](#test-plan)
-    - [Needed Tests](#needed-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -65,11 +68,80 @@ This proposal aims to:
 
 ## Design
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 ### Test Plan
 
-#### Needed Tests
+##### Prerequisite testing updates
 
-- Run E2E tests on a cgroup v2 enabled host.
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+The main unit test coverage is in the cgroup manager kubelet package under `pkg/kubelet/cm`.
+Kubelet uses the existing
+[libcontainer](https://github.com/opencontainers/runc/tree/main/libcontainer)
+library to manage cgroups so we will primarily be targeting integration testing
+to verify the feature is working as intended.
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+Please see below under e2e tests
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+We would like to ensure that kubelet e2e node tests are tested under both
+variants (cgroupv1 and cgroupv2) based OS images.
+We currently have the following cgroupv2 jobs:
+
+- https://testgrid.k8s.io/sig-node-containerd#cos-cgroupv2-containerd-e2e / https://storage.googleapis.com/k8s-triage/index.html?job=sig-node-containerd%23cos-cgroupv2-containerd-e2e
+- https://testgrid.k8s.io/sig-node-containerd#cos-cgroupv2-containerd-node-e2e / https://storage.googleapis.com/k8s-triage/index.html?job=cos-cgroupv2-containerd-node-e2e
+- https://testgrid.k8s.io/sig-node-containerd#cos-cgroupv2-containerd-node-features / https://storage.googleapis.com/k8s-triage/index.html?job=cos-cgroupv2-containerd-node-features
+- https://testgrid.k8s.io/sig-node-containerd#cos-cgroupv2-containerd-node-e2e-serial / https://storage.googleapis.com/k8s-triage/index.html?job=cos-cgroupv2-containerd-node-e2e-serial
+- https://testgrid.k8s.io/sig-node-cri-o#ci-crio-cgroupv2-node-e2e-conformance / https://storage.googleapis.com/k8s-triage/index.html?job=ci-crio-cgroupv2-node-e2e-conformance
+
+As part of graduation to GA, we plan to rename the cgroupv1 based jobs as
+`cgroupv1` and ensure node e2e test grid have clearly labelled cgroupv1 and cgroupv2 jobs for SIG node based test categories (`e2e`, `node-e2e`,
+`node-features`, and `node-e2e-serial`).
+
 
 ### Graduation Criteria
 
@@ -84,7 +156,6 @@ This proposal aims to:
 
 - GA: Assuming no negative user feedback based on production
   experience, promote after 2 releases in beta.
-  *TBD* whether phase 2 must be implemented for GA.
 
 ### Upgrade / Downgrade Strategy
 

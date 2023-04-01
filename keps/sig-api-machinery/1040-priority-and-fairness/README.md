@@ -66,7 +66,13 @@
   - [References](#references)
   - [Design Considerations](#design-considerations)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -82,25 +88,22 @@
 
 ## Release Signoff Checklist
 
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
-of the targeted release**.
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
-- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [x] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have set the KEP status to `implementable`
+- [x] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
@@ -109,10 +112,11 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-This KEP generalizes the existing max-in-flight request handler in the
-apiserver to make more distinctions among requests and provide
-prioritization and fairness among the categories of requests.  An
-outline of the request handling in an apiserver can be found at
+This KEP describes an alternative to the existing max-in-flight
+request handler in the apiserver that makes more distinctions among
+requests, and provides prioritization and fairness among the
+categories of requests, in a user-configurable way.  An outline of the
+request handling in an apiserver can be found at
 https://speakerdeck.com/sttts/kubernetes-api-codebase-tour?slide=18 .
 
 ## Motivation
@@ -283,8 +287,10 @@ In short, this proposal is about generalizing the existing
 max-in-flight request handler in apiservers to add more discriminating
 handling of requests.  The overall approach is that each request is
 categorized to a priority level and a queue within that priority
-level; each priority level dispatches to its own isolated concurrency
-pool; within each priority level queues compete with even fairness.
+level; each priority level dispatches to its own concurrency pool and,
+according to a configured limit, unused concurrency borrrowed from
+lower priority levels; within each priority level queues compete with
+even fairness.
 
 ### Request Categorization
 
@@ -637,25 +643,225 @@ Requests of an exempt priority are never held up in a queue; they are
 always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
+As mentioned [above](#non-goals), the functionality described here
+operates independently in each apiserver.
+
 The concurrency limit of an apiserver is divided among the non-exempt
-priority levels in proportion to their assured concurrency shares.
-This produces the assured concurrency value (ACV) for each non-exempt
-priority level:
+priority levels, and they can do a limited amount of borrowing from
+each other.
+
+Two fields of `LimitedPriorityLevelConfiguration`, introduced in the
+midst of the `v1beta2` lifetime, limit the borrowing.  The fields are
+added in all the versions (`v1alpha1`, `v1beta1`, and `v1beta2`).  The
+following display shows the new fields along with the updated
+description for the `AssuredConcurrencyShares` field, in `v1beta2`.
+
+```go
+type LimitedPriorityLevelConfiguration struct {
+  ...
+  // `assuredConcurrencyShares` (ACS) contributes to the computation of the
+  // NominalConcurrencyLimit (NominalCL) of this level.
+  // This is the number of execution seats available at this priority level.
+  // This is used both for requests dispatched from
+  // this priority level as well as requests dispatched from other priority
+  // levels borrowing seats from this level.
+  // The server's concurrency limit (ServerCL) is divided among the
+  // Limited priority levels in proportion to their ACS values:
+  //
+  // NominalCL(i)  = ceil( ServerCL * ACS(i) / sum_acs )
+  // sum_acs = sum[limited priority level k] ACS(k)
+  //
+  // Bigger numbers mean a larger nominal concurrency limit, at the expense
+  // of every other Limited priority level.
+  // This field has a default value of 30.
+  // +optional
+  AssuredConcurrencyShares int32
+
+  // `lendablePercent` prescribes the fraction of the level's NominalCL that
+  // can be borrowed by other priority levels.  This value of this
+  // field must be between 0 and 100, inclusive, and it defaults to 0.
+  // The number of seats that other levels can borrow from this level, known
+  // as this level's LendableConcurrencyLimit (LendableCL), is defined as follows.
+  //
+  // LendableCL(i) = round( NominalCL(i) * lendablePercent(i)/100.0 )
+  //
+  // +optional
+  LendablePercent int32
+  
+  // `borrowingLimitPercent`, if present, specifies a limit on how many seats
+  // this priority level can borrow from other priority levels.  The limit
+  // is known as this level's BorrowingConcurrencyLimit (BorrowingCL) and
+  // is a limit on the total number of seats that this level may borrow
+  // at any one time.  When this field is non-nil, it must hold a non-negative
+  // integer and the limit is calculated as follows.
+  //
+  // BorrowingCL(i) = round( NominalCL(i) * borrowingLimitPercent(i)/100.0 )
+  //
+  // When this field is left `nil`, the limit is effetively infinite.
+  // +optional
+  BorrowingLimitPercent *int32
+}
+```
+
+Prior to the introduction of borrowing, the `assuredConcurrencyShares`
+field had two meanings that amounted to the same thing: the total
+shares of the level, and the non-lendable shares of the level.  While
+it is somewhat unnatural to keep the meaning of "total shares" for a
+field named "assured" shares, rolling out the new behavior into
+existing systems will be more continuous if we keep the meaning of
+"total shares" for the existing field.  In `v1beta3`
+`AssuredConcurrencyShares` has been renamed to
+`NominalConcurrencyShares`.
+
+The limits on borrowing are two-sided: a given priority level has a
+limit on how much it may borrow and a limit on how much may be
+borrowed from it.  The latter is a matter of protection, the former is
+a matter of restraint.  Introducing just the protection side is not
+enough.  If APF gained borrowing without giving the cluster
+administrators a way to limit how much a given priority level borrows
+then the administrators would not be able to do something they could
+do before the introduction of borrowing: use a priority level as a
+deliberate jail for some class of traffic that APF is not limiting
+well.  APF dispatches requests based on approximate estimates of how
+much work they involve.  We have been improving these estimates, and
+may continue to do so, but there will always remain the possibility
+that some class of requests is much "heavier" than the APF code
+estimates; for those, a deliberate jail is useful.
+
+The following table shows the current default non-exempt priority
+levels and a proposal for their new configuration.
+
+| Name | Assured Shares | Proposed Lendable | Proposed Borrowing Limit |
+| ---- | -------------: | ----------------: | -----------------------: |
+| leader-election |  10 |   0% | none |
+| node-high       |  40 |  25% | none |
+| system          |  30 |  33% | none |
+| workload-high   |  40 |  50% | none |
+| workload-low    | 100 |  90% | none |
+| global-default  |  20 |  50% | none |
+| catch-all       |   5 |   0% | none |
+
+Each non-exempt priority level `i` has two concurrency limits: its
+NominalConcurrencyLimit (`NominalCL(i)`) as defined above by
+configuration, and a CurrentConcurrencyLimit (`CurrentCL(i)`) that is
+used in dispatching requests.  The CurrentCLs are adjusted
+periodically, based on configuration, the current situation at
+adjustment time, and recent observations.  The "borrowing" resides in
+the differences between CurrentCL and NominalCL.  There are upper and lower
+bound on each non-exempt priority level's CurrentCL, as follows.
 
 ```
-ACV(l) = ceil( SCL * ACS(l) / ( sum[priority levels k] ACS(k) ) )
+MaxCL(i) = NominalCL(i) + BorrowingCL(i)
+MinCL(i) = NominalCL(i) - LendableCL(i)
 ```
 
-where SCL is the apiserver's concurrency limit and ACS(l) is the
-AssuredConcurrencyShares for priority level l.
+Naturally the CurrentCL values are also limited by how many seats are
+available for borrowing from other priority levels.  The sum of the
+CurrentCLs is always equal to the server's concurrency limit
+(ServerCL), possibly plus a little for the `ceil` in the definition of
+the NominalCLs and plus or minus a little for rounding in the
+adjustment algorithm below.
 
 Dispatching is done independently for each priority level.  Whenever
-(1) a non-exempt priority level's number of running requests is zero
-or below the level's assured concurrency value and (2) that priority
-level has a non-empty queue, it is time to dispatch another request
+(1) a non-exempt priority level's number of occupied seats is zero or
+below the level's CurrentCL and (2) that priority level has a
+non-empty queue, it is time to consider dispatching another request
 for service.  The Fair Queuing for Server Requests algorithm below is
 used to pick a non-empty queue at that priority level.  Then the
-request at the head of that queue is dispatched.
+request at the head of that queue is dispatched if possible.
+
+Every 10 seconds, all the CurrentCLs are adjusted.  We do smoothing on
+the inputs to the adjustment logic in order to dampen control
+gyrations, in a way that lets a priority level reclaim lent seats at
+the nearest adjustment time.  The adjustments take into account the
+high watermark `HighSeatDemand(i)`, time-weighted average
+`AvgSeatDemand(i)`, and time-weighted population standard deviation
+`StDevSeatDemand(i)` of each priority level `i`'s seat demand over the
+just-concluded adjustment period.  A priority level's seat demand at
+any given moment is the sum of its occupied seats and the number of
+seats in the queued requests.  We also define `EnvelopeSeatDemand(i) =
+AvgSeatDemand(i) + StDevSeatDemand(i)`.  The adjustment logic is
+driven by a quantity called smoothed seat demand
+(`SmoothSeatDemand(i)`), which does an exponential averaging of
+EnvelopeSeatDemand values using a coeficient A in the range (0,1) and
+immediately tracks EnvelopeSeatDemand when it exceeds
+SmoothSeatDemand.  The rule for updating priority level `i`'s
+SmoothSeatDemand at the end of an adjustment period is
+`SmoothSeatDemand(i) := max( EnvelopeSeatDemand(i),
+A*SmoothSeatDemand(i) + (1-A)*EnvelopeSeatDemand(i) )`.  The value of
+`A` is fixed at 0.977 in the code, which means that the half-life of
+the exponential decay is about 5 minutes.
+
+Adjustment is also done on configuration change, when a priority level
+is introduced or removed or its NominalCL, LendableCL, or BorrowingCL
+changes.  At such a time, the current adjustment period comes to an
+early end and the regular adjustment logic runs; the adjustment timer
+is reset to next fire 10 seconds later.  For a newly introduced
+priority level, we set HighSeatDemand, AvgSeatDemand,
+SmoothSeatDemand, and StDevSeatDemand to zero.  Initializing
+SmoothSeatDemand to a higher value would risk creating an illusion of
+pressure that decays only slowly; initializing to zero is safe because
+the arrival of actual pressure gets a quick response.
+
+For adjusting the CurrentCL values, each non-exempt priority level `i`
+has a lower bound (`MinCurrentCL(i)`) for the new value.  It is simply
+HighSeatDemand clipped by the configured concurrency limits:
+`MinCurrentCL(i) = max( MinCL(i), min( NominalCL(i), HighSeatDemand(i)
+) )`.
+
+If `MinCurrentCL(i) = NominalCL(i)` for every non-exempt priority
+level `i` then there is no wiggle room.  In this situation, no
+priority level is willing to lend any seats.  The new CurrentCL values
+must equal the NominalCL values.  Otherwise there is wiggle room and
+the adjustment proceeds as follows.  For the following logic we let
+the CurrentCL values be floating-point numbers, not necessarily
+integers.
+
+The priority levels would all be fairly happy if we set CurrentCL =
+SmoothSeatDemand for each.  We clip that by the lower bound just shown
+and define `Target(i)` as follows, taking it as a first-order target
+for each non-exempt priority level `i`.
+
+```
+Target(i) = max( MinCurrentCL(i), SmoothSeatDemand(i) )
+```
+
+Sadly, the sum of the Target values --- let's name that TargetSum ---
+is not necessarily equal to ServerCL.  However, if `TargetSum <
+ServerCL` then all the Targets could be scaled up in the same
+proportion `FairProp = ServerCL / TargetSum` (if that did not violate
+any upper bound) to get the new concurrency limits `CurrentCL(i) :=
+FairProp * Target(i)` for each non-exempt priority level `i`.
+Similarly, if `TargetSum > ServerCL` then all the Targets could be
+scaled down in the same proportion (if that did not violate any lower
+bound) to get the new concurrency limits.  This shares the wealth or
+the pain proportionally among the priority levels (but note: the upper
+bound does not affect the target, lest the pain of not achieving a
+high SmoothSeatDemand be distorted, while the lower bound _does_
+affect the target, so that merely achieving the lower bound is not
+considered a gain).  The following computation generalizes this idea
+to respect the relevant bounds.
+
+We can not necessarily scale all the Targets by the same factor ---
+because that might violate some upper or lower bounds.  The problem is
+to find a proportion `FairProp` that can be shared by all the priority
+levels except those with a bound that forbids it.  This means to find
+a value of `FairProp` that simultaneously solves all the following
+conditions, for the non-exempt priority levels `i`, and also makes the
+CurrentCL values sum to ServerCL.  In some cases there are many
+satisfactory values of `FairProp` --- and that is OK, because they all
+produce the same CurrentCL values.
+
+```
+CurrentCL(i) = min( MaxCL(i), max( MinCurrentCL(i), FairProp * Target(i) ))
+```
+
+This is similar to the max-min fairness problem and can be solved
+using sorting and then a greedy algorithm, taking O(N log N) time and
+O(N) space.
+
+After finding the floating point CurrentCL solutions, each one is
+rounded to the nearest integer to use in subsequent dispatching.
 
 ### Fair Queuing for Server Requests
 
@@ -1790,7 +1996,7 @@ others, at any given time this may compute for some priority level(s)
 an assured concurrency value that is lower than the number currently
 executing.  In these situations the total number allowed to execute
 will temporarily exceed the apiserver's configured concurrency limit
-(`SCL`) and will settle down to the configured limit as requests
+(`ServerCL`) and will settle down to the configured limit as requests
 complete their service.
 
 ### Default Behavior
@@ -1864,6 +2070,18 @@ This KEP adds the following metrics.
 - apiserver_dispatched_requests (count, broken down by priority, FlowSchema)
 - apiserver_wait_duration (histogram, broken down by priority, FlowSchema)
 - apiserver_service_duration (histogram, broken down by priority, FlowSchema)
+- `apiserver_flowcontrol_request_concurrency_limit` (gauge of NominalCL, broken down by priority)
+- `apiserver_flowcontrol_request_min_concurrency_limit` (gauge of MinCL, broken down by priority)
+- `apiserver_flowcontrol_request_max_concurrency_limit` (gauge of MaxCL, broken down by priority)
+- `apiserver_flowcontrol_request_current_concurrency_limit` (gauge of CurrentCL, broken down by priority)
+- `apiserver_flowcontrol_demand_seats` (timing ratio histogram of seat demand / NominalCL, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_high_water_mark` (gauge of HighSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_average` (gauge of AvgSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_demand_seats_stdev` (gauge of StDevSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_envelope_seats` (gauge of EnvelopeSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_smoothed_demand_seats` (gauge of SmoothSeatDemand, broken down by priority)
+- `apiserver_flowcontrol_target_seats` (gauge of Target, brokwn down by priority)
+- `apiserver_flowcontrol_seat_fair_frac` (gauge of FairProp)
 
 ### Testing
 
@@ -2360,9 +2578,7 @@ There are likely others.
 
 ## Design Details
 
-We are still ironing out the high level goals and approach.  Several
-earlier proposals have been floated, as listed next.  This section
-contains a discussion of the issues.
+The [Proposal](#proposal) is fairly detailed.
 
 ### References
 
@@ -2593,9 +2809,43 @@ with miniscule quanta, are also isomorphic.
 
 ### Test Plan
 
-- __Unit Tests__: All changes must be covered by unit tests. Additionally,
- we need to test the evenness of dispatching algorithm.
-- __Integration Tests__: The use cases discussed in this KEP must be covered by integration tests.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+Reviewers have not identified any additional tests that need to be
+added prior implementing this enhancement to ensure the enhancements
+have also solid foundations.
+
+##### Unit tests
+
+- `apiserver/pkg/apis/flowcontrol/bootstrap`: `23-02-02` - `100`
+- `apiserver/pkg/util/flowcontrol`: `23-02-02` - `76`
+- `apiserver/pkg/util/flowcontrol/fairqueuing`: `23-02-02` - `80.9`
+- `apiserver/pkg/util/flowcontrol/fairqueuing/eventclock`: `23-02-02` - `100`
+- `apiserver/pkg/util/flowcontrol/fairqueuing/promise`: `23-02-02` - `100`
+- `apiserver/pkg/util/flowcontrol/fairqueuing/queueset`: `23-02-02` - `81.6`
+- `apiserver/pkg/util/flowcontrol/request`: `23-02-02` - `87.5`
+- `apiserver/pkg/server/filters/priority-and-fairness.go`: `23-02-02` - `90.6`
+
+##### Integration tests
+
+The integration tests are in https://github.com/kubernetes/kubernetes/tree/master/test/integration/apiserver/flowcontrol .  Testgrid results for them can be seen at https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=apiserver%2Fflowcontrol .
+
+- TestConcurrencyIsolation
+- TestConditionIsolation
+- TestConfigConsumerFight
+- TestPriorityLevelIsolation
+
+##### e2e tests
+
+The end-to-end tests are in
+https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apimachinery/flowcontrol.go
+.
+
+- "API priority and fairness": https://storage.googleapis.com/k8s-triage/index.html?sig=api-machinery&test=API%20priority%20and%20fairness
 
 ### Graduation Criteria
 
@@ -2621,149 +2871,302 @@ Beta:
 
 GA:
 
-- Satisfaction with LIST and WATCH support.
-- API annotations properly support strategic merge patch.
-- APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that there is another level of concern that APF does not attempt to address, which is mismatch between the throughput that various controllers can sustain.
-- Design and implement borrowing between priority levels.
-- Satisfaction that the API is sufficient to support auto-tuning of capacity and resource costs.
+- [x] API annotations properly support strategic merge patch.
+- [x] Design and implement borrowing between priority levels.
+- [ ] Satisfaction with LIST and WATCH support.
+- [ ] APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that there is another level of concern that APF does not attempt to address, which is mismatch between the throughput that various controllers can sustain.
+- [ ] Satisfaction that the interface is sufficient to support tuning of capacity and resource costs.
+
+### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
+
+### Version Skew Strategy
+
+This feature affects only the kube-apiserver, so there is no issue
+with version skew with other components.
 
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
 
-* **How can this feature be enabled / disabled in a live cluster?** To enable
-  priority and fairness, all of the following must be enabled:
-  - [x] Feature gate
-    - Feature gate name: APIPriorityAndFairness
-    - Components depending on the feature gate:
-      - kube-apiserver
-  - [x] Command-line flags
-    - `--enable-priority-and-fairness`, and
-    - `--runtime-config=flowcontrol.apiserver.k8s.io/v1alpha1=true`
+###### How can this feature be enabled / disabled in a live cluster?
 
-* **Does enabling the feature change any default behavior?** Yes, requests that
-  weren't rejected before could get rejected while requests that were rejected
-  previously may be allowed. Performance of kube-apiserver under heavy load
-  will likely be different too.
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: APIPriorityAndFairness
+  - Components depending on the feature gate:
+    - kube-apiserver
+- [x] Other
+  - Describe the mechanism: command-line flag
+    `enable-priority-and-fairness`, which defaults to `true`.
+  - Will enabling / disabling the feature require downtime of the
+    control plane?  Changing a command-line flag requires restarting
+    the kube-apiserver.
+  - Will enabling / disabling the feature require downtime or
+    reprovisioning of a node? (Do not assume `Dynamic Kubelet Config`
+    feature is enabled).  No.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes.
+###### Does enabling the feature change any default behavior?
 
-* **What happens if we reenable the feature if it was previously rolled back?**
-  The feature will be restored.
+Yes, requests that weren't rejected before could get rejected while
+requests that were rejected previously may be allowed. Performance of
+kube-apiserver under heavy load will likely be different too.
 
-* **Are there any tests for feature enablement/disablement?** No. Manual tests
-  will be run before switching feature gate to beta.
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+The feature will be restored.
+
+###### Are there any tests for feature enablement/disablement?
+
+No.  Manual tests were run before switching feature gate to beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
-* **How can a rollout fail? Can it impact already running workloads?** A
-  misconfiguration could cause apiserver requests to be rejected, which could
-  have widespread impact such as: (1) rejecting controller requests, thereby
-  bringing a lot of things to a halt, (2) dropping node heartbeats, which may
-  result in overloading other nodes, (3) rejecting kube-proxy requests to
-  apiserver, thereby breaking existing workloads, (4) dropping leader election
-  requests, resulting in HA failure, or any combination of the above.
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-* **What specific metrics should inform a rollback?** An abnormal spike in the
-  `apiserver_flowcontrol_rejected_requests_total` metric should potentially be
-  viewed as a sign that kube-apiserver is rejecting requests, potentially
-  incorrectly. The `apiserver_flowcontrol_request_queue_length_after_enqueue`
-  metric getting too close to the configured queue length could be a sign of
-  insufficient queue size (or a system overload), which can be precursor to
-  rejected requests.
+A misconfiguration could cause apiserver requests to be rejected,
+which could have widespread impact such as: (1) rejecting controller
+requests, thereby bringing a lot of things to a halt, (2) dropping
+node heartbeats, which may result in overloading other nodes, (3)
+rejecting kube-proxy requests to apiserver, thereby breaking existing
+workloads, (4) dropping leader election requests, resulting in HA
+failure, or any combination of the above.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  No. Manual tests will be run before switching feature gate to beta.
+###### What specific metrics should inform a rollback?
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-  fields of API types, flags, etc.?** Yes, `--max-requests-inflights` will be
-  deprecated in favor of APF.
+See [the remarks on service health](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service).
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Manual tests were run during promotion to Beta in 1.20.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+The rollout replaces the behavior of the max-in-flight filter with the
+more sophisticated behavior of this feature.
 
 ### Monitoring Requirements
 
-* **How can an operator determine if the feature is in use by workloads?**
-  If the `apiserver_flowcontrol_dispatched_requests_total` metric is non-zero,
-  this feature is in use. Note that this isn't a workload feature, but a
-  control plane one.
+###### How can an operator determine if the feature is in use by workloads?
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
-  - [x] Metrics
-    - Metric name: `apiserver_flowcontrol_request_queue_length_after_enqueue`
-    - Components exposing the metric: kube-apiserver
+If the `apiserver_flowcontrol_dispatched_requests_total` metric is
+non-zero, this feature is in use. Note that this isn't a workload
+feature, but a control plane one.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  No SLOs are proposed for the above SLI.
+###### How can someone using this feature know that it is working for their instance?
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?** No.
+The classification functionality can be reviewed by looking at the
+`apf_pl` and `apf_fs` attributes that appear in the httplog lines from
+the apiserver when `-v=3` or more verbose. The classification is also
+reported in each HTTP response via the
+`X-Kubernetes-PF-PriorityLevel-UID` and
+`X-Kubernetes-PF-FlowSchema-UID` headers, respectively.
+
+The nominal division of concurrency can be checked by looking at the
+`apiserver_flowcontrol_nominal_limit_seats` metric of the limited
+priority levels to see whether they are in the proportions given by
+the `NominalConcurrencyShares` fields in the corresponding
+`PriorityLevelConfiguration` objects, and sum to the server's
+concurrency limit (the sum of the `--max-requests-inflight` and
+`--max-mutating-requests-inflight` command line parameters) allowing
+for rounding error.
+
+The dynamic adjustment of concurrency limits can be checked for
+validity by checking whether the
+`apiserver_flowcontrol_current_limit_seats` metrics sum to the
+server's concurrency limit allowing for rounding error.  The
+responsiveness to load can be checked by comparing those dynamic
+concurrency limits to various indications of load and keeping in mind
+the bounds shown by the `apiserver_flowcontrol_lower_limit_seats` and
+`apiserver_flowcontrol_upper_limit_seats` metrics.  Indications of
+load include the `apiserver_flowcontrol_request_wait_duration_seconds`
+histogram vector metric and the
+`apiserver_flowcontrol_demand_seats_smoothed` gauge vector metric.
+
+The dispatching can be checked by checking whether there are
+significant queuing delays only for flow schemeas that go to priority
+levels whose seats are highly utilized.  The histogram vector metric
+`apiserver_flowcontrol_request_wait_duration_seconds` shows the
+former, and tThe histogram vector metric
+`apiserver_flowcontrol_priority_level_seat_utilization` shows the
+latter.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+None have been identified.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+Since this feature is about protecting the server from overload,
+trouble in this feature and actual overload can show similar symptoms.
+Following are some thoughts about how to tell them apart.
+
+- high latency / long queue lengths + low request volume / low CPU
+  usage = probably APF misconfiguration or bug
+
+- high latency / long queue lengths + high request volume / high CPU
+  usage = probably APF is saving your cluster from an outage
+
+The following metrics give relevant clues.
+
+- `apiserver_flowcontrol_request_wait_duration_seconds` shows queuing
+  delay in APF.
+- `apiserver_flowcontrol_request_execution_seconds` shows execution
+  durations in APF; that summed with
+  `apiserver_flowcontrol_request_wait_duration_seconds` shows total
+  handling time covered by APF.
+- The `apiserver_request_duration_seconds_count` histogram shows total
+  request delay as measured in a handler tha encloses APF, grouped by
+  request characteristics.
+- The rate of change in
+  `apiserver_flowcontrol_request_execution_seconds_count` shows the
+  rates of request handling, grouped by flow schema.
+- The rate of change in `apiserver_request_total` shows the rates at
+  which requests are being handled, grouped by request
+  characteristics.
+- the `apiserver_flowcontrol_current_inqueue_requests` gauge vector
+  samples queue lengths for each flow schema.
+- the `apiserver_flowcontrol_priority_level_seat_utilization`
+  histogram vector summarizes per-nanosecond samples of the fraction
+  each priority level's seats that are occupied (these should not all
+  be low if the server is heavily loaded).
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?**
-  No.
+###### Does this feature depend on any specific services running in the cluster?
+
+No
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?** Yes.
-  Self-requests for new API objects will be introduced. In addition, the
-  request execution order may change, which could occasionally increase the
-  number of retries.
+###### Will enabling / using this feature result in any new API calls?
 
-* **Will enabling / using this feature result in introducing new API types?**
-  Yes, a new flowcontrol API group, configuration types, and status types are
-  introduced. See `k8s.io/api/flowcontrol/v1alpha1/types.go` for a full list.
+Yes.  Self-requests for new API objects will be introduced. In
+addition, the request execution order may change, which could
+occasionally increase the number of retries.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-  provider?** No.
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in increasing size or count of
-  the existing API objects?** No.
+Yes, a new flowcontrol API group, configuration types, and status
+types are introduced. See `k8s.io/api/flowcontrol/v1alpha1/types.go`
+for a full list.
 
-* **Will enabling / using this feature result in increasing time taken by any
-  operations covered by [existing SLIs/SLOs]?** Yes, a non-negligible latency
-  is added to API calls to kube-apiserver. While [preliminary tests](https://github.com/tkashem/graceful/blob/master/priority-fairness/filter-latency/readme.md)
-  shows that the API server latency is still well within the existing SLOs,
-  more thorough testing needs to be performed.
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-* **Will enabling / using this feature result in non-negligible increase of
-  resource usage (CPU, RAM, disk, IO, ...) in any components?** The proposed
-  flowcontrol logic in request handling in kube-apiserver will increase the CPU
-  and memory overheads involved in serving each request. Note that the resource
-  usage will be configurable and may require the operator to fine-tune some
-  parameters.
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+Yes, a non-negligible latency is added to API calls to
+kube-apiserver. While [preliminary
+tests](https://github.com/tkashem/graceful/blob/master/priority-fairness/filter-latency/readme.md)
+shows that the API server latency is still well within the existing
+SLOs, more thorough testing needs to be performed.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+The proposed flowcontrol logic in request handling in kube-apiserver
+will cause a small increase the CPU and memory overheads involved in
+serving each request when there is no significant queuing. When there
+_is_ significant queuing, it is because this feature is doing its
+intended function of smoothing out usage of many resources by limiting
+the number of requests being actively handled at once.  Holding
+requests in queues involves an added memory cost. Note that the
+resource usage will be configurable and may require the operator to
+fine-tune some parameters.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+This feature does not directly consume any resources on worker nodes.
+It can have indirect effects, through the changes in how the
+kube-apiserver serves requests.
 
 ### Troubleshooting
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
-  The feature is itself within the API server. Etcd being unavailable would
-  likely cause kube-apiserver to fail at processing incoming requests.
+###### How does this feature react if the API server and/or etcd is unavailable?
 
-* **What are other known failure modes?** A misconfiguration could reject
-  requests incorrectly. See the rollout and monitoring sections for details on
-  which metrics to watch to detect such failures (see the `kep.yaml` file for
-  the full list of metrics). The following kube-apiserver log messages could
-  also indicate potential issues:
-  - "Unable to list PriorityLevelConfiguration objects"
-  - "Unable to list FlowSchema objects"
+This feature is entirely in the apiserver, so will be unavailable when
+the apiserver is unavailable.
 
-* **What steps should be taken if SLOs are not being met to determine the
-  problem?** No SLOs are proposed.
+This feature does not depend directly on the storage and will continue
+to perform its function while the storage is unavailable, except for
+the parts of the function that involve maintaining its configuration
+objects and reacting to changes in them.  While the storage is
+unavailable this feature continues to use the last configuration that
+it read.  Unavailability of storage will naturally have severe effects
+on request executions and this feature will react to the relevant
+consequences.
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+###### What are other known failure modes?
+
+  - Some client makes requests with big responses that the client does
+    not finish reading in the first minute, constantly occupying (hand
+    size) X (max width = 10) seats --- which nearly starves other
+    clients when the priority level's concurrency limit is not much
+    greater than that.
+    - Detection: How can it be detected via metrics? In this situation
+      the requests from the bad client will timeout during execution
+      at a rate of (hand size)/minute, and other requests in the same
+      priority level will almost all timeout while waiting in a queue.
+    - Mitigations: What can be done to stop the bleeding, especially
+      for already running user workloads?  Identify the bad client and
+      create a special flow schema and priority level to isolate that
+      client.
+    - Diagnostics: What are the useful log messages and their required
+      logging levels that could help debug the issue?  In the
+      kube-apiserver's log at `-v=3` or more verbose the httplog
+      entries will indicate timeouts.
+    - Testing: Are there any tests for failure mode? If not, describe
+      why.  We only recently realized this failure mode and we hope to
+      make a change that will prevent it or automatically mitigate it.
+      See https://github.com/kubernetes/kubernetes/issues/115409 .
+
+  - A misconfiguration could reject
+    requests incorrectly.
+    - Detection: See the rollout and monitoring sections for details
+      on which metrics to watch to detect such failures (see the
+      `kep.yaml` file for the full list of metrics). The following
+      kube-apiserver log messages could also indicate potential
+      issues:
+      - "Unable to list PriorityLevelConfiguration objects"
+      - "Unable to list FlowSchema objects"
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+No SLOs are proposed.
 
 ## Implementation History
 
-
-- v1.19: `Alpha` release
+- v1.18: `Alpha` release
 - v1.20: graduated to `Beta`
 - v1.22: initial support for width concept and watch initialization
 - v1.23: introduce `v1beta2` API
   - no changes compared to `v1beta1`
   - `v1beta1` remain as storage version
 - v1.24: storage version changed to `v1beta2`
+- v1.26: introduce concurrency borrowing between priority levels
 
 ## Drawbacks
 
@@ -2782,6 +3185,5 @@ designs not chosen.
 
 ## Infrastructure Needed
 
-The end-to-end test suite should exercise the functionality introduced
-by this KEP.  This may require creating a special client to submit an
-overload of low-priority work.
+Nothing beyond the usual CI.
+

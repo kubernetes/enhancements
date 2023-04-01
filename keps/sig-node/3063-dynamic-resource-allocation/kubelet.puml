@@ -1,0 +1,12 @@
+@startuml
+!theme reddress-lightblue
+
+(*) --> "Pod scheduled to the node"
+-->[ **Kubelet** pick up the pod ] "Pod references resource claim"
+-->[ **Kubelet** calls NodePrepareResource(ResourceClaimUID, AllocationParameters)\l **Resource Plugin** creates CDI JSON file(s) ] "CDI JSON files created"
+-->[ **Resource Plugin** returns device Ids ] "Resource prepared"
+-->[ **Kubelet** passes device Ids to the CRI runtime\l **CRI runtime** uses CDI JSON file(s) to update OCI container config\l **CRI runtime** creates pod containers ] "All Pod containers created"
+-->[ ... ] "Pod runs"
+-->[ ... ] "Pod terminated"
+-->[ **Kubelet** calls NodeUnprepareResource\l **Resource plugin** removes CDI JSON file(s) ] (*)
+@enduml

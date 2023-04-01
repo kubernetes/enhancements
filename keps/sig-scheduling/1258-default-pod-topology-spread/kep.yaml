@@ -11,8 +11,6 @@ reviewers:
 approvers:
 - "@ahg-g"
 - "@Huang-Wei"
-prr-approvers:
-  - "@wojtek-t"
 see-also:
 - "/keps/sig-scheduling/895-pod-topology-spread"
 stage: stable

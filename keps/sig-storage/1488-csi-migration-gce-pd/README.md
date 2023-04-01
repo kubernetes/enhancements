@@ -65,7 +65,7 @@ test infrastructure](https://github.com/kubernetes/cloud-provider-gcp).
 
 ##### Unit tests
 
-See tests in [`k8s.io/csi-translation-lib/plugins/gce_pd_test`](https://github.com/kubernetes/csi-translation-lib/blob/master/plugins/gce_pd_test.go).
+- `k8s.io/csi-translation-lib/plugins/gce_pd.go`: `2022-06-21` - `69.7`
 
 ##### Integration tests
 
@@ -73,12 +73,7 @@ N/A
 
 ##### e2e tests
 
-Support for tests after gce-pd migration have been [added to
-cloud-provider-gcp](https://github.com/kubernetes/cloud-provider-gcp/pull/265). These
-tests [have been removed from the k/k test
-jobs](https://github.com/kubernetes/test-infra/pulls?q=is%3Apr+author%3Aleiyiz+gcepd).
-
-The e2e tests are now covered in [cloud-provider-gcp](https://testgrid.k8s.io/provider-gcp-presubmits#cloud-provider-gcp-e2e-full&include-filter-by-regex=gcepd).
+- `sig-storage` `Driver: gcepd`: https://testgrid.k8s.io/provider-gcp-presubmits#cloud-provider-gcp-e2e-full&include-filter-by-regex=gcepd
 
 ## Implementation History
 

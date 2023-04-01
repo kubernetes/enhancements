@@ -16,7 +16,6 @@ reviewers:
   - "@dashpole"
 approvers:
   - "@sig-node-leads"
-prr-approvers: []
 see-also:
   - "keps/sig-node/606-compute-device-assignment/"
 replaces: []

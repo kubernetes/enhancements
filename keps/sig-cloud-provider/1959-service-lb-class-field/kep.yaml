@@ -15,8 +15,6 @@ approvers:
   - "@bowei"
   - "@cheftako"
   - "@thockin"
-prr-approvers:
-  - "@johnbelamaric"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

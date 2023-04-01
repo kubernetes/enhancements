@@ -16,8 +16,6 @@ reviewers:
   - "@andrewsykim"
 approvers:
   - TBD
-prr-approvers:
-  - deads2k
 see-also:
   - "keps/sig-api-machinery/20190226-network-proxy.md"
 replaces:

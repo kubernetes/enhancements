@@ -16,13 +16,11 @@ approvers:
   - "@brancz"
   - "@dashpole"
   - "@ahg-g"
-prr-approvers:
-  - "@johnbelamaric"
 see-also:
 replaces:
-latest-milestone: "v1.21"
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.20"
   beta: "v1.21"
-  stable: "v1.22"
-stage: "beta"
+  stable: "v1.27"
+stage: "stable"

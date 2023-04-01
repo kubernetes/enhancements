@@ -7,12 +7,19 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
+    - [Story 1: Cluster administators: easier monitoring](#story-1-cluster-administators-easier-monitoring)
+    - [Story 2: Device Vendors: decouple monitoring from device lifecycle management](#story-2-device-vendors-decouple-monitoring-from-device-lifecycle-management)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Proposed API](#proposed-api)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
@@ -20,13 +27,14 @@
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring requirements](#monitoring-requirements)
+  - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Add v1alpha1 Kubelet GRPC service, at <code>/var/lib/kubelet/pod-resources/kubelet.sock</code>, which returns a list of <a href="https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L734">CreateContainerRequest</a>s used to create containers.](#add-v1alpha1-kubelet-grpc-service-at--which-returns-a-list-of-createcontainerrequests-used-to-create-containers)
   - [Add a field to Pod Status.](#add-a-field-to-pod-status)
@@ -41,13 +49,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements](https://github.com/kubernetes/enhancements/issues/606)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
-- [X] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- ~~ [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io] ~~
-- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -70,12 +82,21 @@ As such the external monitoring agents need to be able to determine the set of d
 * Deprecate and remove current device-specific knowledge from the kubelet, such as [accelerator metrics](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/stats/v1alpha1/types.go#L229)
 * Enable external device monitoring agents to provide metrics relevant to Kubernetes
 
+### Non-Goals
+
+* Enable cluster components to consume the API. The API is node-local only.
+
 ## Proposal
 
 ### User Stories
 
-* As a _Cluster Administrator_, I provide a set of devices from various vendors in my cluster.  Each vendor independently maintains their own agent, so I run monitoring agents only for devices I provide.  Each agent adheres to to the [node monitoring guidelines](https://docs.google.com/document/d/1_CdNWIjPBqVDMvu82aJICQsSCbh2BR-y9a8uXjQm4TI/edit?usp=sharing), so I can use a compatible monitoring pipeline to collect and analyze metrics from a variety of agents, even though they are maintained by different vendors.
-* As a _Device Vendor_, I manufacture devices and I have deep domain expertise in how to run and monitor them. Because I maintain my own Device Plugin implementation, as well as Device Monitoring Agent, I can provide consumers of my devices an easy way to consume and monitor my devices without requiring open-source contributions. The Device Monitoring Agent doesn't have any dependencies on the Device Plugin, so I can decouple monitoring from device lifecycle management. My Device Monitoring Agent works by periodically querying the `/devices/<ResourceName>` endpoint to discover which devices are being used, and to get the container/pod metadata associated with the metrics:
+#### Story 1: Cluster administators: easier monitoring
+
+As a _Cluster Administrator_, I provide a set of devices from various vendors in my cluster.  Each vendor independently maintains their own agent, so I run monitoring agents only for devices I provide.  Each agent adheres to to the [node monitoring guidelines](https://docs.google.com/document/d/1_CdNWIjPBqVDMvu82aJICQsSCbh2BR-y9a8uXjQm4TI/edit?usp=sharing), so I can use a compatible monitoring pipeline to collect and analyze metrics from a variety of agents, even though they are maintained by different vendors.
+
+#### Story 2: Device Vendors: decouple monitoring from device lifecycle management
+
+As a _Device Vendor_, I manufacture devices and I have deep domain expertise in how to run and monitor them. Because I maintain my own Device Plugin implementation, as well as Device Monitoring Agent, I can provide consumers of my devices an easy way to consume and monitor my devices without requiring open-source contributions. The Device Monitoring Agent doesn't have any dependencies on the Device Plugin, so I can decouple monitoring from device lifecycle management. My Device Monitoring Agent works by periodically querying the `/devices/<ResourceName>` endpoint to discover which devices are being used, and to get the container/pod metadata associated with the metrics:
 
 ![device monitoring architecture](https://user-images.githubusercontent.com/3262098/43926483-44331496-9bdf-11e8-82a0-14b47583b103.png)
 
@@ -135,6 +156,10 @@ message ContainerDevices {
 
 ### Test Plan
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 Given that the API allows observing what device has been associated to what container, we need to be testing different configurations, such as:
 * Pods without devices assigned to any containers.
 * Pods with devices assigned to some but not all containers.
@@ -147,6 +172,20 @@ We have identified two main ways of testing this API:
 
 E2E tests are explicitly not written because they would require us to generate and deploy a custom container.
 The infrastructure required is expensive and it is not clear what additional testing (and hence risk reduction) this would provide compare to node e2e tests.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/kubelet/apis/podresources`: `20230127` - `61.5%`
+
+##### Integration tests
+
+covered by e2e tests
+
+##### e2e tests
+
+- `k8s.io/kubernetes/test/e2e_node/podresources_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=POD%20Resources
 
 ### Graduation Criteria
 
@@ -161,6 +200,8 @@ The infrastructure required is expensive and it is not clear what additional tes
 - [X] Multiple real world examples ([Multus CNI](https://github.com/intel/multus-cni)).
 - [X] Allowing time for feedback (2 years).
 - [X] [Start Deprecation of Accelerator metrics in kubelet](https://github.com/kubernetes/kubernetes/pull/91930).
+- [X] The API endpoint should be available on all the platforms kubelet runs and supports device plugins (linux, windows, ...).
+- [X] Rate limiting mechanisms are implemented in the server to prevent excessive load from malfunctioning/rogue clients.
 - [X] Risks have been addressed.
 
 ### Upgrade / Downgrade Strategy
@@ -179,60 +220,137 @@ Downgrades here are related to downgrading the plugin
 Kubelet will always be backwards compatible, so going forward existing plugins are not expected to break.
 
 ## Production Readiness Review Questionnaire
-### Feature enablement and rollback
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [X] Feature gate (also fill in values in `kep.yaml`).
-    - Feature gate name: `KubeletPodResources`.
-    - Components depending on the feature gate: N/A.
+### Feature Enablement and Rollback
 
-* **Does enabling the feature change any default behavior?** No
-* **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?** Yes, through feature gates.
-* **What happens if we reenable the feature if it was previously rolled back?** The service recovers state from kubelet.
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `KubeletPodResources`.
+  - Components depending on the feature gate: N/A
+
+###### Does enabling the feature change any default behavior?
+
+No.
 * **Are there any tests for feature enablement/disablement?** No, however no data is created or deleted.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, through feature gates.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+The service recovers state from kubelet.
+
+###### Are there any tests for feature enablement/disablement?
+
+No, however no data is created or deleted.
 
 ### Rollout, Upgrade and Rollback Planning
 
-* **How can a rollout fail? Can it impact already running workloads?** Kubelet would fail to start. Errors would be caught in the CI.
-* **What specific metrics should inform a rollback?** Not Applicable, metrics wouldn't be available.
-* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?** Not Applicable.
-* **Is the rollout accompanied by any deprecations and/or removals of features,  APIs, fields of API types, flags, etc.?** No.
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-### Monitoring requirements
-* **How can an operator determine if the feature is in use by workloads?**
-  - Look at the `pod_resources_endpoint_requests_total` metric exposed by the kubelet.
-  - Look at hostPath mounts of privileged containers.
-* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
-  - [X] Metrics
-    - Metric name: `pod_resources_endpoint_requests_total`
-    - Components exposing the metric: kubelet
+Kubelet would fail to start. Errors would be caught in the CI.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** N/A or refer to Kubelet SLIs.
-* **Are there any missing metrics that would be useful to have to improve observability if this feature?** No.
+###### What specific metrics should inform a rollback?
 
+Not Applicable, metrics wouldn't be available.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Not Applicable.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No.
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+- Look at the `pod_resources_endpoint_requests_total` metric exposed by the kubelet.
+- Look at hostPath mounts of privileged containers.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [X] Other (treat as last resort)
+  - Details: check the kubelet metrics `pod_resources_endpoint_*`
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+N/A or refer to Kubelet SLIs.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [X] Metrics
+  - Metric name: `pod_resources_endpoint_requests_total`
+  - Components exposing the metric: kubelet
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?** Not aplicable.
+###### Does this feature depend on any specific services running in the cluster?
+
+Not applicable.
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?** No.
-* **Will enabling / using this feature result in introducing new API types?** No.
-* **Will enabling / using this feature result in any new calls to cloud provider?** No.
-* **Will enabling / using this feature result in increasing size or count of the existing API objects?** No.
-* **Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs][]?** No. Feature is out of existing any paths in kubelet.
-* **Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?** In 1.18, DDOSing the API can lead to resource exhaustion. It is planned to be addressed as part of G.A.
+###### Will enabling / using this feature result in any new API calls?
+
+No.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No. Feature is out of existing any paths in kubelet.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+In 1.18, DOSing the API can lead to resource exhaustion. It is planned to be addressed as part of G.A.
+The API is exposed only through a unix-domain socket local to the node, so malicious agents can only be among pods running on the same node (e.g.
+no network access) which have been granted permission to access the unix domain socket with volume mounts and filesystem permissions.
 Feature only collects data when requests comes in, data is then garbage collected. Data collected is proportional to the number of pods on the node.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. Clients consume the API through the gRPC interface exposed from the unix domain socket. Only a single socket is created and managed by the kubelet,
+shared among all the clients (typically one). No resources are reserved when a client connects, and the API is stateless (no state preserved across
+calls, not concept of session). All the data needed to serve the calls is fetched by internal, already existing data structures internal to resource
+managers.
 
 ### Troubleshooting
 
-* **How does this feature react if the API server and/or etcd is unavailable?**: No effect.
-* **What are other known failure modes?** No known failure modes
-* **What steps should be taken if SLOs are not being met to determine the problem?** N/A
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+No effect.
+
+###### What are other known failure modes?
+
+No known failure modes
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
 
 ## Implementation History
 
@@ -243,6 +361,11 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2019-04-30: Demo of production GPU monitoring by NVIDIA
 - 2019-04-30: Agreement in sig-node to move feature to beta in 1.15
 - 2020-06-17: Agreement in sig-node to move feature to G.A in 1.19 or 1.20
+- 2023-01-27: KEP translate to the most recent template
+
+## Drawbacks
+
+N/A
 
 ## Alternatives
 

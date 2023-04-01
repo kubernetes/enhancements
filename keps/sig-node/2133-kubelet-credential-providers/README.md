@@ -15,6 +15,10 @@
     - [Caching Credentials](#caching-credentials)
   - [Metrics](#metrics)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -44,10 +48,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -333,6 +337,70 @@ Beta:
 GA:
 * e2e test with an external implementation (e.g. [GCR](https://github.com/kubernetes/cloud-provider-gcp/tree/master/cmd/auth-provider-gcp)).
 
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+N/A
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+The unit test coverage is in k8s.io/kubernetes/pkg/credentialprovider package:
+
+- k8s.io/kubernetes/pkg/credentialprovider: 06/21/2022 - 47.2
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+Please see below under e2e tests.
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+An e2e test using a mock credential provider has been added for Beta launch:
+
+- test/e2e_node/image_credential_provider.go: https://testgrid.k8s.io/sig-node-kubelet#kubelet-credential-provider
+
+For GA launch, we will add an e2e test that utilizes the GCP credential provider (https://github.com/kubernetes/cloud-provider-gcp).
+
 ### Graduation Criteria
 
 ### Alpha
@@ -534,6 +602,8 @@ No.
 - 2020-11-11: PR introducing this feature at alpha stage was merged https://github.com/kubernetes/kubernetes/pull/94196
 - 2021-07-02: PR improving concurrency and cache for kubelet credential provider was merged https://github.com/kubernetes/kubernetes/pull/102168
 - 2021-09-27: PR adding metrics for kubelet credential provider was merged https://github.com/kubernetes/kubernetes/pull/102802
+- v1.26: e2e tests added authenticating to GCR
+- v1.26: v1 APIs added and feature graduated to GA
 
 ## Drawbacks
 

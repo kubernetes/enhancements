@@ -15,8 +15,6 @@ reviewers:
 approvers:
   - "@liggitt"
   - "@mikedanese"
-prr-approvers:
-  - "@deads2k"
 stage: stable
 latest-milestone: "v1.22"
 milestone:

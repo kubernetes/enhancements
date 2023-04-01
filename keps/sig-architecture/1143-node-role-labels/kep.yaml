@@ -15,8 +15,6 @@ reviewers:
 approvers:
   - "@thockin"
   - "@derekwaynecarr"
-prr-approvers:
-  - "@wojtek-t"
 creation-date: 2019-07-16
 last-updated: 2021-04-02
 status: implemented

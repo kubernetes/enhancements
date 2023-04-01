@@ -92,7 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Multi-tenant controllers](#multi-tenant-controllers)
   - [<code>ClusterProperty</code> CRD](#-crd)
   - [Well known properties](#well-known-properties)
-    - [Property: <code>id.k8s.io</code>](#property-)
+    - [Property: <code>cluster.clusterset.k8s.io</code>](#property-)
       - [Uniqueness](#uniqueness)
       - [Lifespan](#lifespan)
       - [Contents](#contents)
@@ -108,7 +108,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Rationale behind the <code>ClusterProperty</code> CRD](#rationale-behind-the--crd)
   - [Implementing the <code>ClusterProperty</code> CRD and its admission controllers](#implementing-the--crd-and-its-admission-controllers)
-    - [<code>id.k8s.io ClusterProperty</code>](#)
+    - [<code>cluster.clusterset.k8s.io ClusterProperty</code>](#)
     - [<code>clusterset.k8s.io ClusterProperty</code>](#-1)
   - [CRD upgrade path](#crd-upgrade-path)
     - [To CRD or not to CRD?](#to-crd-or-not-to-crd)
@@ -210,10 +210,10 @@ deployment has felt like a given to SIG-Multicluster; it has been discussed in
 a broad sense previously ([see this doc](https://docs.google.com/document/d/1F__vEKeI41P7PPUCMM9PVPYY34pyrvQI5rbTJVnS5c4/edit?usp=sharing)), and was scoped 
 down in response to actual observed use cases in the latest community discussion on
 which this KEP is based ([doc](https://docs.google.com/document/d/1S0u6xzP2gcJKPipA6tBNDNuid76nVKeGhTk7PrCIuQY/edit?usp=sharing)). The motivation
-of this KEP is to provide a flexible but useful baseline for clusterID that can
+of this KEP is to provide a flexible but useful baseline for cluster id that can
 work with the known use cases (see the User Stories section). 
 
-Existing implementations of the MCS API may have addressed the need for a cluster ID in their own ways, inconsistent with this current standard. It is the perspective of SIG-Multicluster that future additions to the MCS API will depend when necessary on the proposal laid out here, and existing implementations are encouraged to migrate any existing cluster ID assignment and storage mechanism to fit within the specifications of this KEP.
+Existing implementations of the MCS API may have addressed the need for a cluster id in their own ways, inconsistent with this current standard. It is the perspective of SIG-Multicluster that future additions to the MCS API will depend when necessary on the proposal laid out here, and existing implementations are encouraged to migrate any existing cluster id assignment and storage mechanism to fit within the specifications of this KEP.
 
 ### Goals
 
@@ -225,7 +225,7 @@ know that this has succeeded?
 managed as Kubernetes resources
 * Define the standard to be strict enough to be useful in the following user stories:
   * Establish reliable coordinates for determining clusterset membership and identity of a cluster within its cluster set
-  * Enable cluster-granularity DNS names for multicluster services
+  * Enable disambiguation of DNS names for multicluster Headless services with the same hostnames
   * Facilitate enrichment of log / event / metrics data with cluster id / set coordinates
 
 ### Non-Goals
@@ -234,11 +234,11 @@ managed as Kubernetes resources
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-* Define any characteristics of the system that tracks cluster IDs within a cluster (i.e. a cluster registry)
+* Define any characteristics of the system that tracks cluster ids within a cluster (i.e. a cluster registry)
 * Solve any problems without specific, tangible use cases (though we will leave room for extension).
 * In particular, this KEP explicitly does not consider 
    * a cluster joining multiple ClusterSets
-   * how or whether users should be able to specify aliases for cluster IDs and what they could be used for
+   * how or whether users should be able to specify aliases for cluster ids and what they could be used for
 
 
 ## Proposal
@@ -253,11 +253,14 @@ nitty-gritty.
 -->
 
 ### Overview
-Each cluster in a ClusterSet will be assigned a unique identifier, that lives at least as long as that cluster is a member of the given ClusterSet, and is immutable for that same lifetime. This identifier will be stored in a new cluster-scoped `ClusterProperty` CR with the well known name `id.k8s.io` that may be referenced by workloads within the cluster. The identifier must be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label, and may be created by an implementation dependent mechanism.
+Each cluster in a ClusterSet will be assigned a unique identifier, that lives at least as long as that cluster is a member of the given ClusterSet, and is immutable for that same lifetime. This identifier will be stored in a new cluster-scoped `ClusterProperty` CR with the well known name `cluster.clusterset.k8s.io` that may be referenced by workloads within the cluster. The identifier must either:
+- be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label,
+- or be composed of two valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS labels separated with a dot.
+The identifier may be created by an implementation dependent mechanism.
 
 While a member of a ClusterSet, a cluster will also have an additional `clusterset.k8s.io ClusterProperty` which describes its current membership. This property must be present exactly as long as the cluster's membership in a ClusterSet lasts, and removed when the cluster is no longer a member.
 
-More detail and examples of the uniqueness, lifespan, immutability, and content requirements for both the `id.k8s.io ClusterProperty` and `clusterset.k8s.io ClusterProperty` are described further below. The goal of these requirements are to provide to the MCS API a cluster ID of viable usefulness to address known user stories without being too restrictive or prescriptive.
+More detail and examples of the uniqueness, lifespan, immutability, and content requirements for both the `cluster.clusterset.k8s.io ClusterProperty` and `clusterset.k8s.io ClusterProperty` are described further below. The goal of these requirements are to provide to the MCS API a cluster id of viable usefulness to address known user stories without being too restrictive or prescriptive.
 
 ### User Stories
 
@@ -282,7 +285,7 @@ I want the ability to add a previously-isolated cluster to a ClusterSet, or to m
 
 I have a headless multi-cluster service deployed across clusters in my ClusterSet with similarly named pods in each cluster. I need a way to disambiguate each backend pod via DNS.
 
-_For example, an exported headless service of services name `myservice` in namespace `test`,  backed by pods in two clusters with clusterIDs `clusterA` and `clusterB`, could be disambiguated by different DNS names following the pattern `<clusterID>.<svc>.<ns>.svc.clusterset.local`: `clusterA.myservice.test.svc.clusterset.local.` and `clusterB.myservice.test.svc.clusterset.local.`. This way the user can implement whatever load balancing they want (as is usually the case with headless services) by targeting each cluster's available backends directly._
+_For example, an exported headless service of services name `myservice` in namespace `test`,  backed by pods in two clusters with cluster ids `clusterA` and `clusterB`, could be disambiguated by different DNS names following the pattern `<clusterid>.<svc>.<ns>.svc.clusterset.local`: `clusterA.myservice.test.svc.clusterset.local.` and `clusterB.myservice.test.svc.clusterset.local.`. This way the user can implement whatever load balancing they want (as is usually the case with headless services) by targeting each cluster's available backends directly._
 
 #### Diagnostics
 
@@ -309,12 +312,12 @@ _Note: While prior Kubernetes API constructs containing arbitrary string values,
 
 ### Well known properties
 
-The `ClusterProperty` CRD will support two specific properties under the well known names `id.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowledge of a cluster's ID or ClusterSet membership.
+The `ClusterProperty` CRD will support two specific properties under the well known names `cluster.clusterset.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowledge of a cluster's id or ClusterSet membership.
 
 The requirements below use the keywords **must, should,** and **may** purposefully in accordance with [RFC-2119](https://tools.ietf.org/html/rfc2119).
 
 
-#### Property: `id.k8s.io`
+#### Property: `cluster.clusterset.k8s.io`
 
 Contains a unique identifier for the containing cluster.
 
@@ -336,24 +339,33 @@ Contains a unique identifier for the containing cluster.
 
 ##### Contents
 
-*   The identifier **must** be a valid RFC-1123 DNS label [as described for object names in the Kubernetes docs](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
-    *   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
-    *   Can be used as a component in MCS DNS.
+*   The identifier **must** either:
+    *   be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label,
+    *   or be composed of two valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS labels separated with a dot.
+*   The identifier **may** be used as a component in MCS DNS.
 *   The identifier **may** be a human readable description of its cluster.
 
 
 ##### Consumers
 
 *   **Must** be able to rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
-*   **Should** watch the `id.k8s.io` property to handle potential changes if they live beyond the ClusterSet membership.
+*   **Should** watch the `cluster.clusterset.k8s.io` property to handle potential changes if they live beyond the ClusterSet membership.
 *   **May** rely on the existence of an identifier for clusters that do not belong to a ClusterSet so long as the implementation provides one.
 
 
 ##### Notable scenarios
 
-**Renaming a cluster**: Since a `id.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the property contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
+**Renaming a cluster**: Since a `cluster.clusterset.k8s.io ClusterProperty` must be immutable for the duration of its *membership* in a given ClusterSet, the property contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
 
-**Reusing cluster names**: Since an `id.k8s.io ClusterProperty` has no restrictions on whether or not a ClusterProperty can be repeatable, if a cluster unregisters from a ClusterSet it is permitted under this standard to rejoin later with the same `id.k8s.io ClusterProperty` it had before. Similarly, a *different* cluster could join a ClusterSet with the same `id.k8s.io ClusterProperty` that had been used by another cluster previously, as long as both do not have membership in the same ClusterSet at the same time. Finally, two or more clusters may have the same `id.k8s.io ClusterProperty` concurrently (though they **should** not; see "Uniqueness" above) *as long as* they both do not have membership in the same ClusterSet.
+**Reusing cluster names**: Since an `cluster.clusterset.k8s.io ClusterProperty` has no restrictions on whether or not a ClusterProperty can be repeatable, if a cluster unregisters from a ClusterSet it is permitted under this standard to rejoin later with the same `cluster.clusterset.k8s.io ClusterProperty` it had before. Similarly, a *different* cluster could join a ClusterSet with the same `cluster.clusterset.k8s.io ClusterProperty` that had been used by another cluster previously, as long as both do not have membership in the same ClusterSet at the same time. Finally, two or more clusters may have the same `cluster.clusterset.k8s.io ClusterProperty` concurrently (though they **should** not; see "Uniqueness" above) *as long as* they both do not have membership in the same ClusterSet.
+
+**Cluster identifier composed of two DNS labels**: If a clusterset includes
+clusters registered with multiple cluster registries, the value of
+`cluster.clusterset.k8s.io ClusterProperty` may not uniquely identify a cluster
+within the clusterset. In such case the value of `cluster.clusterset.k8s.io ClusterProperty`
+may be composed of two DNS labels separated with a dot. The additional DNS label
+is implementation-dependent and allows the implementation to uniquely identify
+the cluster registry with which a cluster is registered.
 
 #### Property: `clusterset.k8s.io`
 
@@ -419,43 +431,43 @@ proposal will be implemented, this is the place to discuss them.
 
 This proposal suggests a CRD composed of objects all of the same `Kind` `ClusterProperty`, and that are distinguished using certain well known values in their `metadata.name` fields. This design avoids cluster-wide singleton `Kind`s for each property, reduces access competition for the same metadata by making each property its own resource (instead of all in one), allows for RBAC to be applied in a targeted way to individual properties, and supports the user prerogative to store other simple metadata in one centralized CRD by creating CRs of the same `Kind` `ClusterProperty` but with their own names.
 
-Storing arbitrary facts about a cluster can be implemented in other ways. For example, Cluster API subproject stopgapped their need for cluster name metadata by leveraging the existing `Node` `Kind` and storing metadata there via annotations, such as `cluster.x-k8s.io/cluster-name` ([ref](https://github.com/kubernetes-sigs/cluster-api/pull/4048)). While practical for their case, this KEP avoids adding cluster-level info as annotations on child resources so as not to be dependent on a child resource's existence, to avoid issues maintaining parity across multiple resources of the same `Kind` for identical metadata, and maintain RBAC separation between the cluster-level metadata and the child resources. Even within the realm of implementing as a CRD, the API design could focus on distinguishing each fact by utilizing different `spec.Type`s (as `Service` objects do e.g. `spec.type=ClusterIP` or `spec.type=ExternalName`), or even more strictly, each as a different `Kind`.  The former provides no specific advantages since multiple differently named properties for the same fact are unnecessary, and is less expressive to query (it is easier to query by name directly like `kubectl get clusterproperties id.k8s.io`). The latter would result in the proliferation of cluster-wide singleton `Kind` resources, and be burdensome for users to create their own custom properties.
+Storing arbitrary facts about a cluster can be implemented in other ways. For example, Cluster API subproject stopgapped their need for cluster name metadata by leveraging the existing `Node` `Kind` and storing metadata there via annotations, such as `cluster.x-k8s.io/cluster-name` ([ref](https://github.com/kubernetes-sigs/cluster-api/pull/4048)). While practical for their case, this KEP avoids adding cluster-level info as annotations on child resources so as not to be dependent on a child resource's existence, to avoid issues maintaining parity across multiple resources of the same `Kind` for identical metadata, and maintain RBAC separation between the cluster-level metadata and the child resources. Even within the realm of implementing as a CRD, the API design could focus on distinguishing each fact by utilizing different `spec.Type`s (as `Service` objects do e.g. `spec.type=ClusterIP` or `spec.type=ExternalName`), or even more strictly, each as a different `Kind`.  The former provides no specific advantages since multiple differently named properties for the same fact are unnecessary, and is less expressive to query (it is easier to query by name directly like `kubectl get clusterproperties cluster.clusterset.k8s.io`). The latter would result in the proliferation of cluster-wide singleton `Kind` resources, and be burdensome for users to create their own custom properties.
 
 
 ### Implementing the `ClusterProperty` CRD and its admission controllers
 
-#### `id.k8s.io ClusterProperty`
+#### `cluster.clusterset.k8s.io ClusterProperty`
 
 The actual implementation to select and store the identifier of a given cluster could occur local to the cluster. It does not necessarily ever need to be deleted, particularly if the identifier selection mechanism chooses an identifier that is compliant with this specification's most broad restrictions -- namely, being immutable for a cluster's lifetime and unique beyond just the scope of the cluster's membership. A recommended option that meets these broad restrictions is a cluster's kube-system.uuid. 
 
-That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `id.k8s.io ClusterProperty` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for example, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new ID.
+That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `cluster.clusterset.k8s.io ClusterProperty` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for example, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new id.
 
-Since this KEP does not formally mandate that the cluster ID *must* be immutable for the lifetime of the cluster, only for the lifetime of its membership in a ClusterSet, any dependent tooling explicitly *cannot* assume the `id.k8s.io ClusterProperty` for a given cluster will stay constant on its own merit. For example, log aggregation of a given cluster ID based on this property should only be trusted to be referring to the same cluster for as long as it has one ClusterSet membership; similarly, controllers whose logic depends on distinguishing clusters by cluster ID can only trust this property to disambiguate the same cluster for as long as the cluster has one ClusterSet membership.
+Since this KEP does not formally mandate that the cluster id *must* be immutable for the lifetime of the cluster, only for the lifetime of its membership in a ClusterSet, any dependent tooling explicitly *cannot* assume the `cluster.clusterset.k8s.io ClusterProperty` for a given cluster will stay constant on its own merit. For example, log aggregation of a given cluster id based on this property should only be trusted to be referring to the same cluster for as long as it has one ClusterSet membership; similarly, controllers whose logic depends on distinguishing clusters by cluster id can only trust this property to disambiguate the same cluster for as long as the cluster has one ClusterSet membership.
 
-Despite this flexibility in the KEP, clusterIDs may still be useful before ClusterSet membership needs to be established; again, particularly if the implementation chooses the broadest restrictions regarding immutability and uniqueness. Therefore, having a controller that initializes it early in the lifecycle of the cluster, and possibly as part of cluster creation, may be a useful place to implement it, though within the bounds of this KEP that is not strictly necessary.
+Despite this flexibility in the KEP, cluster ids may still be useful before ClusterSet membership needs to be established; again, particularly if the implementation chooses the broadest restrictions regarding immutability and uniqueness. Therefore, having a controller that initializes it early in the lifecycle of the cluster, and possibly as part of cluster creation, may be a useful place to implement it, though within the bounds of this KEP that is not strictly necessary.
 
-The most common discussion point within the SIG regarding whether an implementation should favor a UUID or a human-readable clusterID string is when it comes to DNS. Since DNS names are originally intended to be a human readable technique of address, clunky DNS names composed from long UUIDs seems like an anti-pattern, or at least unfinished. While some extensions to this spec have been discussed as ways to leverage the best parts of both (ex. using labels on the `id.k8s.io ClusterProperty` to store aliases for DNS), an actual API specification to allow for this is outside the scope of this KEP at this time (see the Non-Goals section).
+The most common discussion point within the SIG regarding whether an implementation should favor a UUID or a human-readable cluster id string is when it comes to DNS. Since DNS names are originally intended to be a human readable technique of address, clunky DNS names composed from long UUIDs seems like an anti-pattern, or at least unfinished. While some extensions to this spec have been discussed as ways to leverage the best parts of both (ex. using labels on the `cluster.clusterset.k8s.io ClusterProperty` to store aliases for DNS), an actual API specification to allow for this is outside the scope of this KEP at this time (see the Non-Goals section).
 
 ```
-# An example object of `id.k8s.io ClusterProperty` 
+# An example object of `cluster.clusterset.k8s.io ClusterProperty` 
 # using a kube-system ns uuid as the id value (recommended above):
 
 apiVersion: about.k8s.io/v1
 kind: ClusterProperty
 metadata:
-  name: id.k8s.io
+  name: cluster.clusterset.k8s.io
 spec:
   value: 721ab723-13bc-11e5-aec2-42010af0021e
 ```
 
 ```
-# An example object of `id.k8s.io ClusterProperty` 
+# An example object of `cluster.clusterset.k8s.io ClusterProperty` 
 # using a human-readable string as the id value:
 
 apiVersion: about.k8s.io/v1
 kind: ClusterProperty
 metadata:
-  name: id.k8s.io
+  name: cluster.clusterset.k8s.io
 spec:
   value: cluster-1
 ```
@@ -464,10 +476,10 @@ spec:
 
 A cluster in a ClusterSet is expected to be authoritatively associated with that ClusterSet by an external process and storage mechanism with a purview above the cluster local boundary, whether that is some form of a cluster registry or just a human running kubectl. (The details of any specific mechanism is out of scope for the MCS API and this KEP -- see the Non-Goals section.) Mirroring this information in the cluster-local `ClusterProperty` CRD will necessarily need to be managed above the level of the cluster itself, since the properties of `clusterset.k8s.io` extend beyond the boundaries of a single cluster, and will likely be something that has access to whatever cluster registry-esque concept is implemented for that multicluster setup. It is expected that the mcs-controller ([as described in the MCS API KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#proposal)), will act as an admission controller to verify individual objects of this property.
 
-Because there are obligations of the `id.k8s.io ClusterProperty` that are not meanigfully verifiable until a cluster tries to join a ClusterSet and set its `clusterset.k8s.io ClusterProperty`, the admission controller responsible for setting a `clusterset.k8s.io ClusterProperty` will need the ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]` or possibly affect changes to that cluster's `id.k8s.io ClusterProperty` to make it valid `[/UNRESOLVED]`. Two symptomatic cases of this would be:
+Because there are obligations of the `cluster.clusterset.k8s.io ClusterProperty` that are not meanigfully verifiable until a cluster tries to join a ClusterSet and set its `clusterset.k8s.io ClusterProperty`, the admission controller responsible for setting a `clusterset.k8s.io ClusterProperty` will need the ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]` or possibly affect changes to that cluster's `cluster.clusterset.k8s.io ClusterProperty` to make it valid `[/UNRESOLVED]`. Two symptomatic cases of this would be:
 
-1. When a cluster with a given `id.k8s.io ClusterProperty` tries to join a ClusterSet, but a cluster with that same `id.k8s.io ClusterProperty` appears to already be in the set.
-2. When a cluster that does not have a `id.k8s.io ClusterProperty` tries to join a ClusterSet.
+1. When a cluster with a given `cluster.clusterset.k8s.io ClusterProperty` tries to join a ClusterSet, but a cluster with that same `cluster.clusterset.k8s.io ClusterProperty` appears to already be in the set.
+2. When a cluster that does not have a `cluster.clusterset.k8s.io ClusterProperty` tries to join a ClusterSet.
 
 In situations like these, the admission controller will need to fail to add the invalid cluster to the ClusterSet by refusing to set its `clusterset.k8s.io ClusterProperty`, and surface an error that is actionable to make the property valid.
 
@@ -488,11 +500,11 @@ spec:
 
 _That is the question._
 
-While this document has thus far referred to the `ClusterProperty` resource as being implemented as a CRD, another implementation point of debate has been whether this belongs in the core Kubernetes API, particularly the `id.k8s.io ClusterProperty`. A dependable cluster ID or cluster name has previously been discussed in other forums (such as [this SIG-Architecture thread](https://groups.google.com/g/kubernetes-sig-architecture/c/mVGobfD4TpY/m/nkdbkX1iBwAJ) from 2018, or, as mentioned above, the [Cluster API subproject](https://github.com/kubernetes-sigs/cluster-api/issues/4044) which implemented [their own solution](https://github.com/kubernetes-sigs/cluster-api/pull/4048).) It is the opinion of SIG-Multicluster that the function of the proposed `ClusterProperty` CRD is of broad utility and becomes more useful the more ubiquitous it is, not only in multicluster set ups.
+While this document has thus far referred to the `ClusterProperty` resource as being implemented as a CRD, another implementation point of debate has been whether this belongs in the core Kubernetes API, particularly the `cluster.clusterset.k8s.io ClusterProperty`. A dependable cluster id or cluster name has previously been discussed in other forums (such as [this SIG-Architecture thread](https://groups.google.com/g/kubernetes-sig-architecture/c/mVGobfD4TpY/m/nkdbkX1iBwAJ) from 2018, or, as mentioned above, the [Cluster API subproject](https://github.com/kubernetes-sigs/cluster-api/issues/4044) which implemented [their own solution](https://github.com/kubernetes-sigs/cluster-api/pull/4048).) It is the opinion of SIG-Multicluster that the function of the proposed `ClusterProperty` CRD is of broad utility and becomes more useful the more ubiquitous it is, not only in multicluster set ups.
 
 This has led to the discussion of whether or not we should pursue adding this resource type not as a CRD associated with SIG-Multicluster, but as a core Kubernetes API implemented in `kubernetes/kubernetes`. A short pro/con list is enclosed at the end of this section.
 
-One effect of that decision is related to the upgrade path. Implementing this resource only in k/k will restrict the types of clusters that can use cluster ID to only ones on the target version (or above) of Kubernetes, unless a separate backporting CRD is made available to them. At that point, with two install options, other issues arise. How do backported clusters deal with migrating their CRD data to the core k/k objects during upgrade -- will the code around the formal k/k implementation be sensitive to the backport CRD and migrate itself? Will users have to handle upgrades in a bespoke manner?
+One effect of that decision is related to the upgrade path. Implementing this resource only in k/k will restrict the types of clusters that can use cluster id to only ones on the target version (or above) of Kubernetes, unless a separate backporting CRD is made available to them. At that point, with two install options, other issues arise. How do backported clusters deal with migrating their CRD data to the core k/k objects during upgrade -- will the code around the formal k/k implementation be sensitive to the backport CRD and migrate itself? Will users have to handle upgrades in a bespoke manner?
 
 |                       | CRD                                                                              | k/k                                               |
 |-----------------------|----------------------------------------------------------------------------------|---------------------------------------------------|
@@ -526,101 +538,35 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+This KEP proposes and out-of-tree CRD that is not expected to integrate with any of the Kubernetes CI infrastructure. In addition, it explicitly provides only the CRD definition and generated clients for use by third party implementers, and does not provide a controller or any other binary with business logic to test. For these reasons, we only expect to provide unit tests for a dummy controller to confirm that the generated CRD can be installed and the generated clients can be instantiated. Today those tests are available [here](https://github.com/kubernetes-sigs/about-api/blob/master/clusterproperty/controllers/suite_test.go).
+
+However, similar to other out-of-tree CRDs that serve third party implementers, such as Gateway API and MCS API, there is rationale for the project to provide conformance tests for implementers to use to confirm they adhere to the restrictions set forth in this KEP that are not otherwise enforced by the CRD definition; in thise case, the constraints defined on the well-known properties `clusterset.k8s.io` and `cluster.clusterset.k8s.io`. Providing these tests are not considered blocking graduation requirements for the maturity level of this API.
+
+These tests will be provided in such a way that implementers can expose one or more clusters that have the About API CRD installed in them, and run a series of tests that confirms any well-known properties stored in those clusters' `ClusterProperty` objects conform to the constraints in [Well known properties](#well-known-properties). 
+
 ### Graduation Criteria
 
 #### Alpha -> Beta Graduation
 
-- Determine if an `id.k8s.io ClusterProperty` be strictly a valid DNS label, or is allowed to be a subdomain.
+- Determine if an `cluster.clusterset.k8s.io ClusterProperty` be strictly a valid DNS label, or is allowed to be a subdomain.
 - To CRD or not to CRD (see section above)
 - Determine if CRD implementation should use CEL validation to limit byte length instead of code points; this would make it only compatible with 1.23+ where CEL validation is behind a feature gate for alpha.
 
 #### Beta -> GA criteria
 
-- At least one headless implementation using clusterID for MCS DNS
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-#### Beta -> GA Graduation
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-#### Removing a Deprecated Flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include 
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
--->
+- At least one headless implementation using cluster id for MCS DNS
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Any changes to the API definition will follow the official Kubernetes API groups and versioning guidance [here](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-groups-and-versioning) and [here](https://kubernetes.io/docs/reference/using-api/#api-versioning). In short, the API will be provided in order through `v1alphaX`, `v1betaX`, to `v1`, where compatibility will be preserved from `v1beta1` and onwards; clients will be expected to eventually migrate to the `v1` implementation of the API as the prior versions are deprecated.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+As a CRD, this API is dependent on any changes in the version and compatibility of the CRD feature itself on which it is built. As the CRD system is in `v1` as of Kubernetes 1.14, and the Kubernetes versioning guarantees `v1` APIs to be maintained through the Kubernetes major release, and as the About API does not depend on any new features of the CRD system since then, there is no expected coordination required with any core Kubernetes components until and unless Kubernetes proceeds to version 2.X.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+This CRD /is/ a direct dependency of the MCS API and any mcs-controller implementation as defined by that KEP. As discussed later in the PRR, it is expected that the mcs-controller (or any other controller taking this CRD as its dependency) would manage the lifecycle of this CRD, including any version skew.
+
+As also mentioned below, we are aware that other features (in or out of tree) may want to use this CRD (as debated in "To CRD or Not to CRD" section, above) but we believe it is in the scope of those future features to assess the impact of this CRD's version strategy on their component's version skew and their feature's stability if they do.
 
 ## Production Readiness Review Questionnaire
 
@@ -666,7 +612,7 @@ _This section must be completed when targeting alpha to a release._
       plane?
       - No
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
       - No
 
 * **Does enabling the feature change any default behavior?**
@@ -710,69 +656,50 @@ _This section must be completed when targeting alpha to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+  
+   CRDs themselves are Kubernetes objects, and can fail to be applied if the schema definition is corrupt or incompatible with the CustomResourceDefinition schema. Unit tests and manual tests continuously confirm that as the built CRD yaml produced by this project is valid against the stable `v1 CustomResourceDefinition`. (It also could fail if the CRD is applied to a version of Kubernetes that does not have the CRD system is used (<1.14), or the API Server is unreachable, but these are both considered catastrophic failures out of scope of this KEP.) 
+  
+  Ultimately, the failure of a rollout of any CRD has the potential to disrupt all features or workloads that depend on it. Watches in controllers will fail to receive updates as the client would fail to find the CRD; a concrete known example for this CRD, the CoreDNS multicluster DNS plugin, would fail to program new DNS records and CoreDNS will answer SERVFAIL to any request made for a Kubernetes record that has not yet been synchronized. Features or workloads that depend on this CRD should plan to manage the lifecycle of this CRD or to provide transparent failure modes if the CRD is not present.
 
 * **What specific metrics should inform a rollback?**
 
+  Metrics should be configured using a metrics solutions implementing the [Custom Metrics API](https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-usage-monitoring/#full-metrics-pipeline), for example, the [metrics plugin for Custom Resources in kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/customresourcestate-metrics.md). Kubernetes does not provide default metrics for CRDs.
+
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+Unit tests and manual tests confirm that the CRD is capable of being uninstalled and reinstalled.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  Kubernetes does not provide default metrics for CRDs so an operator would need to depend on custom metrics, or filter 404s from Kubernetes API server against this CRD.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+
+  N/A: This KEP does not propose a service, only leverages the existing Kuebernetes API service and CRD extension mechanism.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+
+  N/A: This KEP does not propose a service, only leverages the existing Kuebernetes API service and CRD extension mechanism.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+  
+  Default metrics for CRDs in general for number of requests by workload source would improve 
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+    This feature depends only on the CustomResourceDefinition v1 in Kubernetes API server, available in Kubernetes versions 1.14+.
 
 
 ### Scalability
@@ -786,45 +713,32 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+
+  Installing the CRD will require a single API call to POST the new `CustomResourceDefinition` resource that represents it.
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+
+  Yes, installing the CRD introduces the cluster-scoped `ClusterProperty` Kind. As there is no related service proposed as part of this KEP, there are no specific limits on the supported number of objects per cluster outside of Kubernetes API server storage limits. 
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
 
+  No.
+
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+
+  Besides the trivial single `CustomResourceDefinition` required to install this CRD, no other size or count of existing API objects will be affected by this KEP.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+
+  No, this KEP does not affect any of the operations covered by existing SLIs/SLOs, particularly since CustomResourceDefinitions are excluded from those SLOs.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+
+  This CRD will utilize the validation mechanism provided by the CRD extension for validation of structural schemas of CRDs which requires some amount of resources to validate on create or update of a CR. However, the number of expected resources (2 as of this KEP) and their rate of change (related to clusterset membership changes, itself expected to be a human decision and rarely changing state) is expected to be trivial.
 
 ### Troubleshooting
 
@@ -836,19 +750,22 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  This KEP itself proposes a CRD applied to the API server; if the API server and/or etcd is unavailable, so is this CRD. Features dependent on this CRD must assess the impact of this CRD's availability on their component's availability. Most concretely today, components of the mcs-controller are expected to serve as an admission controller to this CRD or are dependent on this CRD to program DNS. If the API server and/or etcd is unavailable, those controllers will be unable to update a cluster's ClusterProperty data regarding its well-known properties as part of a ClusterSet, or to program any updates to DNS, respectively.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
+
+  - [CRD cannot be installed]
+    - Detection: Custom metrics or dependent feature metrics; increased 404 rate on Kube API server for the CRD.
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+      Warning and above, as this is the level that 404s against the CRD will be seen.
+    - Testing: Unit tests against generated CRD schema installation and usage of generated client.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  N/A: SLOs are not defined as there is no service provided by this KEP.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
