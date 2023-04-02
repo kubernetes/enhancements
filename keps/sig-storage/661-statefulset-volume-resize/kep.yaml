@@ -2,6 +2,7 @@ title: StatefulSet volume resize
 kep-number: 661
 authors:
   - "@areller"
+  - "@harshanarayana"
 owning-sig: sig-apps
 participating-sigs:
   - sig-storage
