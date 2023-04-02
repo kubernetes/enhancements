@@ -278,7 +278,7 @@ There are multiple real or potential places where errors/failures could happen w
 
 These are potential failures that could arise during validation or submission that the API server performs when sending the modified StatefulSet object. In the diagram above, it refers to the arrow denoted with `(1)`.  
 
-We won't expand on any of the errors that could happen during this phase right now, as we'll talk about it during [Validation](###-Validation)
+We won't expand on any of the errors that could happen during this phase right now, as we'll talk about it during [Validation](#validation)
 But it's worth noting that this is the ideal place that errors could happen in - as it'll give the user immediate feedback. 
 
 #### When Patching The PVC Object
@@ -286,7 +286,7 @@ But it's worth noting that this is the ideal place that errors could happen in -
 These are errors that could happen when the reconciliation logic in the StatefulSet controller attempts to perform a `patch` operation on the PVC object. These errors arise from either the PVC validation logic in the API server or its admission plugin. In the diagram above, it refers to the arrow denoted with `(6)`.
 
 * The storage class of the volume we're trying to resize doesn't allow for expansions.
-  * It shouldn't be a problem to have this validation in the StatefulSet validation/admission and we'll talk about it during [Validation](###-Validation).
+  * It shouldn't be a problem to have this validation in the StatefulSet validation/admission and we'll talk about it during [Validation](#validation).
 * We are trying to decrease the size of the volume.
   * Specifically, we're trying to decrease the size of the volume to a size that's less (or equal) than it's capacity. Decreasing the size of the volume to a size that's greater than its current capacity is allowed, as its part of the recovery from failed expansions mechanism, described in [KEP 1790](../1790-recover-resize-failure/README.md).
 * The volume we're trying to resize is not bound.
@@ -297,7 +297,7 @@ These are errors that could happen when the reconciliation logic in the Stateful
 This refers to a class of errors that could happen after the StatefulSet controller has successfully performed a `patch` operation on the PVC object. These errors are asynchronous in nature and can happen at any time after the `patch` operation. In the diagram above, it refers to the arrow denoted with `(10)`. (Though in reality, `kubelet` is involved in the resize as well, when an online expansion is performed, but we leave it out of the diagram).
 
 * The CSI driver doesn't support online expansions.
-  * This is a scenario where the driver cannot do an expansion while the volume is published to a node/the pod that's using it is up. When this happens, the CSI driver will return an error when the CSI resizer calls it (eg `FailedPrecondition`). In this proposal we won't be supporting the scenario of not supporting online expansions. Ideally, we'd want to know ahead of time (during StatefulSet admission/validation) if the CSI driver supports online expansion or not - but it might not be so simple. We'll discuss it in details when we talk about [Validation](###-Validation).
+  * This is a scenario where the driver cannot do an expansion while the volume is published to a node/the pod that's using it is up. When this happens, the CSI driver will return an error when the CSI resizer calls it (eg `FailedPrecondition`). In this proposal we won't be supporting the scenario of not supporting online expansions. Ideally, we'd want to know ahead of time (during StatefulSet admission/validation) if the CSI driver supports online expansion or not - but it might not be so simple. We'll discuss it in details when we talk about [Validation](#validation).
 * The CSI driver doesn't support offline expansions.
   * This is a scenario where the volume must be published to a node/the pod that's using it must be up in order to perform an expansion. This is not exactly an error. The expansion process will be stuck until the volume is published on a node. This could happen in scenarios where a user attempts to resize a PVC that's not currently attached to a pod (eg a PVC is bound to a pod of the StatefulSet and then the user downscales the StatefulSet). We'll have to make sure to not get in the way of the user when try try to recover from this scenario.
 * No space left/exceeding quota
@@ -357,12 +357,12 @@ Given the above, this kind of validation won't be handled as part of this KEP.
 Errors that happen during validation are trivial so we won't cover them in this section. 
 
 The two classes of errors we've like to have error indication than happen 
-* [When Patching The PVC Object](###-When-Patching-The-PVC-Object)
-* [Asynchronous Errors/Failures](###-Asynchronous-Errors/Failures)
+* [When Patching The PVC Object](#when-patching-the-pvc-object)
+* [Asynchronous Errors/Failures](#asynchronous-errorsfailures)
 
 The main mechanism for error reporting will be via [events](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/) on either the StatefulSet object or the PVC objects. From a UX standpoint, having errors as events on the StatefulSet object, instead of spreading them across the PVC objects, might seem more deseriable - but in some cases, could introduce additional complexity and only marginal benefits.  
 
-For errors that happen [When Patching The PVC Object](###-When-Patching-The-PVC-Object), reporting on the StatefulSet object is fairly straightforward, since those errors arise from within the StatefulSet controller.
+For errors that happen [When Patching The PVC Object](#when-patching-the-pvc-object), reporting on the StatefulSet object is fairly straightforward, since those errors arise from within the StatefulSet controller.
 
 For example, an error that arises when trying to patch the PVC object to a size that's less or equal to its capacity, can result in the following event on the StatefulSet object. 
 
@@ -375,7 +375,7 @@ Events:
   Warning  FailedToPatchPVC  1s (x11 over 6s)   statefulset-controller  StatefulSet default/ex1 failed to patch PVC vol1-ex1-2 of Pod 2: PersistentVolumeClaim "vol1-ex1-2" is invalid: spec.resources.requests.storage: Forbidden: field can not be less than previous value
 ````
 
-However, for errors that happen [asynchronously](###-Asynchronous-Errors/Failures), reporting on the StatefulSet object is not as straightforward. For example, if the CSI driver fails to resize the volume, the error will be reported as an event on the PVC object.
+However, for errors that happen [asynchronously](#asynchronous-errorsfailures), reporting on the StatefulSet object is not as straightforward. For example, if the CSI driver fails to resize the volume, the error will be reported as an event on the PVC object.
 
 `kubectl describe pvc vol1-ex1-2`
 ```
@@ -391,7 +391,7 @@ In order to propagate that event to the StatefulSet object, we would have to sub
 This adds extra complication to the StatefulSet controller and could potentially hinder performance. The benefit is marginal improvement in UX (concentration of all error events under the StatefulSet object). 
 
 * The impovement is marginal because
-  * As we'll describe in later section, [Events](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/) is not a reliable mechanism for getting feedback on the resize operation, and the user will benefit more from relying on the feedback mechanisms described [here](###-Feedback).
+  * As we'll describe in later section, [Events](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/) is not a reliable mechanism for getting feedback on the resize operation, and the user will benefit more from relying on the feedback mechanisms described [here](#feedback).
   * Even though events might not be realiable for gathering feedback (especially during an automated deployment process, eg a CI/CD pipeline), the user could still rely on them for troubleshooting - but in that case, the user could just get/subscribe (`kubectl get events -w`) to events from the entire namespace.
     * It should also be possible to create tooling that will allow the user to aggregate events from multiple PVCs that were created by the same StatefulSet/template.
 * It will be inconsistent with how events are reported on the StatefulSet pod.
@@ -474,9 +474,9 @@ We are going to change how the StatefulSet reconciliation logic works. Since thi
 
 #### API Changes
 
-We are adding a new array field to the StatefulSet status object (###-Feedback). I don't believe this change will impact any existing clients/tools - but to be careful, we should not expose this field in the API server as long as the feature flag described above is disabled. (We technically can't put a struct field behind a feature flag - but, by marking it as `omitempty` and putting the logic that populates it in the StatefulSet controller, behind a feature flag, we can effectively hide it from the API server)
+We are [adding a new array field to the StatefulSet status object](#feedback). I don't believe this change will impact any existing clients/tools - but to be careful, we should not expose this field in the API server as long as the feature flag described above is disabled. (We technically can't put a struct field behind a feature flag - but, by marking it as `omitempty` and putting the logic that populates it in the StatefulSet controller, behind a feature flag, we can effectively hide it from the API server)
 
-Apart from mitigating the risk of breaking changes, the new [feedback](###-Feedback) machanism might not be immediately intuitive to all users and/or immediately be adapted by all deployment tools. We'll have to provide documentation and examples for how to use it and push for adaption by deployment tools. (such as Helm)
+Apart from mitigating the risk of breaking changes, the new [feedback](#feedback) machanism might not be immediately intuitive to all users and/or immediately be adapted by all deployment tools. We'll have to provide documentation and examples for how to use it and push for adaption by deployment tools. (such as Helm)
 
 #### Changes To Revision Control
 
@@ -484,9 +484,9 @@ We are technically not making any changes to the revision control logic. But, th
 
 #### Unreliability of [Events](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/)
 
-The error reporting mechanisms that we describe [here](###-Error-Indications-To-The-User), suffer from [known reliability issues](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#Event). The event reporting mechanisms works in a fire/forget fashion. The controller tries to push an event into a channel but will abort if the channel is full. 
+The error reporting mechanisms that we describe [here](#error-indications-to-the-user), suffer from [known reliability issues](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#Event). The event reporting mechanisms works in a fire/forget fashion. The controller tries to push an event into a channel but will abort if the channel is full. 
 
-We'll need to document the fact that the user should probably use events as a troubleshooting mechanism, and rely on the [feedback](###-Feedback) mechanism for reliable feedback, especially when deploying from an automated CI/CD pipeline.
+We'll need to document the fact that the user should probably use events as a troubleshooting mechanism, and rely on the [feedback](#feedback) mechanism for reliable feedback, especially when deploying from an automated CI/CD pipeline.
 
 #### Provide Clarity On Failure Scenarios
 
@@ -505,7 +505,7 @@ proposal will be implemented, this is the place to discuss them.
 
 ### API changes
 
-The only API changes we'll make, is to add the `volumeClaimTemplates` array field to the StatefulSet status object as described in the [Feedback](###-Feedback) section.
+The only API changes we'll make, is to add the `volumeClaimTemplates` array field to the StatefulSet status object as described in the [Feedback](#feedback) section.
 
 ### API server validation relaxation
 Modifications would be made to `ValidateStatefulSetUpdate` in order to allow changes in the
@@ -518,7 +518,7 @@ Now that StatefulSet controller needs to patch the PVC, `patch` will be added to
 
 #### PVC Capacity Notifications
 
-In order to be notified of capacity changes in PVC objects (arrow `(15)` in the diagram [here](###-Feedback)), which is necessary for the [feedback mechanism](###-Feedback), we'll perform the following changes
+In order to be notified of capacity changes in PVC objects (arrow `(15)` in the diagram [here](#feedback)), which is necessary for the [feedback mechanism](#feedback), we'll perform the following changes
 
 * When [creating a new a PVC object during StatefulSet reconciliation](https://github.com/kubernetes/kubernetes/blob/d89d5ab2680bc74fe4487ad71e514f4e0812d9ce/pkg/controller/statefulset/stateful_pod_control.go#L342), we'll add an annotations to the PVC object, denoting the namespace and name of the StatefulSet object.
   * We don't want to use the [`ownerReference`](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/#owner-references-in-object-specifications)  in this case, because that field is already utilized by the [StatefulSet PVC retention mechanism](https://kubernetes.io/blog/2021/12/16/kubernetes-1-23-statefulset-pvc-auto-deletion/).
@@ -537,8 +537,8 @@ We would want to perform PVC reconciliation only for replicas that are in the la
   * For example, imagine a readiness check that tests that the filesystem has at least 10% space left.
 
 On top of it, when we ecnounter an error during patching the PVC 
-  * If the error is transient (not part of [Errors When Patching The PVC Object](###-When-Patching-The-PVC-Object)), record it on the StatefulSet object, and return the error immediately (this will stop the reconciliation process from progressing to other replicas and will trigger a retry).
-  * If the error is not transient (part of [Errors When Patching The PVC Object](###-When-Patching-The-PVC-Object)), record it on the StatefulSet object, and
+  * If the error is transient (not part of [Errors When Patching The PVC Object](#when-patching-the-pvc-object)), record it on the StatefulSet object, and return the error immediately (this will stop the reconciliation process from progressing to other replicas and will trigger a retry).
+  * If the error is not transient (part of [Errors When Patching The PVC Object](#when-patching-the-pvc-object)), record it on the StatefulSet object, and
     * If the roll out strategy of the StatefulSet is monotonic (`OrderedReadyPodManagement`), return immediately - but do not return the error, because if the error is not transient, we do not want to retry.
     * If the roll out strategy is burst (not monotonic), continue.
 
