@@ -14,16 +14,8 @@ reviewers:
   - "@msau42"
   - "@xing-yang"
 approvers:
-   - "@kow3ns"
-   - "@xing-yang"
-
-##### WARNING !!! ######
-# prr-approvers has been moved to its own location
-# You should create your own in keps/prod-readiness
-# Please make a copy of keps/prod-readiness/template/nnnn.yaml
-# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
-prr-approvers:
-  - "@wojtek-t"
+  - "@kow3ns"
+  - "@xing-yang"
 
 see-also:
   - "/keps/sig-storage/1790-recover-resize-failure"
