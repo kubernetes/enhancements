@@ -611,7 +611,7 @@ when drafting this test plan.
 - Test resize failure recovery after [KEP 1790](../1790-recover-resize-failure/README.md) has been implemented.
 
 * We'll need to make sure that while the feature flag is disabled
-  * Validation that doesn't allow PVC tempalte to change is still intact
+  * Validation that doesn't allow PVC template to change is still intact
   * The new StatefulSet status field is not exposed.
   * No change to existing StatefulSet functionality 
 
