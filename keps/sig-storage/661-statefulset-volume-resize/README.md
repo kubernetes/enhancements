@@ -529,7 +529,7 @@ In order to be notified of capacity changes in PVC objects (arrow `(15)` in the 
 
 We would want to perform PVC reconciliation only for replicas that are in the latest revision of the StatefulSet object, and are running, but not necessarily ready (pass readiness checks). 
 
-* The reason for only performing reconciliation on running and up to date (match to the latest revision), is that we don't want to do unecessary reconciliation works on replicas that are not running and might never run again as far as we're concerned.
+* The reason for only performing reconciliation on running and up to date (match to the latest revision), is that we don't want to do unnecessary reconciliation works on replicas that are not running and might never run again as far as we're concerned.
   * Another reason is that we want for the PVC reconciliation to match the cadence of pod creation/modification in the StatefulSet. If the user uses monotonic (`OrderedReadyPodManagement`) roll out strategy, we'd want the PVC reconciliation process to respect that strategy. This is especially important considering that PVC reconciliation could fail asynchronically (eg, due to out of space/exceeding quota issues) and we want the failure to be predictable.
   * Another reason is that some CSI drivers don't support offline expansion (meaning, the volume has to be published/attached to a pod)
   * This means that if the StatefulSet is scaled to 0, and the user resizes one of the PVC templates, the change won't be reconciled (even if the PVC objects exist), until the StatefulSet is scaled up again.
@@ -609,6 +609,22 @@ when drafting this test plan.
 - E2E tests for volume expansion of PVC associated with statefulsets.
 - Ensure statefulset controller revision works properly after resize.
 - Test resize failure recovery after [KEP 1790](../1790-recover-resize-failure/README.md) has been implemented.
+
+* We'll need to make sure that while the feature flag is disabled
+  * Validation that doesn't allow PVC tempalte to change is still intact
+  * The new StatefulSet status field is not exposed.
+  * No change to existing StatefulSet functionality 
+
+* The following scenarios will need to be covered by a combination of unit/integration and manual testing
+  * A user increases the size of a PVC template with a single replica StatefulSet. The resize goes through. While the resize is in progress, the `finishedReconciliationGeneration` in the StatefulSet status for that PVC template is not increased to the generation of the StatefulSet. (Resize is in progress as long as the `.status.capacity.storage` of the PVC is not equal to the `.spec.resources.requests.storage` of the PVC)
+  * A user increases the size of a PVC template with multiple replicas. For both monotonic and burst roll out strategies. 
+    * The resize (patching of the PVC object) begins only once the replica is running. (We can simulate a restart to the replica by changing one of its fields in its spec)
+    * The `readyReplicas` in the StatefulSet status for that PVC template increases as the PVCs are resized.
+  * A user decreases the size of a PVC template. The user should be able to successfully submit the modified StatefulSet. There should be an error message (event) generated on the StatefulSet object stating that the patching of the PVC object has failed. While in failed state, the `finishedReconciliationGeneration` in the StatefulSet status for that PVC template is not increased to the generation of the StatefulSet, and the `readyReplicas` field stays at 0. When increasing the size of the PVC template back to its original size, the error should be resolved and the `finishedReconciliationGeneration` in the StatefulSet status for that PVC template should be increased to the generation of the StatefulSet and the `readyReplicas` field should be updated to the number of replicas in the StatefulSet.
+    * The same scenario should be tested for having multiple PVC templates. The tester should note that after trying to decrease the size of one of the PVC templates, its `finishedReconciliationGeneration` in the StatefulSet status is not increased to the generation of the StatefulSet, and the `readyReplicas` field stays at 0. But for the other PVC template, its `finishedReconciliationGeneration` in the StatefulSet status is increased to the generation of the StatefulSet, and the `readyReplicas` field is updated to the number of replicas in the StatefulSet.
+    * The same test should be done for monotonic and burst roll out strategies.
+      * For monotonic, the StatefulSet reconciliation should stay stuck on the first replica when it encounters the patching error.
+      * For burst, the StatefulSet reconciliation should continue to the next replica when it encounters the patching error.
 
 ### Graduation Criteria
 
