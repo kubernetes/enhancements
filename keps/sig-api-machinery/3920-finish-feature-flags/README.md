@@ -152,7 +152,8 @@ A list of problems:
   going back into a pristine state, the cluster goes into a third state,
   off-with-dangling-references. This third state is tested less well than either
   the on or off states.
-* Because of this, it's risky to try alpha features with important clusters.
+* Because of this, it's risky to try alpha features with important clusters,
+  beyond just the risk of the alpha feature going haywire.
 * It's not very useful or convenient to make disposable clusters to try alpha
   features.
 * Because of that, it's extremely hard to get robust feedback about features
@@ -200,6 +201,9 @@ Secondary goals:
   settable, by api clients
 
 Follow-up goals:
+* Permit features (if the developers desire this behavior) to default on only
+  when all uses in the cluster are from sufficiently high versions, and default
+  off otherwise.
 * When a feature is about a new field, remove it from OpenAPI specs when the
   feature is off.
 * For features that possibly could support it, add a canarying mechanism so that
@@ -401,6 +405,20 @@ the leader will determine the setting for the whole cluster.
 Misconfiguration as described here is currently possible for all components of
 the cluster; we describe apiserver in detail because it is the most confusing
 (it runs both server and client flows).
+
+#### Story: New collection
+
+For example, APIPriorityAndFairness adds some completely new types,
+PriorityLevel and FlowSchemaConfiguration. If this feature were to be turned
+off, it would be ideal to remove every object in those collections so that they
+won't reappear when the feature is turned back on.
+
+Additionally this illustrates another desire: Over some release, this feature
+switched from alpha to beta, and as permitted by the rules, the beta and alpha
+schema were incompatible. Admins who had enabled the alpha needed to clear the
+collection. It is not yet described in this KEP, but the desired amelioration to
+this is to permit developers to write a pre-upgrade hook to clear the
+collection. (TODO.)
 
 #### Story: ?
 
