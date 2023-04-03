@@ -1,0 +1,41 @@
+title: Declarative Validation
+kep-number: 3937
+authors:
+  - "@jpbetz"
+owning-sig: sig-apimachinery
+status: provisional
+creation-date: 2023-04-03
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-api-machinery/692-crd-openapi-schema"
+  - "/keps/sig-api-machinery/1929-built-in-default"
+  - "/keps/sig-api-machinery/2876-crd-validation-expression-language"
+  - "/keps/sig-api-machinery/2887-openapi-enum-types"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.28"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.28"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: TODO
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
