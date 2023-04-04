@@ -51,6 +51,7 @@
   - [Version 1.24](#version-124)
   - [Version 1.25](#version-125)
   - [Version 1.27](#version-127)
+  - [Version 1.28](#version-128)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
   - [Alternative quota-based implementation](#alternative-quota-based-implementation)
@@ -944,8 +945,12 @@ ConfigMap rendering [issue](https://github.com/kubernetes/kubernetes/issues/1120
 
 ### Version 1.27
 
-- Fix the blocking issue that caused the revert to alpha: [fsquota: only generate pod uuid is nil #112624](https://github.com/kubernetes/kubernetes/pull/112624)
+- Fix the blocking issue that caused the revert to alpha: <https://github.com/kubernetes/kubernetes/pull/112624> and <https://github.com/kubernetes/kubernetes/pull/115314>.
+- Add test in sig-node test grid for this feature <https://testgrid.k8s.io/sig-node-kubelet#kubelet-gce-e2e-fsquota-ubuntu>: <https://github.com/kubernetes/test-infra/pull/28616>
 
+### Version 1.28
+
+- Promote `LocalStorageCapacityIsolationFSMonitoring` to Beta
 
 ## Drawbacks [optional]
 
