@@ -159,7 +159,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 With this enhancement, Kubernetes Developers will declare validation rules using
-IDL tags in the `types.go` files used to define the Kubernetes API. For example:
+IDL tags in the `types.go` files that to define the Kubernetes API. For example:
 
 ```go
 // staging/src/k8s.io/api/example/v1/types.go
@@ -495,7 +495,7 @@ This might be a good place to talk about core concepts and how they relate.
         should be feasible to avoid extra conversions.
     - CEL expressions are significantly more expensive to run.
       - Why this might be OK:
-        - CEL expressions are only expected to account for 30-40% of all
+        - CEL expressions are expected to account for 30% of all
           validation rules, with the rest expressed as simple value validations
           (required checks, enum value checks) that do not require CEL
           evaluation.
