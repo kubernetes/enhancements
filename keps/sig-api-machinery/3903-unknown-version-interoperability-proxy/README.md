@@ -273,6 +273,8 @@ the number if needed, but upgrades aren't that frequent and few resources are
 changed on releases, so these requests should not be common. We will count them
 with a metric.
 
+There could be a large volume of requests for a specific resource which might result in the identified apiserver being unable to serve the proxied requests. This scenario should not occur too frequently, since resource types which have large request volume should not be added or removed during an upgrade -- that would cause other problems, too.
+
 TODO: security / cert stuff.
 
 ## Design Details
