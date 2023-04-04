@@ -86,15 +86,24 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Job API Definition](#job-api-definition)
+  - [Deployment/ReplicaSet API](#deploymentreplicaset-api)
+  - [Implementation](#implementation)
   - [Test Plan](#test-plan)
-    - [Prerequisite testing updates](#prerequisite-testing-updates)
-    - [Unit tests](#unit-tests)
-    - [Integration tests](#integration-tests)
-    - [e2e tests](#e2e-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Alpha](#alpha-1)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -154,7 +163,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 Currently, Jobs and Deployments start Pods as soon as they are marked for terminating.  
-This KEP proposes a new field for the Job and Deployment controllers that counts terminating
+This KEP proposes a new field for the Job, Deployment and ReplicaSet controllers that counts terminating
 pods as active.  The goal of this KEP is to allow for opt-in behavior where terminating pods count as active.
 
 ## Motivation
@@ -200,21 +209,6 @@ We will propose two new API fields in Jobs and Deployments/ReplicaSets in this K
 As a machine learning user, ML frameworks allow scheduling of multiple pods.  
 The Job controller does not typically wait for terminating pods to be marked as failed.  Tensorflow and other ML frameworks may have a requirement that they only want Pods to be started once the other pods are fully terminated.  The following yaml can fit these needs:
 
-```yaml
-apiVersion: v1
-kind: Job
-spec:
-  template:
-    spec:
-      containers:
-      - name: main-job-container
-        image: job-image
-        command: ["./program"]
-  backoffLimit: 3
-  terminatingAsActive: true
-  podFailurePolicy:
-```
-
 This case was added due to a bug discovered with running IndexedJobs with Tensorflow.  See [Jobs create replacement Pods as soon as a Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844) for more details.
 
 #### Story 2
@@ -232,12 +226,8 @@ for more examples.
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+The Deployment API is open for discussion.  We put the field in Deployment/ReplicaSet because it is related to RolloutStrategy. 
+It is not clear if `recreate` and/or `rollingupdate` need this API for both rollout options.
 
 ### Risks and Mitigations
 
@@ -260,12 +250,14 @@ Consider including folks who also work outside the SIG or subproject.
 At the JobSpec level, we are adding a new BoolPtr field:
 
 ```golang
+type JobSpec struct{
   ...
  // terminatingAsActive specifies if the Job controller should include terminating pods
  // as active. If the field is true, then the Job controller will include active pods
  // to mean running or terminating pods
  // +optional
  TerminatingAsActive *bool
+}
 ```
 
 ### Deployment/ReplicaSet API
@@ -305,15 +297,17 @@ type ReplicaSetSpec struct {
 
 ### Implementation
 
-Generally, both the Job controller and ReplicaSets utilize `FilterActivePods` in their reconcilation loop.  `FilterActivePods` gets a list of pods that are not terminating.  This KEP will include terminating pods in this list.
+Generally, both the Job controller and ReplicaSets utilize `FilterActivePods` in their reconciliation loop.  `FilterActivePods` gets a list of pods that are not terminating.  This KEP will include terminating pods in this list.
 
 ```golang
 // FilterActivePods returns pods that have not terminated.
 func FilterActivePods(pods []*v1.Pod, terminatingPods bool) []*v1.Pod {
  var result []*v1.Pod
  for _, p := range pods {
-  if IsPodActive(p) || terminatingPods {
+  if IsPodActive(p) {
    result = append(result, p)
+  } else if IsPodTerminating(p) && terminatingPods {
+      result = append(result, p)
   } else {
    klog.V(4).Infof("Ignoring inactive pod %v/%v in state %v, deletion time %v",
     p.Namespace, p.Name, p.Status.Phase, p.DeletionTimestamp)
@@ -372,9 +366,20 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
+- <test>: <link to test coverage>
 -->
 
-- <test>: <link to test coverage>
+We will add the following integration test for the Job controller:
+
+TerminatingAsActive Feature Toggle On:
+
+  1) NonIndexedJob starts pods that takes a while to terminate
+  2) Delete pods
+  3) Verify that pod creation only occurs once terminating pods are removed
+
+We should test the above with the FeatureToggle off also.
+
+We will add a similar integration test for Deployment:
 
 ##### e2e tests
 
@@ -386,12 +391,17 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
 - <test>: <link to test coverage>
+-->
 
 ### Graduation Criteria
 
+#### Alpha
+
+- Job controller includes terminating pods as active
+- Deployment strategy optionally includes terminating pods as active
+- Unit Tests
+- Initial e2e tests
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -515,9 +525,8 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: TerminatingPodsAsActive
+  - Feature gate name: TerminatingAsActive
   - Components depending on the feature gate: kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
@@ -608,22 +617,10 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
+If a user terminates pods that are controlled by a deployment/job, then we should wait
+until the existing pods are terminated before starting new ones.
 
-- [ ] Events
-  - Event Reason:
-- [] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+We will add e2e test that determine this.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -644,90 +641,34 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+NA
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
-
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+This feature is closely related to the 3329-retriable-and-nonretriable-failures but not sure if that is considered a dependency.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
+Generally, enabling this will slow down rollouts if pods take a long time to terminate.  We would wait
+to create new pods until the existing ones are terminated
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+No
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+We add `TerminatingAsActive` to `JobSpec`, `DeploymentStrategy` and `ReplicaSetSpec`.  This is a boolPtr.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -736,12 +677,12 @@ For Job API, we are adding a BoolPtr field named `TerminatingAsActive` which is 
 - API type(s): boolPtr
 - Estimated increase in size: 8B
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+ReplicaSet and Deployment have two additions:
+
+- API type(s): boolPtr
+- `DeploymentStrategy` and ReplicaSetSpec
+- Estimated increase in size: 16B (2 x 8B)
+
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -825,22 +766,12 @@ Major milestones might include:
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+Enabling this feature may have rollouts become slower.
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+We discussed having this under the PodFailurePolicy but this is a more general idea than the PodFailurePolicy.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+NA
