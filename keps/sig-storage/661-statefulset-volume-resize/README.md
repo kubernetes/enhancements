@@ -74,50 +74,76 @@ tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [Possible Errors/Failures](#possible-errorsfailures)
-    - [During Validation/Admission](#during-validationadmission)
-    - [When Patching The PVC Object](#when-patching-the-pvc-object)
-    - [Asynchronous Errors/Failures](#asynchronous-errorsfailures)
-  - [Validation](#validation)
-    - [Validation Of The Storage Class](#validation-of-the-storage-class)
-    - [Validation Of CSI Driver Capabilities](#validation-of-csi-driver-capabilities)
-    - [Validating That The Volume Size Doesn't Decrease](#validating-that-the-volume-size-doesnt-decrease)
-  - [Error Indications To The User](#error-indications-to-the-user)
-  - [Revision control](#revision-control)
-  - [Risks and Mitigations](#risks-and-mitigations)
-    - [Change In StatefulSet Reconciliation Logic](#change-in-statefulset-reconciliation-logic)
-    - [API Changes](#api-changes)
-    - [Changes To Revision Control](#changes-to-revision-control)
-    - [Unreliability of <a href="https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/">Events</a>](#unreliability-of-events)
-    - [Provide Clarity On Failure Scenarios](#provide-clarity-on-failure-scenarios)
-- [Implementation Details](#implementation-details)
-  - [API changes](#api-changes-1)
-  - [API server validation relaxation](#api-server-validation-relaxation)
-  - [RBAC changes.](#rbac-changes)
-  - [StatefulSet controller changes](#statefulset-controller-changes)
-    - [PVC Capacity Notifications](#pvc-capacity-notifications)
-    - [Main Reconciliation Logic](#main-reconciliation-logic)
-  - [Test Plan](#test-plan)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring Requirements](#monitoring-requirements)
-  - [Dependencies](#dependencies)
-  - [Scalability](#scalability)
-  - [Troubleshooting](#troubleshooting)
-- [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [KEP-0661: StatefulSet volume resize](#kep-0661-statefulset-volume-resize)
+  - [Release Signoff Checklist](#release-signoff-checklist)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [Possible Errors/Failures](#possible-errorsfailures)
+      - [During Validation/Admission](#during-validationadmission)
+      - [When Patching The PVC Object](#when-patching-the-pvc-object)
+      - [Asynchronous Errors/Failures](#asynchronous-errorsfailures)
+    - [Validation](#validation)
+      - [Validation Of The Storage Class](#validation-of-the-storage-class)
+      - [Validation Of CSI Driver Capabilities](#validation-of-csi-driver-capabilities)
+      - [Validating That The Volume Size Doesn't Decrease](#validating-that-the-volume-size-doesnt-decrease)
+    - [Error Indications To The User](#error-indications-to-the-user)
+    - [Feedback](#feedback)
+    - [Revision control](#revision-control)
+    - [Risks and Mitigation](#risks-and-mitigation)
+      - [Change In StatefulSet Reconciliation Logic](#change-in-statefulset-reconciliation-logic)
+      - [API Changes](#api-changes)
+      - [Changes To Revision Control](#changes-to-revision-control)
+      - [Unreliability of Events](#unreliability-of-events)
+      - [Provide Clarity On Failure Scenarios](#provide-clarity-on-failure-scenarios)
+  - [Implementation Details](#implementation-details)
+    - [API changes](#api-changes-1)
+    - [API server validation relaxation](#api-server-validation-relaxation)
+    - [RBAC changes.](#rbac-changes)
+    - [StatefulSet controller changes](#statefulset-controller-changes)
+      - [PVC Capacity Notifications](#pvc-capacity-notifications)
+      - [Main Reconciliation Logic](#main-reconciliation-logic)
+    - [Test Plan](#test-plan)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
+  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+          - [How can this feature be enabled / disabled in a live cluster?](#how-can-this-feature-be-enabled--disabled-in-a-live-cluster)
+          - [Does enabling the feature change any default behavior?](#does-enabling-the-feature-change-any-default-behavior)
+          - [Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement)
+          - [What happens if we reenable the feature if it was previously rolled back?](#what-happens-if-we-reenable-the-feature-if-it-was-previously-rolled-back)
+          - [Are there any tests for feature enablement/disablement?](#are-there-any-tests-for-feature-enablementdisablement)
+    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+          - [How can a rollout or rollback fail? Can it impact already running workloads?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
+          - [What specific metrics should inform a rollback?](#what-specific-metrics-should-inform-a-rollback)
+          - [Were upgrade and rollback tested? Was the upgrade-\>downgrade-\>upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)
+          - [Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis-fields-of-api-types-flags-etc)
+    - [Monitoring Requirements](#monitoring-requirements)
+          - [How can an operator determine if the feature is in use by workloads?](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads)
+          - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
+          - [What are the reasonable SLOs (Service Level Objectives) for the enhancement?](#what-are-the-reasonable-slos-service-level-objectives-for-the-enhancement)
+          - [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
+          - [Are there any missing metrics that would be useful to have to improve observability of this feature?](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
+    - [Dependencies](#dependencies)
+          - [Does this feature depend on any specific services running in the cluster?](#does-this-feature-depend-on-any-specific-services-running-in-the-cluster)
+    - [Scalability](#scalability)
+          - [Will enabling / using this feature result in any new API calls?](#will-enabling--using-this-feature-result-in-any-new-api-calls)
+          - [Will enabling / using this feature result in introducing new API types?](#will-enabling--using-this-feature-result-in-introducing-new-api-types)
+          - [Will enabling / using this feature result in any new calls to the cloud provider?](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud-provider)
+          - [Will enabling / using this feature result in increasing size or count of the existing API objects?](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects)
+          - [Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any-operations-covered-by-existing-slisslos)
+          - [Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?](#will-enabling--using-this-feature-result-in-non-negligible-increase-of-resource-usage-cpu-ram-disk-io--in-any-components)
+    - [Troubleshooting](#troubleshooting)
+          - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
+          - [What are other known failure modes?](#what-are-other-known-failure-modes)
+          - [What steps should be taken if SLOs are not being met to determine the problem?](#what-steps-should-be-taken-if-slos-are-not-being-met-to-determine-the-problem)
+  - [Implementation History](#implementation-history)
+  - [Drawbacks](#drawbacks)
+  - [Alternatives](#alternatives)
+  - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -183,10 +209,11 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Kubernetes has supported volume expansion as a beta feature since v1.16. However,
-this feature support is only limited to standalone pods and deployments. Expansion of 
-volumes associated with a Statefulset is not supported. This enhancement proposes to add 
-the ability to resize volumes associated with a StatefulSet via modifications to its specification.
+Kubernetes has supported volume expansion as a beta feature since `v1.16`. However, this feature support is only
+limited to expanding volumes by editing the PVCs as an adhoc operation. Expansion of the volumes associated with a
+`StatefulSet` created via the `volumeClaimTemplate` is not supported directly via the modification of the `volumeClaimTemplate`
+construct of the `StatefulSet`. This enhancement proposes to add  the ability to resize volumes associated 
+with a `StatefulSet` via modifications to its `volumeClaimTemplate` specification.
 
 ## Motivation
 
@@ -200,11 +227,11 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 -->
 
 Stable persistent volumes can be created by specifying `.spec.volumeClaimTemplates`
-for a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/).
+for a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#volume-claim-templates).
 Currently, StatefulSets do not allow the associated volumes to be resized directly by modifying the
 `.spec.volumeClaimTemplates`. Instead users have to modify each PVC one by one to achieve this. In such cases, 
-when the statefulset scales up, the new PVC(s) will be created with the older size and this again needs 
-manual intervention. The intent of this proposal is to avoid this user overhead and simplify the 
+when the StatefulSet scales up, the new PVC(s) will be created with the older size and this again needs 
+manual intervention. The intent of this proposal is to avoid this operational overhead and simplify the 
 process of resizing StatefulSet volumes.
 
 ### Goals
@@ -219,7 +246,7 @@ PVC in the `.spec.volumeClaimTemplates`.
 
 * Minimize the amount of unexpected errors/failures that the user might experience during volume resize by having as much validation as we can on the API server.
 * In case errors do happen during resize, we shouldn't get in the way of the user trying to remediate those errors
-* Provide a feedback mechanism for when a volume finished resizing fully, so that users can build detection mechanisms around that for their automated CI/CD processes.
+* Provide a feedback mechanism for when a volume finished resizing successfully, so that users can build detection mechanisms around that for their automated CI/CD processes.
 
 ### Non-Goals
 
@@ -230,11 +257,11 @@ and make progress.
 
 This proposal does not try to address the following scenarios but relies on the
 underlying PVC resize logic to take the appropriate action or indicate error as needed.
+
 - Shrinking of volume is not allowed.
-- Few environments require Pod restarts in order to get access to the resized volume (meaning that the underlying CSI driver doesn't support online expansions). This KEP won't support such scenarios.
+- Few environments require Pod restarts in order to get access to the resized volume (meaning that the underlying CSI driver doesn't support online expansions). This KEP won't address such scenarios.
 - Modifying anything but the `resources.request.storage` field of the `persistentVolumeClaim` (eg, `storageClassName`, `labels`, `annotations`).
-- Resizing a PVC associated with a statefulset directly by modifying the PVC spec will not affect the 
-  Statefulset `.spec.volumeClaimTemplates`. 
+- Resizing a PVC associated with a StatefulSet directly by modifying the PVC spec will not affect the StatefulSet `.spec.volumeClaimTemplates`.
 - Resizing ephemeral volumes.
 - Correcting failures resulting from bad input or environmental issues (such as insufficient capacity/quota). We'll make an attempt to do as much validation as we can in the API server, but cases of errors/failures past admission will have to be handled by the user. This KEP will discuss the different failures that could happen past admission.
 
@@ -260,17 +287,18 @@ spawned from it. Reconciliation logic runs for every change made to the Stateful
 `Spec`.
 - The validation logic in the API server is responsible for restricting the fields
 which can be edited in a StatefulSet specification.
-  - Part of the validation that the API server performs for objects (eg StatefulSet, PVC) happens in the object API server code and part happens in an admission plugin.
+  - Part of the validation that the API server performs for objects (eg `StatefulSet`, `PVC`) happens in the object's API server code and part happens in an admission plugin.
 - The RBAC specification in the controller policy is responsible for adding the required 
 RBAC permission for StatefulSet.
 - The StatefulSet controller also supports revision control.
 
 The following changes are proposed to achieve the goal:
 1. Make the `volumeClaimTemplates` storage size (`.spec.resources.request.storage`) editable by modification to the api server
-   validation. We should allow the user to both increase or decrease the storage size. Allowing the user to decrease the storage size will give them the ability to address failed expansions, as described in [KEP 1790](../1790-recover-resize-failure/README.md).
+   validation. We should allow the user to both increase or decrease the storage size in case of expansion failures. Allowing the user to decrease the storage size will give them the ability to address failed expansions, as described in [KEP 1790](../1790-recover-resize-failure/README.md).
 2. Add reconciliation of the associated PVC's size and the individual `volumeClaimTemplates` size into the 
    StatefulSet controller reconciliation.
-3. Add PVC `patch` privilege to the StatefulSet controller's clusterrole RBAC.
+3. Add PVC `patch` privilege to the StatefulSet controller's `ClusterRole` RBAC.
+4. Modification to the `StatefulSet.Status` to add additional field for `volumeClaimTemplates` to track volume expansion workflow status
 
 Once the above changes are made, modification to any of the `volumeClaimTemplates` storage
 size (specifically to the `.spec.resources.request.storage` field) by user will update (patch) the underlying PVC via the reconciliation performed by (2) above.
@@ -279,7 +307,7 @@ The existing PVC resize workflow kicks in at this point and attempts to resize t
 ![Diagram 1](./diag1.png)
 
 Two things to note about the diagram above
-* It's an oversimpflication of the volume resize process or of how StatefulSet reconciliation works - but it should suffice in the context of this discussion.
+* It's an over simplification of the volume resize process or of how StatefulSet reconciliation works - but it should suffice in the context of this discussion.
 * The numbers I denote on the arrows do not indicate the order in which operations happen. They are there for easier identification.
 
 ### Possible Errors/Failures
@@ -316,12 +344,12 @@ This refers to a class of errors that could happen after the StatefulSet control
   * This is a scenario where the driver returns an error to the resizer (eg `ResourceExhaused`/`OutOfRange`) because there's no space left for the resize process, or the user exceeds a quota on the provider they are using for storage. There is nothing we can do in this scenario other than not getting in the way of the user when they try to recover from it, and, continue reconciliation once they apply successful recovery. The recovery could involve steps like
     * Using the mechanisms that are described in [KEP 1790](../1790-recover-resize-failure/README.md)
     * Requesting more quota from the provider
-  * It's important to note, that it's possible for partial failures to occur as well - which might be more tricky for the user to handle. For example, a user could do a resize in a StatefulSet that has 3 replicas and the resize could succeed on 2 of them and fail only on the last.
+  * It's important to note that, it's possible for partial failures to occur as well - which might be more tricky for the user to handle. For example, a user could do a resize in a StatefulSet that has 3 replicas and the resize could succeed on 2 of them and fail only on the last.
     * In such case, the user won't be able to apply the mechanisms in [KEP 1790](../1790-recover-resize-failure/README.md) and their only recourse would be to request more quota from the provider, or downsize their StatefulSet (number of replicas).
 
 ### Validation
 
-We'd ideally want as much validation to happen as early as possible, ie during StatefulSet admission/validation. In reality, perfect validation during StatefulSet admission might be very hard to achieve as it involves communication with parts that the StatefulSet admission plugin won't have direct access to, like the CSI driver. Non the less, we'll discuss all the possible validation that we could potentially be performing during admission whether or not we'll actually end up performing them in the final implementation.
+We'd ideally want as much validation to happen as early as possible, ie during StatefulSet admission/validation. In reality, perfect validation during StatefulSet admission might be very hard to achieve as it involves communication with parts that the StatefulSet admission plugin won't have direct access to, like the CSI driver. Nonetheless, we'll discuss all the possible validation that we could potentially be performing during admission whether or not we'll actually end up performing them in the final implementation.
 
 #### Validation Of The Storage Class
 
@@ -330,7 +358,7 @@ The plugin will use an [informer](https://pkg.go.dev/k8s.io/client-go/informers)
 
 #### Validation Of CSI Driver Capabilities
 
-As mentioned earlier, we won't be supporting the scenario of drivers not supporting online expansion in the scope of this proposal. Thus, it would be ideal if we can validate durign StatefulSet admission that the CSI driver supports online expansions. However, this could be a lot more tricky than validating whether or not the storage class supports expansions, during admission.  
+As mentioned earlier, we won't be supporting the scenario of drivers not supporting online expansion in the scope of this proposal. Thus, it would be ideal if we can validate during StatefulSet admission that the CSI driver supports online expansions. However, this could be a lot more tricky than validating whether or not the storage class supports expansions, during admission.  
 
 According to the [CSI Spec](https://github.com/container-storage-interface/spec/blob/master/spec.md#getplugincapabilities) - A driver must publish whether or not it supports online expansion via `GetPluginCapabilities`.  
 
@@ -402,7 +430,7 @@ In order to propagate that event to the StatefulSet object, we would have to sub
 
 This adds extra complication to the StatefulSet controller and could potentially hinder performance. The benefit is marginal improvement in UX (concentration of all error events under the StatefulSet object). 
 
-* The impovement is marginal because
+* The improvement is marginal because
   * As we'll describe in later section, [Events](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/) is not a reliable mechanism for getting feedback on the resize operation, and the user will benefit more from relying on the feedback mechanisms described [here](#feedback).
   * Even though events might not be realiable for gathering feedback (especially during an automated deployment process, eg a CI/CD pipeline), the user could still rely on them for troubleshooting - but in that case, the user could just get/subscribe (`kubectl get events -w`) to events from the entire namespace.
     * It should also be possible to create tooling that will allow the user to aggregate events from multiple PVCs that were created by the same StatefulSet/template.
@@ -420,7 +448,7 @@ It is useful to provide feedback to the user about the status of the resize oper
 * Feedback is especially useful if the resize happens as part of an automated deployment mechanism (ie a CI/CD pipeline). In such cases, the user doesn't necessarily keep an eye on the deployment process so proper feedback is really important.  
 
 We propose to provide feedback by adding a new field to the StatefulSet status object. The new field will be an array that contains
-* The name of the PVC template
+* The name of the volume claim template
 * The current number of replicas for which the size of that PVC template is fully reconciled with the capacity of the PVC object (the `.status.capacity.storage` field) 
 * The last generation (pertains to the `.metadata.generation` field on the StatefulSet object) in which the size of that PVC template was fully reconciled with the capacity of the PVC object for all replicas.  
 
@@ -466,7 +494,7 @@ revision - going forward to a new version or going back to an older version woul
 changes to the persistent volume size. Any changes requiring resize of the volume will need editing
 of the StatefulSet storage size specification.
 
-### Risks and Mitigations
+### Risks and Mitigation
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -488,7 +516,7 @@ We are going to change how the StatefulSet reconciliation logic works. Since thi
 
 We are [adding a new array field to the StatefulSet status object](#feedback). I don't believe this change will impact any existing clients/tools - but to be careful, we should not expose this field in the API server as long as the feature flag described above is disabled. (We technically can't put a struct field behind a feature flag - but, by marking it as `omitempty` and putting the logic that populates it in the StatefulSet controller, behind a feature flag, we can effectively hide it from the API server)
 
-Apart from mitigating the risk of breaking changes, the new [feedback](#feedback) machanism might not be immediately intuitive to all users and/or immediately be adapted by all deployment tools. We'll have to provide documentation and examples for how to use it and push for adaption by deployment tools. (such as Helm)
+Apart from mitigating the risk of breaking changes, the new [feedback](#feedback) mechanism might not be immediately intuitive to all users and/or immediately be adapted by all deployment tools. We'll have to provide documentation and examples for how to use it and push for adaption by deployment tools. (such as Helm)
 
 #### Changes To Revision Control
 
@@ -700,9 +728,9 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
-* *Alpha* in 1.24 behind `StatefulSetVolumeExpansion` feature gate which will be set to `false` by default. Statefulset controller revision behavior will be explained in the documentation.
-* *Beta* in 1.25: We are going to move this to beta with enhanced e2e and more stability improvements.
-* *GA* in 1.26  
+* *Alpha* in 1.28 behind `StatefulSetVolumeExpansion` feature gate which will be set to `false` by default. Statefulset controller revision behavior will be explained in the documentation.
+* *Beta* in 1.29: We are going to move this to beta with enhanced e2e and more stability improvements.
+* *GA* in 1.30  
 
 ### Upgrade / Downgrade Strategy
 
@@ -1082,4 +1110,3 @@ from controller revision changes.
 Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
--->
