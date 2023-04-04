@@ -158,8 +158,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-With this enhancement, Kubernetes Developers will declare API validation using
-IDL tags in Go. For example:
+With this enhancement, Kubernetes Developers will declare validation rules using
+IDL tags in the `types.go` files used to define the Kubernetes API. For example:
 
 ```go
 // staging/src/k8s.io/api/example/v1/types.go
@@ -182,10 +182,10 @@ type FizzBuzz struct {
 
 In this example, both `+maxLength` and `+validations` are IDL tags.
 
-The declarative validation will be used by the kube-apiserver to
+The declarative validation rules will be used by the kube-apiserver to
 validate API requests.
 
-The declarative validation will also be included in the published OpenAPI:
+The declarative validation rules will also be included in the published OpenAPI:
 
 ```yaml
 openAPIV3Schema:
@@ -211,7 +211,7 @@ validation options available today for CRDs. namely:
 ## Motivation
 
 Kubernetes API validation rules are currently written by hand, which makes them
-difficult for users to directly access and inconvenient to maintain.
+difficult for users to access directly.
 
 Declarative validation will benefit Kubernetes maintainers:
 
@@ -231,7 +231,7 @@ Declarative validation will also benefit Kubernetes users:
 - It will enable clients to perform validation of native types earlier in
   development worflows ("shift-left"), such as at with a git pre-submit linter.
 - It will improve API composition. In particular CRDs that embed native types
-  (such as PotTemplate), which gain validation of the native type automatically.
+  (such as PodTemplate), which gain validation of the native type automatically.
   This has the potential to simplify controller development and improve end
   user experiences when using CRDs.
 
@@ -271,20 +271,20 @@ native types will be made available to CRD authors and vis-versa.
 Declarative validation will be performed against versioned APIs. This differs from the hand
 written validation, which is evaluated against internal types.
 
-Go tags will be added to support the following declarative validation rules:
+Go IDL tags will be added to support the following declarative validation rules:
 
-| Type of valiation      | Go tag                                               | OpenAPI validation field                                                           |
-| ---------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| string format          | `+format={format name}`                              | `format`                                                                           |
-| size limits            | `+min`, `+max`                                       | `minLength`, `minProperties`, `minItems`, `maxLength`, `maxProperties`, `maxItems` |
-| numeric limits         | `+min`, `+max`, `+min:exclusive`, `+max:exclusive`   | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`                       |
-| required fields        | `+optional`                                          | `required`                                                                         |
-| enum values            | `+enum`                                              | `enum`                                                                             |
-| uniqueness             | `listType=set` (sets and map keys)                   | `x-kubernetes-list-type`                                                           |
-| regex matches          | `+pattern`                                           | `pattern`                                                                          |
-| cross field validation | `validation=rule:"{CEL expression}"`                 | `x-kubernetes-validations`                                                         |
-| [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules)   | `validation=rule:"{CEL expression using oldSelf}"`   | `x-kubernetes-validations`                                                         |
-| special case: metadata name format   | `+metadataNameFormat={format name}`                  | `x-kubernetes-validations` (see "format" section below for details) |
+| Type of valiation      | Go IDL tag                                                       | OpenAPI validation field                                                           |
+| ---------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| string format          | `+format={format name}`                                          | `format`                                                                           |
+| size limits            | `+min{Length,Properties,Items}`, `+max{Length,Properties,Items}` | `min{Length,Properties,Items}`, `max{Length,Properties,Items}` |
+| numeric limits         | `+minimum`, `+maximum`, `+exclusiveMinimum`, `+exclusiveMaximum` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`                       |
+| required fields        | `+optional`                                                      | `required`                                                                         |
+| enum values            | `+enum`                                                          | `enum`                                                                             |
+| uniqueness             | `listType=set` (sets and map keys)                               | `x-kubernetes-list-type`                                                           |
+| regex matches          | `+pattern`                                                       | `pattern`                                                                          |
+| cross field validation | `validation=rule:"{CEL expression}"`                             | `x-kubernetes-validations`                                                         |
+| [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules)   | `validation=rule:"{CEL expression using oldSelf}"`   | `x-kubernetes-validations`                                                   |
+| special case: metadata name format   | `+metadataNameFormat={format name}`                | `x-kubernetes-validations` (see "format" section below for details) |
 
 ### CEL Validation
 
@@ -343,7 +343,7 @@ type aliases. For example:
 
 ```go
 type Widget struct {
-  // +validations=rule:"self.matches('[a-z][1-9]') && self[1] % 2 == 0"
+  // +validations=rule:"self.matches('[a-z][1-9]+')"
   Component PartId `json...`
 }
 
@@ -368,9 +368,10 @@ But all resources share the `ObjectMeta` type.
 We can support these uses cases with CEL validation rules:
 
 ```go
-// +validation=rule:"!has(self.metadata.name) || self.metadata.name.isFormat('dns1123subdomain')"
-// +validation=rule:"!has(self.metadata.generateName) || self.metadata.generateName.replace('-$', 'a').isFormat('dns1123subdomain')"
 type ExampleSpec struct {
+
+  // +validation=rule:"!has(self.name) || self.name.isFormat('dns1123subdomain')"
+  // +validation=rule:"!has(self.generateName) || self.generateName.replace('-$', 'a').isFormat('dns1123subdomain')"
   metav1.ObjectMeta `json...`
 }
 ```
@@ -392,6 +393,26 @@ can be declared on the `container` and `initContainer` fields using CEL. E.g.:
 // +validation=rule:"!has(self.RestartPolicy)"
 Containers []Container `json...`
 ```
+
+## Analysis
+
+At the time of writing this document, there are 1181 validation rules written in about
+15k lines of go code in [kubernetes/kubernetes/pkg/apis](https://github.com/kubernetes/kubernetes/commit/0c62b122c02bff9131b6db960042150a3638d3f3).
+
+Roughly 30% of validation rules may require CEL expressions. 15% of these are
+forbidden rules which primarily check which fields are allowed when a union
+discriminator is set. 10% are object name validations, and the remaining 10% are
+cross field validation checks, mainly mutual exclusion and some "transition
+rules" (e.g. immutability checks).
+
+The remaining 70% of validation rules can be represented using JSON Schema value
+validations. `optional`, `format` and `enum` will the the most frequently used.
+
+![Validation types](validation-types.svg)
+
+![Object metadata name validations](metadata-name-types.svg)
+
+![Requires CEL](requires-cel.svg)
 
 ## Migration
 
