@@ -226,8 +226,12 @@ for more examples.
 
 ### Notes/Constraints/Caveats (Optional)
 
-The Deployment API is open for discussion.  We put the field in Deployment/ReplicaSet because it is related to RolloutStrategy. 
+The Deployment API is open for discussion.  We put the field in Deployment/ReplicaSet because it is related to RolloutStrategy.
 It is not clear if `recreate` and/or `rollingupdate` need this API for both rollout options.
+
+Another open question is if we want to include Deployments in the initial release of this feature.  There is some discussion about releasing the Job API first and then follow up with Deployment.  
+
+We decided to define the APIs in this KEP as they can utilize the same implementation.  
 
 ### Risks and Mitigations
 
