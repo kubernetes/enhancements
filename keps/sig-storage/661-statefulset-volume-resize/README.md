@@ -298,6 +298,7 @@ The following changes are proposed to achieve the goal:
 2. Add reconciliation of the associated PVC's size and the individual `volumeClaimTemplates` size into the 
    StatefulSet controller reconciliation.
 3. Add PVC `patch` privilege to the StatefulSet controller's `ClusterRole` RBAC.
+4. Modification to the `StatefulSet.Status` to add additional field for `volumeClaimTemplates` to track volume expansion workflow status
 
 Once the above changes are made, modification to any of the `volumeClaimTemplates` storage
 size (specifically to the `.spec.resources.request.storage` field) by user will update (patch) the underlying PVC via the reconciliation performed by (2) above.
@@ -336,7 +337,7 @@ These are errors that could happen when the reconciliation logic in the Stateful
 This refers to a class of errors that could happen after the StatefulSet controller has successfully performed a `patch` operation on the PVC object. These errors are asynchronous in nature and can happen at any time after the `patch` operation. In the diagram above, it refers to the arrow denoted with `(10)`. (Though in reality, `kubelet` is involved in the resize as well, when an online expansion is performed, but we leave it out of the diagram).
 
 * The CSI driver doesn't support online expansions.
-  * This is a scenario where the driver cannot do an expansion while the volume is published to a node/the pod that's using it is up. When this happens, the CSI driver will return an error when the CSI resizer calls it (eg `FailedPrecondition`). In this proposal we won't be supporting the scenario of non online expansions. Ideally, we'd want to know ahead of time (during StatefulSet admission/validation) if the CSI driver supports online expansion or not - but it might not be so simple. We'll discuss it in details when we talk about [Validation](#validation).
+  * This is a scenario where the driver cannot do an expansion while the volume is published to a node/the pod that's using it is up. When this happens, the CSI driver will return an error when the CSI resizer calls it (eg `FailedPrecondition`). In this proposal we won't be supporting the scenario of not supporting online expansions. Ideally, we'd want to know ahead of time (during StatefulSet admission/validation) if the CSI driver supports online expansion or not - but it might not be so simple. We'll discuss it in details when we talk about [Validation](#validation).
 * The CSI driver doesn't support offline expansions.
   * This is a scenario where the volume must be published to a node/the pod that's using it must be up in order to perform an expansion. This is not exactly an error. The expansion process will be stuck until the volume is published on a node. This could happen in scenarios where a user attempts to resize a PVC that's not currently attached to a pod (eg a PVC is bound to a pod of the StatefulSet and then the user downscales the StatefulSet). We'll have to make sure to not get in the way of the user when try try to recover from this scenario.
 * No space left/exceeding quota
@@ -1109,4 +1110,3 @@ from controller revision changes.
 Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
--->
