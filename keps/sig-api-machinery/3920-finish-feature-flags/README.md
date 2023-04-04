@@ -476,16 +476,234 @@ optional but will be easy.
 
 ### More details about everything
 
-TODO
+#### API Type
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+Unsurprisingly, the Feature type looks like this:
+
+```
+// Feature represents a single feature that can be turned on or off.
+type Feature struct {
+	metav1.TypeMeta `json:",inline"`
+	// The name is <status.Class>/<status.Name>.
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	// `spec` contains the user-settable attributes of the feature.
+	Spec FeatureSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
+
+	// `status` declares the facts about this feature.
+	Status FeatureStatus `json:"status" protobuf:"bytes,3,opt,name=status"`
+}
+```
+
+The spec type may surprise you, but in reality most of the facts about features
+are status reported by the system. In fact, we may omit the `Desired` field
+completely until ready to take on the secondary goals.
+
+```
+type FeatureSpec struct {
+	// `desired` is the desired state of the feature, if it differs from
+	// `status.default`. This field may be set by users if the feature is
+	// set to accept dynamic values.
+	// +optional
+	Desired *FeatureEnablement `json:"desired" protobuf:"bytes,1,opt,name=desired,casttype=FeatureEnablement"`
+}
+
+type FeatureEnablement string
+
+const (
+	FeatureEnablementEnabled  FeatureEnablement = "Enabled"
+	FeatureEnablementDisabled FeatureEnablement = "Disabled"
+)
+```
+
+Finally, the status type and supporting types, with some interleaved commentary:
+
+```
+type FeatureStatus struct {
+	// `class` is the class of feature. "kube-system" indicates
+	// the feature is about the host cluster. Third parties may use a
+	// domain name if they wish to reuse this system for their own
+	// canarying. `class` should match `metadata.namespace`.
+	Class string `json:"class" protobuf:"bytes,1,opt,name=class"`
+
+	// `name` is the name of the feature. It should match `metadata.name`.
+	Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
+```
+TODO: work out the relationship between this class and name and the object's
+namespace and name. Do we permit multiple classes per namespace?
+
+```
+	// `stability` declares the stability of this feature in the current
+	// installed version.
+	Stability StabilityLevel `json:"stability" protobuf:"bytes,3,opt,name=stability,casttype=StabilityLevel"`
+
+	// `version` declares the version of software currently providing this feature.
+	Version string `json:"version"`
+```
+
+Note that the above fields are from the server flow's perspective. During
+upgrades/downgrades these will be set to the values that correspond to the
+intended destination version. (This KEP doesn't yet explain the version change
+flow! TODO.)
+
+```
+	// `default` indicates whether the system thinks the field should be
+	// enabled by default.
+	Default FeatureEnablement `json:"default" protobuf:"bytes,4,opt,name=default,casttype=FeatureEnablement"`
+
+    // `source` indicates the source of the current intended state (the `state` we
+    // are either in now or will be in after exiting a transitional `state`). It
+    // is either "Default", "CommandLine", or "Dynamic". The default value may
+    // change between versions; we surface this so it is possible to know that
+    // such features may change setting.
+    Source FeatureSettingSource `json:"source"`
+```
+Again, the above are from the server flow's perspective.
+
+```
+	// `state` declares the current state of the feature ("On", "Off", or a
+	// transitional state).
+	State FeatureState `json:"state" protobuf:"bytes,5,opt,name=state,casttype=FeatureState"`
+```
+
+The state is the most important field here. For features where clients are
+configured to look at the API rather than their local command lines for values,
+this is the field they will read. The two transitional states are "TurningOn"
+and "TurningOff". Clients that see eg "TurningOn" or "On" may permit uses of the
+feature; "TurningOff" and "Off" mean they may not.
+
+```
+	// `transitionTasks` lists the things that need to be done prior to
+	// exiting a transitional state.
+	// +listType=atomic
+	TransitionTasks []string `json:"transitionTasks"`
+```
+
+Since the server flow is coordinated across several binaries of possibly
+differing versions, and since some tasks are lengthy or may need to be attempted
+several times, we track here the tasks necessary to complete a transition. The
+tasks will be done in order; the last task will be WaitForUses and implemented
+by the system. The library we provide will make it easy for developers to add
+functions which we will ensure get run for the transition, using this system.
+
+```
+	// `uses` is for clients to report their use of the feature. Clients
+	// should report their use only if there is not already an entry
+	// matching their condition; this keeps this field very low-qps no
+	// matter how many clients there are. The server may occasionally clear
+	// non-desired-state uses and wait for clients to add them back, as a
+	// way of telling whether a state transition has completed or not. When
+	// that happens, `useEvaluationTime` will be set to a time in the
+	// future; clients have until then to record their use.
+	// +listType=map
+	// +listMapKey=version
+	// +listMapKey=enabled
+	Uses []FeatureUse `json:"uses"`
+
+	// `useEvaluationTime`, if set, is set to a time in the future when the
+	// server will evaluate the contents of `uses` and do something with
+	// that information, such as complete a state transition.
+	// +optional
+	UseEvaluationTime *metav1.Time `json:"useEvaluationTime"`
+```
+
+If you read the outline in prior sections carefully, you may have wondered if it
+was really a good idea to have thousands of kubelets and other cluster clients
+all writing uses into the system. Hopefully the comments on these two fields
+explains how we reduce those writes to a trivial amount of load. In our case we
+don't need to know how many clients have observed the "wrong" use, just that
+they don't all agree.
+
+And here ends the status type!
+
+```
+}
+
+// FeatureUse records facts about a single process's use of a feature.
+type FeatureUse struct {
+	// `version` is the version of the process making the report.
+	Version string `json:"version"`
+
+	// `enabled` is the local state of this feature for the process making
+	// the report. It may differ from the current desired state. Clients
+	// may not report transitional states.
+	Enabled FeatureEnablement `json:"enabled"`
+
+	// `reportTime` is the time at which this report is made.
+	ReportTime metav1.Time `json:"reportTime"`
+}
+
+type StabilityLevel string
+
+const (
+	// Indicates that the feature doesn't exist at the current version
+	// (i.e., there has been a downgrade).
+	StabilityLevelUnavailable StabilityLevel = "Unavailable"
+
+	// Indicates that the feature is available at alpha quality.
+	StabilityLevelAlpha StabilityLevel = "Alpha"
+
+	// Indicates that the feature is available at beta quality.
+	StabilityLevelBeta StabilityLevel = "Beta"
+
+	// Indicates that the feature is available at GA (stable / Generally
+	// Available) quality.
+	StabilityLevelGA StabilityLevel = "GA"
+
+	// Indicates that the feature will be removed and permenantly turned
+	// off in a future version. (I.e., we decided not to keep the feature.)
+	StabilityLevelDeprecated StabilityLevel = "Deprecated"
+
+	// Indicates that the feature will be removed and permenantly turned
+	// on in a future version. (I.e., the feature is finished and is no longer optional.)
+	StabilityLevelUniversal StabilityLevel = "Universal"
+)
+
+type FeatureState string
+
+const (
+	// The feature is on. Relevant actors in the system know it is on.
+	FeatureStateOn FeatureState = "On"
+	// The feature is off. Relevant actors in the system know it is off.
+	FeatureStateOff FeatureState = "Off"
+	// The system is turning the feature on. New uses of the feature are
+	// permitted. Some processes may have observed an "off" value on start
+	// up and need to restart.
+	FeatureStateTurningOn FeatureState = "TurningOn"
+	// The system is turning the feature off. New uses of the feature are
+	// NOT permitted, but existing uses have not been cleaned up, and
+	// processes that observed the feature being on when they started may
+	// still be running and need to be restarted.
+	FeatureStateTurningOff FeatureState = "TurningOff"
+)
+```
+
+
+TODO: Please leave comments saying what other details you would like.
 
 ### Test Plan
+
+The supporting library will be unit tested.
+
+Since this API and library will support third party use, we will structure
+integration tests of the API and library to use it that way, only using
+apiserver and the cluster as storage. This will be less invasive than having to
+make "real" k8s features to test it with.
+
+Existing checking of in-tree features and the testing of that should change very
+little or not at all with this, especially for features that are only settable
+on the command line.
+
+For beta, we will be able to make a version of the e2e test suite which (for
+those features which permit being set centrally) turns on features, exercises
+them (exercising functions to be provided by feature authors), turns them off,
+and verifies that the cluster is still functional. Today feature authors often
+have to make a separate test suite to get their feature tested. So this should
+be both more resource efficient than the current state, and it will be
+attractive for feature authors as it will be less work for them.
+
+We will add more details to the test plan as the prototype gets further along.
+
 
 <!--
 **Note:** *Not required until targeted at a release.*
