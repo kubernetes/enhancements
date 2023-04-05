@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3937: Declarative Validation of the Kubernetes API
+# KEP-3937: Declarative Validation of Kubernetes Native Types
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -83,9 +83,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Unions](#unions)
   - [CEL Validation](#cel-validation)
   - [Formats](#formats)
   - [IDL tags](#idl-tags)
+- [Analysis](#analysis)
 - [Migration](#migration)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -159,54 +161,88 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 With this enhancement, Kubernetes Developers will declare validation rules using
-IDL tags in the `types.go` files that to define the Kubernetes API. For example:
+IDL tags in the `types.go` files that to define the Kubernetes native API types.
+For example:
 
 ```go
-// staging/src/k8s.io/api/example/v1/types.go
+// staging/src/k8s.io/api/core/v1/types.go
 
-type FizzBuzzSpec struct {
+// +valdiation=rule:"!self.hostNetwork || self.containers.all(c, c.containerPort.all(cp, cp.hostPort == cp.containerPort))"
+type PodSpec struct {
+  Containers []Container `json:...`
+}
+
+type Container struct {
   // ...
-  //
-  // +maxLength=64
-  Name string `json...`
+
+  Ports []ContainerPort `json:...`
+
   // ...
 }
 
-type FizzBuzz struct {
+type ContainerPort struct {
+  // ...
+
   // ...
   //
-  // +validations=rule:"self.replicas <= self.maxReplicas", messageExpression:"'replicas must be less than maxReplicas value of ' + string(self.maxReplicas)"
-  Spec FizzBuzzSpec `json...`
+  // +minimum=1
+  // +maximum=65535
+  HostPort int32 `json:...`
+
+  // ...
+  //
+  // +minimum=1
+  // +maximum=65535
+  ContainerPort int32 `json:...`
+
+  // ...
 }
 ```
 
-In this example, both `+maxLength` and `+validations` are IDL tags.
+In this example, both `+valdiation`, `+minimum` and `+maximum` are IDL tags.
 
 The declarative validation rules will be used by the kube-apiserver to
 validate API requests.
 
 The declarative validation rules will also be included in the published OpenAPI:
 
-```yaml
-openAPIV3Schema:
-    type: object
-    properties:
-      spec:
-        type: object
-        x-kubernetes-validations:
-          - rule: "self.replicas <= self.maxReplicas"
-       properties:
-         name:
-           type: string
-           maxLength: 64
+```json
+// Pod Spec
+"openAPIV3Schema": {
+  "type": "object",
+  "x-kubernetes-validations": [
+    {
+      "rule": "!self.hostNetwork || self.containers.all(c, c.containerPort.all(cp, cp.hostPort == cp.containerPort))"
+    }
+  ],
+}
+
+...
+
+// Container Port
+"openAPIV3Schema": {
+  "type": "object",
+  "properties": {
+    "hostPort": {
+      "minimum": 1,
+      "maximum": 65535
+      ...
+    }
+    "containerPort": {
+      "minimum": 1,
+      "maximum": 65535
+      ...
+    }
+  }
+}
 ```
 
 It is important to note that the declarative validation will use the same set of
 validation options available today for CRDs. namely:
 
-- [JSON Schema value validations](https://datatracker.ietf.org/doc/html/draft-bhutton-json-schema-validation-00) (e.g. `format:datetime`, `maxItems:64`)
+- [JSON Schema value validations](https://datatracker.ietf.org/doc/html/draft-bhutton-json-schema-validation-00) (e.g. `format`, `maxItems`)
 - [CEL Validation Rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#validation-rules) (e.g. `self.replicas <= self.maxReplicas`)
-- Relevant [merge strategy declarations](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) (e.g. `listType:set`)
+- Relevant [merge strategy declarations](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy) (e.g. `listType=set`)
 
 ## Motivation
 
@@ -278,13 +314,43 @@ Go IDL tags will be added to support the following declarative validation rules:
 | string format          | `+format={format name}`                                          | `format`                                                                           |
 | size limits            | `+min{Length,Properties,Items}`, `+max{Length,Properties,Items}` | `min{Length,Properties,Items}`, `max{Length,Properties,Items}` |
 | numeric limits         | `+minimum`, `+maximum`, `+exclusiveMinimum`, `+exclusiveMaximum` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`                       |
-| required fields        | `+optional`                                                      | `required`                                                                         |
-| enum values            | `+enum`                                                          | `enum`                                                                             |
+| required fields        | `+optional` (exists today)                                       | `required`                                                                         |
+| enum values            | `+enum` (exists today)                                           | `enum`                                                                             |
 | uniqueness             | `listType=set` (sets and map keys)                               | `x-kubernetes-list-type`                                                           |
 | regex matches          | `+pattern`                                                       | `pattern`                                                                          |
 | cross field validation | `validation=rule:"{CEL expression}"`                             | `x-kubernetes-validations`                                                         |
 | [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules)   | `validation=rule:"{CEL expression using oldSelf}"`   | `x-kubernetes-validations`                                                   |
 | special case: metadata name format   | `+metadataNameFormat={format name}`                | `x-kubernetes-validations` (see "format" section below for details) |
+
+### Unions
+
+Unions are informally defined but common in built-in types.
+
+We will convert most union validation to CEL expressions. For example:
+
+```go
+// staging/src/k8s.io/api/apps/v1/types.go
+
+type DeploymentSpec struct {
+  // ...
+  //
+  // +minimum=0
+  Replicas string `json...`
+  
+  // ...
+  // 
+  // +validation=rule:"!(self.type == 'Recreate') || !has(self.rollingUpdate)",message="may not be specified when strategy `type` is Recreate",reason=Forbidden,field="rollingUpdate"
+  // +validation=rule:"!(self.type == 'RollingUpdate') || has(self.rollingUpdate)",message="this should be defaulted and never be nil",reason=Required,field="rollingUpdate"
+  Strategy DeploymentStrategy `json:...`
+  
+  // ...
+}
+```
+
+For backward compatibility with existing validations, `reason` and `field` will
+be added to make it possible to declare a validation rule in CEL that matches
+not just the logic of the hand written validation is replaces, but also the
+exact field path and reason type.
 
 ### CEL Validation
 
@@ -293,15 +359,16 @@ declare validation rules for use cases that are too complex to be declared using
 JSON Schema value validations. Using CEL to validate APIs has been successfully
 demonstrated by CRD Validation Rules, which are on track for GA in 1.28.
 
-In addition to the `rule`, `message` and `messageExpression` available to CRD
-validation rules, declarative validation rules will also have a `reason` field,
-e.g.:
+CEL rules will typically be placed on struct or field declarations and access
+multiple fields nested below the level of the type or field where the CEL
+expression is declared, e.g.:
 
 ```go
   
+  //+validation=rule:"!self.widgetType == 'Component' || !['badname2', 'badname2'].exists(notAllowed, self.componentName.contains(notAllowed))",reason=Forbidden
   type FizzBuzzSpec struct {
-    //+validation=rule:"!['badname2', 'badname2'].exists(notAllowed, self.contains(notAllowed))",reason=Forbidden
-    WidgetName string `json...`
+    Type WidgetType `json...`
+    ComponentName string `json...`
   }
 ```
 
@@ -329,6 +396,10 @@ to cover formats heavily used by the Kubernetes API, namely:
 | 'dns1123subdomain'           | metadata name and generateName     |
 | 'dns1123label'               | metadata name and generateName     |
 | 'dns1035label'               | Scoped names and keys              |
+| 'quantity'                   | various fields                     |
+
+We will add all of these to the supported list of formats in kube-openapi.
+We will also document all supported formats on the Kubernetes website.
 
 Other candidate format types are:
 
