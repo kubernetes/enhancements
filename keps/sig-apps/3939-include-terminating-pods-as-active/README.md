@@ -88,8 +88,11 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2](#story-2)
     - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Open Questions on Deployment Controller](#open-questions-on-deployment-controller)
+    - [Open Questions on Job Controller](#open-questions-on-job-controller)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [API Name Choices](#api-name-choices)
   - [Job API Definition](#job-api-definition)
   - [Deployment/ReplicaSet API](#deploymentreplicaset-api)
   - [Implementation](#implementation)
@@ -173,7 +176,6 @@ Existing Issues:
 - [Job Creates Replacement Pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)
 - [Option for acknowledging terminating Pods in Deployment rolling update](https://github.com/kubernetes/kubernetes/issues/107920)
 - [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510)
-- [<https://github.com/kubernetes/kubernetes/issues/116308>
 
 Many common machine learning frameworks, such as Tensorflow, require unique pods.  Terminating pods that count as active pods
 can cause errors.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
@@ -226,12 +228,25 @@ for more examples.
 
 ### Notes/Constraints/Caveats (Optional)
 
+#### Open Questions on Deployment Controller
+
 The Deployment API is open for discussion.  We put the field in Deployment/ReplicaSet because it is related to RolloutStrategy.
 It is not clear if `recreate` and/or `rollingupdate` need this API for both rollout options.
 
 Another open question is if we want to include Deployments in the initial release of this feature.  There is some discussion about releasing the Job API first and then follow up with Deployment.  
 
-We decided to define the APIs in this KEP as they can utilize the same implementation.  
+We decided to define the APIs in this KEP as they can utilize the same implementation.
+
+#### Open Questions on Job Controller
+
+With 3329-retriable-and-non-retriable-failures and PodFailurePolicy enabled, terminating pods are only marked as failed once they have been transitioned to failed.  If PodFailurePolicy is disabled, then we mark a terminating pod as failed as soon as deletion is registered.  
+
+Should we add a new field to the status that reflects terminating pods?
+
+[Job controller should wait for Pods to be in a terminal phase before considering them failed or succeeded](https://github.com/kubernetes/kubernetes/issues/116858) is a relevant issue for this case.  
+I am not sure how to handle these two different cases if we want to count terminating pods as active.  
+
+Should we use this feature to help solve 116858?  When this feature toggle is on, then we mark terminating pods only as failed once they are complete regardless of PodFailurePolicy.
 
 ### Risks and Mitigations
 
@@ -248,6 +263,13 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 ## Design Details
+
+### API Name Choices
+
+- TerminatingAsActive
+- ActiveUntilTerminal
+- DelayPodRecreationUntilTerminal
+- ?
 
 ### Job API Definition
 
@@ -319,11 +341,20 @@ func FilterActivePods(pods []*v1.Pod, terminatingPods bool) []*v1.Pod {
  }
  return result
 }
+
+func IsPodTerminating(p *v1.Pod) bool {
+ return v1.PodSucceeded != p.Status.Phase &&
+  v1.PodFailed != p.Status.Phase &&
+  p.DeletionTimestamp != nil
+}
 ```
 
 The Job Controller uses this list to determine if there is a mismatch of active pods between expected values in the JobSpec.  
 Including active pods in this list allows the job controller to wait until these terminating pods.
 
+[Filter Active Pods Usage in Job Controller](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/job/job_controller.go#L749) filters the active pods.
+
+For the Deployment/ReplicaSet, ReplicaSets [filter out active pods](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/replicaset/replica_set.go#L692).  The implementation for this should include reading the deployment field and setting the replicaset the same field in the replicaset.  
 <!--
 This section should contain enough information that the specifics of your
 change are understandable. This may include API specs (though not always
@@ -686,7 +717,6 @@ ReplicaSet and Deployment have two additions:
 - API type(s): boolPtr
 - `DeploymentStrategy` and ReplicaSetSpec
 - Estimated increase in size: 16B (2 x 8B)
-
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
