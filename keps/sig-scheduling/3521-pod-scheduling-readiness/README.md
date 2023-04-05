@@ -328,6 +328,12 @@ the following parts:
 `SchedulingPaused` to the "phase" column of `kubectl get pod`. This new literal indicates whether it's
 scheduling-paused or not.
 
+- **Downgrade->Upgrade path:** For a Pod that has non-empty scheduling gates, if it's downgraded to a
+version with this feature disabled, and then upgraded to a version with this feature enabled, the Pod
+is still treated as scheduling gated, but its condition may be misleading. Please check the
+"Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?" portion in
+section [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning) for more details.
+
 ### Risks and Mitigations
 
 <!--
@@ -827,11 +833,34 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-It will be tested manually prior to beta launch.
+- Start a local Kubernetes 1.26 cluster (`PodSchedulingReadiness` defaulted to false)
+- Create a Pod `test-pod` with one scheduling gate
+- The Pod's scheduling gate gets dropped as expected due to disabled feature gate
+- Delete the Pod
+- Re-start API Server and scheduler with version 1.27, and specify `PodSchedulingReadiness=true`
+- Create the same Pod `test-pod` with one scheduling gate
+- The Pod stays in `SchedulingGated` state, and its `.spec.schedulingGates` is persisted
+- Re-start API Server and scheduler with version 1.26
+- The Pod `test-pod` enters `Pending` state, with old `.spec.schedulingGates` reserved<sup>1</sup>
+- Re-start API Server and scheduler with version 1.27, and specify `PodSchedulingReadiness=true`
+- The Pod stays in `Pending` state, with old `.spec.schedulingGates` reserved<sup>2</sup>
 
-<<UNRESOLVED>>
-Add detailed scenarios and result here, and cc @wojtek-t.
-<</UNRESOLVED>>
+<sup>1</sup> It's pending because binding a node to a Pod with non-empty scheduling gates are not allowed:
+```yaml
+status:
+  conditions:
+  - message: 'running Bind plugin "DefaultBinder": Operation cannot be fulfilled on
+      pods/binding "pause": pod pause has non-empty .spec.schedulingGates'
+    reason: SchedulerError
+    status: "False"
+    type: PodScheduled
+  phase: Pending
+```
+
+<sup>2</sup> Although the Pod is still considered as "gated" internally, its `{PodScheduled, SchedulerError}`
+condition that was persisted previously is not updated - which is designed to be responsible by
+API Server but is not triggered in this downgrade->upgrade path. Please check
+https://github.com/kubernetes/enhancements/pull/3871#discussion_r1102315845 for more details.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
