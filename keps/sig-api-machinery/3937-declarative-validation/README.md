@@ -95,6 +95,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Request handling](#request-handling)
+  - [Prototype Notes](#prototype-notes)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -586,6 +588,24 @@ This might be a good place to talk about core concepts and how they relate.
     to prevent mistakes from slipping through.
 
 ## Design Details
+
+### Request handling
+
+Write requests are decoded, converted to internal, processed by any mutating admission
+plugins, processed any before create handlers, validated, then converted to the storage
+version and stored.
+
+We will no longer require the conversion to internal at the start of this workflow.
+
+Plan is:
+
+- Alpha:  If feature flag is set, convert from internal back to versioned type
+  and either process as unstructured or using SMD value wrappers.
+- Beta: Use the versioned type that the request was received as in of the
+  API request handling code, avoiding conversions for cases where the request
+  version and storage version are the same.
+
+### Prototype Notes
 
 The core changes proposed here can be implement with only a small set of code
 changes. A working
