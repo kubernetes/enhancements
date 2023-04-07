@@ -78,9 +78,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes testing and expanding the supported skew between node and control plane components
-by one version from n-2 to n-3, so that node components for the **oldest** supported minor version
-work with control plane components for the **newest** supported minor version.
+This KEP proposes testing and expanding the supported skew between core node and control plane components
+by one version from n-2 to n-3, so that node components (kubelet and kube-proxy) for the **oldest** supported minor version
+work with control plane components (kube-apiserver, kube-scheduler, kube-controller-manager, cloud-controller-manager) for the **newest** supported minor version.
 
 ## Motivation
 
@@ -182,6 +182,13 @@ Updating the skew policy to allow up to n-3 nodes brings the policy back in line
 * This does not propose any changes to the mechanics control plane components use to enable features 
   and work with older nodes without features ([KEP-3920](https://github.com/kubernetes/enhancements/pull/3920) could help with this)
 * This does not propose delaying introduction of existing features SIGs have planned around existing n-2 node/control plane skew
+* This does not address increasing node skew supported by cluster management tools like `kubeadm`. Maintainers of those tools
+  can choose to make use of the additional supported skew if they wish, but are not required to. For example, `kubeadm` currently officially
+  supports managing [kubelets up to one version older](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#version-skew-policy)
+  than the `kubeadm` instance, and does not make use of the existing supported n-2 skew in upgrade plans.
+* This does not address third-party components that version themselves with node components and limit skew relative to the control plane.
+  Maintainers of those components can choose to support larger or smaller version skew. Node operators should limit themselves to skew
+  supported by core Kubernetes node components and any third-party components required for node operation.
 
 ## Proposal
 
