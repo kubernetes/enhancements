@@ -268,7 +268,7 @@ Declarative validation will also benefit Kubernetes users:
   are currently only available to developers willing and able to find and read
   the hand written validation rules.
 - It will enable clients to perform validation of native types earlier in
-  development worflows ("shift-left"), such as at with a git pre-submit linter.
+  development worflows ("shift-left"), such as at with a Git pre-submit linter.
 - It will improve API composition. In particular CRDs that embed native types
   (such as PodTemplate), which gain validation of the native type automatically.
   This has the potential to simplify controller development and improve end
@@ -321,8 +321,8 @@ Go IDL tags will be added to support the following declarative validation rules:
 | enum values            | `+enum` (exists today)                                           | `enum`                                                                             |
 | uniqueness             | `listType=set` (sets and map keys)                               | `x-kubernetes-list-type`                                                           |
 | regex matches          | `+pattern`                                                       | `pattern`                                                                          |
-| cross field validation | `validation=rule:"{CEL expression}"`                             | `x-kubernetes-validations`                                                         |
-| [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules)   | `validation=rule:"{CEL expression using oldSelf}"`   | `x-kubernetes-validations`                                                   |
+| cross field validation | `cel=rule:"{CEL expression}"`                                     | `x-kubernetes-validations`                                                         |
+| [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules)   | `cel=rule:"{CEL expression using oldSelf}"`   | `x-kubernetes-validations`                                                   |
 | special case: metadata name format   | `+metadataNameFormat={format name}`                | `x-kubernetes-validations` (see "format" section below for details) |
 
 ### Unions
@@ -417,7 +417,7 @@ type aliases. For example:
 
 ```go
 type Widget struct {
-  // +validations=rule:"self.matches('[a-z][1-9]+')"
+  // +cel=rule:"self.matches('[a-z][1-9]+')"
   Component PartId `json...`
 }
 
@@ -444,8 +444,8 @@ We can support these uses cases with CEL validation rules:
 ```go
 type ExampleSpec struct {
 
-  // +validation=rule:"!has(self.name) || self.name.isFormat('dns1123subdomain')"
-  // +validation=rule:"!has(self.generateName) || self.generateName.replace('-$', 'a').isFormat('dns1123subdomain')"
+  // +cel=rule:"!has(self.name) || self.name.isFormat('dns1123subdomain')"
+  // +cel=rule:"!has(self.generateName) || self.generateName.replace('-$', 'a').isFormat('dns1123subdomain')"
   metav1.ObjectMeta `json...`
 }
 ```
@@ -589,9 +589,37 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Kubernetes developer wishes to add a field to a existing API version
 
-#### Story 2
+1. Developer add the field to the Go struct
+2. Developer adds needed IDL tags to Go struct
+3. Developer adds validation_test.go cases (same as today)
+4. API reviewers review IDL tags along with Go struct change
+
+#### Kubernetes devekoper adds a v1beta2 version of an API
+
+1. Develop copies over v1beta1 API and creates v1beta2
+2. Linter verifies that IDL tags match for both version of API (unless
+   exceptions are put in exception file)
+3. API reviewer can review change knowing that validation is consistent unless
+   there are lines added to exception file
+
+#### User wishes to validate the YAML of a kubernetes native type as a Git pre-submit check
+
+1. OpenAPI of native types is downloaded from kube-apiserver
+2. Tool that checks YAML against OpenAPI schema is used to validate YAML in a
+   Git pre-submit (there are tools being written now that will also handle
+   x-kubernetes-validations)
+
+#### User wishes to use Kubebuilder to define a custom resource that embeds PodTemplate
+
+1. Go struct that declares custom resource references the go struct of v1.PodTemplate.
+2. Kubebuilder recognizes the Go IDL tags introduced by this KEP (Note that
+   Kubebuidler already has IDL tags:
+   https://book.kubebuilder.io/reference/markers/crd-validation.html, but they
+   are different than what we propose here)
+3. Kubebuilder generates appropriate OpenAPI for the CRD resulting in full
+   validation of the PodTemplate
 
 ### Notes/Constraints/Caveats (Optional)
 
