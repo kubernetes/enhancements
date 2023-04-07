@@ -87,7 +87,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [CEL Validation](#cel-validation)
   - [Formats](#formats)
   - [IDL tags](#idl-tags)
-- [Analysis](#analysis)
+- [Performance considerations](#performance-considerations)
+- [Analysis of existing validation rules](#analysis-of-existing-validation-rules)
 - [Migration](#migration)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -467,7 +468,49 @@ can be declared on the `container` and `initContainer` fields using CEL. E.g.:
 Containers []Container `json...`
 ```
 
-## Analysis
+## Performance considerations
+
+The design decision to declaratively validate API versions has performance
+implications.
+
+Today, the apiserver's request handler decodes incoming versioned API requests
+to the versioned type and then immediately performs an "unsafe" conversion to
+the internal type when possible. All subsequent request processing uses the
+internal type as the "hub" type. Validation is written for the internal
+type and so are per-resource strategies.
+
+With this change, the internal type will no longer be responsible for
+validation.
+
+If we were to convert from the internal back to the version of the API request
+for validation, we would introduce one additional conversion. If we make this
+an "unsafe" conversion, than is will be low cost for the vast majority of requests.
+
+We will benchmark this approach and plan to use it for alpha.
+
+We could do better.
+
+Since the internal type will no longer be used for validation, it becomes a lot
+less important. It is still important to have a hub type. But why not pick one
+of the versioned types to be the hub type? The vast majority of APIs only have
+one version anyway. The obvious candidate version to choose for the hub version
+would the perferred storage version.
+
+Switching to a versioned type for the hub type would have a few implications:
+
+- We would eliminate the need for internal versions.
+- We would reduce the need for "unsafe" conversions (a small security win) since
+  most APIs only have a single v1 version and so the entire request handling process
+  would simply use that version.
+- We would introduce more conversion when API request version differs from the
+  hub version. But beta APIs are off-by-default and we expect a lot less mixed
+  version API usage than in the past.
+
+This "hub version" change feels like something that could be made somewhat
+independant of this KEP.
+
+
+## Analysis of existing validation rules
 
 At the time of writing this document, there are 1181 validation rules written in about
 15k lines of go code in [kubernetes/kubernetes/pkg/apis](https://github.com/kubernetes/kubernetes/commit/0c62b122c02bff9131b6db960042150a3638d3f3).
@@ -599,11 +642,13 @@ We will no longer require the conversion to internal at the start of this workfl
 
 Plan is:
 
-- Alpha:  If feature flag is set, convert from internal back to versioned type
-  and either process as unstructured or using SMD value wrappers.
-- Beta: Use the versioned type that the request was received as in of the
-  API request handling code, avoiding conversions for cases where the request
-  version and storage version are the same.
+- Early Alphas:  If feature flag is set, convert from internal back to versioned
+  type (via unsafe where possible) and process objects either as unstructured
+  (requires another conversion) or using SMD value wrappers (avoids conversion
+  but introduces some overhead).
+- Before graduation to Beta: Benchmark performance. Decide if we should invest in
+  the "Switch hub version to be an API version" idea proposed in the performance
+  section of this KEP.
 
 ### Prototype Notes
 
