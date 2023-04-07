@@ -488,7 +488,7 @@ an "unsafe" conversion, than is will be low cost for the vast majority of reques
 
 We will benchmark this approach and plan to use it for alpha.
 
-We could do better.
+Long term, we could do better:
 
 Since the internal type will no longer be used for validation, it becomes a lot
 less important. It is still important to have a hub type. But why not pick one
@@ -666,17 +666,16 @@ Write requests are decoded, converted to internal, processed by any mutating adm
 plugins, processed any before create handlers, validated, then converted to the storage
 version and stored.
 
-We will no longer require the conversion to internal at the start of this workflow.
-
-Plan is:
+Our plan:
 
 - Early Alphas:  If feature flag is set, convert from internal back to versioned
-  type (via unsafe where possible) and process objects either as unstructured
-  (requires another conversion) or using SMD value wrappers (avoids conversion
-  but introduces some overhead).
-- Before graduation to Beta: Benchmark performance. Decide if we should invest in
-  the "Switch hub version to be an API version" idea proposed in the performance
-  section of this KEP.
+  type (via unsafe where possible) for declarative validation. Because all CEL
+  evaluation is currently written for unstructured values, we will convert to
+  unstructured before declarative validation.
+- Before graduation to Beta: Benchmark performance. Decide if we should invest
+  in the "Switch hub version to be an API version" idea proposed in the
+  performance section of this KEP. Also decide if we should invest in using
+  using SMD value wrappers to avoid conversion to unstructured.
 
 ### Prototype Notes
 
