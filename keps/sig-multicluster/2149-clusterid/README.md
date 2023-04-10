@@ -86,8 +86,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Overview](#overview)
   - [User Stories](#user-stories)
     - [ClusterSet membership](#clusterset-membership)
-    - [Joining or moving between
-      ClusterSets](#joining-or-moving-between-clustersets)
+    - [Joining or moving between ClusterSets](#joining-or-moving-between-clustersets)
     - [Multi-Cluster Services](#multi-cluster-services)
     - [Diagnostics](#diagnostics)
     - [Multi-tenant controllers](#multi-tenant-controllers)
