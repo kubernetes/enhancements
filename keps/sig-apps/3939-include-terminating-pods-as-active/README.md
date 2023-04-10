@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3939: Include Terminating Pods As Active
+# KEP-3939: Count Terminating Pods Separately From Failed/Active
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -165,9 +165,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently, Jobs and Deployments start Pods as soon as they are marked for terminating.  
-This KEP proposes a new field for the Job, Deployment and ReplicaSet controllers that counts terminating
-pods as active.  The goal of this KEP is to allow for opt-in behavior where terminating pods count as active.
+Currently, Jobs and Deployments start Pods as soon as they are marked for terminating.  Terminating pods are in an inbetween state where they are neither active nor really fully terminated.  
+This KEP proposes a new field for the Job, Deployment/ReplicaSet controllers that counts terminating
+pods as like they were active.  The goal of this KEP is to allow for opt-in behavior where terminating pods count as active.  This will allow users to see that new pods will be only created once the existing pods have fully terminated.
 
 ## Motivation
 
@@ -190,8 +190,10 @@ In scarce compute environments, these resources can be difficult to obtain so po
 ### Goals
 
 - Job Controller should only create new pods once the existing ones are marked as Failed/Succeeded
+- Job Controller will have a new status field where we include the number of terminating pods.
 - Deployment controller should allow for flexibility in waiting for pods to be fully terminated before
   creating new ones
+- Deployment/ReplicaSet will have a new status field where we include the number of terminating replicas.
 
 ### Non-Goals
 
@@ -200,9 +202,9 @@ In scarce compute environments, these resources can be difficult to obtain so po
 
 ## Proposal
 
-Both Jobs and the ReplicaSet controller get a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  In this KEP, we want to include terminating pods as active pods.
+Both Jobs and the ReplicaSet controller get a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  In this KEP, we will consider terminating pods to be separate from active and failed.  This means that for cases where we track the number of pods, like the Job Controller, we should include a field that states the number of terminating pods.  
 
-We will propose two new API fields in Jobs and Deployments/ReplicaSets in this KEP.  
+We will propose new API fields in Jobs and Deployments/ReplicaSets in this KEP.  
 
 ### User Stories (Optional)
 
@@ -242,6 +244,7 @@ We decided to define the APIs in this KEP as they can utilize the same implement
 With 3329-retriable-and-non-retriable-failures and PodFailurePolicy enabled, terminating pods are only marked as failed once they have been transitioned to failed.  If PodFailurePolicy is disabled, then we mark a terminating pod as failed as soon as deletion is registered.  
 
 Should we add a new field to the status that reflects terminating pods?
+
 
 [Job controller should wait for Pods to be in a terminal phase before considering them failed or succeeded](https://github.com/kubernetes/kubernetes/issues/116858) is a relevant issue for this case.  
 I am not sure how to handle these two different cases if we want to count terminating pods as active.  
@@ -286,18 +289,49 @@ type JobSpec struct{
 }
 ```
 
+So we can count terminating pods separately from active or failed we need to include a new field in the JobStatus.
+
+```golang
+type JobStatus struct {
+  ...
+  // Number of terminating pods
+  // +optional
+  terminating int32
+}
+```
+
 ### Deployment/ReplicaSet API
 
 ```golang
-// DeploymentStrategy stores information about the strategy and rolling-update
+// DeploymentSpec stores information about the strategy and rolling-update
 // behavior of a deployment.
-type DeploymentStrategy struct {
+type DeploymentSpec struct {
   ... 
   // TerminatingAsActive specifies if the Deployments should include terminating pods
  // as active. If the field is true, then the Deployment controller will include active pods
  // to mean running or terminating pods
  // +optional
  TerminatingAsActive *bool
+}
+```
+
+So we can count terminating pods separately from active or failed we need to include a new field in the ReplicaSetStatus and DeploymentStatus.
+
+```golang
+type DeploymentStatus struct {
+  ...
+  // Terminating replicas states the number of replicas that are terminating
+  // +optional
+  TerminatingReplicas int32 
+}
+```
+
+```golang
+type ReplicaSetStatus struct {
+  ...
+  // Terminating replicas states the number of replicas that are terminating
+  // +optional
+  TerminatingReplicas int32 
 }
 ```
 

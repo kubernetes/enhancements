@@ -1,11 +1,10 @@
 title: Terminating Pods Should be Included as Active Pods
-kep-number: NNNN
+kep-number: 3939
 authors:
   - "@kannon92"
 owning-sig: sig-apps
 participating-sigs:
   - sig-apps
-  - sig-bbb
 status: provisional
 creation-date: 2023-04-03
 reviewers:
@@ -16,8 +15,7 @@ approvers:
   - "@oscar.doe"
 
 see-also:
-  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
+  - "/keps/sig-apps/3329-retriable-and-non-retriable-failures"
 replaces:
   - "/keps/sig-ccc/3456-replaced-kep"
 
@@ -38,7 +36,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: TerminatingAsActive
+  - name: TerminatingPodsAsActive
     components:
       - kube-controller-manager
 disable-supported: true
