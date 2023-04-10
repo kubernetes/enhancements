@@ -28,13 +28,13 @@
     - [Enforcement Actions](#enforcement-actions)
     - [Audit Annotations](#audit-annotations)
     - [Audit Events](#audit-events)
-    - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
+    - [Per namespace policy params](#per-namespace-policy-params)
+    - [Match Conditions](#match-conditions)
     - [CEL Expression Composition](#cel-expression-composition)
       - [Use Cases](#use-cases)
-      - [Match Conditions](#match-conditions)
       - [Variables](#variables)
     - [Secondary Authz](#secondary-authz)
-    - [Access to namespace metadata](#access-to-namespace-metadata)
+    - [Access to namespace](#access-to-namespace)
     - [Transition rules](#transition-rules)
     - [Resource constraints](#resource-constraints)
     - [Safety Features](#safety-features)
@@ -43,6 +43,8 @@
     - [Audit Annotations](#audit-annotations-1)
     - [Client visibility](#client-visibility)
     - [Metrics](#metrics)
+  - [Future Plan](#future-plan)
+    - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
   - [User Stories](#user-stories)
     - [Use Case: Singleton Policy](#use-case-singleton-policy)
     - [Use Case: Shared Parameter Resource](#use-case-shared-parameter-resource)
@@ -1186,48 +1188,42 @@ are included with the key provided. E.g.:
 }
 ```
 
-#### Namespace scoped policy binding
+#### Per namespace policy params
 
-For phase 1, policy bindings were only allowed to be cluster scoped. We can
-support namespace scoped policy bindings as follows:
+Currently the policies and bindings are only allowed to be cluster scoped.
+We want to support per namespace configuration with namespace scoped param resources.
 
-- Add a `NamespacePolicyBinding` resource.
-- If the parameter resource is namespace scoped, it implicitly matches
-  resources only in the namespace it is in, but may further constrain what
-  resources it matches with additional match criteria.
+(Thanks for the input from @dead2k)
+This sort of mapping allows:
+- A cluster-admin can write a single resource to say, “this is the policy I want in all my namespaces”.
+- If namespace admins can read the param resources, but not write that resource, they can understand the limitations they currently have.
+- A single lenient cluster policy and cluster policybinding can enforce the minimum constraint, and a single cluster policy with a cluster policybinding pointing to a namespace level param can further restrict.
 
-Benefits: Allows policy of a namespace to be controlled from within the
-namespace. As an example, ResourceQuota works this way.
+A new optional field `namespaceParamRef` could be added inside ValidatingAdmissionPolicyBinding to support such use case.
+In contrast, a namespace scoped policybinding will require creation and maintenance of both policybindings and parameters
+in every namespace to enforce the policy itself, versus the single policybinding and many parameters.
 
-Details to consider:
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "demo-binding-test.example.com"
+spec:
+  policyName: "demo-policy.example.com"
+  namespaceParamRef:
+    name: "param-resource.example.com"
+    failAction: “allow”
+  validationActions: [Deny]
+```
 
-- Should a policy support both cluster scoped and namespace scoped binding? If
-  so how? It would need two different parameter CRDs (since a CRD must either be
-  cluster scoped or namespace scoped, not both).
+- a new optional field `namespaceParamRef` is added as a peer to `paramRef`. User has to choose one for parameterization.
+  It allows users to configure param resource per namespace.
+- failAction defines the behavior when the param resource cannot be found in current namespace.
+  Set to `allow` will ignore the validation and let the request through. Set to `deny` will fail the validation if specific param resource not found.
+- if the resource be validated on is a cluster scoped resource and have `namespaceParamRef` set, return error.
+- the existing behavior should not be affected.
 
-#### CEL Expression Composition
-
-##### Use Cases
-
-###### Code re-use for complicated expressions
-
-A CEL expression may not be computationally expensive, but could still be
-intricate enough that copy-pasting could prove to be a bad decision later on
-in time. With the addition of the `messageExpression` field, more copy-pasting
-is expected as well. If a sufficiently complex expression ended up copy-pasted everywhere,
-and then needs to be updated somehow, it will need that update in every place
-it was copy-pasted. A variable, on the other hand, will only need to be updated
-in one place.
-
-###### Reusing/memoizing an expensive computation
-
-For a CEL expression that runs in O(n^2) time or worse (or otherwise
-takes a significant amount of time to execute), it would be nice to only run
-it when necessary. For instance, if multiple validation expressions used the
-same expensive expression, that expression could be refactored out into a
-variable.
-
-##### Match Conditions
+#### Match Conditions
 
 Note that the syntax of the `matchConditions` resource is intended to
 align with the [Admission Webhook Match Conditions KEP #3716](https://github.com/kubernetes/enhancements/pull/3717),
@@ -1283,6 +1279,27 @@ Note that `matchConditions` and `validations` look similar, but `matchConditions
 * All match conditions must be satisfied (evaluate to `true`) before `validations` are tested
 * If there is an error executing a match condition, the failure policy for the (definition, binding) tuple is invoked
 
+#### CEL Expression Composition
+
+##### Use Cases
+
+###### Code re-use for complicated expressions
+
+A CEL expression may not be computationally expensive, but could still be
+intricate enough that copy-pasting could prove to be a bad decision later on
+in time. With the addition of the `messageExpression` field, more copy-pasting
+is expected as well. If a sufficiently complex expression ended up copy-pasted everywhere,
+and then needs to be updated somehow, it will need that update in every place
+it was copy-pasted. A variable, on the other hand, will only need to be updated
+in one place.
+
+###### Reusing/memoizing an expensive computation
+
+For a CEL expression that runs in O(n^2) time or worse (or otherwise
+takes a significant amount of time to execute), it would be nice to only run
+it when necessary. For instance, if multiple validation expressions used the
+same expensive expression, that expression could be refactored out into a
+variable.
 
 ##### Variables
 
@@ -1480,16 +1497,17 @@ If we were to offer a way to lookup arbitrary other resources, or even if
 we provided selective access to just some resources, this might become
 easier. This can explored as future work.
 
-#### Access to namespace metadata
+#### Access to namespace
 
-We have general agreement to include this as a feature, but need to provide
-a concrete design.
+We have general agreement to grant CEL expressions access to the admission object's namespace through a newly added CEL variable `namespaceObject`.
+If the resource is cluster scoped, `namespaceObject` will be null.
 
-- Namespace labels and annotations are the most commonly needed fields not
-  already available in the resource being validated. Note that
-  namespaceSelectors already allow matches to examine namespace levels, but we
-  also have use cases that need to be able to inspects the fields in CEL
-  expressions.
+`namespaceObject` will provide access to all existing fields under namespace metadata, namespace spec and namespace status except for metadata.managedFields and metadata.ownerReferences.
+The fields could be directly accessed through `namespaceObject` variable. e.g. `namespaceObject.metadata.name` or `namespaceObject.status.phase`.
+
+Namespace labels and annotations are the most commonly needed fields not already available in the resource being validated. 
+labels and annotations could be accessed through `namespaceObject.metadata.labels` for example `namespaceObject.metadata.labels.env`.
+Note that we recommend to check if the specific label/annotation exists before validation: `'env' in namespaceObject.metadata.labels`.
 
 #### Transition rules
 
@@ -1617,6 +1635,32 @@ the number of biindings can become quite large, so let's limit it to
 
 - xref: [Metrics Provided by OPA Gatekeeper](https://open-policy-agent.github.io/gatekeeper/website/docs/metrics/)
 - xref: [Admission Webhook Metrics](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#admission-webhook-metrics)
+
+### Future Plan
+
+#### Namespace scoped policy binding
+
+**Note**
+The namespace scoped policy binding will require a new API in place.
+It will be planned separately and will not be affecting the existing ValidatingAdmissionPolicy behavior. 
+
+For phase 1, policy bindings were only allowed to be cluster scoped. We can
+support namespace scoped policy bindings as follows:
+
+- Add a `NamespacePolicyBinding` resource.
+- If the parameter resource is namespace scoped, it implicitly matches
+  resources only in the namespace it is in, but may further constrain what
+  resources it matches with additional match criteria.
+
+Benefits: Allows policy of a namespace to be controlled from within the
+namespace. As an example, ResourceQuota works this way.
+
+Details to consider:
+
+- Should a policy support both cluster scoped and namespace scoped binding? If
+  so how? It would need two different parameter CRDs (since a CRD must either be
+  cluster scoped or namespace scoped, not both).
+
 
 ### User Stories
 
@@ -2312,6 +2356,11 @@ in back-to-back releases.
   If multiple admission policies require the same conversion, convert only once. 
   From @liggitt: "webhook code loops up one level, first accumulates all the validation webhooks we'll run, then converts to the versions needed by those webhooks then evaluates in parallel"
 - authz check to the specific resource referenced in the policy's paramKind. ([comment](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013135860))
+- complete feature of access to namespace metadata 
+- complete type check for CRD
+- add controlled rollout strategy to support future CEL library/function/variable changes
+- [Quantity](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/api/resource/quantity.go#L100) support from CEL expression and tested properly
+- support the list of features mentioned under phrase 2
 
 ### Upgrade / Downgrade Strategy
 
@@ -2387,15 +2436,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: CELValidatingAdmission
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: ValidatingAdmissionPolicy
   - Components depending on the feature gate: kube-apiserver
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -2506,6 +2549,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+The following metrics could be used to see if the feature is in use:
+- validating_admission_policy/check_total
+- validating_admission_policy/definition_total
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -2518,13 +2564,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- Metrics like `validating_admission_policy/check_total` can be used to check how many validation applied in total
+- Audit mode can be used to check audit event following [this documentation](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/#audit-annotations) 
+- ValidatingAdmissionPolicy.Status can be used to see if typechecking performed as expected
+- User can also verify if the admission request is rejected or a warning is shown as expected based on how validationAction is set.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -2542,6 +2585,9 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+No impact on latency for admission request when ValidatingAdmissionPolicy are absent.
+
+Performance when ValidatingAdmissionPolicy are in use will need to be measured and optimized.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -2549,12 +2595,10 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [ ] The Metrics below could be used:
+  - validating_admission_policy/check_total
+  - validating_admission_policy/definition_total
+  - validating_admission_policy/check_duration_seconds
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -2562,6 +2606,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+No. We are open to input.
 
 ### Dependencies
 
@@ -2585,6 +2630,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No.
 
 ### Scalability
 
@@ -2612,6 +2658,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+Yes. A new API group is introduced which will be used for this feature.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -2621,6 +2668,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+Yes. We introduced two new kinds for this feature: ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding as described in [this doc](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/)
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -2629,6 +2677,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -2638,6 +2687,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -2649,6 +2699,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+The existing admission request latency might be affected when the feature is used. We expect this to be negligible and will measure it before GA.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -2661,6 +2712,20 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+We don't expect it to. Especially comparing to the existing method to achieve the same goal, using this feature will not result in non-negligible increase of resource usage.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+No.
 
 ### Troubleshooting
 
@@ -2676,6 +2741,7 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+Same as without this feature.
 
 ###### What are other known failure modes?
 
@@ -2691,8 +2757,14 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- The feature can be disabled by disabling the API or setting the feature-gate to false if the performance impact of it is not tolerable.
+- Try to run the validations separately to see which rule is slow
+- Remove the problematic rules or update the rules to meet the requirement
+
 
 ## Implementation History
 
