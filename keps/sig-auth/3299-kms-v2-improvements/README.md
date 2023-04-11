@@ -9,13 +9,15 @@
 - [Proposal](#proposal)
 - [Design Details](#design-details)
   - [v2 API](#v2-api)
-  - [Key Hierarchy](#key-hierarchy)
-  - [Metadata](#metadata)
+  - [DEK re-use in API server](#dek-re-use-in-api-server)
+  - [key_id and rotation](#key_id-and-rotation)
   - [Status API](#status-api)
   - [Observability](#observability)
   - [Sequence Diagram](#sequence-diagram)
     - [Encrypt Request](#encrypt-request)
     - [Decrypt Request](#decrypt-request)
+    - [Status Request](#status-request)
+    - [Generate Data Encryption Key (DEK)](#generate-data-encryption-key-dek)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -63,15 +65,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes the new v2alpha1 `KeyManagementService` service contract to:
+This KEP proposes the new v2 `KeyManagementService` service contract to:
 - enable partially automated key rotation for the latest key without API server restarts
 - improve KMS plugin health check reliability
 - improve observability of envelop operations between kube-apiserver, KMS plugins and KMS
-
-It further proposes a SIG-Auth maintained KMS plugin reference implementation. This implementation will support a key hierarchy design that implements the v2alpha1 API and will serve as a baseline that provides:
-- improve readiness times for clusters with a large number of encrypted resources
-- reduce the likelihood of hitting the external KMS request rate limit
-- metrics and tracing support
 
 ## Motivation
 
@@ -99,12 +96,12 @@ It further proposes a SIG-Auth maintained KMS plugin reference implementation. T
 ## Proposal
 
 Performance, Health Check, Observability and Rotation:
-- Support key hierarchy in KMS plugin that generates local KEK
+- Support re-using DEK when the KEK key ID is stable
 - Expand `EncryptionConfiguration` to support a new KMSv2 configuration
 - Add v2alpha1 `KeyManagementService` proto service contract in Kubernetes to include
     - `key_id` and additional metadata in `annotations` to support key rotation
     - `key_id`: the KMS Key ID, stable identifier, changed to trigger key rotation and storage migration
-    - `annotations`: structured data, can contain the encrypted local KEK, can be used for debugging, recovery, opaque to API server, stored unencrypted, etc. Validation similar to how K8s labels are validated today. Labels have good size limits and restrictions today.
+    - `annotations`: structured data, can be used for debugging, recovery, opaque to API server, stored unencrypted, etc. Validation similar to how K8s labels are validated today. Labels have good size limits and restrictions today.
     - A status request and response periodically (order of minutes) returns `version`, `healthz`, and `key_id`
     - The `key_id` in status can be used on decrypt operations to compare and validate the key ID stored in the DEK cache and the latest `EncryptResponse` `key_id` to detect if an object is stale in terms of storage migration
     - Generate a new UID for each envelope operation in kube-apiserver
@@ -136,37 +133,37 @@ index d7d68d2584d..84c1fa6546f 100644
 +    APIVersion string `json:"apiVersion"`
 ```
 
-Support key hierarchy in KMS plugin that generates local KEK and add v2 `KeyManagementService` proto service contract in Kubernetes to include `key_id`, `annotations`, and `status`.
+Add v2 `KeyManagementService` proto service contract in Kubernetes to include `key_id`, `annotations`, and `status`.
 
-### Key Hierarchy
+### DEK re-use in API server
 
-Key Hierarchy in KMS plugin (reference implementation):
+In case of KMS v1, a new DEK is generated for every encryption. This means that for every write request, the API server makes a call to the KMS plugin to encrypt the DEK using the remote KEK. The API server also has to cache the DEKs to avoid making a call to the KMS plugin for every read request. When the API server restarts, it has to populate the cache by making a call to the KMS plugin for every DEK in the etcd store based on the cache size. This is a significant overhead for the API server.
 
-1. No changes to the API server, keep 1:1 DEK mapping
-    1. Assumption: A KMS plugin that was implemented using a local HSM would not need any changes because it would be able to handle the amount of encryption calls with ease since it would not need to perform network IO
-    1. Assumption: local gRPC calls to the KMS plugin do not represent significant overhead
-1. KMS plugin generates its own local KEK in-memory
-1. External KMS is used to encrypt the local KEK
-1. Local KEK is used for encryption of DEKs sent by API server
-1. Local KEK is used for encryption based on policy (N events, X time, etc)
+With KMS v2, the API server will generate a DEK at startup and caches it. The API server also makes a call to the KMS plugin to encrypt the DEK using the remote KEK. This is a one-time call at startup and on KEK rotation. The API server then uses the cached DEK to encrypt the resources. This reduces the number of calls to the KMS plugin and improves the overall latency of the API server requests.
 
-Since key hierarchy is implemented at the KMS plugin level, it should be seamless for the kube-apiserver. So whether the plugin is using a key hierarchy or not, the kube-apiserver should behave the same.
+### key_id and rotation
 
-### Metadata
+What is required of the kube-apiserver is to be able to tell the KMS plugin which KEK (KMS KEK) it should use to decrypt the incoming DEK. To do so, upon encryption, the KMS plugin needs to provide the `key_id` for the KEK used as part of `EncryptResponse`. The kube-apiserver would then store it in etcd next to the DEK. Upon decryption, the kube-apiserver provides the `key_id` from the last encryption when calling Decrypt.
 
-What is required of the kube-apiserver is to be able to tell the KMS plugin which KEK (local KEK or KMS KEK) it should use to decrypt the incoming DEK. To do so, upon encryption, the KMS plugin could provide the encrypted local KEK as part of the `annotations` field in the `EncryptResponse`. The kube-apiserver would then store it in etcd next to the DEK. Upon decryption, the kube-apiserver provides the encrypted local KEK in `annotations` and `key_id` from the last encryption when calling Decrypt. In case no encrypted local KEK is provided in the `annotations`, then we can assume key hierarchy is not used. The KMS plugin would query the external KMS to use the remote KEK to decrypt the DEK (same behavior as today). No state coordination is required between different instances of the KMS plugin.
+The key_id is the public, non-secret name of the remote KMS KEK that is currently in use. It may be logged during regular operation of the API server, and thus must not contain any private data. Plugin implementations are encouraged to use a hash to avoid leaking any data. The KMS v2 metrics take care to hash this value before exposing it via the `/metrics` endpoint.
 
-For the reference KMS plugin, the encrypted local KEK is stored in etcd via the `annotations` field, and once decrypted, it can be stored in memory as part of the KMS plugin cache to be used for encryption and decryption of DEKs. The encrypted local KEK is used as the key and the decrypted local KEK is stored as the value.
+The API server considers the `key_id` returned from the `Status` procedure call to be authoritative. Thus, a change to this value signals to the API server that the remote KEK has changed, and data encrypted with the old KEK should be marked stale when a no-op write is performed. If an `EncryptRequest` procedure call returns a `key_id` that is different from `Status`, the response is thrown away and the plugin is considered unhealthy.
+**NOTE:** Thus implementations must guarantee that the `key_id` returned from Status will be the same as the one returned by EncryptRequest. Furthermore, plugins must ensure that the `key_id` is stable and does not flip-flop between values (i.e. during a remote KEK rotation).
+
+Plugins must not re-use `key_id`s, even in situations where a previously used remote KEK has been reinstated. For example, if a plugin was using key_id=A, switched to key_id=B, and then went back to `key_id=A` - instead of reporting `key_id=A` the plugin should report some derivative value such as `key_id=A_001` or use a new value such as `key_id=C`.
+
+Since the API server polls `Status` about every minute, `key_id` rotation is not immediate. Furthermore, the API server will coast on the last valid state for about three minutes. Thus if a user wants to take a passive approach to storage migration (i.e. by waiting), they must schedule a migration to occur at `3 + N + M` minutes after the remote KEK has been rotated (N is how long it takes the plugin to observe the `key_id` change and M is the desired buffer to allow config changes to be processed - a minimum M of five minutes is recommend). Note that no API server restart is required to perform KEK rotation.
+
+> NOTE: Because you don't control the number of writes performed with the DEK, we will recommend rotating the KEK at least every 90 days.
 
 ```proto
 message EncryptResponse {
     // The encrypted data.
     bytes ciphertext = 1;
-    // The KMS key ID used to encrypt the data. This must always refer to the KMS KEK and not any local KEKs that may be in use.
+    // The KMS key ID used to encrypt the data. This must always refer to the KMS KEK.
     // This can be used to inform staleness of data updated via value.Transformer.TransformFromStorage.
     string key_id = 2;
     // Additional metadata to be stored with the encrypted data.
-    // This metadata can contain the encrypted local KEK that was used to encrypt the DEK.
     // This data is stored in plaintext in etcd. KMS plugin implementations are responsible for pre-encrypting any sensitive data.
     map<string, bytes> annotations = 3;
 }
@@ -253,52 +250,99 @@ This `UID` field is included in the `EncryptRequest` and `DecryptRequest` of the
 #### Encrypt Request
 
 ```mermaid
+%%{init:{"sequence": {"mirrorActors":true},
+    "themeVariables": {
+        "actorBkg":"royalblue",
+        "actorTextColor":"white"
+}}}%%
+
 sequenceDiagram
-    participant etcd
-    participant kubeapiserver
-    participant kmsplugin
-    participant externalkms
-    kubeapiserver->>kmsplugin: encrypt request
-    alt using key hierarchy
-        kmsplugin->>kmsplugin: encrypt DEK with local KEK
-        kmsplugin->>externalkms: encrypt local KEK with remote KEK
-        externalkms->>kmsplugin: encrypted local KEK
-        kmsplugin->>kmsplugin: cache encrypted local KEK
-        kmsplugin->>kubeapiserver: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
-    else not using key hierarchy
-        %% current behavior
-        kmsplugin->>externalkms: encrypt DEK with remote KEK
-        externalkms->>kmsplugin: encrypted DEK
-        kmsplugin->>kubeapiserver: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", key_id: "<remote KEK ID>", "annotations": {}}
+    participant user
+    participant kube_api_server
+    participant kms_plugin
+    participant external_kms
+    alt Generate DEK at startup
+        Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) diagram for details
     end
-    kubeapiserver->>etcd: store encrypt response and encrypted DEK
+    user->>kube_api_server: create/update resource that's to be encrypted
+    kube_api_server->>kube_api_server: encrypt resource with DEK
+    kube_api_server->>etcd: store encrypted object
 ```
 
 #### Decrypt Request
 
 ```mermaid
+%%{init:{"sequence": {"mirrorActors":true},
+    "themeVariables": {
+        "actorBkg":"royalblue",
+        "actorTextColor":"white"
+}}}%%
+
 sequenceDiagram
-    participant kubeapiserver
-    participant kmsplugin
-    participant externalkms
-    %% if local KEK in annotations, then using hierarchy
-    alt encrypted local KEK is in annotations
-      kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
-        alt encrypted local KEK in cache
-            kmsplugin->>kmsplugin: decrypt DEK with local KEK
-        else encrypted local KEK not in cache
-            kmsplugin->>externalkms: decrypt local KEK with remote KEK
-            externalkms->>kmsplugin: decrypted local KEK
-            kmsplugin->>kmsplugin: decrypt DEK with local KEK
-            kmsplugin->>kmsplugin: cache decrypted local KEK
-        end
-        kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
-    else encrypted local KEK is not in annotations
-        kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {}}
-        kmsplugin->>externalkms: decrypt DEK with remote KEK (same behavior as today)
-        externalkms->>kmsplugin: decrypted DEK
-        kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {}}
+    participant user
+    participant kube_api_server
+    participant kms_plugin
+    participant external_kms
+    participant etcd
+    user->>kube_api_server: get/list resource that's encrypted
+    kube_api_server->>etcd: get encrypted resource
+    etcd->>kube_api_server: encrypted resource
+    alt Encrypted DEK not in cache
+        kube_api_server->>kms_plugin: decrypt request
+        kms_plugin->>external_kms: decrypt DEK with remote KEK
+        external_kms->>kms_plugin: decrypted DEK
+        kms_plugin->>kube_api_server: return decrypted DEK
+        kube_api_server->>kube_api_server: cache decrypted DEK
     end
+    kube_api_server->>kube_api_server: decrypt resource with DEK
+    kube_api_server->>user: return decrypted resource
+```
+
+#### Status Request
+
+```mermaid
+%%{init:{"sequence": {"mirrorActors":true},
+    "themeVariables": {
+        "actorBkg":"royalblue",
+        "actorTextColor":"white"
+}}}%%
+
+sequenceDiagram
+    participant kube_api_server
+    participant kms_plugin
+    participant external_kms
+    alt Generate DEK at startup
+        Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) diagram for details
+    end
+    loop every minute (or every 10s if error or unhealthy)
+        kube_api_server->>kms_plugin: status request
+        kms_plugin->>external_kms: validate remote KEK
+        external_kms->>kms_plugin: KEK status
+        kms_plugin->>kube_api_server: return status response <br/> {"healthz": "ok", key_id: "<remote KEK ID>", "version": "v2beta1"}
+        alt KEK rotation detected (key_id changed), rotate DEK
+            Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) diagram for details
+        end
+    end
+```
+
+#### Generate Data Encryption Key (DEK)
+
+```mermaid
+%%{init:{"sequence": {"mirrorActors":true},
+    "themeVariables": {
+        "actorBkg":"royalblue",
+        "actorTextColor":"white"
+}}}%%
+
+sequenceDiagram
+    participant kube_api_server
+    participant kms_plugin
+    participant external_kms
+        kube_api_server->>kube_api_server: generate DEK
+        kube_api_server->>kms_plugin: encrypt request
+        kms_plugin->>external_kms: encrypt DEK with remote KEK
+        external_kms->>kms_plugin: encrypted DEK
+        kms_plugin->>kube_api_server: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", key_id: "<remote KEK ID>", "annotations": {}}
 ```
 
 ### Test Plan
@@ -309,13 +353,10 @@ sequenceDiagram
 
 ##### Unit tests
 
-- Validate key hierarchy behavior in reference implementation
-  - Local KEK is generated for encryption
-  - Local KEK is rotated after a period of time/number of operations
-  - Remote KEK is only called when
-    - Cache is empty, so remote KEK is needed to decrypt local KEK
-    - Local KEK is generated or rotated
-  - When key hierarchy is not used, remote KEK is called for every encryption/decryption
+- Validate DEK re-use behavior in the API server
+  - DEK is generated at startup and re-used for all encryption operations
+  - DEK is rotated after KEK rotation
+  - KMS plugin is only called when cache is empty
   - Ensure the logs and metrics are generated as expected
   - At least 75% code coverage
 - Staleness check based on keyID in the `StatusResponse`
@@ -334,9 +375,6 @@ sequenceDiagram
     - single health check for v2 at `/kms-providers`
     - individual health checks for v1 and v2 with `/kms-provider-0` and `/kms-provider-1`
 - Integration tests with base64 plugin to validate the encryption and decryption of data
-- Integration tests with reference implementation
-  - Validate the encryption and decryption of data
-  - Validate the functionality of reference implementation
 - Integration tests to check rotation is possible without restarting API server
 - Integration tests that exercise the feature enablement/disablement flow
 
@@ -346,15 +384,14 @@ With this e2e test suite, we want to do the following:
 1. Run the e2e suite against a kind cluster without kms encryption enabled.
 2. Run the e2e suite against a kind cluster that has kms v2 encryption enabled (as defined below).
 3. Compare `request_duration_seconds`, `request_terminations_total`, `request_aborts_total` API server metrics between the two runs. The acceptable delta should be less than 20%.
-4. Observe metrics from the reference implementation to determine time taken at each step of the encryption/decryption process.
+4. Observe metrics from the mock implementation to determine time taken at each step of the encryption/decryption process.
 5. Observe API server startup time with and without kms encryption enabled.
 
-- KMSv2 config would use the reference implementation
+- KMSv2 config would use the mock implementation
   - Validate all resources are encrypted
   - The "remote" kms would be a local encryption key
     - that adds 100 ms latency
     - that has rate limiting
-  - Key hierarchy would be used
 
 ### Graduation Criteria
 
@@ -541,6 +578,9 @@ No.
 
 - 2022-05-09: Initial KEP draft submitted.
 - 2022-09-09: KMSv2 Alpha (v1.25) implemented https://github.com/kubernetes/kubernetes/pull/111126
+- 2023-02-28: re-use DEK while key ID is unchanged https://github.com/kubernetes/kubernetes/pull/116155
+  - This was a change in design from alpha to beta. The key hierarchy approach initially suggested in the KEP was dropped in favor of re-using DEKs based on metrics numbers from CI.
+- 2023-03-14: Generate proto API and update feature gate for beta https://github.com/kubernetes/kubernetes/pull/115123
 
 ## Alternatives
 
@@ -548,7 +588,104 @@ No.
 
 We considered the follow approaches and each has its own drawbacks:
 1. `cacheSize` field in `EncryptionConfiguration`. It is used by the API server to initialize a LRU cache of the given size with the encrypted ciphertext used as index. Having a higher value for the `cacheSize` will prevent calls to the plugin for decryption operations. However, this does not solve the issue with the number of calls to KMS plugin when encryption traffic is bursty.
-1. Reduce the number of trips to KMS by caching DEKs by allowing one DEK to be used to encrypt multiple objects within the configured TTL period. One issue with this approach is it will be very hard to inform the API server to rotate the DEKs when a KEK has been rotated.
+2. Key hierarchy in the KMS plugin.
+   - No changes to the API server, keep 1:1 DEK mapping
+     - Assumption: A KMS plugin that was implemented using a local HSM would not need any changes because it would be able to handle the amount of encryption calls with ease since it would not need to perform network IO
+     - Assumption: local gRPC calls to the KMS plugin do not represent significant overhead
+   - KMS plugin generates its own local KEK in-memory
+   - External KMS is used to encrypt the local KEK
+   - Local KEK is used for encryption of DEKs sent by API server
+   - Local KEK is used for encryption based on policy (N events, X time, etc)
+  We tested this approach and the metrics in CI indicated the gRPC calls to the KMS plugin added significant overhead. The gRPC call latency was in the order of `0.1s` (refer to `apiserver_envelope_encryption_kms_operations_latency_seconds_bucket` [here](https://gist.github.com/aramase/86eb99d63f7e0d3c7d344af6adc37e0a))
+
+        <details>
+        <summary>API server encryption metric from CI run</summary>
+
+        ```console
+        # HELP apiserver_envelope_encryption_kms_operations_latency_seconds [ALPHA] KMS operation duration with gRPC error code status total.
+        # TYPE apiserver_envelope_encryption_kms_operations_latency_seconds histogram
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0001"} 0
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0002"} 0
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0004"} 60
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0008"} 2947
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0016"} 5090
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0032"} 6639
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0064"} 8076
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0128"} 9448
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0256"} 10875
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.0512"} 12236
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.1024"} 13442
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.2048"} 14153
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.4096"} 14426
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="0.8192"} 14533
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="1.6384"} 14544
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="3.2768"} 14544
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="6.5536"} 14544
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="13.1072"} 14544
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="26.2144"} 14544
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="52.4288"} 14544
+        apiserver_envelope_encryption_kms_operations_latency_seconds_bucket{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider",le="+Inf"} 14544
+        apiserver_envelope_encryption_kms_operations_latency_seconds_sum{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider"} 433.331096833
+        apiserver_envelope_encryption_kms_operations_latency_seconds_count{grpc_status_code="OK",method_name="/v2alpha1.KeyManagementService/Encrypt",provider_name="kmsprovider"} 14544
+        ```
+
+        </details>
+
+        <details>
+        <summary>Encrypt Request</summary>
+
+        ```mermaid
+        sequenceDiagram
+            participant etcd
+            participant kubeapiserver
+            participant kmsplugin
+            participant externalkms
+            kubeapiserver->>kmsplugin: encrypt request
+            alt using key hierarchy
+                kmsplugin->>kmsplugin: encrypt DEK with local KEK
+                kmsplugin->>externalkms: encrypt local KEK with remote KEK
+                externalkms->>kmsplugin: encrypted local KEK
+                kmsplugin->>kmsplugin: cache encrypted local KEK
+                kmsplugin->>kubeapiserver: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
+            else not using key hierarchy
+                %% current behavior
+                kmsplugin->>externalkms: encrypt DEK with remote KEK
+                externalkms->>kmsplugin: encrypted DEK
+                kmsplugin->>kubeapiserver: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", key_id: "<remote KEK ID>", "annotations": {}}
+            end
+            kubeapiserver->>etcd: store encrypt response and encrypted DEK
+        ```
+
+        </details>
+
+        <details>
+        <summary>Decrypt Request</summary>
+
+        ```mermaid
+        sequenceDiagram
+            participant kubeapiserver
+            participant kmsplugin
+            participant externalkms
+            %% if local KEK in annotations, then using hierarchy
+            alt encrypted local KEK is in annotations
+              kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
+                alt encrypted local KEK in cache
+                    kmsplugin->>kmsplugin: decrypt DEK with local KEK
+                else encrypted local KEK not in cache
+                    kmsplugin->>externalkms: decrypt local KEK with remote KEK
+                    externalkms->>kmsplugin: decrypted local KEK
+                    kmsplugin->>kmsplugin: decrypt DEK with local KEK
+                    kmsplugin->>kmsplugin: cache decrypted local KEK
+                end
+                kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {"kms.kubernetes.io/local-kek": "<encrypted local KEK>"}}
+            else encrypted local KEK is not in annotations
+                kubeapiserver->>kmsplugin: decrypt request <br/> {"ciphertext": "<encrypted DEK>", key_id: "<key_id gotten as part of EncryptResponse>", <br/> "annotations": {}}
+                kmsplugin->>externalkms: decrypt DEK with remote KEK (same behavior as today)
+                externalkms->>kmsplugin: decrypted DEK
+                kmsplugin->>kubeapiserver: return decrypt response <br/> {"plaintext": "<decrypted DEK>", key_id: "<remote KEK ID>", <br/> "annotations": {}}
+            end
+        ```
+        </details>
 
 **Observability**:
 
