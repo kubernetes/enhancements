@@ -14,30 +14,30 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [User Stories (Optional)](#user-stories-optional)
-        - [Story 1](#story-1)
-        - [Story 2](#story-2)
-    - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-        - [Prerequisite testing updates](#prerequisite-testing-updates)
-        - [Unit tests](#unit-tests)
-        - [Integration tests](#integration-tests)
-        - [e2e tests](#e2e-tests)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-    - [Monitoring Requirements](#monitoring-requirements)
-    - [Dependencies](#dependencies)
-    - [Scalability](#scalability)
-    - [Troubleshooting](#troubleshooting)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -74,30 +74,29 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This proposal aims at enabling dynamic node resizing. This will help in resizing cluster resource capacity by just updating resources of nodes rather than adding new node or removing existing node and 
-also enable node configurations to be reflected at the node and cluster levels automatically without the need to manually resetting the kubelet
+The proposal aims at enabling dynamic node resizing. This will help in updating cluster resource capacity by just resizing compute resources of nodes rather than adding new node or removing existing node from a cluster.
+The updated node configurations are to be reflected at the node and cluster levels automatically without the need to reset the kubelet.
 
-This proposal also aims to improvise the initialisation and reinitialisation of resource managers like cpu manager, memory manager with the dynamic change in machine's CPU and memory configurations.
+This proposal also aims to improve the initialization and reinitialization of resource managers, such as the CPU manager and memory manager, in response to changes in a node's CPU and memory configurations.
 
 ## Motivation
-In a typical Kubernetes environment, the cluster resources may need to be altered because of various reasons like
-- Incorrect resource assignment while creating a cluster.
-- Workload on cluster is increased over time and leading to add more resources to cluster.
-- Workload on cluster is decreased over time and leading to resources under utilization.
+In a typical Kubernetes environment, the cluster resources may need to be altered due to following reasons:
+- Incorrect resource assignment during cluster creation.
+- Increased workload over time, leading to the need for additional resources in the cluster.
+- Decreased workload over time, leading to resource underutilization in the cluster.
 
-To handle these scenarios currently we can 
-- Horizontally scale up or down cluster by the addition or removal of compute nodes
-- Vertically scale up or down cluster by increasing or decreasing the node’s capacity, but the current workaround for the node resize to be captured by the cluster is only by the means of restarting Kubelet.
+To handle these scenarios, we can:
+- Horizontally scale up or down the cluster by adding or removing compute nodes.
+- Vertically scale up or down the cluster by increasing or decreasing node capacity. However, currently, the workaround for capturing node resizing in the cluster involves restarting the Kubelet.
 
-The dynamic node resize will give advantages in case of scenarios like
-- Handling the resource demand with limited set of machines by increasing the capacity of existing machines rather than creating new ones.
-- Creating/Deleting new machine takes more time when compared to increasing/decreasing the capacity of existing ones.
+Dynamic node resizing will provide advantages in scenarios such as:
+- Handling resource demand with a limited set of nodes by increasing the capacity of existing nodes instead of creating new nodes.
+- Creating or deleting new nodes takes more time compared to increasing or decreasing the capacity of existing nodes.
 
 ### Goals
 
-* Dynamically resize the node without restarting the kubelet
-* Add ability to reinitialize resource managers(cpu manager, memory manager) to adopt changes in machine resource
-
+* Dynamically resize the node without restarting the kubelet.
+* Ability to reinitialize resource managers (CPU manager, memory manager) to adopt changes in node's resource.
 
 ### Non-Goals
 
@@ -105,21 +104,19 @@ The dynamic node resize will give advantages in case of scenarios like
 
 ## Proposal
 
-This KEP adds a polling mechanism in kubelet to fetch the machine-info using cadvisor, The information will be fetched repeatedly based on configured time interval.
-Later node status updater will take care of updating this information at node level.
+This KEP adds a polling mechanism in kubelet to fetch the machine-information from cAdvisor's cache, The information will be fetched periodically based on a configured time interval, after which the node status updater is responsible for updating this information at node level in the cluster.
 
-This KEP also improvises the resource managers like memory manager, cpu manager initialization and reinitialization so that these resource managers will 
-adapt to the dynamic change in machine configurations. 
+Additionally, this KEP aims to improve the initialization and reinitialization of resource managers, such as the memory manager and CPU manager, so that they can adapt to change in node's configurations.
 
 ### User Stories (Optional)
 
 #### Story 1
 
-As a cluster admin, I want to increase the cluster resource capacity without adding a new node to the cluster.
+As a cluster admin, I must be able to increase the cluster resource capacity without adding a new node to the cluster.
 
 #### Story 2
 
-As a cluster admin, I want to decrease the cluster resource capacity without removing an existing node from the cluster.
+As a cluster admin, I must be able to decrease the cluster resource capacity without removing an existing node from the cluster.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -148,13 +145,13 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-Below diagram is shows the interaction between kubelet and cadvisor
+Below diagram is shows the interaction between kubelet and cAdvisor.
 
 ```
 +----------+                    +-----------+                   +-----------+                  +--------------+
 |          |                    |           |                   |           |                  |              |
-|   node   |                    |  kubelet  |                   |  cadvisor |                  | machine-info |
-|          |                    |           |                   |           |                  |              |
+|   node   |                    |  kubelet  |                   |  cAdvisor |                  | machine-info |
+|          |                    |           |                   |   cache   |                  |              |
 +----+-----+                    +-----+-----+                   +-----+-----+                  +-------+------+
      |                                |                               |                                |
      |                                |            poll               |                                |
@@ -177,7 +174,7 @@ Below diagram is shows the interaction between kubelet and cadvisor
      |     node status update         |                               |                                |
      |<-------------------------------|                               |                                |
      |                                |                               |                                |
-     |                                |                               |                                |
+     |      if shrink in resource     |                               |                                |
      |      re-run pod admission      |                               |                                |
      |<-------------------------------|                               |                                |                                |
      |                                |                               |                                |      
@@ -188,14 +185,76 @@ Below diagram is shows the interaction between kubelet and cadvisor
 ```
 
 The interaction sequence is as follows
-1. Kubelet will be polling cadvisor with interval of configured time like one minute to fetch the machine resource information
-2. Cadvisor will fetch and update the machine resource information
-3. kubelet cache will be updated with the latest machine resource information
-4. node status updater will update the node's status with new resource information
-5. In case of shrink in cluster resources will re-run the pod admission to evict pods which lack resources
-6. kubelet will reinitialize the resource managers to keep them up to date with dynamic resource changes
+1. Kubelet will be polling in interval of configured time to fetch the machine resource information from cAdvisor's cache, Which is currently updated every 5 minutes.
+3. Kubelet's cache will be updated with the latest machine resource information.
+4. Node status updater will update the node's status with the latest resource information.
+5. In case of a shrink in cluster resources rerun the pod admission and the pod admission will evict pods
+6. Kubelet will reinitialize the resource managers to keep them up to date with dynamic resource changes.
 
-Note: In case of increase in cluster resources scheduler will automatically schedule any pending pods
+Note: In case of increase in cluster resources, the scheduler will automatically schedule any pending pods.
+
+**Kubelet Configuration changes**
+
+* A new boolean variable `dynamicNodeResize` will be added to kubelet configuration.
+* `dynamicNodeResize` will be false by default.
+* User need to set `dynamicNodeResize` to true make use of Dynamic Node Resize.
+
+**Proposed Code changes**
+
+**Dynamic Node resize and Pod Re-admission logic**
+
+```azure
+	if kl.kubeletConfiguration.DynamicNodeResize {
+		// Handle the node dynamic resize
+		machineInfo, err := kl.cadvisor.MachineInfo()
+		if err != nil {
+			klog.ErrorS(err, "Error fetching machine info")
+		} else {
+			cachedMachineInfo, _ := kl.GetCachedMachineInfo()
+
+			if !reflect.DeepEqual(cachedMachineInfo, machineInfo) {
+				kl.setCachedMachineInfo(machineInfo)
+
+				// Resync the resource managers
+				if err := kl.ResyncComponents(machineInfo); err != nil {
+					klog.ErrorS(err, "Error resyncing the kubelet components with machine info")
+				}
+
+				//Rerun pod admission only in case of shrink in cluster resources
+				if machineInfo.NumCores < cachedMachineInfo.NumCores || machineInfo.MemoryCapacity < cachedMachineInfo.MemoryCapacity {
+					klog.InfoS("Observed shrink in nod resources, rerunning pod admission")
+					kl.HandlePodAdditions(activePods)
+				}
+			}
+		}
+	}
+```
+
+**Changes to resource managers to adapt to dynamic resize**
+
+1. Adding ResyncComponents() method to ContainerManager interface
+```azure
+    // Manages the containers running on a machine.
+    type ContainerManager interface {
+        .
+        .
+        // ResyncComponents will resyc the resource managers like cpu, memory and topology managers
+	// with updated machineInfo
+	ResyncComponents(machineInfo *cadvisorapi.MachineInfo) error
+	.
+	.
+    )
+```
+
+2. Adding a method Sync to all the resource managers and will be invoked once there is dynamic resource change.
+
+```azure
+        // Sync will sync the CPU Manager with the latest machine info
+	Sync(machineInfo *cadvisorapi.MachineInfo) error
+```
+
+
+Note: PoC code changes: https://github.com/kubernetes/kubernetes/pull/115755
 
 ### Test Plan
 
@@ -212,26 +271,11 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
+1. Add necessary tests in kubelet_node_status_test.go to check for the node status behaviour with dynamic node resize.
+2. Add necessary tests in kubelet_pods_test.go to check for the pod cleanup and pod addition workflow.
+3. Add necessary tests in eventhandlers_test.go to check for scheduler behaviour with dynamic node capacity change.
+4. Add necessary tests in resource managers to check for managers behaviour to adopt dynamic node capacity change.
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
 
 ##### Integration tests
 
