@@ -25,9 +25,3 @@ milestone:
   alpha: ""
   beta: ""
   stable: ""
-
-feature-gates:
-  - name: DynamicNodeResize
-    components:
-      - kubelet
-disable-supported: true
