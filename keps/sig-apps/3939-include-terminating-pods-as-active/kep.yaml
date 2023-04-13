@@ -36,9 +36,13 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: TerminatingPodsAsActive
+  - name: TerminatingPodsAsActiveJobs
     components:
       - kube-controller-manager
+  - name: TerminatingPodsReplicaSetDeployments
+    components:
+      - kube-controller-manager
+
 disable-supported: true
 
 # The following PRR answers are required at beta release

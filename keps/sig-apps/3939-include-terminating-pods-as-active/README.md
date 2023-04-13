@@ -245,7 +245,6 @@ With 3329-retriable-and-non-retriable-failures and PodFailurePolicy enabled, ter
 
 Should we add a new field to the status that reflects terminating pods?
 
-
 [Job controller should wait for Pods to be in a terminal phase before considering them failed or succeeded](https://github.com/kubernetes/kubernetes/issues/116858) is a relevant issue for this case.  
 I am not sure how to handle these two different cases if we want to count terminating pods as active.  
 
@@ -595,16 +594,24 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: TerminatingAsActive
+  - Feature gate name: TerminatingPodsAsActiveJobs
+  - Feature gate name: TerminatingPodsReplicaSetDeployments
   - Components depending on the feature gate: kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, terminating pods are included in the active pod count for `FilterActivePods`.
+For enabling TerminatingPodsAsActiveJobs:
 
-This means that deployments/Jobs when field is enabled will only create new pods once the existing pods have terminated.
+a) Count the number of terminating pods and populate in JobStatus
+b) FilterActiveJobs will include both active and terminating.
 
-This could potentially make deployments slower.
+For enalbing TerminatingPodsReplicaSetDeployments:
+
+a) Count the number of terminating pods and populate in DeploymentStatus and ReplicaSetStatus.
+b) FilterActivePods will include both active and terminating pods.
+
+This could potentially make jobs/deployments/replicasets slower due to waiting for terminating pods
+to be fully deleted.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
