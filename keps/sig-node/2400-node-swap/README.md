@@ -8,6 +8,10 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Enable Swap Support only for Burstable QoS Pods](#enable-swap-support-only-for-burstable-qos-pods)
+    - [Set Aside Swap for System Critical Daemon](#set-aside-swap-for-system-critical-daemon)
+  - [Steps to Calculate Swap Limit](#steps-to-calculate-swap-limit)
+    - [Example](#example)
   - [User Stories](#user-stories)
     - [Improved Node Stability](#improved-node-stability)
     - [Long-running applications that swap out startup memory](#long-running-applications-that-swap-out-startup-memory)
@@ -17,6 +21,7 @@
     - [Virtualization management overhead](#virtualization-management-overhead)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Security risk](#security-risk)
 - [Design Details](#design-details)
   - [Enabling swap as an end user](#enabling-swap-as-an-end-user)
   - [API Changes](#api-changes)
@@ -30,7 +35,8 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha2](#alpha2)
-    - [Beta](#beta)
+    - [Beta 1](#beta-1)
+    - [Beta 2](#beta-2)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -166,6 +172,54 @@ administrators can configure the kubelet such that:
 
 This proposal enables scenarios 1 and 2 above, but not 3.
 
+### Enable Swap Support only for Burstable QoS Pods
+Before enabling swap support through the pod API, it is crucial to build confidence in this feature by carefully assessing its impact on workloads and Kubernetes. As an initial step, we propose enabling swap support for Burstable QoS Pods by automatically calculating the appropriate swap values, rather than allowing users to input these values manually. 
+
+Swap access is granted only for pods of Burstable QoS. Guaranteed QoS pods are usually higher-priority pods, therefore we want to avoid swap's performance penalty for them. Best-Effort pods, on the contrary, are low-priority pods that are the first to be killed during node pressures. In addition, they're unpredictable, therefore it's hard to assess how much swap memory is a reasonable amount to allocate for them. 
+
+By doing so, we can ensure a thorough understanding of the feature's performance and stability before considering the manual input of swap values in a subsequent beta release. This cautious approach will ensure the efficient allocation of resources and the smooth integration of swap support into Kubernetes.
+
+Allocate the swap limit equal to the requested memory for each container and adjust the proportion of swap based on the total swap memory available.
+
+#### Set Aside Swap for System Critical Daemon
+
+System critical daemons (such as Kubelet) are essential for node health. Usually, an appropriate portion of system resources (e.g., memory, CPU) is reserved as system reserved. However, swap doesn't inherently support reserving a portion out of the total available. For instance, in the case of memory, we set `memory.min` on the node-level cgroup to ensure an adequate amount of memory is set aside, away from the pods, and for system critical daemons. But there is no equivalent for swap; i.e., no `memory.swap.min` is supported in the kernel. 
+
+Since this proposal advocates enabling swap only for the Burstable QoS pods, this can be done by setting `memory.swap.max` on the cgroups used by the Burstable QoS pods. The value of this `memory.swap.max` can be calculated by:
+
+memory.swap.max = total swap memory available on the system - system reserve (memory)
+
+This is the total amount of swap available for all the Burstable QoS pods; let's call it `TotalPodsSwapAvailable`. This will ensure that the system critical daemons will have access to the swap at least equal to the system reserved memory. This will indirectly act as having support for swap in system reserved.
+
+### Steps to Calculate Swap Limit
+
+1. **Calculate the container's memory proportionate to the node's memory:**
+  - Divide the container's memory request by the total node's physical memory. Let's call this value `ContainerMemoryProportion`.
+  - If a container is defined with memory requests == memory limits, its `ContainerMemoryProportion` is defined as 0. Therefore, as can be seen below, its overall swap limit is also 0.
+
+2. **Multiply the container memory proportion by the available swap memory for Pods:**
+  - Meaning: `ContainerMemoryProportion * TotalPodsSwapAvailable`.
+
+#### Example
+Suppose we have a Burstable QoS pod with two containers:
+
+- Container A: Memory request 20 GB
+- Container B: Memory request 10 GB
+
+Let's assume the total physical memory is 40 GB and the total swap memory available is also 40 GB. Also assume that the system reserved memory is configured at 2GB, 
+
+Step 1: Determine the containers memory proportion:
+- Container A: `20G/40G` = `0.5`.
+- Container B: `10G/40G` = `0.25`.
+
+Step 2: Determine swap limitation for the containers:
+- Container A: `ContainerMemoryProportion * TotalPodsSwapAvailable` = `0.5 * 38G` = `19G`.
+- Container B: `ContainerMemoryProportion * TotalPodsSwapAvailable` = `0.25 * 38G` = `9.5G`.
+
+In this example, Container A would have a swap limit of 19 GB, and Container B would have a swap limit of 9.5 GB.
+
+This approach allocates swap limits based on each container's memory request and adjusts the proportion based on the total swap memory available in the system. It ensures that each container gets a fair share of the swap space and helps maintain resource allocation efficiency.
+
 ### User Stories
 
 #### Improved Node Stability
@@ -299,6 +353,14 @@ and/or workloads in a number of different scenarios.
 
 Since swap provisioning is out of scope of this proposal, this enhancement
 poses low risk to Kubernetes clusters that will not enable swap.
+
+#### Security risk
+
+Enabling swap on a system without encryption poses a security risk, as critical information, such as Kubernetes secrets, may be swapped out to the disk. If an unauthorized individual gains access to the disk, they could potentially obtain these secrets. To mitigate this risk, it is recommended to use encrypted swap. However, handling encrypted swap is not within the scope of kubelet; rather, it is a general OS configuration concern and should be addressed at that level. Nevertheless, it is essential to provide documentation that warns users of this potential issue, ensuring they are aware of the potential security implications and can take appropriate steps to safeguard their system.
+
+To guarantee that system daemons are not swapped, the kubelet must configure the `memory.swap.max` setting to `0` within the system reserved cgroup. Moreover, to make sure that burstable pods are able to utilize swap space, kubelet should verify that the cgroup associated with burstable pods should not be nested under the cgroup designated for system reserved.
+
+Additionally, end user may decide to disable swap completely for a Pod or a container in beta 1 by making Pod guaranteed or set request == limit for a container. This way, there will be no swap enabled for the corresponding containers and there will be no information exposure risks.
 
 ## Design Details
 
@@ -487,14 +549,14 @@ Test grid tabs enabled:
 
 No new e2e tests introduced.
 
-For alpha2 [Current stage]:
+For alpha2:
 
 - Add e2e tests that exercise all available swap configurations via the CRI.
 - Verify MemoryPressure behavior with swap enabled and document any changes
   for configuring eviction.
 - Verify new system-reserved settings for swap memory.
 
-For beta [Future]:
+For beta 1:
 
 - Add e2e tests that verify pod-level control of swap utilization.
 - Add e2e tests that verify swap performance with pods using a tmpfs.
@@ -536,20 +598,21 @@ Here are specific improvements to be made:
   swap limit for workloads.
 - Investigate eviction behavior with swap enabled.
 
-
-#### Beta
-
-- Add support for controlling swap consumption at the pod level [via cgroups].
-- Handle usage of swap during container restart boundaries for writes to tmpfs
-  (which may require pod cgroup change beyond what container runtime will do at
-  container cgroup boundary).
+#### Beta 1
+- Enable Swap Support using Burstable QoS Pods only. 
+- Enable Swap Support for Cgroup v2 Only.
 - Add swap memory to the Kubelet stats api.
 - Determine a set of metrics for node QoS in order to evaluate the performance
   of nodes with and without swap enabled.
-- Better understand relationship of swap with memory QoS in cgroup v2
-  (particularly `memory.high` usage).
-- Collect feedback from test user cases.
+- Make sure node e2e jobs that use swap are healthy
 - Improve coverage for appropriate scenarios in testgrid.
+
+#### Beta 2
+- Publish a Kubernetes doc page encoring user to use encrypted swap if they wish to enable this feature.
+- Handle usage of swap during container restart boundaries for writes to tmpfs
+  (which may require pod cgroup change beyond what container runtime will do at
+  container cgroup boundary).
+
 
 [via cgroups]: #restrict-swap-usage-at-the-cgroup-level
 
@@ -559,6 +622,8 @@ _(Tentative.)_
 
 - Test a wide variety of scenarios that may be affected by swap support.
 - Remove feature flag.
+- Remove the Swap Support using Burstable QoS Pods only deprecated in Beta 2. 
+
 
 ### Upgrade / Downgrade Strategy
 
