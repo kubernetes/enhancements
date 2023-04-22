@@ -13,10 +13,10 @@ reviewers:
 approvers:
   - "@liggitt"
 stage: beta
-latest-milestone: "v1.26"
+latest-milestone: "v1.27"
 milestone:
-  alpha: "v1.24"
-  beta: "v1.25"
+  beta: "v1.24"
+  stable: "v1.26"
 feature-gates:
   - name: LegacyServiceAccountTokenNoAutoGeneration
     components:

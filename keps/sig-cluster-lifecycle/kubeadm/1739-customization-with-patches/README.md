@@ -664,7 +664,7 @@ _This section must be completed when targeting alpha to a release._
       this is done on the primary control-plane Node - i.e. no other control-plane
       Nodes exist yet, which is not a "live cluster" yet.
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
       Potentially, during a mutable `kubeadm upgrade` on a control-plane Node,
       if the user created patches result in bad configuration.
 

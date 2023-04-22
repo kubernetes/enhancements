@@ -85,7 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
     - [Terminology](#terminology)
   - [User Stories](#user-stories)
-    - [Different Services Each Deployed to Separate Cluster](#different-services-each-deployed-to-separate-cluster)
+    - [Different ClusterIP Services Each Deployed to Separate Cluster](#different-clusterip-services-each-deployed-to-separate-cluster)
     - [Single Service Deployed to Multiple Clusters](#single-service-deployed-to-multiple-clusters)
   - [Constraints](#constraints)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -260,16 +260,29 @@ nitty-gritty.
   controllers, or a human using kubectl to create resources. This document aims
   to support any implementation that fulfills the behavioral expectations of
   this API.
-- **cluster name** - A unique name or identifier for the cluster, scoped to the
+- **cluster name** - A unique identifier for a cluster, scoped to the
   implementation's cluster registry. We do not attempt to define the registry.
-  Each cluster must have a name that can uniquely identify it within the
-  clusterset. A cluster name must be a valid [RFC
-  1123](https://tools.ietf.org/html/rfc1123) DNS label.
+  The cluster name must be a valid [RFC 1123](https://tools.ietf.org/html/rfc1123)
+  DNS label.
 
   The cluster name should be consistent for the life of a cluster and its
   membership in the clusterset. Implementations should treat name mutation as a
   delete of the membership followed by recreation with the new name.
-- **cluster network** - An identifier for the cluster network. Each cluster can have an optional name that can identify the network its running in. The network name must be a valid [RFC
+
+- **cluster id** - A unique identifier for a cluster, scoped to a clusterset.
+  The cluster id must be either:
+  - equal to cluster name,
+  - or composed of two valid [RFC 1123](https://tools.ietf.org/html/rfc1123)
+    DNS labels separated with a dot. The first label equals cluster name and the
+    second one gives additional context, allowing the implementation to uniquely
+    identify a cluster within a clusterset composed of clusters registered with
+    multiple cluster registries.
+
+  The cluster id should be consistent for the life of a cluster and its
+  membership in the clusterset. Implementations should treat id mutation as a
+  delete of the membership followed by recreation with the new name.
+  
+  - **cluster network** - An identifier for the cluster network. Each cluster can have an optional name that can identify the network its running in. The network name must be a valid [RFC
   1123](https://tools.ietf.org/html/rfc1123) DNS label. Two or more clusters within the ClusterSet can have the same network identifier.
 
   The network name should be consistent during its
@@ -301,8 +314,15 @@ be recognized as a single combined service. For example, if 5 clusters export
 all exporting clusters. Properties of the `ServiceImport` (e.g. ports, topology)
 will be derived from a merger of component `Service` properties.
 
-This specification is not prescriptive on exact implementation details. Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
-extended to present `ServiceImports` alongside traditional `Services`. One often discussed implementation requiring no changes to kube-proxy is to have the mcs-controller maintain ServiceImports and create "dummy" or "shadow" Service objects, named after a mcs-controller managed EndpointSlice that aggregates all cross-cluster backend IPs, so that kube-proxy programs those endpoints like a regular Service. Other implementations are encouraged as long as the properties of the API described in this document are maintained.
+This specification is not prescriptive on exact implementation details. Existing
+implementations of Kubernetes Service API (e.g. kube-proxy) can be extended to
+present `ServiceImports` alongside traditional `Services`. One often discussed
+implementation requiring no changes to kube-proxy is to have the mcs-controller
+maintain ServiceImports and create "dummy" or "shadow" Service objects, named
+after a mcs-controller managed EndpointSlice that aggregates all cross-cluster
+backend IPs, so that kube-proxy programs those endpoints like a regular Service.
+Other implementations are encouraged as long as the properties of the API described
+in this document are maintained.
 
 ### User Stories
 
@@ -313,11 +333,11 @@ the system.  The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Different Services Each Deployed to Separate Cluster
+#### Different ClusterIP Services Each Deployed to Separate Cluster
 
-I have 2 clusters, each running different services managed by different teams,
-where services from one team depend on services from the other team. I want to
-ensure that a service from one team can discover a service from the other team
+I have 2 clusters, each running different ClusterIP services managed by different
+teams, where services from one team depend on services from the other team. I want
+to ensure that a service from one team can discover a service from the other team
 (via DNS resolving to VIP), regardless of the cluster that they reside in. In
 addition, I want to make sure that if the dependent service is migrated to
 another cluster, the dependee is not impacted.
@@ -331,7 +351,7 @@ access instances of this service in priority order based on availability and
 locality. Requests to my replicated service should seamlessly transition (within
 SLO for dropped requests) between instances of my service in case of failure or
 removal without action by or impact on the caller. Routing to my replicated
-service should optimize for cost metric (e.g.prioritize traffic local to zone,
+service should optimize for cost metric (e.g. prioritize traffic local to zone,
 region).
 
 ### Constraints
@@ -542,11 +562,11 @@ given `EndpointSlice` will reference its `ServiceImport` using the label
 associated with its `Service` in a single cluster.
 
 Each imported `EndpointSlice` will also have a
-`multicluster.kubernetes.io/source-cluster` label with the cluster name, a
-registry-scoped unique identifier for the cluster. The `EndpointSlice`s imported
-for a service are not guaranteed to exactly match the originally exported
-`EndpointSlice`s, but each slice is guaranteed to map only to a single source
-cluster.
+`multicluster.kubernetes.io/source-cluster` label with the cluster id, a
+clusterset-scoped unique identifier for the cluster. The `EndpointSlice`s
+imported for a service are not guaranteed to exactly match the originally
+exported `EndpointSlice`s, but each slice is guaranteed to map only to a single
+source cluster.
 
 The mcs-controller is responsible for managing imported `EndpointSlice`s.
 
@@ -874,6 +894,19 @@ required by virtue of being two different `ServiceExport`s.
 Note that this puts the burden of enforcing the boundaries of a
 `ServiceExport`'s fungibility on the name/namespace creator.
 
+Individually addressing pods backing a Headless service is exempt from the rules
+described in this section. Such a pod may be addressed using the
+`<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format, where `clusterid`
+must uniquely identify a cluster within a clusterset. The implementation may use
+cluster name as `clusterid`, and this is not ambiguous if all the clusters on
+the clusterset are registered with the same cluster registry. In case a
+clusterset contains clusters registered with multiple registries, cluster name
+may be ambiguous. The implementation may in such case use `clusterid` composed
+of cluster name and an additional DNS label, separated with a dot. The
+additional label gives additional context, which is implementation-dependent and
+may be used for instance to uniquely identify the cluster registry with which a
+cluster is registered.
+
 
 #### EndpointSlice
 
@@ -905,7 +938,7 @@ mcs-controller itself in distributed implementations.
 We recommend creating leases to represent connectivity with source clusters.
 These leases should be periodically renewed by the mcs-controller while the
 connection with the source cluster is confirmed alive. When a lease expires, the
-cluster name and `multicluster.kubernetes.io/source-cluster` label may be used
+cluster id and `multicluster.kubernetes.io/source-cluster` label may be used
 to find and remove all `EndpointSlices` containing endpoints from the
 unreachable cluster.
 

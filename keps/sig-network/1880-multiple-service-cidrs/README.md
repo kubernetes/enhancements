@@ -18,7 +18,7 @@
   - [Current implementation details](#current-implementation-details)
   - [New allocation model](#new-allocation-model)
     - [The kube-apiserver bootstrap process and the service-cidr flags](#the-kube-apiserver-bootstrap-process-and-the-service-cidr-flags)
-    - [The special &quot;default&quot; ServiceCIDRConfig](#the-special-default-servicecidrconfig)
+    - [The special &quot;default&quot; ServiceCIDR](#the-special-default-servicecidr)
     - [Service IP Allocation](#service-ip-allocation)
     - [Service IP Reservation](#service-ip-reservation)
     - [Edge cases](#edge-cases)
@@ -57,22 +57,22 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in
   [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
   (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance
     Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by
     [Conformance
     Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to
   [kubernetes.io]
@@ -138,27 +138,27 @@ Implement a new allocation logic for Services IPs that:
 
 ## Proposal
 
-The proposal is to implement a new allocator logic that uses 2 new API Objects: ServiceCIDRConfig
+The proposal is to implement a new allocator logic that uses 2 new API Objects: ServiceCIDR
 and IPAddress, and allow users to dynamically increase the number of Services IPs available by
-creating new ServiceCIDRConfigs.
+creating new ServiceCIDRs.
 
-The new allocator will be able to "automagically" consume IPs from any ServiceCIDRConfig available, we can
+The new allocator will be able to "automagically" consume IPs from any ServiceCIDR available, we can
 think about this model, as the same as adding more disks to a Storage system to increase the
 capacity.
 
 To simplify the model, make it backwards compatible and to avoid that it can evolve into something
 different and collide with other APIs, like Gateway APIs, we are adding the following constraints:
 
-- a ServiceCIDRConfig will be immutable after creation (to be revisited before Beta).
-- a ServiceCIDRConfig can only be deleted if there are no Service IP associated to it (enforced by finalizer).
-- there can be overlapping ServiceCIDRConfigs.
-- the apiserver will periodically ensure that a "default" ServiceCIDRConfig exists to cover the service CIDR flags
+- a ServiceCIDR will be immutable after creation (to be revisited before Beta).
+- a ServiceCIDR can only be deleted if there are no Service IP associated to it (enforced by finalizer).
+- there can be overlapping ServiceCIDRs.
+- the apiserver will periodically ensure that a "default" ServiceCIDR exists to cover the service CIDR flags
   and the "kubernetes.default" Service.
-- any IPAddress existing in a cluster has to belong to a Service CIDR defined by a ServiceCIDRConfig.
+- any IPAddress existing in a cluster has to belong to a Service CIDR defined by a ServiceCIDR.
 - any Service with a ClusterIP assigned is expected to have always a IPAddress object associated.
-- a ServiceCIDRConfig which is being deleted can not be used to allocate new IPs
+- a ServiceCIDR which is being deleted can not be used to allocate new IPs
 
- This creates a 1-to-1 relation between Service and IPAddress, and a 1-to-N relation between the ServiceCIDRs defined by the ServiceCIDRConfig and IPAddress. It is important to clarify that overlapping ServiceCIDRConfig are merged in memory, an IPAddress doesn't come from a specific ServiceCIDRConfig object, but "any ServiceCIDRConfig that includes that IP"
+ This creates a 1-to-1 relation between Service and IPAddress, and a 1-to-N relation between the ServiceCIDRs defined by the ServiceCIDR and IPAddress. It is important to clarify that overlapping ServiceCIDR are merged in memory, an IPAddress doesn't come from a specific ServiceCIDR object, but "any ServiceCIDR that includes that IP"
 
  The new allocator logic can be used by other APIs, like Gateway API.
 
@@ -252,13 +252,11 @@ multiple apiservers.
 
 The new allocation mode requires:
 
-- 2 new API objects ServiceCIDRConfig and IPAddress in networking.k8s.io/v1alpha1, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. Both will be protected with finalizers.
-- 1 new allocator implementing current `allocator.Interface`, that runs in each apiserver, and uses the new objects to allocate IPs for Services.
-- 1 new controller that participates on the ServiceCIDRConfig deletion, the guarantee that each IPAddresses has
-  a ServiceCIDRConfig associated. It also handles the special case for the `default` ServiceCIDRConfig.
-- 1 new controller that participates in the IPAddress deletion, that guarantees that each Service IP
-  allocated has its corresponding IPAddress object, recreating it if necessary.
-- 1 new controller that handles the bootstrap process and the default ServiceCIDRConfig.
+- 2 new API objects ServiceCIDR and IPAddress in networking.k8s.io/v1alpha1, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
+- 1 new allocator implementing current `allocator.Interface`, that runs in each apiserver, and uses the new ServiceCIDRs objects to allocate IPs for Services.
+- 1 new repair loop that runs in the apiserver that reconciles the Services with the IPAddresses: repair
+Services, garbage collecting orphan IPAddresses and handle the upgrade from the old allocators.
+- 1 new controller that handles the bootstrap process and the ServiceCIDR object. This controllers participates on the ServiceCIDR deletion, guaranteeing that the existing IPaddresses always have a ServiceCIDR associated.
 
 [![](https://mermaid.ink/img/pako:eNp9UstqwzAQ_BWxx5IcCqUHUwrFacGXYJLeqh620tpV0SNIcsAk_vfKjpNiJ3QvYmdGs7NIBxBOEmQgNIawUlh7NNyyVAPCtuT3StDhhPWV6yZE8kXJQvTK1jeYwD4-52RRvqFRWlFPjk17Rbel00q07G7av7c7Omm7G-HyYrXJna1UfYm5RkOzfEW5f7iGHifQxL0oX6T0FMJ_rhuqmPv6ScfE4VynbszJONxzYE_H5fL4PDaXIVkCUGsnMFLgMLn4t-DcYj23EM5GVHZwgAUY8gaVTA88LMEhfpMhDr1UUoWNjr2yS9JmJ9PoV6mi85BVqAMtAJvotq0VkEXf0Fk0_pNR1f0CyVS2dw)](https://mermaid.live/edit#pako:eNp9UstqwzAQ_BWxx5IcCqUHUwrFacGXYJLeqh620tpV0SNIcsAk_vfKjpNiJ3QvYmdGs7NIBxBOEmQgNIawUlh7NNyyVAPCtuT3StDhhPWV6yZE8kXJQvTK1jeYwD4-52RRvqFRWlFPjk17Rbel00q07G7av7c7Omm7G-HyYrXJna1UfYm5RkOzfEW5f7iGHifQxL0oX6T0FMJ_rhuqmPv6ScfE4VynbszJONxzYE_H5fL4PDaXIVkCUGsnMFLgMLn4t-DcYj23EM5GVHZwgAUY8gaVTA88LMEhfpMhDr1UUoWNjr2yS9JmJ9PoV6mi85BVqAMtAJvotq0VkEXf0Fk0_pNR1f0CyVS2dw)
 
@@ -268,17 +266,60 @@ Currently, the Service CIDRs are configured independently in each kube-apiserver
 the bootstrap process, the apiserver uses the first IP of each range to create the special
 "kubernetes.default" Service. It also starts a reconcile loop, that synchronize the state of the
 bitmap used by the internal allocators with the assigned IPs to the Services.
+This "kubernetes.default" Service is never updated, the first apiserver wins and assigns the
+ClusterIP from its configured service-ip-range, other apiservers with different ranges will
+not try to change the IP. If the apiserver that created the Service no longer works, the
+admin has to delete the Service so others apiservers can create it with its own ranges.
 
-With current implementation, each kube-apiserver can boot with different ranges configured.
+With current implementation, each kube-apiserver can boot with different ranges configured without errors,
+but the cluster will not work correctly, see https://github.com/kubernetes/kubernetes/issues/114743.
 There is no conflict resolution, each apiserver keep writing and deleting others apiservers allocator bitmap
 and Services.
 
 In order to be completely backwards compatible, the bootstrap process will remain the same, the
 difference is that instead of creating a bitmap based on the flags, it will create a new
-ServiceCIDRConfig object from the flags (flags configuration removal is out of scope of this KEP)
-with a special label `networking.kubernetes.io/service-cidr-from-flags` set to `"true"`.
+ServiceCIDR object from the flags (flags configuration removal is out of scope of this KEP)
+ ...
 
-It now has to handle the possibility of multiple ServiceCIDRConfig with the special label, and
+```
+<<[UNRESOLVED bootstrap>>
+Option 1:
+... with a special well-known name `kubernetes`.
+
+The new bootstrap process will be:
+
+```
+at startup:
+ read_flags
+ if invalid flags
+  exit
+ run default-service-ip-range controller
+ run kubernetes.default service loop (it uses the first ip from the subnet defined in the flags)
+ run service-repair loop (reconcile services, ipaddresses)
+ run apiserver
+
+controller:
+  if ServiceCIDR `kubernetes` does not exist
+    create it and create the kubernetes.default service (avoid races)
+  else
+    keep watching to handle finalizers and recreate if needed
+```
+
+All the apiservers will be synchronized on the ServiceCIDR and default Service created by the first to win.
+Changes on the configuration imply manual removal of the ServiceCIDR and default Service, automatically
+the rest of the apiservers will race and the winner will set the configuration of the cluster.
+
+Pros:
+- Simple to implement
+- Align with current behavior of kubernetes.default, though this can be a Con as well, since this
+the existing behavior was unexpected
+Cons:
+- Requires manual intervention
+
+Option 2:
+... with a special label `networking.kubernetes.io/service-cidr-from-flags` set to `"true"`.
+
+It now has to handle the possibility of multiple ServiceCIDR with the special label, and
 also updating the configuration, per example, from single-stack to dual-stack.
 
 The new bootstrap process will be:
@@ -289,6 +330,8 @@ at startup:
  if invalid flags
   exit
  run default-service-ip-range controller
+ run kubernetes.default service loop (it uses the first ip from the subnet defined in the flags)
+ run service-repair loop (reconcile services, ipaddresses)
  run apiserver
 
 controller:
@@ -313,11 +356,19 @@ controller on_event:
   create it
 ```
 
-#### The special "default" ServiceCIDRConfig
+Pros:
+- Automatically handles conflicts, no admin operation required
+Cons:
+- Complex to implement
+
+<<[/UNRESOLVED]>>
+```
+
+#### The special "default" ServiceCIDR
 
 The `kubernetes.default` Service is expected to be covered by a valid range. Each apiserver will
-ensure that a ServiceCIDRConfig object exists to cover its own flag-defined ranges, so this should
-be true in normal cases. If someone were to force-delete the ServiceCIDRConfig covering `kubernetes.default` it
+ensure that a ServiceCIDR object exists to cover its own flag-defined ranges, so this should
+be true in normal cases. If someone were to force-delete the ServiceCIDR covering `kubernetes.default` it
 would be treated the same as any Service in the repair loop, which will generate warnings about
 orphaned Service IPs.
 
@@ -353,29 +404,20 @@ In [keps/sig-network/3070-reserved-service-ip-range](https://github.com/kubernet
 of the Service CIDR for dynamically allocation, the range size for dynamic allocation depends
 ont the size of the CIDR.
 
-The new allocation logic has to be compatible, but in this case we have more flexibility and
-there are different possibilities, that should be resolved before Beta.
-
-```
-<<[UNRESOLVED keps/sig-network/3070-reserved-service-ip-range]>>
-Option 1: Maintain the same formula and behavior per ServiceCIDRConfig
-Option 2: Define a new "allocationMode: (Dynamic | Static | Mixed)" field
-Option 3: Define a new "allocationStaticThreshold: int" field
-<<[/UNRESOLVED]>>
-```
+The new allocation logic has to be compatible with current implementation.
 
 #### Edge cases
 
-Since we have to maintain 3 relationships Services, ServiceCIDRConfigs and IPAddresses, we should be able
+Since we have to maintain 3 relationships Services, ServiceCIDRs and IPAddresses, we should be able
 to handle edge cases and race conditions.
 
-- Valid Service and IPAddress without ServiceCIDRConfig:
+- Valid Service and IPAddress without ServiceCIDR:
 
-This situation can happen if a user forcefully delete the ServiceCIDRConfig, it can be recreated for the
-"default" ServiceCIDRConfigs because the information is in the apiserver flags, but for other ServiceCIDRConfigs
+This situation can happen if a user forcefully delete the ServiceCIDR, it can be recreated for the
+"default" ServiceCIDRs because the information is in the apiserver flags, but for other ServiceCIDRs
 that information is no longer available.
 
-Another possible situation is when one ServiceCIDRConfig has been deleted, but the information takes too long
+Another possible situation is when one ServiceCIDR has been deleted, but the information takes too long
 to reach one of the apiservers, its allocator will still consider the range valid and may allocate one IP
 from there. To mitigate this problem, we'll set a grace period of 60 seconds on the servicecidrconfig controller
 to remove the finalizer, if an IP address is created during this time we'll be able to block the deletion
@@ -383,7 +425,7 @@ and inform the user.
 
 [![](https://mermaid.ink/img/pako:eNp1kjFvwyAQhf8KYm3ixlZVtQyRbNwhW9WsLCe4JEg2uBi3qqL890Jw67hNGBDifffuieNIpVVIGe3xfUAjsdawd9AKQ8IC6a0jFYGe1NigR7JF96El8k39xq3Z6X0CO3BeS92B8YRHHDrdBxQdKf8T9ZyoLpuVUeMOYWomTAIqslyv7zi7mYXkz0WWPz5lq2x1XzykqrSXsZbU7I_1qBobrmzMEghoGisjM7nlReLqs0vJfsuTm0oqj-qyYleCqXPiiRvDzPPOqSnTRb_NK_nU_mAHf3USwtAFbdG1oFWY6TE6CeoP2KKgLBwV7mBovKDCnAI6dCrEf1E6vDxlO2h6XFAYvN1-GUmZdwP-QOO_GKnTN31Vsn4)](https://mermaid.live/edit#pako:eNp1kjFvwyAQhf8KYm3ixlZVtQyRbNwhW9WsLCe4JEg2uBi3qqL890Jw67hNGBDifffuieNIpVVIGe3xfUAjsdawd9AKQ8IC6a0jFYGe1NigR7JF96El8k39xq3Z6X0CO3BeS92B8YRHHDrdBxQdKf8T9ZyoLpuVUeMOYWomTAIqslyv7zi7mYXkz0WWPz5lq2x1XzykqrSXsZbU7I_1qBobrmzMEghoGisjM7nlReLqs0vJfsuTm0oqj-qyYleCqXPiiRvDzPPOqSnTRb_NK_nU_mAHf3USwtAFbdG1oFWY6TE6CeoP2KKgLBwV7mBovKDCnAI6dCrEf1E6vDxlO2h6XFAYvN1-GUmZdwP-QOO_GKnTN31Vsn4)
 
-For any Service and IPAddress that doesn't belong to a ServiceCIDRConfig the controller will raise an event
+For any Service and IPAddress that doesn't belong to a ServiceCIDR the controller will raise an event
 informing the user, keeping the previous behavior
 
 ```go
@@ -391,15 +433,15 @@ informing the user, keeping the previous behavior
 c.recorder.Eventf(&svc, nil, v1.EventTypeWarning, "ClusterIPOutOfRange", "ClusterIPAllocation", "Cluster IP [%v]:%s is not within the service CIDR %s; please recreate service",
 ```
 
-- Valid Service and ServiceCIDRConfig but not IPAddress
+- Valid Service and ServiceCIDR but not IPAddress
 
-It can happen that an user forcefully delete an IPAddress, in this case, the controller will regenerate the IPAddress, as long as a valid ServiceCIDRConfig covers it.
+It can happen that an user forcefully delete an IPAddress, in this case, the controller will regenerate the IPAddress, as long as a valid ServiceCIDR covers it.
 
 During this time, there is a chance that an apiserver tries to allocate this IPAddress, with a possible situation where
 2 Services has the same IPAddress. In order to avoid it, the Allocator will not delete an IP from its local cache
 until it verifies that the consumer associated to that IP has been deleted too.
 
-- Valid IPAddress and ServiceCIDRConfig but no Service
+- Valid IPAddress and ServiceCIDR but no Service
 
 The IPAddress will be deleted and an event generated if the controller determines that the IPAddress
 is orphan [(see Allocator section)](#Allocator)
@@ -444,24 +486,24 @@ correct, and will start sending events to warn the user that it has to fix/recre
 #### API
 
 ```go
-// ServiceCIDRConfig defines a range of IPs using CIDR format (192.168.0.0/24 or 2001:db2::0/64).
-type ServiceCIDRConfig struct {
+// ServiceCIDR defines a range of IPs using CIDR format (192.168.0.0/24 or 2001:db2::0/64).
+type ServiceCIDR struct {
  metav1.TypeMeta   `json:",inline"`
  metav1.ObjectMeta `json:"metadata,omitempty"`
 
- Spec   ServiceCIDRConfigSpec   `json:"spec,omitempty"`
+ Spec   ServiceCIDRSpec   `json:"spec,omitempty"`
 }
 
 
-// ServiceCIDRConfigSpec describe how the ServiceCIDRConfig's specification looks like.
-type ServiceCIDRConfigSpec struct {
+// ServiceCIDRSpec describe how the ServiceCIDR's specification looks like.
+type ServiceCIDRSpec struct {
  // IPv4 is an IPv4 block in CIDR notation "10.0.0.0/8" 
  IPv4 string `json:"ipv4"`
  // IPv6 is an IPv6 block in CIDR notation "fd12:3456:789a:1::/64" 
  IPv6 string `json:"ipv6"`
 }
 
-// IPAddress represents an IP used by Kubernetes associated to an ServiceCIDRConfig.
+// IPAddress represents an IP used by Kubernetes associated to an ServiceCIDR.
 // The name of the object is the IP address in canonical format.
 type IPAddress struct {
  metav1.TypeMeta   `json:",inline"`
@@ -514,10 +556,10 @@ type Interface interface {
 }
 ```
 
-This allocator will have an informer watching Services, ServiceCIDRConfigs and IPAddresses, so it can have locally the
+This allocator will have an informer watching Services, ServiceCIDRs and IPAddresses, so it can have locally the
 information needed to assign new IP addresses to Services.
 
-IPAddresses can only be allocated from ServiceCIDRConfigs that are available and not being deleted.
+IPAddresses can only be allocated from ServiceCIDRs that are available and not being deleted.
 
 The uniqueness of an IPAddress is guaranteed by the apiserver, since trying to create an IP
 address that already exist will fail.
@@ -533,7 +575,7 @@ This is a very core and critical change, it has to be thoroughly tested on diffe
 
 API objects must have unit tests for defaulting and validation and integration tests exercising the
 different operations and fields permutations, with both positive and negative cases: Special
-attention to cross-reference validation problems, like create IPAddress reference wrong ServiceCIDRConfig or
+attention to cross-reference validation problems, like create IPAddress reference wrong ServiceCIDR or
 invalid or missing
 
 Controllers must have unit tests and integration tests covering all possible race conditions.
@@ -574,7 +616,15 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- cmd/kube-apiserver/app/options/validation_test.go: 06/02/23 - 99.1
+- pkg/apis/networking/validation/validation_test.go: 06/02/23 - 91.7
+- pkg/controlplane/instance_test.go: 06/02/23 - 49.7
+- pkg/printers/internalversion/printers_test.go: 06/02/23 - 49.7
+- pkg/registry/core/service/ipallocator/bitmap_test.go: 06/02/23 - 86.9
+- pkg/registry/core/service/ipallocator/controller/repairip_test.go: 06/02/23 - 0 (new)
+- pkg/registry/core/service/ipallocator/ipallocator_test.go: 06/02/23 - 0 (new)
+- pkg/registry/networking/ipaddress/strategy_test.go: 06/02/23 - 0 (new)
+- staging/src/k8s.io/kubectl/pkg/describe/describe_test.go: 06/02/23 - 49.7
 
 ##### Integration tests
 
@@ -586,7 +636,18 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+There will be added tests to verify:
+
+- API servers using the old and new allocators at same time
+- API server upgrade from old to new allocatr
+- ServicesCIDRs resizing
+- ServiceCIDR without the IPv6 limitation size
+
+Files:
+
+- test/integration/controlplane/synthetic_controlplane_test.go
+- test/integration/servicecidr/allocator_test.go
+- test/integration/servicecidr/main_test.go
 
 ##### e2e tests
 
@@ -600,7 +661,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+e2e tests will cover all the user stories defined in the KEP
 
 ### Graduation Criteria
 
@@ -616,9 +677,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - API stability, no changes on new types and behaviors:
   - ServiceCIDR immutability
   - default IPFamily
-  - two or one IP families per ServiceCIDRConfig
+  - two or one IP families per ServiceCIDR
 - Gather feedback from developers and users
-- Document and add more complex testing scenarios: scaling out ServiceCIDRConfigs, ...
+- Document and add more complex testing scenarios: scaling out ServiceCIDRs, ...
 - Additional tests are in Testgrid and linked in KEP
 - Scale test to O(10K) services and O(1K) ranges
 - Improve performance on the allocation logic, O(1) for allocating a free address
@@ -663,8 +724,8 @@ Service implementation (kube-proxy, ...) is able to handle those IPs.
 Example:
 
 - flags set to 10.0.0.0/20
-- upgrade to 1.25 with alpha gate
-- apiserver create a default ServiceCIDRConfig object for 10.0.0.0/20
+- upgrade to N+1 with alpha gate
+- apiserver create a default ServiceCIDR object for 10.0.0.0/20
 - user creates a new ServiceCIDR for 192.168.1.0/24
 - create a Service which gets 192.168.1.1
 - rollback or disable the gate
@@ -678,7 +739,7 @@ Example:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ServiceCIDRConfig
+  - Feature gate name: ServiceCIDR
   - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
@@ -891,7 +952,7 @@ Think about adding additional work or introducing new steps in between
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-The apiservers will increase the memory usage because they have to keep a local informer with the new objects ServiceCIDRConfig and IPAddress.
+The apiservers will increase the memory usage because they have to keep a local informer with the new objects ServiceCIDR and IPAddress.
 
 ### Troubleshooting
 

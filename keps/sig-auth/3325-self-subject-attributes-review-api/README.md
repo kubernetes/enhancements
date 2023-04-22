@@ -243,16 +243,33 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha
 
+- `SelfSubjectReview` endpoint is introduced in `authentication.k8s.io/v1alpha1` API
 - Feature implemented behind a feature flag
 - Initial unit and integration tests completed and enabled
+- Corresponding kubectl command implemented: `kubectl alpha auth whoami`
 
 #### Beta
 
 - Gather feedback from users
+- `SelfSubjectReview` is promoted to `authentication.k8s.io/v1beta1` API (Beta APIs are not enabled by default, [see](https://github.com/kubernetes/enhancements/blob/master/keps/sig-architecture/3136-beta-apis-off-by-default/README.md)).
+- Promote feature gate to Beta and make it enabled by default
+- Unit tests coverage improved
+- `kubectl alpha auth whoami` command uses `authentication.k8s.io/v1beta1` API, falls back to `authentication.k8s.io/v1alpha1` API
+- Fix [documentation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#self-subject-review):
+  - Change API version
+  - Rewrite conditions to enable the feature
 
 #### GA
 
-- Corresponding kubectl command implemented
+- `SelfSubjectReview` is promoted to `authentication.k8s.io/v1` API and enable by default
+- Promote feature gate to Stable
+- `kubectl alpha auth whoami` replaced with `kubectl auth whoami`
+- `kubectl auth whoami` command prefers `authentication.k8s.io/v1` API over `authentication.k8s.io/v1beta1` and `authentication.k8s.io/v1alpha1`
+- More integration and e2e tests cases
+- Fix [documentation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#self-subject-review):
+  - Change API version
+  - Rewrite conditions to enable the feature
+  - Change kubectl command
 
 NOTE: Should not be a part of [conformance tests](https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md).
 The fact that a user possesses a token does not necessarily imply the power to know to whom that token belongs.
@@ -263,22 +280,9 @@ The fact that a user possesses a token does not necessarily imply the power to k
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
--->
-
-- Feature gate
+- [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `APISelfSubjectReview`
-  - Components depending on the feature gate:
-    - kube-apiserver
-
-```go
-FeatureSpec{
-	Default: false,
-	LockToDefault: false,
-	PreRelease: featuregate.Alpha,
-}
-```
+  - Components depending on the feature gate: `kube-apiserver`
 
 ###### Does enabling the feature change any default behavior?
 

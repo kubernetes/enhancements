@@ -6,8 +6,9 @@ authors:
 owning-sig: sig-network
 participating-sigs:
   - sig-cloud-provider
-status: implementable
+status: implemented
 creation-date: 2020-01-03
+last-updated: 2023-01-05
 reviewers:
   - "@thockin"
   - "@dcbw"

@@ -218,7 +218,7 @@ _This section must be completed when targeting alpha to a release._
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 * **Does enabling the feature change any default behavior?**
   No, the default service controller in Kubernetes will continue to watch and implement

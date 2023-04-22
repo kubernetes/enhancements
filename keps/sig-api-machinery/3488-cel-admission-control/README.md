@@ -19,15 +19,19 @@
       - [Policy Configuration](#policy-configuration)
       - [Match Criteria](#match-criteria)
     - [Decisions and Enforcement](#decisions-and-enforcement)
-    - [Informational type checking](#informational-type-checking)
     - [Failure Policy](#failure-policy)
     - [Safety measures](#safety-measures)
     - [Singleton Policies](#singleton-policies)
     - [Limits](#limits)
   - [Phase 2](#phase-2)
+    - [Informational type checking](#informational-type-checking)
     - [Enforcement Actions](#enforcement-actions)
+    - [Audit Annotations](#audit-annotations)
+    - [Audit Events](#audit-events)
     - [Namespace scoped policy binding](#namespace-scoped-policy-binding)
     - [CEL Expression Composition](#cel-expression-composition)
+      - [Use Cases](#use-cases)
+      - [Match Conditions](#match-conditions)
       - [Variables](#variables)
     - [Secondary Authz](#secondary-authz)
     - [Access to namespace metadata](#access-to-namespace-metadata)
@@ -36,7 +40,7 @@
     - [Safety Features](#safety-features)
     - [Aggregated API servers](#aggregated-api-servers)
     - [CEL function library](#cel-function-library)
-    - [Audit Annotations](#audit-annotations)
+    - [Audit Annotations](#audit-annotations-1)
     - [Client visibility](#client-visibility)
     - [Metrics](#metrics)
   - [User Stories](#user-stories)
@@ -359,8 +363,8 @@ This API separates policy _definition_ from policy _configuration_ by splitting
 responsibilities across resources. The resources involved are:
 
 - Policy definitions (ValidatingAdmissionPolicy)
-- Policy bindings (PolicyBinding)
-- Policy param resources (custom resources)
+- Policy bindings (ValidatingAdmissionPolicyBinding)
+- Policy param resources (custom resources or config maps)
 
 ![Relatinships between policy resources](erd.png)
 
@@ -394,7 +398,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: "replicalimit-policy.example.com"
 spec:
-  paramSource:
+  paramKind:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
@@ -407,12 +411,12 @@ spec:
   validations:
     - name: max-replicas
       expression: "object.spec.replicas <= params.maxReplicas"
-      messageExpression: "'object.spec.replicas must be no greater than ' + string(params.maxReplicas)"
+      messageExpression: "'object.spec.replicas must be no greater than %d'.format([params.maxReplicas])"
       reason: Invalid
       # ...other rule related fields here...
 ```
 
-The `spec.paramSource` field of the `ValidatingAdmissionPolicy` specifies the
+The `spec.paramKind` field of the `ValidatingAdmissionPolicy` specifies the
 kind of resources used to parameterize this policy. For this example, it is
 configured by `ReplicaLimit` custom resources. Note in this example how the CEL
 expression references to the parameters via the CEL `params` variable, e.g.
@@ -434,13 +438,15 @@ resource are created. For example:
 
 ```yaml
 # Policy binding
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "replicalimit-binding-test.example.com"
 spec:
-  policy: "replicalimit-policy.example.com"
-  params: "replica-limit-test.example.com"
+  policyName: "replicalimit-policy.example.com"
+  paramRef:
+   name: "replica-limit-test.example.com"
+   namespace: "default"
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -464,13 +470,15 @@ An admission policy may have multiple bindings. To bind all other environments
 environment to have a maxReplicas limit of 100, create another `PolicyBinding`:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: aadmissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "replicalimit-binding-nontest"
 spec:
-  policy: "replicalimit-policy.example.com"
-  params: "replica-limit-clusterwide.example.com"
+  policyName: "replicalimit-policy.example.com"
+  paramRef:
+    name: "replica-limit-test.example.com"
+    namespace: "default"
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -491,13 +499,14 @@ matching binding. In the above example, the "nontest" policy binding could
 instead have been defined as a global policy:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: aadmissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "replicalimit-binding-global"
 spec:
-  policy: "replicalimit-policy.example.com"
-  params: "replica-limit-clusterwide.example.com"
+  policyName: "replicalimit-policy.example.com"
+  paramRef:
+   name: replica-limit-clusterwide.example.com"
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -534,7 +543,7 @@ organized into CEL variables as well as some other useful variables:
 
 - 'object'
 - 'oldObject'
-- 'review'
+- 'request'
   - 'requestResource' (GVR)
   - 'resource' (GVR)
   - 'name'
@@ -543,35 +552,35 @@ organized into CEL variables as well as some other useful variables:
   - 'userInfo'
   - 'dryRun'
   - 'options'
-- 'config' - configuration data of the policy configuration being validated
+- 'params' - referred params object, maybe null if no object is referred
 
 See below "Decisions and Enforcement" for more detail about how the
 `spec.validations` field works and how violations are reported.
 
 ##### Policy Configuration
 
-`PolicyBinding` resources and parameter CRDs together define how cluster
+`ValidatingAdmissionPolicyBinding` resources and parameter CRDs together define how cluster
 administrators configure policies for clusters.
 
-Each `PolicyBinding` contains:
+Each `ValidatingAdmissionPolicyBinding` contains:
 
-- `spec.policy` - A reference to the policy being configured
+- `spec.policyName` - A reference to the policy being configured
 - `spec.matchResources` - Match criteria for which resources the policy should
   validate
-- `spec.params` - Reference to the custom resource containing the params to use
+- `spec.paramKind` - Reference to the custom resource containing the params to use
   when validating resources 
-- `spec.mode` - See "Decisions and Enforcement" for details.
 
 Example:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: PolicyBinding
+apiVersion: aadmissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: "xyzlimit-scale.example.com"
 spec:
-  policy: xyzlimit-scale.example.com
-  params: xyzlimit-scale-settings.example.com
+  policyName: xyzlimit-scale.example.com
+  paramRef:
+    name: xyzlimit-scale-settings.example.com
   matchResources:
     namespaceSelectors:
     - key: environment,
@@ -690,8 +699,8 @@ Matching is performed in quite a few systems across Kubernetes:
 | exclude                                  | Audit (level=None)           | phase 1                                |
 | apiVersion + kind                        |                              | phase 1                                |
 | NonResourceURLs                          | Audit/RBAC/P&F               | No                                     |
-| user/userGroup                           | Audit                        | phase 2 see "Secondary Authz" section  |
-| user.Extra                               | (in WH AdmissionReview)      | phase 2 see "Secondary Authz" section  |
+| user/userGroup                           | Audit                        | phase 1 - request.userInfo.groups      |
+| user.Extra                               | (in WH AdmissionReview)      | phase 1 - request.userInfo.extra       |
 | permissions (RBAC verb)                  | RBAC                         | phase 2 see "Secondary Authz" section  |
 
 WH = Admission webhooks, P&F = Priority and Fairness
@@ -845,6 +854,11 @@ Policy definitions:
 - Each validation may define a message:
   - `message` - plain string message
   - `messageExpression: "<cel expression>"` (mutually exclusive with `message`)
+    - As part of [the KEP update to add expression composition](https://github.com/kubernetes/enhancements/pull/3669/files),
+      expressions defined under `variables` will be accessible from `messageExpression`
+    - `messageExpression` is a CEL expression and thus factors into the runtime cost limit.
+    If the runtime cost limit is exceeded during `messageExpression` execution, then this is logged.
+    Whether or not the action is admitted after that depends upon failure policy.
   - If `message` and `messageExpression` are absent, `expression` and `name`
     will be included in the failure message
   - If `messageExpression` results in an error: `expression` and `name` will be
@@ -866,7 +880,7 @@ spec:
   validations:
     - expression: "self.name.startsWith('xyz-')"
       name: name-prefix
-      messageExpression: "self.name + ' must start with xyz-'"
+      message: "self.name must start with xyz-"
       reason: Unauthorized
     - expression: "self.name.contains('bad')"
       name: bad-name
@@ -875,7 +889,7 @@ spec:
       reason: Invalid
     - expression: "self.name.contains('suspicious')"
       name: suspicious-name
-      messageExpression: "self.name + ' contains suspicious'"
+      message: "'self.name contains suspicious'"
       code: 400
       reason: Invalid
 ```
@@ -883,41 +897,6 @@ spec:
 xref:
 
 - https://open-policy-agent.github.io/gatekeeper/website/docs/next/violations/
-
-#### Informational type checking
-
-This is complicated by:
-
-- Version skew
-- CRDs
-- Aggregated API servers
-
-Problem examples:
-
-| Problem                                                | Summary                                     |
-| ------------------------------------------------------ | ------------------------------------------- |
-| version skew: ephemeralContainers case                 | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
-| version skew: Migration from annotation to field       | Need to be able to validate annotation (if present) or field (if it exists and is populated) |
-| CRD is deleted                                         | Nothing to type check against, but also means there are no coresponding custom resources |
-| CRD is in multiple clusters, but schema differs        | If policy author is aware of the schema variations, can they write policies that work for all the variations? |
-| Validation of an aggregated API server type            | Main API server does not have type definitions |
-
-Due to these complications, we have decided to evalute CEL expressions
-dynamically. Informational type checking will be provided (except for aggregated
-API server types), but will be surfaced only as warnings. See "Alternatives
-Considered" section for details of all the alternatives we reviewed when
-selecting this approach.
-
-Type checking is still performed for all expressions where a GVK can be matched
-to type check against, resulting in warnings, e.g.:
-
-```yaml
-...
-status:
-  expressionWarnings:
-    - expression: "object.foo"
-      warning: "no such field 'foo'"
-```
 
 #### Failure Policy
 
@@ -962,8 +941,8 @@ higher level. This could be added later.
 
 #### Singleton Policies
 
-For simple policies that apply cluster wide, a policy can be authored using a
-single `ValidatingAdmissionPolicy` resource.
+For simple policies that does not refer to a param, a policy can be authored using a
+single `ValidatingAdmissionPolicy` resource without a `paramKind` field.
 
 This is only available for cases where there is no need to have multiple
 bindings, and where all params can be inlined in CEL.
@@ -975,17 +954,16 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 ...
 spec:
+  # no paramKind
   matchConstraints: ...
   validations:
   - expression: "object.spec.replicas < 100"
-  singletonBinding:
-    matchResources: ...
 ```
 
 Note that:
 
-- `spec.paramSource` must be absent and validations may not reference `params`
-- If `spec.singletonBinding` is present policy binding support is disabled.
+- `spec.paramKind` must be absent
+- validation expressions may not refer `params`
 
 Safety features:
 
@@ -1017,28 +995,196 @@ All these capabilities are required before Beta, but will not be implemented in
 the first alpha release of this enhancement due to the size and complexity of
 this enhancement.
 
+#### Informational type checking
+
+Some advantages of strongly typed objects and expressions over treating everything as unstructured are:
+
+- Checks against missing/misspelled fields.
+  The user may write an expression that refers to a missing/misspelled field that
+  does not exist in their test cases but appears later. A type check can detect this kind of error while an evaluation-time check may not.
+- Checks against type confusions. Similarly, the user may confuse the type of field but their test cases never touch wrongly typed fields.
+- Guard against short-circuit evaluation. The user may make a mistake of one of the mentioned above but the code path is never covered in their test cases;
+- Support Kubernetes extensions. For example, IntOrString and map lists.
+
+However, enforcing types for every expression and object is not feasible because of:
+
+- Version skew
+- CRDs
+- Aggregated API servers
+
+Problem examples:
+
+| Problem                                          | Summary                                                                                                               |
+|--------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| version skew: ephemeralContainers case           | New pod field, need to be able to validate in same was containers and initContainers if field exists and is populated |
+| version skew: Migration from annotation to field | Need to be able to validate annotation (if present) or field (if it exists and is populated)                          |
+| CRD is deleted                                   | Nothing to type check against, but also means there are no coresponding custom resources                              |
+| CRD is in multiple clusters, but schema differs  | If policy author is aware of the schema variations, can they write policies that work for all the variations?         |
+| Validation of an aggregated API server type      | Main API server does not have type definitions                                                                        |
+
+Until the design is extended to handle these situations, the type checking will remain informational.
+
+Informational type checking will be performed against all expressions where a GVK can be resolved to
+type check against. The result of type checking will be part of the status of the performed policy.
+
+For example, accessing an unknown field will result a warning like this.
+
+```yaml
+...
+status:
+  expressionWarnings:
+    - expression: "object.replicas > 1" # should be "object.spec.replicas > 1"
+      warning: "no such field 'replicas'"
+```
+
 #### Enforcement Actions
 
-For phase 1, all violations implicitly result in a `deny` enforcement action.
+`ValidatingAdmissionPolicyBinding` resources may control how admission is
+enforced. This is performed using a single field. E.g.:
 
-For phase 2, we intend to support multiple enforcement actions.
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
+...
+spec:
+  validationActions: [Warn, Audit] # required field
+```
 
-Use cases:
+The enum options will be:
 
-- Cluster admin would like to rollout a policies, sometimes in bulk, without
+- `Deny`: Validation failures result in a denied request.
+- `Warn`: Validation failures are reported as warnings to the client. (xref: [Admisssion Webhook Warnings](https://kubernetes.io/blog/2020/09/03/warnings/#admission-webhooks))
+- `Audit`: Validation failures are published as audit events (see below Audit
+  Annotations section for details).
+
+If, in the future, `ValidatingAdmissionPolicy` also introduces enforcement
+action fields, this effective enforcement will be the set to the intersection of the
+the policy enforcement actions and the binding enforcement actions.
+
+Systems that need to aggregate validation failures may implement an [audit
+webhook
+backend](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/#webhook-backend). See
+below "Audit Events" for details.
+
+For singleton policies, since there is no separate binding resource, the
+`validationActions` field will be set on the policy definition in the same way
+that other binding fields are.
+
+Metrics will include validation action so that cluster administrators can monitor the
+validation failures of a binding before setting `validationActions` to `Deny`.
+
+This enables the following use cases:
+
+- A policy framework captures enforcement violations during dry run and
+  aggregates them. (E.g. When in DryRun mode, OPA Gatekeeper aggregates
+  violations and records them to the status of the constraint resource).
+  Including validation failures in audit events makes this possible to do
+  using a audit webhook backend.
+- Cluster admin would like to rollout policies, sometimes in bulk, without
   knowing all the details of the policies. During rollout the cluster admin
   needs a state where the policies being rolled out cannot result in admission
-  rejection.
+  rejection. With the enforcement field on bindings, cluster admins can decide
+  which initial actions to enable and then add actions until `Deny` is enabled.
+  The cluster admin may monitoring metrics, warnings and audit events along the
+  way.
 - A policy framework needs different enforcement actions at different
-  enforcement points.
-- Cluster admin would like to set specific enforcement actions for policy
-  violations.
+  enforcement points. Since this API defines the behavior of only the admission
+  enforcement point, higher level constructs can map to the actions of this
+  enforcement point as needed.
 
-We also intend to support multiple enforcement actions:
+Future work:
 
-- Deny
-- Audit annotation
-- Client warnings
+- ValidatingAdmissionPolicy resources might, in the future, add a `warnings`
+  field adjacent to the `validations` and `auditAnnotations` fields to declare
+  expressions only ever result in warnings. This would allow
+  ValidatingAdmissionPolicy authors to declare a expression as non-enforcing
+  regardless of `validationActions`.
+
+- ValidatingAdmissionPolicy resources, might, in the future, offer
+  per-expression enforcement actions (instead of a separate `warnings` field)
+  and combine these enforcement actions with the
+  ValidatingAdmissionPolicyBinding enforcement action to determine the effective
+  enforcement. This would be designed to simplify the workflow required to add
+  or update expression on an existing ValidatingAdmissionPolicy.
+
+#### Audit Annotations
+
+`ValidatingAdmissionPolicy` may declare [Audit
+  annotations](https://github.com/kubernetes/kubernetes/blob/97bbf07d3f3f20332912ee411fdf75ce84425e28/staging/src/k8s.io/api/admission/v1/types.go#L142)
+  in the policy definition. E.g.:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+...
+spec:
+  ...
+  validations:
+    - expression: <expression>
+  auditAnnotations:
+    - key: "my-audit-key"
+      valueExpression: <expression that evaluates to a string (and is recorded) or null (and is not recorded)>
+```
+
+`auditAnnotations` are independent of `validations`. A `ValidatingAdmissionPolicy`
+may contain only `validations`, only `auditAnnotations` or both.
+
+Auudit annotations are recorded regardless of whether a
+ValidatingAdmissionPolicyBinding's `validationActions` include `Audit`.
+
+The published annotation key will be of the form `<ValidatingPolicyDefinition
+name>/<auditAnnotation key>` and will be validated as a
+[QualifiedName](https://github.com/kubernetes/kubernetes/blob/dfa4143086bf504c6c72d5eee8a2210b8ed41b9a/staging/src/k8s.io/apimachinery/pkg/util/validation/validation.go#L43).
+
+The validation rule will be: `len(key) < QualifierName.maxLength - len(policy
+name) - 1` to accommodate the `<ValidatingPolicyDefinition
+name>/<auditAnnotation key>` audit annotation key format.
+
+If `valueExpression` returns a string, the audit annotation is published.  If
+`valueExpression` returns null, the audit annotation is omitted. No other return
+types will be supported.
+
+#### Audit Events
+
+All audit event keys are prefixed by `<ValidatingPolicyDefinition name>/`.
+
+At Metadata audit level or higher, when a validating admission binding fails,
+and the binding's `validationActions` includes `Audit`, any validation
+expression, details are included in the audit annotations for the audit event
+under the key `validation_failures`. E.g.:
+
+```yaml
+# the audit event recorded
+{
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "annotations": {
+        "ValidatingAdmissionPolicy/mypolicy.mygroup.example.com/validation_failure": "{\"expression\": 1, \"message\": \"x must be greater than y\", \"enforcement\": \"Deny\", \"binding\": \"mybinding.mygroup.example.com\"}"
+        # other annotations
+        ...
+    }
+    # other fields
+    ...
+}
+```
+
+Also, at Metadata audit level or higher, any audit annotations declared by the policy definition
+are included with the key provided. E.g.:
+
+```yaml
+# the audit event recorded
+{
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "annotations": {
+        "ValidatingAdmissionPolicy/mypolicy.mygroup.example.com/myauditkey": "my audit value"
+        # other annotations
+        ...
+    }
+    # other fields
+    ...
+}
+```
 
 #### Namespace scoped policy binding
 
@@ -1061,47 +1207,234 @@ Details to consider:
 
 #### CEL Expression Composition
 
+##### Use Cases
+
+###### Code re-use for complicated expressions
+
+A CEL expression may not be computationally expensive, but could still be
+intricate enough that copy-pasting could prove to be a bad decision later on
+in time. With the addition of the `messageExpression` field, more copy-pasting
+is expected as well. If a sufficiently complex expression ended up copy-pasted everywhere,
+and then needs to be updated somehow, it will need that update in every place
+it was copy-pasted. A variable, on the other hand, will only need to be updated
+in one place.
+
+###### Reusing/memoizing an expensive computation
+
+For a CEL expression that runs in O(n^2) time or worse (or otherwise
+takes a significant amount of time to execute), it would be nice to only run
+it when necessary. For instance, if multiple validation expressions used the
+same expensive expression, that expression could be refactored out into a
+variable.
+
+##### Match Conditions
+
+Note that the syntax of the `matchConditions` resource is intended to
+align with the [Admission Webhook Match Conditions KEP #3716](https://github.com/kubernetes/enhancements/pull/3717),
+so that KEP should be controlling with regard to deviations in the schema.
+This section is focused specifically on how the `matchConditions` concept can
+be applied to in-process admission.
+
+The match criteria in bindings are not expected to be able to cover all possible
+ways users may want to scope their policies. For example, there is no way to
+match off of kind, only resource. To provide extensibility for the match criteria
+without requiring modifying every validation rule individually, a global predicate
+system is needed. These predicates contain CEL statements that must be satisfied, otherwise
+the policy will be ignored. In order to keep bindings language-agnostic and to support
+singleton policies, the logic should live in the policy definition resource. To enable
+customization per-binding, the CEL statements should have access to the parameter resource.
+
+Here is an example of a policy definition using match conditions (under the `matchConditions` field):
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "replicalimit-policy.example.com"
+Spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: rules.example.com/v1
+    kind: ReplicaLimit
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["apps"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE", "UPDATE"]
+      resources:   ["deployments"]
+  matchConditions:
+    - name: 'is-deployment'
+      expression: 'metadata.kind == "Deployment"'
+    - name: 'not-in-excluded-namespaces'
+      expression: '!(metadata.namespace in params.excludedNamespaces)'
+  validations:
+    - expression: "object.spec.replicas <= params.maxReplicas"
+      reason: Invalid
+```
+
+For demonstration purposes, we assume `match` has no support for `excludedNamespaces`.
+
+Note that `matchConditions` and `validations` look similar, but `matchConditions` entries only have the
+`expression` field: their only function is to gate whether the expressions in `validations` are evaluated.
+
+`matchConditions` has the following behaviors:
+
+* Only the request object and parameters are accessible (no referential lookup)
+* All match conditions must be satisfied (evaluate to `true`) before `validations` are tested
+* If there is an error executing a match condition, the failure policy for the (definition, binding) tuple is invoked
+
+
 ##### Variables
 
-Each CEL "program" is a single expression. There is no support for vaiable
+Each CEL "program" is a single expression. There is no support for variable
 assignment. This can result in redundant code to traverse maps/arrays or
 dereference particular fields.
 
 We can support this in much the same way as cel-policy-template `terms`. These
 can be lazily evaluated while the validation expressions are evaluated
-(cel-policy-template does this). The results can also be memoized to avoid
-repeated evaluations if they are shared across validations.
+(cel-policy-template does this).
+
+A policy can include an additional `variables` section. This is an array
+containing one or more `name` and `expression` pairs, which can be used/re-used by
+the policy's validation expressions. These results are memoized on a
+per-validation basis, so if multiple expressions use the same spec variables,
+the expression that calculates the variable's value will only run once.
+
+The variables can be accessed as members of `variables`, which is an object
+that is exposed to CEL expressions (both validation expressions as well as
+other variables).
+
+For example:
 
 ```yaml
   variables:
     - name: metadataList
       expression: "spec.list.map(x, x.metadata)"
     - name: itemMetadataNames
-      expression: "metadataList.map(m, m.name)"
+      expression: "variables.metadataList.map(m, m.name)"
   validations:
-    - expression: "itemMetadataNames.all(name, name.startsWith('xyz-'))"
-    - expression: "itemMetadataNames.exists(name, name == 'required')"
+    - expression: "variables.itemMetadataNames.all(name, name.startsWith('xyz-'))"
+    - expression: "variables.itemMetadataNames.exists(name, name == 'required')"
 ```
+
+Variable names must be valid CEL names. What constitutes a
+valid CEL name can be found at CEL's [language definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax) under `IDENT`.
+This validity is checked at write time.
+
+For per-policy runtime cost limit purposes, variables count towards the runtime cost limit
+once per policy. The cost of each variable is computed when it is first evaluated in an
+expression, mirroring how the cost limit would be calculated if the variable's
+expression was embedded verbatim.  If the runtime cost limit is exceeded in the
+process, then evaluation halts. No individual variable or expression will be listed as the
+cause in the resulting message. Whether or not the request actually fails depends on the failure policy,
+however. For subsequent uses, inclusion of the variable has zero effect on the runtime
+cost limit. If the variable evaluates to an array or some other iterable, and some expression
+iterates on it, that of course contributes to the cost limit, but simply including the variable does
+not add the underlying expression's cost again.
+
+Variables are also subject to the per-expression runtime cost limit. Exceeding the per-expression
+runtime cost limit is always attributed to the variable, unlike the per-policy limit.
+
+Variables can only reference other variables that
+have been previously defined in the `variables` section, so circular references
+are not allowed.
+
+If an error ocurrs during variable evaluation, then the expression
+that caused it to be evaluated (since variable are always
+lazily-evaluated) also finishes with an error. Evaluation for that
+variable is not attempted again during the same validation; if any other
+expressions attempt to evaluate a variable that already failed an evaluation
+attempt, they will also be considered to have failed.
 
 #### Secondary Authz
 
-We have general agreement to include this as a feature, but need to provide
-a concrete design.
+We will support admission control use cases requiring permission checks:
 
-kube-apiserver authorizer checks (aka Secondary-authz checks) have been proposed
-as a way of doing things like:
-
-- Validate that only a user with a specific permission can set a particular
+- Validate that only a user with a specific permission can set a particular field.
+- Validate that only a controller responsible for a finalizer can remove it from the finalizers
   field.
-- Validate that only a controller responsible for a finalizer can remove it from
-  the finalizers field.
 
-This could be supported by matching criteria, or via CEL expression access, or both.
- 
-Use cases:
+To depend on an authz decision, validation expressions can use the `authorizer`
+variable, which performs authz checks for the admission request user (the same
+use as identified by `request.userInfo`), and which will be bound at evaluation
+time to an Authorizer object supporting receiver-style function overloads:
+
+| Symbol      | Type                                                                    | Description                                                                                     |
+|-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| path        | Authorizer.(path string) -> PathCheck                                   | Defines a check for an non-resource request path (e.g. /healthz)                                |
+| check       | PathCheck.(httpRequestVerb string) -> Decision                          | Checks if the user is authorized for the HTTP request verb on the path                          |
+| resource    | Authorizer.(kind string, group string, version string) -> ResourceCheck | Defines a check for API resources                                                               |
+| subresource | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies thath the check is for a subresource                                                  |
+| namespace   | ResourceCheck.(namespace string) -> ResourceCheck                       | Specifies that the check is for a namespace (if not called, the check is for the cluster scope) |
+| name        | ResourceCheck.(name string) -> ResourceCheck                            | Specifies that the check is for a specific resource name                                        |
+| check       | ResourceCheck.(apiVerb string) -> Decision                              | Checks if the admission request user is authorized for the API verb on the resource             |
+| allowed     | Decision.() -> bool                                                     | Is the admission request user authorized?                                                       |
+| denied      | Decision.() -> bool                                                     | Is the admission request user denied authorization?                                             |
+
+xref: https://kubernetes.io/docs/reference/access-authn-authz/authorization/#review-your-request-attributes for a details on
+authorization attributes.
+
+Example expressions using `authorizer`:
+
+- `authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed()`
+- `authorizer.path('/metrics').denied('get')`
+
+Note that this API:
+
+- Produces errors at compilation time when parameters are missing or improperly combined
+  (e.g. subresource with non-resource path, missing path or resource).
+- Is open to the addition of future knobs (e.g. impersonation).
+- Will have a limit on the number of authz checks generated during expression
+  evaluation, this will be enforced by setting a CEL evaluation cost to
+  performing each authz check that is high enough serve as an effective limit to
+  the total authz checks that can be performed. The limit will be picked
+  emperically by evaluating the resource costs (CPU cost primarily) of authz
+  checks. This will need to be set high enough to handle policies like "You must
+  be authorized to read every secret your pod mounts".
+
+Other considerations:
+
+- Since authorization decisions depend on an apiserver's authorizer, and the
+  ValidatingAdmissionPolicy plugin is supported on [aggregated API
+  servers](#aggregated-api-servers), the evaluation result of any validation expression involving
+  secondary authz inherently depends on which apiserver evalutes it.
+- A validation expression could be written such that it allows malicious clients to probe
+  permissions. Policy authors are responsible for careful use of client-provided inputs when
+  constructing authz checks.
+- Decisions can be stored either as a [variable](#variables) or as part of the implementation of the
+  object bound to the exposed `authorizer` object (i.e. caching decisions for identical checks
+  within a single policy evaluation) in order to prevent duplicate checks across multiple validation
+  expressions.
+- Authorization checks that require information from resources other than the
+  resource being admitted are possible but will be limited by eventual
+  consistency. Information from other resources can be accumulated by a controller
+  and written to a custom resources which can then be referenced by the `paramSource`
+  of a policy binding and accessed in CEL expressions via the `params` variable.
+
+
+CertificateApproval use case:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "certificate-approval-policy.example.com"
+spec:
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["certificates.k8s.io"]
+      apiVersions: ["*"]
+      operations:  ["UPDATE"]
+      resources:   ["certificatesigningrequests/approval"]
+  validations:
+  - expression: "authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed() || authorizer.resource('signers', 'certificates.k8s.io', '*').name([oldObject.spec.signerName.split('/')[0], '*'].join('/')).check('approve').allowed()"
+    reason: Forbidden
+    messageExpression: "user not permitted to approve requests with signerName %s".format([oldObject.spec.signerName])"
+```
+
+Other use cases in existing admission plugins:
 
 - PodSecurityPolicy (kube)
-- CertificateApproval (kube)
 - CertificateSigning (kube)
 - OwnerReferencesPermissionEnforcement (kube)
 - network.openshift.io/ExternalIPRanger
@@ -1111,7 +1444,7 @@ Use cases:
 - security.openshift.io/SecurityContextConstraint
 - security.openshift.io/SCCExecRestrictions
 
-From deads2k:
+Restricted Service Account use case (from deads2k):
 
 > Note that user.Extra in AdmissionReview has pod claims, which are valuable.
 
@@ -1127,9 +1460,25 @@ From deads2k:
 > permission, then its probably better to create something specifically for the
 > purpose.
 
-Looking up the pod (or any other additional resources) is not something we are
-currently planning to support in this KEP, but the use case is interesting and
-we should investigate with sig-auth.
+This enhancement makes
+`request.userInfo.extra['authentication.kubernetes.io/pod-uid']` available to
+admission policies. Looking up the pod (or any other additional resources) is
+makes this use case challenging. A controller that accumulates a `pod-uid ->
+node-name` map in a custom resource by watching all pods could then make the
+mapping available in a custom resource for the admission policy to consume using
+`paramSource`. 
+
+This would result in a CEL expression like:
+
+```
+object.spec.NodeName == params.nodeNamebyPodUID[request.userInfo.extra['authentication.kubernetes.io/pod-uid']]
+```
+
+But this would not scale well to clusters with large pod counts.
+
+If we were to offer a way to lookup arbitrary other resources, or even if
+we provided selective access to just some resources, this might become
+easier. This can explored as future work.
 
 #### Access to namespace metadata
 
@@ -1161,7 +1510,7 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
 
 - CEL estimated cost limits
 - CEL runtime cost limits
-- Go context cancelation as a way of halting CEL execution if the request
+- Go context cancellation as a way of halting CEL execution if the request
   context is canceled for any reason.
 
  Estimated cost is, unfortunately, not something we can offer for admission with
@@ -1170,11 +1519,11 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
  for the same cases where we provide informational type checking, in which case
  we can report any cost limit violations in the same way we report type checking
  violations. Note that for built-in types, where `max{Length,Items,Properties}`
- value valiations are not available, estimated cost calculations will not be
- nearly as helpful or actionable. I recommend we do not attempt any estimated
- cost calculations on built-in types until the value validations are available.
+ value validations are not available, estimated cost calculations will not be
+ nearly as helpful or actionable. We do not plan to enforce any estimated
+ cost calculations on ValidatingAdmissionPolicy.
 
- Runtime cost limits can should be established and enforced. Exceeding the cost
+ Runtime cost limits should be established and enforced. Exceeding the cost
  limit will trigger the `FailurePolicy`, so this will need to be documented, but
  unlike webhooks, runtime cost is deterministic (it is purely a function of the
  input data and the CEL expression and is independent of underlying hardware or
@@ -1182,7 +1531,7 @@ Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api
  webhook timeouts.
 
  The request's Go context will be passed in to all CEL evaluations such that
- cancelation halts CEL evaluation, if, for any reason, the context is canceled.
+ cancellation halts CEL evaluation, if, for any reason, the context is canceled.
 
 #### Safety Features
 
@@ -1219,7 +1568,10 @@ Plan:
 To consider:
 
 - labelSelector evaluation functions or other match evaluator functions ([original comment thread](https://github.com/kubernetes/enhancements/pull/3492#discussion_r981747317))
-- `string.format(string, list(dyn))` to make `messageExpression` more convenient.
+
+To implement:
+
+- `string.format` into CEL upstream ([tracking PR](https://github.com/google/cel-go/pull/617)) (TODO @DangerOnTheRanger: add tracking cel-go issue once available)
 
 #### Audit Annotations
 
@@ -1536,7 +1888,7 @@ Steps:
 
 1. Webhook is configured and in-use.
 2. `ValidatingAdmissionPolicy` created with `FailPolicy: Ignore`
-3. `ValidatingAdmissionPolicy` is monitored to ensure it behaves the same as te webhook (logs or audit annotations can be used)
+3. `ValidatingAdmissionPolicy` is monitored to ensure it behaves the same as the webhook (logs or audit annotations can be used)
 4. `ValidatingAdmissionPolicy` is updated to `FailPolicy: Fail`
 5. Verify the webhook never denies any requests. If the admission policy is
    equivalent, then policy will be run first and deny the request before
@@ -1716,7 +2068,7 @@ metadata:
   generation: 2
   ...
 status:
-  paramSource:
+  paramKind:
     apiVersion: "example.com/v1"
     kind: "fooLimits"
     generation: 5
@@ -2043,7 +2395,7 @@ well as the [existing list] of feature gates.
   - Will enabling / disabling the feature require downtime of the control
     plane?
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -2475,7 +2827,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: "validate-xyz.example.com"
 spec:
-  paramSource:
+  paramKind:
     group: rules.example.com
     kind: ReplicaLimit
     version: v1
@@ -2868,7 +3220,7 @@ For example, to validate all containers:
   validations:
     - scope: "spec.containers[*]"
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "scope.name + 'does not start with \'xyz\''"
+      message: "scope.name does not start with 'xyz'"
 ```
 
 To make it possible to access the path information in the scope, we can offer a
@@ -2882,7 +3234,7 @@ spec.x[xKey].y[yIndex].field
   validations:
     - scope: "x[xKey].y[yIndex].field"
       expression: "scope.startsWith('xyz-')"
-      messageExpression: "scopePath.xKey + ', ' + scopePath.yIndex + ': some problem'"
+      messageExpression: "'%s, %d: some problem'.format([scopePath.xKey, scopePath.yIndex])"
 ```
 
 Prior art:
@@ -2903,7 +3255,7 @@ Note: We considered extending to a list of scopes, e.g.:
   validations:
     - scopes: ["spec.containers[*]", "initContainers[*]", "spec.ephemeralContainers[*]"]
       expression: "scope.name.startsWith('xyz-')"
-      messageExpression: "scope.name + ' does not start with \'xyz\''"
+      message: "scope.name does not start with 'xyz'"
 ```
 
 But feedback was this is signficantly more difficult to understand.

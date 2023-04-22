@@ -1,4 +1,4 @@
-# KEP-3573: Device Manager Proposal
+# KEP-3573: Device Plugins
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -78,7 +78,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Device Manager Proposal is for a user to be able to enable vendor devices (e.g: GPUs) through
+Device Manager proposal is for a user to be able to enable vendor devices (e.g: GPUs) through
 the following simple steps:
   * `kubectl create -f http://vendor.com/device-plugin-daemonset.yaml`
   * When launching `kubectl describe nodes`, the devices appear in the node

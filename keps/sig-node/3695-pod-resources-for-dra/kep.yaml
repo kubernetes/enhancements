@@ -1,0 +1,56 @@
+title: Extend the PodResources API to include resources allocated by DRA
+kep-number: 3695
+authors:
+  - "@moshe010"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: implementable
+reviewers:
+  - "@ffromani"
+  - "@swatisehgal"
+approvers:
+  - "@sig-node-leads"
+see-also:
+  - "keps/sig-node/2403-pod-resources-allocatable-resources"
+  - "keps/sig-node/606-compute-device-assignment/"
+  - "keps/sig-node/2043-pod-resource-concrete-assigments/"
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.27"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.27"
+  beta: "v1.30"
+  stable: "v1.32"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: DynamicResourceAllocation
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+      - kubelet
+  - name: PodResourcesDynamicResource
+    components:
+      - kubelet
+  - name: PodResourcesGet
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - pod_resources_endpoint_requests_total
+  - pod_resources_endpoint_requests_list
+  - pod_resources_endpoint_requests_get
+  - pod_resources_endpoint_errors_get

@@ -10,6 +10,7 @@ participating-sigs:
 - wg-multitenancy
 - sig-scheduling
 status: implementable
+creation-date: 2019-02-28
 reviewers:
 - "@deads2k"
 - "@lavalamp"
@@ -19,21 +20,20 @@ reviewers:
 approvers:
 - "@deads2k"
 - "@lavalamp"
-creation-date: 2019-02-28
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "v1.27"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.18"
   beta: "v1.20"
-  stable: "v1.23"
+  stable: "v1.28"
 
 # The following PRR answers are required at alpha release.
 # List the feature gate name and the components for which it must be enabled.
@@ -47,9 +47,33 @@ disable-supported: true
 metrics:
 - apiserver_flowcontrol_rejected_requests_total
 - apiserver_flowcontrol_dispatched_requests_total
+- apiserver_flowcontrol_priority_level_seat_utilization
+- apiserver_flowcontrol_priority_level_request_utilization
+- apiserver_flowcontrol_read_vs_write_current_requests
+- apiserver_flowcontrol_current_r
+- apiserver_flowcontrol_dispatch_r
+- apiserver_flowcontrol_latest_s
+- apiserver_flowcontrol_next_s_bounds
+- apiserver_flowcontrol_next_discounted_s_bounds
 - apiserver_flowcontrol_current_inqueue_requests
 - apiserver_flowcontrol_request_queue_length_after_enqueue
 - apiserver_flowcontrol_request_concurrency_limit
 - apiserver_flowcontrol_current_executing_requests
+- apiserver_flowcontrol_request_concurrency_in_use
 - apiserver_flowcontrol_request_wait_duration_seconds
 - apiserver_flowcontrol_request_execution_seconds
+- apiserver_flowcontrol_watch_count_samples
+- apiserver_flowcontrol_epoch_advance_total
+- apiserver_flowcontrol_work_estimated_seats
+- apiserver_flowcontrol_request_dispatch_no_accommodation_total
+- apiserver_flowcontrol_nominal_limit_seats
+- apiserver_flowcontrol_lower_limit_seats
+- apiserver_flowcontrol_upper_limit_seats
+- apiserver_flowcontrol_demand_seats
+- apiserver_flowcontrol_demand_seats_high_watermark
+- apiserver_flowcontrol_demand_seats_average
+- apiserver_flowcontrol_demand_seats_stdev
+- apiserver_flowcontrol_demand_seats_smoothed
+- apiserver_flowcontrol_target_seats
+- apiserver_flowcontrol_seat_fair_frac
+- apiserver_flowcontrol_current_limit_seats

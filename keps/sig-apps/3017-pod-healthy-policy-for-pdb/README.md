@@ -1,4 +1,4 @@
-# KEP-3017: Pod Healthy Policy for PDBs
+# KEP-3017: Unhealthy Pod Eviction Policy for PDBs
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -10,7 +10,6 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
-  - [Changes to the disruption controller](#changes-to-the-disruption-controller)
   - [Changes to the eviction API](#changes-to-the-eviction-api)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -34,6 +33,10 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+- [Abandoned Alternative Implementation](#abandoned-alternative-implementation)
+  - [Changes to the disruption controller](#changes-to-the-disruption-controller)
+  - [Changes to the definition of healthy in a PDB according to the policy used.](#changes-to-the-definition-of-healthy-in-a-pdb-according-to-the-policy-used)
+- [Future Work](#future-work)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -76,11 +79,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Pod Disruption Budgets currently doesn't provide a way for users to specify how to handle
-pods that are Running, but not Ready. In this KEP, we add a new field `podHealthyPolicy` that
-allows users to specify whether those pods should be considered healthy and therefore
-covered by the constraints of the Pod Disruption Budget, or if they should be considered as
-already disrupted and thus not covered by a Pod Disruption Budget. 
+Pod Disruption Budgets currently don't provide a way for users to specify how to handle
+pods that are Running, but not Healthy (Ready).
+In this KEP, we add a new field `unhealthyPodEvictionPolicy` that allows users to specify
+what should happen to these not Healthy (Ready) pods. Whether they should be always evicted or kept
+in case the application guarded by a Pod Disruption Budget is not available and disrupted.
 
 ## Motivation
 
@@ -93,7 +96,7 @@ soon-to-be evicted pod has been copied/shared/replicated to other pod(s).
 Both use-cases have rough edges with the current implementation. 
 
 For users who only want to make sure a minimum number of pods are available, it is possible
-to end up in situations where pods that are Running but not Ready can not be evicted,
+to end up in situations where pods that are Running but not Healthy (Ready) can not be evicted,
 even when the total number of pods are higher than the threshold set in the PDB
 (https://github.com/kubernetes/kubernetes/issues/72320). This can block automated
 tooling like the cluster-autoscaler and draining of nodes.
@@ -109,26 +112,36 @@ doesn't provide any alternatives solutions for this problem.
 
 ### Goals
 
-- Prevent PDBs from deadlocking eviction due to non-Ready pods.
+- Prevent PDBs from deadlocking eviction due to non-Healthy (non-Ready) pods.
 - Make sure users who rely on PDBs for data-safety can continue to do so.
 
 ### Non-Goals
 
 - Providing a safe solution for preventing data-loss. Not because this isn't important, but 
 it is unclear if PDB is the right tool for this.
+- Allow customization of healthiness detection for pods guarded by a PodDisruptionBudget.
 
 ## Proposal
 
-The core issue here is whether a pod that is Running but not Ready is already disrupted, 
-and thus can be evicted without being constrained by a potential Pod Disruption Budget. Currently,
-the disruption controller only considers Running and Ready pods as healthy, thus that is 
-the basis for computing `allowedDisruptions`. The disruption API on the other hand, does require
-that `allowedDisruptions` is larger than 0 to evict a pod that is Running but not Ready. 
+The core issue here is whether a pod that is Running but not Healthy (Ready) is considered disrupted,
+and thus should be evicted without being potentially constrained by a Pod Disruption Budget.
 
-Adding a `podHealthyPolicy` field on the PDB API will allow the user to specify which
-behavior that are desired, and this will be consistently handled by the disruption controller, eviction
-API, and any other APIs that might use PDBs. If a `podHealthyPolicy` is not provided, the default
-will be the current behavior.
+Currently, we only allow evicting Running pods in case there are enough pods healthy
+(`.status.currentHealthy` is at least equal to `.status.DesiredHealthy`).
+This is to give the application best chance to achieve availability and prevent data loss
+by disallowing disruption of starting pods that have not become Healthy (Ready yet).
+
+We also want to allow unconditional eviction of Running pods for applications that do not have
+such strict constraints. This will allow cluster administrators to evict misbehaving applications
+that are guarded by a PDB and proceed with node drain.
+
+Adding a `unhealthyPodEvictionPolicy` field on the PDB API will allow the user to specify which
+behavior is desired. This will be consistently handled by the eviction API, and any other APIs
+that might use PDBs.  If a `unhealthyPodEvictionPolicy` is not provided, the default will be
+the current behavior.
+
+The behavior for pods in Pending, Succeeded or Failed phase will stay the same and such pods will
+always be considered for eviction.
 
 ### Risks and Mitigations
 
@@ -141,49 +154,47 @@ will be the current behavior.
 type PodDisruptionBudgetSpec struct {
 	
 	...
-	
-	// PodHealthyPolicy defines the criteria for when the disruption controller
-	// should consider a pod to be healthy.
-	// If no policy is specified, the legacy behavior will be used. It means
-	// only pods that are Running and Ready will be considered when the disruption
-	// controller computes "disruptionsAllowed", but all pods in the Running phase
-	// will be subject to the PDB on eviction.
-	// +optional
-	PodHealthyPolicy PodHealthyPolicy `json:"podHealthyPolicy,omitempty" protobuf:"bytes,4,opt,name=podHealthyPolicy"`
+    // UnhealthyPodEvictionPolicy defines the criteria for when unhealthy pods
+    // should be considered for eviction. Current implementation considers healthy pods,
+    // as pods that have status.conditions item with type="Ready",status="True".
+    //
+    // Valid policies are IfHealthyBudget and AlwaysAllow.
+    // If no policy is specified, the default behavior will be used,
+    // which corresponds to the IfHealthyBudget policy.
+    //
+    // Additional policies may be added in the future.
+    // Clients making eviction decisions should disallow eviction of unhealthy pods
+    // if they encounter an unrecognized policy in this field.
+    UnhealthyPodEvictionPolicy *UnhealthyPodEvictionPolicyType `json:"unhealthyPodEvictionPolicy,omitempty" protobuf:"bytes,4,opt,name=unhealthyPodEvictionPolicy"`
 }
 
-// PodHealthyPolicy defines the policy when a pod are considered healthy and therefore
-// covered by a PodDisruptionBudget.
-type PodHealthyPolicy string
+// UnhealthyPodEvictionPolicyType defines the criteria for when unhealthy pods
+// should be considered for eviction.
+// +enum
+type UnhealthyPodEvictionPolicyType string
 
 const (
-	// PodReady policy means that only pods that are both Running and Ready
-	// will be considered healthy by the disruption controller. Any pods that
-	// are not Ready are considered to already be disrupted and therefore will
-	// not be counted when computing "disruptionsAllowed" and can be evicted
-	// regardless of whether the criteria in a PDB is met.
-	PodReady PodHealthyPolicy = "PodReady"
-	
-	// PodRunning policy means that pods that are in the Running phase
-	// is considered healthy by the disruption controller, regardless of
-	// whether they are Ready or not. Any pods that are in the Running
-	// phase will be counted when computing "disruptionsAllowed" and
-	// will be subject to the PDB for eviction.
-	PodRunning PodHealthyPolicy = "PodRunning"
+    // IfHealthyBudget policy means that running pods (status.phase="Running"),
+    // but not yet healthy can be evicted only if the guarded application is not
+    // disrupted (status.currentHealthy is at least equal to status.desiredHealthy).
+    // Healthy pods will be subject to the PDB for eviction.
+    IfHealthyBudget UnhealthyPodEvictionPolicyType = "IfHealthyBudget"
+
+    // AlwaysAllow policy means that all running pods (status.phase="Running"),
+    // but not yet healthy are considered disrupted and can be evicted regardless
+    // of whether the criteria in a PDB is met. This means perspective running
+    // pods of a disrupted application might not get a chance to become healthy.
+    // Healthy pods will be subject to the PDB for eviction.
+    AlwaysAllow UnhealthyPodEvictionPolicyType = "AlwaysAllow"
 )
 ```
 
-### Changes to the disruption controller
-
-The disruption controller will be updated to use `podHealthyPolicy` to
-determine how it should compute the value of `disruptionsAllowed`.
-
 ### Changes to the eviction API
 
-The eviction API will be updated to use `podHealthyPolicy` to determine whether
-a pod which is Running but not Ready can be evicted regardless of the value of
+The eviction API will be updated to use `unhealthyPodEvictionPolicy` of a PDB to determine
+whether a pod which is Running but not Ready can be evicted regardless of the value of
 `disruptionsAllowed`. This will only be a behavioral change when users have specified
-a `podHealthyPolicy`, and will not require the actual API to change.
+a `unhealthyPodEvictionPolicy`, and will not require the actual API to change.
 
 ### Test Plan
 
@@ -207,7 +218,7 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-We assess that the disruption controller has adequate test coverage for places which might be impacted by
+We assess that the eviction api has adequate test coverage for places which might be impacted by
 this enhancement. Thus, no additional tests prior implementing this enhancement
 are needed.
 
@@ -222,8 +233,7 @@ together with explanation why this is acceptable.
 
 Unit tests covering:
   - The current behavior stays unchanged when the policy is not specified.
-  - Correct behavior for both policies in both the disruption controller and
-    the eviction API.
+  - Correct behavior for both policies in the eviction API.
   - Feature gate disablement.
 
 <!--
@@ -238,16 +248,23 @@ extending the production code to implement this enhancement.
 -->
 
 The core packages (with their unit test coverage) which are going to be modified during the implementation:
-- `k8s.io/kubernetes/pkg/controller/disruption`: `5 October 2022` - `77.7%` <!--(computing allowedDisruptions according to the podHealthyPolicy)-->
-- `k8s.io/kubernetes/pkg/apis/policy/validation`: `5 October 2022` - `93%`  <!--(validation of the PodDisruptionBudget configuration with regard to the PodHealthyPolicy)-->
+- `k8s.io/kubernetes/pkg/apis/policy/validation`: `5 October 2022` - `93%`  <!--(validation of the PodDisruptionBudget configuration with regard to the unhealthyPodEvictionPolicy)-->
 - `k8s.io/kubernetes/pkg/apis/policy/v1`: `5 October 2022` - `60%` <!--(extension of PodDisruptionBudgetSpec)-->
+- `k8s.io/kubernetes/pkg/registry/policy/poddisruptionbudget`: `8 November 2022` - `62.5%` <!--(create/update logic)-->
+- `k8s.io/kubernetes/pkg/registry/core/pod/storage`: `8 November 2022` - `74.2%` <!--(eviction logic)-->
+
+Alpha implementation:
+- `k8s.io/kubernetes/pkg/apis/policy/validation`: `7 December 2022` - `93.1%`  <!--(validation of the PodDisruptionBudget configuration with regard to the unhealthyPodEvictionPolicy)-->
+- `k8s.io/kubernetes/pkg/apis/policy/v1`: `7 December 2022` - `60%` <!--(extension of PodDisruptionBudgetSpec)-->
+- `k8s.io/kubernetes/pkg/registry/policy/poddisruptionbudget`: `7 December 2022` - `75%` <!--(create/update logic)-->
+- `k8s.io/kubernetes/pkg/registry/core/pod/storage`: `7 December 2022` - `78%` <!--(eviction logic)-->
+
 
 ##### Integration tests
 
 Integration tests covering:
   - The current behavior stays unchanged when the policy is not specified.
-  - Correct behavior for both policies in both the disruption controller and
-    the eviction API.
+  - Correct behavior for both policies in the eviction API.
   - Feature gate disablement.
 
 
@@ -260,6 +277,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 - <test>: <link to test coverage>
 -->
 
+[TestEvictionWithUnhealthyPodEvictionPolicy](https://github.com/kubernetes/kubernetes/blob/c8010537913422cc221cdd784936ff99817f621c/test/integration/evictions/evictions_test.go#L417): https://storage.googleapis.com/k8s-triage/index.html?test=UnhealthyPodEvictionPolicy
 
 ##### e2e tests
 
@@ -288,12 +306,17 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Beta
 
 - Feature gate enabled by default.
-- Existing E2E and conformance tests passing.
+- Integration test which exercises the functionality.
+- We want to keep the `spec.unhealthyPodEvictionPolicy` field null by default when not specified.
+  This should preserve the original behavior and behave the same as the `IfHealthyBudget` value.
+  This should be tested and documented.
+- manual test for upgrade->downgrade->upgrade path will be performed once 1.27 is released
 
 #### GA
 
 - Every bug report is fixed.
-- The disruption controller and the eviction API ignores the feature gate.
+- Introduce E2E tests for this field and confirm their stability.
+- The eviction API ignores the feature gate.
 
 #### Deprecation
 
@@ -314,61 +337,75 @@ This feature doesn't depend on the version for nodes.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: PodDisruptionBudgetPodHealthyPolicy
+    - Feature gate name: PDBUnhealthyPodEvictionPolicy
     - Components depending on the feature gate:
-      - kube-controller-manager
       - kube-apiserver
 - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 ###### Does enabling the feature change any default behavior?
 
-No, the behavior is only changed when users specify the `podHealthyPolicy` in
+No, the behavior is only changed when users specify the `unhealthyPodEvictionPolicy` in
 the PodDisruptionBudget spec.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, in that case the disruption controller and the eviction API will just
-use the default behavior.
+Yes, in that case the eviction API will just use the default behavior.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The disruption controller and the eviction API will again start using
-the `PodHealthyPolicy` if provided on a PDB.
+The eviction API will again start using the `unhealthyPodEvictionPolicy` if provided on a PDB.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, but they will be added for alpha.
+- [TestPodDisruptionBudgetStrategy](https://github.com/kubernetes/kubernetes/blob/06914bdaf51fc1b91501c332bd69d439cd370581/pkg/registry/policy/poddisruptionbudget/strategy_test.go#L96-L114)
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-It does not change the default behavior. Users will have to specify a policy
-on the PDB for behavior to be affected.
+Bugs could affect `/evictions` endpoint which would return server error in that case.
+It cannot directly affect workloads, but could potentially cause node drain to stall,
+which would have an effect on the cluster during an upgrade.
+
+When the rollback occurs, existing filled `.spec.unhealthyPodEvictionPolicy` fields will be ignored
+and the old eviction behavior will be enforced for these PDBs.
 
 ###### What specific metrics should inform a rollback?
 
-Unexpected controller-manager crashes or significant changes in the latency or depth of the disruption controller
-workqueue.
+Failing eviction requests could be an indicator. `apiserver_request_total{resource = "pods", subresource = "eviction"}` metric
+can be observed to detect increased rate of failing evictions.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+A manual test was performed, as follows:
+
+1. Create a cluster in 1.25.
+2. Upgrade to 1.26.
+3. Create Deployment A and PDB A targeting the pods of Deployment A using the `AlwaysAllow` UnhealthyPodEvictionPolicy.
+4. Downgrade to 1.25.
+5. Verify that the eviction continue to work without using the UnhealthyPodEvictionPolicy.
+6. Create another StatefulSet B and PDB B targeting the pods of StatefulSet B.
+7. Upgrade to 1.26.
+8. Verify that eviction of pods for Deployment A and StatefulSet B use the default behavior.
+   Verify that the `AlwaysAllow` UnhealthyPodEvictionPolicy can be set again to a PDB of Deployment A and test the eviction behavior
+
+TODO:
 A manual test will be performed, as follows:
 
-1. Create a cluster in 1.23.
-2. Upgrade to 1.24.
-3. Create Deployment A and PDB A targeting the pods of Deployment A using the `PodReady` PodHealthyPolicy.
-4. Downgrade to 1.23.
-5. Verify that the disruption controller and eviction continue to work without using the PodHealthyPolicy.
+1. Create a cluster in 1.26.
+2. Upgrade to 1.27.
+3. Create Deployment A and PDB A targeting the pods of Deployment A using the `AlwaysAllow` UnhealthyPodEvictionPolicy.
+4. Downgrade to 1.26.
+5. Verify that the eviction continue to work without using the UnhealthyPodEvictionPolicy (PDBUnhealthyPodEvictionPolicy feature gate disabled by default).
 6. Create another StatefulSet B and PDB B targeting the pods of StatefulSet B.
-7. Upgrade to 1.24.
-8. Verify that eviction of pods for Deployment A uses the `PodReady` PodHealthyPolicy and eviction of pods for
-StatefulSet B uses the default behavior.
+7. Upgrade to 1.27.
+8. Verify that eviction of pods for Deployment A uses the `AlwaysAllow` UnhealthyPodEvictionPolicy and eviction of pods for
+   StatefulSet B uses the default behavior.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -376,73 +413,38 @@ N/A
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+By checking `.spec.unhealthyPodEvictionPolicy` field of the PodDisruptionBudget.
+Pods belonging to this PDB should be evicted according to this policy.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-    - Event Reason:
-- [ ] API .status
-    - Condition name:
-    - Other field:
-- [ ] Other (treat as last resort)
-    - Details:
+- [x] Other (treat as last resort)
+    - Details: kube-apiserver logs and audit logs that track eviction requests can be examined to see
+      if the `UnhealthyPodEvictionPolicy` feature is working properly.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+This feature should not have an impact on the eviction request latency or availability.
+Eviction requests should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos)
+for serving mutating or read-only API calls.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+The following indicators should conform to the existing kube-apiserver SLIs.
 
-- [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-- [ ] Other (treat as last resort)
-    - Details:
+- [x] Metrics
+    - Metric name: apiserver_request_total
+      - [Optional] Aggregation method: resource = "pods", subresource = "eviction"
+      - Components exposing the metric: kube-apiserver
+    - Metric name: apiserver_request_duration_seconds
+      - [Optional] Aggregation method: resource = "pods", subresource = "eviction"
+      - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No
 
 ### Dependencies
 
@@ -454,8 +456,7 @@ No
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No, both the disruption controller and the eviction API already fetch the
-PDB from the API server.
+No, the eviction API already fetch the PDB from the API server.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -491,7 +492,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-No change from the existing behavior of the disruption controller and the eviction API.
+No change from the existing behavior of the eviction API.
 
 ###### What are other known failure modes?
 
@@ -513,6 +514,9 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - 2021-10-24: Proposed KEP for adding the new behavior in alpha status in 1.24.
+- 2022-11-11: Initial alpha implementation merged into 1.26
+- 2022-12-07: KEP rewritten to match the implementation (PodHealthyPolicy was renamed to UnhealthyPodEvictionPolicy)
+- 2023-02-06: Update for beta promotion
 
 ## Drawbacks
 
@@ -526,3 +530,52 @@ Changing the default behavior was considered but rejected for two reasons:
 * There are two separate use-cases for this feature and changing the behavior
   to support only one of them would create problems for other users.
 
+## Abandoned Alternative Implementation
+
+There is a noticeable difference to the original KEP as some behaviours were dropped.
+
+### Changes to the disruption controller
+
+We have removed changes to the disruption controller and computation of `disruptionsAllowed`.
+We have kept the scope only to the eviction API. It is better to split these changes into separate features
+in order to have simpler (less confusing), and more well-defined behavior for each feature.
+
+You can see possible followups for customizing the definition of healthiness in [Future Work](#future-work)
+
+### Changes to the definition of healthy in a PDB according to the policy used.
+
+We have decided that eviction policy should not change the meaning of a healthy pod as a single powerful field
+could introduce more confusion into how it affects the status of PodDisruptionBudget and Eviction API.
+
+`PodRunning` policy was measuring running pods and changing the computation of `disruptionsAllowed`,
+and it was removed from the original KEP.
+
+```golang
+const (
+	// PodRunning policy means that pods that are in the Running phase
+	// is considered healthy by the disruption controller, regardless of
+	// whether they are Ready or not. Any pods that are in the Running
+	// phase will be counted when computing "disruptionsAllowed" and
+	// will be subject to the PDB for eviction.
+	PodRunning PodHealthyPolicy = "PodRunning"
+)
+```
+
+## Future Work
+
+The current implementation considers healthy pods, as pods that have `.status.conditions` item with `type="Ready"` and `status="True"`.
+These pods are tracked via `.status.currentHealthy` field in the PDB status.
+
+This might not be enough for all use cases. For example the user might want to specifically handle pods that have their PVC
+on a specific node's local storage. The pod should block the node from being drained and going down to prevent a possible data loss,
+even in all situtations when the pod is not ready ([discussion](https://github.com/kubernetes/kubernetes/pull/105296#issuecomment-929503163))
+
+To support this, a new custom mechanism for defining healthiness needs to be defined to optionally replace the default implementation.
+This could be achieved with the help of user defined [Pod Readiness Gates](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/580-pod-readiness-gates/README.md),
+by introducing a new field in a PodDisruptionBudget that could receive either a list of condition types or a logical expression
+referencing these condition types to conclude whether the pod is healthy or not.
+This field and other options should be explored in an additional KEP.
+
+The disruption controller would update the existing fields in a PodDisruptionBudget status based on the custom healthiness.
+The eviction API would react to the existing fields in the same way as it does now,
+and in a combination with here proposed `PDBUnhealthyPodEvictionPolicy` feature.

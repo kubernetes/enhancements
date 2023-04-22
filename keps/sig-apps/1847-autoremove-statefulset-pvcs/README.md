@@ -32,15 +32,39 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha release](#alpha-release)
     - [Beta release](#beta-release)
+    - [GA release](#ga-release)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+      - [How can this feature be enabled / disabled in a live cluster?](#how-can-this-feature-be-enabled--disabled-in-a-live-cluster)
+      - [Does enabling the feature change any default behavior?](#does-enabling-the-feature-change-any-default-behavior)
+      - [Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement)
+      - [What happens if we reenable the feature if it was previously rolled back?](#what-happens-if-we-reenable-the-feature-if-it-was-previously-rolled-back)
+      - [Are there any tests for feature enablement/disablement?](#are-there-any-tests-for-feature-enablementdisablement)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+      - [How can a rollout fail? Can it impact already running workloads?](#how-can-a-rollout-fail-can-it-impact-already-running-workloads)
+      - [What specific metrics should inform a rollback?](#what-specific-metrics-should-inform-a-rollback)
+      - [Were upgrade and rollback tested? Was the upgrade-&gt;downgrade-&gt;upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)
+      - [Is the rollout accompanied by any deprecations and/or removals of features, APIs,](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis)
   - [Monitoring Requirements](#monitoring-requirements)
+      - [How can an operator determine if the feature is in use by workloads?](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads)
+      - [What are the SLIs (Service Level Indicators) an operator can use to determine](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine)
+      - [What are the reasonable SLOs (Service Level Objectives) for the above SLIs?](#what-are-the-reasonable-slos-service-level-objectives-for-the-above-slis)
+      - [Are there any missing metrics that would be useful to have to improve observability](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability)
   - [Dependencies](#dependencies)
+      - [Does this feature depend on any specific services running in the cluster?](#does-this-feature-depend-on-any-specific-services-running-in-the-cluster)
   - [Scalability](#scalability)
+      - [Will enabling / using this feature result in any new API calls?](#will-enabling--using-this-feature-result-in-any-new-api-calls)
+      - [Will enabling / using this feature result in introducing new API types?](#will-enabling--using-this-feature-result-in-introducing-new-api-types)
+      - [Will enabling / using this feature result in any new calls to the cloud provider?](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud-provider)
+      - [Will enabling / using this feature result in increasing size or count of the existing API objects?](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects)
+      - [Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any-operations-covered-by-existing-slisslos)
+      - [Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?](#will-enabling--using-this-feature-result-in-non-negligible-increase-of-resource-usage-cpu-ram-disk-io--in-any-components)
   - [Troubleshooting](#troubleshooting)
+      - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
+      - [What are other known failure modes?](#what-are-other-known-failure-modes)
+      - [What steps should be taken if SLOs are not being met to determine the problem?](#what-steps-should-be-taken-if-slos-are-not-being-met-to-determine-the-problem)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -50,14 +74,16 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+  - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -356,8 +382,11 @@ mechanism to run upgrade/downgrade tests.
 - (Done) Add unit, functional, upgrade and downgrade tests to automated k8s test.
 
 #### Beta release
+- (Done) Enable feature gate for e2e pipelines
+
+#### GA release
 - Validate with customer workloads
-- Enable feature gate for e2e pipelines
+
 
 ### Upgrade / Downgrade Strategy
 
@@ -378,7 +407,7 @@ are not involved so there is no version skew between nodes and the control plane
 
 ### Feature Enablement and Rollback
 
-* **How can this feature be enabled / disabled in a live cluster?**
+##### How can this feature be enabled / disabled in a live cluster?
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: StatefulSetAutoDeletePVC
     - Components depending on the feature gate
@@ -386,13 +415,13 @@ are not involved so there is no version skew between nodes and the control plane
       - kube-apiserver, to manage the new policy field in the StatefulSet
         resource (eg dropDisabledFields).
   
-* **Does enabling the feature change any default behavior?**
+##### Does enabling the feature change any default behavior?
   No. What happens during StatefulSet deletion differs from current behavior
   only when the user explicitly specifies the
   `PersistentVolumeClaimDeletePolicy`.  Hence no change in any user visible
   behavior change by default.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?**
+##### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
   Yes. Disabling the feature gate will cause the new field to be ignored. If the feature
   gate is re-enabled, the new behavior will start working.
   
@@ -405,7 +434,7 @@ are not involved so there is no version skew between nodes and the control plane
   be discovered during feature testing. In any case the mitigation will be to
   manually delete any PVCs.
   
-* **What happens if we reenable the feature if it was previously rolled back?**  
+##### What happens if we reenable the feature if it was previously rolled back?  
   In the simple case of reenabling the feature without concurrent StatefulSet
   deletion or scale-down, nothing needs to be done when the deletion policy has
   `whenScaled` set to `Delete`. When the policy has `whenDeleted` set to `Delete`, the
@@ -414,14 +443,14 @@ are not involved so there is no version skew between nodes and the control plane
   As above, if there is a concurrent scale-down or StatefulSet deletion, more
   care needs to be taken. This will be detailed further during feature testing.
 
-* **Are there any tests for feature enablement/disablement?**
+##### Are there any tests for feature enablement/disablement?
   Feature enablement and disablement tests will be added, including for
   StatefulSet behavior during transitions in conjunction with scale-down or
   deletion.
 
 ### Rollout, Upgrade and Rollback Planning
 
-* **How can a rollout fail? Can it impact already running workloads?**
+##### How can a rollout fail? Can it impact already running workloads?
   If there is a control plane update which disables the feature while a stateful
   set is in the process of being deleted or scaled down, it is undefined which
   PVCs will be deleted. Before the update, PVCs will be marked for deletion;
@@ -431,17 +460,17 @@ are not involved so there is no version skew between nodes and the control plane
   an operator that there is an essential race condition when a cluster update
   happens during a stateful set scale down or delete.
 
-* **What specific metrics should inform a rollback?**
+##### What specific metrics should inform a rollback?
   The operator can monitor `kube_persistent_volume_*` metrics from
   kube-state-metrics to watch for large numbers of undeleted
   PersistentVolumes. If consistent behavior is required, the operator can wait
   for those metrics to stablize.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+##### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   Yes. The race condition wasn't exposed, but we confirmed the PVCs were updated correctly.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
+##### Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?
   Enabling the feature also enables the `PersistentVolumeClaimRetentionPolicy`
   api field.
 
@@ -449,18 +478,18 @@ fields of API types, flags, etc.?**
 
 Metrics are provided by `kube-state-metrics` unless otherwise noted.
 
-* **How can an operator determine if the feature is in use by workloads?**
+##### How can an operator determine if the feature is in use by workloads?
   `kube_statefulset_persistent_volume_claim_retention_policy` will have nonzero
   counts for the `delete` policy fields.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
+##### What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?
   - Metric name: `kube_statefulset_status_replicas_current` should be near
     `kube_statefulset_stats_replicas_ready`.
     - [Optional] Aggregation method: `gauge`
     - Components exposing the metric: `kube-state-metrics`
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+##### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
   `kube_statefulset_stats_replicas_ready /
   kube_statefulset_stats_replicas_current` should be near 1.0, although as
@@ -468,15 +497,15 @@ the health of the service?**
   the stateful set controller, this will need to be tuned by an operator on a
   per-cluster basis.
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
+##### Are there any missing metrics that would be useful to have to improve observability 
+of this feature?
 
   kube-state-metrics have filled a gap in the traditional lack of metrics from
   core Kubernetes controllers.
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?**
+##### Does this feature depend on any specific services running in the cluster?
 
   No, outside of depending on the scheduler, the garbage collector and volume
   management (provisioning, attaching, etc) as does almost anything in
@@ -486,7 +515,7 @@ of this feature?**
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?**
+##### Will enabling / using this feature result in any new API calls?
 
   Yes and no. This feature will result in additional resource deletion calls, which will
   scale like the number of pods in the stateful set (ie, one PVC per pod and possibly one
@@ -499,41 +528,40 @@ of this feature?**
   there shouldn't be much overall increase beyond the second-order effect of
   this feature allowing more automation.
 
-* **Will enabling / using this feature result in introducing new API types?**
+##### Will enabling / using this feature result in introducing new API types?
   No.
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+##### Will enabling / using this feature result in any new calls to the cloud provider?
   PVC deletion may cause PV deletion, depending on reclaim policy, which will result in
   cloud provider calls through the volume API. However, as noted above, these calls would
   have been happening anyway, manually.
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
+##### Will enabling / using this feature result in increasing size or count of the existing API objects?
   - PVC, new ownerRef.
   - StatefulSet, new field
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by existing SLIs/SLOs?**
+##### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
   No. (There are currently no StatefulSet SLOs?)
   
   Note that scale-up may be slower when volumes were deleted by scale-down. This
   is by design of the feature.
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+##### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+  No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
   No.
 
 ### Troubleshooting
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
+##### How does this feature react if the API server and/or etcd is unavailable?
 
 PVC deletion will be paused. If the control plane went unavailable in the middle
 of a stateful set being deleted or scaled down, there may be deleted Pods whose
 PVCs have not yet been deleted. Deletion will continue normally after the
 control plane returns.
 
-* **What are other known failure modes?**
+##### What are other known failure modes?
   - PVCs from a stateful set not being deleted as expected.
     - Detection: This can be deteted by higher than expected counts of
       `kube_persistentvolumeclaim_status_phase{phase=Bound}`, lower than
@@ -548,7 +576,7 @@ control plane returns.
       `StatefulSet` controller, but Kubernetes does not test against external
       custom controller.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+##### What steps should be taken if SLOs are not being met to determine the problem?
 
 Stateful set SLOs are new with this feature and are in process of being
 evaluated. If they are not being met, the kube-controller-manager (where the
@@ -561,7 +589,7 @@ stateful set controller lives) should be examined and/or restarted.
 
   - 1.21, KEP created.
   - 1.23, alpha implementation.
-  - 1.26, graduation to beta.
+  - 1.27, graduation to beta.
 
 ## Drawbacks
 The StatefulSet field update is required.

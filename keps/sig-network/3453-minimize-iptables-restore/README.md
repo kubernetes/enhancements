@@ -181,17 +181,6 @@ any reported failures would be as likely to be the result of a bug in
 the checking code as they would be to indicate a bug in the actual
 syncing code.
 
-```
-<<[UNRESOLVED]>>
-
-We need to decide whether we are going to try to implement such a
-check and associated metric. (For the initial Alpha release, we will
-not; if we decide to add it later that may postpone the transition to
-Beta.)
-
-<<[/UNRESOLVED]>>
-```
-
 ## Design Details
 
 ### Test Plan
@@ -244,18 +233,10 @@ appropriate code for that.
 
 #### Beta
 
-- If we decide that we need to implement the "partial sync gives
-  different result than full sync" metric, then we will not go to Beta
-  until at least one release has passed with that metric available in
-  Alpha.
-
 - No new bugs
 - Feature actually improves performance (eg, in the `gce-5000Nodes`
   periodic job).
-- Real-world users trying out the Alpha feature have reported both
-  (a) no new bugs, and (b) improved performance.
-- General e2e tests modified to check the "partial sync failures"
-  metric at some point or points during the test run, TBD.
+- Additional metrics to distinguish partial and full resync times
 
 #### GA
 
@@ -280,7 +261,7 @@ ways.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
+- [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MinimizeIPTablesRestore`
   - Components depending on the feature gate:
     - kube-proxy
@@ -308,18 +289,22 @@ Nothing different than enabling it the first time.
 
 No, but:
 
-- even with the new code enabled, kube-proxy will always do a full
+- Even with the new code enabled, kube-proxy will always do a full
   sync the first time it syncs after startup (regardless of the
   pre-existing iptables state), so a test that switched from
   "disabled" to "enabled" would not really test anything different
   than a test that just brought up the cluster with the feature
   enabled in the first place.
 
-- even with the new code enabled, kube-proxy will periodically do a
+- Even with the new code enabled, kube-proxy will periodically do a
   full resync, so a test that switched from "enabled" to "disabled"
   would not really test anything that wouldn't also be tested by just
   letting kube-proxy run for a while with the feature enabled. (Where
   "a while" is much less than the length of an e2e run.)
+
+- The new code does not make any API writes (or change any other
+  persistent cluster or node state besides the iptables rules), so
+  there is nothing else that would need to be validated.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -344,17 +329,19 @@ rules.
 
 ###### What specific metrics should inform a rollback?
 
-We should add metrics to catch the failure modes noted above in [Risks
-and Mitigations](#risks-and-mitigations); in particular we should make
-it noticeable when failed partial resyncs occur.
+The new kube-proxy
+`sync_proxy_rules_iptables_partial_restore_failures_total` metric
+indicates when kube-proxy is falling back from a partial resync to a
+full resync due to an unexpected `iptables-restore` error. While it may
+eventually be non-0 due to unrelated unexpected `iptables-restore`
+errors, it should not ever be steadily increasing, and if it was, that
+would likely indicate a bug in the code.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+No, but as described above, the ordinary operation of kube-proxy with
+the feature enabled includes behavior that is equivalent to what would
+happen during an upgrade or rollback.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -376,33 +363,71 @@ is enabled, then it is in use.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-TBD
-
 Sync performance should be much better in large clusters, and should
-be somewhat independent of cluster size. We will have better answers
-after it sees more real-world(-ish) use.
+be somewhat independent of cluster size.
 
-`sync_proxy_rules_duration_seconds`
-`network_programming_duration_seconds`
-`sync_proxy_rules_endpoint_changes_pending`
-`sync_proxy_rules_service_changes_pending`
-`sync_proxy_rules_last_queued_timestamp_seconds` vs `sync_proxy_rules_last_timestamp_seconds`
+![graph of performance over time](5000Node-perf.png)
 
+Enabling this feature on the 5000-node scalability test immediately
+resulted in a 2x improvement to the
+`network_programming_duration_seconds` (aka
+`NetworkProgrammingLatency`) metric in the 50th, 90th, and 99th
+percentile buckets, with the 50th percentile going from about 27
+seconds to about 13 (the first drop in the graph above).
+
+On further investigation, we realized that it could theoretically have
+improved further, but the tests were running kube-proxy with
+`--iptables-min-sync-period 10s`, which introduced its own latency.
+Dropping them to `--iptables-min-sync-period 1s` (the default) caused
+a further drop in the 50th percentile latency, to about 5 seconds (the
+second drop in the graph above) though at a cost of increased CPU
+usage (since `syncProxyRules()`, the heart of kube-proxy, runs 10
+times as often now). (90th and 99th percentile latency did not change,
+because they are more dominated by the time it takes to do _full_
+resyncs. We realized that we should probably add separate partial/full
+sync time metrics to get more fine-grained information.)
+
+For 1.26 we added a new section to the kube-proxy documentation
+describing the kube-proxy `--sync-period` and
+`--iptables-min-sync-period` options ([website #28435]), which also
+mentions that the `MinimizeIPTablesRestore` feature reduces the need
+for `--iptables-min-sync-period` and that administrators using that
+feature should try out smaller min-sync-period values. For 1.27, we
+should add a note about the latency vs CPU usage tradeoff, and we
+should make sure to have a release note about this as well.
+
+[website #28435]: https://github.com/kubernetes/website/pull/38435
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name: sync_proxy_rules_iptables_partial_restore_failures_total
-  - [Optional] Aggregation method: ??? (I don't know what this means)
+  - Metric names:
+      - sync_proxy_rules_iptables_partial_restore_failures_total
+      - sync_full_proxy_rules_duration_seconds
+      - sync_partial_proxy_rules_duration_seconds
   - Components exposing the metric:
     - kube-proxy
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+As of 1.26, there are no metrics for distinguishing the average
+partial sync time from the average full sync time, which would help
+administrators to understand kube-proxy's performance better and
+figure out a good `--iptables-min-sync-period` value. We will add
+those metrics for beta.
+
+As discussed above under [Subtle Synchronization
+Delays](#subtle-synchronization-delays), it would theoretically be
+possible to have kube-proxy check the results of the partial restores
+against an equivalent full restore, to ensure that it got the result
+it was expecting. However, as also discussed there, this would be
+quite difficult to implement, and would involve much more new code
+than the actual partial-restores feature. Given that, and the fact
+that e2e testing during Alpha has not turned up any problems with the
+feature, it seems that if we tried to sanity check the rules in that
+way, a failure would be more likely to indicate a bug in the
+rule-sanity-checking code than a bug in the rule-generation code.
+Thus, we are not implementing such a metric.
 
 ### Dependencies
 
@@ -437,15 +462,21 @@ take by operations related to kube-proxy SLIs/SLOs.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-There should be no effect on disk or IO.
+There should be no effect on disk, IO, or RAM.
 
-There should be a major _decrease_ in CPU usage by kube-proxy's
-process group (not by kube-proxy itself, but by the `iptables-restore`
-processes it spawns.)
+The feature itself should result in a _decrease_ in the CPU usage of
+kube-proxy's process group, since the `iptables-restore` processes it
+spawns will have less work to do.
 
-The current PR would not result in any non-negligible increase in
-kube-proxy RAM usage, although some variations of it might involve
-keeping track of more information in memory between resyncs.
+(If administrators also follow the recommendation to lower
+`--iptables-min-sync-period`, then that will _increase_ kube-proxy CPU
+usage, since kube-proxy will be waking up to resync more often. But
+this is a CPU usage increase that the administrator is more-or-less
+explicitly requesting.)
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
 
 ### Troubleshooting
 
@@ -455,28 +486,19 @@ It does not change kube-proxy's behavior in this case.
 
 ###### What are other known failure modes?
 
-(No _known_ failure modes yet. See [Risks and
+No known failure modes. See [Risks and
 Mitigations](#risks-and-mitigations) for theorized potential failure
-modes.)
-
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+modes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
 - 2022-08-02: Initial proposal
+- 2022-10-04: Initial KEP merged
+- 2022-11-01: Code PR merged
+- 2022-11-10: Testing PRs merged; 5000Nodes test begins enabling the feature
+- 2022-12-08: Kubernetes 1.26 released
 
 ## Drawbacks
 

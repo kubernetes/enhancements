@@ -77,8 +77,10 @@ SIG Architecture for cross-cutting KEPs).
   - [Changes to Snapshot Controller](#changes-to-snapshot-controller)
   - [Changes to external-provisioner](#changes-to-external-provisioner)
   - [Test Plan](#test-plan)
-    - [Unit tests](#unit-tests)
-    - [E2E tests](#e2e-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Alpha -&gt; Beta](#alpha---beta)
@@ -214,7 +216,7 @@ need to identify the `VolumeSnapshotContent` mapped to the `VolumeSnapshot`
 from which the `PVC` is being created. 
 
 Either through software or via manual intervention, the annotation 
-`snapshot.storage.kubernetes.io/allowVolumeModeChange: true` needs to be applied
+`snapshot.storage.kubernetes.io/allow-volume-mode-change: true` needs to be applied
 to the `VolumeSnapshotContent`. If the backup software is a privileged user, 
 it will have `Update` and `Patch` permissions on `VolumeSnapshotContents`.
 
@@ -289,7 +291,7 @@ like below after this change:
 kind: VolumeSnapshotContent 
 metadata: 
 	annotations: 
-		- snapshot.storage.kubernetes.io/allowVolumeModeChange: "true"
+		- snapshot.storage.kubernetes.io/allow-volume-mode-change: "true"
 ...
 ```
 
@@ -328,7 +330,7 @@ As part of the preprocessing steps, it will:
    2. Get the `Spec.VolumeMode` of the `PVC` being created.
    If they do not match:
       1. Get all annotations on the `VolumeSnapshotContent` and verify if 
-      `snapshot.storage.kubernetes.io/allowVolumeModeChange: true` exists.
+      `snapshot.storage.kubernetes.io/allow-volume-mode-change: true` exists.
       If it does not exist, block volume provisioning by returning an error.
 4. In all other cases, let volume provisioning continue.
 
@@ -338,31 +340,71 @@ decisions.
 
 ### Test Plan
 
-E2E tests will be added for this design, that attempt to restore a volume with
-and without requisite privileges. 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-#### Unit tests
+##### Prerequisite testing updates
 
-- With feature flag disabled:
-  - attempt to convert volume mode when creating a `PVC`
-  from a `VolumeSnapshot`.
-- With feature flag enabled, attempt to convert volume mode when creating a `PVC`
-from a `VolumeSnapshot`:
-  - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
-  annotation present.
-  - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
-  annotation.
-  - With `Spec.SourceVolumeMode` set to `nil`.
+<!--
+ Based on reviewers feedback describe what additional tests need to be added prior
+ implementing this enhancement to ensure the enhancements have also solid foundations.
+ -->
 
-#### E2E tests
+None. New E2E tests will be added for the transition to beta.
+
+##### Unit tests
+
+<!--
+ In principle every added code should have complete unit test coverage, so providing
+ the exact set of tests will not bring additional value.
+ However, if complete unit test coverage is not possible, explain the reason of it
+ together with explanation why this is acceptable.
+ -->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+The unit tests were added to the CSI external-provisioner repo. 
+
+- https://github.com/kubernetes-csi/external-provisioner/pull/726/
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- No integration tests added.
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
 
 The feature flag will be enabled for e2e tests. The tests will attempt to convert volume 
 mode when creating a `PVC` from a `VolumeSnapshot`:
-  - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
-    annotation present.
-  - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allowVolumeModeChange: true`
-    annotation.
-  - With `Spec.SourceVolumeMode` set to `nil`.
+  - With `Spec.SourceVolumeMode` populated and `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
+    annotation present - https://github.com/kubernetes-csi/external-provisioner/pull/867/files: https://testgrid.k8s.io/sig-storage-csi-external-provisioner#canary
+  - With `Spec.SourceVolumeMode` populated but no `snapshot.storage.kubernetes.io/allow-volume-mode-change: true`
+    annotation - https://github.com/kubernetes-csi/external-provisioner/pull/832: https://testgrid.k8s.io/sig-storage-csi-external-provisioner#canary
+  - With `Spec.SourceVolumeMode` set to `nil` - https://github.com/kubernetes-csi/external-provisioner/pull/867/files: https://testgrid.k8s.io/sig-storage-csi-external-provisioner#canary
 
 ### Graduation Criteria
 
@@ -422,7 +464,7 @@ unauthorized conversion of the volume mode.
   seconds of downtime until the newer Pods are Running. There will not be any 
   effect on the previously running applications.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
     No
 
 ###### Does enabling the feature change any default behavior?
@@ -468,12 +510,19 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Due to the feature gate on the external-provisioner, rolling out this feature
+does not affect existing Pods that use PVCs. It also does not affect 
+VolumeSnapshots that are created prior to rolling out the feature, ie, the
+volume mode of an existing VolumeSnapshot can be modified while creating a PVC.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- persistentvolumeclaim_provision_failed_total
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -483,11 +532,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Yes. The feature flag was enabled and disabled separately in the csi-provisioner and snapshot-controller.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -503,6 +556,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+If the feature gate is enabled in the external-provisioner and snapshot-controller,
+this feature will always be in use when creating a PVC from a VolumeSnapshot.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -514,13 +570,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Events
+  - Event Reason: ProvisioningFailed
+  - Event Message: Failed to provision volume with StorageClass "csi-hostpath-sc": error getting handle for DataSource Type 
+  VolumeSnapshot by Name new-snapshot-demo: requested volume default/hpvc-restore modifies the mode of the source volume 
+  but does not have permission to do so. snapshot.storage.kubernetes.io/allow-volume-mode-change annotation is not present 
+  on snapshotcontent snapcontent-8d709f2e-db04-444f-aae2-e17d6c5398dd
+
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -539,18 +595,22 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+We will add new labels to the existing persistentvolumeclaim_provision_failed_total metric 
+for the volume data source and status code.
+The per-day percentage of calls with error status code <= 1. 
+However the failure will always happen as long as the feature is correctly enabled and the
+annotations are not applied correctly to VolumeSnapshotContent objects. 
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+    - Metric name: persistentvolumeclaim_provision_failed_total
+    - [Optional] Aggregation method:
+    - Components exposing the metric: external-provisioner
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -558,6 +618,9 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+There are no metrics for persistentvolumeclaims created from volumesnapshots. This KEP aims to add those metrics to 
+the external-provisioner.
 
 ### Dependencies
 
@@ -582,12 +645,16 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+- [external-provisioner]
+    - Usage description: Failure events are emitted as events by the external-provisioner.
+        - Impact of its outage on the feature: Outage of this component will prevent error reporting to users. 
+        - Impact of its degraded performance or high-error rates on the feature: Outage of this component will prevent error reporting to users.
+
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-
-This feature does not add any new API calls. 
+This feature adds an event write to the API server when PVC creation is blocked.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -609,11 +676,15 @@ The latency of CSI's `CreateVolume` may increase due to this change, when the
 `Spec.DataSource` field points to a `VolumeSnapshot` instance. This is because
 there is an additional check to determine whether volume provisioning must 
 continue. However, this increase is expected to be minimal as there are no new
-API calls. 
+API calls and the volume spec has already been loaded into memory of the external-provisioner.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature does not introduce any resource exhaustive operations.
 
 ### Troubleshooting
 
@@ -626,6 +697,10 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+In case PVC creation is blocked due to this feature, the failure event will not be emitted
+due to the unavailability of the API server. Users will need to refer to the external-provisioner
+logs to determine why PVC creation is failing.
 
 ###### What are other known failure modes?
 
@@ -643,6 +718,9 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+The user needs to read the logs of the external-provisioner to determine the reason
+behind why PVC creation is failing.
 
 ## Implementation History
 

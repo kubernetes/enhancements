@@ -12,12 +12,13 @@ approvers:
   - "@soltysh"
 
 creation-date: 2021-04-06
-last-updated: 2022-01-20
+last-updated: 2023-01-12
 
 status: implementable
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.24"
+latest-milestone: "v1.27"
 
 milestone:
   alpha: "v1.24"
+  beta: "v1.27"

@@ -15,7 +15,7 @@ approvers:
   - "@brancz"
 creation-date: 2019-01-31
 last-updated: 2021-02-03
-status: implementable
+status: implemented
 see-also:
 replaces:
 stage: stable

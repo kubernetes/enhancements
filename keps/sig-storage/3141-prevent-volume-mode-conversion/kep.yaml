@@ -1,11 +1,11 @@
-title: KEP Template
+title: Prevent unauthorised volume mode conversion
 kep-number: 3141
 authors:
   - "@RaunakShah"
   - "@xing-yang"
 owning-sig: sig-storage
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2022-01-17
 reviewers:
   - "@jsafrane"
@@ -17,18 +17,18 @@ approvers:
   - "@liggitt"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.24"
+latest-milestone: "v1.27"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.24"
-  beta: "v1.25"
-  stable: "v1.26"
+  beta: "v1.27"
+  stable: "v1.28"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -39,3 +39,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - persistentvolumeclaim_provision_total
+  - persistentvolumeclaim_provision_failed_total
+  - persistentvolumeclaim_provision_duration_seconds

@@ -87,6 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Open Questions](#open-questions)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -251,6 +252,12 @@ https://github.com/kubernetes/kubectl/issues/524
 #### Story 3
 
 [UNRESOLVED] As a user I would like to use different preferences per context.
+
+#### Story 4
+
+As a user I would like to be able to opt out of deprecation warnings.
+
+https://github.com/kubernetes/kubectl/issues/1317
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -569,7 +576,7 @@ well as the [existing list] of feature gates.
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
+    of a node? No.
 
 ###### Does enabling the feature change any default behavior?
 

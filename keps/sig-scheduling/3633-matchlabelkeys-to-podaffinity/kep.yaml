@@ -1,0 +1,29 @@
+title: Introduce MatchLabelKeys to PodAffinity and PodAntiAffinity
+kep-number: 3633
+authors:
+  - "@sanposhiho"
+owning-sig: sig-scheduling
+status: provisional
+creation-date: 2022-11-09
+reviewers:
+  - "@Huang-Wei"
+approvers:
+  - "@Huang-Wei"
+
+see-also:
+  - "/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades"
+
+stage: alpha
+
+latest-milestone: "v1.27"
+
+milestone:
+  alpha: "v1.27"
+  beta: "v1.28"
+  stable: "v1.30"
+
+feature-gates:
+  - name: MatchLabelKeysInPodAffinity
+    components:
+      - kube-scheduler
+disable-supported: true

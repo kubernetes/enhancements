@@ -3,6 +3,7 @@ kep-number: 2831
 authors:
   - "@husky-parul"
   - "@somalley"
+  - "@dashpole"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-architecture
@@ -10,20 +11,24 @@ participating-sigs:
 status: implementable
 creation-date: 2021-07-21
 reviewers:
+  - "@saschagrunert"
+  - "@vrutkovs"
   - "@dashpole"
   - "@ehashman"
+  - "@wojtek-t"
 approvers:
   - "@dashpole"
   - "@ehashman"
+  - "@wojtek-t"
 see-also:
   - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/647-apiserver-tracing"
 replaces:
-stage: alpha
-latest-milestone: "v1.25"
+stage: beta
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.25"
-  beta: "v1.26"
-  stable: "v1.27"
+  beta: "v1.27"
+  stable: "v1.28"
 feature-gates:
   - name: KubeletTracing
     components:

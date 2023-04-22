@@ -131,7 +131,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -142,7 +142,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -640,7 +640,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-No, unit and integration tests will be added.
+No. The unit tests that are exercising the `switch` of feature gate itself  will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -659,6 +659,12 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+It won't impact already running workloads because it is an opt-in feature in scheduler.
+But during a rolling upgrade, if some apiservers have not enabled the feature, they will not
+be able to accept and store the field "MatchLabelKeys" and the pods associated with these 
+apiservers will not be able to use this feature. As a result, pods belonging to the 
+same deployment may have different scheduling outcomes.
+
 
 ###### What specific metrics should inform a rollback?
 
@@ -666,6 +672,9 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+- If the metric `schedule_attempts_total{result="error|unschedulable"}` increased significantly after pods using this feature are added.
+- If the metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` increased to higher than 100ms on 90% after pods using this feature are added.  
+
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -674,12 +683,60 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Yes, it was tested manually by following the steps below, and it was working at intended.
+1. create a kubernetes cluster v1.26 with 3 nodes where `MatchLabelKeysInPodTopologySpread` feature is disabled.
+2. deploy a deployment with this yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  replicas: 12 
+  selector:
+    matchLabels:
+      foo: bar
+  template:
+    metadata:
+      labels:
+        foo: bar
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              foo: bar
+          matchLabelKeys:
+            - pod-template-hash
+```
+3. pods spread across nodes as 4/4/4
+4. update the deployment nginx image to `nginx:1.15.0`
+5. pods spread across nodes as 5/4/3
+6. delete deployment nginx
+7. upgrade kubenetes cluster to v1.27 (at master branch) while `MatchLabelKeysInPodTopologySpread` is enabled.
+8. deploy a deployment nginx like step2
+9. pods spread across nodes as 4/4/4
+10. update the deployment nginx image to `nginx:1.15.0`
+11. pods spread across nodes as 4/4/4
+12. delete deployment nginx
+13. downgrade kubenetes cluster to v1.26  where `MatchLabelKeysInPodTopologySpread` feature is enabled.
+14. deploy a deployment nginx like step2
+15. pods spread across nodes as 4/4/4
+16. update the deployment nginx image to `nginx:1.15.0`
+17. pods spread across nodes as 4/4/4
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No.
 
 ### Monitoring Requirements
 
@@ -694,6 +751,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Operator can query pods that have the `pod.spec.topologySpreadConstraints.matchLabelKeys` field set to determine if the feature is in use by workloads. 
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -706,13 +764,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: We can determine if this feature is being used by checking deployments that have only `MatchLabelKeys` set in `TopologySpreadConstraint` and no `LabelSelector`. These Deployments will strictly adhere to TopologySpread after both deployment and rolling upgrades if the feature is being used.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -730,6 +783,7 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+Metric plugin_execution_duration_seconds{plugin="PodTopologySpread"} <= 100ms on 90-percentile.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -737,12 +791,10 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Component exposing the metric: kube-scheduler
+    - Metric name: `plugin_execution_duration_seconds{plugin="PodTopologySpread"}`
+    - Metric name: `schedule_attempts_total{result="error|unschedulable"}`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -750,6 +802,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+Yes. It's helpful if we have the metrics to see which plugins affect to scheduler's decisions in Filter/Score phase. 
+There is the related issue: https://github.com/kubernetes/kubernetes/issues/110643 . It's very big and still on the way.
 
 ### Dependencies
 
@@ -773,6 +827,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No.
 
 ### Scalability
 
@@ -800,6 +855,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -809,6 +865,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -817,6 +874,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -826,6 +884,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -837,6 +896,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+Yes. there is an additional work: the scheduler will use the keys in `matchLabelKeys` to look up label values from the pod and AND with `LabelSelector`.
+Maybe result in a very samll impact in scheduling latency which directly contributes to pod-startup-latency SLO.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -849,6 +910,20 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+No.
 
 ### Troubleshooting
 
@@ -861,6 +936,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+If the API server and/or etcd is not available, this feature will not be available. 
+This is because the scheduler needs to update the scheduling results to the pod via the API server/etcd.
 
 ###### What are other known failure modes?
 
@@ -876,8 +953,18 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+- Check the metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` to determine 
+  if the latency increased. If increased, it means this feature may increased scheduling latency. 
+  You can disable the feature `MatchLabelKeysInPodTopologySpread` to see if it's the cause of the 
+  increased latency.
+- Check the metric `schedule_attempts_total{result="error|unschedulable"}` to determine if the number 
+  of attempts increased. If increased, You need to determine the cause of the failure by the event of 
+  the pod. If it's caused by plugin `PodTopologySpread`, You can further analyze this problem by looking 
+  at the scheduler log.
+
 
 ## Implementation History
 
@@ -892,6 +979,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
  - 2022-03-17: Initial KEP
+ - 2022-06-08: KEP merged
+ - 2023-01-16: Graduate to Beta
 
 ## Drawbacks
 

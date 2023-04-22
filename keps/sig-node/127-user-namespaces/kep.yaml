@@ -15,7 +15,7 @@ approvers:
   - "@derekwaynecarr"
 
 stage: alpha
-latest-milestone: "v1.25"
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.25"
 

@@ -16,6 +16,7 @@
   - [Timestamp of the Pod Status](#timestamp-of-the-pod-status)
   - [Runtime Service Changes](#runtime-service-changes)
   - [Pod Status Update in the Cache](#pod-status-update-in-the-cache)
+  - [Compatibility Check](#compatibility-check)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -23,6 +24,12 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Beta (enabled by default)](#beta-enabled-by-default)
+      - [Stress Test](#stress-test)
+      - [Recovery Test](#recovery-test)
+      - [Retries with Backoff Logic](#retries-with-backoff-logic)
+      - [Generic PLEG Continuous Validation](#generic-pleg-continuous-validation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -42,9 +49,9 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -53,7 +60,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -271,6 +278,10 @@ func (c *cache) Set(id types.UID, status *PodStatus, err error, timestamp time.T
 
 This has no impact on the existing `Generic PLEG` when used without `Evented PLEG` because its the only entity that sets the cache and it does so every second (if needed) for a given pod.
 
+### Compatibility Check
+
+For this feature to work Kubelet needs to be used with a compatible CRI Runtime that is capable of generating CRI Events. During the Kubelet start up if it detects that CRI Runtime doesn't support generating and streaming CRI Events, it should automatically fall back to using `Generic PLEG`
+
 
 ### Test Plan
 
@@ -333,6 +344,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 - Existing Pod Lifecycle tests must pass fine even after increasing the relisting frequency.
+- E2E Node Conformance non-blocking [presubmit job](https://testgrid.k8s.io/sig-node-presubmits#pr-crio-cgrpv1-evented-pleg-gce-e2e)
+- E2E Node Conformance non-blocking [periodic job](https://testgrid.k8s.io/sig-node-cri-o#ci-crio-cgroupv1-evented-pleg)
 
 
 ### Graduation Criteria
@@ -340,6 +353,49 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Feature implemented behind a feature flag
 - Existing `node e2e` tests around pod lifecycle must pass
+
+#### Beta
+- Add E2E Node Conformance presubmit job in CI 
+- Add E2E Node Conformance periodic job in CI
+
+#### Beta (enabled by default)
+##### Stress Test
+To test the performance and scalability of Evented PLEG, it is necessary to generate a large number of CRI Events by creating and deleting a significant number of containers within a short period of time. The following steps outline the stress test:
+
+Since this is a disruptive stress test, it should be part of a node e2e `Serial` job. CRI Events are generated per container, and therefore, the test should create a substantial number of containers within a single pod. After creation, these containers should run to completion and then be removed by the kubelet. This process will ensure the generation of CONTAINER_CREATED_EVENT, CONTAINER_STARTED_EVENT, CONTAINER_STOPPED_EVENT, and CONTAINER_DELETED_EVENT.
+
+The test should continue to create these containers until the histogram metric `evented_pleg_connection_latency_seconds` begins to show distinct latency values in its 1-second bucket. This indicates that it is taking 1 second or longer for an event to be observed by the kubelet after getting generated by the runtime. Typical values for this latency are around 0.001 seconds, so it is safe to assume 1 second as a measure indicates that the system is under stress.
+
+Once the `evented_pleg_connection_latency_seconds` is observed to be greater than 1 second, new container creation is halted, and the rest of the already created containers are run to completion. At this point, `kubelet_evented_pleg_connection_latency_seconds_count` can be used to determine the total number of CRI Events generated during this test.
+
+##### Recovery Test
+To test the ability of the Kubelet to recover the latest state of a container after a restart, a disruption test should be included in the node e2e Serial job. The test should involve creating a container with a sufficient time to completion (e.g. sleep 20), and then immediately stopping the Kubelet once the container enters the `Running` state. The CRI runtime should emit CRI events indicating the change in container state, but the Kubelet will miss the `CONTAINER_STOPPED_EVENT` for that container.
+
+To validate the Kubelet's ability to recover the latest state of the container, the test should query the CRI endpoint to confirm that the container has ran to completion successfully. Once the Kubelet is started again, it should be able to query the CRI runtime and update its cache with the latest state of the container. If the Kubelet accurately reports the state of the container as `Completed`, the test will be considered passed.
+
+##### Retries with Backoff Logic
+Currently, the Kubelet attempts to reconnect five times before falling back on Generic PLEG in the event of errors encountered during the streaming connection with CRI Runtime. However, in situations where the CRI Runtime is taken down for maintenance purposes, the Kubelet may exhaust all of its reconnection attempts and never try again, resulting in the usage of `Generic PLEG` despite the CRI Runtime's compatibility with `Evented PLEG`. To address this issue, a backoff logic with exponentially increasing sequence and an upper limit should be implemented to retry re-establishing the connection. Once the upper limit is reached, it should periodically try with that value. By doing so, the Kubelet will be able to reconnect to the CRI Runtime even after multiple attempts have failed, and it will be able to utilize `Evented PLEG` when possible. e.g.
+
+```
+Retry immediately
+Retry after 1 second
+Retry after 2 seconds
+Retry after 4 seconds
+Retry after 8 seconds
+Retry after 16 seconds
+Retry after 32 seconds
+Retry after 64 seconds
+Retry after every 60 seconds indefinitely
+```
+
+##### Generic PLEG Continuous Validation
+Make sure existing jobs in following test grid tabs that use `Generic PLEG` continue to use it by making sure that `Evented PLEG` is disabled for them. 
+
+https://testgrid.k8s.io/sig-node-release-blocking
+https://testgrid.k8s.io/sig-node-kubelet
+https://testgrid.k8s.io/sig-node-containerd
+https://testgrid.k8s.io/sig-node-cri-o
+https://testgrid.k8s.io/sig-node-presubmits
 
 ### Upgrade / Downgrade Strategy
 
@@ -379,8 +435,7 @@ If reenabled, kubelet will again start updating container statuses using CRI eve
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, unit tests for the feature when enabled and disabled will be implemented in both kubelet
-
+These [unit test](https://github.com/kubernetes/kubernetes/blob/ca70940ba8c375bc69091822a9d52bcb7925de3b/pkg/kubelet/pleg/evented_test.go#L47) performs a health check on Evented PLEG.
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -409,6 +464,14 @@ that might indicate a serious problem?
 -->
 
 If users observe incosistancy in the container statuses reported by the kubelet and the CRI runtime (e.g. using a tool like `crictl`) after enabling this feature, they should consider rolling back the feature.
+
+Apart from that cluster admins can monitor the state of evented PLEG's connection with the CRI runtime using following metrics, 
+
+* `evented_pleg_connection_error_count` - The count of errors encountered during the establishment of streaming connection with the CRI runtime.
+* `evented_pleg_connection_success_count` - The count of successful streaming connections with the CRI runtime.
+* `evented_pleg_connection_latency_seconds` - The latency of streaming connection with the CRI runtime, measured in seconds.
+* `evented_pleg_notifications_received` - The number of notifications received through streaming connection with the CRI runtime.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -416,7 +479,20 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-N/A for alpha release. But we will add the tests for beta release.
+
+Following scenarios were tested in manual tests, 
+
+Scenario 1: Kubelet Upgrade without Corresponding CRI Runtime Upgrade
+
+Step 1: Kubelet is upgraded but CRI runtime remains unchanged. Kubelet falls back to using the Generic PLEG as the CRI runtime does not emit any CRI events.
+Step 2: Kubelet is downgraded, but the CRI runtime version remains the same. Kubelet continues to work with the existing Generic PLEG.
+Step 3: If the Kubelet is upgraded again, it behaves similarly to step 1.
+
+Scenario 2: Kubelet and CRI Runtime Upgrade Together
+
+Step 1: Both the Kubelet and CRI runtime are upgraded. Since the CRI runtime emits CRI events, Kubelet uses the Evented PLEG with an increased relisting period for the Generic PLEG.
+Step 2: Kubelet and CRI runtime are downgraded. Kubelet defaults to using the Generic PLEG.
+Step 3: If the Kubelet is upgraded again, it behaves similarly to Scenario 1, Step 1.  
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
@@ -564,6 +640,10 @@ No.
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -589,6 +669,8 @@ Disabling this feature in the kubelet will revert to the existing relisting PLEG
 ## Implementation History
 
 - PR for required CRI changes - https://github.com/kubernetes/kubernetes/pull/110165
+- PR for presubmit Node e2e job - https://github.com/kubernetes/test-infra/pull/28366
+- PR for periodic Node e2e job - https://github.com/kubernetes/test-infra/pull/28592
 
 ## Drawbacks
 

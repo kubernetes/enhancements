@@ -18,7 +18,7 @@ creation-date: 2018-07-24
 last-updated: 2019-02-26
 status: implemented
 see-also:
-  - n/a
+  - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/3638-kubectl-plugin-subcommands"
 replaces:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/cli/kubectl-extension.md"
   - "https://github.com/kubernetes/community/pull/481"

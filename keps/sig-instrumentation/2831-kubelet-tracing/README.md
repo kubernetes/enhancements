@@ -9,9 +9,10 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Continuous Trace Collection](#continuous-trace-collection)
-      - [Example Scenarios](#example-scenarios)
+    - [Continuous trace collection](#continuous-trace-collection)
+      - [Example scenarios](#example-scenarios)
   - [Tracing Requests and Exporting Spans](#tracing-requests-and-exporting-spans)
+  - [Connected Traces with Nested Spans](#connected-traces-with-nested-spans)
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
   - [Kubelet Configuration](#kubelet-configuration)
 - [Design Details](#design-details)
@@ -43,16 +44,16 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -105,7 +106,7 @@ From there, OpenTelemetry trace data can be exported to a tracing backend of cho
 specified within `kubernetes/component-base` with the default URL to make the kubelet send its spans to the collector.
 Alternatively, I can point the kubelet at an OpenTelemetry collector listening on a different port or URL if I need to.
 
-#### Continuous Trace Collection
+#### Continuous trace collection
 
 As a cluster administrator or cloud provider, I would like to collect gRPC and HTTP trace data from the transactions between the API server and the 
 kubelet and interactions with a node's container runtime (Container Runtime Interface) to debug cluster problems.  I can set the `SamplingRatePerMillion`
@@ -114,7 +115,7 @@ debug, I can search span metadata or specific nodes to find a trace which displa
 The sampling rate for trace exports can be configured based on my needs. I can collect each node's kubelet trace data as distinct tracing services
 to diagnose node issues.
 
-##### Example Scenarios
+##### Example scenarios
 
 * Latency or timeout experienced when:
     * Attach or exec to running containers
@@ -139,6 +140,17 @@ Also, designated http servers and clients will be wrapped with [otelhttp](https:
 to generate spans for sampled incoming requests and propagate context with client requests.
 
 OpenTelemetry-Go provides the [propagation package](https://github.com/open-telemetry/opentelemetry-go/blob/main/propagation/propagation.go) with which you can add custom key-value pairs known as [baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/baggage/api.md). Baggage data will be propagated across services within contexts.
+
+### Connected Traces with Nested Spans
+
+With the initial implementation of this proposal, kubelet tracing produced disconnected spans, because context was not wired through kubelet CRI calls.
+With [this PR](https://github.com/kubernetes/kubernetes/pull/113591), context is now plumbed between CRI calls and kubelet.
+It is now possible to connect spans for CRI calls. Nested spans with top-level traces in the kubelet will connect CRI calls together.
+Nested spans will be created for the following:
+* Sync Loops (e.g. syncPod, eviction manager, various gc routines) where the kubelet initiates new work.
+    * [top-level traces for pod sync and GC](https://github.com/kubernetes/kubernetes/pull/114504)
+* Incoming requests (exec, attach, port-forward, metrics endpoints, podresources)
+* Outgoing requests (CNI, CSI, device plugin, k8s API calls)
 
 ### Running the OpenTelemetry Collector
 
@@ -187,25 +199,11 @@ type TracingConfiguration struct {
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
 
 An integration test will verify that spans exported by the kubelet match what is
 expected from the request. We will also add an integration test that verifies
@@ -213,48 +211,20 @@ spans propagated from kubelet to API server match what is expected from the requ
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `k8s.io/component-base/traces`: no test grid results - k8s.io/component-base/traces/config_test.go
+- https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go#L503-#L532
+- https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cri/remote/remote_runtime_test.go#L65-#L97
+- https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go
+- https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/component-base/tracing/api/v1/config_test.go
 
 ##### Integration tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-An integration test will verify that spans exported by the kubelet match what is
-expected from the request. We will also add an integration test that verifies
+Integration tests verify that spans exported by the kubelet match what is
+expected from the request. Also an integration test that verifies
 spans propagated from kubelet to API server match what is expected from the request.
 
-##### e2e tests
+- _component-base tracing/api/v1 integration test_ https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/tracing/tracing_test.go
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
+##### e2e tests
 
 - A test with kubelet-tracing & apiserver-tracing enabled to ensure no issues are introduced, regardless
 of whether a tracing backend is configured.
@@ -263,14 +233,22 @@ of whether a tracing backend is configured.
 
 Alpha
 
-- [] Implement tracing of incoming and outgoing gRPC, HTTP requests in the kubelet
-- [] Integration testing of tracing
+- [X] Implement tracing of incoming and outgoing gRPC, HTTP requests in the kubelet
+- [X] Integration testing of tracing
+- [X] Unit testing of kubelet tracing and tracing configuration
 
 Beta
 
-- [] Publish examples of how to use the OT Collector with kubernetes
-- [] Allow time for feedback
-- [] Revisit the format used to export spans.
+- [X] OpenTelemetry reaches GA
+- [X] Publish examples of how to use the OT Collector with kubernetes
+- [X] Allow time for feedback
+- [ ] Test and document results of upgrade and rollback while feature-gate is enabled.
+- [ ] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
+- [ ] Unit/integration test to verify connected traces in kubelet.
+- [ ] Revisit the format used to export spans.
+- [ ] Parity with the old text-based Traces
+- [ ] Connecting traces from container runtimes via the Container Runtime Interface
+  - https://github.com/kubernetes/kubernetes/pull/114504
 
 GA
 
@@ -306,7 +284,7 @@ GA
       of a node? **No, restarting the kubelet with feature-gate disabled will disable tracing**
 
 ##### Does enabling the feature change any default behavior?
-  No. The feature is disabled unlesss the feature gate is enabled and the TracingConfiguration is populated in Kubelet Configuration.
+  No. The feature is disabled unless the feature gate is enabled and the TracingConfiguration is populated in Kubelet Configuration.
   When the feature is enabled, it doesn't change behavior from the users' perspective; it only adds tracing telemetry.
 
 ##### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -316,8 +294,8 @@ GA
   It will start generating and exporting traces again.
 
 ##### Are there any tests for feature enablement/disablement?
-  Unit tests switching feature gates will be added. Manual testing of disabling, reenabling the feature on nodes, ensuring the kubelet comes up w/out error will
-  also be performed.
+  Enabling and disabling kubelet tracing is an in-memory switch. Explicit enablement/disablement tests will not provide value so will not be added.
+  Manual testing of disabling, reenabling the feature on nodes, ensuring the kubelet comes up w/out error will be performed and documented.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -328,7 +306,17 @@ _This section must be completed when targeting beta graduation to a release._
   No impact to running workloads, logs will indicate the problem.
 
 ###### What specific metrics should inform a rollback?
-  To be determined.
+
+  * This KEP is following the [opentelemetry-go issue #2547](https://github.com/open-telemetry/opentelemetry-go/issues/2547).
+
+  ```
+  ...using the OTLP trace exporter, it isn't currently possible to monitor (with metrics) whether or not spans are being successfully collected and exported.
+  For example, if my SDK cannot connect to an opentelemetry collector, and isn't able to send traces, I would like to be able to measure how many traces are collected,
+  vs how many are not sent. I would like to be able to set up SLOs to measure successful trace delivery from my applications.
+  ```
+
+  * Pod Lifecycle and Kubelet [SLOs](https://github.com/kubernetes/community/tree/master/sig-scalability/slos) are the signals that should guide a rollback.  In particular, the [`kubelet_pod_start_duration_seconds_count`, `kubelet_runtime_operations_errors_total`, and `kubelet_pleg_relist_interval_seconds_bucket`] would surface issues affecting kubelet performance.
+
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   Upgrades and rollbacks will be tested while feature-gate is experimental
@@ -357,7 +345,7 @@ _This section must be completed when targeting beta graduation to a release._
 ##### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [] Metrics
-  - Metric name: tbd
+  - Metric name: tbd [opentelemetry-go issue #2547](https://github.com/open-telemetry/opentelemetry-go/issues/2547)
   - Components exposing the metric: kubelet
 
 ##### Are there any missing metrics that would be useful to have to improve observability 
@@ -442,6 +430,7 @@ _This section must be completed when targeting beta graduation to a release._
 - 2022-07-22: KEP merged, targeted at Alpha in 1.24
 - 2022-03-29: KEP deemed not ready for Alpha in 1.24
 - 2022-06-09: KEP targeted at Alpha in 1.25
+- 2023-01-09: KEP targeted at Beta in 1.27
 
 ## Drawbacks
 

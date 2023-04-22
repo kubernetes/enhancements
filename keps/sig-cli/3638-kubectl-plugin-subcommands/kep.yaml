@@ -1,0 +1,28 @@
+title: Improve kubectl plugin resolution for non-shadowing subcommands
+kep-number: 3638
+authors:
+  - "@ardaguclu"
+owning-sig: sig-cli
+status: implementable
+see-also:
+  - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2379-kubectl-plugins"
+creation-date: 2023-01-16
+reviewers:
+  - "@brianpursley"
+  - "@KnVerey"
+  - "@soltysh"
+approvers:
+  - "@brianpursley"
+  - "@KnVerey"
+  - "@soltysh"
+
+stage: alpha
+
+latest-milestone: "v1.27"
+
+milestone:
+  alpha: "v1.27"
+  beta: "v1.28"
+  stable: "v1.29"
+
+disable-supported: true

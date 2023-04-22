@@ -807,7 +807,7 @@ Note: the feature gate here is for `kubeadm` and not the control-plane component
     plane?
     No, since it will only take effect when the control-plane is upgraded or created.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
     No, this only affects the control-plane, no change is required on the node(s).
 
 ###### Does enabling the feature change any default behavior?

@@ -1000,7 +1000,7 @@ _This section must be completed when targeting alpha to a release._
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node?
 
 * **Does enabling the feature change any default behavior?**
   No
@@ -1203,6 +1203,7 @@ For each of them, fill in the following information by copying the below templat
 - **2021-08-21:** HostProcessContainers (via CRI) support added to containerd - [containerd/containerd#5131](https://github.com/containerd/containerd/pull/5131).
 - **2021-12-07:** K8s 1.23 released with beta support for `WindowsHostProcessContainers` feature.
 - **2022-02-15:** Containerd 1.6.0 relased with support for HostProcessContainers.
+- **2022-12-08:** K8s 1.26 released with `WindowsHostProcessContainers` feature stable.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

@@ -26,6 +26,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -190,6 +191,7 @@ and internalTrafficPolicy.
 - E2E test validating fallback behavior for terminating endpoints when `externalTrafficPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L3145
 - E2E test validating fallback behaviro for terminating endpoints when `internalTrafficPolicy: Cluster`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2889
 - E2E test validating fallback behaviro for terminating endpoints when `internalTrafficPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/4bc1398c0834a63370952702eef24d5e74c736f6/test/e2e/network/service.go#L2972
+- E2E test performing rolling update with an LB using `externalTrafficiPolicy: Local`: https://github.com/kubernetes/kubernetes/blob/f333e5b4c5a174c63ac8e71f2c187f434ce56b1b/test/e2e/network/loadbalancer.go#L1283-L1299
 
 ### Graduation Criteria
 
@@ -205,6 +207,11 @@ and internalTrafficPolicy.
 * E2E tests are in place, exercising all permutations of internalTrafficPolicy and externalTrafficPolicy (see [Test Plan](#test-plan) section)
 * Metrics to publish how many Services/Endpoints are routing traffic to terminating endpoints.
 * Manual or automated rollback testing (see [Test Plan](#test-plan) section)
+
+#### GA
+
+* Feedback from users in issue [85643](https://github.com/kubernetes/kubernetes/issues/85643) that enabling ProxyTerminatingEndpoints can achieve zero downtime rolling updates when using `externalTrafficPolicy: Local`
+* E2E tests demonstrating that rolling updates can be performed with negligible downtime (ideally 100%, but may not feasible without flakiness) with a Service LoadBalancer when using externalTrafficPolicy: Local
 
 ### Upgrade / Downgrade Strategy
 
@@ -273,7 +280,115 @@ no longer be included in this metric.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade->downgrade->upgrade testing (manual or automated) will be required for Beta. If tested manually, the steps will be documented in this KEP.
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+Build and run the latest version of Kubernetes using Kind:
+```
+$ kind build node-image
+$ kind create cluster --image kindest/node:latest
+...
+...
+$ kubectl get no
+NAME                 STATUS   ROLES           AGE   VERSION
+kind-control-plane   Ready    control-plane   21m   v1.26.0-beta.0.88+3cfa2453421710
+
+```
+
+Deploy a webserver. In this test the following Deployment and Service was used:
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agnhost-server
+  template:
+    metadata:
+      labels:
+        app: agnhost-server
+    spec:
+      containers:
+      - name: agnhost
+        image: registry.k8s.io/e2e-test-images/agnhost:2.40
+        args:
+        - serve-hostname
+        - --port=80
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  internalTrafficPolicy: Local
+  selector:
+    app: agnhost-server
+  ports:
+  - port: 80
+    protocol: TCP
+```
+
+Before roll back, first verify that the `ProxyTerminatingEndpoint` feature is working. This is accomplished by
+scaling down the `agnhost-server` deployment to 0 replicas, and checking that the server still accepts traffic
+while it is terminating:
+
+Retrieve the cluster IP:
+```
+$ kubectl get svc agnhost-server
+NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+agnhost-server   ClusterIP   10.96.132.199   <none>        80/TCP    6m40s
+```
+
+Send a request from inside the kind node container:
+```
+$ docker exec -ti kind-control-plane bash
+root@kind-control-plane:/# curl 10.96.132.199
+agnhost-server-6d66cfc94f-q5msk
+```
+
+Scale down `agnhost-server` deployment to 0 replicas, check the pod is terminating, and check that the
+cluster IP works while the pod is terminating.
+```
+$ kubectl scale deploy/agnhost-server --replicas=0
+deployment.apps/agnhost-server scaled
+$ kubectl get po
+NAME                              READY   STATUS        RESTARTS   AGE
+agnhost-server-6d66cfc94f-x9kcw   1/1     Terminating   0          19s
+$ docker exec -ti kind-control-plane bash
+root@kind-control-plane:/# curl 10.96.132.199
+agnhost-server-6d66cfc94f-x9kcw
+```
+
+Rollback the feature by disabling the feature gate in kube-proxy:
+```
+# edit kube-proxy ConfigMap and add `ProxyTerminatingEndpoints: false` to `featureGates` field
+$ kubectl -n kube-system edit cm kube-proxy
+configmap/kube-proxy edited
+# restart kube-proxy
+$ kubectl -n kube-system delete po -l k8s-app=kube-proxy
+pod "kube-proxy-2ltb8" deleted
+
+```
+
+Verify that traffic cannot be routed to terminating endpoints anymore:
+```
+$ kubectl scale deploy/agnhost-server --replicas=0
+deployment.apps/agnhost-server scaled
+$ kubectl get po
+NAME                              READY   STATUS        RESTARTS   AGE
+agnhost-server-6d66cfc94f-qmftt   1/1     Terminating   0          12s
+$ docker exec -ti kind-control-plane bash
+root@kind-control-plane:/# curl 10.96.132.199
+curl: (7) Failed to connect to 10.96.132.199 port 80 after 0 ms: Connection refused
+```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 

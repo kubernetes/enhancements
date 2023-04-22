@@ -1,4 +1,4 @@
-# KEP-127: Support User Namespaces
+# KEP-127: Support User Namespaces in stateless pods
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -18,13 +18,13 @@
 - [Design Details](#design-details)
   - [Pod.spec changes](#podspec-changes)
   - [CRI changes](#cri-changes)
-  - [Phases](#phases)
-    - [Phase 1: pods &quot;without&quot; volumes](#phase-1-pods-without-volumes)
-      - [pkg/volume changes for phase I](#pkgvolume-changes-for-phase-i)
-    - [Phase 2: pods with volumes](#phase-2-pods-with-volumes)
-    - [Phase 3: TBD](#phase-3-tbd)
-    - [Unresolved](#unresolved)
-  - [Summary of the Proposed Changes](#summary-of-the-proposed-changes)
+  - [Support for stateless pods](#support-for-stateless-pods)
+  - [Handling of stateless volumes](#handling-of-stateless-volumes)
+    - [Example of how idmap mounts work](#example-of-how-idmap-mounts-work)
+      - [Example without idmap mounts](#example-without-idmap-mounts)
+      - [Example with idmap mounts](#example-with-idmap-mounts)
+    - [Regarding the previous implementation for volumes](#regarding-the-previous-implementation-for-volumes)
+  - [Unresolved](#unresolved)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -47,6 +47,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Don't use idmap mounts and rely chown all the files correctly](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
+  - [64k mappings?](#64k-mappings)
+  - [Allow runtimes to pick the mapping?](#allow-runtimes-to-pick-the-mapping)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -61,7 +64,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
 - [X] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -72,7 +75,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP adds support to use user-namespaces in pods.
+This KEP adds support to use user-namespaces in stateless pods.
 
 ## Motivation
 
@@ -123,11 +126,11 @@ Here we use UIDs, but the same applies for GIDs.
 - Increase pod to pod isolation by allowing to use non-overlapping mappings
   (UIDs/GIDs) whenever possible. IOW, if two containers runs as user X, they run
   as different UIDs in the node and therefore are more isolated than today.
-  See phase 3 for limitations.
 - Allow pods to have capabilities (e.g. `CAP_SYS_ADMIN`) that are only valid in
   the pod (not valid in the host).
 - Benefit from the security hardening that user namespaces provide against some
   of the future unknown runtime and kernel vulnerabilities.
+- Support only stateless pods
 
 ### Non-Goals
 
@@ -138,17 +141,16 @@ Here we use UIDs, but the same applies for GIDs.
 - Implement all the very nice use cases that user namespaces allows. The goal
   here is to allow them as incremental improvements, not implement all the
   possible ideas related with user namespaces.
+- Support stateful pods
 
 [kubelet-userns]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2033-kubelet-in-userns-aka-rootless
 
 ## Proposal
 
 This KEP adds a new `hostUsers` field  to `pod.Spec` to allow to enable/disable
-using user namespaces for pods.
+using user namespaces for stateless pods.
 
-This proposal aims to support running pods inside user namespaces. This will
-improve the pod to node isolation (phase 1 and 2) and pod to pod isolation
-(phase 3) we currently have.
+This proposal aims to support running stateless pods inside user namespaces.
 
 This mitigates all the vulnerabilities listed in the motivation section.
 
@@ -259,30 +261,38 @@ message NamespaceOption {
     // do not set a user namespace.
     UserNamespace userns_options = 5;
 }
-
 ```
 
-### Phases
+The Mount message will be modified to take the UID/GID mappings. The complete
+Mount is shown here:
 
-We propose to divide the work in 3 phases. Each phase makes this work with
-either more isolation or more workloads. When no support is yet added to handle
-some workload, a clear error will be shown.
+```
+// Mount specifies a host volume to mount into a container.
+message Mount {
+    // Path of the mount within the container.
+    string container_path = 1;
+    // Path of the mount on the host. If the hostPath doesn't exist, then runtimes
+    // should report error. If the hostpath is a symbolic link, runtimes should
+    // follow the symlink and mount the real destination to container.
+    string host_path = 2;
+    // If set, the mount is read-only.
+    bool readonly = 3;
+    // If set, the mount needs SELinux relabeling.
+    bool selinux_relabel = 4;
+    // Requested propagation mode.
+    MountPropagation propagation = 5;
+    // uid_mappings specifies the UID mappings for this mount.
+    repeated IDMapping uid_mappings = 6;
+    // gid_mappings specifies the GID mappings for this mount.
+    repeated IDMapping gid_mappings = 7;
+}
+```
 
-PLEASE note that only phase 1 is targeted for alpha.
+### Support for stateless pods
 
-Please note the last sub-section here is a table with the summary of the changes
-proposed on each phase. That table is not updated (it is from the initial
-proposal, doesn't have all the feedback and adjustments we discussed) but can
-still be useful as a general overview.
-
-TODO: move the table to markdown and include it here.
-
-
-#### Phase 1: pods "without" volumes
-
-This phase makes pods "without" volumes work with user namespaces. This is
-activated via the bool `pod.spec.HostUsers` and can only be set to `false`
-on pods which use either no volumes or only volumes of the following types:
+Make pods "without" volumes work with user namespaces. This is activated via the
+bool `pod.spec.HostUsers` and can only be set to `false` on pods which use
+either no volumes or only volumes of the following types:
 
  - configmap
  - secret
@@ -316,121 +326,109 @@ The picked range will be stored under a file named `userns` in the pod folder
 (by default it is usually located in `/var/lib/kubelet/pods/$POD/userns`). This
 way, the Kubelet can read all the allocated mappings if it restarts.
 
-During phase 1, to make sure we don't exhaust the host UID namespace, we will
+During alpha, to make sure we don't exhaust the host UID namespace, we will
 limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
 leaves us plenty of host UID space free and this limits is probably never hit in
 practice. See UNRESOLVED for more some UNRESOLVED info we still have on this.
 
-##### pkg/volume changes for phase I
+### Handling of stateless volumes
 
-We need the files created by the kubelet for these volume types to be readable
-by the user the pod is mapped to in the host. Luckily, Kuberentes already
-supports specifying an [fsUser and fsGroup for volumes][volume-mounter-args] for
-projected SA tokens so we just need to extend that to the other volume types we
-support in phase I.
+Only the aforementioned volume types are supported. If other volume types are
+used, a clear error is thrown during API validation of the pod.spec.
 
-First, we need to teach the [operation executor][operation-executor] to convert
-the container UIDs/GIDs to the host UIDs/GIDs that this pod is mapped to. To do
-this, we will modify the [volumeHost interface][volumeHost-interface] adding
-functions to transform a container ID to the corresponding host ID, so the
-operation executor will just call that function (via
-self.volumePluginMgr.Host.GetHostIDsForPod())
+When the volumes used are supported, the kubelet will set the `uid_mappings` and
+`gid_mappings` in the CRI `Mount message`. It will use the same mappings the
+kubelet allocated for the user namespace (see previous section for more details
+on this).
 
-This function will call the kubelet, which will use the user namespace manager
-created to transform the IDs for that pod. The [volumeHost
-interface][volumeHost-interface] will then have this new method:
+The container runtime, when it receives the `Mount message` with the UID/GID
+mappings fields set, it uses the Linux idmap mounts support to create such a
+mount. If the kernel/filesystem used doesn't support idmap mounts, a clear error
+will be thrown by the OCI runtime at pod creation.
+
+#### Example of how idmap mounts work
+
+Let's say we have a pod A that has this mapping for its user namespace
+allocated (same mapping for UIDs than for GIDs):
+
+| Host ID  | Container ID   | Length  |
+|----------|----------------|---------|
+| 65536    |      0         |  65536  |
+
+This means user 0 inside the container is mapped to user 65536 on the host, user
+1 is mapped to 65537 on the host, and so forth. Let' say the pod is running UID
+0 inside the container too.
+
+Let's say also that this pod has a configmap with a file named `foo`.
+The file `/var/lib/kubelet/.../volumes/configmap/foo` is created by the kubelet,
+the owner is host UID 0, and bind-mounted into the container at
+`/vol/configmap/foo`.
+
+##### Example without idmap mounts
+
+To understand how idmap mounts work, let's first see an example of what happens
+without idmap mounts.
+
+If the pod wants to read who is the owner of file `/vol/configmap/foo`, as host
+UID 0 is not mapped in this userns, it will be shown as nobody. Therefore,
+process running in the pod's userns won't be able to read the file (unless it
+has permissions for others).
+
+Therefore, if we want the pod to be able to read those files and permissions be
+what we expect, the kubelet needs to chown the file to a UID that is mapped into
+the pod's userns (e.g. UID 65536 in this example), as that is what root inside
+the container is mapped to in the user namespace.
+
+We tried this before, but several limitations were hit. See the 
+[alternatives section](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
+for more details on the limitations we hit.
+
+##### Example with idmap mounts
+
+Now let's say the pod is using its volumes that were mounted using idmap mounts
+by the container runtime. All the mappings used (the idmap mounts and the pod
+userns) are:
+
+| Host ID  | Container ID   | Length  |
+|----------|----------------|---------|
+| 65536    |      0         |  65536  |
+
+
+Keep in mind the file `/var/lib/kubelet/.../volumes/configmap/foo` is created by
+the kubelet, the owner is host UID 0, **but** it is bind-mounted into
+`/vol/configmap/foo` **using an idmap mount** with the mapping aforementioned.
+
+To achieve this, the kubelet only needs to set the UID/GID mappings in the
+`Mount` CRI message.
+
+If the pod wants to read who is the owner of file `/vol/configmap/foo`, now it
+will see the owner is root inside the container. This is due to the IDs
+transformations that the idmap mount does for us.
+
+In other words, we can make sure the pod can read files instead of chowning them
+all using the host IDs the pod is mapped to, by just using an idmap mount that
+has the same mapping that we use for the pod user namespace.
+
+#### Regarding the previous implementation for volumes
+We previously added to the [KubeletVolumeHost interface][kubeletVolumeHost-interface]
+the following method:
 
 ```
 GetHostIDsForPod(pod *v1.Pod, containerUID, containerGID *int64) (hostUID, hostGID *int64, err error)
 ```
 
-This method will only transform the IDs if the pod is running with userns
-enabled. If userns is disabled, the params will not be translated and, also, 
-GetHostIDsForPod() will return nil if the containerUID/containerGID received
-were nil. This is to keep the current functionality untouched, as [fsUser and
-fsGroup can be set to nil][operation-executor] today by the operation executor.
+As this is not needed anymore, it will be deleted from the interface and all
+components that implement the interface.
 
-Secondly, we need to modify these volume types to honor the `fsUser` passed in
-mounterArgs to their SetUpAt() method. As the [AtomicWriter already knows and
-honors the FsUser field][atomic-writer-fsUser] already, just setting this field
-is missing when creating the FileProjection (only done when the feature gate is
-enabled). For example, configmaps will just need to set FsUser alongside Data
-and Mode [here][configmap-fsuser] (and all the other paths in that function that
-create the projection, of course). Other volume types are quite similar too.
+[kubeletVolumeHost-interface]: https://github.com/kubernetes/kubernetes/blob/36450ee422d57d53a3edaf960f86b356578fe996/pkg/volume/plugins.go#L322
 
-For this we need to modify the MakePayload() or CollectData() functions of each
-supported volume type to handle the fsUser new param, and the corresponding
-volume SetUpAt() function to pass this new param when calling AtomicWriter.
-
-We have written already this code and the per-volume diff is 3 lines.
-
-For fsGroup() we don't need any changes, these volume types already honors it.
-
-[volume-mounter-args]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/volume.go#L125-L129
-[operation-executor]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/util/operationexecutor/operation_generator.go#L674-L675
-[volumeHost interface]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/plugins.go#L360-L361
-[atomic-writer-fsUser]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/util/atomic_writer.go#L68
-[configmap-fsuser]: https://github.com/kubernetes/kubernetes/blob/cfd69463deeebfc5ae8a0813d7d2b125033c4aca/pkg/volume/configmap/configmap.go#L272-L273
-
-#### Phase 2: pods with volumes
-
-This phase makes user namespaces work in pods with volumes too. This is
-activated via the bool `pod.spec.HostUsers` too and pods fall into this mode if
-some other volume type than the ones listed for phase 1 is used. IOW, when phase
-2 is implemented, pods that use volume types not supported in phase 1, fall into
-the phase 2.
-
-All pods in this mode will use _the same_ mapping, chosen by the kubelet, with a
-length 65536, and mapping the range 0-65535 too. IOW, each pod will have its own user
-namespace, but they will map to _the same_ UIDs/GIDs in the host.
-
-Using the same mapping allows for pods to share files and mitigates all the
-listed vulnerabilities (as the host is protected from the container). It is also
-a trivial next-step to take, given that we have phase 1 implemented: just return
-the same mapping if the pod has other volumes.
-
-While these pods do not use a distinct user namespace mapping, they are still
-using a new user namespace object in the kernel (so they cannot join/attack
-other pods namespaces). Security-wise this is a middle layer between what we
-have today (no userns at all) and using a distinct UID/GID mapping for the user
-namespace.
-
-#### Phase 3: TBD
-
-#### Unresolved
+### Unresolved
 
 Here is a list of considerations raised in PRs discussion that hasn't yet
 settle. This list is not exhaustive, we are just trying to put the things that
 we don't want to forget or want to highlight it. Some things that are obvious we
 need to tackle are not listed. Let us know if you think it is important to add
 something else to this list:
-
-- We will start with mappings of 64K. Tim Hockin, however, has expressed
-  concerns. See more info on [this Github discussion](https://github.com/kubernetes/enhancements/pull/3065#discussion_r781676224)
-  SergeyKanzhelev [suggested a nice alternative](https://github.com/kubernetes/enhancements/pull/3065#discussion_r807408134),
-  to limit the number of pods so we guarantee enough spare host UIDs in case we
-  need them for the future. There is no final decision yet on how to handle this.
-  For now we will limit the number of pods, so the wide mapping is not
-  problematic, but [there are downsides to this too](https://github.com/kubernetes/enhancements/pull/3065#discussion_r812806223)
-
-
-- Tim suggested we should try to not use the whole UID space. Something to keep
-  in mind for next revisions. More info [here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r797100081)
-
-Idem before, see Sergey idea from previous item.
-
-- While we said that if support is not implemented we will throw a clear error,
-  we have not said if it will be API-rejected at admission time or what. I'd
-  like to see how that code looks like before promising something. Was raised [here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798730922)
-
-- Tim suggested that we might want to allow the container runtimes to choose
-  the mapping and have different runtimes pick different mappings. While KEP
-  authors disagree on this, we still need to discuss it and settle on something.
-  This was [raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
-
-- (will clarify later with Tim what he really means here). Tim [raised this](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798766024): do
-  we actually want to ship phase 2 as automatic thing? If we do, any workloads
-  that use it can't ever switch to whatever we do in phase 3
 
 - What about windows or VM container runtimes, that don't use linux namespaces?
   We need a review from windows maintainers once we have a more clear proposal.
@@ -445,11 +443,6 @@ Idem before, see Sergey idea from previous item.
   allows). Same applies for VM runtimes.
   UPDATE: Windows maintainers reviewed and [this change looks good to them][windows-review].
 
-[windows-review]: https://github.com/kubernetes/enhancements/pull/3275#issuecomment-1121603308
-
-### Summary of the Proposed Changes
-
-[This table](https://docs.google.com/presentation/d/1z4oiZ7v4DjWpZQI2kbFbI8Q6botFaA07KJYaKA-vZpg/edit#slide=id.gfd10976c8b_1_41) gives you a quick overview of each phase (note it is outdated, but still useful for a general overview).
 
 ### Test Plan
 
@@ -502,11 +495,6 @@ Tests are already written for that file.
 The rest of the changes are more about hooking it up so it is called.
 
 - `pkg/kubelet/kuberuntime/kuberuntime_container_linux.go`: 24.05.2022 - 90.8%
-- `pkg/volume/util/operationexecutor/operation_generator.go`: 24.05.2022 - 8.6%
-- `pkg/volume/configmap/configmap.go`: 24.05.2022 - 74.8%
-- `pkg/volume/downwardapi/downwardapi.go`: 24.05.2022 - 61.7%
-- `pkg/volume/secret/secret.go`: 24.05.2022 - 65.7%
-- `pkg/volume/projected/projected.go`: 24.05.2022 - 68.2%
 
 ##### Integration tests
 
@@ -558,10 +546,8 @@ use container runtime versions that have the needed changes.
 
 ### Graduation Criteria
 
-Note this section is a WIP yet.
-
 ##### Alpha
-- Phase 1 implemented
+- Support with idmap mounts
 
 ##### Beta
 
@@ -569,8 +555,12 @@ Note this section is a WIP yet.
 - Should we reconsider making the mappings smaller by default?
 - Should we allow any way for users to for "more" IDs mapped? If yes, how many more and how?
 - Should we allow the user to ask for specific mappings?
+- Get review from VM container runtimes maintainers
+- Gather and address feedback from the community
 
 ##### GA
+
+- Gather and address feedback from the community
 
 ### Upgrade / Downgrade Strategy
 
@@ -983,6 +973,33 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+The kubelet is spliting the host UID/GID space for different pods, to use for
+their user namespace mapping. The design allows for 65k pods per node, and the
+resource is limited in the alpha phase to the min between maxPods per node
+kubelet setting and 1024. This guarantees we are not inadvertly exhausting the
+resource.
+
+For container runtimes, they might use more disk space or inodes to chown the
+rootfs. This is if they chose to support this feature without relying on new
+Linux kernels (or supporting old kernels too), as new kernels allow idmap mounts
+and no overhead (space nor inodes) is added with that.
+
+For CRIO and containerd, we are working to incrementally support all variations
+(idmap mounts, no overhead;overlyafs metacopy param, that gives us just inode
+overhead; and a full rootfs chown, that has space overhead) and document them
+appropiately.
+
 ### Troubleshooting
 
 <!--
@@ -1017,6 +1034,10 @@ For each of them, fill in the following information by copying the below templat
 
 ## Implementation History
 
+2016: First iterations of this KEP, but code never landed upstream.
+Kubernetes 1.25: Support for stateless pods merged (alpha)
+Kubernetes 1.27: Support for stateless pods rework to rely on idmap mounts (alpha)
+
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
@@ -1035,6 +1056,87 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+Here is a list of considerations raised in PRs discussion that were considered.
+This list is not exhaustive.
+
+### Don't use idmap mounts and rely chown all the files correctly
+
+We explored the idea of not using idmap mounts for stateless pods, and instead
+make sure we chown each file with the hostID a pod is mapped to (see more
+details in the [example section](#example-without-idmap-mounts) of how file
+access works with userns and without idmap mounts).
+
+The problems were mostly:
+
+* Changing the owner of files in configmaps/secrets/etc was a concern, those
+  volume type today ignore FsUser setting and changing it to honor them was a
+  concern for some members of the community due to possibly breaking some
+  existing behavior. See discussions [here][fsgroup-1] and [here][fsgroup-2]
+
+* Therefore, we need to rely on `fsGroup`, that always mark files readable for
+  the group. This means this solution can't work when we NEED not to have
+  permissions for the group (think of ssh keys, for example, that tools enforce no
+  permission for the group)
+
+* There are several other files that also need to have the proper permissions,
+  like: /dev/termination-log, /etc/hosts, /etc/resolv.conf, /etc/hotname, etc.
+  While it is completely possible to do, it adds more complexity to lot of parts
+  of the code base and future Kubernetes features will have to take this into
+  account too.
+
+To exemplify the complexity of the last point, let's see some concrete examples.
+`/etc/hosts` is created by [ensureHostsFile()][ensure-hosts-file] that doesn't
+know pod attributes like the mapping. The same happens with
+[SetupDNSinContainerizedMounter][dns-in-container] that doesn't know anything
+else but the path. The same happens with the other files mentioned, all of them
+and live in different "subsystems" of the kubelet, have very long call chains
+will need to change to take the mapping or similar. Also, future patches, like
+https://github.com/kubernetes/kubernetes/pull/108076 to fix a security bug in
+`/dev/termination-log` also will need to be adjusted to take into account the
+pod mappings.
+
+If we go this route, while possible, more and more subsystems will have to
+special-case if the pod uses userns and chown to a specific ID. Not only
+existing places, but future places that create a file that is mounted will have
+to know about the mapping of the pod.
+
+Furthermore, some of these files are
+[created by containerruntimes][containerd-mounts-files], so complexity creeps
+out very easily.
+
+Taking into account the 3 points (can't easily create secret/configmap files
+with a specific owner; fsGroup has lot of limitations; and the complexity of
+chowing each of these files in the kubelet), this approach was discarded. Future
+KEPs can explore this path if they so want to.
+
+[fsgroup-1]: https://github.com/kubernetes/kubernetes/pull/111090#discussion_r934057520
+[fsgroup-2]: https://github.com/kubernetes/kubernetes/pull/111090#discussion_r935802376
+[dns-in-container]: https://github.com/kubernetes/kubernetes/blob/7a55b76f28eddbbb7abf69038d4bd5abab833b4f/pkg/kubelet/network/dns/dns.go#L452-L479
+[ensure-hosts-file]: https://github.com/kubernetes/kubernetes/blob/7a55b76f28eddbbb7abf69038d4bd5abab833b4f/pkg/kubelet/kubelet_pods.go#L327-L347
+[containerd-mounts-files]: https://github.com/containerd/containerd/blob/3d32da8f607a2a43d7157499254713f42b3c6701/pkg/cri/server/container_create_linux.go#L61
+
+### 64k mappings?
+
+We will start with mappings of 64K. Tim Hockin, however, has expressed
+concerns. See more info on [this Github discussion](https://github.com/kubernetes/enhancements/pull/3065#discussion_r781676224)
+SergeyKanzhelev [suggested a nice alternative](https://github.com/kubernetes/enhancements/pull/3065#discussion_r807408134),
+to limit the number of pods so we guarantee enough spare host UIDs in case we
+need them for the future. There is no final decision yet on how to handle this.
+For now we will limit the number of pods, so the wide mapping is not
+problematic, but [there are downsides to this too](https://github.com/kubernetes/enhancements/pull/3065#discussion_r812806223)
+
+For stateless pods this is of course not an issue.
+
+### Allow runtimes to pick the mapping?
+
+Tim suggested that we might want to allow the container runtimes to choose the
+mapping and have different runtimes pick different mappings. While KEP authors
+disagree on this, we still need to discuss it and settle on something.  This was
+[raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
+
+For stateless pods with 64k mappings this is not an issue. This was considered
+something to discuss for pods with volumes (out of scope of this KEP).
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do

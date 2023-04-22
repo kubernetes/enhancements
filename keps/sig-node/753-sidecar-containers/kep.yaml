@@ -1,22 +1,53 @@
 title: Sidecar Containers
 kep-number: 753
 authors:
-  - "@joseph-irving"
-  - "@rata"
-owning-sig: sig-apps
-participating-sigs:
-  - sig-apps
-  - sig-node
-reviewers:
-  - "@fejta"
-  - "@sjenning"
   - "@SergeyKanzhelev"
-approvers:
-  - "@enisoc"
-  - "@kow3ns"
-  - "@derekwaynecarr"
-  - "@dchen1107"
-editor: TBD
+  - "@matthyx"
+  - "@jpbetz"
+owning-sig: sig-node
+participating-sigs:
+  - sig-scheduler
+  - sig-apps
+status: implementable
 creation-date: 2018-05-14
-last-updated: 2020-06-24
-status: provisional
+last-updated: 2023-02-01
+reviewers:
+  - "@mrunalp"      # overall
+  - "@ffromani"     # resource management
+  - "@swatisehgal"  # resource management
+  - "@ahg-g"        # SIG Scheduling
+approvers:
+  - "@mrunalp"
+  - "@thockin"
+
+see-also:
+
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.27"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.27"
+  beta: "v1.28"
+  stable: "v1.30"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: SidecarContainers
+    components:
+      - kubelet
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:

@@ -595,10 +595,11 @@ N/A
 
 ##### Integration tests
 
--   Verify finalizers and statuses are persisted appropriately
--   Test watchers
--   Ensure that the controller handles the feature being disabled and re-enabled:
-    -   Test with some Nodes already having `PodCIDR` allocations
+- `TestIPAMMultiCIDRRangeAllocatorCIDRAllocate`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L44
+- `TestIPAMMultiCIDRRangeAllocatorCIDRRelease`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L131
+- `TestIPAMMultiCIDRRangeAllocatorClusterCIDRDelete`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L208
+- `TestIPAMMultiCIDRRangeAllocatorClusterCIDRTerminate`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L304
+- `TestIPAMMultiCIDRRangeAllocatorClusterCIDRTieBreak`: https://github.com/kubernetes/kubernetes/blob/b7ad17978eaba508c560f81bab2fb9d0b256e469/test/integration/clustercidr/ipam_test.go#L389
 
 ##### e2e tests
 
@@ -742,7 +743,7 @@ Pick one of these and delete the rest.
         -   Yes. Changing the kube-controller-manager flags will require
             restarting the component (which runs other controllers).
     -   Will enabling / disabling the feature require downtime or reprovisioning
-        of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+        of a node?
         -   No. With the caveat that if the kube-proxy is in use, it must set
             the appropriate flags, as [described above](#pre-requisites).
 
@@ -774,10 +775,10 @@ appropriately.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Not yet, they will be added as part of the graduation to alpha. They will test
+Not yet, they will be added as part of the graduation to beta. They will test
 the scenario where some Nodes already have PodCIDRs allocated to them
 (potentially from CIDRs not tracked by any `ClusterCIDR`). This should be
-sufficient to cover the enablement/disablment scenarios.
+sufficient to cover the enablement/disablement scenarios.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -791,6 +792,15 @@ This section must be completed when targeting beta to a release.
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
 -->
+kube-controller-manager needs to be restarted, the CIDR allocator will be switched 
+to the new range allocator based on `--cidr-allocator-type=MultiCIDRRangeAllocator` 
+flag. Rollout can fail if the `--cluster-cidr` field is updated during the 
+kube-controller-manager restart. kube-controller-manager will crashloop and new
+nodes will not have any PodCIDRs assigned and thus will not be ready. This
+behavior is consistent with the existing reange-allocator behavior. The mitigation
+is to set `--cluster-cidr` back to the original value.
+
+Already running workloads will not be impacted.
 
 ###### What specific metrics should inform a rollback?
 
@@ -798,6 +808,9 @@ mid-rollout?
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+multicidrset_allocation_tries_per_request metric must be monitored, if the value
+is high(>25) in the buckets greater than 125 would indicate a large number of
+failures while allocating the cidrs.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -807,11 +820,113 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+Build and run the latest version of Kubernetes using Kind:
+```
+$ kind build node-image
+$ kind create cluster --image kindest/node:latest --config ~/k8sexample/kind/cluster-config-without-multipod.yaml 
+...
+...
+sarveshr@sarveshr:~$ kubectl --context kind-multi-pod-cidr get node
+NAME                           STATUS   ROLES           AGE   VERSION
+multi-pod-cidr-control-plane   Ready    control-plane   21m   v1.27.0-alpha.1.226+1ded677b2a77a7
+```
+
+Initially the feature gate `MultiCIDRRangeAllocator` is set to `false`
+
+```
+$ vi cluster-config-without-multipod.yaml 
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: multi-pod-cidr
+featureGates:
+  "MultiCIDRRangeAllocator": false
+runtimeConfig:
+  "api/alpha": "true"
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+```
+
+Make sure no ClusterCIDR objects are created
+
+```
+$ kubectl --context kind-multi-pod-cidr get cc -A                                                                                              
+No resources found    
+```
+
+Upgrade to use MultiCIDRRangeAllocator, by logging into the Control plane node
+and updating the kubeadm manifests as follows:
+
+1. Update `/etc/kubernetes/manifests/kube-apiserver.yaml` by modifying
+`--feature-gates=MultiCIDRRangeAllocator=false` to `--feature-gates=MultiCIDRRangeAllocator=true`
+2. Update `/etc/kubernetes/manifests/kube-controller-manager.yaml` by modifying
+`--cidr-allocator-type=RangeAllocator` to `--cidr-allocator-type=MultiCIDRRangeAllocator` and
+`--feature-gates=MultiCIDRRangeAllocator=false` to `--feature-gates=MultiCIDRRangeAllocator=true`
+
+kubelet will restart the kube-apiserver and kube-controller-manager pods as these are static manifests.
+
+Validate that all pods are Running
+
+```
+$ kubectl --context kind-multi-pod-cidr get po -A                                                                                              
+NAMESPACE            NAME                                                   READY   STATUS    RESTARTS      AGE                                                   
+kube-system          coredns-56f4c55bf9-b7bds                               1/1     Running   0             3m26s                                                 
+kube-system          coredns-56f4c55bf9-bgcxk                               1/1     Running   0             3m26s                                                 
+kube-system          etcd-multi-pod-cidr-control-plane                      1/1     Running   0             3m38s                                                 
+kube-system          kindnet-cj5sg                                          1/1     Running   2 (71s ago)   3m26s                                                 
+kube-system          kube-apiserver-multi-pod-cidr-control-plane            1/1     Running   0             72s                                                   
+kube-system          kube-controller-manager-multi-pod-cidr-control-plane   1/1     Running   0             19s                                                   
+kube-system          kube-proxy-gwh45                                       1/1     Running   0             3m26s
+kube-system          kube-scheduler-multi-pod-cidr-control-plane            1/1     Running   1 (95s ago)   3m38s
+local-path-storage   local-path-provisioner-c8855d4bb-qxw7g                 1/1     Running   0             3m26s
+```
+
+Validate whether the Default ClusterCIDR object is created
+
+```
+$ kubectl --context kind-multi-pod-cidr get cc -A
+NAME                   PERNODEHOSTBITS   IPV4            IPV6     AGE
+default-cluster-cidr   8                 10.244.0.0/16   <none>   21s
+```
+
+Rollback to use RangeAllocator, by logging into the Control plane node
+and updating the kubeadm manifests as follows:
+
+1. Update `/etc/kubernetes/manifests/kube-apiserver.yaml` by modifying
+   `--feature-gates=MultiCIDRRangeAllocator=true` to `--feature-gates=MultiCIDRRangeAllocator=false`
+2. Update `/etc/kubernetes/manifests/kube-controller-manager.yaml` by modifying
+   `--cidr-allocator-type=MultiCIDRRangeAllocator` to `--cidr-allocator-type=RangeAllocator` and
+   `--feature-gates=MultiCIDRRangeAllocator=true` to `--feature-gates=MultiCIDRRangeAllocator=false`
+
+kubelet will restart the kube-apiserver and kube-controller-manager pods as these are static manifests.
+
+Validate that all pods are Running
+
+```
+$ kubectl --context kind-multi-pod-cidr get po -A
+NAMESPACE            NAME                                                   READY   STATUS    RESTARTS      AGE
+kube-system          coredns-56f4c55bf9-b7bds                               1/1     Running   0             16m
+kube-system          coredns-56f4c55bf9-bgcxk                               1/1     Running   0             16m
+kube-system          etcd-multi-pod-cidr-control-plane                      1/1     Running   0             16m
+kube-system          kindnet-cj5sg                                          1/1     Running   4 (24s ago)   16m
+kube-system          kube-apiserver-multi-pod-cidr-control-plane            1/1     Running   0             24s
+kube-system          kube-controller-manager-multi-pod-cidr-control-plane   1/1     Running   0             11s
+kube-system          kube-proxy-gwh45                                       1/1     Running   0             16m
+kube-system          kube-scheduler-multi-pod-cidr-control-plane            1/1     Running   2 (49s ago)   16m
+local-path-storage   local-path-provisioner-c8855d4bb-qxw7g                 1/1     Running   0             16m
+```
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No
 
 ### Monitoring Requirements
 
@@ -827,15 +942,28 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+`multicidrset_cidrs_allocations_total` metric with value > 0 will indicate enablement. 
+The operator can also check if ClusterCIDR objects are created, this can be done
+using `kubectl get cc -A`
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-We will carry-over existing metrics to the new controller: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/nodeipam/ipam/cidrset/metrics.go#L26-L68
+We have carried-over existing metrics to the new controller: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/nodeipam/ipam/cidrset/metrics.go#L26-L68
 
 They are:
--   cidrset_cidrs_allocations_total - Count of total number of CIDR allcoations
--   cidrset_cidrs_releases_total - Count of total number of CIDR releases
--   cidrset_usage_cidrs - Gauge messuring the percentage of the provided CIDRs
-    that have been allocated
+- multicidrset_cidrs_allocations_total - Count of total number of CIDR allocations
+- multicidrset_cidrs_releases_total - Count of total number of CIDR releases
+- multicidrset_usage_cidrs - Gauge measuring the percentage of the provided CIDRs
+    that have been allocated.
+- multicidrset_allocation_tries_per_request - Histogram measuring CIDR allocation
+    tries per request.
+
+The health of the service can be determined if the *_total metrics increase with
+the number of nodes and the multicidrset_usage_cidrs metric is greater or equal
+than the number of nodes.
+
+Note that this service is optional and would allocate the CIDRs only when
+`--allocate-node-cidrs` is set to true in kube-controller-manager.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
@@ -848,6 +976,7 @@ high level (needs more precise definitions) those may be things like:
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 -->
+N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -855,6 +984,7 @@ high level (needs more precise definitions) those may be things like:
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+TBD
 
 ### Dependencies
 
@@ -878,6 +1008,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No
 
 ### Scalability
 
@@ -955,6 +1086,13 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+MultiCIDRRangeAllocator is a part of the kube-controller-manager and if the
+kube-controller-manager is not able to connect to the apiserver, the cluster
+might have greater problems.
+
+The MultiCIDRRangeAllocator will not be able to fetch node objects and thus the
+node will remain in NotReady state as it will have no PodCIDRs assigned. This is
+in line with the current RangeAllocator behavior.
 
 ###### What are other known failure modes?
 

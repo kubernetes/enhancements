@@ -105,6 +105,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -313,11 +315,12 @@ client-side validation, albeit one that is error-prone and not officially
 supported).
 
 Long-term, we want to favor using out-of-tree solutions for client-side
-validation, though this idea is still in its infancy.
+validation. The [kubeconform](https://github.com/yannh/kubeconform) project is an example of an out-of-tree solution that does this.
 
-The [kubeval](https://www.kubeval.com/) project is an example of an out-of-tree solution that does this, and
-we will look into expanding its support of open API to v3, and investigate
-whether it makes sense as a permanent solution to client-side validation.
+SIG API Machinery's effort will go to producing clear and complete (and
+improving over time) API spec documents insteading of making client side
+validation. We strongly recommend that third part integrators make use of such
+documents.
 
 ##### Aligning json and yaml errors
 
@@ -615,6 +618,11 @@ It tests the cross product of all valid permutations along the dimensions of:
 With field validation on by default in beta, we will modify
 [test/e2e/kubectl/kubectl.go](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/kubectl.go) to ensure that kubectl defaults to using server side field validation and detects unknown/duplicate fields as expected.
 
+[GA]
+We will introduce field validation specific e2e/conformance tests to submit
+requests directly against the API server for both built-in and custom resources
+to test that duplicate and unknown fields are appropriately detected.
+
 ### Graduation Criteria
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -655,29 +663,23 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - [x] field validation integration tests check for exact match of strict errors
 - [x] In tree NestedObjectDecoders no longer short circuit on strict decoding
   errors [#107545](https://github.com/kubernetes/kubernetes/issues/107545)
-- [ ] Unknown/Duplicate fields are properly detected in the metadata at both the
+- [x] Unknown/Duplicate fields are properly detected in the metadata at both the
   root level and within embedded objects
   [#109215](https://github.com/kubernetes/kubernetes/issues/109215),[#109316](https://github.com/kubernetes/kubernetes/pull/109316), and
   [#109494](https://github.com/kubernetes/kubernetes/pull/109494)
 
 
-<!--
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
+- [x] Wait two releases (1.25 and 1.26) with field validation enabled by default
+  and receive minimal bug reports pertaining to the feature. As a data point,
+  GKE clusters running field validation by default in 1.25 are seeing less CPU
+  and memory overall vs 1.24, supporting the notion that this feature has not
+  significantly impacted performance.
+- [] Add conformance testing to invoke field validation directly
+  against the API server
 
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
+<!--
 #### Deprecation
 
 - Announce deprecation and support policy of the existing flag
@@ -696,20 +698,30 @@ enhancement:
   cluster required to make on upgrade, in order to maintain previous behavior?
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
+  -->
 
 ### Version Skew Strategy
 
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+Following the graduation of server-side field validation to GA, there will be a
+period of time when a newer client (which expects server-side field validation locked in GA) will send
+requests to an older server that could have server-side field validation
+disabled.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+Until version skew makes it incompatible for a client to hit a server
+with field validation disabled, kubectl must continue to check if the feature is
+enabled server-side. As long as the feature can be disabled server-side, kubectl
+must continue to have client-side validation. When the feature can't be disabled
+server-side, kubectl should remove client-side validation entirely.
+
+Given that kubectl [supports](https://kubernetes.io/releases/version-skew-policy/#kubectl) one minor version skew (older or newer) of kube-apipserver,
+this would mean that removing client-side validation in 1.28 would be
+1-version-skew-compatible with GA in 1.27 (when server-side validation can no
+longer be disabled).
+
+See section on [Out-of-Tree
+Alternatives to Client Side
+Validation](#out-of-tree-alternatives-to-client-side-validation) for
+alternatives to client-side validation
 
 ## Production Readiness Review Questionnaire
 
@@ -749,12 +761,14 @@ Pick one of these and delete the rest.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: ServerSideFieldValidation
   - Components depending on the feature gate: kube-apiserver
+  - Note: feature gate locked to true upon graduation to GA (1.27) and removed
+    two releases later (1.29)
 - [x] Other
   - Describe the mechanism: query parameter
   - Will enabling / disabling the feature require downtime of the control
     plane? NO
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). NO
+    of a node? NO
 
 ###### Does enabling the feature change any default behavior?
 
@@ -851,8 +865,15 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Users should expect to see an increase in request latency and memory usage
-(~20-25% increase) for requests that desire server side schema validation.
+We have benchmark tests for field validation
+[here](https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/field_validation_test.go#L2936-L2996) and an analysis of those
+benchmarks summarized
+[here](https://github.com/kubernetes/kubernetes/pull/107848#issuecomment-1032216698).
+
+Based on the above, users should should expect to see negligible latency increases (with the
+exception of SMP requests that are ~5% slower), and memory that is negligible
+for JSON (and no change for protobuf), but around 10-20% more memory usage for
+YAML data.
 
 Cluster operators can also use cpu usage monitoring to determine whether
 increased usage of server-side schema validation dramatically increases CPU usage after feature enablement.

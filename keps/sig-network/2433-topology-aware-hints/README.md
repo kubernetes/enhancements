@@ -8,19 +8,22 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Assumptions](#assumptions)
-  - [Identifying Zones](#identifying-zones)
-  - [Excluding Control Plane Nodes](#excluding-control-plane-nodes)
   - [Configuration](#configuration)
-    - [Interoperability](#interoperability)
-    - [Feature Gate](#feature-gate)
+  - [Interoperability](#interoperability)
+  - [Feature Gate](#feature-gate)
   - [API](#api)
     - [Future API Expansion](#future-api-expansion)
   - [Kube-Proxy](#kube-proxy)
   - [EndpointSlice Controller](#endpointslice-controller)
+- [Heuristics](#heuristics)
+  - [Proportional CPU Heuristic](#proportional-cpu-heuristic)
+    - [Assumptions](#assumptions)
+    - [Identifying Zones](#identifying-zones)
+    - [Excluding Control Plane Nodes](#excluding-control-plane-nodes)
     - [Example](#example)
     - [Overload](#overload)
     - [Handling Node Updates](#handling-node-updates)
+  - [Additional Heuristics](#additional-heuristics)
   - [Future Expansion](#future-expansion)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
@@ -94,6 +97,7 @@ Kubernetes clusters are increasingly deployed in multi-zone environments.
 Network traffic is routed randomly to any endpoint matching a Service. Some
 users might want the traffic to stay in the same zone for the following
 reasons:
+
 - Cost savings: Keeping traffic within a zone can limit cross-zone networking
   costs.
 - Performance: Traffic within a zone usually has less latency and bandwidth
@@ -125,10 +129,19 @@ for most use cases.
 - Ensuring that Pods are distributed evenly across zones.
 
 ## Proposal
+This KEP describes two related concepts:
 
-When this feature is enabled, the EndpointSlice controller will be updated to
-provide hints for each endpoint. These hints will initially be limited to a
-single zone per-endpoint. Kube-Proxy will then use these hints to filter the
+1. A way to express the heuristic you'd like to use for Topology Aware Routing.
+2. A new Hints field in EndpointSlices that can be used to enable certain
+   topology heuristics.
+
+For now, the only heuristic proposed relies on hints so these concepts are
+closely tied. It is important to note that that may not be the case for future
+heuristics.
+
+When a heuristic that depends on Hints is chosen, the EndpointSlice controller
+will populate hints for each endpoint. These hints will initially be limited to
+a single zone per-endpoint. Kube-Proxy will then use these hints to filter the
 endpoints they should route to.
 
 For example, for a Service with 3 endpoints, the EndpointSlice controller may
@@ -178,43 +191,16 @@ with a new Service annotation.
 
 ## Design Details
 
-### Assumptions
-
-- Incoming traffic is proportional to the number of allocatable CPU cores in a
-  zone. Although this is an imperfect metric, it is the best available way of
-  predicting how much traffic will be received in a zone. If we are unable to
-  derive the number of allocatable cores in a zone we will fall back to the
-  number of nodes in that zone.
-- Service capacity is proportional to the number of endpoints in a zone. This
-  assumes that each endpoint has equivalent capacity. Although this is not
-  always true, it usually is. We can explore ways to deal with variable capacity
-  endpoints in the future.
-
-### Identifying Zones
-
-The EndpointSlice controller reads the standard `topology.kubernetes.io/zone`
-label on Nodes to determine which zone a Pod is running in. Kube-Proxy would be
-updated to read the same information to identify which zone it is running in.
-
-### Excluding Control Plane Nodes
-
-Any Nodes with the following labels (set to any value) will be excluded when
-calculating allocatable cores in a zone:
-
-* `node-role.kubernetes.io/control-plane`
-* `node-role.kubernetes.io/master`
-
 ### Configuration
 
-A new `service.kubernetes.io/topology-aware-routing` annotation  can be used to
-enable or disable Topology Aware Routing (and by extension, hints) for a
-Service. This may be set to "Auto" or "Disabled". Any other value is treated as
-"Disabled".
+A new `service.kubernetes.io/topology-mode` annotation can be used to enable or
+disable Topology Aware Routing heuristics for a Service.
 
 The previous `service.kubernetes.io/topology-aware-hints` annotation will
-continue to be supported as a means of configuring this feature.
+continue to be supported as a means of configuring this feature for both "Auto"
+and "Disabled" values. New values will only be supported by the new annotation.
 
-#### Interoperability
+### Interoperability
 
 Topology hints will be ignored if the TopologyKeys field has at least one entry.
 This field is deprecated and will be removed soon.
@@ -225,7 +211,7 @@ topology was enabled, external traffic would be routed using the
 ExternalTrafficPolicy configuration while internal traffic would be routed with
 topology.
 
-#### Feature Gate
+### Feature Gate
 
 This functionality will be guarded by the `TopologyAwareHints` feature gate.
 This gate also interacts with 2 other feature gates:
@@ -290,7 +276,6 @@ conditions are true:
 
 - Kube-Proxy is able to determine the zone it is running within (likely based
   on node labels).
-- The annotation is set to `Auto`.
 - At least one endpoint for the Service has a hint pointing to the zone
   Kube-Proxy is running within.
 - All endpoints for the Service have zone hints.
@@ -304,17 +289,56 @@ and disabled states. Without this fallback, endpoints could easily get
 overloaded as hints were being added or removed from some EndpointSlices but
 had not yet propagated to all of them.
 
+Note: Some future heuristics may not rely on hints and could instead be
+implemented directly by kube-proxy.
+
 ### EndpointSlice Controller
 
 When the `TopologyAwareHints` feature gate is enabled and the annotation is set
-to `Auto` for a Service, the EndpointSlice controller will add hints to
-EndpointSlices. These hints will indicate where an endpoint should be consumed
-by proxy implementations to enable topology aware routing.
+to `Auto` or `ProportionalByCore` for a Service, the EndpointSlice controller
+will add hints to EndpointSlices. These hints will indicate where an endpoint
+should be consumed by proxy implementations to enable topology aware routing.
 
-The EndpointSlice controller will determine how many endpoints should be
-available for each zone based on the proportion of CPU cores in each zone. If
-it is not possible to determine the number CPU cores, 1 core per node will be
-assumed for calculations.
+## Heuristics
+
+This KEP starts with the following heuristics:
+
+| Heuristic Name | Description |
+|-|-|
+| Auto | EndpointSlice controller and/or underlying dataplane can choose the heuristic used. |
+| ProportionalByCore | Endpoints will be allocated to each zone proportionally, based on the allocatable Node CPU cores in each zone. |
+
+In the future, additional heuristics may be added. Until that point, "Auto" will
+be the only configurable value. In most clusters, that will translate to
+`ProportionalByCore` unless the underlying dataplane has a better approach
+available.
+
+### Proportional CPU Heuristic
+#### Assumptions
+
+- Incoming traffic is proportional to the number of allocatable CPU cores in a
+  zone. Although this is an imperfect metric, it is the best available way of
+  predicting how much traffic will be received in a zone. If we are unable to
+  derive the number of allocatable cores in a zone we will fall back to the
+  number of nodes in that zone.
+- Service capacity is proportional to the number of endpoints in a zone. This
+  assumes that each endpoint has equivalent capacity. Although this is not
+  always true, it usually is. We can explore ways to deal with variable capacity
+  endpoints in the future.
+
+#### Identifying Zones
+
+The EndpointSlice controller reads the standard `topology.kubernetes.io/zone`
+label on Nodes to determine which zone a Pod is running in. Kube-Proxy would be
+updated to read the same information to identify which zone it is running in.
+
+#### Excluding Control Plane Nodes
+
+Any Nodes with the following labels (set to any value) will be excluded when
+calculating allocatable cores in a zone:
+
+* `node-role.kubernetes.io/control-plane`
+* `node-role.kubernetes.io/master`
 
 #### Example
 
@@ -369,12 +393,20 @@ of the following scenarios:
 2. A new Node results in a Service that is able to achieve an endpoint
    distribution below 20% for the first time.
 
+### Additional Heuristics
+To enable additional heuristics to be added in the future, we will:
+
+1. Remove the requirement in kube-proxy that the hints annotation must be set to
+   a known value on the associated Service before the values of EndpointSlice
+   hints will be considered.
+2. Ensure the EndpointSlice controller TopologyCache provides an interface that
+   simplifies adding additional heuristics in the future.
+
 ### Future Expansion
 
 In the future we may expand this functionality if needed. This could include:
 
-- A new `RequireZone` algorithm that would keep endpoints in EndpointSlices for
-  the same zone they are in.
+- As described above, additional heuristics may be added in the future.
 - A new option to specify a minimum threshold for the `Auto` (PreferZone)
   approach.
 - Support for region based hints.
@@ -467,6 +499,16 @@ EndpointSliceSyncs = metrics.NewCounterVec(
   []string{"result"}, // either "success" or "failure"
 )
 
+// EndpointSliceHints tracks the number of endpoints that have hints assigned.
+EndpointSliceEndpointsWithHints = metrics.NewGaugeVec(
+  &metrics.CounterOpts{
+    Subsystem:      EndpointSliceSubsystem,
+    Name:           "endpoints_with_hints",
+    Help:           "Number of endpoints that have hints assigned",
+    StabilityLevel: metrics.ALPHA,
+  },
+  []string{"result"}, // either "Auto" or "SameZone"
+)
 ```
 
 ### Events
@@ -490,7 +532,7 @@ feature.
 
 #### Sample Events
 
-| Type | Reason | Message | 
+| Type | Reason | Message |
 |-|-|-|
 | Normal | TopologyAwareRoutingEnabled | Topology Aware Routing has been enabled |
 | Normal | TopologyAwareRoutingDisabled | Topology Aware Routing configuration was removed |
@@ -532,10 +574,16 @@ completeness.
   disabled.
 - Ensure that existing Topology Hints e2e test runs as a presubmit if any code
   changes in kube-proxy or the EndpointSlice controller.
-- Topology Hints e2e tests will graduate to conformance tests.
 - Autoscaling and Scheduling SIGs have a plan to provide zone aware autoscaling
   (and scheduling) that allows users to proportionally distribute endpoints
   across zones.
+
+**Note on Conformance Tests:**
+It's worth noting that conformance tests are intentionally out of scope for this
+KEP. We want to provide flexibility for underlying dataplanes to provide
+improved topology aware routing options. As the name suggests, "hints" can be
+useful when implementing topology aware routing, but we do not want them to be
+considered a strict requirement.
 
 ### Version Skew Strategy
 This KEP requires updates to both the EndpointSlice Controller and kube-proxy.
@@ -559,6 +607,7 @@ enabled even if the annotation has been set on the Service.
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: TopologyAwareHints
     - Components depending on the feature gate:
+      - kube-apiserver
       - kube-controller-manager
       - kube-proxy
 
@@ -575,13 +624,14 @@ enabled even if the annotation has been set on the Service.
   EndpointSlices for Services that have this feature enabled.
 
 * **Are there any tests for feature enablement/disablement?**
-  Per Service enablement and disablement is covered in depth by unit tests. As a
-  prerequisite for graduation to GA, we will also add the following:
+  Enablement is covered by a variety of tests:
 
-  - Test coverage in EndpointSlice strategy to ensure that the Hints field is
-    dropped when the feature gate is not enabled.
-  - Test coverage in EndpointSlice controller for the transition from enabled to
-    disabled.
+  * Per Service enablement and disablement in EndpointSlice Controller. [(Unit
+    Tests.)](https://github.com/kubernetes/kubernetes/blob/468ce5918377ab4d4e3180b4fd33fdd2bdb16ec9/pkg/controller/endpointslice/reconciler_test.go#L1641-L1907)
+  * Hints field is dropped when feature gate is off. [(Strategy Unit
+    Tests.)](https://github.com/kubernetes/kubernetes/blob/468ce5918377ab4d4e3180b4fd33fdd2bdb16ec9/pkg/registry/discovery/endpointslice/strategy_test.go)
+  * TODO before GA: Test coverage in EndpointSlice controller for the transition
+    from enabled to disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 

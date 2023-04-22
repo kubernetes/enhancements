@@ -63,6 +63,7 @@ Architecture for cross-cutting KEPs). -->
 - [Proposal](#proposal)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Future Work](#future-work)
+    - [OpenAPI V2 plan](#openapi-v2-plan)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Paths](#paths)
@@ -73,10 +74,16 @@ Architecture for cross-cutting KEPs). -->
   - [OpenAPI](#openapi)
   - [Version Skew](#version-skew)
   - [OpenAPI V3 Proto](#openapi-v3-proto)
+  - [Clients](#clients)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -209,6 +216,17 @@ endpoints.
 After OpenAPI v3 is implemented, we can start working on updating clients to
 consume OpenAPI v3. A separate KEP will be published for that.
 
+#### OpenAPI V2 plan
+
+As OpenAPI V3 becomes more and more available and easily accessible,
+clients should move to OpenAPI V3 in favor of OpenAPI V2. This should
+result in a steady decline in the number of requests sent to the
+OpenAPI V2 endpoint. In the short term, we will make OpenAPI V2 make
+computations more lazily, deferring the aggregation and marshaling
+process to be on demand rather than at a set interval. This is not
+directly part of OpenAPI V3's GA plan, but is something we will be
+monitoring closely once OpenAPI V3 is GA.
+
 ### Risks and Mitigations
 
 Aggregation for OpenAPI v2 already consumes a non-negligible amount of
@@ -276,6 +294,12 @@ document itself can provide information on group-version changes and
 updates. If there is a race and the client passes in an outdated etag
 value, the server will send a 301 to redirect the client to the URL
 with the latest etag value.
+
+To ensure that the client cache does not grow in an unbounded manner,
+the client-go disk cache will be replaced with a cmopactable disk
+cache which performs occasional cleanup of old cached files. Refer to
+[PR](https://github.com/kubernetes/kubernetes/pull/109701) for more
+details.
 
 ### Controllers
 
@@ -383,29 +407,88 @@ This solves the immediate protobuf issue but adds complexity to the OpenAPI sche
 
 The final alternative is to upgrade to OpenAPI 3.1 where the new JSON Schema version it is based off of supports fields alongside a `$ref`. However, OpenAPI does not follow semvar and 3.1 is a major upgrade over 3.0 and introduces various backwards incompatible changes. Furthermore, library support is currently lacking (gnostic) and doesn't fully support OpenAPI 3.1. One important backwards incompatible change is the removal of the nullable field and replacing it by changing the type field from a single string to an array of strings.
 
+### Clients
+
+Updating all OpenAPI V2 clients to use OpenAPI V3 is outside the scope
+of this KEP and part of future work. However, some key clients will be
+updated to use OpenAPI V3 as part of GA. One example is [OpenAPI V3
+for kubectl
+explain](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/3515-kubectl-explain-openapiv3/README.md).
+Server Side Apply will also be updated to directly use the OpenAPI V3
+schema rather than OpenAPI V2. Finally, the query param verifier in
+kubectl will be updated to use OpenAPI V3.
 
 ### Test Plan
 
-<!-- **Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept encements with inadequate testing.
 All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing
-guidelines][testing-guidelines] when drafting this test plan.
-
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-For alpha, unit tests will be included to ensure that v3 schemas are properly
-generated and published. A validator will also be used to ensure that the spec
-generated is valid OpenAPI v3.
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this encement.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this encement to ensure the encements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this encement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this encement.
+-->
+
+This feature is primarily implemented in kube-openapi and unit tests, validation, benchmarks and fuzzing are added there. Some packages in k/k will be modified to capture the changes in kube-openapi and unit tests accompany them.
+
+`k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder`
+`k8s.io/kube-aggregator/pkg/controllers/openapiv3/aggregator`
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the encement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+Tests in the following directory:
+
+- `test/integration/apiserver/openapi/...`: https://storage.googleapis.com/k8s-triage/index.html?test=TestOpenAPIV3
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the encement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+Tests will be added to ensure that OpenAPI is present for all group versions.
 
 ### Graduation Criteria
 
@@ -420,12 +503,19 @@ generated is valid OpenAPI v3.
   - Incorrect OpenAPI polymorphic types (IntOrString, Quantity) are updated to use `anyOf` in OpenAPI V3
 - Definition names of native resources are updated to omit their package paths
 - Parameters are reused as components
-- `kubectl explain` to support using the OpenAPI v3 Schema
 - Aggregated API servers are queried for their v2 endpoint and converted to
   publish v3 if they do not directly publish v3
 - Heuristics are used for the OpenAPI v2 to v3 conversion to maximize
   correctness of published spec
 - Aggregation for OpenAPI v3 will serve as a proxy to downstream OpenAPI paths
+
+#### GA
+
+- OpenAPI V3 uses the optimized JSON marshaler for increased performance. See [link](https://github.com/kubernetes/kube-openapi/pull/319) for the benefits with OpenAPI V2.
+- [Updated OpenAPI V3 Client Interface](https://docs.google.com/document/d/1HmqJH-yyK8WyU8V1y5z-RyMLq9-Xe8JfTTuaNkm9GZ0)
+- Direct conversion from OpenAPI V3 to SMD schema for Server Side Apply
+- HTTP Disk Cache is replaced with Compactable Disk Cache
+- Conformance tests
 
 ### Upgrade / Downgrade Strategy
 
@@ -505,7 +595,7 @@ you need any help or guidance. -->
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control plane?
   - Will enabling / disabling the feature require downtime or reprovisioning of
-    a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -741,6 +831,10 @@ No. One thing to note is that aggregation for OpenAPI v2 consumes quite a bit of
 memory. OpenAPI v3 will avoid aggregating the entire spec and only aggregate (if
 necessary) per group/version, decreasing the runtime and memory usage to a
 negligible amount.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+This feature strictly operates on the control plane and has no effect on node resources.
 
 ### Troubleshooting
 
