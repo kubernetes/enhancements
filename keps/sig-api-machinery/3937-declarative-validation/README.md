@@ -315,15 +315,15 @@ Go IDL tags will be added to support the following declarative validation rules:
 | Type of valiation      | Go IDL tag                                                       | OpenAPI validation field                                                           |
 | ---------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | string format          | `+format={format name}`                                          | `format`                                                                           |
-| size limits            | `+min{Length,Properties,Items}`, `+max{Length,Properties,Items}` | `min{Length,Properties,Items}`, `max{Length,Properties,Items}` |
+| size limits            | `+min{Length,Properties,Items}`, `+max{Length,Properties,Items}` | `min{Length,Properties,Items}`, `max{Length,Properties,Items}`                     |
 | numeric limits         | `+minimum`, `+maximum`, `+exclusiveMinimum`, `+exclusiveMaximum` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`                       |
 | required fields        | `+optional` (exists today)                                       | `required`                                                                         |
 | enum values            | `+enum` (exists today)                                           | `enum`                                                                             |
 | uniqueness             | `listType=set` (sets and map keys)                               | `x-kubernetes-list-type`                                                           |
 | regex matches          | `+pattern`                                                       | `pattern`                                                                          |
-| cross field validation | `cel=rule:"{CEL expression}"`                                     | `x-kubernetes-validations`                                                         |
-| [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules)   | `cel=rule:"{CEL expression using oldSelf}"`   | `x-kubernetes-validations`                                                   |
-| special case: metadata name format   | `+metadataNameFormat={format name}`                | `x-kubernetes-validations` (see "format" section below for details) |
+| cross field validation | `cel=rule:"{CEL expression}"`                                    | `x-kubernetes-validations`                                                         |
+| [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules) | `cel=rule:"{CEL expression using oldSelf}"` | `x-kubernetes-validations` |
+| special case: metadata name format | `+metadataNameFormat={format name}`                  | `x-kubernetes-validations` (see "format" section below for details)                |
 
 ### Unions
 
@@ -342,8 +342,8 @@ type DeploymentSpec struct {
   
   // ...
   // 
-  // +validation=rule:"!(self.type == 'Recreate') || !has(self.rollingUpdate)",message="may not be specified when strategy `type` is Recreate",reason=Forbidden,field="rollingUpdate"
-  // +validation=rule:"!(self.type == 'RollingUpdate') || has(self.rollingUpdate)",message="this should be defaulted and never be nil",reason=Required,field="rollingUpdate"
+  // +cel=rule:"!(self.type == 'Recreate') || !has(self.rollingUpdate)",message="may not be specified when strategy `type` is Recreate",reason=Forbidden,field="rollingUpdate"
+  // +cel=rule:"!(self.type == 'RollingUpdate') || has(self.rollingUpdate)",message="this should be defaulted and never be nil",reason=Required,field="rollingUpdate"
   Strategy DeploymentStrategy `json:...`
   
   // ...
@@ -368,7 +368,7 @@ expression is declared, e.g.:
 
 ```go
   
-  //+validation=rule:"!self.widgetType == 'Component' || !['badname2', 'badname2'].exists(notAllowed, self.componentName.contains(notAllowed))",reason=Forbidden
+  //+cel=rule:"!self.widgetType == 'Component' || !['badname2', 'badname2'].exists(notAllowed, self.componentName.contains(notAllowed))",reason=Forbidden
   type FizzBuzzSpec struct {
     Type WidgetType `json...`
     ComponentName string `json...`
@@ -381,6 +381,7 @@ validation rules that exist in the Kubernetes API today.
 - `isFormat() <bool>` and `validateFormat() <list<string>>` will be added to allow formats to be checked in CEL
   expression and for format violations to be reported using `messageExpression: "self.validateFormat('ipv6')"`
 - IP and CIDR libraries will be added that allow for a wide range of IP (v4 and v6) checks to be performed.
+- Quantity library
 
 TODO: Flesh out the exact library functions we will to add.
 
@@ -399,13 +400,13 @@ to cover formats heavily used by the Kubernetes API, namely:
 | 'dns1123subdomain'           | metadata name and generateName     |
 | 'dns1123label'               | metadata name and generateName     |
 | 'dns1035label'               | Scoped names and keys              |
-| 'quantity'                   | various fields                     |
 
 We will add all of these to the supported list of formats in kube-openapi.
 We will also document all supported formats on the Kubernetes website.
 
 Other candidate format types are:
 
+- `APIVersion` (GroupVersion)
 - Qualified name
 - Fully qualified name
 - Fully qualified domain name
@@ -464,7 +465,7 @@ same for both can be declared on `Container` but any rules that are different
 can be declared on the `container` and `initContainer` fields using CEL. E.g.:
 
 ```go
-// +validation=rule:"!has(self.RestartPolicy)"
+// +cel=rule:"!has(self.RestartPolicy)"
 Containers []Container `json...`
 ```
 
@@ -865,6 +866,14 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+For the introduction of new formats in CRDs:
+
+Today, [supported formats](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/validation/formats.go) is used strip out unsupported
+formats when used in older version of the kube-apiserver. We will extend this to have
+two lists:  `supported` and `storage`.  All new formats will be added to `storage` for
+at least one minor release of Kubernetes before the format is added to `supported` so
+that any usages of the new formats written to CRDs downgrade safely.
 
 ### Version Skew Strategy
 
