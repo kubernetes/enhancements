@@ -165,7 +165,9 @@ to implement this enhancement.
 - Test that the runSleepHandler function returns immediately when given a duration of zero.
 
 ##### Integration tests
+N/A
 
+##### e2e tests
 - Basic functionality
   1. Create a simple pod with a container that runs a long-running process.
   2. Add a preStop hook to the container configuration, using the new sleepAction with a specified sleep duration (e.g., 5 seconds).
@@ -186,16 +188,7 @@ to implement this enhancement.
      - Equal to the sleep duration
      - Greater than the sleep duration
   4. For each termination grace period value, delete the pod and observe the time it takes for the container to terminate.
-  5. Verify that the container is terminated gracefully, taking into account both the sleep duration and the termination grace period.
-
-
-##### e2e tests
-
-- Test no connection errors during a rolling update.
-  1. Deploy a deployment with multiple pods and a service using the prestop hook with sleep action.
-  2. Send traffic to the service and keep a watch on the connection.
-  3. Perform the rolling update of the deployment.
-  4. Verify there were no connection errors during the rolling update.
+  5. Verify that the container is terminated gracefully after the configured sleep duration.
 
 ### Graduation Criteria
 
