@@ -134,15 +134,15 @@ sure new clusters are in good state.
 ### LegacyServiceAccountTokenTracking
 
 To facilitate LegacyServiceAccountTokenCleanUp, we implement a simple controller
-in kube-apiserver that maintains a bool value configmap in `kube-system` to
+in kube-apiserver that maintains a bool value configmap `kube-apiserver-legacy-service-account-token-tracking` in `kube-system` to
 indicates if tracking is enabled in the cluster. It is similar to the existing
 `ClusterAuthenticationTrustController` that maintains `configmap/extension-apiserver-authentication`.
 
 - When LegacyServiceAccountTokenTracking is enabled in all apiservers,
 
-  - the controller creates/updates a configmap in `kube-system` namespace that
-    stores the current date as `tracked-since`.
-  - when a legacy token is used, issue a warning, update the label `last-used`
+  - the controller creates/updates the configmap `kube-apiserver-legacy-service-account-token-tracking` in `kube-system` namespace that
+    stores the current date as `since`.
+  - when a legacy token is used, issue a warning, update the label `kubernetes.io/legacy-token-last-used`
     on the secret at date granularity, and record in a metric.
 
 - When LegacyServiceAccountTokenTracking is disabled in any apiserver,
@@ -160,10 +160,10 @@ can be configured by cluster admins.
 
 Determine the date that a given secret was last used:
 
-1. `last-used` if exists and after `tracked-since`.
-2. defaults to `tracked-since`
+1. `kubernetes.io/legacy-token-last-used` if exists and after `since` stored in the configmap `kube-apiserver-legacy-service-account-token-tracking`.
+2. defaults to `since`
 
-If `tracked-since` is unavailable, no secret would be removed.
+If `kube-apiserver-legacy-service-account-token-tracking` is unavailable, no secret would be removed.
 
 ### Test Plan
 
@@ -227,10 +227,12 @@ legacy tokens for security practices.
 
 #### Beta -> GA Graduation
 
-- [ ] In use by multiple distributions
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
-- [ ] Tests passing
+- [x] In use by multiple distributions
+  - Google
+  - RedHat
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
 
 #### Alpha -> Beta Graduation
 
@@ -242,7 +244,7 @@ legacy tokens for security practices.
 
 | Alpha | Beta | GA   |
 | ----- | ---- | ---- |
-| 1.27  | 1.28 | 1.29 |
+| 1.28  | 1.29 | 1.30 |
 
 #### Beta -> GA Graduation
 
@@ -296,7 +298,7 @@ yes for all feature gates.
   before the reenablement, Token Controller would create tokens for
   serviceaccounts while the feature was off.
 - LegacyServiceAccountTokenTracking: during this sequence of operations,
-  only the label `last-used` is persisted, but there is no impact on the
+  only the label `kubernetes.io/legacy-token-last-used` is persisted, but there is no impact on the
   functionality of this feature.
 - LegacyServiceAccountTokenCleanUp: the same as enable the feature.
 
@@ -351,7 +353,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-check if there is a configmap `tracked-since` in namespace `kube-system`.
+check if there is a configmap `kube-apiserver-legacy-service-account-token-tracking` in namespace `kube-system`.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -435,13 +437,13 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-- `tracked-since` configmap cannout be created.
+- `kube-apiserver-legacy-service-account-token-tracking` configmap cannout be created.
 - unable to remove unused auto-generated secrets.
 
 ###### What are other known failure modes?
 
-- failure to create `tracked-since` config map
-  - Detection: check if `tracked-since` exists in `kube-system`
+- failure to create `kube-apiserver-legacy-service-account-token-tracking` config map
+  - Detection: check if `kube-apiserver-legacy-service-account-token-tracking` exists in `kube-system`
   - Mitigations: there is no impact on existing systems.
   - Diagnostics: check kube-apiserver log.
   - Testing: TBD.
