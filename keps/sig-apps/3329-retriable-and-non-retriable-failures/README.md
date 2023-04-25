@@ -116,6 +116,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Garbage collected pods](#garbage-collected-pods)
     - [Evolving condition types](#evolving-condition-types)
     - [Stale DisruptionTarget condition which is not cleaned up](#stale-disruptiontarget-condition-which-is-not-cleaned-up)
+    - [ActiveDeadlineExceeded when pod containers aren't killed](#activedeadlineexceeded-when-pod-containers-arent-killed)
 - [Design Details](#design-details)
   - [New PodConditions](#new-podconditions)
   - [Interim FailureTarget Job condition](#interim-failuretarget-job-condition)
@@ -290,8 +291,6 @@ know that this has succeeded?
   state (value of `status.phase`) rather than `Failed` (such as incorrect image
   name, non-matching configMap references, incorrect PVC references).
 - Adding pod conditions to indicate admission failures
-  (see: [active deadline timeout exceeded](#active-deadline-timeout-exceeded))
-  or exceeding of the active deadline timeout
   (see: [admission failures](#admission-failures).
   Also, adding pod conditions to
   indicate failures tue to exhausting the resource (memory or ephemeral storage)
@@ -769,7 +768,6 @@ initiated by Kubelet (see [Design details](#design-details)).
 
 Kubelet can also evict a pod in some scenarios which are not covered with
 adding a pod failure condition:
-- [active deadline timeout exceeded](#active-deadline-timeout-exceeded)
 - [admission failures](#admission-failures)
 - [resource limits exceeded](#resource-limits-exceeded)
 
@@ -781,11 +779,18 @@ may suggest a software bug due to which the pod executes longer than expected.
 On the other hand, it might be due node CPU pressure caused by other processes
 on the node. Thus, in order to give users freedom of handling this situation we
 should introduce a dedicated pod condition type, such as `ActiveDeadlineExceeded`.
-However, as the feature focuses on scenarios which can be naturally interpreted
-in terms of retriability and evolving Pod condition types
-(see [evolving condition types](#evolving-condition-types)) are a concern we decide
-to do not add any pod condition in this case. It should be re-considered in the
-future if there is a good motivating use-case.
+
+For, 1.28 we are going to add the `ActiveDeadlineExceeded` condition to allow
+users to match pods which exceeded the timeout (regardless of the exit code),
+to fix the scenario raised in the issue:
+[Pod Failure Policy Edge Case: Job Retries When Pod Finishes Successfully](https://github.com/kubernetes/kubernetes/issues/115688).
+
+The condition is added if the pod exceeds the specified timeout, similarly
+as currently the pod's `.status.reason` and `.status.message` fields are set,
+along with setting the `.status.phase` as `Failed`. It is possible in the
+current kubelet implementation that the fields are set even if the pod containers
+complete on their own. This creates a risk of a user mis-interpreting the
+condition (see also: [ActiveDeadlineExceeded when pod containers aren't killed](#activedeadlineexceeded-when-pod-containers-arent-killed)).
 
 ##### Admission failures
 
@@ -1248,6 +1253,27 @@ are configured to ignore the disruption errors it results in an unnecessary
 Pod retry.
 
 Given the factors above we assess this is an acceptable risk.
+
+#### ActiveDeadlineExceeded when pod containers aren't killed
+
+The new ActiveDeadlineExceeded condition is added whenever the pod exceeds the
+timeout for execution (along with the currently set fields of `.status.reason`,
+`.status.message` and `.status.phase`, see:
+[active deadline timeout exceeded](#active-deadline-timeout-exceeded)).
+
+Note that, it means that the pod's containers may terminate on their own
+in-between detection of the condition, and actual killing of the containers.
+In particular, the condition might be added in scenarios when the pod containers
+complete on their own with 0 exit code before SIGTERM, or they handle the
+SIGTERM signal and complete with 0 exit code before SIGKILL. This creates
+a risk of misinterpreting the condition by a user who might expect that the
+condition is only added if the pod's containers are actually killed with
+SIGKILL.
+
+In order to mitigate this issue we propose to update the user-facing
+with the implemented semantics and with a note that the behavior of handling the
+pod when the timeout is exceeded, but its containers complete before killing is
+subject to change in the future.
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -1712,6 +1738,13 @@ Second iteration:
  - Extend Kubelet to mark as failed pending terminating pods (see: [Marking pods as Failed](#marking-pods-as-failed)).
  - Extend the feature documentation to explain transitioning of pending and
    terminating pods into `Failed` phase.
+
+Third iteration (1.28):
+- Introduce `ActiveDeadlineExceeded` condition for pods which exceeded the timeout
+- Update user-facing documentation the implemented semantics of adding
+  `ActiveDeadlineExceeded` and document that the semantics is subject to change
+  for pods exceeding the execution timeout, for which their containers complete
+  before SIGKILL.
 
 #### GA
 
@@ -2406,7 +2439,6 @@ improvement.
 As one possible direction of extending the feature is adding pod failure
 conditions in the following scenarios (see links for discussions on the factors
 that made us not to cover the scenarios in Beta):
-- [active deadline timeout exceeded](#active-deadline-timeout-exceeded)
 - [admission failures](#admission-failures)
 - [resource limits exceeded](#resource-limits-exceeded).
 
