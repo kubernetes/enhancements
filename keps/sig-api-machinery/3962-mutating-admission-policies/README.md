@@ -10,11 +10,11 @@
     - [Bindings](#bindings)
     - [Unsetting values](#unsetting-values)
     - [Old object state](#old-object-state)
-    - [Complex mutations](#complex-mutations)
+    - [Scoped mutations](#scoped-mutations)
     - [Multiple mutations](#multiple-mutations)
       - [Order](#order)
-      - [Safety](#safety)
       - [Reinvocation](#reinvocation)
+      - [Safety](#safety)
   - [User Stories](#user-stories)
     - [Use case: Set a label](#use-case-set-a-label)
     - [Use case: Set a field](#use-case-set-a-field)
@@ -91,26 +91,32 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement adds a `MutatingAdmissionPolicy` API to allow mutating
-admission control rules to be declared using CEL expressions. This continues the
-work started by the [`ValidatingAdmissionPolicy`
-API](/keps/sig-api-machinery/3488-cel-admission-control/README.md).
+This enhancement adds mutating admission policies, declared using CEL
+expressions, as an alternative to mutating admission webhooks. This continues
+the work started by [`KEP-3488`
+API](/keps/sig-api-machinery/3488-cel-admission-control/README.md) for
+validating admission policies.
 
-Mutations can be declared in CEL by combining CEL's object instantiation
-and Server Side Apply's merge algorithms.
+This enhancement proposes and approach where mutations are declared in CEL by
+combining CEL's object instantiation and Server Side Apply's merge algorithms.
 
 ## Motivation
 
-A large proportion of mutations perform relatively simple changes such as setting
-a label or annotation, or adding a sidecar container to a pod. Such mutations
-can be expressed conveniently in CEL, eliminating the need for the developmental
-and operational complexity of a webhook.
+A large proportion of mutating admission needs are for relatively simple
+operations such as setting a label, setting a field, or adding a sidecar
+container to a pod. These mutations can be expressed trivially in only a few
+lines of CEL, eliminating the developmental and operational complexity of a
+webhook.
 
 Offering CEL based mutation also has other fundamental advantages over webhooks.
 CEL mutations can be declared in a way that allows the kube-apiserver to
 introspect the mutation and extract useful information about which fields the
-mutation reads and writes. This information can be useful when ordering
-mutations.
+mutation operation reads and writes. This information can be leveraged to do
+things like finding order for mutating admission policies that minimizes the
+need for reinvocation. Also, in-process mutation is sufficiently fast,
+especially when compared with webhooks, that it is reasonable to re-run
+mutations to do things like validate that multiple muation policy is still
+applied after all other mutating admission operations have been applied.
 
 ### Goals
 
@@ -140,7 +146,7 @@ mutations.
 
 ## Proposal
 
-Introduce `MutatingAdmissionPolicy`, e.g.
+Introduce `MutatingAdmissionPolicy` API, e.g.
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1alpha1
@@ -158,9 +164,12 @@ spec:
       apiVersions: ["v1"]
       operations:  ["CREATE"]
       resources:   ["pods"]
+  matchConditions:
+    - name: does-not-already-have-sidecar
+      expression: "!object.spec.initContainers.exists(ic, ic.name == params.name)"
+  failurePolicy: Fail
   mutations:
-    - name: inject-sidecar
-      apply: >
+    - mutation: >
         Object{
           spec: Object.spec{
             initContainers: [
@@ -174,9 +183,13 @@ spec:
             ] + oldObject.spec.initContainers
           }
         }
+      mutationValidation:
+        type: Expression
+        expression: "object.spec.initContainers.exists(ic, ic.name == params.name)"
+
 ```
 
-The `apply` field contains a CEL expression that evalutes to a partially
+The `mutation` field contains a CEL expression that evalutes to a partially
 populated object representing an Server Side Apply "apply configuration". The
 apply configuration is then merged into the request object.
 
@@ -187,6 +200,10 @@ respected.
 However, unlike with server side apply, these mutations will not have a field
 manager. This has important implications in how the merge is performed that will
 be discussed in more detail in the below "Unsetting values" section.
+
+The `mutationValidation` field declares how the validate the the mutation has
+been correctly applied. This is important when multiple mutations are applied to
+an object and will be discussed in more detail below.
 
 In this example, note that:
 
@@ -208,9 +225,7 @@ spec:
   paramRef:
    name: "meshproxy-test.example.com"
    namespace: "default"
-```
-
-```yaml
+---
 # Sidecar parameter resource
 apiVersion: mutations.example.com
 kind: Sidecar
@@ -223,7 +238,7 @@ spec:
   restartPolicy: Always
 ```
 
-Next, a pod may be created:
+Next, we can test the policy with a pod:
 
 ```yaml
 kind: Pod
@@ -295,23 +310,18 @@ This solves the vast majority of value removal needs. Specifically:
 | list        | map        | See below                                                            |
 
 <<[UNRESOLVED jpbetz ]>>
-Decide on how to handle struct, type=atomic
+Pick an option for atomic structs and lists with "map" merge type.
 <<[/UNRESOLVED]>>
 
-struct, type=atomic Options:
+Atomic struct options:
   - Recreate the struct, e.g.: `Object.spec.structField: Object.spec.structField{field1: oldObject.spec.structField.field1}`
   - TODO: The entire OpenAPIv3 stanza of a CRD is an atomic struct, can we support mutations of it?
 
-<<[UNRESOLVED jpbetz ]>>
-Decide on how to handle list, type=map
-<<[/UNRESOLVED]>>
-
-list, type=map Options:
-  - Add a `objects.remove()` that makes it possible to remove "list,type=map"
-    entries.
-  - Use a synthetic "_remove: true" marker field to all "list,type=map" object
-    schemas so that a user could do `[Object.spec.listMapField{keyField: "key",
-    _remove: true}]`.
+List with "map" merge type options:
+  - Add a `objects.filter(<list>, <keys-to-remove>)` CEL function that makes it possible
+    to remove "list,type=map" entries.
+  - Use a synthetic "$remove: true" directive field to all "list,type=map" object
+    schemas so that a user could do `[Object.spec.listMapField{keyField: "key", $remove: true}]`.
   - Offer way to declare which fields are "owned" by the mutation, and then remove
     any fields that are owned but where no replacement value is set.
 
@@ -334,131 +344,174 @@ Object{
 }
 ```
 
-#### Complex mutations
+#### Scoped mutations
 
-<<[UNRESOLVED jpbetz ]>>
-Expose merge functions directly? I'm concerned with the API complexity of doing this, but
-it does solve for some otherwise difficult cases.
-<<[/UNRESOLVED]>>
+When a list is atomic, there is no way to merge in an added field to each list
+item using server side apply directly. (What was done above in the imagePullPolicy
+example only works for a list when listType=map).
 
-On rare occasions, it may be useful to perform apply directly on part of an
-object. For example, imagine that the field "widgets" is a list of objects, but
-the field is not a listType=map, and so there is no way to merge in an added
-field to each widget using server side apply directly like was done with the
-above imagePullPolicy example.
+This can be addressed if we allow mutations to be scoped. For example:
 
-A workaround is to recreate all the widgets list, but use apply() on each widget to merge
-in a single field change:
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: "widget-policy.example.com"
+spec:
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["example.com"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE"]
+      resources:   ["parts"]
+  mutations:
+    - scope: "spec.widgets[*]"
+      mutation: >
+        Object.spec.widget{
+          reticulated: true
+        }
+```
+
+We considered not offering this `scope` field, but because of how server side
+apply merges work, it is more than just a convenience-- It makes it possible to
+express mutations that would otherwise require exposing additional merge utility
+functions.
+
+When a mutation is scoped, we will also provide an `oldSelf` variable that provides
+access to the scoped value before the mutation is applied.
+
+Alternative considered: Offer an `apply()` function in CEL, e.g.:
 
 ```cel
 Object{
     spec: Object.spec{
-        containers: oldObject.spec.widgets.map(oldWidget,
+        widgets: oldObject.spec.widgets.map(oldWidget,
             objects.apply(oldWidget, Object.spec.widgets.item{
-                part: "xyz"
+                reticulated: true
             })
         )
     }
 }
 ```
 
-Note that such fields are very rare in the Kubernetes API since they don't work
-well with server side apply. But this may come in handy with CRDs when the CRD
-author fails to use `x-kubernetes-list-type: map`.
-
-This can also be avoided if we allow mutations to be scoped, e.g. `scope:
-spec.widgets[*]`.
-
 #### Multiple mutations
 
 ##### Order
 
-<<[UNRESOLVED jpbetz ]>>
-Should we offer a separate `scope` field for mutations or just compute scopes
-from apply configurations applied to the root?
-<<[/UNRESOLVED]>>
+With mutating admission policies added, the the mutating admission plugin order
+will become:
 
-We will order mutations primarily by scope. Mutations scoped nearer to the root
-are ordered before deeper leveled scopes. 
+  - Mutating admission webhooks (ordered lexographically by webhook name)
+  - Mutating admission policies (ordered by scope)
+  - Mutating admission controllers
 
-How will scopes be determined?
+Mutating admission policies will be ordered primarily by scope where mutations
+scoped nearer to the root are ordered before deeper scoped mutations.
 
-- Option 1: explicitly as an API field (e.g. `spec.containers[*]`
-- Option 2: computed by inspecting the CEL expression to identify which parts of
-  the apply configuration are just path information. E.g. `Object{ spec: Object.spec{ containers: oldObject.spec.containers.filter(...) }}` is clearly
-  scoped to `spec.containers`
-- Option 3: Offer Option 1 for convenience but also further narrow the actual
-  scopes used for computing order using Option 2.
+For example, the following scopes are correctly ordered:
 
-Once scopes are known, they could be written to the status to make it easier for
-cluster administrators to understand the total order of mutations.
+- `spec`
+- `spec.initContainers[name:sidecar]`
+- `spec.initContainers[*].imagePullPolicy`
 
-Alternative: Do what mutating webhooks do: order mutations using the
+For mutations at the same level, the lexographical name of the policy
+will be used to ensure a deterministic order. E.g.:
+
+- `spec.a`
+- `spec.b`
+
+The scope of a mutation will be computed as follows:
+
+- Start with the explicitly stated `scope` of each mutation
+- Inspect the CEL expression to identify which parts of the apply configuration
+  are just path information and narrow the scope using this information.
+  - Example: `Object{ spec: Object.spec{ containers: oldObject.spec.containers.filter(...) }}` is
+    scoped to `spec.containers`.
+- When a mutating admission policies declares the multiple mutations, the "least
+  common denominator" scope will be used. E.g. for `spec.a`, `spec.b` the LCD scope
+  is `spec`.
+
+Alternative considered: Do what mutating webhooks do: order mutations using the
 lexographical ordering of the resource names. Just like with mutating webhooks,
 reinvocation will be required.
 
-Alternative: Order by constructing a DAG of which fields each mutation reads and
-writes. CEL expressions can be statically analyzed to build a list of the schema
-fields that are read/written. Potential cycles could be detected and a warning
-written to status.. This is significantly more coplex than the other alternatives.
-For this alternative to offer any advantage, we would need to be able to use
-the data to ban cycles from being introduced so that the DAG can be used
-to determine a total order of mutations.
-
-##### Safety
-
-<<[UNRESOLVED jpbetz ]>>
-Define the API for this.
-<<[/UNRESOLVED]>>
-
-To ensure mutations are not "broken" by other mutations (overwritten, undone, or
-otherwise invalidated), we will validate mutations after they are applied to
-ensure that they applied in a reasonable way. For basic single field mutations a
-validation can be automatic (e.g. run the mutation again and making sure nothing
-changes). Some mutations will have more complex validation needs. For example, a
-sidecar injector might want to allow for the fields of the injected sidecar
-container to be modified (`imagePullPolicy` is a prime example), but still
-verify that the sidecar container exists in the list of containers and has some
-core set of fields set to the expected values.
-
-We intend make it convenient in the API for mutations to declare validation
-requirements. A set of validation options like this might be sufficient:
-
-- `Exact`: Validate that the mutation is fully applied (replaying the
-  mutation doesn't change anything)
-- `Overwritable`: No validation (allow other mutators to overwrite)
-- `conditional` (probably not an enum value though): Validate that some CEL
-  expressions results in true (can be used to validate that some subset of
-  fields, or that an int increase remains monotomic, ...)
-
-The safest way to ensure that admission authors pick a reasonable validation option
-is to use a required field without a default.
-
-By putting the validation of each mutation in the MutatingAdmissionResource we
-can enable both the validating and mutating changes atomically in an API server.
+Alternative considered: Order by constructing a DAG of which fields each
+mutation reads and writes. CEL expressions can be statically analyzed to build a
+list of the schema fields that are read/written. Potential cycles could be
+detected and a warning written to status.. This is significantly more coplex
+than the other alternatives. For this alternative to offer any advantage, we
+would need to be able to use the data to ban cycles from being introduced so
+that the DAG can be used to determine a total order of mutations.
 
 ##### Reinvocation
 
-Like mutating webhooks, we will reinvoke mutations if there is any possiblity
-that two mutations are interacting with each other. Any mutation that could
-possibly have read fields written by another mutator, or that might overwrite
-fields written by another mutator will trigger reinvocation. 
+The existing reinvocation policy established between webhooks and admission controllers
+will be extended to also handle admission policies.  Admission policies will be
+reinvoked after webhooks and before admission controllers.
 
-We can be more intelligent about reinvocation that mutating webhooks since we
-can compute scopes of both fields read and written for CEL mutations, which is
-not something that is possible with mutating webhooks.
+##### Safety
 
-Like mutating webhooks, we will set a limit on the number of reinvocations that
-can occur. Unlike mutating webhooks, CEL invocation is fast so we more than two
-invocation passes might be possible. However, since CEL mutation also has more
-information about what fields each mutator reads and writes, we also do not
-expect reinvocation to be as often needed, and so will likely use the same
-reinvocation limit of 2 that is used by webhooks, but may also reinvoke
-for purposes of validating mutations (see above "Safety" section).
+To ensure mutations are not "broken" by other mutations (overwritten, undone, or
+otherwise invalidated), we will register a validation in the validating
+admission plugin chain for mutation.  These validation checks will ensure if
+mutation has had the desired effect.
 
-We may also be able to detect that mutations have not "converged" (settled
-on a stable output) within the two reinvocations and report this information
-into the status of all mutators that are "fighting with each other".
+
+These validation checks will be declared using a `mutationValidation` field, which
+is a union with a `type` field that must be one of:
+
+- `ExactAfterReplay` - Replaying the mutation on the mutated object results in an identical object.
+- `Expression` - An `expression` field provides a CEL expression to validate the post condition.
+- `SkipValidation` - Don't validate. Since we expect most mutations should be post checked, we will
+                 require developers explicitly opt out if they don't want validation.
+
+For example:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: "sidecar-policy.example.com"
+spec:
+  # ...
+  mutations:
+      mutation: >
+        Object{
+          spec: Object.spec{
+            initContainers: [
+              Object.spec.initContainers{
+                name: params.name,
+                image: params.image,
+                args: params.args,
+                restartPolicy: params.restartPolicy
+                // ... other container fields injected here ...
+              }
+            ] + oldObject.spec.initContainers
+          }
+        }
+      mutationValidation: 
+        type: Expression
+        expression: "object.spec.initContainers.exists(ic, ic.name == params.name)"
+```
+
+Or, if the mutation is idempotent and expected to be applied exactly, simply do:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: "widget-policy.example.com"
+spec:
+  # ...
+  mutations:
+    - scope: "spec.widgets[*]"
+      mutation: >
+        Object.spec.widget{
+          reticulated: true
+        }
+      mutationValidation:
+        type: ExactAfterReplay
+```
 
 ### User Stories
 
@@ -482,7 +535,7 @@ Object{
             Object.spec.containers.item{
                 name: c.name,
                 imagePullPolicy: "Always"
-            })
+            }
         )
         // ... same for initContainers and ephemeralContainers ...
     }
