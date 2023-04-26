@@ -10,16 +10,30 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [The Job object too big](#the-job-object-too-big)
+  - [Expotential backoff delay issue](#expotential-backoff-delay-issue)
 - [Design Details](#design-details)
+  - [Job API](#job-api)
+  - [Tracking the number of failures per index](#tracking-the-number-of-failures-per-index)
+  - [Failed indexes format](#failed-indexes-format)
+  - [Job completion](#job-completion)
+  - [FailIndex action](#failindex-action)
+  - [Expotential backoff delay per index](#expotential-backoff-delay-per-index)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrade](#upgrade)
+    - [Downgrade](#downgrade)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -31,6 +45,18 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [backoffLimitPerIndex inside new runPolicy](#backofflimitperindex-inside-new-runpolicy)
+  - [Mark Job Complete if some indexes failed](#mark-job-complete-if-some-indexes-failed)
+  - [Support backoffLimitPerIndex when restartPolicy=OnFailure](#support-backofflimitperindex-when-restartpolicyonfailure)
+  - [Mutually exclusive backoffLimit and backoffLimitPerIndex](#mutually-exclusive-backofflimit-and-backofflimitperindex)
+  - [Use bool field](#use-bool-field)
+  - [Use enum field](#use-enum-field)
+  - [Global expotential backoff delay](#global-expotential-backoff-delay)
+  - [Expotential backoff delay with in-memory tracking](#expotential-backoff-delay-with-in-memory-tracking)
+  - [Alternative ways to support high number of completions](#alternative-ways-to-support-high-number-of-completions)
+    - [Keep failedIndexes field as a bitmap](#keep-failedindexes-field-as-a-bitmap)
+    - [Keep the list of failed indexes in a dedicated API object](#keep-the-list-of-failed-indexes-in-a-dedicated-api-object)
+    - [Implicit limit on the number of failed indexes](#implicit-limit-on-the-number-of-failed-indexes)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -38,18 +64,18 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -60,19 +86,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP extends the indexed job API to support indexed jobs where each index is independent,
-and a failed index does not cause the other indices to automatically clean up.
-
+This KEP extends the Job API to support indexed jobs where the backoff limit is
+per index, and the Job can continue execution despite some of its indexes failing.
 
 ## Motivation
 
-Currently, the indices of an indexed job share a single backoff limit. 
+Currently, the indexes of an indexed job share a single backoff limit.
 When the job reaches this shared backoff limit, the job controller marks the entire
-job as failed, and the resources are cleaned up, including indices that have yet
-to run to completion. 
+job as failed, and the resources are cleaned up, including indexes that have yet
+to run to completion.
 
 As a result, the current implementation does not cover the situation where the workload
-is truly embarrassingly parallel and each index is completely independent of other indices. 
+is truly embarrassingly parallel and each index is independent of other indexes.
 
 For instance, if indexed jobs were used as the basis for a suite of long-running integration tests,
 then each test run would only be able to find a single test failure.
@@ -82,10 +107,14 @@ showing that this is a common use case that should be supported by Kubernetes.
 
 ### Goals
 
-Support the use case where each indexed job has its own backoff limit, and all 
-indices of an indexed job can complete even when a single index fails.
+- allow to count failures towards the backoffLimit independently for all indexes,
+- allow to continue Job execution despite some of its indexes failing,
+- allow to fail an index (stop recreating pods for the index) using pod failure policy.
 
 ### Non-Goals
+
+- allow to control the number of retries per index when pod's `restartPolicy=OnFailure`
+(see [Support backoffLimitPerIndex when restartPolicy=OnFailure](#support-backofflimitperindex-when-restartpolicyonfailure)).
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
@@ -94,18 +123,104 @@ and make progress.
 
 ## Proposal
 
-We propose the addition of a new enum field in PodFailurePolicy called backoffLimitTarget,
-that accepts the values Job and Index. Job (the default value) would have the same behavior
-as the current implementation of the backoff limit where the limit shared between all indices.
-Index would represent this new set of use cases, where the backoff limit is applied to each
-index individually.
+We propose a new policy for running Indexed Jobs in which the backoff limit
+controls the number of retries per index. When the new policy is used all
+indexes execute until their success or failure. We also propose a new API field
+to control the number of failed indexes.
 
-We also propose the addition of a new action in PodFailurePolicy called FailIndex. This would be
-analagous to the existing FailJob action, but would allow a single index to be failed (short-circuiting retries)
-while the rest continue until completion.
+Additionally, we propose a new action in [PodFailurePolicy](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3329-retriable-and-non-retriable-failures), called FailIndex,
+to short-circuit failing of the index before the backoff limit per index is
+reached.
 
 ### User Stories (Optional)
 
+#### Story 1
+
+As a CI/CD platform administrator, I want to use Indexed Jobs to run
+suites of integration tests, one suite per index. A failure of one suite should
+not interrupt running of other suites. Additionally, I would like to be able
+to control the maximal number of retries per index.
+
+The following Job configuration could satisfy my use case:
+
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  backoffLimitPerIndex: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: job-container
+        image: job-image
+        command: ["./tests-runner"]
+```
+
+In this case, we run 10 indexes representing the test suites. We allow for one
+failure per index.
+
+#### Story 2
+
+As a CI/CD platform administrator from the [Story 1](#story-1) I want to be able
+to control the failures with the pod failure policy. In particular, I want
+to be able to use pod failure policy to avoid restarts of some indexes, based
+on exit codes.
+
+The following Job configuration could satisfy my use case:
+
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  backoffLimitPerIndex: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: job-container
+        image: job-image
+        command: ["./tests-runner"]
+  podFailurePolicy:
+    rules:
+    - action: FailIndex
+      onExitCodes:
+        operator: In
+        values: [42]
+```
+
+#### Story 3
+
+As a CI/CD platform administrator from the [Story 1](#story-1) I want to be able
+to fail the entire Job if the number of failed indexes exceeds 50%. I want to
+do this in order to cut down costs of running the tests in case of compilation
+issues that would result in all tests failing.
+
+The following Job configuration could satisfy my use case:
+
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  backoffLimitPerIndex: 1
+  maxFailedIndexes: 5
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: job-container
+        image: job-image
+        command: ["./tests-runner"]
+```
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -117,6 +232,101 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 ### Risks and Mitigations
+
+#### The Job object too big
+
+With the new field `.status.failedIndexes` the Job object can be significantly
+larger as every failed index is recorded in the field.
+
+Note that, the similar risk is also present for Indexed Jobs, regarding the
+already existing `.status.completedIndexes` field (see
+[Indexed Jobs can break with high number of parallelism or completions](https://github.com/kubernetes/kubernetes/issues/118085)).
+
+In order to mitigate this risk we first constrain the `.spec.maxFailedIndexes`
+to `10^5`, which is the same limit as for `.spec.parallelism` currently.
+
+Second, we validate if the fields are inside of the scalability limits:
+1. `.spec.completions<=10^5`, `.spec.parallelism<=10^5`, `spec.maxFailedIndexes<=10^5`
+2. `spec.completions` unlimited (<= max int32 ~2*10^9), `.spec.parallelism<=10^4`, `spec.maxFailedIndexes<=10^4`
+
+In (1.), in the worst case scenario, every index is either present
+in `completedIndexes` or `failedIndexes`, but not in both. Thus the total
+sum of both fields is limited by `(5+1)*10^5=0.572Mi`, where:
+- 5 is the maximal number of digits in the indexes,
+- 1 is for separation character,
+- 10^5 is the total number of listed indexes.
+
+In (2.) the worst case scenario for the `completedIndexes` field is when every
+third index is not in the field, because it corresponds to either a failed or
+a hanging indexes, so it is a "gap". Then, between every gap we have two indexes
+listed. Thus, the size of the `completedIndexes` field is limited
+by: `(10+1)*2*(10^4+10^4)=0.42Mi`, where:
+- 10 is the maximal number of digits in the indexes
+- 1 is for the separation character
+- 2*(10^4+10^4) is the number of indexes explicitly listed in the field - two indexes per gap.
+
+The size of the `failedIndexes` field is limited by: `(10+1)*10^4=0.105Mi`, where:
+- 10 is the maximal number of digits in the indexes,
+- 1 is for the separation character
+- 10^4 is the maximal number of indexes present in the field.
+
+Thus, the size of both fields is capped at `0.572Mi` for the limits in (1.) and
+`0.525Mi` for the limits in (2.).
+
+For comparison, before the introduction of `.status.failedIndexes`, the max
+size of the `.status.completedIndexes` was limited by `(5+1)*10^5*2/3=0.382Mi` in
+the (1.) case, and `(10+1)*2*10^4=0.21Mi` in the (2.) case. This means an increase
+of `0.19Mi`.
+
+The values of the limits are aligned with the values for the soft limits proposed
+as a fix for the for regular indexed jobs
+(see [here](https://github.com/kubernetes/kubernetes/issues/118085#issuecomment-1564520559)).
+However, in case when `backoffLimitPerIndex` is used we propose these limits
+to be hard.
+
+We believe that the scalability limits should be enough for most of Job use-cases.
+For workloads requiring larger jobs users should be able to create multiple Jobs,
+orchestrated by the [JobSet](https://github.com/kubernetes-sigs/jobset).
+
+### Expotential backoff delay issue
+
+Currently, a pod is recreated by the Job controller with expotential backoff
+delay (10s, 20s, 40s ...), counted from the last failure time.
+
+One complication is that the last failure time for failed pods may increase with
+time, as it fallbacks to `now` in some cases
+(see in [code](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/job/backoff_utils.go#L160-L182)).
+Thus, there is a risk that due to the presence
+of pods hitting the fallback the last failure time is continuously bumped,
+thus shifting the time to recreate the pod.
+
+This risk is present both when computing the expotential backoff delay globally
+(as for regular indexed Jobs), or per-index as proposed in in this KEP
+(see [Expotential backoff delay per index](#expotential-backoff-delay-per-index)).
+
+In order to mitigate this risk currently the time of last failure is recorded
+in-memory (globally for all pods within a Job). And a new failed pod may bump
+it only until it is added to the `uncountedTerminatedPods` structure.
+
+However, tracking the last failure time per index might be costly for memory
+consumption (see [Expotential backoff delay with in-memory tracking](#expotential-backoff-delay-with-in-memory-tracking)).
+
+Thus, in order to mitigate this risk we propose to compute the finish time for
+a pod as the first available value of the following (avoiding the ever-increasing
+fallback to `now`):
+1. max `finishAt` of all containers, if specified for all containers
+2. `LastTransitionTime` for the `Ready=False` condition
+3. `deletionTimestamp` - `deletionGracePeriodSeconds` if `deletionTimestamp` is set
+
+Here (3.) is used to mark the moment of deletion which is used to approximate
+the current behavior. (2.) is used when Kubelet loses track of one of its containers,
+the `Ready=False` condition is set by Kubelet when transitioning a pod to `Failed`
+phase: https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/kubelet/status/status_manager.go#L1060-L1068.
+When none of the above conditions is satisfied to compute the finish time we
+fallback to the pod's creation time.
+
+This fix can be considered a preparatory PR before the KEP, as to some extent
+is solves the preexisting issue.
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -132,18 +342,173 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-A possible PodFailurePolicy spec might look something like this with the new additions
+We introduce a new Job API field, called `.spec.backoffLimitPerIndex`.
+When set it limits the number of retries, counted independently for all indexes.
 
+Additionally, we propose the `.spec.maxFailedIndexes` to control
+the maximal number of failed indexes. Once the number is exceeded the entire
+Job is marked Failed and its execution is terminated.
+
+We also propose to extend the PodFailurePolicy with a new action, called
+`FailIndex` to allow an index to fail fast before reaching the backoff limit
+per index.
+
+### Job API
+
+```golang
+
+// PodFailurePolicyAction specifies how a Pod failure is handled.
+// +enum
+type PodFailurePolicyAction string
+
+const (
+  // This is an action which might be taken on a pod failure - mark the
+  // Job's index as failed to avoid restarts within this index. This action
+  // can only be used when backoffLimitPerIndex is set.
+  PodFailurePolicyActionFailIndex PodFailurePolicyAction = "FailIndex"
+  ...
+)
+...
+
+// JobSpec describes how the job execution will look like.
+type JobSpec struct {
+  ...
+  // Specifies the limit for the number of retries within an
+  // index before marking this index as failed. When enabled the number of
+  // failures per index is kept in the pod's
+  // batch.kubernetes.io/job-index-failure-count annotation. It can only
+  // be set when Job's completionMode=Indexed, and the Pod's restart
+  // policy is Never.
+  // When specified, then the backoffLimit field is defaulted to the max int32
+  // value. Also, once specified it cannot be set to nil.
+  // +optional
+  BackoffLimitPerIndex *int32
+
+  // Specifies the maximal number of failed indexes before marking the Job as
+  // failed, when backoffLimitPerIndex is set. Once the number of failed
+  // indexes exceeds this number the entire Job is marked as Failed and its
+  // execution is terminated. When left as nil the job continues execution of
+  // all of its indexes and is marked with the `Complete` Job condition.
+  // It can only be specified when backoffLimitPerIndex is set.
+  // The value is might be up to 10^5 when completions is <= 10^5, or 10^4 when
+  // completions > 10^5.
+  // +optional
+  MaxFailedIndexes *int32
+  ...
+}
+
+type JobStatus struct {
+  ...
+
+  // FailedIndexes holds the failed indexes when backoffLimitPerIndex is set.
+  // The indexes are represented in the text format analogous as for the
+  // `completedIndexes` field, ie. they are kept as decimal integers
+  // separated by commas. The numbers are listed in increasing order. Three or
+  // more consecutive numbers are compressed and represented by the first and
+  // last element of the series, separated by a hyphen.
+  // For example, if the failed indexes are 1, 3, 4, 5 and 7, they are
+  // represented as "1,3-5,7".
+  // +optional
+  FailedIndexes *string
+}
 ```
-podFailurePolicy:
-  rules:
-  - action: FailJob|FailIndex
-    onExitCodes:
-      containerName: main
-      operator: In
-      values: [42]
-  backoffLimitTarget: Job|Index
-```
+
+We allow to specify custom `.spec.backoffLimit` and `.spec.backoffLimitPerIndex`.
+This allows for a controlled downgrade. Also, when `.spec.backoffLimitPerIndex`
+is specified, then we default `.spec.backoffLimit` to max int32 value. This way
+we ensure old clients of the API wouldn't break when reading or trying to modify
+the `.spec.backoffLimit` that has nil value.
+
+### Tracking the number of failures per index
+
+In order to determine if the backoff limit per index is exceeded we keep
+track of the number of failures per index. For this purpose we use the Pod
+annotation, `batch.kubernetes.io/job-index-failure-count`, which holds the value
+of the number of pod failures for a given index. It is set to `0` for the first
+pod created for a given index.
+
+When Job controller sees a failed pod corresponding to a given index, and the
+value of the annotation `batch.kubernetes.io/job-index-failure-count` is greater
+or equal to the configured backoff limit per index then the index is marked
+as failed and added to `.status.failedIndexes`.
+
+When Job controller creates replacement pods for failed pods for a given
+index it checks if the index isn't finished yet (it is not in
+`.status.failedIndexes` nor `.status.completedIndexes`).
+Then, if `x` is the highest `batch.kubernetes.io/job-index-failure-count`
+for the index, the newly created pod will have the annotation set to `x+1`.
+An exception is when the newly failed pod matches the `Ignore` action in pod
+failure policy. In this case the replacement pod does not increment the
+value in the annotation.
+
+In order to keep track of the number of failures per index, the Job controller
+removes finalizers of a failed pod for a given index, only once the replacement
+pod (with incremented value of `batch.kubernetes.io/job-index-failure-count`) is
+created, or the index is marked as failed in `.status.failedIndexes`. This means
+that these are the main steps when handling a failed pod to prepare it for
+deletion:
+1. Pod is recognized as failed
+2. pod UID is recorded in Job status (`.status.uncountedTerminatedPods`)
+3. the replacement Pod is created
+4. Pod's finalizer is removed
+
+Here, the new feature adds a dependency between steps (3.) and (4.) as previously
+these steps could be performed in any order. Note that, typically when a pod is
+deleted or fails the replacement pod is created with a backoff delay, starting
+from 10s. This means, that after the proposed change the pod finalizer removal
+will be paused for at least 10s, until the backoff elapses and the replacement
+pod is created. While this may result in pods hanging around before garbage
+collection, it does not affect directly the rate of pod recreation.
+
+Note that, the first step (1.) will also be impacted by
+[KEP-3939: Consider Terminating pods as active pods in Jobs.](https://github.com/kubernetes/enhancements/issues/3939)
+
+### Failed indexes format
+
+The format of the `.status.failedIndexes` field is analogous to the one used for
+successful indexes represented by the [`completedIndexes` field](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/2214-indexed-job#track-completed-indexes-in-job-status)), which is a
+text format grouping consecutive integers into ranges. In a special case, when
+the indexes are non-consecutive they are represented by comma-separated numbers.
+In the worst-case scenario this is a string of comma-separated even values. In
+order to constrain the size of the field we cap the number of completions
+(see [The Job object too big](#the-job-object-too-big) for more details).
+
+### Job completion
+
+When backoff limit per index is used, then we execute indexes until all of them
+are completed (either failed or succeeded), or the number of failed indexes
+exceeds the specified `.spec.maxFailedIndexes`.
+
+Then, the Job is marked as completed (the `Complete` Job condition type) when
+all indexes are succeeded. The Job is marked as failed (the `Failed` Job condition)
+when at least one index is failed. The `Failed` condition is added once
+all indexes completed their execution (either failed or succeeded), or when
+the number of failed indexes exceeds the specified `.spec.maxFailedIndexes`.
+The `reason` field for the failed Job is `FailedIndexes` and the `message` field
+will list up to 3 of the failed indexes (in case there are more indexes the
+message will indicate that, for example with `...`).
+
+### FailIndex action
+
+In order to allow early termination of indexes with the `FailIndex` action
+we add the corresponding index to the set of failed indexes represented by
+`.status.failedIndexes`. This action can only be used if backoff limit per index
+is used.
+
+### Expotential backoff delay per index
+
+First, we solve the issue of increasing failure time for deleted pods when the
+finalizer removal is delayed, by modifying the definition of the pod finish time,
+to avoid fallback to `now`
+(see also [Expotential backoff delay issue](#expotential-backoff-delay-issue)).
+
+Second, we compute the backoff delay within each index independently. The number
+of consecutive failures per-index can be derived from the
+`batch.kubernetes.io/job-index-failure-count` annotation of the last failed pod,
+plus one. This is because any successful pod marks the index as successful and
+stops retries. Note that, using the annotation value means that failed pods
+matching the Ignore rule are skipped in the calculation, but this behavior is
+consistent with handling ignored pod failures for regular backoff limit.
 
 ### Test Plan
 
@@ -158,7 +523,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -170,6 +535,23 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 -->
 
 ##### Unit tests
+
+Unit tests will be added along with any new code introduced. In particular,
+the following scenarios will be covered with unit tests:
+- handling or ignoring of `.spec.backoffLimitPerIndex` by the Job
+  controller when the feature gate is enabled or disabled, respectively,
+- handling of ignoring of the pod failure policy rule with `FailIndex` action
+- the `JobBackoffLimitPerIndex` feature gate is enabled or disabled, respectively,
+- validation of a job configuration with respect to `.spec.backoffLimitPerIndex` by
+  kube-apiserver (including limits for `.spec.maxFailedIndexes`,
+  `.spec.parallelism` and `.spec.completions`), when the feature gate is enabled
+  or disabled,
+- marking of the Job as `Complete` only once all indexes are completed,
+- termination of Job execution and marking it as failed when
+  `.spec.maxFailedIndexes` is exceeded.
+- calculation of the expotential backoff delay per index when `backoffLimitPerIndex`
+  is used.
+- a fuzzer roundtrip test for API when `backoffLimit` is set to max int32.
 
 <!--
 In principle every added code should have complete unit test coverage, so providing
@@ -190,7 +572,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+The core packages (with their unit test coverage) which are going to be modified during the implementation:
+- `k8s.io/kubernetes/pkg/controller/job`: `27 Apr 2023` - `90.4%`  <!--(main logic to handle backoffLimitPerIndex, FailIndex and maxFailedIndexes)-->
+- `k8s.io/kubernetes/pkg/apis/batch/validation`: `27 Apr 2023` - `98.5%` <!--(validation of the job configuration for backoffLimitPerIndex and FailIndex)-->
 
 ##### Integration tests
 
@@ -202,7 +586,16 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+The following scenarios will be covered with integration tests:
+- enabling, disabling and re-enabling of the `JobBackoffLimitPerIndex` feature gate
+- handling of the `.spec.backoffLimitPerIndex` when the `FailIndex` action is used,
+- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes` isn't set,
+- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes` is set,
+- handling of the `.spec.backoffLimit` when `.spec.backoffLimitPerIndex` is set,
+- handling of the expotential backoff delay per index when `.spec.backoffLimitPerIndex` is set.
+
+More integration tests might be added to ensure good code coverage based on the
+actual implementation.
 
 ##### e2e tests
 
@@ -216,7 +609,18 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+The following scenarios will be covered with e2e tests:
+- handling of the `.spec.backoffLimitPerIndex` when the `FailIndex` is used -
+  the Job's index is marked as failed,
+- handling of the `.spec.backoffLimitPerIndex` when the number of failures for
+  an index exceeds the backoff - the index is marked as failed, but the Job
+  continues its execution until all indexes are finished.
+- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes`
+  is set and exceeded - the Job is marked as Failed and its execution is
+  terminated.
+
+More integration tests might be added to ensure good code coverage based on the
+actual implementation.
 
 ### Graduation Criteria
 
@@ -282,7 +686,46 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- the feature implemented behind the `JobBackoffLimitPerIndex` feature flag
+- change the logic of computing the expotential backoff delay (see [here](#expotential-backoff-delay-issue))
+- user-facing documentation, including the warning for setting completions > 10^5
+- The `JobBackoffLimitPerIndex` feature flag disabled by default
+- Tests: unit and integration
+
+#### Beta
+
+- Address reviews and bug reports from Alpha users
+- Propose and implement metrics
+- E2e tests are in Testgrid and linked in KEP
+- The feature flag enabled by default
+
+#### GA
+
+- Address reviews and bug reports from Beta users
+- Write a blog post about the feature
+- Graduate e2e tests as conformance tests
+- Lock the `JobBackoffLimitPerIndex` feature gate
+- Declare deprecation of the `JobBackoffLimitPerIndex` feature gate in documentation
+
 ### Upgrade / Downgrade Strategy
+
+#### Upgrade
+
+An upgrade to a version which supports this feature should not require any
+additional configuration changes. In order to use this feature after an upgrade
+users will need to configure their Jobs by specifying
+`.spec.backoffLimitPerIndex`.
+There is no difference in behavior of Jobs if `.spec.backoffLimitPerIndex` is
+not set.
+
+#### Downgrade
+
+A downgrade to a version which does not support this feature should not require
+any additional configuration changes. Jobs which specified
+`.spec.backoffLimitPerIndex` (to make use of this feature) will be
+handled in a default way, ie. using the `.spec.backoffLimit`.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -297,6 +740,13 @@ enhancement:
 -->
 
 ### Version Skew Strategy
+
+This feature is limited to control plane.
+
+Note that, kube-apiserver can be in the N+1 skew version relative to the
+kube-controller-manager (see [here](https://kubernetes.io/releases/version-skew-policy/#kube-controller-manager-kube-scheduler-and-cloud-controller-manager)).
+In that case, the Job controller operates on the version of the Job object that
+already supports the new Job API.
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -353,9 +803,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: JobBackoffLimitPerIndex
+  - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -365,12 +815,18 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
+No.
+
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes. Using the feature gate is the recommended way. When the feature is disabled
+the Job controller manager handles pod failures in the default way, even if
+`.spec.backoffLimitPerIndex` is set.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -385,7 +841,12 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+The Job controller starts to handle pod failures according to the specified
+`.spec.backoffLimitPerIndex` or `.spec.maxFailedIndexes` fields.
+
 ###### Are there any tests for feature enablement/disablement?
+
+No. The tests will be added in Alpha.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -408,6 +869,8 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+The change is opt-in, it doesn't impact already running workloads.
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -420,12 +883,26 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
+A substantial increase in the `job_sync_duration_seconds`.
+
+Also, a substantial increase in the total number of pods, as it may take
+additional time to get the finalizers removed.
+
+Additionally, a substantial increase in the difference of
+`terminated_pods_tracking_finalizer_total` for the `add` and `delete` labels may
+indicate that it takes too long to delete the finalizers.
+
+The feature is opt-in so in case of issues it is enough not to use the
+backoffLimitPerIndex API field.
+
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+It will be tested manually prior to beta launch.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -434,6 +911,8 @@ are missing a bunch of machinery and tooling and can't do that now.
 -->
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No.
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
@@ -449,6 +928,12 @@ previous answers based on experience in the field.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
+
+By the presence of the `.spec.backoffLimitPerIndex` field in the jobs.
+
+For Beta we are also considering to introduce `job_finished_indexes_total`
+metric
+(see also [here](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)).
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -467,13 +952,11 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Job API .status
+  - field: `failedIndexes` will not be empty as indexes fail
+- [x] Pod API
+  - annotation: `batch.kubernetes.io/job-index-failure-count` is present for
+    pods created by Jobs with this feature enabled
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -498,14 +981,20 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `job_sync_duration_seconds` (existing): can be used to see how much the
+feature enablement increases the time spent in the sync job
+  - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+For Beta we will consider introduction of a new metric `job_finished_indexes_total`
+with labels `status=(failed|succeeded)`, and `backoffLimit=(perIndex|global)`.
+It will count the number of failed and succeeded indexes across jobs using
+`backoffLimitPerIndex`, or regular Indexed Jobs (using only `.spec.backoffLimit`).
+It might be useful to determine the global ratio of failed vs. succeeded indexes
+when `backoffLimitPerIndex` is used.
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
@@ -519,6 +1008,8 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+No.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -549,6 +1040,8 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
+No.
+
 <!--
 Describe them, providing:
   - API call type (e.g. PATCH pods)
@@ -564,6 +1057,8 @@ Focusing mostly on:
 
 ###### Will enabling / using this feature result in introducing new API types?
 
+No.
+
 <!--
 Describe them, providing:
   - API type
@@ -573,6 +1068,8 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
+No.
+
 <!--
 Describe them, providing:
   - Which API(s):
@@ -580,6 +1077,22 @@ Describe them, providing:
 -->
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+  Yes, but only when the `.spec.backoffLimitPerIndex` field is set.
+
+  - API type(s): Job
+  - Estimated increase in size:
+    - New `.status.failedIndexes` field in Status and `.status.completedIndexes`
+pre-existing field are impacted. When the scalability limits are respected,
+then the maximal increase of the total size of both fields can be estimated
+as `190Ki` (see [The Job object too big](#the-job-object-too-big) for more details),
+    - New `.spec.backoffLimitPerIndex` field of `*int32` is 12 bytes.
+
+  - API type(s): Pod
+  - Estimated increase in size:
+    the new annotation `batch.kubernetes.io/job-index-failure-count` to keep the
+    current number of retries per index. Is around 50 bytes.
+
 
 <!--
 Describe them, providing:
@@ -589,6 +1102,9 @@ Describe them, providing:
 -->
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+However, we don't expect this increase to be captured by existing
+[SLO/SLIs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md).
 
 <!--
 Look at the [existing SLIs/SLOs].
@@ -600,6 +1116,14 @@ Think about adding additional work or introducing new steps in between
 -->
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+The added dependency of removing finalizers only after pod
+recreation [Tracking the number of failures per index](#tracking-the-number-of-failures-per-index)
+may keep pods around longer (around 10s which is the backoff for pod recreation)
+before actual deletion (requested or by PodGC).
+
+This can increase the RAM consumption, but only for a short period of time. Also,
+it is only affecting the failing pods.
 
 <!--
 Things to keep in mind include: additional in-memory state, additional
@@ -656,6 +1180,10 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2023-01-23: Initial version of the KEP PR [Backoff Limit Per Job #3774](https://github.com/kubernetes/enhancements/pull/3774)
+- 2023-04-26: The KEP PR [Backoff limit per Job Index #3967](https://github.com/kubernetes/enhancements/pull/3967) takes over from [#3774](https://github.com/kubernetes/enhancements/pull/3774)
+- 2023-05-08: The KEP PR ready for review
+
 ## Drawbacks
 
 <!--
@@ -664,11 +1192,234 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+### backoffLimitPerIndex inside new runPolicy
+
+We could nest the new fields (`maxFailedIndexes` and `backoffLimitPerIndex`) inside
+another field. Proposed alternative names for the field:
+1. `runPolicy`
+2. `completionPolicy`
+3. `failurePolicy`
+
+For example:
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  backoffLimit: 4
+  runPolicy:
+    backoffLimitPerIndex: true
+    maxFailedIndexes: 1
+  ...
+```
+
+The option (3.) suggests that the fields are about declaring the Job as failed.
+However, the `backoffLimitPerIndex` field not only allows to count failures
+towards the backoff limit per index, but also allows all indexes to execute
+despite failures, thus more generic names, like (1.) and (2.) are preferred.
+
+Also the options (1.) and (2.) may be reused in the context of success policy
+which is subject of
+[Job success/completion policy](https://github.com/kubernetes/kubernetes/issues/117600).
+It might be beneficial for the API to consider the conditions for the Job
+success or failure under the same field.
+
+**Reasons for deferring / rejecting**
+
+It is not clear what is the best name going forward. Also, it seems that the
+`backoffLimitPerIndex` should be next to `backoffLimit`. It was discussed
+and the consensus is that "top-level" is fine
+(see [here](https://github.com/kubernetes/enhancements/pull/3967#discussion_r1196170192)).
+
+### Mark Job Complete if some indexes failed
+
+The alternative to the proposed [Job completion](#job-completion) strategy.
+
+Allow execution of all indexes, up to `.spec.maxFailedIndexes` of
+failed indexes. Then, mark the Job `Complete` even if some indexes failed.
+The Job is marked `Failed` only if the number of failed indexes exceeds the
+specified `.spec.maxFailedIndexes` limit, in that case, the `reason`
+field could be `FailedIndexes`, and the `message` field would list the failed
+indexes up to a couple of them.
+
+**Reasons for deferring / rejecting**
+
+This approach is less intuitive to the end-users of the API, compared
+to the proposal. In particular, in some cases it would require custom logic in
+the user's controller to determine if the Job is failed.
+
+### Support backoffLimitPerIndex when restartPolicy=OnFailure
+
+We've considered supporting the backoffLimitPerIndex when pod's `restartPolicy=OnFailure`.
+
+**Reasons for deferring / rejecting**
+
+When restartPolicy=OnFailure it is Kubelet's responsibility to restart the pod.
+On the other hand if the maximal number of restarts would be enforced by the
+Job controller, then race conditions are possible. For example, in-between the
+checks by the Job controller, Kubelet execute more restarts than the specified
+`.spec.backoffLimit`. The problematic counting of failures in the
+restartPolicy=OnFailure has been ticketed
+[When restartPolicy=OnFailure the calculation for number of retries is not accurate](https://github.com/kubernetes/kubernetes/issues/109870).
+
+We believe that this feature can be supported well by using the pod-level API,
+started in this KEP:
+[Add a new field maxRestartTimes to podSpec when running into RestartPolicyOnFailure](https://github.com/kubernetes/enhancements/issues/3322).
+
+Once the pod-level API is done, it could be considered to support `.spec.backoffLimitPerIndex`
+when`restartPolicy=OnFailure` in pod's spec. In this case we could set the pod-level
+`maxRestartTimes` field based on the Job-level `.spec.backoffLimit`, leaving the
+responsibility of enforcing the limit to the Kubelet.
+
+We will re-assess the decision of the Pod-level API graduates to GA in the
+KEP: [Add a new field maxRestartTimes to podSpec when running into RestartPolicyOnFailure](https://github.com/kubernetes/enhancements/issues/3322).
+For example, when maxRestartTimes is specified for `restartPolicy=OnFailure`, then
+we could support `maxFailedIndexes` which would allow to control the number of
+failed indexes (that exceeded the `maxRestartTimes` and are marked failed).
+
+### Mutually exclusive backoffLimit and backoffLimitPerIndex
+
+We've also considered to make the `backoffLimit` and `backoffLimitPerIndex`
+fields mutually exclusive.
+
+**Reasons for deferring / rejecting**
+
+There is no way to control downgrade, as the value of `backoffLimit` would
+always default to 6. Also, old API clients may error trying to read or modify
+Job objects with backoffLimit=nil.
+
+### Use bool field
+
+We've considered to use a bool `backoffLimitPerIndex` field. Here is an example:
+
+
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  backoffLimit: 1
+  backoffLimitPerIndex: true
+  ...
+```
+
+**Reasons for deferring / rejecting**
+
+It does not allow to specify both `.spec.backoffLimit` and `.spec.backoffLimitPerIndex`
+in the same config. While setting both fields can be confusing in regular use
+it can be helpful to support the use case of controlled downgrade.
+
+### Use enum field
+
+We've considered to use an enum `backoffLimitTarget: Job|Index` field (another
+name for this concept could be `backoffLimitGranularity`), to specify that the
+failures should be tracked per-index. Here, the default would be `Job`. Here is
+an example:
+
+
+```yaml
+apiVersion: v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  backoffLimit: 1
+  backoffLimitTarget: Index
+  ...
+```
+
+**Reasons for deferring / rejecting**
+
+No other targets, than `Job` and `Index`, will be added in a foreseeable
+future. Thus, it seems like an unnecessary complication. The dedicated name
+`backoffLimitPerIndex` seems to also better reflect the user's intention.
+
+Similarly as in the bool case field [Use bool field](#use-bool-field) it does
+not allow to set both `.spec.backoffLimit` and `.spec.backoffLimitPerIndex`
+to control the downgrade.
+
 <!--
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### Global expotential backoff delay
+
+We could also consider leaving the expotential backoff delay as global and
+be enabled by a dedicated API field in the future KEP, say `backoffDelayPerIndex`.
+
+**Reasons for deferring / rejecting**
+
+The idea of using `backoffLimitPerIndex` is to make the indexes independent.
+Thus, failures or successes in one index should not influence backoff delays
+for another index. We are leaving the decision to the community feeback and
+discussions though.
+
+### Expotential backoff delay with in-memory tracking
+
+Instead of modifying the definition of pod's finish time (see [Expotential backoff delay issue](#expotential-backoff-delay-issue))
+we could keep track of the "failure time" for failed pods in-memory.
+
+**Reasons for deferring / rejecting**
+
+As the number of failed indexes is capped at 10^5 keeping track of failure
+times for all pods will be at least 8B per failed pod, which is around 1Mi per
+Job in the worst-case scenario. This is a non-negligible memory increase.
+
+The extra tracking information is not needed counting pods as terminated is done
+in [KEP-3939: Consider terminating pods in job controller](https://github.com/kubernetes/enhancements/pull/3940).
+In this case we can assume that the failure time of each pod does not change
+after its phase is terminal.
+
+### Alternative ways to support high number of completions
+
+In the current proposal the high number of completions (like 10^6) is supported
+by specifying the `.spec.maxFailedIndexes` field. This way the size
+of the `failedIndexes` field is controlled.
+
+See below for alternative approaches proposed.
+
+#### Keep failedIndexes field as a bitmap
+
+In order to squeeze more failed indexes we could use bitmap.
+
+**Reasons for deferring / rejecting**
+
+- it is not human readable which might be useful for manual inspection
+- it is harder to parse by user-provided controllers
+- it introduces another format to keeping the succeeded indexes in `.status.completedIndexes`
+
+#### Keep the list of failed indexes in a dedicated API object
+
+The idea is to keep the heavy fields outside of the Job API object itself.
+It could be a new API object, for example JobFailedIndexes.
+
+**Reasons for deferring / rejecting**
+
+This approach significantly increases the complexity of the Job controller that
+needs to register and manage another API object. This may also have performance
+impact as the Job controller needs to query the object. Finally, it is also
+a complication to the end users who want to fetch the list of failed indexes.
+
+#### Implicit limit on the number of failed indexes
+
+An alternative is to have an implicit limit on the number of failed indexes, for
+example, by controlling the size of the `.status.failedIndexes` field down to
+300KB. This can allow to run a job with completions at the level of 10^6, without
+explicit limit for maximal number of failed indexes.
+
+**Reasons for deferring / rejecting**
+
+It may behave unpredictably, impacting the user experience. For example,
+when a user sets `maxFailedIndexes` as 10^6 the Job may complete if the indexes
+and consecutive, but the Job may also fail if the size of the object exceeds the
+limits due to non-consecutive indexes failing.
 
 ## Infrastructure Needed (Optional)
 
