@@ -380,7 +380,14 @@ validation rules that exist in the Kubernetes API today.
 
 - `isFormat() <bool>` and `validateFormat() <list<string>>` will be added to allow formats to be checked in CEL
   expression and for format violations to be reported using `messageExpression: "self.validateFormat('ipv6')"`
-- IP and CIDR libraries will be added that allow for a wide range of IP (v4 and v6) checks to be performed.
+- IP and CIDR library:
+  - `ip(string) IP`
+  - `IP.is4() bool`
+  - `IP.is6() bool`
+  - `IP.isLoopback() bool`
+  - `cidr(string) CIDR`
+  - `CIDR.overlaps(CIDR) bool`
+  - `CIDR.containsIP(IP) bool`
 - Quantity library
 
 TODO: Flesh out the exact library functions we will to add.
