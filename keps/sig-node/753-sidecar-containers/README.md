@@ -26,12 +26,16 @@
     - [Scenario 7. Risk of porting existing sidecars to the new mechanism naively](#scenario-7-risk-of-porting-existing-sidecars-to-the-new-mechanism-naively)
 - [Design Details](#design-details)
   - [Backward compatibility](#backward-compatibility)
+  - [kubectl changes](#kubectl-changes)
+    - [Without sidecar containers support](#without-sidecar-containers-support)
+    - [With sidecar container feature](#with-sidecar-container-feature)
   - [Resources calculation for scheduling and pod admission](#resources-calculation-for-scheduling-and-pod-admission)
   - [Exposing Pod Resource requirements](#exposing-pod-resource-requirements)
     - [Goals of exposing the Pod.TotalResourcesRequested field](#goals-of-exposing-the-podtotalresourcesrequested-field)
     - [Implementation details](#implementation-details)
     - [Notes for implementation](#notes-for-implementation)
     - [Resources calculation and Pod QoS evaluation](#resources-calculation-and-pod-qos-evaluation)
+    - [Resource calculation and version skew](#resource-calculation-and-version-skew)
   - [Topology and CPU managers](#topology-and-cpu-managers)
   - [Termination of containers](#termination-of-containers)
   - [Other](#other)
@@ -81,10 +85,10 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -243,9 +247,8 @@ condition is represented with the field `Started` of `ContainerStatus` type. See
 the section ["Pod startup completed condition"](#pod-startup-completed-condition)
 for considerations on picking this signal.
 
-As part of the KEP, init containers and regular containers will be split into
-two different types. The field `restartPolicy` will only be introduced on init
-containers. The only supported value proposed in this KEP is `Always`. No other
+The field `restartPolicy` will only be accepted on init
+containers as part of this KEP. The only supported value proposed in this KEP is `Always`. No other
 values will be defined as part of this KEP. Moreover, the field will be
 nullable so the default value will be "no value". 
 
@@ -274,7 +277,7 @@ containers in the Pod. This intent to solve the issue
 https://github.com/kubernetes/kubernetes/issues/111356 
 
 As part of this KEP we also will be enabling for sidecar containers (those will
-not be enabled for other init containers):
+not be allowed for other init containers):
 - `PostStart` and `PreStop` lifecycle handlers for sidecar containers
 - All probes (startup, readiness, liveness)
 - Readiness probes of sidecars will contribute to determine the whole Pod
@@ -525,6 +528,91 @@ Behaviors they can rely on:
 
 These potential incompatibilities will be documented.
 
+### kubectl changes
+
+The `kubectl get pods` filters all the Init containers from output when Pod is Running.
+As part of this KEP, the output will be extended to include status of sidecar Containers.
+#### Without sidecar containers support
+
+For the Pod:
+
+```
+initContainers:
+  - name: init-config
+containers:
+  - name: sidecar-1
+  - name: sidecar-2
+  - name: main
+```
+
+Initialization (Waiting)
+
+```
+NAME      READY   STATUS     RESTARTS   AGE
+test      0/3     Init:0/1   0          0s
+```
+Running
+
+```
+NAME      READY   STATUS     RESTARTS   AGE
+test      3/3     Running    0          35s
+```
+
+#### With sidecar container feature
+
+For the Pod:
+
+```
+initContainers:
+  - name: init-config
+  - name: sidecar-1
+    restartPolicy: Always
+  - name: sidecar-2
+    restartPolicy: Always
+containers:
+  - name: main
+```
+
+What we have today:
+
+Initialization (Waiting)
+
+```
+NAME      READY   STATUS     RESTARTS   AGE
+test      0/1     Init:0/3   0          0s
+NAME      READY   STATUS     RESTARTS   AGE
+test      0/1     Init:1/3   0          5s
+NAME      READY   STATUS     RESTARTS   AGE
+test      0/1     Init:2/3   0          10s
+```
+
+Running
+
+```
+NAME      READY   STATUS     RESTARTS   AGE
+test      1/1     Running    0          35s
+```
+
+What will be returned as part of the KEP implementation:
+
+Initialization (Waiting)
+
+```
+NAME      READY   STATUS     RESTARTS   AGE
+test      0/3     Init:0/3   0          0s
+NAME      READY   STATUS     RESTARTS   AGE
+test      0/3     Init:1/3   0          5s
+NAME      READY   STATUS     RESTARTS   AGE
+test      0/3     Init:2/3   0          10s
+```
+
+Running
+
+```
+NAME      READY   STATUS     RESTARTS   AGE
+test      3/3     Running    0          35s
+```
+
 ### Resources calculation for scheduling and pod admission
 
 When calculating whether Pod will fit the Node, resource limits and requests are
@@ -586,7 +674,7 @@ represent the actual resources in use.  The KEP notes that:
 > `Status.ContainerStatuses[i].ResourcesAllocated` when considering available
 > space on a node.
 
-We can introduce `ContainerUse` to represent this value:
+We will introduce `ContainerUse` to represent this value:
 
 ```
 ContainerUse(i) = Max(Spec.Containers[i].Resources, Status.ContainerStatuses[i].ResourcesAllocated)
@@ -639,6 +727,11 @@ allow a pod to schedule.
   the effective resource requirements for a v1.Pod struct.
 - Eliminate duplication of the pod resource requirement calculation within
   `kubelet` and `kube-scheduler`.
+
+Note: in order to support the [Downgrade strategy](#downgrade-strategy), scheduler
+will ignore the presence of the feature gate when calculating resources. This will
+prevent overbooking of nodes when scheduler ignored sidecar when calculating resources
+and scheduled too many Pods on the Node that had the feature gate enabled.
 
 #### Implementation details
 
@@ -698,6 +791,24 @@ The logic in
 [`GetPodQOS`](https://github.com/kubernetes/kubernetes/blob/release-1.26/pkg/apis/core/helper/qos/qos.go#L38-L101)
 not likely will need changes, but needs to be tested with the sidecar
 containers.
+
+#### Resource calculation and version skew
+
+In case of a version skew between scheduler and kubelet, or in cases when
+scheduler and kubelet has a different value set for the `SidecarContainers` feature gate,
+calculation of resources required for a Pod will differ between the scheduler
+and a kubelet when the sidecar container created.
+
+In case when scheduler "knows" about the sidecar and kubelet doesn't, there
+unlikely be any issues. Scheduler will calculate resources usage for a Pod that
+will be equal or more than kubelet will require to run the Pod. So there will be
+no overbooking.
+
+If scheduler has the `SidecarContainers` feature gate disabled, the Pod that has a Sidecar
+container will not be admitted as validation of the new field will fail.
+
+We will recommend in documentation to not disable the feature gate on scheduler,
+while there are any Pods with Sidecar container is running.
 
 ### Topology and CPU managers
 
@@ -984,26 +1095,31 @@ First, there will be no effect on any workload that doesn't use a new field. Any
 combination of feature gate enabled/disabled or version skew will work as usual
 for that workload.
 
-So when the new functionality wasn't yet used, downgrade will not be affected.
+When the new functionality wasn't yet used, downgrade will not be affected.
 
-Due to the new field added to `initContainers` to turn them into sidecars,
-downgrading to the version without this feature will make all Pods using this
-flag unscheduleable. New Pods will be rejected by the control plane and
-all kubelets. Pods that has already been created will not be rejected by control
-plane, but once reaching the kubelet, that has this feature disabled or which
-is old, kubelet will reject the Pod on unmarshalling.
+Versions of Kubernetes that doesn't have this feature implemented will ignore
+and strip out the new field `initContainers`. 
 
-**Note**, we tested kubelet behavior. For the control plane we may need
-to implement a new logic to reject such Pods when feature gate got turned off.
+Pods that has already been created will stay being scheduled after the downgrade - 
+not be rejected by control
+plane nor by kubelet. Both will treat the sidecar container as an Init container.
+This may render the Pod unusable as it will stuck in initialization forever -
+sidecar container are never exiting. We will document this behavior for Alpha release.
+Promoting feature to Beta we will revisit the situation. If we will see this as
+a major issue, we will need to wait for 3 releases so kubelet will have the logic
+to reject such Pods when the feature gate is disabled to keep Downgrade safe.
+
+**Note**, For the control plane and kubelet we will implement logic to reject Pods
+with sidecar containers when feature gate got turned off.
 See [Upgrade/downgrade testing](#upgradedowngrade-testing) section.
 
 Workloads will have to be deleted and recreated with the old way of handling
 sidecars.  Once there is no more Pods using sidecars, node can be downgraded
 without side effects.
 
-If downgrade hapenning from the version with the feature enabled to the previous
+If downgrade happening from the version with the feature enabled to the previous
 version that has this feature support, but feature gate is disabled, kubelet
-and/or control place will reject these Pods.
+and control place will reject these Pods.
 
 **Note**, downgrade requires node drain. So we will not support scenarios when
 Pod already running on the node will need to be handled by the restarted
