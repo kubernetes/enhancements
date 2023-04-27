@@ -170,7 +170,7 @@ For example:
 ```go
 // staging/src/k8s.io/api/core/v1/types.go
 
-// +valdiation=rule:"!self.hostNetwork || self.containers.all(c, c.containerPort.all(cp, cp.hostPort == cp.containerPort))"
+// +valdiationRule="!self.hostNetwork || self.containers.all(c, c.containerPort.all(cp, cp.hostPort == cp.containerPort))"
 type PodSpec struct {
   Containers []Container `json:...`
 }
@@ -312,18 +312,20 @@ written validation, which is evaluated against internal types.
 
 Go IDL tags will be added to support the following declarative validation rules:
 
-| Type of valiation      | Go IDL tag                                                       | OpenAPI validation field                                                           |
-| ---------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| string format          | `+format={format name}`                                          | `format`                                                                           |
-| size limits            | `+min{Length,Properties,Items}`, `+max{Length,Properties,Items}` | `min{Length,Properties,Items}`, `max{Length,Properties,Items}`                     |
-| numeric limits         | `+minimum`, `+maximum`, `+exclusiveMinimum`, `+exclusiveMaximum` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`                       |
-| required fields        | `+optional` (exists today)                                       | `required`                                                                         |
-| enum values            | `+enum` (exists today)                                           | `enum`                                                                             |
-| uniqueness             | `listType=set` (sets and map keys)                               | `x-kubernetes-list-type`                                                           |
-| regex matches          | `+pattern`                                                       | `pattern`                                                                          |
-| cross field validation | `cel=rule:"{CEL expression}"`                                    | `x-kubernetes-validations`                                                         |
-| [transition rules](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules) | `cel=rule:"{CEL expression using oldSelf}"` | `x-kubernetes-validations` |
-| special case: metadata name format | `+metadataNameFormat={format name}`                  | `x-kubernetes-validations` (see "format" section below for details)                |
+| Type of valiation      | Go IDL tag                                                       | OpenAPI validation field                                                           | Reason Type      |
+| ---------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------- |
+| string format          | `+format={format name}`                                          | `format`                                                                           | Invalid          |
+| size limits            | `+min{Length,Properties,Items}`, `+max{Length,Properties,Items}` | `min{Length,Properties,Items}`, `max{Length,Properties,Items}`                     | TooMany, TooLong |
+| numeric limits         | `+minimum`, `+maximum`, `+exclusiveMinimum`, `+exclusiveMaximum` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`                       | Invalid          |
+| required fields        | `+optional` (exists today)                                       | `required`                                                                         | Required         |
+| enum values            | `+enum` (exists today)                                           | `enum`                                                                             | NotSupported     |
+| uniqueness             | `listType=set` (sets and map keys)                               | `x-kubernetes-list-type`                                                           | Invalid          |
+| regex matches          | `+pattern`                                                       | `pattern`                                                                          | Invalid          |
+| cross field validation | `validationRule="{CEL expression}"`                              | `x-kubernetes-validations`                                                         | user specified   |
+| [transition rules][1]  | `validationRule="{CEL expression using oldSelf}"`                | `x-kubernetes-validations`                                                         | user specified   |
+| special case: name format | `+nameFormat={format name}`                                   | `x-kubernetes-validations` (see "format" section below for details)                | Invalid          |
+
+xref: [Kubernetes mapping of OpenAPI value validations to response code](https://github.com/kubernetes/kubernetes/blob/7adcb3cb37084750ab572a179ba01b9878b8de5f/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/validation/validation.go#L60)
 
 ### Unions
 
@@ -342,8 +344,8 @@ type DeploymentSpec struct {
   
   // ...
   // 
-  // +cel=rule:"!(self.type == 'Recreate') || !has(self.rollingUpdate)",message="may not be specified when strategy `type` is Recreate",reason=Forbidden,field="rollingUpdate"
-  // +cel=rule:"!(self.type == 'RollingUpdate') || has(self.rollingUpdate)",message="this should be defaulted and never be nil",reason=Required,field="rollingUpdate"
+  // +validationRule="!(self.type == 'Recreate') || !has(self.rollingUpdate)",message="may not be specified when strategy `type` is Recreate",reason=Forbidden,field="rollingUpdate"
+  // +validationRule="!(self.type == 'RollingUpdate') || has(self.rollingUpdate)",message="this should be defaulted and never be nil",reason=Required,field="rollingUpdate"
   Strategy DeploymentStrategy `json:...`
   
   // ...
@@ -368,12 +370,19 @@ expression is declared, e.g.:
 
 ```go
   
-  //+cel=rule:"!self.widgetType == 'Component' || !['badname2', 'badname2'].exists(notAllowed, self.componentName.contains(notAllowed))",reason=Forbidden
+  //+validationRule="!self.widgetType == 'Component' || !['badname2', 'badname2'].exists(notAllowed, self.componentName.contains(notAllowed))",reason=Forbidden
   type FizzBuzzSpec struct {
     Type WidgetType `json...`
     ComponentName string `json...`
   }
 ```
+
+Note that the `+validationRule` IDL tags supports multiple optional fields after the expression string. The supported fields are:
+
+- `message`: A vailidation failure message string.
+- `messageExpression`: A CEL expression that evalutes to a validation failure message string. Takes precedence over message.
+- `reason`: Must be one of [Required, Forbidden, Invalid, RequestEntityTooLarge].
+- `field`: A JSONPath to the sub-field that a validation failure should be attributed to.
 
 We will need to extend our CEL libraries to make it possible to migrate all the
 validation rules that exist in the Kubernetes API today.
@@ -381,16 +390,20 @@ validation rules that exist in the Kubernetes API today.
 - `isFormat() <bool>` and `validateFormat() <list<string>>` will be added to allow formats to be checked in CEL
   expression and for format violations to be reported using `messageExpression: "self.validateFormat('ipv6')"`
 - IP and CIDR library:
+  - `isIP(string) bool`
   - `ip(string) IP`
   - `IP.is4() bool`
   - `IP.is6() bool`
   - `IP.isLoopback() bool`
+  - `isCIDR(string) bool`
   - `cidr(string) CIDR`
   - `CIDR.overlaps(CIDR) bool`
   - `CIDR.containsIP(IP) bool`
-- Quantity library
-
-TODO: Flesh out the exact library functions we will to add.
+- Quantity library:
+  - `isQuantity(string) bool`
+  - `quantity(string) Quantity`
+  - `Quantity.asApproximateFloat() float`
+  - TODO: what else? See https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/api/resource/quantity.go
 
 ### Formats
 
@@ -414,6 +427,7 @@ We will also document all supported formats on the Kubernetes website.
 Other candidate format types are:
 
 - `APIVersion` (GroupVersion)
+- Quantity
 - Qualified name
 - Fully qualified name
 - Fully qualified domain name
@@ -425,7 +439,7 @@ type aliases. For example:
 
 ```go
 type Widget struct {
-  // +cel=rule:"self.matches('[a-z][1-9]+')"
+  // +validationRule="self.matches('[a-z][1-9]+')"
   Component PartId `json...`
 }
 
@@ -452,8 +466,8 @@ We can support these uses cases with CEL validation rules:
 ```go
 type ExampleSpec struct {
 
-  // +cel=rule:"!has(self.name) || self.name.isFormat('dns1123subdomain')"
-  // +cel=rule:"!has(self.generateName) || self.generateName.replace('-$', 'a').isFormat('dns1123subdomain')"
+  // +validationRule="!has(self.name) || self.name.isFormat('dns1123subdomain')",field="name"
+  // +validationRule="!has(self.generateName) || self.generateName.replace('-$', 'a').isFormat('dns1123subdomain')",field="generateName"
   metav1.ObjectMeta `json...`
 }
 ```
@@ -462,7 +476,7 @@ Because the above use case is so common, we plan to offer a special tag to make
 declaring the above rules convenient:
 
 ```go
-// +metadataNameFormat='dns1123subdomain'
+// +nameFormat='dns1123subdomain'
 metav1.ObjectMeta `json...`
 ```
 
@@ -472,7 +486,7 @@ same for both can be declared on `Container` but any rules that are different
 can be declared on the `container` and `initContainer` fields using CEL. E.g.:
 
 ```go
-// +cel=rule:"!has(self.RestartPolicy)"
+// +validationRule="!has(self.RestartPolicy)"
 Containers []Container `json...`
 ```
 
@@ -640,6 +654,11 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
+- Risk: Declarative validation reduces the fidelity of validation error messages
+  - Potential causes:
+    - OpenAPIv3 value validations do not offer a way to specify an exact message or
+      a reason type (Forbidden, Invalid, ...)
+      - TODO
 - Risk: Declarative validation adds significant latency to API request handling.
   - Potential causes:
     - Validation versioned types introduces extra conversions.
@@ -1275,3 +1294,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+* [1]: https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules
