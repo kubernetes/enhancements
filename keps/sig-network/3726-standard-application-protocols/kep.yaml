@@ -4,7 +4,7 @@ authors:
   - "@LiorLieberman"
 owning-sig: sig-network
 
-status: implementable
+status: implemented
 creation-date: 2023-01-11
 reviewers:
   - "@aojea"
