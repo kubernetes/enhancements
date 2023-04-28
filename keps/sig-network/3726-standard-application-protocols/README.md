@@ -144,7 +144,6 @@ Those common protocols will be well defined strings prefixed with ‘kubernetes.
 
 ### New Standard Protocols
 - 'kubernetes.io/h2c'
-- 'kubernetes.io/grpc'
 
 ### Risks and Mitigations
 
@@ -177,7 +176,6 @@ type ServicePort struct {
 	//
 	// * Kubernetes-defined prefixed names:
 	//   * 'kubernetes.io/h2c' - HTTP/2 over cleartext as described in https://www.rfc-editor.org/rfc/rfc7540
-	//   * 'kubernetes.io/grpc' - gRPC over HTTP/2 as described in https://github.com/grpc/grpc/blob/v1.51.1/doc/PROTOCOL-HTTP2.md
 	//
 	// * Other protocols should use implementation-defined prefixed names such as
   // mycompany.com/my-custom-protocol.
