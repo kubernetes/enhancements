@@ -211,7 +211,7 @@ We will propose new API fields in Jobs and Deployments/ReplicaSets in this KEP.
 #### Story 1
 
 As a machine learning user, ML frameworks allow scheduling of multiple pods.  
-The Job controller does not typically wait for terminating pods to be marked as failed.  Tensorflow and other ML frameworks may have a requirement that they only want Pods to be started once the other pods are fully terminated.  The following yaml can fit these needs:
+The Job controller does not typically wait for terminating pods to be marked as failed.  Tensorflow and other ML frameworks may have a requirement that they only want Pods to be started once the other pods are fully terminated.
 
 This case was added due to a bug discovered with running IndexedJobs with Tensorflow.  See [Jobs create replacement Pods as soon as a Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844) for more details.
 
@@ -239,30 +239,8 @@ Another open question is if we want to include Deployments in the initial releas
 
 We decided to define the APIs in this KEP as they can utilize the same implementation.
 
-#### Open Questions on Job Controller
-
-With 3329-retriable-and-non-retriable-failures and PodFailurePolicy enabled, terminating pods are only marked as failed once they have been transitioned to failed.  If PodFailurePolicy is disabled, then we mark a terminating pod as failed as soon as deletion is registered.  
-
-Should we add a new field to the status that reflects terminating pods?
-
-[Job controller should wait for Pods to be in a terminal phase before considering them failed or succeeded](https://github.com/kubernetes/kubernetes/issues/116858) is a relevant issue for this case.  
-I am not sure how to handle these two different cases if we want to count terminating pods as active.  
-
-Should we use this feature to help solve 116858?  When this feature toggle is on, then we mark terminating pods only as failed once they are complete regardless of PodFailurePolicy.
 
 ### Risks and Mitigations
-
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
 
 ## Design Details
 
