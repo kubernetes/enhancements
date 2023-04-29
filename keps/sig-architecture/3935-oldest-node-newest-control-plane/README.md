@@ -66,6 +66,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - sig-cluster-lifecycle: [2023-04-04](https://docs.google.com/document/d/1Gmc7LyCIL_148a9Tft7pdhdee0NBHdOfHS1SAF0duI4/edit#bookmark=id.dlswqqyv7xse)
   - sig-storage: [2023-04-06](https://docs.google.com/document/d/1-8KEG8AjAgKznS9NFm3qWqkGyCHmvU6HVl0sk5hwoAE/edit#bookmark=id.3pg0lcwvpqce)
   - sig-architecture: [2023-04-06](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/edit#bookmark=id.b6nofrhcysqn)
+  - sig-node: [2023-04-11](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit#bookmark=kix.clb5o8ybahss)
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -101,7 +102,8 @@ Node upgrades are inherently more disruptive than control plane upgrades to work
   * Workloads can be designed to have no dependencies on the Kubernetes control plane, so Kubernetes control plane availability does not directly impact running pods
   * There can be _many_ more nodes (hundreds to thousands) than control plane members (typically 1 or 3)
   * Every time nodes are upgraded to a new minor version, every pod running on those nodes [must be drained/rescheduled](https://kubernetes.io/releases/version-skew-policy/#kubelet-1).
-    This is true for immutable nodes and mutable bare-metal nodes. If all nodes are being upgraded, this means every pod in the cluster will be replaced at least once.
+    This is true for immutable nodes and mutable/bare-metal nodes. If all nodes are being upgraded, this means every pod in the cluster will be replaced at least once.
+    Patch updates of kubelet / kube-proxy components *can* be done in place, so it is possible to pick up security fixes and patch updates less disruptively.
   * Replacing or moving pods which are slow to stop or start or have significant data gravity takes significant time, so it is desirable to minimize how frequently that must be done.
 
 If node / control plane skew support was expanded so the oldest node components work with the newest control plane components, the example upgrade path from v1.40 to v1.43 above could improve to this:
