@@ -67,6 +67,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - sig-storage: [2023-04-06](https://docs.google.com/document/d/1-8KEG8AjAgKznS9NFm3qWqkGyCHmvU6HVl0sk5hwoAE/edit#bookmark=id.3pg0lcwvpqce)
   - sig-architecture: [2023-04-06](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/edit#bookmark=id.b6nofrhcysqn)
   - sig-node: [2023-04-11](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit#bookmark=kix.clb5o8ybahss)
+  - sig-network: [2023-04-13](https://docs.google.com/document/d/1_w77-zG_Xj0zYvEMfQZTQ-wPP4kXkpGD8smVtW_qqWM/edit#bookmark=id.ehzitjq2ldlo)
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -269,6 +270,12 @@ Additionally, the 3-release deprecation period before removal of a beta API mean
 update to the replacement API when the beta API is deprecated are compatible with the control plane 
 that removes the beta API 3 releases later.
 
+**Supported skew between node components**
+
+In general, the surface area shared between `kube-proxy` and `kubelet` is small, and limited to network configuration.
+[KEP-3178](https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/3178-iptables-cleanup) makes
+`kube-proxy` and `kubelet` independent in the network configuration they produce in v1.25+.
+
 ### Evaluate previous control plane releases
 
 Were v1.22 control plane changes as compatible with v1.19 nodes as n-2 nodes?
@@ -328,6 +335,10 @@ Were v1.27 control plane changes as compatible with v1.24 nodes as n-2 nodes?
     * Supporting n-3 nodes would have have delayed removal of the in-tree volume plugin to v1.28.
   * ❌ sig-storage: `CSIMigrationAzureDisk` in-tree volume plugin support removed ([#116301](https://github.com/kubernetes/kubernetes/pull/116301)), which relies on kubelets having `CSIMigrationAzureDisk` enabled, which is guaranteed in v1.25+ ([#110491](https://github.com/kubernetes/kubernetes/pull/110491))
     * Supporting n-3 nodes would have delayed removal of the in-tree volume plugin to v1.28.
+* Supported skew between node components
+  * ⚠️ sig-network: `IPTablesOwnershipCleanup` changes for [KEP-3178](https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/3178-iptables-cleanup#version-skew-strategy)
+    made v1.27+ `kubelet` instances rely on `kube-proxy` being >= v1.25. Clusters that deploy older `kube-proxy` instances alongside newer `kubelet` instances could not support n-3 skew between them.
+    * Supporting n-3 nodes would have delayed promotion of `IPTablesOwnershipCleanup` from v1.27 to v1.28.
 * Removal of deprecated REST APIs used by node components ([source](https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-27))
   * ✅ None
 
@@ -365,6 +376,7 @@ Are planned v1.30 control plane changes as compatible with v1.27 nodes as n-2 no
 The calculated impact over the past two years if Kubernetes supported n-3 node skew:
 * the sig-auth `BoundServiceAccountTokenVolume` feature GA would have moved from v1.22 to v1.23 (remaining in beta and enabled by default in v1.22).
 * the sig-auth Pod Security update for the `IdentifyPodOS` feature would have moved from v1.25 to v1.26.
+* the sig-network `IPTablesOwnershipCleanup` beta would have moved from v1.27 to v1.28.
 * the sig-storage in-tree volume plugin cleanups would have been delayed by one release for OpenStack, AzureDisk, and AWS plugins.
 
 The known impact over the next year if Kubernetes supports n-3 node skew:
