@@ -165,7 +165,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently, Jobs and Deployments start Pods as soon as they are marked for terminating.  Terminating pods are in a transitory state where they are neither active nor really fully terminated.  
+Currently, Jobs and Deployments start replacement Pods as soon as previously created Pods are marked for terminating.  Terminating pods are in a transitory state where they are neither active nor really fully terminated.  
 This KEP proposes a new field for the Job, Deployment/ReplicaSet controllers that counts terminating
 pods as like they were active.  The goal of this KEP is to allow for opt-in behavior where terminating pods count as active.  This will allow users to see that new pods will be only created once the existing pods have fully terminated.
 
