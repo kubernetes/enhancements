@@ -89,7 +89,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Open Questions on Deployment Controller](#open-questions-on-deployment-controller)
-    - [Open Questions on Job Controller](#open-questions-on-job-controller)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Name Choices](#api-name-choices)
