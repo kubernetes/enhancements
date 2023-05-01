@@ -16,8 +16,8 @@ approvers:
 - "@liggitt"
 creation-date: "2022-05-30"
 status: implementable
-stage: beta
-latest-milestone: "v1.27"
+stage: stable
+latest-milestone: "v1.28"
 milestone:
   alpha: "v1.26"
   beta: "v1.27"

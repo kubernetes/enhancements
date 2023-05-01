@@ -71,7 +71,7 @@ The motivation for this KEP is to reduce obscurity and help users with debugging
 ### Goals
 
 - Add the API endpoint to get user attributes
-- Add a corresponding kubectl command - `kubectl auth who-am-i`
+- Add a corresponding kubectl command - `kubectl auth whoami`
 
 ### Non-Goals
 
@@ -236,6 +236,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 - `k8s.io/kubernetes/test/e2e/auth/selfsubjectreview.go`
+- `k8s.io/kubernetes/test/cmd/auth_whoami.sh`
 
 ### Graduation Criteria
 
@@ -254,7 +255,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - `SelfSubjectReview` is promoted to `authentication.k8s.io/v1beta1` API (Beta APIs are not enabled by default, [see](https://github.com/kubernetes/enhancements/blob/master/keps/sig-architecture/3136-beta-apis-off-by-default/README.md)).
 - Promote feature gate to Beta and make it enabled by default
 - Unit tests coverage improved
-- `kubectl alpha auth whoami` command uses `authentication.k8s.io/v1beta1` API, falls back to `authentication.k8s.io/v1alpha1` API
+- `kubectl alpha auth whoami` replaced with `kubectl auth whoami`
+- `kubectl auth whoami` command uses `authentication.k8s.io/v1beta1` API, falls back to `authentication.k8s.io/v1alpha1` API
 - Fix [documentation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#self-subject-review):
   - Change API version
   - Rewrite conditions to enable the feature
@@ -263,13 +265,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - `SelfSubjectReview` is promoted to `authentication.k8s.io/v1` API and enable by default
 - Promote feature gate to Stable
-- `kubectl alpha auth whoami` replaced with `kubectl auth whoami`
 - `kubectl auth whoami` command prefers `authentication.k8s.io/v1` API over `authentication.k8s.io/v1beta1` and `authentication.k8s.io/v1alpha1`
 - More integration and e2e tests cases
+  - Add `test/cmd` test
 - Fix [documentation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#self-subject-review):
   - Change API version
   - Rewrite conditions to enable the feature
-  - Change kubectl command
 
 NOTE: Should not be a part of [conformance tests](https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md).
 The fact that a user possesses a token does not necessarily imply the power to know to whom that token belongs.
