@@ -14,18 +14,15 @@
   - [Changes to the <code>provided-node-ip</code> annotation](#changes-to-the--annotation)
   - [Changes to cloud providers](#changes-to-cloud-providers)
   - [Example of <code>--node-ip</code> possibilities](#example-of--possibilities)
-  - [UPDATE: Late-breaking change for 1.27...](#update-late-breaking-change-for-127)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (1?)](#alpha-1)
-    - [Alpha 2?](#alpha-2)
+    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
-    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -75,33 +72,13 @@ using a cloud provider. This KEP proposes to fix that.
 ### Goals
 
 - Allow administrators of clusters using external cloud providers to
-  override the cloud-selected node IPs in a more dual-stack-aware
-  manner:
+  override both node IPs on a node in a dual-stack cluster.
 
-    - Allow administrators to override a single node IP on a node in a
-      dual-stack cluster without causing the node to become
-      single-stack.
-
-    - Allow administrators to override both node IPs on a node in a
-      dual-stack cluster.
-
-    - Allow administrators to override the order of node IPs on a node
-      in a dual-stack cluster (ie, requesting that nodes be
-      IPv6-primary dual stack rather than IPv4-primary dual stack, or
-      vice versa).
-
-    - Allow administrators to configure nodes to be single-stack when
-      the cloud provider suggests dual-stack, without needing to
-      provide a specific IPv4 or IPv6 node IP.
-
-- Define how kubelet will communicate these new intents to cloud
+- Define how kubelet will communicate this new intent to cloud
   providers.
 
 - Update the code in `k8s.io/cloud-provider/node/helpers` to implement
   the needed algorithms for the new behaviors.
-
-- Rename the `alpha.kubernetes.io/provided-node-ip` annotation, which
-  has not been alpha for a long time.
 
 ### Non-Goals
 
@@ -120,15 +97,15 @@ using a cloud provider. This KEP proposes to fix that.
   dual-stack nodes in clouds that do not themselves support
   dual-stack.)
 
-- Improving the behavior of autodetecting the node IP in any other
-  ways. (Eg, being able to pass a CIDR rather than an IP.) There was
-  some discussion of ways we might do this in the abandoned [KEP-1664]
-  (which this KEP is a spiritual successor to), but if we want that,
-  it can be done later, independently of these changes. (These changes
-  were mostly desired in the context of non-cloud-provider clusters
-  anyway.)
+- Improving node IP handling in any other ways. The original version
+  of this KEP proposed some other `--node-ip` features to help with
+  single-stack IPv6 and dual-stack clusters but they turned out to be
+  insufficient and would require a larger redesign of node IP handling
+  in order to fix.
 
-[KEP-1664]: https://github.com/kubernetes/enhancements/issues/1664
+- Renaming `alpha.kubernetes.io/provided-node-ip` annotation. This was
+  also proposed in the original version of this KEP, but is no longer
+  planned as part of this feature.
 
 ## Proposal
 
@@ -169,35 +146,12 @@ specify both IPs that you want it to use.
 
 ### Changes to `--node-ip`
 
-The most obvious required change is that we need to allow
-comma-separated dual-stack `--node-ip` values in clusters using
-external cloud providers (but _not_ in clusters using legacy cloud
-providers).
+We will allow comma-separated dual-stack `--node-ip` values in
+clusters using external cloud providers (but _not_ in clusters using
+legacy cloud providers).
 
-Additionally, the fact that kubelet does not currently pass
-"`0.0.0.0`" and "`::`" to the cloud provider creates a compatibility
-problem: we would like for administrators to be able to say "use an
-IPv6 node IP but I don't care which one" in cloud-provider clusters
-like they can in non-cloud-provider clusters, but for compatibility
-reasons, we can't change the existing behavior of "`--cloud-provider
-external --node-ip ::`" (which doesn't do what it's "supposed to", but
-does have possibly-useful side effects that have led some users to use
-it anyway; see [kubernetes #111695].)
-
-So instead, we will add new syntax, and allow administrators to say
-"`--node-ip IPv4`" or "`--node-ip IPv6`" if they want to explicitly
-require that the cloud provider pick a node IP of a specific family.
-(This also improves on the behavior of the existing "`0.0.0.0`" and
-"`::`" options, because you almost never actually want the "or fall
-back to the other family if there are no IPs of this family" behavior
-that "`0.0.0.0`" and "`::`" imply.)
-
-Additionally, we will update the code to allow including "`IPv4`" and
-"`IPv6`" in dual-stack `--node-ip` values as well (in both cloud and
-non-cloud clusters). This code will have to check the status of the
-feature gate until the feature is GA.
-
-[kubernetes #111695]: https://github.com/kubernetes/kubernetes/issues/111695
+No other changes to `--node-ip` handling are being made as part of
+this KEP.
 
 ### Changes to the `provided-node-ip` annotation
 
@@ -208,54 +162,18 @@ annotation, and the cloud provider will see it, realize that the node
 IP request can't be fulfilled, log an error, and leave the node in the
 tainted state.
 
-It makes sense to have the same behavior if the user passes a "new"
-(eg, dual-stack) `--node-ip` value to kubelet, but the cloud provider
-does not recognize the new syntax and thus can't fulfil the request.
+It makes sense to have the same behavior if the user passes a
+dual-stack `--node-ip` value to kubelet, but the cloud provider does
+not recognize the new syntax and thus can't fulfil the request.
 Conveniently, we can do this just by passing the dual-stack
 `--node-ip` value in the existing annotation; the old cloud provider
 will try to parse it as a single IP address, fail, log an error, and
 leave the node in the tainted state, which is exactly what we wanted
 it to do if it can't interpret the `--node-ip` value correctly.
 
-Therefore, we do not _need_ a new annotation for the new `--node-ip`
+Therefore, we do not need a new annotation for the new `--node-ip`
 values; we can continue to use the existing annotation, assuming
 existing cloud providers will treat unrecognized values as errors.
-
-That said, the existing annotation name is
-`alpha.kubernetes.io/provided-node-ip` but it hasn't been "alpha" for
-a long time. We should fix this. So:
-
-  1. When `--node-ip` is unset, kubelet should delete both the legacy
-     `alpha.kubernetes.io/provided-node-ip` annotation and the new
-     `kubernetes.io/provided-node-ip` annotation (regardless of
-     whether the feature gate is enabled or not, to avoid problems
-     with rollback and skew).
-
-  2. When the `CloudDualStackNodeIPs` feature is enabled and `--node-ip` is
-     set, kubelet will set both the legacy annotation and the new
-     annotation. (It always sets them both to the same value, even if
-     that's a value that old cloud providers won't understand).
-
-  2. When the `CloudDualStackNodeIPs` feature is enabled, the cloud provider
-     will use the new `kubernetes.io/provided-node-ip` annotation _if
-     the legacy alpha annotation is not set_. (But if both annotations
-     are set, it will prefer the legacy annotation, so as to handle
-     rollbacks correctly.)
-
-  3. A few releases after GA, kubelet can stop setting the legacy
-     annotation, and switch to unconditionally deleting it, and
-     setting/deleting the new annotation depending on whether
-     `--node-ip` was set or not. Cloud providers will also switch to
-     only using the new annotation, and perhaps logging a warning if
-     they see a node with the old annotation but not the new
-     annotation.
-
-Kubelet will preserve the existing behavior of _not_ passing
-"`0.0.0.0`" or "`::`" to the cloud provider, even via the new
-annotation. This is needed to preserve backward compatibility with
-current behavior in clusters using those `--node-ip` values. However,
-it _will_ pass "`IPv4`" and/or "`IPv6`" if they are passed as the
-`--node-ip`.
 
 ### Changes to cloud providers
 
@@ -281,11 +199,6 @@ Assume a node where the cloud has assigned the IPs `1.2.3.4`,
 | `9.10.11.12`         | no   | `"9.10.11.12"`         | (error, because the requested IP is not available) |
 | `abcd::5678`         | no   | `"abcd::5678"`         | `["abcd::5678"]` (SS IPv6) |
 | `1.2.3.4,abcd::1234` | yes* | `"1.2.3.4,abcd::1234"` | `["1.2.3.4", "abcd::1234"]` (DS IPv4-primary) |
-| `IPv4`               | yes  | `"IPv4"`               | `["1.2.3.4"]` (SS IPv4) |
-| `IPv6`               | yes  | `"IPv6"`               | `["abcd::1234"]` (SS IPv6) |
-| `IPv4,IPv6`          | yes  | `"IPv4,IPv6"`          | `["1.2.3.4", "abcd::1234"]` (DS IPv4-primary) |
-| `IPv6,5.6.7.8`       | yes  | `"IPv6,5.6.7.8"`       | `["abcd::1234", "5.6.7.8"]` (DS IPv6-primary) |
-| `IPv4,abcd::ef01`    | yes  | `"IPv4,abcd::ef01"`    | (error, because the requested IPv6 IP is not available) |
 
 Notes:
 
@@ -298,28 +211,6 @@ Notes:
   - `--node-ip 1.2.3.4,abcd::ef01` was previously valid syntax when
     using no `--cloud-provider`, but was not valid for cloud kubelets.
 
-<<[UNRESOLVED multiple-addresses ]>>
-
-In the examples above, `--node-ip IPv4` means "pick any one IPv4
-address", not "use all IPv4 addresses". This seemed to me to be
-consistent with the behavior when specifying a specific IP address (in
-which case all other IPs of the same NodeAddressType are removed from
-the list), but is inconsistent with the behavior of `--node-ip
-0.0.0.0` / `--node-ip ::` with legacy cloud providers and bare metal
-(where that affects the _sorting_ of IPs but does not do any
-_filtering_).
-
-In past discussions (eg https://kep.k8s.io/1664,
-https://issues.k8s.io/95768) no one has ever been entirely sure what
-the point of having multiple node.status.addresses values is, and
-there has never been a way to get multiple node.status.addresses
-values (of the same IP family) on "bare metal", so that would tend to
-prevent people from designing features that depended on multiple node
-addresses. So it's not clear that there's really any downside in
-filtering out the "unused" node IPs...
-
-<<[/UNRESOLVED]>>
-
 If the cloud only had IPv4 IPs for the node, then the same examples would look like:
 
 | `--node-ip` value    | New? | Annotation             | Resulting node addresses |
@@ -331,22 +222,14 @@ If the cloud only had IPv4 IPs for the node, then the same examples would look l
 | `9.10.11.12`         | no   | `"9.10.11.12"`         | (error, because the requested IP is not available) |
 | `abcd::5678`         | no   | `"abcd::5678"`         | (error, because the requested IP is not available) |
 | `1.2.3.4,abcd::1234` | yes* | `"1.2.3.4,abcd::1234"` | (error, because the requested IPv6 IP is not available) |
-| `IPv4`               | yes  | `"IPv4"`               | `["1.2.3.4"]` (SS IPv4) |
-| `IPv6`               | yes  | `"IPv6"`               | (error, because no IPv6 IPs are available) |
-| `IPv4,IPv6`          | yes  | `"IPv4,IPv6"`          | (error, because no IPv6 IPs are available) |
-| `IPv6,5.6.7.8`       | yes  | `"IPv6,5.6.7.8"`       | (error, because no IPv6 IPs are available) |
-| `IPv4,abcd::ef01`    | yes  | `"IPv4,abcd::ef01"`    | (error, because the requested IPv6 IP is not available) |
 
 In this case, kubelet would be even more confused in the
 `--node-ip ::` case, and some things would likely not work.
-By contrast, with `--node-ip IPv6`, the user would get a clear error.
 
-### UPDATE: Late-breaking change for 1.27...
-
-While implementing the above behavior, it became clear that retaining
-backward compatibility with old `--node-ip` values means the overall
-behavior is idiosyncratic and full of loopholes. For example, given
-the initial NodeAddress list:
+Due to backward-compatibility constraints, it is not possible to end up
+with a cluster of every type (single-stack/dual-stack,
+IPv4-primary/IPv6-primary) in all cases. For example, given the initial
+NodeAddress list:
 
 ```yaml
 addresses:
@@ -366,36 +249,13 @@ You can request to get a single-stack IPv4 cluster with any of the
 three IPv4 IPs as the node IP (`--node-ip 10.0.0.1`, `--node-ip
 10.0.0.2`, `--node-ip 192.168.0.1`); a dual-stack IPv4-primary cluster
 with any combination of the IPv4 and IPv6 IPs (`--node-ip
-10.0.0.2,fd00::2`, etc); a dual-stack IPv6-primary cluster with any
-combination of IPs (`--node-ip fd00::1,192.168.0.1`, etc); or an IPv6
-single-stack cluster using the _first_ IPv6 IP (`--node-ip IPv6`).
+10.0.0.2,fd00::2`, etc); or a dual-stack IPv6-primary cluster with any
+combination of IPs (`--node-ip fd00::1,192.168.0.1`, etc).
 
-But there is no way to get a single-stack IPv6 cluster using the
-second IPv6 IP, because passing `--node-ip fd00::2` results in a
-_dual-stack_ cluster, because the current, backward-compatible
-semantics of single-valued `--node-ip` values means that the IPv4
-`ExternalIP` will be preserved.
-
-There are various ways this might be fixed (assuming we want to fix
-it), but we might decide that the best way is something incompatible
-with (or redundant with) the proposal above. Given that there is
-already an UNRESOLVED section about the behavior of the `"IPv4"` and
-`"IPv6"` literals anyway, I have decided to ignore them for the
-(first?) alpha release, and implement _only_ the "two specific IPs"
-behavior for now (since it is more straightforward, and already
-implemented for non-cloud-provider clusters anyway).
-
-Likewise, if we decide that the best way forward is to deprecate
-`--node-ip` in favor of a new `--node-ips` option with better
-semantics, then we might also have different ideas about the best way
-to move forward with changing the annotation name (and semantics), so
-I am ignoring the "new annotation" part of the KEP for now as well.
-
-<<[UNRESOLVED]>>
-
-Figure out the plan.
-
-<<[/UNRESOLVED]>>
+But there is no way to get a single-stack IPv6 cluster, because passing
+`--node-ip fd00::1` results in a _dual-stack_ cluster, because the
+current, backward-compatible semantics of single-valued `--node-ip`
+values means that the IPv4 `ExternalIP` will be preserved.
 
 ### Test Plan
 
@@ -416,10 +276,7 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+(None.)
 
 ##### Unit tests
 
@@ -433,104 +290,44 @@ There will also be small changes in kubelet startup.
 
 ##### Integration tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-```
-<<[UNRESOLVED integration ]>>
-
-I don't know what existing integration testing of kubelet and cloud
-providers there is. Given unit tests for the new `--node-ip` parsing
-and `node.status.addresses`-setting code, and e2e tests of some sort,
-we probably don't need integration tests.
-
-<<[/UNRESOLVED]>>
-```
-
-- <test>: <link to test coverage>
+Given unit tests for the new `--node-ip` parsing and
+`node.status.addresses`-setting code, and e2e tests of some sort, we
+probably don't need integration tests.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+There is now a `[cloud-provider-kind]` that can be used in kind-based
+clusters to implement cloud-provider-based functionality.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+By modifying this provider to allow manually overriding the default
+node IPs, we should be able to create an e2e test job that brings up a
+kind cluster with nodes having various IPs, and then tests different
+`kubelet --node-ip` arguments to ensure that they have the expected
+effect.
 
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-```
-<<[UNRESOLVED e2e ]>>
-
-I'm not sure how we currently handle cloud-provider e2e. GCP does not
-support IPv6 and `kind` does not use a cloud provider, so we cannot
-test the new code/behavior in any of the "core" e2e jobs.
-
-@aojea suggests we _could_ use `kind` with an external cloud provider.
-This would presumably have to be a bespoke dummy cloud provider, but
-since we are only doing this to test the new `k/cloud-provider` code,
-having a mostly-dummied-out cloud provider should not be a problem? It
-could perhaps have a default `NodeAddresses` return value of
-"<intentionally-wrong-IPv4-IP>, <correct-IPv6-IP>,
-<intentionally-wrong-IPv6-IP>, <correct-IPv4-IP>", and then we could
-pass `--node-ip <correct-IPv4-IP>,IPv6` to kubelet. If the cloud
-provider did not receive and interpret the `--node-ip` value
-correctly, then we would end up with node IPs that didn't work and the
-test job should fail.
-
-<<[/UNRESOLVED]>>
-```
-
-- <test>: <link to test coverage>
+[cloud-provider-kind]: https://github.com/kubernetes-sigs/cloud-provider-kind
 
 ### Graduation Criteria
 
-#### Alpha (1?)
+#### Alpha
 
 - Dual-stack `--node-ip` handling implemented behind a feature flag
 
 - Unit tests updated
 
-- Initial e2e tests completed and enabled? Unless maybe the e2e tests
-  will take a bunch of development work on either kind or the
-  cloud-provider CI infrastructure, in which case we might decide to
-  pass on e2e testing in Alpha?
-
-#### Alpha 2?
-
-- Depending on discussions during the 1.28 cycle there may be another
-  Alpha release with additional changes, or we may proceed directly to
-  Beta...
-
 #### Beta
 
 - Positive feedback / no bugs
+
 - At least one release after Alpha
-- No UNRESOLVED sections in the KEP
-- e2e tests definitely completed and enabled if they weren't already in Alpha
-- e2e test that new annotation gets cleared on rollback
+
+- Implement e2e test using `cloud-provider-kind`.
+
+- Upgrade/rollback have been tested manually
 
 #### GA
 
 - Positive feedback / no bugs
-- Two releases after Beta to allow time for feedback
-
-#### Deprecation
-
-- Two releases after GA, kubelet will stop setting the legacy
-  `alpha.kubernetes.io/provided-node-ip` annotation (and start
-  deleting it). Cloud providers will stop honoring the legacy
-  annotation.
-
-- (Two releases after that, we can remove the code to delete the
-  legacy annotation when present.)
 
 ### Upgrade / Downgrade Strategy
 
@@ -545,53 +342,23 @@ to start after downgrade.
 
 ### Version Skew Strategy
 
-- Old kubelet / old cloud provider: Kubelet will only set the old
-  annotation, and the cloud provider will only read the old
-  annotation. Everything works (even if there's a stale new annotation
-  left over from a cluster rollback).
-
-- Old kubelet / new cloud provider: Kubelet will only set the old
-  annotation. The cloud provider will read the old annotation, and
-  will interpret it in the same way an old cloud provider would
-  (because all `--node-ip` values accepted by an old kubelet are
-  interpreted the same way by both old and new cloud providers).
-  Everything works (even if there's a stale new annotation left over
-  from a kubelet rollback, because the new cloud provider still
-  prefers the old annotation).
+- Old kubelet / new cloud provider: Kubelet will set the annotation.
+  The cloud provider will read it and will interpret it in the same
+  way an old cloud provider would (because all `--node-ip` values
+  accepted by an old kubelet are interpreted the same way by both old
+  and new cloud providers). Everything works.
 
 - New kubelet, single-stack `--node-ip` value / old cloud provider:
-  Kubelet will set both annotations (to the same value). The cloud
-  provider will read the old annotation. Everything works, because
-  this is an "old" `--node-ip` value, and the old cloud provider knows
-  how to interpret it correctly.
+  Kubelet will set the annotations. The cloud provider will read it.
+  Everything works, because this is an "old" `--node-ip` value, and
+  the old cloud provider knows how to interpret it correctly.
 
 - New kubelet, dual-stack `--node-ip` value / old cloud provider:
-  Kubelet will set both annotations (to the same value). The cloud
-  provider will read the old annotation, but it will _not_ know how to
-  interpret it because it's a "new" value. So it will log an error and
-  leave the node tainted. (This is the desired result, since the cloud
-  provider is not able to obey the `--node-ip` value the administrator
-  provided.)
-
-- New kubelet / new cloud provider: Kubelet will set both annotations
-  (to the same value). The cloud provider will read the old
-  annotation, and will know how to interpret it regardless of whether
-  it's an "old" or "new" value. Everything works.
-
-- Future (post-GA) kubelet / GA cloud provider: Kubelet will set
-  the new annotation, and delete the old annotation if present. The
-  cloud provider will see that only the new annotation is set, and so
-  will use that. Everything works (even if there had been a stale old
-  annotation left over from the upgrade).
-
-- GA kubelet / Future (post-GA) cloud provider: Kubelet will set
-  both annotations (to the same value). The cloud provider will only
-  look at the new annotation. Everything works.
-
-- Future (post-GA) kubelet / Future (post-GA) cloud provider: Kubelet
-  will set the new annotation, and delete the old annotation if
-  present. The cloud provider will only look at the new annotation.
-  Everything works.
+  Kubelet will set the annotation. The cloud provider will read it,
+  but it will _not_ know how to interpret it because it's a "new"
+  value. So it will log an error and leave the node tainted. (This is
+  the desired result, since the cloud provider is not able to obey the
+  `--node-ip` value the administrator provided.)
 
 ## Production Readiness Review Questionnaire
 
@@ -600,45 +367,20 @@ to start after downgrade.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: CloudNodeIPs
+  - Feature gate name: CloudDualStackNodeIPs
   - Components depending on the feature gate:
     - kubelet
     - cloud-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-Kubelet will begin setting two annotations on each node rather than
-one. However, cloud providers will still prefer the old annotation and
-will only read the new annotation if the old one isn't there.
-
-So assuming no bugs, the only visible change after (just) enabling the
-feature is the duplicate annotation.
+No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, as long as you also roll back the kubelet configuration to no
-longer use the new feature.
-
-One edge case: if a user who was not previously setting `--node-ip`
-upgrades, enables the feature, starts using `--node-ip`, and then
-rolls back the kubelet and its configuration but _not_ the cloud
-provider, then they will end up with a node that has a stale "new"
-annotation (with the `--node-ip` value they had been using while
-upgraded), but no "old" annotation (because the rolled-back kubelet
-configuration no longer specifies `--node-ip` so kubelet will delete
-the old annotation). The (not-rolled-back) cloud provider will then
-mistake this as being the future rather than the past, assuming
-kubelet intentionally set only the new annotation and not the old
-annotation, and so it will obey the (stale) new annotation.
-
-That could be prevented by stretching out the feature enablement over
-a few more releases, and not having the cloud-provider switch from
-"always use the old annotation" to "prefer the old annotation when
-it's set but use the new annotation if it's the only one" until a few
-releases later. If we were going to do that, then perhaps we should
-split the annotation renaming into a separate KEP from the dual-stack
-`--node-ip` handling, so that the edge cases of the annotation
-renaming don't have to slow down the dual-stack `--node-ip` adoption.
+Yes, as long as you also roll back the kubelet configuration (to no
+longer use the new feature) either earlier or together with the feature
+disablement.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -646,7 +388,10 @@ It works.
 
 ###### Are there any tests for feature enablement/disablement?
 
-TBD; we should have a test that the annotation is cleared on rollback
+No; enabling/disabling the feature gate has no immediate effect, and
+changing between a single-stack and dual-stack `--node-ip` value is no
+different, code-wise, than changing from one single-stack `--node-ip`
+value to a new single-stack value.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -656,36 +401,45 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Assuming no drastic bugs (eg, the cloud provider assigns Node X's IP
+to Node Y for no obvious reason), just restarting the cloud provider
+or kubelet with the new feature enabled-but-unused cannot fail.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+The cloud provider will not "re-taint" an existing working node if its
+node IP annotation becomes invalid. Thus, if the administrator
+accidentally rolls out a kubelet config that does something completely
+wrong (eg, specifying a new secondary node IP value which is not
+actually one of that node's IPs) then the only effect would be that
+the cloud provider will log "Failed to update node addresses for node"
+for that node.
+
+The most likely failure mode would be that in the process of
+reconfiguring nodes to use the new feature, the administrator
+reconfigures them _incorrectly_. (In particular, if nodes were
+previously using auto-detected primary node IPs, and the administrator
+needs to switch them to manually-specified dual-stack node IPs, they
+might end up manually specifying wrong (but valid) primary IPs.) In
+that case, the cloud provider would accept the new node IP value and
+update the node's addresses, possibly resulting in disruption.
+However, this would only happen as each kubelet was reconfigured and
+restarted, so as long as the administrator did not roll out the new
+configurations to every node simultaneously without any
+sanity-checking, they should only break a single node.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+There are no relevant metrics; however, the feature will only affect
+nodes that have been reconfigured to use the new feature, so it should
+be obvious to the administrator if the feature is not working
+correctly.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+TODO; do a manual test
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -711,12 +465,12 @@ The Node will have the IPs they expect it to have.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A. This changes the startup behavior of Nodes (and does not affect
+N/A. This changes the startup behavior of kubelet (and does not affect
 startup speed). There is no ongoing "service".
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A. This changes the startup behavior of Nodes (and does not affect
+N/A. This changes the startup behavior of kubelet (and does not affect
 startup speed). There is no ongoing "service".
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -753,12 +507,7 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Not really. Kubelet will now create two node-IP-related annotations on
-each Node rather than just one, and the value of the annotation may
-be slightly larger (eg because it now contains two IP addresses rather
-than one), and some users may change their `--node-ip` to take
-advantage of the new functionality in a way that would cause more node
-IPs to be exposed in `node.status.addresses` than before.
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -822,14 +571,111 @@ additional functionality.
 
 ## Alternatives
 
+The original version of this KEP proposed further changes to
+`--node-ip` handling:
+
+> Additionally, the fact that kubelet does not currently pass
+> "`0.0.0.0`" and "`::`" to the cloud provider creates a compatibility
+> problem: we would like for administrators to be able to say "use an
+> IPv6 node IP but I don't care which one" in cloud-provider clusters
+> like they can in non-cloud-provider clusters, but for compatibility
+> reasons, we can't change the existing behavior of "`--cloud-provider
+> external --node-ip ::`" (which doesn't do what it's "supposed to", but
+> does have possibly-useful side effects that have led some users to use
+> it anyway; see [kubernetes #111695].)
+> 
+> So instead, we will add new syntax, and allow administrators to say
+> "`--node-ip IPv4`" or "`--node-ip IPv6`" if they want to explicitly
+> require that the cloud provider pick a node IP of a specific family.
+> (This also improves on the behavior of the existing "`0.0.0.0`" and
+> "`::`" options, because you almost never actually want the "or fall
+> back to the other family if there are no IPs of this family" behavior
+> that "`0.0.0.0`" and "`::`" imply.)
+> 
+> Additionally, we will update the code to allow including "`IPv4`" and
+> "`IPv6`" in dual-stack `--node-ip` values as well (in both cloud and
+> non-cloud clusters). This code will have to check the status of the
+> feature gate until the feature is GA.
+
+[kubernetes #111695]: https://github.com/kubernetes/kubernetes/issues/111695
+
+As well as to the Node IP annotation:
+
+> That said, the existing annotation name is
+> `alpha.kubernetes.io/provided-node-ip` but it hasn't been "alpha" for
+> a long time. We should fix this. So:
+> 
+>   1. When `--node-ip` is unset, kubelet should delete both the legacy
+>      `alpha.kubernetes.io/provided-node-ip` annotation and the new
+>      `kubernetes.io/provided-node-ip` annotation (regardless of
+>      whether the feature gate is enabled or not, to avoid problems
+>      with rollback and skew).
+> 
+>   2. When the `CloudDualStackNodeIPs` feature is enabled and `--node-ip` is
+>      set, kubelet will set both the legacy annotation and the new
+>      annotation. (It always sets them both to the same value, even if
+>      that's a value that old cloud providers won't understand).
+> 
+>   2. When the `CloudDualStackNodeIPs` feature is enabled, the cloud provider
+>      will use the new `kubernetes.io/provided-node-ip` annotation _if
+>      the legacy alpha annotation is not set_. (But if both annotations
+>      are set, it will prefer the legacy annotation, so as to handle
+>      rollbacks correctly.)
+> 
+>   3. A few releases after GA, kubelet can stop setting the legacy
+>      annotation, and switch to unconditionally deleting it, and
+>      setting/deleting the new annotation depending on whether
+>      `--node-ip` was set or not. Cloud providers will also switch to
+>      only using the new annotation, and perhaps logging a warning if
+>      they see a node with the old annotation but not the new
+>      annotation.
+> 
+> Kubelet will preserve the existing behavior of _not_ passing
+> "`0.0.0.0`" or "`::`" to the cloud provider, even via the new
+> annotation. This is needed to preserve backward compatibility with
+> current behavior in clusters using those `--node-ip` values. However,
+> it _will_ pass "`IPv4`" and/or "`IPv6`" if they are passed as the
+> `--node-ip`.
+
+However, trying to implement this behavior turned up problems:
+
+> While implementing the above behavior, it became clear that retaining
+> backward compatibility with old `--node-ip` values means the overall
+> behavior is idiosyncratic and full of loopholes. For example, given
+> the initial NodeAddress list:
+> 
+> ```yaml
+> addresses:
+>   - type:    InternalIP
+>     address: 10.0.0.1
+>   - type:    InternalIP
+>     address: 10.0.0.2
+>   - type:    InternalIP
+>     address: fd00::1
+>   - type:    InternalIP
+>     address: fd00::2
+>   - type:    ExternalIP
+>     address: 192.168.0.1
+> ```
+> 
+> You can request to get a single-stack IPv4 cluster with any of the
+> three IPv4 IPs as the node IP (`--node-ip 10.0.0.1`, `--node-ip
+> 10.0.0.2`, `--node-ip 192.168.0.1`); a dual-stack IPv4-primary cluster
+> with any combination of the IPv4 and IPv6 IPs (`--node-ip
+> 10.0.0.2,fd00::2`, etc); a dual-stack IPv6-primary cluster with any
+> combination of IPs (`--node-ip fd00::1,192.168.0.1`, etc); or an IPv6
+> single-stack cluster using the _first_ IPv6 IP (`--node-ip IPv6`).
+> 
+> But there is no way to get a single-stack IPv6 cluster using the
+> second IPv6 IP, because passing `--node-ip fd00::2` results in a
+> _dual-stack_ cluster, because the current, backward-compatible
+> semantics of single-valued `--node-ip` values means that the IPv4
+> `ExternalIP` will be preserved.
+
 In the discussion around [KEP-1664] there was talk of replacing
-`--node-ip` with a new `--node-ips` (plural) field, but this was
-mostly because the behavior of `--node-ip` in clusters with external
-cloud providers was incompatible with the behavior of `--node-ip` in
-clusters with legacy or no cloud providers and I wasn't sure if we
-could get away with changing it to make it consistent. However,
-[kubernetes #107750] did just that already, so there's now nothing
-standing in the way of synchronizing the rest of the behavior.
+`--node-ip` with a new `--node-ips` (plural) field with
+new-and-improved semantics, and I think this is what we're going to
+have to do if we want to make this better. But that will have to wait
+for another KEP.
 
 [KEP-1664]: https://github.com/kubernetes/enhancements/issues/1664
-[kubernetes #107750]: https://github.com/kubernetes/kubernetes/pull/107750
