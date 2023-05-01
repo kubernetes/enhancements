@@ -1,0 +1,41 @@
+title: Terminating Pods Should be Included as Active Pods
+kep-number: 3973
+authors:
+  - "@kannon92"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-apps
+status: provisional
+creation-date: 2023-05-01
+reviewers:
+approvers:
+
+see-also:
+  - "/keps/sig-apps/3939-consider-terminating-pods-jobs"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.28"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.28"
+  beta: ""
+  stable: ""
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: TerminatingPodsReplicaSetDeployments
+    components:
+      - kube-controller-manager
+
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
