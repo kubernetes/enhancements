@@ -236,11 +236,11 @@ appropriate code for that.
 - No new bugs
 - Feature actually improves performance (eg, in the `gce-5000Nodes`
   periodic job).
-- Additional metrics to distinguish partial and full resync times
 
 #### GA
 
 - No new bugs
+- Additional metrics to distinguish partial and full resync times
 
 ### Upgrade / Downgrade Strategy
 
@@ -498,7 +498,8 @@ modes.
 - 2022-10-04: Initial KEP merged
 - 2022-11-01: Code PR merged
 - 2022-11-10: Testing PRs merged; 5000Nodes test begins enabling the feature
-- 2022-12-08: Kubernetes 1.26 released
+- 2022-12-08: Alpha in Kubernetes 1.26
+- 2023-04-11: Beta in Kubernetes 1.27
 
 ## Drawbacks
 
