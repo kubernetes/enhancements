@@ -39,9 +39,6 @@ feature-gates:
   - name: TerminatingPodsAsActiveJobs
     components:
       - kube-controller-manager
-  - name: TerminatingPodsReplicaSetDeployments
-    components:
-      - kube-controller-manager
 
 disable-supported: true
 

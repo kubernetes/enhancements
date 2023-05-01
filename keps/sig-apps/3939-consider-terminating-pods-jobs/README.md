@@ -86,17 +86,14 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Open Questions on Deployment Controller](#open-questions-on-deployment-controller)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Name Choices](#api-name-choices)
   - [Job API Definition](#job-api-definition)
-  - [Deployment/ReplicaSet API](#deploymentreplicaset-api)
   - [Implementation](#implementation)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
@@ -110,11 +107,32 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+    - [How can this feature be enabled / disabled in a live cluster?](#how-can-this-feature-be-enabled--disabled-in-a-live-cluster)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+    - [How can a rollout or rollback fail? Can it impact already running workloads?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
+    - [What specific metrics should inform a rollback?](#what-specific-metrics-should-inform-a-rollback)
+    - [Were upgrade and rollback tested? Was the upgrade-&gt;downgrade-&gt;upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)
+    - [Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis-fields-of-api-types-flags-etc)
   - [Monitoring Requirements](#monitoring-requirements)
+    - [How can an operator determine if the feature is in use by workloads?](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads)
+    - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
+    - [What are the reasonable SLOs (Service Level Objectives) for the enhancement?](#what-are-the-reasonable-slos-service-level-objectives-for-the-enhancement)
+    - [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
+    - [Are there any missing metrics that would be useful to have to improve observability of this feature?](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
   - [Dependencies](#dependencies)
+    - [Does this feature depend on any specific services running in the cluster?](#does-this-feature-depend-on-any-specific-services-running-in-the-cluster)
   - [Scalability](#scalability)
+    - [Will enabling / using this feature result in any new API calls?](#will-enabling--using-this-feature-result-in-any-new-api-calls)
+    - [Will enabling / using this feature result in introducing new API types?](#will-enabling--using-this-feature-result-in-introducing-new-api-types)
+    - [Will enabling / using this feature result in any new calls to the cloud provider?](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud-provider)
+    - [Will enabling / using this feature result in increasing size or count of the existing API objects?](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects)
+    - [Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any-operations-covered-by-existing-slisslos)
+    - [Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?](#will-enabling--using-this-feature-result-in-non-negligible-increase-of-resource-usage-cpu-ram-disk-io--in-any-components)
+    - [Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?](#can-enabling--using-this-feature-result-in-resource-exhaustion-of-some-node-resources-pids-sockets-inodes-etc)
   - [Troubleshooting](#troubleshooting)
+    - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
+    - [What are other known failure modes?](#what-are-other-known-failure-modes)
+    - [What steps should be taken if SLOs are not being met to determine the problem?](#what-steps-should-be-taken-if-slos-are-not-being-met-to-determine-the-problem)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -165,7 +183,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 Currently, Jobs and Deployments start replacement Pods as soon as previously created Pods are marked for terminating.  Terminating pods are in a transitory state where they are neither active nor really fully terminated.  
-This KEP proposes a new field for the Job, Deployment/ReplicaSet controllers that counts terminating
+This KEP proposes a new field for the Job controller that controls whether to count terminating
 pods as like they were active.  The goal of this KEP is to allow for opt-in behavior where terminating pods count as active.  This will allow users to see that new pods will be only created once the existing pods have fully terminated.
 
 ## Motivation
@@ -173,23 +191,16 @@ pods as like they were active.  The goal of this KEP is to allow for opt-in beha
 Existing Issues:
 
 - [Job Creates Replacement Pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)
-- [Option for acknowledging terminating Pods in Deployment rolling update](https://github.com/kubernetes/kubernetes/issues/107920)
 - [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510)
 
 Many common machine learning frameworks, such as Tensorflow, require unique pods.  If a terminating pod is not considered active, a replacement pod is created and
 can cause errors.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
 before starting new pods.  
 
-In [Option for acknowledging terminating Pods in Deployment rolling update](https://github.com/kubernetes/kubernetes/issues/107920),
-there is a request in the Deployment API to guarantee that the number of replicas should include terminating.  Terminating pods
-do utilize resources because resources are still allocated to them and there is potential for a user to be charged for utilizing those resources.
-
 In scarce compute environments, these resources can be difficult to obtain so pods can take a long time to find resources and they may only be able to find nodes once the existing pods have been terminated.
 
 ### Goals
 
-- Job Controller should only create new pods once the existing ones are marked as Failed/Succeeded
-- Job Controller will have a new status field where we include the number of terminating pods.
 - Deployment controller should allow for flexibility in waiting for pods to be fully terminated before
   creating new ones
 - Deployment/ReplicaSet will have a new status field where we include the number of terminating replicas.
@@ -201,9 +212,9 @@ In scarce compute environments, these resources can be difficult to obtain so po
 
 ## Proposal
 
-Both Jobs and the ReplicaSet controller get a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  In this KEP, we will consider terminating pods to be separate from active and failed.  This means that for cases where we track the number of pods, like the Job Controller, we should include a field that states the number of terminating pods.  
+The Job controller get a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  In this KEP, we will consider terminating pods to be separate from active and failed.  This means that for cases where we track the number of pods, like the Job Controller, we should include a field that states the number of terminating pods.  
 
-We will propose new API fields in Jobs and Deployments/ReplicaSets in this KEP.  
+We will propose a API fields in Jobs and Deployments/ReplicaSets in this KEP.  
 
 ### User Stories (Optional)
 
@@ -219,25 +230,7 @@ This case was added due to a bug discovered with running IndexedJobs with Tensor
 As a cloud user, users would want to guarantee that the number of pods that are running is exactly the amount that they specify.  Terminating pods do not relinguish resources so scarce compute resource are still scheduled to those pods.
 See [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510) for an example of this.
 
-#### Story 3
-
-As a cloud user, users would want to guarantee that the number of pods that are running includes terminating pods.  In scare compute environments, users may only have a limited amount of nodes and they do not want to try and schedule pods to a new resource.
-Counting terminating pods as active allows for the scheduling of pods to wait until pods are terminated.
-
-See [Option for acknowledging terminating Pods in Deployment rolling update](https://github.com/kubernetes/kubernetes/issues/107920)
-for more examples.
-
 ### Notes/Constraints/Caveats (Optional)
-
-#### Open Questions on Deployment Controller
-
-The Deployment API is open for discussion.  We put the field in Deployment/ReplicaSet because it is related to RolloutStrategy.
-It is not clear if `recreate` and/or `rollingupdate` need this API for both rollout options.
-
-Another open question is if we want to include Deployments in the initial release of this feature.  There is some discussion about releasing the Job API first and then follow up with Deployment.  
-
-We decided to define the APIs in this KEP as they can utilize the same implementation.
-
 
 ### Risks and Mitigations
 
@@ -276,64 +269,9 @@ type JobStatus struct {
 }
 ```
 
-### Deployment/ReplicaSet API
-
-```golang
-// DeploymentSpec stores information about the strategy and rolling-update
-// behavior of a deployment.
-type DeploymentSpec struct {
-  ... 
-  // TerminatingAsActive specifies if the Deployments should include terminating pods
- // as active. If the field is true, then the Deployment controller will include active pods
- // to mean running or terminating pods
- // +optional
- TerminatingAsActive *bool
-}
-```
-
-So we can count terminating pods separately from active or failed we need to include a new field in the ReplicaSetStatus and DeploymentStatus.
-
-```golang
-type DeploymentStatus struct {
-  ...
-  // Terminating replicas states the number of replicas that are terminating
-  // +optional
-  TerminatingReplicas *int32 
-}
-```
-
-```golang
-type ReplicaSetStatus struct {
-  ...
-  // Terminating replicas states the number of replicas that are terminating
-  // +optional
-  TerminatingReplicas *int32 
-}
-```
-
-In [Option for acknowledging terminating Pods in Deployment rolling update](https://github.com/kubernetes/kubernetes/issues/107920)
-there was a request to add this as part of the `DeploymentStrategy` field.  Generally, handling terminating pods as active can be useful in both RollingUpdates and Recreating rollouts.  Having this field for both strategies allows for handling of terminating pods in both cases.  
-
-Deployments create ReplicaSets so there is a need to add a field in the ReplicaSet as well.  Since ReplicaSets are not typically
-set by users, we should add a field to the ReplicaSet that is set from the DeploymentSpec.  
-
-```golang
-// ReplicaSetSpec is the specification of a ReplicaSet.
-// As the internal representation of a ReplicaSet, it must have
-// a Template set.
-type ReplicaSetSpec struct {
-  ...
- // TerminatingAsActive specifies if the Deployments should include terminating pods
- // as active. If the field is true, then the Deployment controller will include active pods
- // to mean running or terminating pods
- // +optional
- TerminatingAsActive *bool
-}
-```
-
 ### Implementation
 
-Generally, both the Job controller and ReplicaSets utilize `FilterActivePods` in their reconciliation loop.  `FilterActivePods` gets a list of pods that are not terminating.  This KEP will include terminating pods in this list.
+The Job controller utilize `FilterActivePods` in their reconciliation loop.  `FilterActivePods` gets a list of pods that are not terminating.  This KEP will include terminating pods in this list.
 
 ```golang
 // FilterActivePods returns pods that have not terminated.
@@ -364,14 +302,6 @@ Including active pods in this list allows the job controller to wait until these
 
 [Filter Active Pods Usage in Job Controller](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/job/job_controller.go#L749) filters the active pods.
 
-For the Deployment/ReplicaSet, ReplicaSets [filter out active pods](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/replicaset/replica_set.go#L692).  The implementation for this should include reading the deployment field and setting the replicaset the same field in the replicaset.  
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
-
 ### Test Plan
 
 <!--
@@ -389,7 +319,7 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-##### Prerequisite testing updates
+#### Prerequisite testing updates
 
 <!--
 Based on reviewers feedback describe what additional tests need to be added prior
@@ -399,8 +329,6 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 ##### Unit tests
 
 - `controller_utils`: `April 3rd 2023` - `56.6`
-- `replicaset`: `April 3rd 2023` - `78.5`
-- `deployment`: `April 3rd 2023` - `66.4`
 - `job`: `April 3rd 2023` - `90.4`
 
 ##### Integration tests
@@ -424,8 +352,6 @@ TerminatingAsActive Feature Toggle On:
 
 We should test the above with the FeatureToggle off also.
 
-We will add a similar integration test for Deployment:
-
 ##### e2e tests
 
 <!--
@@ -444,9 +370,22 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Alpha
 
 - Job controller includes terminating pods as active
-- Deployment strategy optionally includes terminating pods as active
 - Unit Tests
-- Initial e2e tests
+- Integration tests
+
+#### Beta
+
+- Address reviews and bug reports from Alpha users
+- E2e tests are in Testgrid and linked in KEP
+- The feature flag enabled by default
+
+#### GA
+
+- Address reviews and bug reports from Beta users
+- Write a blog post about the feature
+- Graduate e2e tests as conformance tests
+- Lock the `TerminatingPodsAsActiveJobs` feature-gate
+- Declare deprecation of the `TerminatingPodsAsActiveJobs` feature-gate in documentation
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -568,11 +507,10 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
-###### How can this feature be enabled / disabled in a live cluster?
+#### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: TerminatingPodsAsActiveJobs
-  - Feature gate name: TerminatingPodsReplicaSetDeployments
   - Components depending on the feature gate: kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
@@ -582,12 +520,7 @@ For enabling TerminatingPodsAsActiveJobs:
 a) Count the number of terminating pods and populate in JobStatus
 b) FilterActiveJobs will include both active and terminating.
 
-For enalbing TerminatingPodsReplicaSetDeployments:
-
-a) Count the number of terminating pods and populate in DeploymentStatus and ReplicaSetStatus.
-b) FilterActivePods will include both active and terminating pods.
-
-This could potentially make jobs/deployments/replicasets slower due to waiting for terminating pods
+This could potentially make jobs (where pods are terminated) slower due to waiting for terminating pods
 to be fully deleted.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -618,7 +551,7 @@ Yes. Unit tests will include the fields off/on and verify behavior.
 This section must be completed when targeting beta to a release.
 -->
 
-###### How can a rollout or rollback fail? Can it impact already running workloads?
+#### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -630,14 +563,14 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-###### What specific metrics should inform a rollback?
+#### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+#### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -645,7 +578,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+#### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
@@ -660,7 +593,7 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-###### How can an operator determine if the feature is in use by workloads?
+#### How can an operator determine if the feature is in use by workloads?
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -668,14 +601,14 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-###### How can someone using this feature know that it is working for their instance?
+#### How can someone using this feature know that it is working for their instance?
 
 If a user terminates pods that are controlled by a deployment/job, then we should wait
 until the existing pods are terminated before starting new ones.
 
 We will add e2e test that determine this.
 
-###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+#### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -692,17 +625,17 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+#### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 NA
 
-###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+#### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 ### Dependencies
 
 This feature is closely related to the 3329-retriable-and-nonretriable-failures but not sure if that is considered a dependency.
 
-###### Does this feature depend on any specific services running in the cluster?
+#### Does this feature depend on any specific services running in the cluster?
 
 No
 
@@ -711,32 +644,26 @@ No
 Generally, enabling this will slow down rollouts if pods take a long time to terminate.  We would wait
 to create new pods until the existing ones are terminated
 
-###### Will enabling / using this feature result in any new API calls?
+#### Will enabling / using this feature result in any new API calls?
 
 No
 
-###### Will enabling / using this feature result in introducing new API types?
+#### Will enabling / using this feature result in introducing new API types?
 
-We add `TerminatingAsActive` to `JobSpec`, `DeploymentStrategy` and `ReplicaSetSpec`.  This is a boolPtr.
+We add `TerminatingAsActive` to `JobSpec`.  This is a boolPtr.
 
-###### Will enabling / using this feature result in any new calls to the cloud provider?
+#### Will enabling / using this feature result in any new calls to the cloud provider?
 
 No
 
-###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+#### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 For Job API, we are adding a BoolPtr field named `TerminatingAsActive` which is a boolPtr of 8 bytes.
 
 - API type(s): boolPtr
 - Estimated increase in size: 8B
 
-ReplicaSet and Deployment have two additions:
-
-- API type(s): boolPtr
-- `DeploymentStrategy` and ReplicaSetSpec
-- Estimated increase in size: 16B (2 x 8B)
-
-###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+#### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 <!--
 Look at the [existing SLIs/SLOs].
@@ -747,7 +674,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+#### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
 Things to keep in mind include: additional in-memory state, additional
@@ -759,7 +686,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+#### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
 Focus not just on happy cases, but primarily on more pathological cases
@@ -784,9 +711,9 @@ splitting it into a dedicated `Playbook` document (potentially with some monitor
 details). For now, we leave it here.
 -->
 
-###### How does this feature react if the API server and/or etcd is unavailable?
+#### How does this feature react if the API server and/or etcd is unavailable?
 
-###### What are other known failure modes?
+#### What are other known failure modes?
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -801,7 +728,7 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-###### What steps should be taken if SLOs are not being met to determine the problem?
+#### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
