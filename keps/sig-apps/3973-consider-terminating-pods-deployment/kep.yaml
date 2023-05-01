@@ -8,7 +8,9 @@ participating-sigs:
 status: provisional
 creation-date: 2023-05-01
 reviewers:
+  - alice
 approvers:
+  - bob
 
 see-also:
   - "/keps/sig-apps/3939-consider-terminating-pods-jobs"
