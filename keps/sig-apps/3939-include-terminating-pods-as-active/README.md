@@ -177,7 +177,7 @@ Existing Issues:
 - [Option for acknowledging terminating Pods in Deployment rolling update](https://github.com/kubernetes/kubernetes/issues/107920)
 - [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510)
 
-Many common machine learning frameworks, such as Tensorflow, require unique pods.  Terminating pods that count as active pods
+Many common machine learning frameworks, such as Tensorflow, require unique pods.  If a terminating pod is not considered active, a replacement pod is created and
 can cause errors.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
 before starting new pods.  
 
