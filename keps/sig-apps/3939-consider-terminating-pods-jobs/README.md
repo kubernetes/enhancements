@@ -201,11 +201,14 @@ before starting new pods.
 
 In scarce compute environments, these resources can be difficult to obtain so pods can take a long time to find resources and they may only be able to find nodes once the existing pods have been terminated.
 
+If a job is stuck in terminating, it could be possible for autoscaling to kick in and give a new node.  
+This is not ideal if you could just wait for the pod to terminating and reuse that node.  
+
 ### Goals
 
-- Deployment controller should allow for flexibility in waiting for pods to be fully terminated before
+- Job controller should allow for flexibility in waiting for pods to be fully terminated before
   creating new ones
-- Deployment/ReplicaSet will have a new status field where we include the number of terminating replicas.
+- Job controller will have a new status field where we include the number of terminating replicas.
 
 ### Non-Goals
 
@@ -214,22 +217,30 @@ In scarce compute environments, these resources can be difficult to obtain so po
 
 ## Proposal
 
-The Job controller get a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  In this KEP, we will consider terminating pods to be separate from active and failed.  This means that for cases where we track the number of pods, like the Job Controller, we should include a field that states the number of terminating pods.  
+The Job controller get a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  
+In this KEP, we will consider terminating pods to be separate from active and failed.  
+This means that for cases where we track the number of pods, like the Job Controller, we should include a field that states the number of terminating pods.  
 
-We will propose a API fields in Jobs and Deployments/ReplicaSets in this KEP.  
+We propose two apis:
+
+1) A field in Spec that allows for opt-in behavior of including terminating pods as active.
+2) A new field for tracking the number of terminating pods.
 
 ### User Stories (Optional)
 
 #### Story 1
 
 As a machine learning user, ML frameworks allow scheduling of multiple pods.  
-The Job controller does not typically wait for terminating pods to be marked as failed.  Tensorflow and other ML frameworks may have a requirement that they only want Pods to be started once the other pods are fully terminated.
+The Job controller does not typically wait for terminating pods to be marked as failed.  
+Tensorflow and other ML frameworks may have a requirement that they only want Pods to be started once the other pods are fully terminated.
 
-This case was added due to a bug discovered with running IndexedJobs with Tensorflow.  See [Jobs create replacement Pods as soon as a Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844) for more details.
+This case was added due to a bug discovered with running IndexedJobs with Tensorflow.  
+See [Jobs create replacement Pods as soon as a Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844) for more details.
 
 #### Story 2
 
-As a cloud user, users would want to guarantee that the number of pods that are running is exactly the amount that they specify.  Terminating pods do not relinguish resources so scarce compute resource are still scheduled to those pods.
+As a cloud user, users would want to guarantee that the number of pods that are running is exactly the amount that they specify.  
+Terminating pods do not relinguish resources so scarce compute resource are still scheduled to those pods.
 See [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510) for an example of this.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -240,10 +251,15 @@ See [Kueue: Account for terminating pods when doing preemption](https://github.c
 
 ### API Name Choices
 
-- TerminatingAsActive
-- ActiveUntilTerminal
-- DelayPodRecreationUntilTerminal
-- ?
+<<[UNRESOLVED  Name for the API]>>
+Options for the API
+
+- TerminatingAsActive (BoolPtr)
+- ActiveUntilTerminal (BoolPtr)
+- DelayPodRecreationUntilTerminal (BoolPtr)
+- recreatePodsWhen (enum of TerminatingOrFailed|Failed)
+  - default would be Failed
+<<[/UNRESOLVED]>>
 
 ### Job API Definition
 
@@ -273,30 +289,19 @@ type JobStatus struct {
 
 ### Implementation
 
-The Job controller utilize `FilterActivePods` in their reconciliation loop.  `FilterActivePods` gets a list of pods that are not terminating.  This KEP will include terminating pods in this list.
+The Job controller utilize `FilterActivePods` in their reconciliation loop.  `FilterActivePods` gets a list of pods that are not terminating.  
+This KEP will include terminating pods in this list.  This works because in `manageJobs` we check the len of active pods to determine a mismatch between expected active and reality.  
 
 ```golang
-// FilterActivePods returns pods that have not terminated.
-func FilterActivePods(pods []*v1.Pod, terminatingPods bool) []*v1.Pod {
- var result []*v1.Pod
- for _, p := range pods {
-  if IsPodActive(p) {
-   result = append(result, p)
-  } else if IsPodTerminating(p) && terminatingPods {
-      result = append(result, p)
-  } else {
-   klog.V(4).Infof("Ignoring inactive pod %v/%v in state %v, deletion time %v",
-    p.Namespace, p.Name, p.Status.Phase, p.DeletionTimestamp)
+ activePods := controller.FilterActivePods(pods)
+
+ var terminatingPods *int32 = pointer.Int32(0)
+ if waitForPodsToTerminate(&job) {
+  terminatingPods = controller.CountTerminatingPods(activePods)
+  if *terminatingPods > 0 {
+   activePods = append(activePods, controller.FilterTerminatingPods(pods)...)
   }
  }
- return result
-}
-
-func IsPodTerminating(p *v1.Pod) bool {
- return v1.PodSucceeded != p.Status.Phase &&
-  v1.PodFailed != p.Status.Phase &&
-  p.DeletionTimestamp != nil
-}
 ```
 
 The Job Controller uses this list to determine if there is a mismatch of active pods between expected values in the JobSpec.  
