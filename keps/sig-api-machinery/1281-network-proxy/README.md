@@ -103,7 +103,7 @@ For scalability we will be looking at the number of required open connections.
 Increasing usage of webhooks means we need better than 1 request per connection (multiplexing).
 We also need the tunnel to be tolerant of errors in the requests it is transporting.
 HTTP-Connect only supports HTTP requests and not things like DNS requests.
-We assume that for HTTP URL request,s it will be the proxy which does the DNS lookup.
+We assume that for HTTP URL requests it will be the proxy which does the DNS lookup.
 However this means that we cannot have the KAS perform a DNS request to then do a follow on request.
 If no issues are found with HTTP Connect in these areas we will proceed with it.
 If an issue is found then we will update the KEP and switch the client to the gRPC solution.
