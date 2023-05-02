@@ -373,11 +373,7 @@ cases outlined above will be added.
 #### Beta
 
 - Add E2E test coverage
-- Resolve resource constraints validation
-
-<<[UNRESOLVED resource constraints ]>>
-Additional beta requirements TBD
-<<[/UNRESOLVED]>>
+- Smart reload/recompile of Webhook Accessors [Github Issue](https://github.com/kubernetes/kubernetes/issues/116588)
 
 #### GA
 
