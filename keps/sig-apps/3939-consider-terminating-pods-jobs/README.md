@@ -212,8 +212,7 @@ This is not ideal if you could just wait for the pod to terminating and reuse th
 
 ### Non-Goals
 
-- DaemonSets and StatefulSets are not included in this proposal
-  - They were designed to enforce uniqueness from the start so we will not include them in this design.
+- Other workload APIs are not included in this proposal.
 
 ## Proposal
 
@@ -221,9 +220,9 @@ The Job controller get a list of active pods.  Active pods usually mean pods tha
 In this KEP, we will consider terminating pods to be separate from active and failed.  
 This means that for cases where we track the number of pods, like the Job Controller, we should include a field that states the number of terminating pods.  
 
-We propose two apis:
+We propose two new API fields:
 
-1) A field in Spec that allows for opt-in behavior of including terminating pods as active.
+1) A field in Spec that allows for opt-in behavior of whether to wait for terminating pods to finish before recreating.
 2) A new field for tracking the number of terminating pods.
 
 ### User Stories (Optional)
@@ -266,13 +265,28 @@ Options for the API
 At the JobSpec level, we are adding a new BoolPtr field:
 
 ```golang
+// This field controls when we recreate pods
+// Default will be TerminatingOrFailed ie recreate pods when they are failed
+// +enum 
+type RecreatePodsWhen string
+const (
+ // This is a field that recreates pods when they are marked as terminating or failed
+ // ie this means that as soon as pods get marked for deletion they will be recreated
+ TerminatingOrFailed RecreatePodsWhen = "TerminatingOrFailed"
+ // Only recreate pods when they are marked as failed.
+ Failed              RecreatePodsWhen = "Failed"
+)
+```
+
+```golang
 type JobSpec struct{
   ...
- // terminatingAsActive specifies if the Job controller should include terminating pods
- // as active. If the field is true, then the Job controller will include active pods
- // to mean running or terminating pods
+ // RecreatePodsWhen specifies when pods should be recreated.
+ // TerminatingOrFailed means to recreate when a pod is either terminating or failed
+ // TerminatingOrFailed is the default.
+ // Failed means to wait until pods are fully terminated or failed before recreating
  // +optional
- TerminatingAsActive *bool
+ RecreatePodsWhen *RecreatePodsWhen
 }
 ```
 
@@ -287,10 +301,12 @@ type JobStatus struct {
 }
 ```
 
+We will allow only opt-in behavior for this feature so we will fall back to `TerminatingOrFailed` for `RecreatePodsWhen`.  
+
 ### Implementation
 
 The Job controller utilize `FilterActivePods` in their reconciliation loop.  `FilterActivePods` gets a list of pods that are not terminating.  
-This KEP will include terminating pods in this list.  This works because in `manageJobs` we check the len of active pods to determine a mismatch between expected active and reality.  
+This KEP will include terminating pods in this list.  This works because in `manageJobs` we check the length of active pods to determine a mismatch between expected active and reality.  
 
 ```golang
  activePods := controller.FilterActivePods(pods)
@@ -308,6 +324,13 @@ The Job Controller uses this list to determine if there is a mismatch of active 
 Including active pods in this list allows the job controller to wait until these terminating pods.
 
 [Filter Active Pods Usage in Job Controller](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/job/job_controller.go#L749) filters the active pods.
+
+There are two cases in the job controller where deletions can happen programatically:
+
+1) A job is over the `activeDeadlineSeconds` so the child pods are deleted.  
+2) With `PodFailurePolicy` active and `FailJob` is set as the action, the children pods would be deleted.
+
+In both of these cases, we are updating the `Status` field with a count of terminating pods.  So both of these cases will be handled.
 
 ### Test Plan
 
@@ -657,7 +680,7 @@ No
 
 #### Will enabling / using this feature result in introducing new API types?
 
-We add `TerminatingAsActive` to `JobSpec`.  This is a boolPtr.
+We add `RecreatePodsWhen` to `JobSpec`.  This is a enum of two values.
 
 #### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -665,10 +688,15 @@ No
 
 #### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-For Job API, we are adding a BoolPtr field named `TerminatingAsActive` which is a boolPtr of 8 bytes.
+For Job API, we are adding a enum field named `RecreatePodsWhen` which takes either a `TerminateOrFailed` or `Failed`
 
-- API type(s): boolPtr
+- API type(s): enum
 - Estimated increase in size: 8B
+
+We are also added a status field for tracking terminating pods.
+
+- API type(s): int32
+- Estimated increase in size: 4B
 
 #### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -722,33 +750,11 @@ details). For now, we leave it here.
 
 #### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
 #### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- Initial KEP
 
 ## Drawbacks
 
