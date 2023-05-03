@@ -362,6 +362,7 @@ N/A
 - 2019-04-30: Agreement in sig-node to move feature to beta in 1.15
 - 2020-06-17: Agreement in sig-node to move feature to G.A in 1.19 or 1.20
 - 2023-01-27: KEP translate to the most recent template
+- 2023-05-23: KEP GA moved to 1.28
 
 ## Drawbacks
 
