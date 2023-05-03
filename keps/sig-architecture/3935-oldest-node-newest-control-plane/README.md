@@ -372,13 +372,16 @@ Are planned v1.30 control plane changes as compatible with v1.27 nodes as n-2 no
 ### Impact summary
 
 The calculated impact over the past two years if Kubernetes supported n-3 node skew:
-* the sig-auth `BoundServiceAccountTokenVolume` feature GA would have moved from v1.22 to v1.23 (remaining in beta and enabled by default in v1.22).
-* the sig-auth Pod Security update for the `IdentifyPodOS` feature would have moved from v1.25 to v1.26.
-* the sig-network `IPTablesOwnershipCleanup` beta would have moved from v1.27 to v1.28.
-* the sig-storage in-tree volume plugin cleanups would have been delayed by one release for OpenStack, AzureDisk, and AWS plugins.
+* sig-auth: `BoundServiceAccountTokenVolume` feature GA would have moved from v1.22 to v1.23 (remaining in beta and enabled by default in v1.22).
+* sig-auth: Pod Security update for the `IdentifyPodOS` feature would have moved from v1.25 to v1.26.
+* sig-network: `IPTablesOwnershipCleanup` beta would have moved from v1.27 to v1.28.
+* sig-storage: in-tree volume plugin cleanups would have been delayed by one release for OpenStack, AzureDisk, and AWS plugins.
 
 The known impact over the next year if Kubernetes supports n-3 node skew:
-* the sig-storage in-tree volume plugin cleanups would be delayed by one release for AzureFile and vSphere plugins (from v1.29 to v1.30).
+* sig-storage: in-tree volume plugin cleanups would be delayed by one release for AzureFile and vSphere plugins (from v1.29 to v1.30). [KEP-1885](/keps/sig-storage/1885-csi-migration-azurefile) and [KEP-1491](/keps/sig-storage/1491-csi-migration-vsphere)
+
+The known impact to other KEPs beyond the next year if Kubernetes supports n-3 node skew:
+* sig-network: [KEP-3705](/keps/sig-network/3705-cloud-node-ips#version-skew-strategy) would need to keep support in CCM for the `alpha.kubernetes.io/provided-node-ip` annotation to accommodate n-3 nodes
 
 ### Test Plan
 
