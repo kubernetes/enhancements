@@ -246,23 +246,27 @@ See [Kueue: Account for terminating pods when doing preemption](https://github.c
 
 ### Risks and Mitigations
 
+One area of contention is how this KEP will work with 3329-retriable-and-non-retriable-failures.  It is important to mention the subtleties here.  
+
+In 3329, there was a decision to force kubelet to transition pods to failed before marking them as failed.  This is feature toggled guarded by `PodDisruptionCondition`.  
+
+This means that when this feature is turned on we will only mark pods as failed once they are fully terminated.  This means that the pod is still considered active.  
+
+If this feature is turned off then a pod is marked as failed as soon as it is terminated so it will be counted as failed rather than active.  
+
+To get around this problem we decided to add a field called terminating so we can count separately from active or failed.  
+
+Another issue is described here: https://github.com/kubernetes/enhancements/pull/3940#discussion_r1180777509.  
+
+If PodDisruptionConditions is disabled, a pod bound to a no-longer-existing node may be stuck in the Running phase. As a consequence, it will never be replaced, so the whole job will be stuck from making progress.
+
+A suggestion is to fix this outside of this KEP as bug in the Pod Garbage Collector but we want to call this out as a potential risk.  
+
 ## Design Details
-
-### API Name Choices
-
-<<[UNRESOLVED  Name for the API]>>
-Options for the API
-
-- TerminatingAsActive (BoolPtr)
-- ActiveUntilTerminal (BoolPtr)
-- DelayPodRecreationUntilTerminal (BoolPtr)
-- recreatePodsWhen (enum of TerminatingOrFailed|Failed)
-  - default would be Failed
-<<[/UNRESOLVED]>>
 
 ### Job API Definition
 
-At the JobSpec level, we are adding a new BoolPtr field:
+At the JobSpec level, we are adding a new enum field:
 
 ```golang
 // This field controls when we recreate pods
@@ -283,7 +287,7 @@ type JobSpec struct{
   ...
  // RecreatePodsWhen specifies when pods should be recreated.
  // TerminatingOrFailed means to recreate when a pod is either terminating or failed
- // TerminatingOrFailed is the default.
+ // Failed is the default.
  // Failed means to wait until pods are fully terminated or failed before recreating
  // +optional
  RecreatePodsWhen *RecreatePodsWhen
@@ -374,7 +378,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We will add the following integration test for the Job controller:
 
-TerminatingAsActive Feature Toggle On:
+TerminatingPodsAsActiveJobs Feature Toggle On:
 
   1) NonIndexedJob starts pods that takes a while to terminate
   2) Delete pods
