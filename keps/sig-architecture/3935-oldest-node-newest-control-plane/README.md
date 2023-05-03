@@ -198,6 +198,8 @@ Updating the skew policy to allow up to n-3 nodes brings the policy back in line
 3. Choose the minimum node version to begin supporting 3-version skew that avoids disrupting the plans identified in step 2
    * 1.25 nodes / 1.28 control planes
 4. Update the [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) as part of the release identified in step 3
+5. Update [identified KEPs](#impact-summary) that need to adjust timelines
+6. Update the "Production Readiness Review - Version Skew Strategy" portion of the KEP template to remind KEP authors of max supported skews
 
 ### Risks and Mitigations
 
