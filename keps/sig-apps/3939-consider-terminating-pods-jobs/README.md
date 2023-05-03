@@ -89,7 +89,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [API Name Choices](#api-name-choices)
   - [Job API Definition](#job-api-definition)
   - [Implementation](#implementation)
   - [Test Plan](#test-plan)
