@@ -1,4 +1,4 @@
-# KEP-2258: Node service log viewer
+# KEP-2258: Node log query
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -7,8 +7,8 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Implement client for logs endpoint viewer (OS agnostic)](#implement-client-for-logs-endpoint-viewer-os-agnostic)
-  - [Linux distros with systemd / journald](#linux-distros-with-systemd--journald)
+  - [Implement client for logs endpoint (OS agnostic)](#implement-client-for-logs-endpoint-os-agnostic)
+  - [Linux distributions with systemd / journald](#linux-distributions-with-systemd--journald)
   - [Linux distributions without systemd / journald](#linux-distributions-without-systemd--journald)
   - [Windows](#windows)
   - [User Stories](#user-stories)
@@ -17,7 +17,6 @@
     - [Wider access to all node level service logs](#wider-access-to-all-node-level-service-logs)
 - [Design Details](#design-details)
     - [kubelet](#kubelet)
-    - [kubectl](#kubectl)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -45,15 +44,15 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -65,10 +64,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 A Kubernetes cluster administrator has to log in to the relavant control-plane
 or worker nodes to view the logs of the API server, kubelet etc. Or they would
 have to implement a client side reader. A simpler and more elegant method would
-be to allow them to use the kubectl CLI to also view these logs similar to
-using it for other interactions with the cluster. Given the sensitive nature of
-the information in node logs, this feature will only be available to cluster
-administrators.
+be to allow them to use a kubelet API or kubectl plugin to also view these logs
+similar to using it for other interactions with the cluster. Given the sensitive
+nature of the information in node logs, this feature will only be available to
+cluster administrators.
 
 ## Motivation
 
@@ -77,19 +76,19 @@ a cluster administrator to SSH into the nodes for debugging. While certain
 issues will require being on the node, issues with the kube-proxy or kubelet,
 to name a couple, could be solved by perusing their logs. However this
 too requires the administrator to SSH access into the nodes. Having a way for
-them to view the logs using kubectl will significantly simplify their
-troubleshooting.
+them to view the logs using a kubelet API or kubectl plugin will significantly
+simplify their troubleshooting.
 
 
 ### Goals
-Provide a cluster administrator with a streaming view of logs using kubectl
-without them having to implement a client side reader or logging into the node.
-This would work for:
+Provide a cluster administrator with a streaming view of logs using a kubelet
+API without them having to implement a client side reader or logging into the
+node. This would work for:
 - Services on Linux worker and control plane nodes:
   - That have systemd / journald support.
   - That have services that log to `/var/log/`
 - Windows worker nodes (all supported variants) that log to `C:\var\log`,
-  System and Application logs, Windows Event Logs and Event Tracing (ETW).
+  and Application logs.
 
 ### Non-Goals
 - Providing support for non-systemd Linux distributions.
@@ -99,14 +98,12 @@ This would work for:
 
 ## Proposal
 
-### Implement client for logs endpoint viewer (OS agnostic)
-- Implement a new `kubectl node-logs` to work with node objects.
-- Implement a client for the `/var/log/` kubelet endpoint viewer.
+### Implement client for logs endpoint (OS agnostic)
+- Implement a client for the `/proxy/logs/` kubelet endpoint viewer.
 
-### Linux distros with systemd / journald
-Supplement the the `/var/log/` endpoint viewer on the kubelet with a thin shim
-over the `journal` directory that shells out to journalctl. Then implement
-`kubectl node-logs` to also work with node objects.
+### Linux distributions with systemd / journald
+Supplement the the `/proxy/logs/` endpoint viewer on the kubelet with a thin shim
+over the `journal` directory that shells out to journalctl.
 
 ### Linux distributions without systemd / journald
 Running the new "kubectl node-logs" command against services on nodes that do
@@ -122,7 +119,7 @@ Reuse the kubelet API for querying the Linux journal for invoking the
 Consider a scenario where pods / containers are refusing to come up on certain
 nodes. As mentioned in the motivation section, troubleshooting this scenario
 involves the cluster administrator to SSH into nodes to scan the logs. Allowing
-them to use `kubectl node-logs` to do the same as they would to debug issues with a
+them to use the kubelet API to do the same as they would to debug issues with a
 pod / container would greatly simply their debug workflow. This also opens up
 opportunities for tooling and simplifying automated log gathering. The feature
 can also be used to debug issues with Kubernetes services especially in Windows
@@ -130,25 +127,22 @@ nodes that run as native Windows services and not as DaemonSets or Deployments.
 
 Here are some example of how a cluster administrator would use this feature:
 ```
-# Show kubelet and crio journal logs from all masters
-kubectl node-logs --role master -q kubelet -q crio
+# Fetch kubelet logs from a node named node-1.example
+kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=kubelet"
 
-# Show kubelet log file (/var/log/kubelet/kubelet.log) from all Windows worker nodes
-kubectl node-logs --label kubernetes.io/os=windows -q kubelet
+# Fetch kubelet logs from a node named node-1.example that have the word "error"
+kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=kubelet&pattern=error"
 
-# Display docker runtime WinEvent log entries from a specific Windows worker node
-kubectl node-logs <node-name> --query docker
+# Display foo.log from a node name node-1.example
+kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=/foo.log
 ```
 
 ### Risks and Mitigations
 
 #### Large log files and events
 If the log that is attempted to be viewed is very large (GBs) there is
-potential for the node performance to be degraded. To mitigate this we can
-document that node logs should always be rotated in clusters that enable this
-feature. We should also take into account nodes that don't take advantage of
-journald's rate limiting options. We can then take real world feedback around
-this for better mitigation when graduating the feature from alpha to beta.
+potential for the node performance to be degraded. To mitigate this we only
+allow returning of messages that can be retrieved within 30 seconds.
 
 #### Wider access to all node level service logs
 The cluster administrator can now view all logs in /var/log/, systemd/journald
@@ -164,23 +158,32 @@ usage feedback.
 
 The kubelet already has a `/var/log/` [endpoint viewer](https://github.com/kubernetes/kubernetes/blob/b184272e278571d1e6650605dd4c39be897eaaa2/pkg/kubelet/kubelet.go#L1403)
 that is lacking a client. Given its existence we can supplement that with a
-wafer thin shim over the /journal directory that shells out to journalctl. This
-allows us to extend the endpoint for getting logs from the system journal on
-Linux systems that support systemd. To enable filtering of logs, we can reuse
-the existing filters supported by journalctl. The `kubectl node-logs` will have
-command line options for specifying these filters when interacting with node
-objects.
+wafer thin shim that shells out to journalctl. This allows us to extend the
+endpoint for getting logs from the system journal on Linux systems that support
+systemd. To enable filtering of logs, we can reuse the existing filters
+supported by journalctl.
 
 On the Windows side viewing of logs from services that use `C:\var\log` will
 be supported by the existing endpoint. For Windows services that log to the
-the System and Application logs, Windows Event Logs and Event Tracing (ETW),
-we can leverage the [Get-WinEvent cmdlet](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent?view=powershell-7.1)
+the Application logs,we can leverage the
+[Get-WinEvent cmdlet](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent?view=powershell-7.1)
 that supports getting logs from all these sources. The cmdlet has filtering
 options that can be leveraged to filter the logs in the same manner we do
 with the journal logs.
 
 Please note that filtering will not be available for logs in `/var/log/` or
 `C:\var\log\`.
+
+The complete list of options that can be used are:
+
+Option | Description
+------ | -----------
+`boot` | boot show messages from a specific system boot
+`pattern` | pattern filters log entries by the provided PERL-compatible regular expression
+`query` | query specifies services(s) or files from which to return logs (required)
+`sinceTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp from which to show logs (inclusive)
+`untilTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp until which to show logs (inclusive)
+`tailLines` | specify how many lines from the end of the log to retrieve; the default is to fetch the whole log
 
 The feature now enables the cluster administrator to interrogate all services.
 This could be prevented by having a whitelist of allowed services. But this
@@ -193,75 +196,12 @@ configured. Here are some examples:
 
 
 The `/var/log/` endpoint is enabled using the `enableSystemLogHandler` kubelet
-configuration options. To gain access to this new feature this option needs to
-be enabled. In addition when introducing this feature it will be hidden behind a
-`NodeLogQuery` feature gate in the kubelet that needs to be explicitly enabled. So
-you need to enable both options to get access to this new feature and disabling
-`enableSystemLogHandler` will disable the new feature irrespective of the
-`NodeLogQuery` feature gate.
-
-A reference implementation of this feature is available
-[here](https://github.com/kubernetes/kubernetes/pull/96120).
-
-#### kubectl
-
-`kubectl` has an existing `logs` command that is used to view the logs for a
-container in a pod or a specified resource. The sub-command looks at resource
-types, so can be extended to work with node objects to view the logs of services
-on the nodes. Given that the `logs` command depends on RBAC policies for access
-to appropriate resource type and associated endpoints, it will allow us to
-restrict node logs access to only cluster administrators as long as the cluster
-is setup in that manner. Access to the `node/logs` sub-resource needs to be
-explicitly granted as a user with access to `nodes` will not automatically have
-access to `node/logs`. In the alpha phase the functionality will be behind
-`kubectl alpha node-logs` sub-command. The functionality will be moved to
-`kubectl node-logs` in the beta phase. However the examples will reference the
-final destination i.e. `kubectl node-logs`.
-
-The `logs --query` sub-command for node objects will follow a heuristics approach when
-asked to query for logs from a Windows or Linux service. If asked to get the
-logs from a service `foobar`, it will first assume `foobar` logs to the Linux
-journal / Windows eventing mechanisms (Application, System, and ETW). If unable
-to get logs from these, it will attempt to get logs from `/var/log/foobar.log`,
-`/var/log/foobar/foobar.log`, `/var/log/foobar*INFO` or
-`/var/log/foobar/foobar*INFO` in that order. Alternatively an explicit file
-location can be passed to the `--query` option.
-Here are some examples and explanation of the options that will be added.
-```
-Examples:
-  # Show kubelet logs from all masters
-  kubectl node-logs --role master -q kubelet
-
-  # Show docker logs from Windows nodes
-  kubectl node-logs -l kubernetes.io/os=windows -q docker
-
-  # Show foo.log from Windows nodes
-  kubectl node-logs -l kubernetes.io/os=windows -q /foo/foo.log
-
-Options:
-  -g, --grep='': Filter log entries by the provided regex pattern. Only applies to node journal logs.
-      --raw=false: Perform no transformation of the returned data.
-      --role='': Set a label selector by node role.
-  -l, --selector='': Selector (label query) to filter on.
-      --since-time='': Return logs after a specific ISO timestamp.
-      --tail=-1: Return up to this many lines (not more than 100k) from the end of the log.
-      --sort=timestamp: Interleave logs by sorting the output. Defaults on when viewing node journal logs.
-  -q, --query=[]: Return log entries that matches any of the specified service(s).
-      --until-time='': Return logs before a specific ISO timestamp.
-```
-
-The `--sort=timestamp` feature will introduce log unification across node
-objects by timestamps which can be extended to pod logs. This will allow users
-to see logs across nodes from the same time. Similarly for pods, it will allow
-seeing logs across containers aligned by time.
-
-Given that the feature will be introduced behind a feature gate, by default
-`kubectl node-logs` will return a functionality not available message. When the
-feature is enabled in alpha phase, `kubectl node-logs` will display a
-warning message that the feature is in alpha. When the `--query` option
-is used against Linux nodes that do not support systemd/journald and the service
-does not log to `/var/log`, the same functionality not available message will be
-returned.
+configuration options. To gain access to this new feature, this option and a
+newly introduced `enableSystemLogQuery` needs to be enabled. In addition when
+introducing this feature it will be hidden behind a `NodeLogQuery` feature gate
+in the kubelet that needs to be explicitly enabled. So you need to enable both
+options to get access to this new feature. Disabling `enableSystemLogQuery`
+will disable the new feature irrespective of the `NodeLogQuery` feature gate.
 
 ### Test Plan
 
@@ -274,8 +214,7 @@ to implement this enhancement.
 ##### Unit tests
 
 Add unit tests to kubelet and kubectl that exercise the new arguments that
-have been added. A reference implementation of the tests can be seen
-[here](https://github.com/kubernetes/kubernetes/pull/96120/commits/253dbad91a3896680da74da32595f02120f56cfa#diff-1d703a87c6d6156adf2d0785ec0174bb365855d4883f5758c05fda1fee8f7f1b)
+have been added.
 
 Given that a new kubelet package is introduced as part of this feature there is
 no existing test coverage to link to.
@@ -307,19 +246,14 @@ sub-command.
 
 #### Alpha -> Beta Graduation
 
-The plan is to graduate the feature to beta in the v1.28 time frame. At that
+The plan is to graduate the feature to beta in the v1.29 time frame. At that
 point we would have collected feedback from cluster administrators and
-developers who have enabled the feature. Based on this feedback and issues
-opened we should consider adding a kubelet side throttle for the viewing the
-logs. In addition we will garner feedback on the heuristic approach and based on
-that we will decide if we need introduce options to explicitly differentiate
-between file vs journal / WinEvent logs.
+developers who have enabled the feature. In addition we will provide a kubectl
+plugin for querying the logs more elegantly instead of using raw API calls.
 
-The kubectl implementation will move from `kubectl alpha node-logs` to 
-`kubectl node-logs`.
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.29 time frame at which point
+The plan is to graduate the feature to GA in the v1.30 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 
@@ -327,9 +261,8 @@ beta phases.
 
 ### Version Skew Strategy
 
-If a kubectl version that has the new `node-logs` option is used against a node
-that is using a kubelet that does not have the extended `/var/log` endpoint
-viewer, the result should be "feature not supported".
+If the API call is made against a kubelet that does not support the new feature,
+a 404 will be returned.
 
 ## Production Readiness Review Questionnaire
 
@@ -408,6 +341,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - Created on Jan 14, 2021
 - Updated on May 5th, 2021
 - Updated on Dec 13th, 2022
+- Updated on May 2nd, 2023
 
 ## Drawbacks
 
@@ -417,6 +351,3 @@ Alternatively we could use a client side reader on the nodes to redirect the
 logs. The Windows side would require privileged container support. However this
 would not help scenarios where containers are not launching successfully on the
 nodes.
-
-For the kubectl changes an alternative to introducing `kubectl node-logs` would be to
-introduce a plugin.

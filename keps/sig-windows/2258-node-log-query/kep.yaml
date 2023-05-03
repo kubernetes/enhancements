@@ -1,4 +1,4 @@
-title: Node service log viewer
+title: Node log query
 kep-number: 2258
 authors:
   - "@aravindhp"
@@ -11,12 +11,12 @@ participating-sigs:
 status: implementable
 reviewers:
   - "@marosset"
-  - "@immuzz"
+  - "@liggit"
   - "@thockin"
 approvers:
   - "@marosset"
 creation-date: 2021-01-14
-last-updated: 2022-06-06
+last-updated: 2023-05-02
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
 
