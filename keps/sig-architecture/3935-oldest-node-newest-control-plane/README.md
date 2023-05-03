@@ -29,6 +29,7 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
+- [Related work](#related-work)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -529,6 +530,18 @@ or failing to become ready are existing failure modes.
 There are no new failure modes specific to this policy change.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+## Related work
+
+While investigating behavior, test coverage, and documentation of existing supported skew,
+several inconsistencies or gaps were found. Links tracking improving those areas are provided for reference:
+
+* sig-network:
+  * Clarify supported skew documentation for `kube-proxy` - https://github.com/kubernetes/website/pull/40672
+  * Improve test coverage of skewed `kube-proxy` / `kube-apiserver` and skewed `kube-proxy` / `kubelet` - https://docs.google.com/document/d/1_w77-zG_Xj0zYvEMfQZTQ-wPP4kXkpGD8smVtW_qqWM/edit#bookmark=id.urwmea30mygf
+  * Resolve misleading `status.nodeInfo.kubeProxyVersion` API field - https://github.com/kubernetes/kubernetes/issues/117756
+* sig-node:
+  * Clarify supported skew documentation for `kubelet` / `cri-api` - https://github.com/kubernetes/kubernetes/pull/114394
 
 ## Implementation History
 
