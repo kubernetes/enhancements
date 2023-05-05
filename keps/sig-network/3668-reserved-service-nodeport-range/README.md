@@ -465,4 +465,7 @@ N/A
 
 ## Drawbacks
 
+- v1.27 - Initial implementation https://github.com/kubernetes/kubernetes/pull/114418
+- v1.28 - Beta
+
 ## Alternatives
