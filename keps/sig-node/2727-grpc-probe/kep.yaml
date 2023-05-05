@@ -8,7 +8,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-network
-status: implementable
+status: implemented
 creation-date: 2020-04-04
 last-updated: 2023-01-31
 reviewers:
