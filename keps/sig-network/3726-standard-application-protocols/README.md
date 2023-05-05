@@ -167,17 +167,17 @@ type ServicePort struct {
   ...
 
   // The application protocol for this port.
-	// This is used as a hint for implementations to offer richer behavior for protocols that they understand.
-	// This field follows standard Kubernetes label syntax.
-	// Valid values are either:
-	//
-	// * Un-prefixed protocol names - reserved for IANA standard service names (as per
-	// RFC-6335 and https://www.iana.org/assignments/service-names).
-	//
-	// * Kubernetes-defined prefixed names:
-	//   * 'kubernetes.io/h2c' - HTTP/2 over cleartext as described in https://www.rfc-editor.org/rfc/rfc7540
-	//
-	// * Other protocols should use implementation-defined prefixed names such as
+  // This is used as a hint for implementations to offer richer behavior for protocols that they understand.
+  // This field follows standard Kubernetes label syntax.
+  // Valid values are either:
+  //
+  // * Un-prefixed protocol names - reserved for IANA standard service names (as per
+  // RFC-6335 and https://www.iana.org/assignments/service-names).
+  //
+  // * Kubernetes-defined prefixed names:
+  //   * 'kubernetes.io/h2c' - HTTP/2 over cleartext as described in https://www.rfc-editor.org/rfc/rfc7540
+  //
+  // * Other protocols should use implementation-defined prefixed names such as
   // mycompany.com/my-custom-protocol.
   // +optional
   AppProtocol *string
