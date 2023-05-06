@@ -1,24 +1,25 @@
 title: Unknown Version Interoperability Proxy
-kep-number: 3903
+kep-number: 4020
 authors:
   - "@lavalamp"
+  - "@hankang"
+  - "@richabanker"
 owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-aaa
-  - sig-bbb
-status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
-creation-date: yyyy-mm-dd
+status: provisional
+creation-date: 2023-05-17
 reviewers:
-  - TBD
-  - "@alice.doe"
+  - "@deads2k"
+  - "@liggitt"
+  - "@jpbetz"
+
 approvers:
-  - TBD
-  - "@oscar.doe"
+  - "@deads2k"
+  - "@jpbetz"
 
 see-also:
-  - apiserver identity kep, link TODO
+  - "/keps/sig-api-machinery/2339-storageversion-api-for-ha-api-servers"
 replaces:
-  - none I think
+  - none
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -37,12 +38,11 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: MyFeature
+  - name: UnknownVersionInteroperabilityProxy
     components:
       - kube-apiserver
-      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - my_feature_metric
+  - TODO

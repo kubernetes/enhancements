@@ -78,17 +78,25 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Garbage Collector](#garbage-collector)
+    - [Namespace Lifecycle Controller](#namespace-lifecycle-controller)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Aggregation Layer](#aggregation-layer)
+    - [StorageVersion enhancement needed](#storageversion-enhancement-needed)
+    - [Identifying destination apiserver's network location](#identifying-destination-apiservers-network-location)
+    - [Proxy transport between apiservers and authn](#proxy-transport-between-apiservers-and-authn)
+  - [Discovery Merging](#discovery-merging)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -183,7 +191,6 @@ incorrectly or objects being garbage collected mistakenly.
 
 ### Non-Goals
 
-* Change cluster installation procedures (no new certs etc)
 * Lock particular clients to particular versions
 
 ## Proposal
@@ -265,7 +272,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 Cluster admins might not read the release notes and realize they should enable
 network/firewall connectivity between apiservers. In this case clients will
-recieve 503s instead of transparently being proxied. 503 is still safer than
+receive 503s instead of transparently being proxied. 503 is still safer than
 today's behavior.
 
 Requests will consume egress bandwidth for 2 apiservers when proxied. We can cap
@@ -275,20 +282,53 @@ with a metric.
 
 There could be a large volume of requests for a specific resource which might result in the identified apiserver being unable to serve the proxied requests. This scenario should not occur too frequently, since resource types which have large request volume should not be added or removed during an upgrade -- that would cause other problems, too.
 
-TODO: security / cert stuff.
+We should ensure at most one proxy, rather than proxying the request over and over again (if the source apiserver has an incorrect understanding of what the destination apiserver can serve).
+
+To prevent server-side request forgeries we will not give control over information about apiserver IP/endpoint and the trust bundle (used to authenticate server while proxying) to users via REST APIs.
 
 ## Design Details
 
-TODO: explanation of how the handler will determine a request is for a resource
-that should be proxied.
+### Aggregation Layer
 
-TODO: explanation of how the security handshake between apiservers works.
-* What we need to fix: random processes / external users / etc should not be
-  able to proxy requests, so the receiving apiserver needs to be able to verify
-  the source apiserver.
-* generate self-signed cert on startup, put pubkey in apiserver identity lease
-  object?
+1. A new filter will be added to the [handler chain] of the aggregation layer. This filter will maintain an internal map with the key being the group-version-resource and the value being a list of server IDs of apiservers that are capable of serving that group-version-resource
+  1. This internal map is populated using an informer for StorageVersion objects. An event handler will be added for this informer that will get the apiserver ID of the requested group-version-resource and update the internal map accordingly
 
+2. This filter will pass on the request to the next handler in the local aggregator chain, if:
+   1. It is a non resource request
+   2. The StorageVersion informer cache hasn't synced yet or if `StorageVersionManager.Completed()` has returned false. We will serve error 503 in this case
+   3. The request has a header that indicates that this request has been proxied once already. If for some reason the resource is not found locally, we will serve error 503
+   4. No StorageVersion was retrieved for it, meaning the request is for an aggregated API or for a custom resource
+   5. If the local apiserver ID is found in the list of serviceable-by server IDs from the internal map
+
+3. If the local apiserver ID is not found in the list of serviceable-by server IDs, a random apiserver ID will be selected from the retrieved list and the request will be proxied to this apiserver
+
+4. If there is no apiserver ID retrieved for the requested GVR, we will serve 404 with error `GVR <group_version_resource> is not served by anything in this cluster`
+
+5. If the proxy call fails for network issues or any reason, we serve 503 with error `Error while proxying request to destination apiserver`
+
+[handler chain]:https://github.com/kubernetes/kubernetes/blob/fc8f5a64106c30c50ee2bbcd1d35e6cd05f63b00/staging/src/k8s.io/apiserver/pkg/server/config.go#L639
+
+#### StorageVersion enhancement needed
+
+StorageVersion API currently tells us whether a particular StorageVersion can be read from etcd by the listed apiserver. We will enhance this API to also include apiserver ID of the server that can serve this StoageVersion.
+
+#### Identifying destination apiserver's network location
+
+* TODO: We need to find a place to store and retrieve the destination apiserver's host and port information given the server's ID.
+We do not want to store this information in
+
+    * StorageVersion : because we do not want to expose the network identity of the apiservers in this API that can be listed in multiple places where it may be unnecessary/redundant to do so
+    * Endpoint reconciler lease : because the IP present here could be that of a load balancer for the apiservers, but we need to know the definite address of the identified destination apiserver
+
+#### Proxy transport between apiservers and authn
+
+For the mTLS between source and destination apiservers, we will do the following
+
+1. For server authentication by the client (source apiserver) : the client needs to validate the server certs (presented by the destination apiserver), for which it needs to know the CA bundle of the authority that signed those certs. We will introduce a new flag --peer-ca-file that must be passed to the kube-apiserver to verify the other kube-apiserver's server certs
+
+2. For client authentication by the server (destination apiserver) : destination apiserver will check the source apiserver certs to determine that the proxy request is from an authenticated client. The destination apiserver will use requestheader authentication (and NOT client cert authentication) for this using the kube-aggregator proxy client cert/key and the --requestheader-client-ca-file passed to the apiserver upon bootstrap
+
+### Discovery Merging
 TODO: detailed description of discovery merging. (not scheduled until beta.)
 
 ### Test Plan
@@ -369,11 +409,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Alpha
 
 - Proxying implemented (behind feature flag)
+- mTLS or other secure system used for proxying
 
 #### Beta
 
 - Discovery document merging implemented
-- mTLS or other secure system used for proxying
 
 #### GA
 
@@ -651,18 +691,17 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+This feature depends on the `StorageVersion` feature, that generates objects with a `storageVersion.status.serverStorageVersions[*].apiServerID` field which is used to find the destination apiserver's network location.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: `kubernetes_uvip_count`
+  - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -678,6 +717,8 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+No, but it does depend on the `StorageVersion` feature in kube-apiserver.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
