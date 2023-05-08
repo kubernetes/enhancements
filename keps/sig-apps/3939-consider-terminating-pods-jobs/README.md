@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3939: Count Terminating Pods Separately From Failed/Active
+# KEP-3939: Allow for recreation of pods once fully terminated
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -194,7 +194,7 @@ Existing Issues:
 - [Job Creates Replacement Pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)
 - [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510)
 
-Many common machine learning frameworks, such as Tensorflow, require unique pods.  If a terminating pod is not considered active, a replacement pod is created and
+Many common machine learning frameworks, such as Tensorflow and JAX, require unique pods.  If a terminating pod is not considered active, a replacement pod is created and
 can cause errors.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
 before starting new pods.  
 
@@ -215,14 +215,14 @@ This is not ideal if you could just wait for the pod to terminating and reuse th
 
 ## Proposal
 
-The Job controller get a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  
+The Job controller gets a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  
 In this KEP, we will consider terminating pods to be separate from active and failed.  
 This means that for cases where we track the number of pods, like the Job Controller, we should include a field that states the number of terminating pods.  
 
 We propose two new API fields:
 
 1) A field in Spec that allows for opt-in behavior of whether to wait for terminating pods to finish before recreating.
-2) A new field for tracking the number of terminating pods.
+2) A new field in Status for tracking the number of terminating pods.
 
 ### User Stories (Optional)
 
@@ -286,7 +286,7 @@ type JobSpec struct{
   ...
  // RecreatePodsWhen specifies when pods should be recreated.
  // TerminatingOrFailed means to recreate when a pod is either terminating or failed
- // Failed is the default.
+ // TerminatingOrFailed is the default.
  // Failed means to wait until pods are fully terminated or failed before recreating
  // +optional
  RecreatePodsWhen *RecreatePodsWhen
@@ -377,7 +377,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We will add the following integration test for the Job controller:
 
-TerminatingPodsAsActiveJobs Feature Toggle On:
+JobRecreatePodsWhenFailed Feature Toggle On:
 
   1) NonIndexedJob starts pods that takes a while to terminate
   2) Delete pods
@@ -417,8 +417,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Address reviews and bug reports from Beta users
 - Write a blog post about the feature
 - Graduate e2e tests as conformance tests
-- Lock the `TerminatingPodsAsActiveJobs` feature-gate
-- Declare deprecation of the `TerminatingPodsAsActiveJobs` feature-gate in documentation
+- Lock the `JobRecreatePodsWhenFailed` feature-gate
+- Declare deprecation of the `JobRecreatePodsWhenFailed` feature-gate in documentation
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -543,12 +543,12 @@ This section must be completed when targeting alpha to a release.
 #### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: TerminatingPodsAsActiveJobs
+  - Feature gate name: JobRecreatePodsWhenFailed
   - Components depending on the feature gate: kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-For enabling TerminatingPodsAsActiveJobs:
+For enabling JobRecreatePodsWhenFailed:
 
 a) Count the number of terminating pods and populate in JobStatus
 b) FilterActiveJobs will include both active and terminating.
