@@ -85,6 +85,6 @@ Major milestones for Ceph RBD in-tree plugin CSI migration:
 
 - 1.23
   - Ceph RBD CSI migration to Alpha
-- 1.26
+- 1.27
   - Ceph RBD CSI migration to Beta, off by default
 
