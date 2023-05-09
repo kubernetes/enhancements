@@ -351,33 +351,38 @@ would implement restrictions based on the namespace.
      // object tracked by a quota but expressed using ScopeSelectorOperator in combination
      // with possible values.
      ScopeSelector *ScopeSelector
-+    // QOSResources contains the desired set of allowed class resources.
-+    // +featureGate=QOSResources
-+    // +optional
-+    QOSResources QOSResourceQuota
++   // QOSResources contains the desired set of allowed QoS resources.
++   // +optional
++   QOSResources QOSResourceQuota
  }
 
-+// QOSResourceQuota contains the allowed class resources.
++// QOSResourceQuota contains the allowed QoS resources.
 +type QOSResourceQuota struct {
-+       // Pod contains the allowed class resources for pods.
++       // Pod contains the allowed QoS resources for pods.
 +       // +optional
 +       Pod []AllowedQOSResource
-+       // Container contains the allowed class resources for pods.
++       // Container contains the allowed QoS resources for pods.
 +       // +optional
 +       Container []AllowedQOSResource
 +}
 
-+// AllowedQOSResource specifies access to one QoS-class resources type.
++// AllowedQOSResource specifies access to one QoS resources type.
 +type AllowedQOSResource struct {
 +       // Name of the resource.
 +       Name QOSResourceName
 +       // Allowed classes.
-+       Classes []string
++       Classes []AllowedQOSResourceClass
++}
+
++// AllowedQOSResourceClass specifies one allowed class of a QoS resource and
++// possible limits for its usage.
++type AllowedQOSResourceClass struct {
++       // Name of the class.
++       Name string
 +       // Capacity is the hard limit for usage of the class.
 +       // +optional
 +       Capacity int64
 +}
-
 
  // ResourceQuotaStatus defines the enforced hard limits and observed use.
  type ResourceQuotaStatus struct {
@@ -385,10 +390,12 @@ would implement restrictions based on the namespace.
         // Used is the current observed total usage of the resource in the namespace
         // +optional
         Used ResourceList
-+       // QOSResources contains the enforced set of available class resources.
-+       // +featureGate=QOSResources
++       // QOSResources contains the enforced set of available QoS resources.
 +       // +optional
 +       QOSResources QOSResourceQuota
++       // QOSResourcesUsage contains the observed usage of QoS resources in the namespace.
++       // +optional
++       QOSResourcesUsage QOSResourceQuota
  }
 ```
 
@@ -929,7 +936,9 @@ didn't request anythin (see [implicit defaults](#implicit-defaults))
 @@ -545,6 +545,8 @@ message PodSandboxStatus {
      // runtime configuration used for this PodSandbox.
      string runtime_handler = 9;
-+    // Configuration of QoS resources.
++    // Assignment of QoS resources. The runtime must report back assignment
++    // of all available QoS resources on the node, also possible defaults for
++    // resources that the client didn't explicitly request.
 +    repeated PodQOSResource qos_resources = 10;
  }
 
@@ -948,7 +957,9 @@ explicitly (see [implicit defaults](#implicit-defaults))
      LinuxContainerResources linux = 1;
      // Resource limits configuration specific to Windows container.
      WindowsContainerResources windows = 2;
-+    // Configuration of QoS resources.
++    // Assignment of QoS resources. The runtime must report back assignment
++    // of all available QoS resources on the node, also possible defaults for
++    // resources that the client didn't explicitly request.
 +    repeated ContainerQOSResource qos_resources = 3;
 ```
 
