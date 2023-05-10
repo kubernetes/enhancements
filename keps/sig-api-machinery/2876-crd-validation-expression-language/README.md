@@ -1134,8 +1134,10 @@ We plan to add e2e test under api-machinery for crd expression validation:
 
 #### GA
 
-- Formatted message. This targets in 1.27 and ideally should be in at least one release before going to GA.
-- Scalability evaluation. Evaluate CRD scalability with validation rules against [previous scale target](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/95-custom-resource-definitions/README.md#scale-targets-for-ga).
+- Formatted message. This has been added in 1.27.
+- Scalability evaluation. Evaluate CRD scalability with validation rules against [previous scale target](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/95-custom-resource-definitions/README.md#scale-targets-for-ga). The evaluation is available [here](https://docs.google.com/document/d/1gU8FfBhKnkmzJUC32NmXMdh4vzbLxb-gkf52O9Un7Cg/edit?usp=sharing)
+- Add optional fields reason and fieldPath into validation rules. 
+- Enable [CEL optional support](https://github.com/google/cel-spec/wiki/proposal-246) with proposed controlled rollout strategy. Ideally it should be in at least one release before going to GA.
 
 ## Production Readiness Review Questionnaire
 
