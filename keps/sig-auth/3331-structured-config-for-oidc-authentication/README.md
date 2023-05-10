@@ -59,7 +59,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3331: Structured config for OIDC authentication
+# KEP-3331: Structured Authentication Config
 
 <!-- toc -->
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -125,15 +125,21 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement proposal covers implementing the structured configuration for the OIDC authenticator.
-OIDC authentication is important part of Kubernetes, yet it has limitations in its current state.
-Bellow we will discuss that limitation and propose solutions.
+This enhancement proposal covers adding structured authentication configuration to the Kubernetes API server.
+Initially, only a `jwt` configuration will be supported, which will serve as the next interation of the existing
+OIDC authenticator.  OIDC authentication is important part of Kubernetes, yet it has limitations in its current state.
+Below we will discuss that limitation and propose solutions.
 
 # Motivation
 
 Structured config for OIDC authentication: noted in various contexts over the past few years. We want to migrate
 away from a flag-based config that is growing without bounds to a proper versioned config format. This would allow us to
 better support various features that have been requested.
+
+- [Support multiple OIDC ClientIDs on API server](https://github.com/kubernetes/kubernetes/issues/71162)
+- OpenID Connect: Identify user by more JWT claims than just a single one kubernetes/kubernetes#71715
+- OIDC: Allow any claim from an ID token to be mapped to userinfo extra attributes kubernetes/kubernetes#82236
+- Required claims does not support arrays and failing kubernetes auth with oidc - EKS  kubernetes/kubernetes#101291
 
 ### Goals
 
@@ -143,14 +149,20 @@ There are features users want to tune. We need to provide customization of the f
 - *Claim mappings*: it is only possible to pick a single value from a single claim and prefix groups.
 - *Use more than one OIDC provider*: the only option, for now, is to use an external OIDC provider that handles multiplexing support for multiple providers.
 - Change authenticator settings without restarting kube-apiserver.
+- SPIFFE JWTs
+- TODO other issues from the PR
+- Validations for infra providers
+- Easy migration from existing OIDC flags
 
 ### Non-Goals
 
-- Monitoring
+- Supporting configuration of authenticaiton mechnisims other than `jwt`
+- Supporting other methods for keys discovery other than standart OIDC discovery mechanism
+- No support for `x5c`
 
 ## Proposal
 
-1. Add new `authentication` API object to parse a structured config file `OIDCConfiguration`.
+1. Add new `apiserver.config.k8s.io` API object to parse a structured config file `AuthenticaitonConfiguration`.
 2. Add a single flag for kube-apiserver to point to the structured config file, automatically reload it on changes.
 3. Use an expression language to let users write their own logic for mappings and validation rules 
   (expressions should be simple for common cases, yet powerful to cover most user stories).
@@ -164,7 +176,43 @@ we should provide examples of migrating from a flag-based config to a new struct
 
 ### Configuration file
 
+TODO:
+
+- we need to define the minimum valid payload
+-> iss, exp, iat, and some other field that is the username
+-> [oidc validation] -> [claim validation] -> [claim mappings] -> [user info validation] (TODO mermaid diagram)
+-> should we have any revocation mechnism?
+  => use revocation endpoint if it is in the discovery document? (lets decide what we want here before beta)
+
 The main part of this proposal is a configuration file. It contains an array of providers:
+
+```yaml
+apiVersion: apiserver.config.k8s.io/v1alpha1
+kind: AuthenticationConfiguration
+jwt:
+- issuer:
+    url: https://example.com
+    clientID: my-app
+  claimValidationRules:    
+  - rule: 'claims.exp - claims.nbf > 86400'
+    message: total token lifetime must not exceed 24 hours
+  claimMappings:
+    username:
+      expression: 'claims.username + ":external-user"'
+    groups:
+      expression: 'claims.roles.split(",")'
+    uid:
+      claim: 'sub'
+    extra:
+    - key:
+        constant: 'client_name'  # TODO, decide if we really need this flexiblily or can we just have constant keys
+      value:
+        claim: 'aud'
+  claimFilters:
+  userInfoValidationRules: # TODO, provide a real world case
+  
+```
+
 
 ```go
 type OIDCConfiguration struct {
@@ -201,6 +249,7 @@ type Provider struct {
         // URL points to the issuer URL in a format schema://url/path.
         // Not required to be unique because users may want to have the API server trust multiple 
         // client IDs (kubernetes dashboard, kubectl, etc.) from the same provider.
+        // Always used for key discovery
         URL string `json:"url,omitempty"`
         // CertificateAuthorityData contains PEM-encoded certificate authority certificates. Overrides CertificateAuthority.
         // +optional
@@ -213,18 +262,28 @@ type Provider struct {
         // SkipOIDCValidations is a flag to turn off issuer validation, client id validation.
         // OIDC related checks.
         //  
-        // Validations that will be skipped:
+        // Validations that will be skipped (TODO fix this):
         // - ClientID validation
-        // - URL schema equals to HTTPS
+        // - URL schema equals to HTTPS <-NOT??
         // - Issuer URL check
-        // - Expiry validation
+        // - Expiry validation <-NOT
         //
         // +optional
-        SkipOIDCValidations bool `json:"skipOIDCValidations,omitempty"`
+        //SkipOIDCValidations bool `json:"skipOIDCValidations,omitempty"`
+        SkipClientIDValidation bool `json:"skipOIDCValidations,omitempty"`
+
+        // If specified, used for the discovery issuer matching and for matching incoming tokens.
+        IssuerValidationOverride *string `json:"skipOIDCValidations,omitempty"`
    }
    ```
 
-2. `ClaimValidationRules` - additional authentication policies. These policies are applied after generic OIDC validations, e.g., checking the token signature, issuer URL, etc. Rules are applicable to distributed claims.
+   curl oidc.oidc-nameaspace (.url field)
+
+   {
+    issuer: "https://oidc.example.com"  (.issuerValidationOverride field)
+   }
+
+1. `ClaimValidationRules` - additional authentication policies. These policies are applied after generic OIDC validations, e.g., checking the token signature, issuer URL, etc. Rules are applicable to distributed claims.
     ```go
     type ClaimValidationRule struct {
         // Rule is a logical expression that is written in CEL https://github.com/google/cel-go.
@@ -252,17 +311,17 @@ type Provider struct {
       message: total token lifetime must not exceed 24 hours
     ```
 
-3. `ClaimMappings` - rules to map claims from a token to Kubernetes user attributes.
+2. `ClaimMappings` - rules to map claims from a token to Kubernetes user attributes.
     ```go
     type UserAttributes struct {
         // Username represents an option for the username attribute.
-        Username string `json:"username"`
+        Username KeyOrExpression `json:"username"`
         // Groups represents an option for the groups attribute. 
         // +optional
-        Groups string `json:"groups,omitempty"`
+        Groups KeyOrExpression `json:"groups,omitempty"`
         // UID represents an option for the uid attribute.
         // +optional
-        UID string `json:"uid,omitempty"`
+        UID KeyOrExpression `json:"uid,omitempty"`
         // Extra represents an option for the extra attribute.
         // +optional
         Extra []ExtraMapping `json:"extra,omitempty"`
@@ -270,9 +329,14 @@ type Provider struct {
    
     type ExtraMapping struct {
         // Key is a CEL expression to extract extra attribute key.
-        Key string `json:"key"`
+        Key KeyOrExpression `json:"key"`
         // Value is a CEL expression to extract extra attribute value.
-        Value string `json:"value"`
+        Value KeyOrExpression `json:"value"`
+    }
+
+    type KeyOrExpression struct {
+        Key string `json:"key"`
+        Expression string `json:"value"`
     }
     ```
 
@@ -310,7 +374,7 @@ type Provider struct {
     extra:
       client_name: kubernetes
     ```
-4. `ClaimsFilter` - list of claim names that should be passed to CEL expressions. The assumption is that administrators
+3. `ClaimsFilter` - list of claim names that should be passed to CEL expressions. The assumption is that administrators
    know the structure of the token and the exact claims they will use in CEL expressions.
    This option helps to reduce system load and operate only with required claims.
 
@@ -503,7 +567,7 @@ Yes. It works.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-Yes, the `--oidc-configuration-path` flag should be removed from the kube-apiserver manifest.
+Yes, the `--authentication-config` flag should be removed from the kube-apiserver manifest.
 
 ### Monitoring Requirements
 
@@ -532,13 +596,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Metrics
+
+- Last successful load of the file
+- Last time keys were fetched (would be per issuer)
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
