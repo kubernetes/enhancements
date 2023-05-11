@@ -262,7 +262,7 @@ network QoS that cannot support per-container granularity.
 - Make the API to support updating QoS-class resource assignment of running containers
 - Make the extensions flexible, enabling simple addition of other QoS-class
   resource types in the future.
-- Make QoS-class resources opqaue (as possible) to the CRI client
+- Make QoS-class resources opaque (as possible) to the CRI client
 - Discovery of the available QoS-class resources
 - Resource status/capacity
 - Access control ([future work](#future-work))
@@ -659,7 +659,7 @@ available in Linux cgroups v2 to control swap-usage on a per-container basis.
 
 ##### Runtime classes
 
-The QoS-class resources mechanism could be "abused" to replace (or
+The QoS-class resources mechanism could be used to replace (or
 re-implement) the current runtime classes.
 
 One benefit of using a QoS-class resource to represent runtime classes would be
