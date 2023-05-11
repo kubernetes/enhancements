@@ -11,7 +11,7 @@ reviewers:
   - "@mimowo"
   - "@alculquicondor"
 approvers:
-  - "@soltysh"
+  - "@wojtek-t"
 
 see-also:
   - "/keps/sig-apps/3329-retriable-and-non-retriable-failures"
