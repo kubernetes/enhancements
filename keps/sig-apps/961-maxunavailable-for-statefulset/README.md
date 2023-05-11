@@ -1,6 +1,5 @@
 # KEP-961: Implement maxUnavailable in StatefulSet
 
-
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
 title can help communicate what the KEP is and should be considered as part of
@@ -19,23 +18,25 @@ tags, and then generate with `hack/update-toc.sh`.
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
+- [Table of Contents](#table-of-contents)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Implementation Details](#implementation-details)
+    - [API Changes](#api-changes)
+    - [Implementation](#implementation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
-  - [Graduation Criteria](#graduation-criteria)
+    - [Tests](#tests)
+    - [Test Plan](#test-plan-1)
+- [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -206,7 +207,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-N/A
+None.
 
 ## Proposal
 
@@ -458,9 +459,12 @@ No.
 - maxUnavailable greater than 1 with partition and maxUnavailable greater than replicas
 
 #### Test Plan
-For `Alpha`, unit tests and e2e tests will be added to test functionality at both
+
+For `Alpha`, unit tests and integration tests will be added to test functionality at both
 with feature flag enabled and disabled. Defaults will be verified so that users
-who donot set this flag are not surprised at all.
+who do not set this flag are not surprised at all.
+
+For `Beta`, add e2e tests.
 
 ## Graduation Criteria
 
@@ -604,11 +608,16 @@ maxUnavailable to a number greater than 1,  but the invariants and the logic wil
 maxUnavailable pods with the same identity and never more than maxUnavailable being deleted.
 
 ###### What specific metrics should inform a rollback?
-TODO when we reach Beta
+
+When feature enabled but rolling update in a unexpected phenomenon like the update pods at a time is not equal to the
+`maxUnavailable` value or rolling update in a unexpected order.
+
+Or we can refer to the `rolling-update-duration` metric for observation, if it didn't decrease when setting the `maxUnavailable`
+great than 1 or the duration increased abnormally, then we should rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-Will be tested when graduating to Beta.
 
+No, but it will be tested manually before merging the PR.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 No
@@ -623,31 +632,42 @@ The below command should show maxUnavailable value:
 kubectl get statefulsets -o yaml | grep maxUnavailable
 ```
 
+Or refer to the new metric `rolling-update-duration`, it should exist.
+
 ###### How can someone using this feature know that it is working for their instance?
-TODO when we reach Beta
+
+With feature enabled, set the `maxUnavailable` great than 1, and pay attention to the rolling update pods at a time,
+it should equal to the `maxUnavailable`.
+Or when setting the `maxUnavailable` great than 1, the `rolling-update-duration` should decrease.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
+I think it has little relevance with SLOs, but rolling update at a very low speed which impacts the running services.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+None.
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+None.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
-NA
+No.
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
-It doesnt make any extra API calls.
+
+It doesn't make any extra API calls.
 
 ###### Will enabling / using this feature result in introducing new API types?
 No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 No
-
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 A struct gets added to every StatefulSet object which has three fields, one 32 bit integer and two fields of type string.
@@ -661,6 +681,8 @@ The controller-manager will see very negligible and almost un-notoceable increas
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
+No.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -668,7 +690,28 @@ The RollingUpdate will fail or will not be able to proceed if etcd or apiserver 
 hence this feature will also be not be able to be used.
 
 ###### What are other known failure modes?
-NA
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+In a multi-master setup, when the cluster has skewed CCM, the behaviors may different.
+
+- [Failure mode brief description]
+  - Detection: the `rolling-update-duration` didn't decrease when setting the `maxUnavailable` great than 1 or increased abnormally.
+  - Mitigations: Disable the feature.
+  - Diagnostics: Set the logger level great than 4.
+  - Testing: No testing, because the rolling update duration is hard to measure, it can be impact by a lot of things,
+  like the master performance.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -676,10 +719,11 @@ NA
 
 - KEP Started on 1/1/2019
 - Implementation PR and UT by 8/30
+- Bump to beta at 2023-05-11
 
 ## Drawbacks
 
-NA
+Slow rolling update.
 
 ## Alternatives
 
@@ -690,3 +734,5 @@ section.
 your own logic for deleting more than one pods in a specific order. This requires more work on the user but give them ultimate flexibility.
 
 ## Infrastructure Needed (Optional)
+
+No.
