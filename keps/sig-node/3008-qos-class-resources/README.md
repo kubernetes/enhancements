@@ -1485,6 +1485,9 @@ extended to cover QoS-class resources.
 Beta: Existing integration tests for affected components (e.g. scheduler, node
 status, quota) are extended to cover QoS-class resources.
 
+> NOTE: having a mock implementation of CRI server would be helpful in writing
+> integration tests for kubelet.
+
 - <test>: <link to test coverage>
 
 ##### e2e tests
