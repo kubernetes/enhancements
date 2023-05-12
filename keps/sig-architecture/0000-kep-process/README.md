@@ -30,7 +30,7 @@ A standardized development process for Kubernetes is proposed, in order to:
 - allow for the enumeration of stability milestones and stability graduation
   criteria
 - persist project information in a Version Control System (VCS) for future
-  Kubernauts
+  Kubernetes
 - support the creation of _high-value, user-facing_ information such as:
   - an overall project development roadmap
   - motivation for impactful user-facing changes
