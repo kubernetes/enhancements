@@ -256,7 +256,7 @@ Another issue is described here: https://github.com/kubernetes/enhancements/pull
 
 If PodDisruptionConditions is disabled, a pod bound to a no-longer-existing node may be stuck in the Running phase. As a consequence, it will never be replaced, so the whole job will be stuck from making progress.
 
-A suggestion is to fix this outside of this KEP as bug in the Pod Garbage Collector but we want to call this out as a potential risk.  
+Due to the above issue, we can set phase=Failed when PodDisruptionConditions is enabled OR JobRecreatePodsWhenFailed is enabled. When JobRecreatePodsWhenFailed enabled, but PodDisruptionConditions disabled we would just set the phase, but without adding the condition.
 
 ## Design Details
 
