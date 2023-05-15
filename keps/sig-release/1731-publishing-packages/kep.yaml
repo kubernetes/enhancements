@@ -10,7 +10,7 @@ participating-sigs:
   - sig-cluster-lifecycle
 status: implementable
 creation-date: 2019-02-19
-last-updated: 2023-02-07
+last-updated: 2023-05-15
 reviewers:
   - "@timothysc"
   - "@sumitranr"
@@ -32,8 +32,8 @@ see-also:
   - "/keps/sig-release/1732-artifact-management"
   - "/keps/sig-release/k8s-image-promoter"
 stage: alpha
-latest-milestone: "v1.27"
+latest-milestone: "v1.28"
 milestone:
-  alpha: "v1.27"
+  alpha: "v1.28"
   beta: ""
   stable: ""
