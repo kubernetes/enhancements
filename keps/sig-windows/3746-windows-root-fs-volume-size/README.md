@@ -176,6 +176,8 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+Allow users to specify the size of the root-fs volume for Windows containers.
+
 ## Motivation
 
 <!--
@@ -199,9 +201,13 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-Allow users to specify the size of root-fs volumes for Windows containers in Pod specs.
+- Allow users to specify the size of root-fs volumes for Windows containers in Pod specs.
 
 ### Non-Goals
+
+- Allow users to specify the size of root-fs volumes for Linux containers
+  - The goal for this enhancement is to allow users to specify a larger size for the root-fs volume which is a fixed size. Linux containers do not have this limitation and quotas can be used to limit the size if desired.
+  - CRI-API fields for specifying root-fs volume sizes currently exist only on [`WindowsContainerResources`](https://github.com/kubernetes/kubernetes/blob/afbedee92541bdd3d38d0d58b62ee6c704981438/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L986C9-L997)
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
@@ -219,7 +225,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-Allow `resources.limits.storage` to be specified on Containers in pod specs (only if Pod OS is set ot Windows??) and pass the value to container runtime `CreateContainer` calls by setting the existing `WindowsContainerResources.rootfs-size-in-bytes` field in the CRI-API.
+Allow `resources.limits.rootfs-storage` to be specified on Containers in pod specs **for Windows containers only** and pass the value to container runtime `CreateContainer` calls by setting the existing `WindowsContainerResources.rootfs-size-in-bytes` field in the CRI-API.
 
 Ex:
 
@@ -232,7 +238,7 @@ spec:
   - name: container1
     resources:
       limits:
-        storage: 30Gi
+        rootfs-storage: 30Gi
         ephemeral-storage: 40Gi
         cpu: 500m
   - name: container2
@@ -256,6 +262,7 @@ bogged down.
 #### Story 1
 
 A user wants to run a workload that requires more than 20Gb of disk space on the root-fs volume.
+This was possible on Windows nodes by updating the docker figuration file (see [example](https://learn.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/container-storage#example)) and is not possible today with containerd
 
 #### Story 2
 
@@ -298,8 +305,8 @@ proposal will be implemented, this is the place to discuss them.
 
 ### API server updates
 
-Update API server validation to allow `resources.limits.storage` to be specified on containers. While the feature is in development this validation will be gated on by a feature flag.
-The relevant code is in [ValidateContainerResourceName](https://github.com/kubernetes/kubernetes/blob/ad18954259eae3db51bac2274ed4ca7304b923c4/pkg/apis/core/v1/validation/validation.go#L73-L86)
+- Add a new `ResourceRootFSStorage` constant in (k8s.io/api/core/v1/types.go)[https://github.com/kubernetes/kubernetes/blob/ffb4172ff18ff9edc19adff9c657da81c25aaf92/staging/src/k8s.io/api/core/v1/types.go#L5527-L5536]
+- Update API server validation to allow setting `resources.limits.rootfs-storage` on Windows containers. Validation for this new resource type will look similar to validation for of ephemeral storage limits. A majority of this validation will be preformed by updating https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/helper/helpers.go. While the feature is in development apiserver validation will only allow data to be persisted into the api-server if the feature gate is enabled.
 
 ### Kubelet updates
 
@@ -466,7 +473,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-N/A
+- No changes are required on upgrade to maintain previous behavior.
+
+- When downgrading from a release with this feature to a release with this feature no updates are needed to maintain previous behavior but the functionality described in this KEP not work.
 
 ### Version Skew Strategy
 
@@ -483,7 +492,8 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-N/A
+- If an older version of the kubelet is joined to a cluster that is not aware of the new api fields, then if a pod which specifies `resources.limits.rootfs-storage` the rootfs volume for Windows containers will be created with the default (20Gb) volume size.
+- Containerd v1.6.x and v1.7.x support this functionaly so version skew between containerd versions should not be an issue.
 
 ## Production Readiness Review Questionnaire
 
