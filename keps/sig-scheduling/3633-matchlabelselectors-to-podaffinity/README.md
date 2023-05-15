@@ -271,43 +271,30 @@ metadata:
 
 #### Story 2
 
-When users want to achieve exclusive 1:1 job to domain placement in [kubernetes-sigs/jobset](https://github.com/kubernetes-sigs/jobset).
-Noone knows the job's name until it's created from JobSet, but each Job and Pod will get [`job-name`](https://github.com/kubernetes-sigs/jobset/blob/749a77c2647ac46b309b8227f66293e4116b97ed/api/v1alpha1/jobset_types.go#L26) label on it.
+Let's say all Pods on each tenant get `tenant` label via a controller or a manifest management tool like Helm. 
+And, the cluster admin now wants to achieve exclusive 1:1 tenant to domain placement.
 
-Users can use `job-name` label to ensure that the Pods with the same `job-name` will land on the same rack 
-and Pods with other `job-name` won't labd on the same rack via `matchLabelSelectors`.
+By applying the following affinity grobally with the mutating webhook, the cluster admin can ensure that the Pods with the same domain will land on the same domain, and Pods with other `tenant` won't land on the same domain. 
 
 ```yaml
-apiVersion: jobset.x-k8s.io/v1alpha1
-kind: JobSet
-metadata:
-  name: pytorch
-  annotations:
-    alpha.jobset.sigs.k8s.io/exclusive-topology: rack
-spec:
-  replicatedJobs:
-    - name: workers
-      template:
-      ...
-        affinity:
-          podAffinity:      # ensures the pods of this job land on the same rack
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - matchLabelSelectors:
-                  - matchLabelKey: job-name
-                    operator: In
-                topologyKey: rack
-            podAntiAffinity: # ensures only this job lands on the rack
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - matchLabelSelectors:
-                  - matchLabelKey: job-name
-                    operator: NotIn
-              - labelSelector:
-                  matchExpressions:
-                  - key: job-name
-                    operator: Exists
-                topologyKey: rack
+affinity:
+  podAffinity:      # ensures the pods of this tenant land on the same node pool
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - matchLabelSelectors:
+          - matchLabelKey: tenant
+            operator: In
+        topologyKey: node-pool
+  podAntiAffinity:  # ensures only Pods from this tenant lands on the same node pool
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - matchLabelSelectors:
+          - matchLabelKey: tenant
+            operator: NotIn
+      - labelSelector:
+          matchExpressions:
+          - key: tenant
+            operator: Exists
+        topologyKey: node-pool
 ```
-
 
 ### Notes/Constraints/Caveats (Optional)
 
