@@ -57,7 +57,7 @@ The vSphere Cloud Provider is implemented, tested and partially documented. The 
 ### Implementation Details/Notes/Constraints [optional]
 
 Main provider work is completed and feature parity with in-tree will be achieved with the beta version. Removing in-tree `vsphere_volume` code is underway in the same repo and will piggyback on and be tracked through the
-[In-tree Storage Migration to CSI Plugin Migration](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md)
+[In-tree Storage Migration to CSI Plugin Migration](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/csi-migration.md)
 work. New features will need to follow the community KEP process.
 
 ### Risks and Mitigations

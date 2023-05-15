@@ -126,7 +126,7 @@ As a cluster administrator, I want to upgrade my cluster preserving all the
 
 This proposal explores as a first option for implementing Kubeadm
 “advanced configurations“ the usage of Kustomize; please refer to
-[Declarative application management in Kubernetes](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/architecture/declarative-application-management.md)
+[Declarative application management in Kubernetes](https://github.com/kubernetes/design-proposals-archive/blob/master/architecture/declarative-application-management.md)
 and [Kustomize KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0008-kustomize.md)
 for background information about Kustomize.
 
@@ -344,7 +344,7 @@ See risks and mitigations.
 
 ## Alternatives
 
-There are many alternatives to “Kustomize” in the ecosystem; see [Declarative application management in Kubernetes](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/architecture/declarative-application-management.md).
+There are many alternatives to “Kustomize” in the ecosystem; see [Declarative application management in Kubernetes](https://github.com/kubernetes/design-proposals-archive/blob/master/architecture/declarative-application-management.md).
 
 While there is great value in several different approaches “Kustomize” was selected as
 the first choice for this proposal because it already has first-class supported in

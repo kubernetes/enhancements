@@ -16,7 +16,7 @@ last-updated: 2021-09-08
 disable-supported: true
 status: implementable
 see-also:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
+  - "https://github.com/kubernetes/design-proposals-archive/blob/master/storage/csi-migration.md"
 replaces:
 
 # The target maturity stage in the current dev cycle for this KEP.

@@ -65,7 +65,7 @@ The proposal is to make kubernetes scheduler extensible by adding the capability
 to make http calls out to another endpoint to help achieve this functionality.
 
 **NOTE**: This KEP was done in retrospect and it was based on the original
-[extender proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/scheduler_extender.md).
+[extender proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/scheduling/scheduler_extender.md).
 
 ## Motivation
 

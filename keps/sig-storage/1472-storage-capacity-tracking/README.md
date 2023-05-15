@@ -217,7 +217,7 @@ nodes in a cluster.
 
 For situations not handled by the Kubernetes scheduler now and/or in
 the future, a [scheduler
-extender](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/scheduler_extender.md)
+extender](https://github.com/kubernetes/design-proposals-archive/blob/master/scheduling/scheduler_extender.md)
 can influence pod scheduling based on the information exposed via the
 new API. The
 [topolvm-scheduler](https://github.com/cybozu-go/topolvm/blob/master/docs/design.md#how-the-scheduler-extension-works)
@@ -703,10 +703,10 @@ The Kubernetes scheduler already has a component, the [volume
 scheduling
 library](https://github.com/kubernetes/kubernetes/tree/master/pkg/controller/volume/scheduling),
 which implements [topology-aware
-scheduling](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md).
+scheduling](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/volume-topology-scheduling.md).
 
 The
-[CheckVolumeBinding](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md#integrating-volume-binding-with-pod-scheduling)
+[CheckVolumeBinding](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/volume-topology-scheduling.md#integrating-volume-binding-with-pod-scheduling)
 function gets extended to not only check for a compatible topology of
 a node (as it does now), but also to verify whether the node falls
 into a topology segment that has enough capacity left. This check is

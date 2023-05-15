@@ -164,7 +164,7 @@ This new API will provide a standardized way to define a collection of one or mo
 
 ### Key terminology
 
-*KRM*: [Kubernetes Resource Model](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/architecture/resource-management.md)
+*KRM*: [Kubernetes Resource Model](https://github.com/kubernetes/design-proposals-archive/blob/master/architecture/resource-management.md)
 
  *Function*: A program conforming to the spec described in [this document](https://github.com/kubernetes-sigs/kustomize/blob/master/cmd/config/docs/api-conventions/functions-spec.md#krm-functions-specification).
 

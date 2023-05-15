@@ -177,7 +177,7 @@ This KEP proposes converging Kustomize's various alpha extension mechanisms into
 
 ### Key terminology
 
-*KRM*: [Kubernetes Resource Model](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/architecture/resource-management.md)
+*KRM*: [Kubernetes Resource Model](https://github.com/kubernetes/design-proposals-archive/blob/master/architecture/resource-management.md)
 
 *Plugin*: User-authored generator, transformer or validator (refers to both the program that implements it and the "config" YAML required to use it).
 

@@ -28,7 +28,7 @@ This document presents a proposal for managing raw block storage in Kubernetes
 using the persistent volume source API as a consistent model of consumption.
 
 Note that is has been designed & merged before KEP process was introduced:
-https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md
+https://github.com/kubernetes/design-proposals-archive/blob/master/storage/raw-block-pv.md
 
 ## Motivation
 

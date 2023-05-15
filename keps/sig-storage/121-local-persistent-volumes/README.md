@@ -56,7 +56,7 @@ This document presents a detailed design for supporting persistent local storage
 as outlined in [Local Storage Overview](local-storage-overview.md).
 
 This KEP replaces the original [design
-proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md)
+proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/local-storage-pv.md)
 and has been updated to reflect the current implementation.
 
 
@@ -380,7 +380,7 @@ The scheduler will use a PV's node affinity to influence where a Pod can be
 scheduled, as well as which PVs can be bound to a PVC, taking into account all
 scheduling constraints on the Pod. For more details on this feature, see the
 [volume topology design
-proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md).
+proposal](https://github.com/kubernetes/design-proposals-archive/blob/master/storage/volume-topology-scheduling.md).
 
 Local volumes require PV node affinity to be set.
 

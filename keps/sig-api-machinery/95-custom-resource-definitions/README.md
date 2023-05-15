@@ -106,7 +106,7 @@ CRD to GA graduation.
 The CRD `v1` API will be the same as the `v1beta1` but with all changes to the API from the GA tasks:
 
 * Rename misnamed json field [JSONPath](https://github.com/kubernetes/kubernetes/blob/06bc7e3e0026ea25065f59f4bd305c0b7dbbc145/staging/src/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1/types.go#L226-L227) to `jsonPath`
-* [Replace top-level fields with per version fields](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresource-conversion-webhook.md#top-level-fields-to-per-version-fields)
+* [Replace top-level fields with per version fields](https://github.com/kubernetes/design-proposals-archive/blob/master/api-machinery/customresource-conversion-webhook.md#top-level-fields-to-per-version-fields)
 * Restrict OpenAPI per [Vanilla OpenAPI Subset Design](https://docs.google.com/document/d/1pcGlbmw-2Y0JJs9hsYnSBXamgG9TfWtHY6eh80zSTd8)
 
 ## Test Plan

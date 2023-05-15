@@ -268,7 +268,7 @@ Thus, this KEP largely the plan described [here](#plan), with some changes:
 - CRI API is used for all of the monitoring endpoints related to Containers and Pods (except Volume and Ephemeral Storage)
 - CRI API is used to provide metrics for eviction (as it relies on the summary API, which will be populated by the CRI implementation)
 
-[core-proposal]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/core-metrics-pipeline.md#proposed-core-metrics
+[core-proposal]: https://github.com/kubernetes/design-proposals-archive/blob/master/instrumentation/core-metrics-pipeline.md#proposed-core-metrics
 [keep-summary]: https://github.com/kubernetes/kubernetes/issues/68522#issuecomment-666636130
 [plan]: https://github.com/kubernetes/kubernetes/issues/68522#issuecomment-724928827
 

@@ -105,7 +105,7 @@ the long-running request chain. For background, see the discussion on [kubernete
 `StreamingProxyRedirects` and `ValidateProxyRedirects` are currently in Beta, and should either be
 graduated or removed.
 
-[Container Runtime Interface]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/container-runtime-interface-v1.md
+[Container Runtime Interface]: https://github.com/kubernetes/design-proposals-archive/blob/master/node/container-runtime-interface-v1.md
 [potential SSRF attacks]: https://github.com/kubernetes/kubernetes/issues/85867
 
 ### Goals

@@ -49,7 +49,7 @@ It should be possible for a node level integration to offer zero-downtime upgrad
 
 ### Implementation Details/Notes/Constraints
 
-The design of Deployment rolling updates introduced the surge concept, and the initial design for DaemonSet updates considered the implications of adding the Surge strategy later (https://github.com/kubernetes/community/blob/master/contributors/design-proposals/apps/daemonset-update.md#future-plans). [StatefulSets may also surge in a workload specific fashion](https://github.com/kubernetes/enhancements/pull/1863), so this design should be as consistent as possible with existing concepts but clearly denote where the workload concept differs from other controllers.
+The design of Deployment rolling updates introduced the surge concept, and the initial design for DaemonSet updates considered the implications of adding the Surge strategy later (https://github.com/kubernetes/design-proposals-archive/blob/master/apps/daemonset-update.md#future-plans). [StatefulSets may also surge in a workload specific fashion](https://github.com/kubernetes/enhancements/pull/1863), so this design should be as consistent as possible with existing concepts but clearly denote where the workload concept differs from other controllers.
 
 We would add `MaxSurge *intstr.IntOrString` to the RollingUpdate daemonset upgrade strategy. It would have a default value of 0, preserving current behavior. We would allow MaxUnavailable to be 0 when MaxSurge is set.
 
