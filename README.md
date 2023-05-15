@@ -92,7 +92,7 @@ Procedure:
 
 ### Current Release Cycle
 
-[Dates and further information for the 1.25 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.25)
+[Dates and further information for the 1.28 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.28)
 
 ## Exceptions to Enhancement Milestone Dates
 
@@ -104,8 +104,6 @@ The Exceptions Process is handled by the Release Team, please see their [documen
 | ------ | ------ | ------ | ------ |
 | `sig/foo` | Denotes the SIG(s) which owns this enhancement—e.g., `SIG Foo` | Set the label using the comment `/sig foo` (on a separate line) | Anyone |
 | `kind/feature` | Denotes that the issue should be tracked as an enhancement (all enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
-| `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
-| `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and will not be actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
 | `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
 
 ## Glossary
