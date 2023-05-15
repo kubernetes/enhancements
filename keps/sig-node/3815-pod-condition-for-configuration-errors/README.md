@@ -60,22 +60,6 @@ SIG Architecture for cross-cutting KEPs).
 -->
 # KEP-3815: Pod Condition for Configuration Errors
 
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -181,45 +165,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-
-As a batch user, it is very likely that users experience configuration errors when submitting pods to Kubernetes.  We would like to propose a new condition so that users can determine if a pod has an error in startup.  A new condition will provide a quick way to verify if a pod detected a unrecoverable configuration error.  Many of these configuration errors are fixable via user interactions (ie creating a secret, changing the image name) but without any modifications the pods will stay stuck in the pending state.  
+It is very likely that users experience configuration errors when submitting pods to Kubernetes.  
+We would like to propose a new condition so that users can determine if a pod has an error in startup.  
+A new condition will provide a quick way to verify if a pod detected a unrecoverable configuration error.  
+Many of these configuration errors are fixable via user interactions (ie creating a secret, changing the image name) but without any modifications the pods will stay stuck in the pending state.  
 
 ## Motivation
 
-Batch users may not have deep knowledge of Kubernetes.  It is common occurrence to find users submitting Pods with configuration errors (invalid images, wrong image names, missing volumes, missing secrets, wrong volume/secret for config map).  These cases cause the Pod to be stuck in pending and there is code required to remove these pods or user input to remove.
+Users may not have deep knowledge of Kubernetes.  It is common occurrence to find users submitting Pods with configuration errors (invalid images, wrong image names, missing volumes, missing secrets, wrong volume/secret for config map).  These cases cause the Pod to be stuck in pending and there is code required to remove these pods or user input to remove.
 
-As a batch system developer, we find that higher level controllers have to write code to handle Pending Pod cases.  Since the pods are not considered failed, the higher level controller needs to transition this state to failed in order to enforce retries.  For example, the job controller will run these pods and the state of the Pod will be in Pending.  The job controller does not transition this state to failed even if the pod will never start running.
+It would be ideal to have a standard condition for these common configuration errors.  These errors can be fixed via human interaction but they can sometimes be difficult to programatically fix.  A goal of having a standard condition for these configuration errors would be for third-party controllers and/or Kubernetes controllers to start using a single way of detecting fixable configuration errors.  For example, in the Armada project, we utilize container statuses and events to deduce these type of configuration errors.  Events are best-effort so they can easily be missed.  
 
-For CNCF projects, in the Armada project, we implement logic that determines retry ability based on events and statuses.  Events are not standard so we expect issues when updating and we discovered various states that don't have a representative status.  
-
-It would be ideal to have a standard condition for these common configuration errors.  These errors can be fixed via human interaction but they can sometimes be difficult to programatically fix.  A goal of having a standard condition for these configuration errors would be for third-party controllers and/or Kubernetes controllers to start using a single way of detecting fixable configuration errors.
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
 
 ### Goals
 
@@ -227,23 +183,10 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 For future cases that we want to add to to this condition, the suggestion would be to consider cases where pods are forever stuck in the pending state.  We want to avoid transient pods that will eventually resolve themselves so we decided to avoid targeting events that are related to ImagePullBackOff because these can eventually be fixed without any interaction.  The general rule could be that pods that require manually intervention to fix could be added as cases for this condition.  
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
 ### Non-Goals
 
-- Will not modify behavior for ImagePullBackOff
-  - This status can be business as usual or image pull errors
-  - Unclear if it is possible to detect this as a failure
-  - Invalid ImagePullSecrets are a common fail case but it is difficult to distinguish this case from others.
-- Configuration errors that happen during ContainerCreation (Mounting volumes) will not be included as part of this condition
+- Configuration errors that happen during Sandbox creation (Mounting volumes) will not be included as part of this condition
   - PodReadyToStartContainers condition actually covers these cases so there is no need to cover them in this KEP.
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
 
 ## Proposal
 
@@ -434,32 +377,6 @@ var (
 - If these are set, can we assume that container failed?  Not sure how to recreate failures of states other than ErrCreateContainerConfig
 - These seem to be a lot more internal errors so I am not sure how often we get hook errors but should we include these in detection of errors.
 
-Potential function for detecting error and setting condition
-
-```golang
-func GeneratePodFailingToStart(pod *v1.Pod, containerStatus []v1.ContainerStatus) v1.PodCondition {
- successfulCondition := v1.PodCondition{
-  Type:   v1.PodFailingToStart,
-  Status: v1.ConditionFalse,
- }
- failedReasons := map[string]bool{"InvalidImageName": true, "CreateContainerConfigError": true, "ErrImageNeverPull": true}
- for _, status := range containerStatus {
-  if status.State.Waiting == nil {
-   continue
-  }
-  _, ok := failedReasons[status.State.Waiting.Reason]
-  if ok {
-   return v1.PodCondition{
-    Type:   v1.PodFailingToStart,
-    Status: v1.ConditionTrue,
-   }
-
-  }
- }
- return successfulCondition
-}
-```
-
 One question is if we should include all the above errors in our scan of potential failed reasons?
 
 <!--
@@ -549,6 +466,13 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ### Graduation Criteria
 
+#### Alpha
+
+#### Beta
+
+#### GA
+
+#### Deprecation
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -873,19 +797,9 @@ previous answers based on experience in the field.
 
 #### Will enabling / using this feature result in any new API calls?
 
-No.
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Yes, the new pod condition will result in the Kubelet Status Manager making additional PATCH calls on the pod status fields.
+
+The Kubelet Status Manager already has infrastructure to cache pod status updates (including pod conditions) and issue the PATCH es in a batch.
 
 ##### Will enabling / using this feature result in introducing new API types?
 
