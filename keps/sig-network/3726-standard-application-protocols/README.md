@@ -139,18 +139,16 @@ The [documentation](https://kubernetes.io/docs/concepts/services-networking/serv
 
 This KEP proposes to declare standard Kubernetes protocol names for common protocols that are not IANA standard service names.
 
-Those common protocols will be well defined strings prefixed with ‘k8s.io’. 
-`k8s.io/h2c` as an example.
+Those common protocols will be well defined strings prefixed with ‘kubernetes.io’. 
+`kubernetes.io/h2c` as an example.
 
 ### New Standard Protocols
-- 'k8s.io/http2'
-- 'k8s.io/grpc'
-- 'k8s.io/tcp'
+- 'kubernetes.io/h2c'
 
 ### Risks and Mitigations
 
 There are no real “risks”, primary concerns are:
-1. End users will not migrate to `k8s.io/<>` values
+1. End users will not migrate to `kubernetes.io/<>` values
 2. It will take long time to implementations align with the new standards
 3. We have no easy way to monitor who is aligned and who is not
 
@@ -168,21 +166,18 @@ type ServicePort struct {
   ... 
   ...
 
-  // Used as a hint for implementations to
-  // configure the protocol used between the
-  // implementation and the application it exposes.
+  // The application protocol for this port.
+  // This is used as a hint for implementations to offer richer behavior for protocols that they understand.
   // This field follows standard Kubernetes label syntax.
   // Valid values are either:
   //
   // * Un-prefixed protocol names - reserved for IANA standard service names (as per
   // RFC-6335 and https://www.iana.org/assignments/service-names).
   //
-  // * Kubernetes standard names:
-  //   * 'k8s.io/http2' - http2 over cleartext, aka 'h2c'. https://www.rfc-editor.org/rfc/rfc7540
-  //   * 'k8s.io/grpc' - grpc traffic - see https://github.com/grpc/grpc/blob/v1.51.1/doc/PROTOCOL-HTTP2.md
-  //   * 'k8s.io/tcp' - plain tcp traffic
+  // * Kubernetes-defined prefixed names:
+  //   * 'kubernetes.io/h2c' - HTTP/2 over cleartext as described in https://www.rfc-editor.org/rfc/rfc7540
   //
-  // * Other protocols should use prefixed names such as
+  // * Other protocols should use implementation-defined prefixed names such as
   // mycompany.com/my-custom-protocol.
   // +optional
   AppProtocol *string
@@ -200,7 +195,7 @@ In order to be included in the collection, a new protocol must:
 
 <<[UNRESOLVED sig-network ]>>
 
-if we require two implementations to support a protocol before we include it in the standard collection (i.e k8s.io prefixed collection) we create a situation where we force them to support their own domain prefixed values and k8s.io-prefixed values, have their users migrate to the k8s.io values once they are included, and also the k8s.io ones might end up not be quite the same definition as the implementation specific ones (as we see in the GKE & Istio example).
+if we require two implementations to support a protocol before we include it in the standard collection (i.e kubernetes.io prefixed collection) we create a situation where we force them to support their own domain prefixed values and kubernetes.io-prefixed values, have their users migrate to the kubernetes.io values once they are included, and also the kubernetes.io ones might end up not be quite the same definition as the implementation specific ones (as we see in the GKE & Istio example).
 
 The proposed followup work might address this problem also when we turn the field into a list
 
@@ -208,9 +203,12 @@ The proposed followup work might address this problem also when we turn the fiel
 
 
 ### Followup work
-To support implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port we need to turn `AppProtocol` to a list.
+- To support implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port we need to turn `AppProtocol` to a list.
 
 It is likely to be an API change but design details TBD.
+
+- Some implementations are trying to guess the application protocol in absence of `appProtocol`. We should consider adding a new protocol like `kubernetes.io/raw` to the collection that would instructs implementations to process requests as raw.
+We need to look at combination of `appProtocol: kubernetes.io/raw` and the different supported port protocols (TCP, UDP, SCTP).  
 
 ### Documentation change
 
@@ -282,7 +280,7 @@ N/A
 
 ## Drawbacks
 
-* The collection of the standard protocols can become stale fairly quick when new protocols are implemented before we decide to declare them as part of k8s.io common collection. That can lead to a the current state again where implementations already implement support without a prefix (although they should not) OR with a domain prefix.
+* The collection of the standard protocols can become stale fairly quick when new protocols are implemented before we decide to declare them as part of kubernetes.io common collection. That can lead to a the current state again where implementations already implement support without a prefix (although they should not) OR with a domain prefix.
 
 
 ## Alternatives
