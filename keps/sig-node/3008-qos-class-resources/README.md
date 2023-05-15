@@ -239,12 +239,15 @@ classes are then made available for CRI clients. Following this model also
 provides a possible framework for the future improvements, for instance
 enabling class-based network or memory type prioritization of applications.
 
-Currently, there is no mechanism in Kubernetes to use these types of resources.
-CRI-O and containerd runtimes have support for RDT and blockio classes and they
-provide an bridge-gap user interface through special pod annotations. The goal
-is to get these types of resources first class citizens and properly supported
-in Kubernetes, providing visibility, a well-defined user interface, and
-permission controls.
+At the time of writing (May 2023), there is no mechanism in Kubernetes to use
+these types of resources. CRI-O and containerd runtimes have support for RDT
+and blockio classes, but rely on Pod annotations as the user interface, with an
+inferred expectation that people set the equivalent nonstandard and private
+annotations on a Kubernetes Pod. The goal of this KEP is to get these types of
+resources first class citizens and properly supported in Kubernetes, providing
+visibility, a well-defined user interface, and permission controls.
+
+
 
 We can identify two types, container-level and pod-level QoS-class resources.
 Container-level resources enable QoS on per-container granularity, for example
@@ -2141,7 +2144,6 @@ basic support in the container runtimes.
   container-specific RDT class settings
   blockio class for all containers
 - `blockio.resources.kubernetes.io/default` for setting a Pod-level default
-  blockio class for all containers
 - `blockio.resources.kubernetes.io/container.<container-name>` for
   container-specific blockio class settings
 
@@ -2152,9 +2154,9 @@ translate them into corresponding `QOSResources` data in the CRI
 ContainerConfig message at container creation time (CreateContainerRequest).
 Pod-level QoS-class would not supported at this point (via pod annotations).
 
-A feature gate QOSResources would enable kubelet to interpretthe specific pod
-annotations. If the feature gate is disabled the annotations would simply be
-ignored by kubelet.
+A feature gate `TranslateQoSPodMetadata` would enable kubelet to interpretthe
+specific pod annotations. If the feature gate is disabled the annotations would
+simply be ignored by kubelet.
 
 #### API server
 
