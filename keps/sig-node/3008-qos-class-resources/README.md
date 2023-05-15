@@ -129,7 +129,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Pod annotations](#pod-annotations)
     - [Kubelet](#kubelet-1)
     - [API server](#api-server-1)
-    - [Class capacity with extended resources](#class-capacity-with-extended-resources)
+  - [Class capacity with extended resources](#class-capacity-with-extended-resources)
   - [RDT-only](#rdt-only)
   - [Widen the scope](#widen-the-scope)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -1697,8 +1697,9 @@ well as the [existing list] of feature gates.
   - Components depending on the feature gate:
     - Implementation Phase 1:
         - kubelet
-        - kube-apiserver (validation of annotations)
-    - Future phases (with updated pod spec and scheduler and quota support):
+        - kube-apiserver
+        - kube-scheduler
+    - Future phases (with quota and limitranges support):
         - kubelet
         - kube-apiserver
         - kube-scheduler
@@ -1734,30 +1735,16 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 Yes it can.
 
-Implementation Phase 1: In this phase pod annotations are used as the user
-interface for assigning QoS-class resources to workloads. Existing
-running workloads continue to work without any changes as their QoS-class
-resource assigment in the runtime is not changed.
-Restarting or re-deploying a workload causes it to lose its QoS-class resource
-assignment as the annotation parsing in kubelet is disabled. In other words,
-the workload is able to run but the QoS-class resource assignment requests from
-the user, i.e. via pod annotations, are ignored by kubelet.
-
-Future implementation phases: running workloads continue to work without any
-changes. Restarting or re-deploying a workload causes it to fail as the
-requested QoS-class resources are not available in Kubernetes anymore. The
-resources are still supported by the underlying runtime but disabling the
-feature in Kubernetes makes them unavailable and the related PodSpec fields are
-not accepted in validation.
+Running workloads continue to work without any changes. Restarting or
+re-deploying a workload causes it to fail as the requested QoS-class resources
+are not available in Kubernetes anymore. The resources are still supported by
+the underlying runtime but disabling the feature in Kubernetes makes them
+unavailable and the related PodSpec fields are not accepted in validation.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Implementation Phase 1: workloads need to be restarted to re-evaluate the pod
-annotations to correctly communicate QoS-class resource assignments to the
-container runtime.
-
-Future implementation phases: workloads might have failed because of
-unsupported fields in the pod spec and need to be restarted.
+Workloads might have failed because of unsupported fields in the pod spec and
+need to be restarted.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1774,12 +1761,13 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Implementation phase 1: Unit test will be added to kubelet to test that
-inspection of [pod annotations](#pod-annotations) is correctly disabled/enabled
-with the feature gate.
+Kubelet unit tests are extended to verify that no QoS-class resource
+assignments are correctly passed down to the CRI API, also verifying that
+assignments are not passed down if the feature gate is disabled.
 
-Future implementation phases: unit tests for handling the changes in pod spec
-are implemented.
+Apiserver unit tests are extended to verify that the new fields in PodSpec are
+preserved over updates of the Pod object, even when the feature gate is
+disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1799,9 +1787,13 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-Implementation Phase 1: we rely on inspection of pod annotations inside kubelet
-which should make rollout/rollback failure-safe. Already running workloads are
-not affected.
+Implementation Phase 1: Already running workloads ahouls not be affected as the
+QoS-class resources feature operates on new fields in the PodSpec. Bugs in
+kubelet might cause containers fail to start, either by failing a pod admission
+check that should pass or passing incorrect parameters to the container
+runtime. Bugs in kube-scheduler might leave Pods in pending state (even though
+they could be run in some node) or scheduling on an incorrect node, causing
+kubelet todeny running the pod.
 
 Future implementation phases: TBD.
 
@@ -1812,9 +1804,10 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-Implementation Phase 1: watch for non-ready pods with CreateContainerError
+Implementation Phase 1: Watch for non-ready pods with CreateContainerError
 status. The error message will indicate the if the failure is related to
-QoS-class resources.
+QoS-class resources. Generally, pod events would be a good source for
+determining if problems are related to QoS-class resources feature.
 
 Future implementation phases: TBD.
 
@@ -1857,9 +1850,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Implementation Phase 1: by examining pod annotations.
-
-Future implementation phases: by examining the new fields in pod spec.
+By examining the new fields in pod spec.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1996,11 +1987,11 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-Implementation Phase 1: No.
+Implementation Phase 1: No. QoS-class resources do extend existing API types
+but presumably not introduce new types of objects.
 
-Future implementation phases: QoS-class resources do extend existing API types
-but presumably not introduce new types of objects. However, the design for
-resource discovery and permission control is not ready which might change this.
+Future implementation phases: the design for resource discovery and permission
+control is not ready which might change this.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -2022,16 +2013,20 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Implementation Phase 1: [pod annotations](#pod-annotations) are used as the
-initial user interface so assign QoS-class resources to containers. Exact size
-of each annotation varies (depending on the type of resource) but the
-annotation key is expected to be few tens of bytes. The value part is the name
-of the class expected to be a few bytes long.
+New fields in NodeStatus will slightly increase the size of Node objects if
+QoS-class resources are present. This will consist of a few bytes per each type
+of QoS-class resource (mostly from the name field) plus a few bytes per each
+class (mostly from the name field).
 
-Future implementations: New fields in the pod spec will increase the size of
-`Pod` objects by a few bytes per class requested. New fields will be added to
-NodeStatus which will increase its size. New field will be added to
-ResourceQuotaSpec increasing its size.
+New fields in PodSpec will increase the size of Pod objects by a few bytes per
+QoS requested if QoS-class resources are requested, The increase in size
+basically consists of the name of the resource and name of the class.
+Similarly, new fields in PodStatus will increase its size by a few bytes per
+each type of QoS-class resource.
+
+Future implementation phases: extensions to ResourceQuota and/or LimitRanges
+objects will increase their sizes if limits on QoS-class resources are
+specified by the user.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -2167,7 +2162,7 @@ ensure that the annotations always reflect the actual assignment of QoS-class
 resources of a Pod. It also would serve as part of the UX to indicate the
 in-place updates of the resources via annotations is not supported.
 
-#### Class capacity with extended resources
+### Class capacity with extended resources
 
 Support for class capacity could be left out of the proposal to simplify the
 concept. It would be possible to implement "class capacity" by leveraging
