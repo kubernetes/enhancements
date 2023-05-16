@@ -181,8 +181,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 Currently, Jobs and Deployments start replacement Pods as soon as previously created Pods are marked for terminating.  Terminating pods are in a transitory state where they are neither active nor really fully terminated.  
-This KEP proposes a new field for the Job controller that controls whether to count terminating
-pods as like they were active.  The goal of this KEP is to allow for opt-in behavior where terminating pods count as active.  This will allow users to see that new pods will be only created once the existing pods have fully terminated.
+This KEP proposes a new field for the Job controller that allows for users to specify if they want to recreate pods once the existing pods are fully terminated.  
 
 ## Motivation
 
@@ -191,8 +190,8 @@ Existing Issues:
 - [Job Creates Replacement Pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)
 - [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510)
 
-Many common machine learning frameworks, such as Tensorflow and JAX, require unique pods.  If a terminating pod is not considered active, a replacement pod is created and
-can cause errors.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
+Many common machine learning frameworks, such as Tensorflow and JAX, require unique pods.  Currently if a pod is killed, a replacement pod is created and
+can cause errors can cause undesirable behavior.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
 before starting new pods.  
 
 In scarce compute environments, these resources can be difficult to obtain so pods can take a long time to find resources and they may only be able to find nodes once the existing pods have been terminated.
@@ -491,7 +490,7 @@ This section must be completed when targeting alpha to a release.
 For enabling JobRecreatePodsWhenFailed:
 
 a) Count the number of terminating pods and populate in JobStatus
-b) FilterActiveJobs will include both active and terminating.
+b) With `RecreationPodsWhen: Failed` specified, pods will only be recreated when they are fully terminated.
 
 This could potentially make jobs (where pods are terminated) slower due to waiting for terminating pods
 to be fully deleted.
@@ -512,7 +511,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Terminating pods will now be dropped from active list and we will revert to old behavior.  This means that terminating pods will be considered deleted and new pods will be created.
+Terminating pods will no longer be tracked so terminating pods will be considered deleted and new pods will be created.
 
 ###### Are there any tests for feature enablement/disablement?
 
