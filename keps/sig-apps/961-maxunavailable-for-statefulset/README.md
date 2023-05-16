@@ -598,7 +598,6 @@ on feature enable and disabled
 A rollout or rollback of this feature can fail if there is a bug which causes the kube-apiserver or
 the kube-controller-manager to start crashing when the feature flag is enabled.
 
-
 Yes, it can impact already running workloads.
 
 If a rolling update is in progress for a StatefulSet, while this feature is being enabled in kube-apiserver
@@ -610,7 +609,8 @@ maxUnavailable pods with the same identity and never more than maxUnavailable be
 ###### What specific metrics should inform a rollback?
 
 When feature enabled but rolling update in a unexpected phenomenon like the update pods at a time is not equal to the
-`maxUnavailable` value or rolling update in a unexpected order.
+`maxUnavailable` value (we may have some other factors impacting this, but this should apply for most of the time) or
+rolling update in a unexpected order.
 
 Or we can refer to the `rolling-update-duration` metric for observation, if it didn't decrease when setting the `maxUnavailable`
 great than 1 or the duration increased abnormally, then we should rollback.
