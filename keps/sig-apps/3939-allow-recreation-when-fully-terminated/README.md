@@ -190,8 +190,7 @@ Existing Issues:
 - [Job Creates Replacement Pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)
 - [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510)
 
-Many common machine learning frameworks, such as Tensorflow and JAX, require unique pods.  Currently if a pod is killed, a replacement pod is created and
-can cause errors can cause undesirable behavior.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
+Many common machine learning frameworks, such as Tensorflow and JAX, require unique pods.  Currently if a pod is killed, a replacement pod is created and can cause undesirable behavior.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
 before starting new pods.  
 
 In scarce compute environments, these resources can be difficult to obtain so pods can take a long time to find resources and they may only be able to find nodes once the existing pods have been terminated.
