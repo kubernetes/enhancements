@@ -1348,12 +1348,14 @@ in NodeStatus and handle QoS-class resource requests in the PodSpec.
 
 ### API server
 
-Input validation of QoS-class resource names and class names, very similar to
-labels is implemented: keys (`QOSResourceName`) and values must be non-empty,
-less than 64 characters long, must start and end with an alphanumeric character
-and may contain only alphanumeric characters, dashes, underscores or dots (`-`,
-`_` or `.`). Also similar to labels, a namespace prefix (FQDN subdomain separated
-with a slash) in the key is allowed (e.g. `vendor.example/qos-resource`).
+Input validation of QoS-class resource names and class names is implemented.
+They must be "qualified Kubernetes names", i.e. a name part optionally prefixed
+by a DNS subdomain (and a slash). The name part must be non-empty less than 64
+characters long, must start and end with an alphanumeric character and may
+contain only alphanumeric characters, dashes, underscores or dots (`-`,
+`_` or `.`). The optional DNS subdomain part must not be moore than 253
+characters long, must start and end with an alphanumeric character and may only
+contain lowercase alphanumeric characters, dashes (`-`) and dots (`.`).
 
 Official canonical names for well-known QoS-class resources are specified in
 the API. In later implementation phases admission (validation) for their usage
