@@ -397,7 +397,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha
 
-- Job controller includes terminating pods as active
+- Job controller can consider terminating pods as active
 - Unit Tests
 - Integration tests
 
