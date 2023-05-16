@@ -84,6 +84,10 @@ SIG Architecture for cross-cutting KEPs).
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -174,8 +178,7 @@ Many of these configuration errors are fixable via user interactions (ie creatin
 
 Users may not have deep knowledge of Kubernetes.  It is common occurrence to find users submitting Pods with configuration errors (invalid images, wrong image names, missing volumes, missing secrets, wrong volume/secret for config map).  These cases cause the Pod to be stuck in pending and there is code required to remove these pods or user input to remove.
 
-It would be ideal to have a standard condition for these common configuration errors.  These errors can be fixed via human interaction but they can sometimes be difficult to programatically fix.  A goal of having a standard condition for these configuration errors would be for third-party controllers and/or Kubernetes controllers to start using a single way of detecting fixable configuration errors.  For example, in the Armada project, we utilize container statuses and events to deduce these type of configuration errors.  Events are best-effort so they can easily be missed.  
-
+It would be ideal to have a standard condition for these common configuration errors.  These errors can be fixed via human interaction but they can sometimes be difficult to programatically fix.  A goal of having a standard condition for these configuration errors would be for third-party controllers and/or Kubernetes controllers to start using a single way of detecting fixable configuration errors.  For example, in the Armada project, we utilize container statuses and events to deduce these type of configuration errors.  Events are best-effort so they can easily be missed.
 
 ### Goals
 
@@ -719,7 +722,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Condition
+- [x] Condition
   - Details: PodFailingToStart will be set to either True or False.  If feature is enabled and matches one of the user stories above then you will set a PodFailingToStart=True
 
 #### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -741,29 +744,13 @@ question.
 
 ##### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+N/A
 
 ### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 #### Does this feature depend on any specific services running in the cluster?
 
@@ -921,6 +908,11 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+### Validation for image names
+
+See https://github.com/kubernetes/kubernetes/pull/115736#issuecomment-1513730032
+for a detailed answer on why this approach was not taken.  The main issue is that adding validation of image names can break existing workflows and could cause a breaking change.
 
 We decided to not tackle configuration errors that cause a sandbox creation to fail.  The PodReadyToStartContainers covers the following conditions.  This is actually a large pain point for our users but does not need to be covered in this KEP due to an already existing condition.
 
