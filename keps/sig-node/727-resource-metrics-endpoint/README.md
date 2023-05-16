@@ -202,11 +202,11 @@ Alpha:
 
 Beta:
 
-- [ ] Modify the metrics server to consume the kubelet resource metrics endpoint 3 releases after it is added to the kubelet
+- [X] Modify the metrics server to consume the kubelet resource metrics endpoint 3 releases after it is added to the kubelet
 
 GA:
 
-- [ ] Add node-e2e test to the node conformance tests
+- [X] Add node-e2e test to the node conformance tests
 
 ## Implementation History
 
@@ -216,3 +216,4 @@ GA:
 - 2019-02-07: Presentation to Sig-Instrumentation
 - 2020-01-14: [1.18] Endpoint copied from /metrics/resource/v1alpha1 to /metrics/resource, and adopting the metrics stability framework: https://github.com/kubernetes/kubernetes/pull/86282
 - 2020-09-01: [1.20] /metrics/resource/v1alpha1 removed: https://github.com/kubernetes/kubernetes/pull/94272
+- 2021-06-28: Use kubelet's /metrics/resource endpoint in metrics-server: https://github.com/kubernetes-sigs/metrics-server/pull/777
