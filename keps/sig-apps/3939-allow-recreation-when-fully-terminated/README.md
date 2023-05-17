@@ -328,7 +328,7 @@ There are two cases in the job controller where deletions can happen programatic
 1) A job is over the `activeDeadlineSeconds` so the child pods are deleted.  
 2) With `PodFailurePolicy` active and `FailJob` is set as the action, the children pods would be deleted.
 
-In both of these cases, we are updating the `Status` field with a count of terminating pods.  So both of these cases will be handled.
+In both of these cases, we are updating the `Status` field with a count of terminating pods.  So both of these cases will be handled.  We will update the Status field in the same place as when we update the number of active jobs so it should not require any extra API calls.  
 
 ### Test Plan
 
@@ -374,7 +374,7 @@ We will add the following integration test for the Job controller:
 
 JobRecreatePodsWhenFailed Feature Toggle On:
 
-  1) NonIndexedJob starts pods that takes a while to terminate
+  1) Job starts pods that takes a while to terminate
   2) Delete pods
   3) Verify that pod creation only occurs once terminating pods are removed
 
@@ -398,6 +398,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Alpha
 
 - Job controller can consider terminating pods as active
+- Job controller counts terminating pods in `JobStatus`.
 - Unit Tests
 - Integration tests
 
@@ -577,6 +578,8 @@ logs or events for this purpose.
 If a user terminates pods that are controlled by a deployment/job, then we should wait
 until the existing pods are terminated before starting new ones.
 
+When feature is turned on, we will also include a `terminating` field in the Job Status.
+
 We will add e2e test that determine this.
 
 #### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -612,7 +615,7 @@ No
 
 ### Scalability
 
-Generally, enabling this will slow down rollouts if pods take a long time to terminate.  We would wait
+Generally, enabling this will slow down job creation if pods take a long time to terminate.  We would wait
 to create new pods until the existing ones are terminated
 
 #### Will enabling / using this feature result in any new API calls?
@@ -622,6 +625,8 @@ No
 #### Will enabling / using this feature result in introducing new API types?
 
 We add `RecreatePodsWhen` to `JobSpec`.  This is a enum of two values.
+
+We add `terminating` to `JobStatus`. This is a pointer to type `int32`.
 
 #### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -652,6 +657,7 @@ Think about adding additional work or introducing new steps in between
 
 #### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+N/A
 <!--
 Things to keep in mind include: additional in-memory state, additional
 non-trivial computations, excessive access to disks (including increased log
@@ -664,6 +670,7 @@ This through this both in small and large cases, again with respect to the
 
 #### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
+N/A
 <!--
 Focus not just on happy cases, but primarily on more pathological cases
 (e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
@@ -688,6 +695,8 @@ details). For now, we leave it here.
 -->
 
 #### How does this feature react if the API server and/or etcd is unavailable?
+
+No change from existing behavior of the Job controller.
 
 #### What are other known failure modes?
 
