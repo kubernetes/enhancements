@@ -180,7 +180,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently, Jobs and Deployments start replacement Pods as soon as previously created Pods are marked for terminating.  Terminating pods are in a transitory state where they are neither active nor really fully terminated.  
+Currently, Jobs start replacement Pods as soon as previously created Pods are marked for terminating.  Terminating pods are in a transitory state where they are neither active nor really fully terminated.  
 This KEP proposes a new field for the Job controller that allows for users to specify if they want to recreate pods once the existing pods are fully terminated.  
 
 ## Motivation
@@ -303,26 +303,7 @@ We will allow only opt-in behavior for this feature so we will fall back to `Ter
 
 ### Implementation
 
-The Job controller utilize `FilterActivePods` in their reconciliation loop.  `FilterActivePods` gets a list of pods that are not terminating.  
-This KEP will include terminating pods in this list.  This works because in `manageJobs` we check the length of active pods to determine a mismatch between expected active and reality.  
-
-```golang
- activePods := controller.FilterActivePods(pods)
-
- var terminatingPods *int32 = pointer.Int32(0)
- if waitForPodsToTerminate(&job) {
-  terminatingPods = controller.CountTerminatingPods(activePods)
-  if *terminatingPods > 0 {
-   activePods = append(activePods, controller.FilterTerminatingPods(pods)...)
-  }
- }
-```
-
-The Job Controller uses this list to determine if there is a mismatch of active pods between expected values in the JobSpec.  
-Including active pods in this list allows the job controller to wait until these terminating pods.
-
-[Filter Active Pods Usage in Job Controller](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/job/job_controller.go#L749) filters the active pods.
-
+The Job Controller filters all pods and classifies the pods as active.  We will append terminating pods to list as part of this KEP.
 There are two cases in the job controller where deletions can happen programatically:
 
 1) A job is over the `activeDeadlineSeconds` so the child pods are deleted.  
