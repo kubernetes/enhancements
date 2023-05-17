@@ -178,7 +178,7 @@ Once the experimental kubectl events command is implemented, this can be rolled 
 
 ##### GA
 
-- [ ] Address all major issues and bugs raised by community members
+- [x] Address all major issues and bugs raised by community members
 
 ### Upgrade / Downgrade Strategy
 
@@ -336,6 +336,7 @@ None.
 - *2020-01-16* - Initial KEP draft
 - *2021-09-06* - Updated KEP with the new template and mark implementable for alpha implementation.
 - *2022-09-21* - Updated KEP for beta promotion.
+- *2023-05-17* - Updated KEP for stable promotion. 
 
 ## Alternatives
 
