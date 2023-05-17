@@ -241,9 +241,9 @@ See [Kueue: Account for terminating pods when doing preemption](https://github.c
 ### Risks and Mitigations
 
 One area of contention is how this KEP will work with 3329-retriable-and-non-retriable-failures.  It is important to mention the subtleties here.  
-In 3329, there was a decision to force kubelet to transition pods to failed before marking them as failed.  This is feature toggled guarded by `PodDisruptionCondition`.  
-This means that when this feature is turned on we will only mark pods as failed once they are fully terminated.  This means that the pod is still considered running, as opposed to failed.  
-If `PodDisruptionCondition` is turned off then a pod is marked as failed as soon as it is terminated so it will be counted as failed rather than active.  
+In 3329, there was a decision to make kubelet transition pods to failed before deleting them.  This is feature toggled guarded by `PodDisruptionCondition`.  
+This means that when this feature is turned on, the job controller can count pods as failed once they are fully terminated.  This means that the pod is still considered running, as opposed to failed.
+If `PodDisruptionCondition` is turned off then the job controller considers the pod as failed as soon as it is terminating (has a deletion timestamp), because there is no guarantee that the pod will transition to phase=Failed.  
 To get around this problem we decided to add a field called terminating so we can count separately from active or failed.  
 
 Another issue is described here: https://github.com/kubernetes/enhancements/pull/3940#discussion_r1180777509.  
