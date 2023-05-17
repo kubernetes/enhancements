@@ -244,9 +244,9 @@ One area of contention is how this KEP will work with 3329-retriable-and-non-ret
 
 In 3329, there was a decision to force kubelet to transition pods to failed before marking them as failed.  This is feature toggled guarded by `PodDisruptionCondition`.  
 
-This means that when this feature is turned on we will only mark pods as failed once they are fully terminated.  This means that the pod is still considered active.  
+This means that when this feature is turned on we will only mark pods as failed once they are fully terminated.  This means that the pod is still considered running, as opposed to failed.  
 
-If this feature is turned off then a pod is marked as failed as soon as it is terminated so it will be counted as failed rather than active.  
+If `PodDisruptionCondition` is turned off then a pod is marked as failed as soon as it is terminated so it will be counted as failed rather than active.  
 
 To get around this problem we decided to add a field called terminating so we can count separately from active or failed.  
 
