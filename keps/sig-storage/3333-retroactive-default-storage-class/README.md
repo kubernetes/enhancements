@@ -393,7 +393,161 @@ will indicate a problem with the feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade and rollback will be tested when the feature gate will change to beta.
+Rollout-rollback-rollout testing was performed, feature behaves as expected and no issues were observed.
+
+**Perform pre-upgrade tests**
+
+Set default storage class:
+```bash
+$ kc patch sc/csi-hostpath-sc -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+storageclass.storage.k8s.io/csi-hostpath-sc patched
+```
+
+PVC does not get updated and remains pending:
+```bash
+$ kc get pvc
+NAME      STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+csi-pvc   Pending                              
+```
+
+**Upgrade cluster**
+
+Check available 1.25 versions:
+```bash
+$ yum search kubeadm --showduplicates --quiet | grep 1.25
+kubeadm-1.25.0-0.x86_64 : Command-line utility for administering a Kubernetes cluster.
+kubeadm-1.25.1-0.x86_64 : Command-line utility for administering a Kubernetes cluster.
+kubeadm-1.25.2-0.x86_64 : Command-line utility for administering a Kubernetes cluster.
+```
+
+Install/update kubeadm:
+```bash
+$ sudo yum install -y kubeadm-1.25.2-0
+```
+
+Prepare kubeadm config file that enables FeatureGate:
+
+```bash
+$ cat /mnt/clusterconf-examples/featuregate.yaml 
+## Example kubeadm configuration for enabling a feature gate.
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+apiServer:
+  extraArgs:
+    feature-gates: RetroactiveDefaultStorageClass=true
+controllerManager:
+  extraArgs:
+    cluster-cidr: 10.244.0.0/16
+    feature-gates: RetroactiveDefaultStorageClass=true
+```
+
+Perform kubeadm upgrade:
+```bash
+$ sudo kubeadm upgrade plan --config /mnt/clusterconf-examples/featuregate.yaml
+$ sudo kubeadm upgrade apply --config /mnt/clusterconf-examples/featuregate.yaml v1.25.2
+```
+
+Perform kubelet upgrade:
+```bash
+$ sudo yum install -y kubelet-1.25.2-0
+$ sudo systemctl daemon-reload 
+$ sudo systemctl restart kubelet
+```
+
+**Perform post-upgrade tests**
+
+Verify that PVC got SC assigned right after upgrade and PV was provisioned and bound:
+```bash
+$ kc get pvc
+NAME      STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS      AGE
+csi-pvc   Bound    pvc-06a964ca-f997-4780-8627-b5c3bf5a87d8   1Gi        RWO            csi-hostpath-sc   87m
+
+```
+
+**Downgrade cluster**
+
+```bash
+$ yum history | grep -E "kubeadm|kubelet"
+    10 | install -y kubelet-1.25.2-0                                                                                                                                                                                                                                       | 2022-10-12 11:06 | Upgrade        |    1   
+     8 | install -y kubeadm-1.25.2-0                                                                                                                                                                                                                                       | 2022-10-12 09:45 | Upgrade        |    1   
+     7 | install -y kubelet-1.24.5-0 kubeadm-1.24.5-0 kubectl
+
+$ sudo yum -y history undo 8 && sudo yum -y history undo 10
+```
+
+**Perform post-rollback tests**
+
+Remove default SC:
+```bash
+$ kc patch sc/csi-hostpath-sc -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+storageclass.storage.k8s.io/csi-hostpath-sc patched
+```
+
+Create new PVC without SC:
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: csi-pvc-2
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+```
+
+```bash
+$ kc get pvc
+NAME        STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS      AGE
+csi-pvc     Bound     pvc-06a964ca-f997-4780-8627-b5c3bf5a87d8   1Gi        RWO            csi-hostpath-sc   96m
+csi-pvc-2   Pending     
+```
+
+Add default SC again:
+```bash
+$ kc patch sc/csi-hostpath-sc -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+storageclass.storage.k8s.io/csi-hostpath-sc patched
+```
+
+Verify that the new PVC did not get updated with SC this time:
+```bash
+$ kc get pvc/csi-pvc-2
+NAME        STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+csi-pvc-2   Pending    
+```
+
+**Upgrade cluster again**
+
+Install/update kubeadm:
+```bash
+$ sudo yum install -y kubeadm-1.25.2-0
+```
+
+Perform kubeadm upgrade:
+```bash
+$ sudo kubeadm upgrade plan --config /mnt/clusterconf-examples/featuregate.yaml
+$ sudo kubeadm upgrade apply --config /mnt/clusterconf-examples/featuregate.yaml v1.25.2
+```
+
+Perform kubelet upgrade:
+```bash
+$ sudo yum install -y kubelet-1.25.2-0
+$ sudo systemctl daemon-reload 
+$ sudo systemctl restart kubelet
+```
+
+**Perform post-upgrade tests again**
+
+Verify that PVC got SC assigned right after upgrade and PV was provisioned and bound:
+```bash
+$ kc get pvc
+NAME        STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS      AGE
+csi-pvc     Bound    pvc-06a964ca-f997-4780-8627-b5c3bf5a87d8   1Gi        RWO            csi-hostpath-sc   117m
+csi-pvc-2   Bound    pvc-2e765394-f32c-42fb-b3db-ffe203612bac   1Gi        RWO            csi-hostpath-sc   24m
+```
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -403,8 +557,10 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-A counter metric will be present in KCM metric endpoint, it will show total
-count of successful and failed retroactive StorageClass assignments.
+A counter metric called `retroactive_storageclass_total` will be present in KCM metric endpoint, it will show total
+count of retroactive StorageClass assignment attempts. Second metric called `retroactive_storageclass_errors_total` 
+will show total count of failed attempts. This means that a total number of successful assignments can be calculated as
+a difference of the two metrics.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -581,6 +737,7 @@ Major milestones might include:
 -->
 - 1.25: initial version
 - 1.26: beta
+- 1.28: GA
 
 ## Drawbacks
 
