@@ -3,22 +3,22 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3322: Add maxRestartTimes to podSpec honoring restart times on failure
+# KEP-3322: Add maxRestartTimesOnFailure to podSpec honoring restart times on failure
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -85,6 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
+  - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -133,11 +134,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [x] (R) Graduation criteria is in place
+- [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -174,7 +175,8 @@ updates.
 
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
-This KEP aims to add a new field named `maxRestartTimes`(TBD) to podSpec which helps controlling
+
+This KEP aims to add a new field named `maxRestartTimesOnFailure` to podSpec which helps to control
 the restart times of a Pod when Pod's `restartPolicy` is set to `OnFailure`.
 
 ## Motivation
@@ -187,13 +189,13 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
-Currently, we have backoffLimit to fail a Job after some amount of retries, which helps to
+
+Currently, we have `backoffLimit` to fail a Job after a certain amount of retries, which helps to
 prevent unnecessary restarts. `Pod` is also eager for this feature to avoid infinite restarting
-due to a system internal error etc. What's more, considering `Job` is working at a higher level,
-adding `maxRestartTimes` to `Pod` might be reusable.
+due to a system internal error etc. What's more, considering `Job` or other workloads are working
+at a higher level, adding `maxRestartTimesOnFailure` to `Pod` might be reusable.
 
 As a matter of fact, it's a long-standing issue and strongly needed by the community, see [issue](https://github.com/kubernetes/kubernetes/issues/65797).
-
 
 ### Goals
 
@@ -201,7 +203,8 @@ As a matter of fact, it's a long-standing issue and strongly needed by the commu
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- Add a new field `maxRestartTimes` to the spec of pod which only applies when `restartPolicy` is `OnFailure`
+
+- Add a new field `maxRestartTimesOnFailure` to `pod.spec` which only applies when `restartPolicy` is set to `OnFailure`
 
 ### Non-Goals
 
@@ -209,7 +212,8 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-- Combine the implementations of `backoffLimit` and `maxRestartTimes` together.
+
+No.
 
 ## Proposal
 
@@ -221,10 +225,10 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-Add a new field `maxRestartTimes` to the spec of pod. `maxRestartTimes` only applies
-when `restartPolicy` is set to `OnFailure`. As a result, the restart times of a Pod
-will be controlled by `maxRestartTimes`.
 
+Add a new field `maxRestartTimesOnFailure` to the `pod.spec`. `maxRestartTimesOnFailure` only applies
+when `restartPolicy` is set to `OnFailure`. As a result, the restart times of a Pod
+will be controlled by `maxRestartTimesOnFailure`.
 
 ### User Stories (Optional)
 
@@ -236,9 +240,25 @@ bogged down.
 -->
 
 #### Story 1
-When running with a healthy pod, some system errors or program internal errors
+
+When running with a pod, some system errors or program internal errors
 encountered, which causes the application restarting infinitely. This is
 unrecoverable and wasteful.
+
+### Story 2
+
+For batch Job specifically, now a Job provides a single backoffLimit for all derived pods,
+which may cause the entire Job failed and clean up all the resources because of one of the pods
+restarts for more than the `spec.backoffLimit`. To solve the problem, the Batch WG incubates
+a new KEP [Backoff Limit Per Index For Indexed Jobs](https://github.com/kubernetes/enhancements/issues/3850)
+which introduces a new field `backoffLimitPerIndex` to control the max restart times per Pod.
+
+It's actually what we want to implement here, by sinking the capacity of `backoffLimitPerIndex` to pod level,
+it helps to reduce the maintenance costs of the Job API.
+
+Note: currently, `backoffLimitPerIndex` only supports `restartPolicy=Never` initially, but as the KEP states, it will depend
+on this feature to support onFailure restartPolicy in the future, see [chapter](https://github.com/kubernetes/enhancements/blob/ab54c14de86af3bcc76b45a4c9194bc47f6c9a62/keps/sig-apps/3850-backoff-limits-per-index-for-indexed-jobs/README.md#support-backofflimitperindex-when-restartpolicyonfailure).
+This reminds me whether we should widen the _max_restart_times_ to other restart policies like `Never`, see discussion below.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -249,6 +269,23 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
+Discussions:
+
+The Batch WG incubates a new KEP [Backoff Limit Per Index For Indexed Jobs](https://github.com/kubernetes/enhancements/issues/3850),
+which introduces a new field `backoffLimitPerIndex`, then each pod of the Job will have an independent backOffLimit,
+but initially it only supports `restartPolicy=Never`, maybe we can widen the _max_restart_times_ to support other restart policies,
+like `Never`, then the Job API no longer needs to consider these logics anymore. Currently, it uses an annotation `batch.kubernetes.io/job-index-failure-count`
+to record the retires number, which looks not elegant.
+
+Pros:
+  * Reduce the maintenance cost of Job API
+
+Cons:
+  * The boundary of restartPolicy `Never` and `OnFailure` is vaguely.
+
+Caveats:
+
+- Pod's maxRestartTimesOnFailure is somehow conflict with Job's backoffLimit, we'll respect the first one who hit the line.
 
 ### Risks and Mitigations
 
@@ -263,11 +300,11 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-- Considering `Job` has also implemented the similar feature called `backoffLimit`,
-this can be confused to end-users how these two fields interacting with each other.
-- If `maxRestartTimes` configured in a recoverable circumstance with a small number,
-e.g. network shaking with 3 times, the service will stay in a failed state forever
-after 3 restarts. So end-users should be careful when configuring this field.
+
+- If `maxRestartTimesOnFailure` is configured in a recoverable circumstance with a small number retries.
+E.g. we set the `maxRestartTimesOnFailure=3`, and the network shakes with 4 times, the service will stuck
+in a failed state forever after 3 restarts, so end-users should be careful when configuring this field.
+However, this problem also exists in Job's backoffLimit, which is default to 6.
 
 ## Design Details
 
@@ -277,29 +314,30 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
-Add `maxRestartTimes` to podSpec:
+
+Add `maxRestartTimesOnFailure` to `pod.spec`:
 
 ```golang
 type PodSpec struct {
   // ...
   RestartPolicy RestartPolicy
-  // MaxRestartTimes indicates the maximum count container can restart. It's the sum of
+  // maxRestartTimesOnFailure indicates the maximum count container can restart. It's the sum of
   // all containers' restart times and only works when RestartPolicy is set to `OnFailure`.
   // Default to nil which means will restart infinity.
   // +optional
-  MaxRestartTimes *int
+  maxRestartTimesOnFailure *int
 }
 ```
 
-If Pod's `RestartPolicy` is `Always` or `Never`, `MaxRestartTimes` is default to nil, and will not apply.
+- If Pod's `RestartPolicy` is `Always` or `Never`, `maxRestartTimesOnFailure` is default to nil, and will not apply.
+- If Pod's `RestartPolicy` is `OnFailure`, `maxRestartTimesOnFailure` is also default to nil, which means infinite
+restart times for backwards compatibility.
 
-If Pod's `RestartPolicy` is `OnFailure`, `MaxRestartTimes` is also default to nil, which means infinite
-restart times for backwards compatibility. In runtime, we'll check the sum of `RestartCount` of
+In runtime, we'll check the sum of `RestartCount` of
 all containers [`Status`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/runtime.go#L306-L335)
 packaged by Pod in function [`ShouldContainerBeRestarted`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/helpers.go#L63-L96).
-If the value is greater than the `MaxRestartTimes`, return false indicating the Pod should not restart again.
+If the value is greater than the `maxRestartTimesOnFailure`, return false indicating the Pod should not restart again.
 We'll add a new error named `ExceedMaxRestartTimes` as the reason of Pod's failure state.
-
 
 ### Test Plan
 
@@ -324,6 +362,7 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+
 No.
 
 ##### Unit tests
@@ -346,14 +385,16 @@ https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
 This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
+
 - Test cases:
   - Defaulting and validating tests
   - Feature gate enable/disable tests
   - tests with restartPolicy set to `Always` or `Never`
   - tests with restartPolicy set to `OnFailure`
+
 - Test coverage:
-  - `/pkg/kubelet/container`: `2022-06-06` - `52.1%`
-  - `/pkg/kubelet/kuberuntime`: `2022-06-06` - `66.8%`
+  - `/pkg/kubelet/container`: `2023-05-08` - `55.6%`
+  - `/pkg/kubelet/kuberuntime`: `2023-05-08` - `66.5%`
 
 ##### Integration tests
 
@@ -449,14 +490,17 @@ in back-to-back releases.
 -->
 
 #### Alpha
+
 - Feature implemented behind feature gate.
 - All tests passed as designed in [TestPlan](#test-plan).
 
 #### Beta
+
 - Feature is enabled by default
 - Gather feedback from developers.
 
 #### GA
+
 - No negative feedback.
 
 ### Upgrade / Downgrade Strategy
@@ -474,8 +518,8 @@ enhancement:
 -->
 
 - Upgrade
-  - While the feature gate is enabled, `MaxRestartTimes` are allowed to use by end-users.
-  - While the feature gate is enabled with `MaxRestartTimes` not configured, default values
+  - While the feature gate is enabled, `MaxRestartTimesOnFailure` are allowed to use by end-users.
+  - While the feature gate is enabled with `MaxRestartTimesOnFailure` not configured, default values
   will be applied, which will maintain the previous behaviors.
 - Downgrade
   - Previously configured values will be ignored.
@@ -495,7 +539,8 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-None
+The apiserver's version should be consistent with the kubelet version, or this feature
+will not work.
 
 ## Production Readiness Review Questionnaire
 
@@ -541,7 +586,9 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: MaxRestartTimesOnFailure
-  - Components depending on the feature gate: kubelet, kube-apiserver
+  - Components depending on the feature gate:
+    - kubelet
+    - kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
@@ -549,6 +596,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
 No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -567,6 +615,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes, we can disable the `MaxRestartTimesOnFailure` feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
 Will go back to work as designed.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -583,6 +632,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
 No, we'll add them during alpha.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -602,11 +652,12 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+
 Yes, since this feature should be enabled both by apiserver and kubelet, if we only
-successfully roll back the apiserver, the kubelet will fail to update pod for `maxRestartTime`
+successfully roll back the apiserver, the kubelet will fail to update pod for `maxRestartTimeOnFailure`
 is unknown to apiserver.
 
-Also, in HA clusters, if we only rollback parts of apiservers, pods with `maxRestartTimes` set
+Also, in HA clusters, if we only rollback parts of api-servers, pods with `maxRestartTimesOnFailure` set
 will still be impacted. But finally if the rollback finished, the running workloads will
 recover as expected.
 
@@ -616,7 +667,10 @@ recover as expected.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-`pod_exceed_restart_times_size` is always zero.
+
+When we set the restartPolicy=OnFailure and set a specific maxRestartTimesOnFailure number,
+but Pod restarts for more than the number.
+Or the `pod_exceed_restart_times_size` is always zero, but we do have Pods failed for exceeding the restart times.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -625,6 +679,7 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
 No.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -632,6 +687,7 @@ No.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
 No.
 
 ### Monitoring Requirements
@@ -650,7 +706,8 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Operator can query `pod.spec.maxRestartTimes` to identify whether this is set.
+
+Operator can query `pod.spec.maxRestartTimesOnFailure` to identify whether this is set.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -665,9 +722,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [x] Other (treat as last resort)
   - Details:
-    - We'll print a log when container restart count meet the `maxRestartTimes` limit.
-    - Pod status will stay in `ExceedMaxRestartTimes` when restart count reach
-    the `maxRestartTimes` limit.
+    - We'll print a log when container restart count reaches the `maxRestartTimesOnFailure`.
+    - Pod status will turn to `ExceedMaxRestartTimes` when restart count reaches the `maxRestartTimesOnFailure` limit.
     - Metric `pod_exceed_restart_times_size` will increase over time if reach the max restart times.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -687,13 +743,13 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
+No.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -702,6 +758,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+No.
 
 ### Dependencies
 
@@ -725,6 +782,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
 No.
 
 ### Scalability
@@ -753,6 +811,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+
 No.
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -763,6 +822,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+
 No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
@@ -772,6 +832,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
 No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
@@ -782,6 +843,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
 Yes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -794,6 +856,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
 No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
@@ -807,6 +870,21 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
 No.
 
 ### Troubleshooting
@@ -823,8 +901,9 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
 For new created pods, since API server is down, we'll fail to create pods obviously.
-But for already running pods, since `maxRestartTimes` is only taken into account by
+But for already running pods, since `maxRestartTimesOnFailure` is only taken into account by
 kubelet, so the feature still works, but we'll failed in updating Pod status.
 
 ###### What are other known failure modes?
@@ -842,9 +921,9 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-
 
 ## Implementation History
 
@@ -860,12 +939,14 @@ Major milestones might include:
 -->
 - 2022.06.02: KEP proposed for review, including motivation, proposal, risks,
 test plan and graduation criteria.
+- 2023.05.08: KEP updated for review.
 
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
 We have to re-implement this feature in other workloads if we need.
 
 ## Alternatives
@@ -876,7 +957,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-- The community has discussed about adding `maxRestartTimes` to annotations, however,
+- The community has discussed about adding `maxRestartTimesOnFailure` to annotations, however,
 a field might be a better choice for validation.
 
 ## Infrastructure Needed (Optional)
@@ -886,3 +967,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+No.
