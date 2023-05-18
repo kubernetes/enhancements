@@ -164,7 +164,7 @@ Before promoting to beta at least a single e2e test should also be added in
 
 ##### e2e tests
 
-- missing
+- kubectl events should show event when pod is created: [test grid](https://storage.googleapis.com/k8s-triage/index.html?sig=cli&test=kubectl%20events)
 
 ### Graduation Criteria
 
