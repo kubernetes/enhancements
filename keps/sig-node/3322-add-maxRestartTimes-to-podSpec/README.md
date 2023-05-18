@@ -87,6 +87,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
   - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Discussions](#discussions)
+    - [Caveats](#caveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -269,7 +271,7 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-Discussions:
+#### Discussions
 
 The Batch WG incubates a new KEP [Backoff Limit Per Index For Indexed Jobs](https://github.com/kubernetes/enhancements/issues/3850),
 which introduces a new field `backoffLimitPerIndex`, then each pod of the Job will have an independent backOffLimit,
@@ -283,7 +285,7 @@ Pros:
 Cons:
   * The boundary of restartPolicy `Never` and `OnFailure` is vaguely.
 
-Caveats:
+#### Caveats
 
 - Pod's maxRestartTimesOnFailure is somehow conflict with Job's backoffLimit, we'll respect the first one who hit the line.
 
