@@ -238,16 +238,21 @@ See [Kueue: Account for terminating pods when doing preemption](https://github.c
 
 ### Notes/Constraints/Caveats (Optional)
 
+A focus of this KEP is for nonprogramatic deletion (ie kubelet eviction, preemption, etc) so we want to mention some other cases where the job controller can start deletion.
+
+1) A job is over the `activeDeadlineSeconds` so the child pods are deleted.  
+2) With `PodFailurePolicy` active and `FailJob` is set as the action, the children pods would be deleted.
+
 ### Risks and Mitigations
 
 One area of contention is how this KEP will work with 3329-retriable-and-non-retriable-failures.  It is important to mention the subtleties here.  
 In 3329, there was a decision to make kubelet transition pods to failed before deleting them.  This is feature toggled guarded by `PodDisruptionCondition`.  
-This means that when this feature is turned on, the job controller can count pods as failed once they are fully terminated.  This means that the pod is still considered running, as opposed to failed.
-If `PodDisruptionCondition` is turned off then the job controller considers the pod as failed as soon as it is terminating (has a deletion timestamp), because there is no guarantee that the pod will transition to phase=Failed.  
-To get around this problem we decided to add a field called terminating so we can count separately from active or failed.  
+This means that when this feature is turned on, the job controller can count pods as failed once they are fully terminated.  This means that the pod is still considered running, as opposed to failed.  So this pod would be considered active until it is fully terminated.  
+If `PodDisruptionCondition` is turned off then the job controller considers the pod as failed as soon as it is terminating (has a deletion timestamp), because there is no guarantee that the pod will transition to phase=Failed.
+This causes some problems in tracking for active versus failed because we have different behavior based on `PodDisruptionCondition`.  To migitate this, we decided to add a new field called `terminating`.  This will track terminating pods separately from active and failed.  
 
 Another issue is described here: https://github.com/kubernetes/enhancements/pull/3940#discussion_r1180777509.  
-If PodDisruptionConditions is disabled, a pod bound to a no-longer-existing node may be stuck in the Running phase. As a consequence, it will never be replaced, so the whole job will be stuck from making progress.  Due to the above issue, we can set phase=Failed when PodDisruptionConditions is enabled OR JobRecreatePodsWhenFailed is enabled. When JobRecreatePodsWhenFailed enabled, but PodDisruptionConditions disabled we would just set the phase, but without adding the condition.
+If PodDisruptionConditions is disabled, a pod bound to a no-longer-existing node may be stuck in the Running phase. As a consequence, it will never be replaced, so the whole job will be stuck from making progress.  Due to the above issue, we can set phase=Failed when PodDisruptionConditions is enabled OR JobRecreatePodsWhenFailed is enabled. When JobRecreatePodsWhenFailed enabled, but PodDisruptionConditions disabled we would just set the phase, but without adding the condition.  We will need to modify the PodGC (gc_controller.go) in the case of `JobRecreatePodsFailed` being enabled while `PodDisruptionConditions` is disabled.  
 
 ## Design Details
 
@@ -296,16 +301,14 @@ We will allow only opt-in behavior for this feature so we will fall back to `Ter
 
 ### Implementation
 
-The Job Controller filters all pods and classifies the pods as active.  We will append terminating pods to list as part of this KEP.
+The Job Controller filters all pods and classifies the pods as active.  This list is used to verify that the expected number of active pods matches the reality.  
 
-There are two cases in the job controller where deletions can happen programatically:
+As part of this KEP, we want to include pods that are also terminating (`DeletionTimestamp != nil`).  
+The field `Status.terminating` will include the number of terminating pods.  Once the pods are fully terminated, this field will be unset again because we will obtain the count of active and terminating pods and update the status.
 
-1) A job is over the `activeDeadlineSeconds` so the child pods are deleted.  
-2) With `PodFailurePolicy` active and `FailJob` is set as the action, the children pods would be deleted.
+We will update the Status field in the same place as when we update the number of active jobs so it should not require any extra API calls.  
 
-In both of these cases, we are updating the `Status` field with a count of terminating pods.  So both of these cases will be handled.  We will update the Status field in the same place as when we update the number of active jobs so it should not require any extra API calls.  
-
-In cases where pods are terminating outside of the job controller, we will look at the list of pods that a job has.  And we can classify them as terminating and add that to the status field.  We will also include them in the list.
+In cases where pods are terminating outside of the job controller, we will look at the list of pods that a job has.  And we can classify them as terminating and add that to the status field.
 
 ### Test Plan
 
