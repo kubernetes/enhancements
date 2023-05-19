@@ -71,7 +71,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Risks and Mitigations](#risks-and-mitigations)
   - [Design Details](#design-details)
     - [Configuration file](#configuration-file)
-    - [More about CEL](#more-about-cel)
+    - [CEL](#cel)
     - [Flags](#flags)
     - [Test Plan](#test-plan)
         - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -83,6 +83,8 @@ SIG Architecture for cross-cutting KEPs).
       - [Beta](#beta)
       - [GA](#ga)
       - [Deprecation](#deprecation)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
   - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
     - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
     - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -93,6 +95,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Implementation History](#implementation-history)
   - [Drawbacks](#drawbacks)
   - [Alternatives](#alternatives)
+  - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -104,10 +107,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -126,7 +129,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This enhancement proposal covers adding structured authentication configuration to the Kubernetes API server.
-Initially, only a `jwt` configuration will be supported, which will serve as the next interation of the existing
+Initially, only a `jwt` configuration will be supported, which will serve as the next iteration of the existing
 OIDC authenticator.  OIDC authentication is important part of Kubernetes, yet it has limitations in its current state.
 Below we will discuss that limitation and propose solutions.
 
@@ -136,10 +139,12 @@ Structured config for OIDC authentication: noted in various contexts over the pa
 away from a flag-based config that is growing without bounds to a proper versioned config format. This would allow us to
 better support various features that have been requested.
 
-- [Support multiple OIDC ClientIDs on API server](https://github.com/kubernetes/kubernetes/issues/71162)
-- OpenID Connect: Identify user by more JWT claims than just a single one kubernetes/kubernetes#71715
-- OIDC: Allow any claim from an ID token to be mapped to userinfo extra attributes kubernetes/kubernetes#82236
-- Required claims does not support arrays and failing kubernetes auth with oidc - EKS  kubernetes/kubernetes#101291
+- [Support multiple ClientIDs](https://github.com/kubernetes/kubernetes/issues/71162)
+- [Identify user by more JWT claims than just a single one](https://github.com/kubernetes/kubernetes/issues/71715)
+- [Allow any claim from an ID token to be mapped to user info extra attributes](https://github.com/kubernetes/kubernetes/issues/82236)
+- [Fail authentication unless user is a member of a specific set of groups](https://github.com/kubernetes/kubernetes/issues/84730)
+- [Required claims does not support arrays](https://github.com/kubernetes/kubernetes/issues/101291)
+- [Forward audiences to authorization via user info extra attributes](https://github.com/kubernetes/kubernetes/pull/117474)
 
 ### Goals
 
@@ -147,30 +152,35 @@ There are features users want to tune. We need to provide customization of the f
 
 - *Claims validation rules*: current OIDC provider supports only audience claim validation and only by exact values.
 - *Claim mappings*: it is only possible to pick a single value from a single claim and prefix groups.
+  - This also serves to support the use of nested claims (i.e. not at the top level)
 - *Use more than one OIDC provider*: the only option, for now, is to use an external OIDC provider that handles multiplexing support for multiple providers.
+  - This also serves to support the use of more than one client ID
 - Change authenticator settings without restarting kube-apiserver.
-- SPIFFE JWTs
-- TODO other issues from the PR
-- Validations for infra providers
+- Support validation rules on the final user info object to allow infra providers to safely expose this functionality to customers
 - Easy migration from existing OIDC flags
+  - Note: we intend to drop the `--oidc-signing-algs` flag because this configuration provides no benefit (we will always allow all asymmetric algorithms)
 
 ### Non-Goals
 
-- Supporting configuration of authenticaiton mechnisims other than `jwt`
-- Supporting other methods for keys discovery other than standart OIDC discovery mechanism
-- No support for `x5c`
+- Supporting configuration of authentication mechanisms other than `jwt` (this is deferred to future KEPs)
+- Supporting methods for keys discovery other than standard OIDC discovery mechanism via the well-known endpoint
+- Support for certificate based signing via the `x5c` header field (this is deferred until we have more user evidence)
+- Supporting access to the JWT header in rules (this is deferred until we have more user evidence)
+- Supporting access to the provider config itself in rules (this is deferred until we have more user evidence)
+- Supporting JWTs with multiple signatures (to avoid any security issues caused by signature confusion)
 
 ## Proposal
 
-1. Add new `apiserver.config.k8s.io` API object to parse a structured config file `AuthenticaitonConfiguration`.
-2. Add a single flag for kube-apiserver to point to the structured config file, automatically reload it on changes.
-3. Use an expression language to let users write their own logic for mappings and validation rules 
+1. Add new `apiserver.config.k8s.io` API object to parse a structured config file `AuthenticationConfiguration`.
+2. Add a single flag `--authentication-config` for kube-apiserver to point to the structured config file, automatically reload it on changes.
+3. Use an expression language to let users write their own logic for mappings and validation rules
   (expressions should be simple for common cases, yet powerful to cover most user stories).
 
 ### Risks and Mitigations
 
-Since this is a new optional feature, no migration is required. Before the Stable release of the feature,
-we should provide examples of migrating from a flag-based config to a new structured config.
+Since this is a new optional feature, no migration is required unless the user wants to replace their
+existing OIDC flags usage with the config file.  The use of `--authentication-config` is mutually exclusive
+with the existing OIDC flags, so we will provide documentation for migrating from a flag-based config to the new config.
 
 ## Design Details
 
@@ -178,11 +188,15 @@ we should provide examples of migrating from a flag-based config to a new struct
 
 TODO:
 
-- we need to define the minimum valid payload
--> iss, exp, iat, and some other field that is the username
--> [oidc validation] -> [claim validation] -> [claim mappings] -> [user info validation] (TODO mermaid diagram)
--> should we have any revocation mechnism?
+- should we have any revocation mechanism?
   => use revocation endpoint if it is in the discovery document? (lets decide what we want here before beta)
+  => related issue https://github.com/kubernetes/kubernetes/issues/71151
+- distributed claims with fancier resolution requirements (such as access tokens as input)
+- implementation detail: we should probably parse the `iss` claim out once
+- should audit annotations be set on validation failure?
+- should we introduce implicit checks that assure at least one of uid/username are nonempty?
+- decide what error should be returned if CEL eval fails at runtime
+  `500 Internal Sever Error` seem appropriate but authentication can only do `401`
 
 The main part of this proposal is a configuration file. It contains an array of providers:
 
@@ -192,9 +206,14 @@ kind: AuthenticationConfiguration
 jwt:
 - issuer:
     url: https://example.com
-    clientID: my-app
-  claimValidationRules:    
-  - rule: 'claims.exp - claims.nbf > 86400'
+    clientIDs:
+    - my-app
+  claimValidationRules:
+  - claim: hd
+    requiredValue: example.com
+  - expression: 'claims.hd == "example.com"'
+    message: the hd claim must be set to example.com
+  - expression: 'claims.exp - claims.nbf <= 86400'
     message: total token lifetime must not exceed 24 hours
   claimMappings:
     username:
@@ -205,158 +224,306 @@ jwt:
       claim: 'sub'
     extra:
     - key:
-        constant: 'client_name'  # TODO, decide if we really need this flexiblily or can we just have constant keys
+        constant: 'client_name'  # TODO: decide if we really need this flexibility or can we just have constant keys
       value:
         claim: 'aud'
-  claimFilters:
-  userInfoValidationRules: # TODO, provide a real world case
-  
+  # TODO(enj): drop this and figure out to get from CEL
+  # claimFilters:
+  # - username
+  # - roles
+  userInfoValidationRules:
+  - rule: "!userInfo.username.startsWith('system:')"
+    message: username cannot used reserved system: prefix
+  - rule: "userInfo.groups.all(group, !group.startsWith('system:'))"
+    message: groups cannot used reserved system: prefix
 ```
 
+The minimum valid payload from a JWT is (`aud` may be a `string`):
 
-```go
-type OIDCConfiguration struct {
-    metav1.TypeMeta
-    // Providers is a list of OIDC providers to authenticate Kubernetes users.
-    Providers []Provider `json:"providers"`
+TODO:
+are `iat` and `nbf` required?
+is `sub` required or is the requirement to just have some username field?
+
+```json
+{
+  "iss": "https://example.com",
+  "sub": "001",
+  "aud": [
+    "cluster-a"
+  ],
+  "exp": 1684274031,
+  "iat": 1684270431,
+  "nbf": 1684270431
 }
 ```
 
-Each provider has several properties that will be described in detail below.
+Payloads with nested data are supported as well (it will be possible
+to use the `foo` value as a claim mapping):
+
+TODO(aramase): validate if CEL can work with multiple level of nesting
+
+```json
+{
+  "custom": {
+    "data": {
+      "name": "foo"
+    }
+  },
+  ...
+}
+```
+
+The order in which validations and claim mapping occurs is as follows:
+
+TODO: mermaid diagram
+
+1. OIDC validations
+    - `iss`
+    - TODO enumerate these
+2. Claim validation based on `claimValidationRules`
+3. Claim mapping based on `claimMappings`
+4. User info validation based on `userInfoValidationRules`
 
 ```go
-type Provider struct {
-    // Issuer is a basic OIDC provider connection options.
+type AuthenticationConfiguration struct {
+  metav1.TypeMeta `json:",inline"`
+
+    // jwt is a list of OIDC providers to authenticate Kubernetes users.
+    // For an incoming token, each JWT authenticator will be attempted in
+    // the order in which it is specifcied in this list.  Note however that
+    // other authenticators may run before or after the JWT authenticators.
+    // The specific position of JWT authenticators in relation to other
+    // authenticators is neither defined nor stable across releases.  Since
+    // each JWT authenticator must have a unique issuer URL, at most one
+    // JWT authenticator will attempt to cryptographically validate the token.
+    JWT []JWTAuthenticator `json:"jwt"`
+}
+```
+
+Each authenticator has several properties that will be described in detail below.
+
+```go
+type JWTAuthenticator struct {
+    // issuer is a basic OIDC provider connection options.
     Issuer Issuer `json:"issuer"`
-    // ClaimValidationRules are rules that are applied to validate ID token claims to authorize users.
+
+    // claimValidationRules are rules that are applied to validate token claims to authenticate users.
     // +optional
     ClaimValidationRules []ClaimValidationRule `json:"claimValidationRules,omitempty"`
-    // ClaimMappings points claims of an ID token to be treated as user attributes.
-    // All mappings are logical expressions that is written in CEL https://github.com/google/cel-go.
-    ClaimMappings UserAttributes `json:"claimMappings"`
+
+    // claimMappings points claims of a token to be treated as user attributes.
+    ClaimMappings ClaimMappings `json:"claimMappings"`
+
     // ClaimsFilter allows unmarshalling only required claims which positively affects performance.
+    // TODO: this is only dist claims -> drop this and figure out to get from CEL
+    //
+    // 3. `ClaimsFilter` - list of claim names that should be passed to CEL expressions. The assumption is that administrators
+    // know the structure of the token and the exact claims they will use in CEL expressions.
+    // This option helps to reduce system load and operate only with required claims.
+    //
     // +optional
-    ClaimsFilter []string `json:"claimFilters,omitempty"`
+    // ClaimsFilter []string `json:"claimFilters,omitempty"`
+
+    // userInfoValidationRules are rules that are applied to final userInfo before completing authentication.
+    // These allow invariants to be applied to incoming identites such as preventing the
+    // use of the system: prefix that is commonly used by Kubernetes components.
+    // +optional
+    UserInfoValidationRules []UserInfoValidationRule `json:"userInfoValidationRules,omitempty"`
 }
 ```
 
-1. `Issuer` - is a sections for external provider specific settings, e.g., OIDC discovery URL. 
-  There is also default validation settings (ClientID, SkipOIDCValidations) that's available out of the box for flag-based 
-  OIDC provider, but for structured config they can be disabled.
+1. `Issuer` - is a section for external provider specific settings, e.g., OIDC discovery URL.
 
-    ```go
+```go
     type Issuer struct {
-        // URL points to the issuer URL in a format schema://url/path.
-        // Not required to be unique because users may want to have the API server trust multiple 
-        // client IDs (kubernetes dashboard, kubectl, etc.) from the same provider.
-        // Always used for key discovery
+        // url points to the issuer URL in a format https://url/path.
+        // This must match the "iss" claim in the presented JWT, and the issuer returned from discovery.
+        // Same value as the --oidc-issuer-url flag.
+        // Used to fetch discovery information unless overridden by discoveryURL.
+        // Required to be unique.
         URL string `json:"url,omitempty"`
-        // CertificateAuthorityData contains PEM-encoded certificate authority certificates. Overrides CertificateAuthority.
-        // +optional
-        CertificateAuthorityData []byte `json:"certificateAuthorityData,omitempty"`
-        // ClientID the JWT must be issued for, the "sub" field. This plugin only trusts a single
-        // client to ensure the plugin can be used with public providers.
-        // Do not affect anything with the SkipOIDCValidations option enabled.
-        // +optional
-        ClientID string `json:"clientID,omitempty"`
-        // SkipOIDCValidations is a flag to turn off issuer validation, client id validation.
-        // OIDC related checks.
-        //  
-        // Validations that will be skipped (TODO fix this):
-        // - ClientID validation
-        // - URL schema equals to HTTPS <-NOT??
-        // - Issuer URL check
-        // - Expiry validation <-NOT
-        //
-        // +optional
-        //SkipOIDCValidations bool `json:"skipOIDCValidations,omitempty"`
-        SkipClientIDValidation bool `json:"skipOIDCValidations,omitempty"`
 
-        // If specified, used for the discovery issuer matching and for matching incoming tokens.
-        IssuerValidationOverride *string `json:"skipOIDCValidations,omitempty"`
+        // If specified, overrides the URL used to fetch discovery information.
+        // Format must be https://url/path.
+        // Example:
+        // curl oidc.oidc-namespace (.discoveryURL field)
+        // {
+        //     issuer: "https://oidc.example.com" (.url field)
+        // }
+        // Required to be unique.
+        // +optional
+        DiscoveryURL *string `json:"discoveryURL,omitempty"`
+
+        // certificateAuthority contains PEM-encoded certificate authority certificates
+        // used to validate the connection when fetching discovery information.
+        // If unset, the system verifier is used.
+        // Same value as the content of the file referenced by the --oidc-ca-file flag.
+        // +optional
+        CertificateAuthority string `json:"certificateAuthority,omitempty"`
+
+        // clientIDs is the set of acceptable audiences the JWT must be issued to.
+        // At least one of the entries must match the "aud" claim in presented JWTs.
+        // Same value as the --oidc-client-id flag (though this field supports an array).
+        // Required to be non-empty.
+        ClientIDs []string `json:"clientIDs,omitempty"`
    }
    ```
 
-   curl oidc.oidc-nameaspace (.url field)
+2. `ClaimValidationRules` - additional authentication policies. These policies are applied after generic OIDC validations, e.g., checking the token signature, issuer URL, etc. Rules are applicable to distributed claims.
 
-   {
-    issuer: "https://oidc.example.com"  (.issuerValidationOverride field)
-   }
-
-1. `ClaimValidationRules` - additional authentication policies. These policies are applied after generic OIDC validations, e.g., checking the token signature, issuer URL, etc. Rules are applicable to distributed claims.
     ```go
     type ClaimValidationRule struct {
-        // Rule is a logical expression that is written in CEL https://github.com/google/cel-go.
-        Rule string `json:"rule"`
-        // Message customize returning message for validation error of the particular rule.
+        // Claim is the name of a required claim.
+        // Same as --oidc-required-claim flag.
+        // Only string claims are supported.
+        // Mutually exclusive with expression and message.
+        // +optional
+        Claim string `json:"claim"`
+        // RequiredValue is the value of a required claim.
+        // Same as --oidc-required-claim flag.
+        // Mutually exclusive with expression and message.
+        // +optional
+        RequiredValue string `json:"requiredValue"`
+
+        // Expression is a logical expression that is written in CEL https://github.com/google/cel-go.
+        // Must return true for the validation to pass.
+        // Mutually exclusive with claim and requiredValue.
+        // +optional
+        Expression string `json:"expression"`
+        // Message customizes the returned error message when expression returns false.
+        // Mutually exclusive with claim and requiredValue.
+        // Note that messageExpression is explicitly not supported to avoid
+        // misconfigured expressions from leaking JWT payload contents.
         // +optional
         Message string `json:"message,omitempty"`
     }
     ```
 
     For validation expressions, the CEL is used. They are similar to validations functions for [Custom Resources](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#resource-use-by-validation-functions).
-    `Rule` expression should always evaluate a boolean. Token `claims` are passed to CEL expressions as a dynamic map `decls.NewMapType(decls.String, decls.Dyn)`.
- 
-    > NOTE: If a rule returns `false` after evaluation, the `401 Unauthorized` error will be returned. If the evaluation is failed in runtime, the `500 Internal Sever Error` error will be returned with a message to kube-apiserver logs.
+    Validation expressions must always evaluate a boolean. Token `claims` (payload) are passed to CEL expressions as a dynamic map `decls.NewMapType(decls.String, decls.Dyn)`.
 
-    You can find a snippet of validation rules below:
+    > NOTE: If an expression returns `false` after evaluation, a `401 Unauthorized` error will be returned
+      and the associated `message` will be logged in the API server logs.
+
+    Example validation rules:
 
     ```yaml
     claimValidationRules:
-    
-    - rule: 'claims.aud == "charmander" || claims.aud == "bulbasaur"'
+
+    - expression: 'claims.aud == "charmander" || claims.aud == "bulbasaur"'
       message: clients other than charmander or bulbasaur are not allowed
-    
-    - rule: 'claims.exp - claims.nbf > 86400'
+
+    - expression: 'claims.exp - claims.nbf <= 86400'
       message: total token lifetime must not exceed 24 hours
     ```
 
-2. `ClaimMappings` - rules to map claims from a token to Kubernetes user attributes.
+3. `ClaimMappings` - rules to map claims from a token to Kubernetes user info attributes.
+
     ```go
-    type UserAttributes struct {
+    type ClaimMappings struct {
         // Username represents an option for the username attribute.
-        Username KeyOrExpression `json:"username"`
-        // Groups represents an option for the groups attribute. 
+        // Claim must be a singular string claim.
+        // TODO: decide whether to support a distributed claim for username (what are we required to correlate between the data retrieved for distributed claims? sub? something else?). Limit distributed claim support to OIDC things with clientID validation?
+        // Expression must produce a string value.
+        // Possible prefixes based on the config:
+        //     (1) if userName.prefix = "-", no prefix will be added to the username
+        //     (2) if userName.prefix = "" and userName.claim != "email", prefix will be "<issuer.url>#"
+        //     (3) if userName.expression is set instead, result of expression is used as-is without any implicit prefix
+        // (1) and (2) ensure backward compatibility with the --oidc-username-claim and --oidc-username-prefix flags
+        Username PrefixedClaimOrExpression `json:"username"`
+        // Groups represents an option for the groups attribute.
+        // Claim must be a string or string array claim.
+        // Expression must produce a string or string array value.
+        // "", [], missing, and null values are treated as having no groups.
+        // TODO: investigate if you could make a single expression to construct groups from multiple claims. If not, maybe []PrefixedClaimOrExpression?
         // +optional
-        Groups KeyOrExpression `json:"groups,omitempty"`
+        Groups PrefixedClaimOrExpression `json:"groups,omitempty"`
         // UID represents an option for the uid attribute.
+        // Claim must be a singular string claim.
+        // Expression must produce a string value.
+        // TODO: this is net new, should it just be expression?
         // +optional
-        UID KeyOrExpression `json:"uid,omitempty"`
+        UID ClaimOrExpression `json:"uid,omitempty"`
         // Extra represents an option for the extra attribute.
+        //
+        // TODO: examples for this?
+        //
+        // # known key, value from claim
+        // - key: "example.com/myextrakey"
+        //   value:
+        //     claim: "hd"
+        //
+        // # known key, value constructed by expression
+        // - key: "example.com/myextrakey"
+        //   value:
+        //     expression: claims.someclaim+":"+claims.someclaim
+        //
+        // # calculated key/value pairs? CEL returns [{key,value}, {key,[value, value...]}, ...] and we aggregate?
+        // TODO: ask joe/cici about CEL constructing/returning complex types
+        //
         // +optional
         Extra []ExtraMapping `json:"extra,omitempty"`
     }
-   
+
     type ExtraMapping struct {
         // Key is a CEL expression to extract extra attribute key.
-        Key KeyOrExpression `json:"key"`
+        // Claim must be a singular string claim.
+        // Expression must produce a string value.
+        // "" and null values are treated as the extra mapping not being present.
+        Key string `json:"key"`
         // Value is a CEL expression to extract extra attribute value.
-        Value KeyOrExpression `json:"value"`
+        // Claim must be a string or string array claim.
+        // Expression must produce a string or string array value.
+        // "", [], and null values are treated as the extra mapping not being present.
+        Value ClaimOrExpression `json:"value"`
     }
 
-    type KeyOrExpression struct {
-        Key string `json:"key"`
-        Expression string `json:"value"`
+    type ClaimOrExpression struct {
+        // Claim is the JWT claim to use.
+        // Either claim or expression must be set.
+        // +optional
+        Claim string `json:"claim"`
+
+        // TODO: think about what happens if the claim is absent or the wrong type
+        Expression string `json:"expression"`
+    }
+
+
+    type PrefixedClaimOrExpression struct {
+        // Claim is the JWT claim to use.
+        // Either claim or expression must be set.
+        // +optional
+        Claim string `json:"claim"`
+        // Prefix is prepended to claim to prevent clashes with existing names.
+        // Mutually exclusive with expression.
+        // +optional
+        Prefix string `json:"prefix"`
+
+        // expression represents the expression which will be evaluated by CEL.
+        // Must produce a string. CEL expressions have access to the contents of the token claims for claimValidationRules and claimMappings, userInfo for userInfoValidationRules. Documentation on CEL: https://kubernetes.io/docs/reference/using-api/cel/
+        // Either claim or expression must be set.
+        // +optional
+        Expression string `json:"expression"`
     }
     ```
 
-    Every field of structures above is a CEL expression. For username and uid, the expression should evaluate a string.
-    For groups, it should evaluate to an array. A map of extra attributes is composed of key/value pairs, each with their
-    own CEL expressions, both should evaluate to a string.
-
-    The example of mapping user attributes can be found below:
+    The example of mapping user info attributes:
 
     ```yaml
     claimMappings:
-      username: 'claims.username + ":external-user"'
-      groups: 'claims.roles.split(",")'
-      uid: 'claims.sub'
+      username:
+        expression: 'claims.username + ":external-user"'
+      groups:
+        expression: 'claims.roles.split(",")'
+      uid:
+        claim: 'sub'
       extra:
       - key: '"client_name"'
-        expression: 'claims.aud'
+        value: 'claims.aud'
     ```
-   
-    For the token with the following claims
+
+    For the token with the following claims:
+
     ```json
     {
       "sub": "119abc",
@@ -366,67 +533,53 @@ type Provider struct {
       ...
     }
     ```
-    our authenticator will extract the following user attributes:
+
+    The following user info attributes will be extracted:
+
     ```yaml
     username: jane_doe:external-user
-    groups: ["admin", "user"]
     uid: "119abc"
+    groups: ["admin", "user"]
     extra:
       client_name: kubernetes
     ```
-3. `ClaimsFilter` - list of claim names that should be passed to CEL expressions. The assumption is that administrators
-   know the structure of the token and the exact claims they will use in CEL expressions.
-   This option helps to reduce system load and operate only with required claims.
 
-> TODO: Think about prefixes. The flag-based OIDC authenticator implementation allows to prefix usernames and groups to avoid collisions with system groups or names.
-> 1. This is a common use case. Users can benefit from not using CEL for it.
-> 2. Not only enforcing prefixes is useful. It is also possible to reject tokens if there are groups with the `system:` prefix.
+### CEL
 
-### More about CEL
-
-* CEL runtime should be compiled only once if structured OIDC config option is enabled.
-* Two variables will be available in to use in rules: 
-  * `claim` for token claims
-  * `now` for the current time in UNIX format to be able to customize the expiration validation (e.g., `Rule: "claims.exp < now", Message: "Token is expired"`)
-* To make working with strings more convenient, `strings` and `encoding` [CEL extensions](https://github.com/google/cel-go/tree/v0.9.0/ext) should be enabled, 
-e.g, to be able to split a string with comma separated fields and use them as a single array.
+* CEL runtime should be compiled only once if structured authentication config option is enabled.
+* There will be a maximum allowed CEL expression cost per authenticator (no limit on total authenticators is required due to the issuer uniqueness requirement).
+* One variable will be available to use in `claimValidationRules` and `claimMappings`:
+  * `claims` for JWT claims (payload)
+* One variable will be available to use in `userInfoValidationRules`:
+  * `userInfo` with the same schema as [authentication.k8s.io/v1, Kind=UserInfo](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#userinfo-v1-authentication-k8s-io)
+* To make working with strings more convenient, `strings` and `encoding`
+  [CEL extensions](https://github.com/google/cel-go/tree/v0.9.0/ext) will be enabled,
+  e.g, to be able to split a string with comma separated fields and use them as a single array.
 * Benchmarks are required to see how different CEL expressions affects authentication time.
-* CEL expressions are called on each request. We should properly investigate the influence of these calls on the system.
-  latency and, if necessary, prove caching or other mechanisms to improve performance. The possibility of applying caching mechanisms should be considered.
+* Caching will be used to prevent having to execute the CEL expressions on every request.
+    - TODO decide what the behavior of the token cache will be on config reload
+    - TODO should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
+      this requires awareness of key rotation to implement safely
 
 ### Flags
 
-The only flag requires to enable the feature is the `--oidc-configuration-path` flag. It points to the configuration file.
-On startup, kube-apiserver enables the file watcher for the configuration file and reacts to any file change.
-
-> NOTE: This KEP is aimed at implementing a new Kubernetes authenticator. 
-> It will be possible to simultaneously enable a flag-based OIDC provider authenticator and a structured-config OIDC authenticator.
+To use this feature, the `--authentication-config` flag must be set to the configuration file.  This flag
+is mutually exclusive with all existing `--oidc-*` flags.  The API server will attempt to re-read this file
+every minute.  If the hash of the file contents is unchanged, no action will be taken.  Otherwise, the API
+server will validate the config.  If it is invalid, no action will be taken and the previous valid config
+will remain active.  Otherwise, the new config will become active (via an atomic pointer swap).
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-https://github.com/kubernetes/kubernetes/issues/110782
-
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+[kubernetes#110782](https://github.com/kubernetes/kubernetes/issues/110782) tracks that lack of
+test coverage for OIDC, and [kubernetes#115122](https://github.com/kubernetes/kubernetes/pull/115122)
+attempts to rectify that gap.
 
 ##### Unit tests
 
@@ -461,7 +614,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- test: link to test coverage
 
 ##### e2e tests
 
@@ -475,18 +628,20 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- test: link to test coverage
 
 ### Graduation Criteria
 
 #### Alpha
 
 - Feature implemented behind a feature flag
+- Unit tests to validate CEL semantics
+- Unit tests for config validation
 - Initial e2e tests completed and enabled
 
 #### Beta
 
-- Gather feedback from developers and surveys
+- Gather feedback
 - Complete benchmarks
 - Add metrics
 
@@ -496,19 +651,40 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Migration guide
 - Deprecation warnings for non-structured OIDC provider configuration
 
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
 #### Deprecation
 
 kube-apiserver `--oidc-*` flags require deprecation warnings on the stable release of the feature.
 It is possible to react only to the `--oidc-issuer-url` flag because other flags cannot be enabled separately from this one.
+
+
+### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
+
+### Version Skew Strategy
+
+<!--
+If applicable, how will the component handle version skew with other
+components? What are the guarantees? Make sure this is in the test plan.
+
+Consider the following in developing a version skew strategy for this
+enhancement:
+- Does this enhancement involve coordinating behavior in the control plane and
+  in the kubelet? How does an n-2 kubelet without this feature available behave
+  when this feature is used?
+- Will any other components on the node change? For example, changes to CSI,
+  CRI or CNI may require updating that component before the kubelet.
+-->
 
 ## Production Readiness Review Questionnaire
 
@@ -517,15 +693,15 @@ It is possible to react only to the `--oidc-issuer-url` flag because other flags
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - Feature gate
-  - Feature gate name: `StructuredOIDCConfiguration`
+  - Feature gate name: `StructuredAuthenticationConfiguration`
   - Components depending on the feature gate:
     - kube-apiserver
 
 ```go
 FeatureSpec{
-	Default: false,
-	LockToDefault: false,
-	PreRelease: featuregate.Alpha,
+  Default: false,
+  LockToDefault: false,
+  PreRelease: featuregate.Alpha,
 }
 ```
 
@@ -543,7 +719,7 @@ No impact.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Feature enablement/disablement tests will be added as part of https://github.com/kubernetes/kubernetes/issues/110782
+Feature enablement/disablement unit/integration tests will be added
 
 > An example test could be: unit test that demonstrates that when the featuregate is false, the validation function on the Options type reports a failure when the flag is set.
 
@@ -559,15 +735,15 @@ Possible consequences are:
 
 ###### What specific metrics should inform a rollback?
 
-No specific metrics are required.
+TODO
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Yes. It works.
+TODO
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-Yes, the `--authentication-config` flag should be removed from the kube-apiserver manifest.
+TODO
 
 ### Monitoring Requirements
 
@@ -600,6 +776,8 @@ Metrics
 
 - Last successful load of the file
 - Last time keys were fetched (would be per issuer)
+- JWT authenticator latency metrics
+- Authentication metrics should include which JWT authenticator was used
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -643,11 +821,13 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes, the authenticator requests an OIDC provider to get public keys and validate the token.
+No new API calls will be made.
+
+However, the authenticator does make network requests per OIDC provider to fetch public keys.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes. Group `authenticator.apiserver.k8s.io`, object `OIDCConfiguration`.
+Yes. Group `apiserver.config.k8s.io`, object `AuthenticationConfiguration`.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -679,7 +859,7 @@ TBA.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-This feature is a part of authentication flow. It does not rely on etcd, but stricktly connected to the kube-apiserver.
+This feature is a part of authentication flow. It does not rely on etcd, but strictly connected to the kube-apiserver.
 
 ###### What are other known failure modes?
 
@@ -721,6 +901,19 @@ TBA.
 
 ## Alternatives
 
-Invest more into external software like Dex and officially make it the OIDC provider socket.
-Do not add any more OIDC provider customization to Kubernetes.
-Instead, add more guides and docs about customizing Kubernetes authentication with external software.
+- Invest more into external software like Dex and officially make it the OIDC provider socket.
+- Do not add any more OIDC provider customization to Kubernetes.
+  Instead, add more guides and docs about customizing Kubernetes authentication with external software.
+
+TODO: describe why we removed the skip validations around audience and issuer, as well as why we never
+wanted to support skipping exp/iat/nbf.
+
+## Infrastructure Needed
+
+Tests against real infra like Azure AD, Okta, etc.
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
