@@ -205,7 +205,7 @@ API server change:
   - If the request is for a group/version/resource the apiserver doesn't have
     locally (we can use the StorageVersion API), it will proxy the request to
     one of the apiservers that is listed in the object. If an apiserver fails
-    to respond is not available, then we will return a 503 (there is a small
+    to respond, then we will return a 503 (there is a small
     possibility of a race between the controller registering the apiserver
     with the resources it can serve and receiving a request for a resource
     that is not yet available on that apiserver).
