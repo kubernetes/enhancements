@@ -405,6 +405,33 @@ Tests will verify counting of terminating fields regardless of `PodDisruptionCon
 
 ##### e2e tests
 
+Generally the only tests that are useful for this feature are when `PodRecreateWhen: Failed`.
+
+An example job spec that can reproduce this issue is below:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-slow-cleanup-with-pod-recreate-feature
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 2
+  recreatePodsWhen: Failed
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: sleep
+        image: gcr.io/k8s-staging-perf-tests/sleep
+        args: ["-termination-grace-period", "1m", "60s"]
+```
+
+A e2e test can verify that deletion will not trigger a new pod creation until the exiting pod is fully deleted.  
+
+If `recreatePodsWhen: TerminatingOrFailed` is specified we would test that pod creation happens closely after deletion.
+
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
