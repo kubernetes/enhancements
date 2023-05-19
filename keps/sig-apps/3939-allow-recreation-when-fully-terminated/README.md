@@ -86,6 +86,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -100,6 +101,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
+    - [GA + 2](#ga--2)
     - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -155,9 +157,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -166,9 +168,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -190,10 +192,14 @@ Existing Issues:
 - [Job Creates Replacement Pods as soon as Pod is marked for deletion](https://github.com/kubernetes/kubernetes/issues/115844)
 - [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510)
 
-Many common machine learning frameworks, such as Tensorflow and JAX, require unique pods.  Currently if a pod is killed, a replacement pod is created and can cause undesirable behavior.  This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
+Many common machine learning frameworks, such as Tensorflow and JAX, require unique pods.  
+Currently if a pod is killed, a replacement pod is created and can cause undesirable behavior.  
+This is a rare case but it can provide problems if a job needs to guarantee that the existing pods terminate
 before starting new pods.  
 
 In scarce compute environments, these resources can be difficult to obtain so pods can take a long time to find resources and they may only be able to find nodes once the existing pods have been terminated.
+
+In projects that rely on tracking resource usage (like Kueue), there is a request to track the number of terminating pods as terminating pods can still use resources.
 
 If a job is stuck in terminating, it could be possible for autoscaling to kick in and give a new node.  
 This is not ideal if you could just wait for the pod to terminating and reuse that node.  
@@ -234,24 +240,30 @@ See [Jobs create replacement Pods as soon as a Pod is marked for deletion](https
 
 As a cloud user, users would want to guarantee that the number of pods that are running is exactly the amount that they specify.  
 Terminating pods do not relinguish resources so scarce compute resource are still scheduled to those pods.
+
+#### Story 3
+
+The use case in Kueue is that we want to be able to track how many pods are still terminating, regardless of whether the user wants to control the amount of running pods.  Kueue wants to track the number of pods using resources and terminating pods still utilize resources.  Without having a way to track terminating pods, it is not possible to know if a terminating pod is still using resources.
+
 See [Kueue: Account for terminating pods when doing preemption](https://github.com/kubernetes-sigs/kueue/issues/510) for an example of this.
 
 ### Notes/Constraints/Caveats (Optional)
 
-A focus of this KEP is for nonprogramatic deletion (ie kubelet eviction, preemption, etc) so we want to mention some other cases where the job controller can start deletion.
+A focus of this KEP is for accounting for deletion via disruptions (ie kubelet eviction, preemption, etc) so we want to mention some other cases where the job controller can start deletion.
 
 1) A job is over the `activeDeadlineSeconds` so the child pods are deleted.  
-2) With `PodFailurePolicy` active and `FailJob` is set as the action, the children pods would be deleted.
+2) With `PodFailurePolicy` active and `FailJob` is set as the action, the pods that are still running would be deleted.
 
 ### Risks and Mitigations
 
-One area of contention is how this KEP will work with 3329-retriable-and-non-retriable-failures.  It is important to mention the subtleties here.  
+One area of contention is how this KEP will work with [3329-retriable-and-non-retriable-failures](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/3329-retriable-and-non-retriable-failures/README.md).  It is important to mention the subtleties here. 
+
 In 3329, there was a decision to make kubelet transition pods to failed before deleting them.  This is feature toggled guarded by `PodDisruptionCondition`.  
 This means that when this feature is turned on, the job controller can count pods as failed once they are fully terminated.  This means that the pod is still considered running, as opposed to failed.  So this pod would be considered active until it is fully terminated.  
 If `PodDisruptionCondition` is turned off then the job controller considers the pod as failed as soon as it is terminating (has a deletion timestamp), because there is no guarantee that the pod will transition to phase=Failed.
 This causes some problems in tracking for active versus failed because we have different behavior based on `PodDisruptionCondition`.  To migitate this, we decided to add a new field called `terminating`.  This will track terminating pods separately from active and failed.  
 
-Another issue is described here: https://github.com/kubernetes/enhancements/pull/3940#discussion_r1180777509.  
+Another issue is described [here](https://github.com/kubernetes/enhancements/pull/3940#discussion_r1180777509).
 If PodDisruptionConditions is disabled, a pod bound to a no-longer-existing node may be stuck in the Running phase. As a consequence, it will never be replaced, so the whole job will be stuck from making progress.  Due to the above issue, we can set phase=Failed when PodDisruptionConditions is enabled OR JobRecreatePodsWhenFailed is enabled. When JobRecreatePodsWhenFailed enabled, but PodDisruptionConditions disabled we would just set the phase, but without adding the condition.  We will need to modify the PodGC (gc_controller.go) in the case of `JobRecreatePodsFailed` being enabled while `PodDisruptionConditions` is disabled.  
 
 ## Design Details
@@ -301,14 +313,20 @@ We will allow only opt-in behavior for this feature so we will fall back to `Ter
 
 ### Implementation
 
-The Job Controller filters all pods and classifies the pods as active.  This list is used to verify that the expected number of active pods matches the reality.  
-
 As part of this KEP, we want to include pods that are also terminating (`DeletionTimestamp != nil`).  
-The field `Status.terminating` will include the number of terminating pods.  Once the pods are fully terminated, this field will be unset again because we will obtain the count of active and terminating pods and update the status.
+
+The following algorithm could be used:
+
+1) Count the number of pods that are active
+2) If `Failed` and feature is on, then we will count the number of terminating pods
+3) In `manageJobs` we will count expected jobs against the actual.  `numberOfPods = active + terminating`
+4) `numberOfPods` can be used to signal whether or not creation is needed
+
+The field `Status.terminating` will include the number of terminating pods.
 
 We will update the Status field in the same place as when we update the number of active jobs so it should not require any extra API calls.  
 
-In cases where pods are terminating outside of the job controller, we will look at the list of pods that a job has.  And we can classify them as terminating and add that to the status field.
+In cases caused by disruption, we will look at the list of pods that a job has.  And we can classify them as terminating and add that to the status field.
 
 ### Test Plan
 
@@ -337,7 +355,16 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 ##### Unit tests
 
 - `controller_utils`: `April 3rd 2023` - `56.6`
+  - Adding tests to help determine if pods are terminating.
 - `job`: `April 3rd 2023` - `90.4`
+   a) Verify that terminating pods are in fact counted in the status.
+   b) Recreate pods only once pod is fully terminated (ie `Failed`)
+   c) Verify existing behavior with `TerminatingOrFailed`
+   d) If feature is off verify existing behavior
+   e) Count terminating pods even if terminating Pod considered failed when `PodDisruptionConditions` is disabled
+   f) Count terminating pods even if terminating Pod not considered failed when PodDisruptionConditions is enabled
+- `gc_controller.go`: `April 3rd 2023` - `82.4`
+   a) Set `PodPhase` to `failed` when `JobRecreatePodsWhenFailed` true but `PodDisruptionConditions` is false
 
 ##### Integration tests
 
@@ -352,13 +379,29 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We will add the following integration test for the Job controller:
 
-JobRecreatePodsWhenFailed Feature Toggle On:
+Case with `JobRecreatePodsWhenFailed` on and `podsRecreateWhen: Failed`
 
   1) Job starts pods that takes a while to terminate
   2) Delete pods
-  3) Verify that pod creation only occurs once terminating pods are removed
+  3) Verify that `terminating` is tracked
+  4) Verify that pod creation only occurs once pod is fully terminated.
 
-We should test the above with the FeatureToggle off also.
+Case with `JobRecreatePodsWhenFailed` on and `podsRecreateWhen: TerminatingOrFailed`
+
+  1) Job starts pods that takes a while to terminate
+  2) Delete pods
+  3) Verify that `terminating` is tracked
+  4) Verify that pod creation only occurs once deletion happens.
+
+Case With `JobRecreatePodsWhenFailed` off
+
+  1) Job starts pods that takes a while to terminate
+  2) Delete pods
+  3) Verify that `terminating` is not tracked
+  4) Verify that pod creation only occurs once deletion happens.
+
+To cover cases with `PodDisruptionCondition` we really only need to worry about tracking terminating fields.  
+Tests will verify counting of terminating fields regardless of `PodDisruptionCondition` being on or off.  
 
 ##### e2e tests
 
@@ -391,9 +434,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### GA
 
 - Address reviews and bug reports from Beta users
-- Write a blog post about the feature
 - Graduate e2e tests as conformance tests
-- Lock the `JobRecreatePodsWhenFailed` feature-gate
+- Lock the `JobRecreatePodsWhenFailed` feature-gate to true
+
+#### GA + 2
+
 - Declare deprecation of the `JobRecreatePodsWhenFailed` feature-gate in documentation
 
 #### Deprecation
@@ -491,11 +536,11 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Terminating pods will no longer be tracked so terminating pods will be considered deleted and new pods will be created.
+Terminating pods will no longer be tracked so terminating pods will be considered deleted and new pods will be created without waiting.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. Unit tests will include the fields off/on and verify behavior.
+Yes. Unit tests will include the fields off/on and verify tracking of terminating pods.  
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -504,6 +549,9 @@ This section must be completed when targeting beta to a release.
 -->
 
 #### How can a rollout or rollback fail? Can it impact already running workloads?
+
+A rollback will essentially fallback to previous behavior.  In this case,
+it would be existing pods will now be created as soon as they are terminating.  
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -532,6 +580,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 #### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
+No.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
@@ -555,12 +604,10 @@ logs or events for this purpose.
 
 #### How can someone using this feature know that it is working for their instance?
 
-If a user terminates pods that are controlled by a deployment/job, then we should wait
+If a user terminates pods that are controlled by a job, then we should wait
 until the existing pods are terminated before starting new ones.
 
-When feature is turned on, we will also include a `terminating` field in the Job Status.
-
-We will add e2e test that determine this.
+When feature is turned on, we will also include a `terminating` field in the Job Status if there are any terminating pods.
 
 #### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -587,8 +634,7 @@ NA
 
 ### Dependencies
 
-This feature is closely related to the 3329-retriable-and-nonretriable-failures but not sure if that is considered a dependency.
-
+In Section
 #### Does this feature depend on any specific services running in the cluster?
 
 No
@@ -604,9 +650,7 @@ No
 
 #### Will enabling / using this feature result in introducing new API types?
 
-We add `RecreatePodsWhen` to `JobSpec`.  This is a enum of two values.
-
-We add `terminating` to `JobStatus`. This is a pointer to type `int32`.
+No
 
 #### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -626,6 +670,8 @@ We are also added a status field for tracking terminating pods.
 
 #### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
+Yes. If users enable this feature, jobs will wait for terminating pods to be fully deleted before starting new pods.  
+This is an opt-in feature and will only be enabled if users want this behavior.
 <!--
 Look at the [existing SLIs/SLOs].
 
@@ -684,7 +730,7 @@ No change from existing behavior of the Job controller.
 
 ## Implementation History
 
-- Initial KEP
+- 2023-05-19: Initial KEP
 
 ## Drawbacks
 
