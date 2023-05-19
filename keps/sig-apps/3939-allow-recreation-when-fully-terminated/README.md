@@ -461,7 +461,6 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### GA
 
 - Address reviews and bug reports from Beta users
-- Graduate e2e tests as conformance tests
 - Lock the `JobRecreatePodsWhenFailed` feature-gate to true
 
 #### GA + 2
