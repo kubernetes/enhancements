@@ -426,6 +426,8 @@ for jobs with multiple sizes.
 
 #### Deprecation
 
+All of these have been completed.  
+
 In 1.26:
 
 - Declare deprecation of annotation `batch.kubernetes.io/job-completion` in
@@ -437,9 +439,14 @@ In 1.27:
 - Remove legacy tracking code.
 - Ignore annotation `batch.kubernetes.io/job-completion` and stop adding it.
   Mark the annotation as legacy in the documentation.
+  - Complete via https://github.com/kubernetes/kubernetes/pull/114647
 
 In 1.28:
+
 - Remove feature gate `JobTrackingWithFinalizers`.
+  - https://github.com/kubernetes/kubernetes/pull/117585
+- Remove api code that validates and sets annotations.
+  - https://github.com/kubernetes/kubernetes/pull/117633
 
 ### Upgrade / Downgrade Strategy
 
@@ -701,6 +708,7 @@ Yes, see [Deprecation](#deprecation) for the full plan.
 - 2021-10-14: Added details for Upgrade->Downgrade->Upgrade manual test.
 - 2021-10-21: Add link to testgrid.
 - 2022-08-29: Add GA and deprecation notes.
+- 2023-05-04: Remove validation/defaulting logic from api code
 
 ## Drawbacks
 
