@@ -310,7 +310,7 @@ To prevent server-side request forgeries we will not give control over informati
 
 #### StorageVersion enhancement needed
 
-StorageVersion API currently tells us whether a particular StorageVersion can be read from etcd by the listed apiserver. We will enhance this API to also include apiserver ID of the server that can serve this StoageVersion.
+StorageVersion API currently tells us whether a particular StorageVersion can be read from etcd by the listed apiserver. We will enhance this API to also include apiserver ID of the server that can serve this StorageVersion.
 
 #### Identifying destination apiserver's network location
 
