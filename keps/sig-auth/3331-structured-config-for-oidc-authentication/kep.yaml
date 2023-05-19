@@ -3,12 +3,12 @@ title: Structured authentication config
 kep-number: "3331"
 authors:
 - "@nabokihms"
+- "@enj"
+- "@aramase"
 owning-sig: sig-auth
 reviewers:
-- "@enj"
 - "@liggitt"
 approvers:
-- "@deads2k"
 - "@liggitt"
 creation-date: "2022-06-02"
 status: provisional
