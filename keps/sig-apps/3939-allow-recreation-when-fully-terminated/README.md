@@ -660,7 +660,9 @@ NA
 
 ### Dependencies
 
-In [Risks and Mitigations](#risks-and-mitigations) we discuss the interaction with [3329-retriable-and-non-retriable-failures](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/3329-retriable-and-non-retriable-failures/README.md).  We will have to guard against cases if `PodFailurePolicy` is off while this feature is on.  `PodFailurePolicy` is in beta and is enabled by default but we should guard against cases where `PodDisruptionCondition` is turned off.
+In [Risks and Mitigations](#risks-and-mitigations) we discuss the interaction with [3329-retriable-and-non-retriable-failures](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/3329-retriable-and-non-retriable-failures/README.md).  
+We will have to guard against cases if `PodFailurePolicy` is off while this feature is on.  
+`PodFailurePolicy` is in beta and is enabled by default but we should guard against cases where `PodDisruptionCondition` is turned off.
 
 #### Does this feature depend on any specific services running in the cluster?
 
