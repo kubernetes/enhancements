@@ -274,7 +274,7 @@ metadata:
 Let's say all Pods on each tenant get `tenant` label via a controller or a manifest management tool like Helm. 
 And, the cluster admin now wants to achieve exclusive 1:1 tenant to domain placement.
 
-By applying the following affinity grobally with the mutating webhook, the cluster admin can ensure that the Pods with the same domain will land on the same domain, and Pods with other `tenant` won't land on the same domain. 
+By applying the following affinity globally using a mutating webhook, the cluster admin can ensure that the Pods from the same tenant will land on the same domain exclusively, meaning Pods from other `tenants` won't land on the same domain. 
 
 ```yaml
 affinity:
