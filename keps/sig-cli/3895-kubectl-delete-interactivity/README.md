@@ -134,8 +134,8 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -144,9 +144,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -178,13 +178,8 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-kubectl delete is disruptive and irreversible command and should be used cautiously. However, there
-are various circumstances such as inaccurate usage, mistyping, hasty tab completions, etc. that 
-this command can position the cluster to a state where it is not intended to be. Due to the backwards
-compatibility concerns, asking confirmation to user before proceeding to genuine delete as default is out of the table.
-
-On the other hand, we need to provide a way to mitigate accidental deletes to users and this KEP
-proposes a new flag, namely interactive(-i) that will ask confirmation to user to proceed deletion.
+Introduce interactive mode for `kubectl delete` command, to allow users protect cluster
+administrators from irrevocable removal of critical resources.
 
 ## Motivation
 
@@ -197,6 +192,14 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+kubectl delete is disruptive and irreversible command and should be used cautiously. However, there
+are various circumstances such as inaccurate usage, mistyping, hasty tab completions, etc. that
+this command can position the cluster to a state where it is not intended to be. Due to the backwards
+compatibility concerns, seeking confirmation from a user before proceeding to genuinely delete as default, is out of the table.
+
+On the other hand, we need to provide a way to mitigate accidental deletes to users and this KEP
+proposes a new flag, namely interactive(-i) that will ask confirmation from a user to proceed with deletion.
+
 ### Goals
 
 - Introduce interactive(-i) flag to be used for asking confirmation to user to proceed actual delete operation or not.
@@ -208,7 +211,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 - Smart solutions on client side to detect deletion is accidental or not
-- deletion protection mechanism on server side
+- Deletion protection mechanism on server side
 
 ## Proposal
 
@@ -220,7 +223,7 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-User passes `interactive` flag to kubectl delete command and all the resources planned to be deleted will be 
+When a user passes `--interactive`/`-i` flag to `kubectl delete` command, all the resources planned to be deleted will be 
 shown to the user as preview. Command continues deletion process if user confirms by typing `y`. If user types `n` or
 any other value other than `y`, process will be cancelled and command returns a message with zero exit code.
 
@@ -244,19 +247,19 @@ deployment.apps "dockerd2" deleted
 For the alpha phase, this flag will be hidden behind `KUBECTL_INTERACTIVE_DELETE` environment variable and
 can only be use when this `KUBECTL_INTERACTIVE_DELETE=true` environment variable is exported.
 
-### Technical Implementation
+### Implementation Details/Design
 
-One of major advantage of this feature is the ability of showing resources as preview before deletion. That means
-we need to traverse all resources twice. First one is for confirmation and the other one is for deletion.
+One of major advantage of this feature is the ability to preview all resources before deletion. That means
+we need to traverse all resources twice. First one is for display, and the other one is for deletion.
 However, that comes along with a technical limitation that `Visit` function does not support traversing twice
 as stated in [here](https://github.com/kubernetes/kubernetes/blob/6d7a9048b67d81e57923892650a23636f1afba42/staging/src/k8s.io/cli-runtime/pkg/resource/result.go#L91-L94).
-
-But we also can not use `Infos` function as suggested in the link above, because that unties the builder configuration
+But we also cannot use `Infos` function as suggested in the link above, because that unties the builder configuration
 and deletion logic.
 
-In order to overcome this limitation, this KEP will use separate builder to show resources as preview. Current builder
+In order to overcome this limitation, this feature will use separate builder to show resources as preview. Current builder
 will continue being used as deletion traverse, other builder will be used for preview. Builders must match in terms of 
 configurations to prevent such discrepancies and required tests will be added to assure that configurations are same or not.
+Moreover, deletion will only be performed to the resources whose `uidMap` match the ones in the preview list.
 
 ### User Stories (Optional)
 
@@ -267,12 +270,12 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-As a user, I want to have an option via a flag to list me all the resources being deleted as preview and
-proceed to genuine deletion only if I confirm it.
+As a user, I want to have an option via a flag to list all the resources being deleted as preview and
+proceed to actual deletion only after explicit confirmation.
 
 #### Story 1
 As filed in this issue https://github.com/kubernetes/kubectl/issues/1365;
-user tries to delete all persistentvolumeclaims in a namespace by intending to type;
+user tries to delete all persistentvolumeclaims in a namespace;
 ```sh
 $ kubectl delete --all pvc -n yournamespace
 ```
