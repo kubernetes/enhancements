@@ -298,7 +298,7 @@ resources cannot be met, but that the podgroup cannot meet `all-or-nothing` of
 gang-scheduling. But CA will provision machines for all pods. For this part of pods in pod 
 group, we will add different failure message in condition.reason. Cluster Autoscaler check the
 failure reasons in pod.status.condition to decide whether it's possible to resolve the failure 
-by provisioning new machines. Details are described in the following.
+by provisioning new machines. Details are described below.
 
 - Short-time resource deadlock in the memory of kube-scheduler: base on the alpha version 
 implementation of pod group scheduling, it may happen that two pod groups reserve some
@@ -407,7 +407,7 @@ type PodGroupStatus struct {
 // PodGroupCondition describes the state of a pod group 
 // at a certain point.
 type PodGroupCondition struct {
-	// Type of deployment condition.
+	// Type of podGroup condition.
 	Type PodGroupConditionType
 
 	// Status of the condition, one of True, False, Unknown.
