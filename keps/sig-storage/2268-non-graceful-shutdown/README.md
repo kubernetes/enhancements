@@ -1,6 +1,4 @@
-# Non graceful node shutdown
-
-This includes the Summary and Motivation sections.
+# KEP-2268: Non graceful node shutdown
 
 ## Table of Contents
 
@@ -41,20 +39,20 @@ This includes the Summary and Motivation sections.
 ## Release Signoff Checklist
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation - e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation - e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 **Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those
 approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
@@ -146,7 +144,7 @@ To mitigate this we plan to have a high test coverage and to introduce this enha
 
 ### Test Plan
 
-[x] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -386,6 +384,23 @@ logs or events for this purpose.
   The usage of this feature requires the manual step of applying a taint
   so the operator should be the one applying it.
 
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+- [X] API .status
+  If it works, pods in the stateful workload should be re-scheduled to another
+  running node. `Phase` in Pod `Status` should be `Running` for a new Pod
+  on the other running node.
+  If not, check the pod status to see why it does not come up.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -393,11 +408,11 @@ Pick one more of these and delete the rest.
 -->
   - [X] Metrics
     - Metric name: 
-      - We can add new metrics `deleting_pods_total`, `deleting_pods_error_total`
+      - We added new metrics `deleting_pods_total`, `deleting_pods_error_total`
       in Pod GC Controller.
       For Attach Detach Controller, there's already a metric:
-      attachdetach_controller_forced_detaches
-      It is also useful to know how many nodes have taints. We can explore with [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) which generates metrics about the state of the objects.
+      `attachdetach_controller_forced_detaches`
+      There is also a `kube_node_spec_taint` in [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/node-metrics.md) that is a metric for the taint of a Kubernetes cluster node.
     - [Optional] Aggregation method:
     - Components exposing the metric:
   - [X] Other (treat as last resort)
@@ -490,6 +505,13 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
+Without this feature, a user can forcefully delete the pods after they are
+in terminating state and new pods will be re-scheduled to another running
+node after 6 minutes. With this feature, new pods will be re-scheduled to
+another running node without the 6 minute wait after the user has applied
+the `out-of-service` taint. It speeds up the failover but should not
+affect the scalability.
+
 ###### Will enabling / using this feature result in any new API calls?
 
 <!--
@@ -559,6 +581,19 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
   No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+No.
 
 ### Troubleshooting
 
@@ -648,6 +683,8 @@ For each of them, fill in the following information by copying the below templat
 - 2020-11-10: KEP updated to handle part of the node partitioning
 - 2021-08-26: The scope of the KEP is narrowed down to handle a real node shutdown. Test plan is updated. Node partitioning will be handled in the future and it can be built on top of this design.
 - 2021-12-03: Removed `SafeDetach` flag. Requires a user to add the `out-of-service` taint when he/she knows the node is shutdown.
+- Kubernetes v1.24: moved to alpha.
+- Kubernete v1.26: moved to beta.
 
 ## Alternatives
 
