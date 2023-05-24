@@ -216,7 +216,7 @@ N/A
 
 - [ ] Events
   - Event Reason:
-- [X] API .status
+- [X] API .metadata
   - Condition name:
   - Other field:
     - `.metadata.annotations['batch.kubernetes.io/cronjob-scheduled-timestamp']`
