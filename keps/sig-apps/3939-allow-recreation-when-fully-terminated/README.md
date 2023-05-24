@@ -261,7 +261,6 @@ One area of contention is how this KEP will work with [3329-retriable-and-non-re
 In 3329, there was a decision to make kubelet transition pods to failed before deleting them.  This is feature toggled guarded by `PodDisruptionCondition`.  
 This means that when this feature is turned on, the job controller can count pods as failed once they are fully terminated.  This means that the pod is still considered running, as opposed to failed.  So this pod would be considered active until it is fully terminated.  
 If `PodDisruptionCondition` is turned off then the job controller considers the pod as failed as soon as it is terminating (has a deletion timestamp), because there is no guarantee that the pod will transition to phase=Failed.
-This causes some problems in tracking for active versus failed because we have different behavior based on `PodDisruptionCondition`.  To migitate this, we decided to add a new field called `terminating`.  This will track terminating pods separately from active and failed.  
 
 Another issue is described [here](https://github.com/kubernetes/enhancements/pull/3940#discussion_r1180777509).
 If PodDisruptionConditions is disabled, a pod bound to a no-longer-existing node may be stuck in the Running phase. As a consequence, it will never be replaced, so the whole job will be stuck from making progress.  Due to the above issue, we can set phase=Failed when PodDisruptionConditions is enabled OR JobRecreatePodsWhenFailed is enabled. When JobRecreatePodsWhenFailed enabled, but PodDisruptionConditions disabled we would just set the phase, but without adding the condition.  We will need to modify the PodGC (gc_controller.go) in the case of `JobRecreatePodsFailed` being enabled while `PodDisruptionConditions` is disabled.  
@@ -590,6 +589,7 @@ will rollout across nodes.
 -->
 
 #### What specific metrics should inform a rollback?
+
 
 <!--
 What signals should users be paying attention to when the feature is young
