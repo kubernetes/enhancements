@@ -77,7 +77,7 @@ Currently, there is no supported way to get the original/expected initial schedu
 
 At a high level, the proposal is to modify the CronJob controller to set the job creation timestamp as a job annotation. The details of this are outlined in the Design Details section below.
 
-Job creation timestamp annotation: `batch.kubernetes.io/job-creation-timestamp`
+Job creation timestamp annotation: `batch.kubernetes.io/cronjob-scheduled-timestamp`
 
 ### User Stories (Optional)
 
@@ -104,7 +104,7 @@ After considering these trade-offs, we propose to move forward with Option 1 for
 
 ## Design Details
 
-The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/7024beeeeb1f2e4cde93805a137cd7ad92fec466/pkg/controller/cronjob/utils.go#L188) function, to add the job creation timestamp as the job annotation `batch.kubernetes.io/job-creation-timestamp`. The creation timestamp is represented in `RFC3339` form and is in `UTC`.
+The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/7024beeeeb1f2e4cde93805a137cd7ad92fec466/pkg/controller/cronjob/utils.go#L188) function, to add the job creation timestamp as the job annotation `batch.kubernetes.io/cronjob-scheduled-timestamp`. The creation timestamp is represented in `RFC3339` form and is in `UTC`.
 
 ### Test Plan
 
@@ -211,7 +211,7 @@ N/A
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- Check if CronJobs have the annotation `batch.kubernetes.io/job-creation-timestamp`.
+- Check if CronJobs have the annotation `batch.kubernetes.io/cronjob-scheduled-timestamp`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -220,7 +220,7 @@ N/A
 - [X] API .status
   - Condition name:
   - Other field:
-    - `.metadata.annotations['batch.kubernetes.io/job-creation-timestamp']`
+    - `.metadata.annotations['batch.kubernetes.io/cronjob-scheduled-timestamp']`
 - [ ] Other (treat as last resort)
   - Details:
 
