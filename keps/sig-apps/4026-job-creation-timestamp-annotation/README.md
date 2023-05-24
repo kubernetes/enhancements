@@ -299,4 +299,10 @@ N/A
 
 ## Alternatives
 
+- Add label instead of annotation
+  - Labels are unnecessary as we need to pass data that won't be used with search or satisfy certain conditions.
+
+- Add a status field
+  - The object already has the `CreationTimestamp` field, but it will get overridden with the time the CronJob will start. The point of the new annotation is to pass the original/expected scheduled timestamp information.
+
 ## Infrastructure Needed (Optional)
