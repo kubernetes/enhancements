@@ -590,7 +590,8 @@ will rollout across nodes.
 
 #### What specific metrics should inform a rollback?
 
-
+- job_syncs_total
+  - If the number of syncs increases it could mean that we have an increased number of failures.
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
@@ -621,6 +622,8 @@ previous answers based on experience in the field.
 -->
 
 #### How can an operator determine if the feature is in use by workloads?
+
+During pod terminations, an operator can see that the terminating field is being set.
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
