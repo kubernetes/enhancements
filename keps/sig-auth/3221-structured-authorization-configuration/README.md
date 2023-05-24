@@ -124,7 +124,7 @@ authorizers:
         kubeConfigFile: /kube-system-authz-webhook.yaml
       matchConditions:
       - expression: |
-        request.resourceAttributes.namespace == 'kube-system'
+        has(request.resourceAttributes) && (request.resourceAttributes.namespace == 'kube-system')
       - expression: |
         !('system:serviceaccounts:kube-system' in request.user.groups)
   - type: Node
@@ -214,6 +214,15 @@ path to a file on the disk. Setting both `--authorization-config-file` and
 configuring an authorization webhook will not be allowed. If the user does that,
 there will be an error and API Server would exit right away.
 
+The configuration would be validated at startup and the API server will fail to
+start if the configuration is invalid.
+
+The API server will periodically reload the configuration. If it changes, the
+new configuration will be used for the Authorizer chain. If the new configuration
+is invalid, the last known valid configuration will be used. Logging and metrics
+would be used to signal success/failure of a config reload so that cluster admins
+can have observability over this process.
+
 The proposed structure is illustrated below:
 
 > The sample configuration describes all the fields, their defaults and possible
@@ -290,7 +299,7 @@ authorizers:
       # in the version specified by subjectAccessReviewVersion in the request variable.
       # Documentation on CEL: https://kubernetes.io/docs/reference/using-api/cel/
       - expression: |
-        request.resourceAttributes.namespace == 'kube-system'
+        has(request.resourceAttributes) && (request.resourceAttributes.namespace == 'kube-system')
       - expression: |
         !('system:serviceaccounts:kube-system' in request.user.groups)
   - type: Node
@@ -372,6 +381,9 @@ Labels {along with possible values}:
 - `code` {4xx, 5xx}
 - `decision` {Deny, NoOpinion}
 
+5. `apiserver_authorization_step_configuration_reload_failure_count`
+
+This metric would track the number of times the configuration has been reloaded.
 
 ### Test Plan
 
