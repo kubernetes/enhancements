@@ -210,8 +210,9 @@ will not be able to start. This can be mitigated by fixing the malformed values.
 
 We would like to introduce a structured file format which allows authorization
 to be configured using a flag (`--authorization-config-file`) which accepts a
-path to a file on the disk. This feature can be enabled or disabled by the
-explicit feature flag `AuthorizationConfigFromFile`.
+path to a file on the disk. Setting both `--authorization-config-file` and
+configuring an authorization webhook will not be allowed. If the user does that,
+there will be an error and API Server would exit right away.
 
 The proposed structure is illustrated below:
 
@@ -321,15 +322,14 @@ flag is not supplied. While configuring authorization modes using the file confi
 the version supported by a webhook has to be mentioned using a required field
 `subjectAccessReviewVersion`.
 
-The code path for enabling the above will only be triggered if the feature flag will
-be enabled until the time the feature flag is removed and configuring authorizer
-through a file becomes GA.
-
 The user can define a CEL expression to determine whether a request needs to dispatched
 to the authz webhook for which the expression has been defined. The user would have access
 to a `request` variable containing a `SubjectAccessReview` object in the version specified
 by `subjectAccessReviewVersion`.
 
+The code path for enabling the above will only be triggered if the feature flag will
+be enabled until the time the feature flag is removed and configuring authorizer
+through a file becomes GA.
 
 ### Monitoring
 
@@ -340,6 +340,7 @@ We will add the following 4 metrics:
 This will be incremented on round-trip of an authorizer. It will track total
 authorization decision invocations across the following labels.
 
+Labels {along with possible values}:
 - `mode` {RBAC, Node, Webhook}
 - `decision` {Allow, Deny, NoOpinion}
 
@@ -352,12 +353,12 @@ total invocation counts across the following labels.
 - `code` {2xx, 4xx, 5xx}
 - `decision` {Allow, Deny, NoOpinion}
 
-3. `apiserver_authorization_step_webhook_duration_seconds`
+3. `apiserver_authorization_step_webhook_duration_total_seconds`
 
-This metric will track the average latency
+This metric will track the total round trip time of the requests to the webhook.
 
 Labels {along with possible values}:
-- `server`
+- `name`
 - `code` {2xx, 4xx, 5xx}
 - `decision` {Allow, Deny, NoOpinion}
 
@@ -367,7 +368,7 @@ This metric will be incremented when a webhook returns a 4xx or 5xx (erroneous) 
 
 Labels {along with possible values}:
 
-- server
+- `name`
 - `code` {4xx, 5xx}
 - `decision` {Deny, NoOpinion}
 
