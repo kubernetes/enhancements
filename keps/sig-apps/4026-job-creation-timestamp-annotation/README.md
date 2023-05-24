@@ -85,8 +85,6 @@ Job creation timestamp annotation: `batch.kubernetes.io/job-creation-timestamp`
 
 As a user, I would like to get the job's creation timestamp that this job was expected to be running.
 
-#### Story 2
-
 ### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
@@ -106,7 +104,7 @@ After considering these trade-offs, we propose to move forward with Option 1 for
 
 ## Design Details
 
-The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/cronjob/utils.go#L188) function, to add the job creation timestamp as the job annotation `batch.kubernetes.io/job-creation-timestamp`. The creation timestamp is represented in `RFC3339` form and is in `UTC`.
+The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/7024beeeeb1f2e4cde93805a137cd7ad92fec466/pkg/controller/cronjob/utils.go#L188) function, to add the job creation timestamp as the job annotation `batch.kubernetes.io/job-creation-timestamp`. The creation timestamp is represented in `RFC3339` form and is in `UTC`.
 
 ### Test Plan
 
