@@ -212,7 +212,11 @@ We would like to introduce a structured file format which allows authorization
 to be configured using a flag (`--authorization-config-file`) which accepts a
 path to a file on the disk. This feature can be enabled or disabled by the
 explicit feature flag `AuthorizationConfigFromFile`.
+
 The proposed structure is illustrated below:
+
+> The sample configuration describes all the fields, their defaults and possible
+values.
 
 ```yaml
 apiVersion: apiserver.config.k8s.io/v1alpha1
@@ -312,26 +316,20 @@ The keys `kubeConfigFile`, `authorizedTTL`, `unauthorizedTTL` and
 `--authorization-webhook-cache-unauthorized-ttl` and `--authorization-webhook-version`
 respectively.
 
-The `failurePolicy` will be a required field which allow users to specify whether
-or not request is denied if the webhook errors out or is unreachable. This allows
-`SubjectAccessReviews` to be more definitive.
-
 Today, the `SubjectAccessReview` version defaults to `v1beta1` if the corresponding
 flag is not supplied. While configuring authorization modes using the file config,
 the version supported by a webhook has to be mentioned using a required field
 `subjectAccessReviewVersion`.
-
-The new structure introduces a configurable timeout (with appropriate defaults) that
-allows administrators to define a timeout for webhooks in case they are unreachable.
 
 The code path for enabling the above will only be triggered if the feature flag will
 be enabled until the time the feature flag is removed and configuring authorizer
 through a file becomes GA.
 
 The user can define a CEL expression to determine whether a request needs to dispatched
-to the authz webhook for which the expression has been defined.
+to the authz webhook for which the expression has been defined. The user would have access
+to a `request` variable containing a `SubjectAccessReview` object in the version specified
+by `subjectAccessReviewVersion`.
 
-> TODO: More details on the implementation will be charted once the goals, non-goal and proposal is approved.
 
 ### Monitoring
 
