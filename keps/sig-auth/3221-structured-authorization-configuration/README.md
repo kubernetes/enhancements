@@ -350,8 +350,11 @@ This will be incremented on round-trip of an authorizer. It will track total
 authorization decision invocations across the following labels.
 
 Labels {along with possible values}:
-- `mode` {RBAC, Node, Webhook}
+- `mode` {<authorizer_name>}
 - `decision` {Allow, Deny, NoOpinion}
+
+**Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook{,_<name>}`.
+If there is only one webhook, there would be no `_<name>` suffix.
 
 2. `apiserver_authorization_step_webhook_invocations_total`
 
