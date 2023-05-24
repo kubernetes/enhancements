@@ -243,12 +243,14 @@ authorizers:
       # Required, with no default.
       timeout: 3s
       # The API version of the authorization.k8s.io SubjectAccessReview to
-      # send to and expect from the # webhook.
+      # send to and expect from the webhook.
       # Same as setting `--authorization-webhook-version` flag
       # Required, with no default
+      # Valid values: v1beta1, v1
       subjectAccessReviewVersion: v1
       # Controls the authorization decision when a webhook request fails to
-      # complete or returns a malformed response.
+      # complete or returns a malformed response or errors evaluating
+      # matchConditions.
       # Valid values:
       #   - NoOpinion: continue to subsequent authorizers to see if one of
       #     them allows the request
@@ -265,8 +267,23 @@ authorizers:
         #   allowed for kube-apiserver.
         type: KubeConfig
         # Path to KubeConfigFile for connection info
+        # Required, if connectionInfo.Type is KubeConfig
         kubeConfigFile: /kube-system-authz-webhook.yaml
+      	# matchConditions is a list of conditions that must be met for a request to be sent to this
+        # webhook. An empty list of matchConditions matches all requests.
+        # There are a maximum of 64 match conditions allowed.
+        #
+        # The exact matching logic is (in order):
+        #   1. If ANY matchCondition evaluates to FALSE, the webhook is skipped.
+        #   2. If ALL matchConditions evaluate to TRUE, the webhook is called.
+        #   3. If any matchCondition evaluates to an error (but none are FALSE):
+        #      - If failurePolicy=Deny, reject the request
+        #      - If failurePolicy=NoOpinion, the error is ignored and the webhook is skipped
       matchConditions:
+      # expression represents the expression which will be evaluated by CEL. Must evaluate to bool.
+      # CEL expressions have access to the contents of the SubjectAccessReview
+      # in the version specified by subjectAccessReviewVersion in the request variable.
+      # Documentation on CEL: https://kubernetes.io/docs/reference/using-api/cel/
       - expression: |
         request.resourceAttributes.namespace == 'kube-system'
       - expression: |

@@ -8,10 +8,10 @@ status: implementable
 creation-date: 2022-06-21
 reviewers:
   - "@deads2k"
-  - "@enj"
+  - "@liggitt"
 approvers:
   - "@deads2k"
-  - "@enj"
+  - "@liggitt"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/101762
 stage: alpha
