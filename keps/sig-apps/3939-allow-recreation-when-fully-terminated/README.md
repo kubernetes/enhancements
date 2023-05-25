@@ -625,6 +625,11 @@ previous answers based on experience in the field.
 
 During pod terminations, an operator can see that the terminating field is being set.
 
+We will use a new metric:
+
+- `job_pod_creation` (new) the `action` label will mention what triggers creation (`new`, `recreateTerminatingOrFailed`, `recreateTerminated`))
+This can be used to get the number of pods that are being recreated due to `recreateTerminated`.  Otherwise we would expect to see `new` or `recreateTerminatingOrFailed` as the normal values.  
+
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -657,7 +662,11 @@ question.
 
 #### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-NA
+- [x] Metrics
+  - Metric name:
+    - `job_syncs_total` (existing): can be used to see how much the
+feature enablement causes the number of syncs to increase.
+  - Components exposing the metric: kube-controller-manager
 
 #### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -673,8 +682,8 @@ No
 
 ### Scalability
 
-Generally, enabling this will slow down job creation if pods take a long time to terminate.  We would wait
-to create new pods until the existing ones are terminated
+Generally, enabling this will slow down pod creation if pods take a long time to terminate.  We would wait
+to create new pods until the existing ones are terminated.
 
 #### Will enabling / using this feature result in any new API calls?
 
@@ -702,8 +711,9 @@ We are also added a status field for tracking terminating pods.
 
 #### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Yes. If users enable this feature, jobs will wait for terminating pods to be fully deleted before starting new pods.  
-This is an opt-in feature and will only be enabled if users want this behavior.
+No, SLI/SLO do not include time taking to create new pods if existing ones are terminated.  
+There is an existing one on pod creation but this will not impact that.  
+
 <!--
 Look at the [existing SLIs/SLOs].
 
