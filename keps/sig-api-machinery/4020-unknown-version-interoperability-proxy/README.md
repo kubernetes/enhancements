@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3903: Unknown Version Interoperability Proxy
+# KEP-4020: Unknown Version Interoperability Proxy
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -157,8 +157,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 When a cluster has multiple apiservers at mixed versions (such as during an
-upgrade or downgrade), not every apiserver can serve every resource at every
-version.
+upgrade/downgrade or when runtime-config changes and a rollout happens), not 
+every apiserver can serve every resource at every version.
 
 To fix this, we will add a filter to the handler chain in the aggregator which
 proxies clients to an apiserver that is capable of handling their request.
@@ -291,7 +291,7 @@ To prevent server-side request forgeries we will not give control over informati
 ### Aggregation Layer
 
 1. A new filter will be added to the [handler chain] of the aggregation layer. This filter will maintain an internal map with the key being the group-version-resource and the value being a list of server IDs of apiservers that are capable of serving that group-version-resource
-  1. This internal map is populated using an informer for StorageVersion objects. An event handler will be added for this informer that will get the apiserver ID of the requested group-version-resource and update the internal map accordingly
+   1. This internal map is populated using an informer for StorageVersion objects. An event handler will be added for this informer that will get the apiserver ID of the requested group-version-resource and update the internal map accordingly
 
 2. This filter will pass on the request to the next handler in the local aggregator chain, if:
    1. It is a non resource request
@@ -314,17 +314,29 @@ StorageVersion API currently tells us whether a particular StorageVersion can be
 
 #### Identifying destination apiserver's network location
 
-* TODO: We need to find a place to store and retrieve the destination apiserver's host and port information given the server's ID.
-We do not want to store this information in
+We will use the already existing [masterlease reconciler](https://github.com/kubernetes/kubernetes/blob/master/pkg/controlplane/reconcilers/lease.go) to store/retrieve the IPs and ports for kube-apiservers. Major reasons to use this are
 
-    * StorageVersion : because we do not want to expose the network identity of the apiservers in this API that can be listed in multiple places where it may be unnecessary/redundant to do so
-    * Endpoint reconciler lease : because the IP present here could be that of a load balancer for the apiservers, but we need to know the definite address of the identified destination apiserver
+1. masterlease reconciler already stores kube-apiserver IPs currently
+2. this information is not exposed to users in an API that can be used maliciously
+3. existing code to handle lifecycle of the masterleases is convenient
+
+How the masterlease reconciler will be used is as follows:
+
+1. We will use the already existing IP in Endpoints.Subsets.Addresses of the masterlease by default
+
+2. For users with network configurations that would not allow Endpoints.Subsets.Addresses to be reachable from a kube-apiserver, we will introduce a new --advertise-peer-ip flag to kube-apiserver. We will store its value as an annotation on the masterlease and use this to route the request to the right destination server
+
+3. We will also expose the IP and port information of the kube-apiservers as annotations in APIserver identity lease object for visibility/debugging purposes
+
+4. We will also use an egress dialer for network connections made to peer kube-apiservers. For this, will create a new type for the network context to be used for peer kube-apiserver connections ([xref](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/apis/apiserver/types.go#L55-L71))
 
 #### Proxy transport between apiservers and authn
 
 For the mTLS between source and destination apiservers, we will do the following
 
-1. For server authentication by the client (source apiserver) : the client needs to validate the server certs (presented by the destination apiserver), for which it needs to know the CA bundle of the authority that signed those certs. We will introduce a new flag --peer-ca-file that must be passed to the kube-apiserver to verify the other kube-apiserver's server certs
+1. For server authentication by the client (source apiserver) : the client needs to validate the server certs (presented by the destination apiserver), for which it will 
+   1. look at the CA bundle of the authority that signed those certs. We will introduce a new flag --peer-ca-file that must be passed to the kube-apiserver to verify the other kube-apiserver's server certs 
+   2. look at the ServerName `kubernetes.default.svc` for SNI to verify server certs against
 
 2. For client authentication by the server (destination apiserver) : destination apiserver will check the source apiserver certs to determine that the proxy request is from an authenticated client. The destination apiserver will use requestheader authentication (and NOT client cert authentication) for this using the kube-aggregator proxy client cert/key and the --requestheader-client-ca-file passed to the apiserver upon bootstrap
 
@@ -344,7 +356,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -388,7 +400,11 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+In the first alpha phase, the integration tests are expected to be added for:
+
+- The behavior with feature gate turned on/off
+- Validation where an apiserver tries to serve a request that has already been proxied once
+- Validation where an apiserver tries to call a peer but actually calls itself (to simulate a networking configuration where this happens on accident), and the test fails
 
 ##### e2e tests
 
@@ -402,7 +418,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+We will test the feature mostly in integration test and unit test. We may add e2e test for spot check of the feature presence.
 
 ### Graduation Criteria
 
@@ -410,6 +426,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Proxying implemented (behind feature flag)
 - mTLS or other secure system used for proxying
+- Ensure proper tests are in place.
 
 #### Beta
 
@@ -495,6 +512,8 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+In alpha, no changes are required to maintain previous behavior. And the feature gate can be turned on to make use of the enhancement.
+
 ### Version Skew Strategy
 
 <!--
@@ -552,9 +571,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: UnknownVersionInteroperabilityProxy
+  - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -569,6 +588,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+Yes, requests for built-in resources at the time when a cluster is at mixed versions will be served with a default 503 error instead of a 404 error, if the request is unable to be served. 
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
@@ -582,7 +603,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, disabling the feature will result in requests for built-in resources in a cluster at mixed versions to be served with a default 404 error in the case when the request is unable to be served locally.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The request for built-in resources will be proxied to the apiserver capable of serving it, or else be served with 503 error.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -598,6 +623,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Unit test and integration test will be introduced in alpha implementation.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -617,12 +644,16 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+The proxy to remote apiserver can fail if there are network restrictions in place that do not allow an apiserver to talk to a remote apiserver. In this case, the request will fail with 503 error.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- apiserver_request_total metric that will tell us if there's a spike in the number of errors seen meaning the feature is not working as expected
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -632,11 +663,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade and rollback will be tested before the feature goes to Beta.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -655,6 +690,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The following metrics could be used to see if the feature is in use:
+- kubernetes_uvip_count
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -666,13 +704,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- Metrics like kubernetes_uvip_count can be used to check how many requests were proxied to remote apiserver
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -691,7 +723,6 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-This feature depends on the `StorageVersion` feature, that generates objects with a `storageVersion.status.serverStorageVersions[*].apiServerID` field which is used to find the destination apiserver's network location.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -710,6 +741,8 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+No. We are open to input.
+
 ### Dependencies
 
 <!--
@@ -718,7 +751,10 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No, but it does depend on the `StorageVersion` feature in kube-apiserver.
+No, but it does depend on 
+
+- the `StorageVersion` feature that generates objects with a `storageVersion.status.serverStorageVersions[*].apiServerID` field which is used to find the remote apiserver's network location.
+- `APIServerIdentity` feature in kube-apiserver that creates a lease object for APIServerIdentity which we will use to store the network location of the remote apiserver for visibility/debugging
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -762,6 +798,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -771,6 +809,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -778,6 +818,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -787,6 +829,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -811,6 +855,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+Requests will consume egress bandwidth for 2 apiservers when proxied. We can put a limit on this value if needed.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -822,6 +868,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -837,6 +885,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+If the API server/etcd is unavailable the request will fail with 503 error.
 
 ###### What are other known failure modes?
 
@@ -854,6 +904,9 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- The feature can be disabled by setting the feature-gate to false if the performance impact of it is not tolerable.
+- The peer-to-peer connection between API servers should be checked to ensure that the remote API servers are reachable from a given API server
 
 ## Implementation History
 
