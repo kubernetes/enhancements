@@ -22,7 +22,7 @@ approvers:
   - "@bowei - For networking/proxy portion of KEP"
 editor: "@calebamiles"
 creation-date: 2019-02-25
-last-updated: 2020-01-15
+last-updated: 2023-05-22
 status: implementable
 see-also:
   - "https://goo.gl/qiARUK - Network Proxy design proposal"
@@ -31,5 +31,5 @@ see-also:
 replaces:
 superseded-by:
 
-latest-milestone: "1.16"
-stage: "alpha"
+latest-milestone: "1.18"
+stage: "beta"
