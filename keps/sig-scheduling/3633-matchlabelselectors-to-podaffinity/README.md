@@ -246,7 +246,7 @@ and they want only replicas from the same replicaset to be evaluated.
 
 The deployment controller adds [pod-template-hash](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#pod-template-hash-label) to underlying ReplicaSet and thus every Pod created from Deployment carries the hash string.
 
-Therefore, users can use `pod-template-hash` in `matchLabelSelector.matchLabelKeys` to inform the scheduler to only evaluate Pods with the same `pod-template-hash` value.
+Therefore, users can use `pod-template-hash` in `matchLabelSelector.Key` to inform the scheduler to only evaluate Pods with the same `pod-template-hash` value.
 
 ```yaml
 apiVersion: apps/v1
@@ -265,7 +265,7 @@ metadata:
             - database
         topologyKey: topology.kubernetes.io/zone
         matchLabelSelectors: # ADDED
-        - matchLabelKeys: pod-template-hash
+        - Key: pod-template-hash
           operator: In
 ```
 
@@ -281,13 +281,13 @@ affinity:
   podAffinity:      # ensures the pods of this tenant land on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
       - matchLabelSelectors:
-          - matchLabelKey: tenant
+          - Key: tenant
             operator: In
         topologyKey: node-pool
   podAntiAffinity:  # ensures only Pods from this tenant lands on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
       - matchLabelSelectors:
-          - matchLabelKey: tenant
+          - Key: tenant
             operator: NotIn
       - labelSelector:
           matchExpressions:
@@ -326,7 +326,7 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 In addition to using `pod-template-hash` added by the Deployment controller, 
-users can also provide the customized key in  `MatchLabelKey` to identify 
+users can also provide the customized key in `MatchLabelSelectors.Key` to identify 
 which pods should be grouped. If so, the user needs to ensure that it is 
 correct and not duplicated with other unrelated workloads.
 
@@ -345,11 +345,11 @@ A new optional field `MatchLabelSelectors` is introduced to `PodAffinityTerm`.
 type LabelSelectorOperator string
 
 type MatchLabelSelector struct {
-  // MatchLabelKey is used to lookup value from the incoming pod labels, 
+  // Key is used to lookup value from the incoming pod labels, 
   // and that key-value label is merged with `LabelSelector`.
   // Key that doesn't exist in the incoming pod labels will be ignored. 
-  MatchLabelKey  string
-  // Operator defines how key-value, fetched via the above `MatchLabelKeys`, is merged into LabelSelector.
+  Key  string
+  // Operator defines how key-value, fetched via the above `Keys`, is merged into LabelSelector.
   // If Operator is `In`, `key in (value)` is merged with LabelSelector. 
   // If Operator is `NotIn`, `key notin (value)` is merged with LabelSelector. 
   //
@@ -372,7 +372,7 @@ type PodAffinityTerm struct {
 ```
 
 The inter-Pod Affinity plugin will obtain the labels from the pod 
-labels by the key in `MatchLabelKey`. 
+labels by the key in `MatchLabelSelectors.Key`. 
 
 The obtained labels will be merged to `LabelSelector` of `PodAffinityTerm` depending on `Operator`. 
 - If Operator is `In`, `key in (value)` is merged with LabelSelector. 
@@ -960,6 +960,8 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### 
 
 ## Infrastructure Needed (Optional)
 
