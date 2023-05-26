@@ -110,6 +110,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [implement as a new enum in LabelSelector](#implement-as-a-new-enum-in-labelselector)
+    - [Example](#example)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -961,7 +963,55 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### 
+### implement as a new enum in LabelSelector
+
+Implement new enum values `ExistsWithSameValue` and `ExistsWithDifferentValue` in LabelSelector.
+- `ExistsWithSameValue`: look up the label value keyed with the key specified in the labelSelector, and match with Pods which have the same label value on the key.
+- `ExistsWithDifferentValue`:  look up the label value keyed with the key specified in the labelSelector, and match with Pods which have the same label key, but with the different label value on the key.
+
+#### Example
+
+a set of Pods A doesn't want to co-exist with other set of Pods, but want the set of Pods A co-located
+
+```yaml
+spec:
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: pod-set
+            operator: ExistsWithSameValue
+        topologyKey: kubernetes.io/hostname
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: pod-set
+            operator: ExistsWithDifferentValue
+        topologyKey: kubernetes.io/hostname
+```
+
+smooth rolling upgrade for PodAntiAffinity:
+
+```yaml
+spec:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - pause
+        topologyKey: kubernetes.io/hostname
+      - labelSelector:
+          matchExpressions:
+          - key: pod-template-hash
+            operator: ExistsWithSameValue
+        topologyKey: kubernetes.io/hostname
+```
 
 ## Infrastructure Needed (Optional)
 
