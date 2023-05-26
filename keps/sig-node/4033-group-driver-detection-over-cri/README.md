@@ -235,6 +235,11 @@ used.
  }
  
 +message RuntimeConfiguration {
++    // Configuration information for Linux-based runtimes
++    LinuxRuntimeConfiguration linux = 1;
++}
+ 
++message LinuxRuntimeConfiguration {
 +    // Cgroup driver to use
 +    CgroupDriver cgroup_driver = 1;
 +}
