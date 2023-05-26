@@ -263,6 +263,11 @@ flag). Further, the kubeletConfig field and `--cgroup-driver` flag will be
 marked as deprecated, to be dropped when the runtimes the Kubelet is supported
 to run with all support the flag.
 
+Kubelet startup is modified so that connection to the CRI server (container
+runtime) is established and RuntimeStatus is queried before initializing the
+kubelet internal container-manager which is responsible for kubelet-side cgroup
+management.
+
 ### Test Plan
 
 <!--
