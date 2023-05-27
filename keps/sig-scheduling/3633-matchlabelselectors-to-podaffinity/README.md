@@ -267,7 +267,7 @@ metadata:
             - database
         topologyKey: topology.kubernetes.io/zone
         matchLabelSelectors: # ADDED
-        - Key: pod-template-hash
+        - key: pod-template-hash
           operator: In
 ```
 
@@ -283,13 +283,13 @@ affinity:
   podAffinity:      # ensures the pods of this tenant land on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
       - matchLabelSelectors:
-          - Key: tenant
+          - key: tenant
             operator: In
         topologyKey: node-pool
   podAntiAffinity:  # ensures only Pods from this tenant lands on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
       - matchLabelSelectors:
-          - Key: tenant
+          - key: tenant
             operator: NotIn
       - labelSelector:
           matchExpressions:
@@ -373,10 +373,8 @@ type PodAffinityTerm struct {
 }
 ```
 
-The inter-Pod Affinity plugin will obtain the labels from the pod 
-labels by the key in `MatchLabelSelectors.Key`. 
-
-The obtained labels will be merged to `LabelSelector` of `PodAffinityTerm` depending on `Operator`. 
+When a Pod is created, kube-apiserver will obtain the labels from the pod 
+labels by the key in `MatchLabelSelectors.Key`, and merge to `LabelSelector` of `PodAffinityTerm` depending on `Operator`:
 - If Operator is `In`, `key in (value)` is merged with LabelSelector. 
 - If Operator is `NotIn`, `key notin (value)` is merged with LabelSelector. 
 
@@ -639,7 +637,7 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MatchLabelSelectorsInPodAffinity`
-  - Components depending on the feature gate: `kube-scheduler`, `kube-apiserver`
+  - Components depending on the feature gate: `kube-apiserver`
 - [ ] Other
 
 ###### Does enabling the feature change any default behavior?
@@ -665,7 +663,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
 The feature can be disabled in Alpha and Beta versions
-by restarting kube-apiserver and kube-scheduler with the feature-gate off.
+by restarting kube-apiserver the feature-gate off.
 In terms of Stable versions, users can choose to opt-out by not setting the
 `MatchLabelSelectors` field.
 

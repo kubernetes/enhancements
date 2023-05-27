@@ -1,4 +1,4 @@
-title: Introduce MatchLabelKeys to PodAffinity and PodAntiAffinity
+title: Introduce MatchLabelSelectors to PodAffinity and PodAntiAffinity
 kep-number: 3633
 authors:
   - "@sanposhiho"
@@ -25,5 +25,5 @@ milestone:
 feature-gates:
   - name: MatchLabelSelectorsInPodAffinity
     components:
-      - kube-scheduler
+      - kube-apiserver
 disable-supported: true
