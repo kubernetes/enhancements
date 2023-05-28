@@ -123,10 +123,12 @@ authorizers:
         type: KubeConfig
         kubeConfigFile: /kube-system-authz-webhook.yaml
       matchConditions:
-      - expression: |
-        has(request.resourceAttributes) && (request.resourceAttributes.namespace == 'kube-system')
-      - expression: |
-        !('system:serviceaccounts:kube-system' in request.user.groups)
+      # only send resource requests to the webhook
+      - expression: has(request.resourceAttributes)
+      # only intercept requests to kube-system
+      - expression: request.resourceAttributes.namespace == 'kube-system'
+      # don't intercept requests from kube-system service accounts
+      - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
   - type: Node
   - type: RBAC
   - type: Webhook
@@ -157,6 +159,42 @@ RBAC; 'non-system' users here refers to anyone who shouldn't be able to
 update/delete the protected set of CRDs.
 
 Relevant Discussion Thread is sig-apimachinery: https://groups.google.com/g/kubernetes-sig-api-machinery/c/MBa19WTETMQ
+
+A relevant configuration for this scenario with the assumptions:
+1. The "protected" CRDs are installed in the kube-system namespace.
+2. They can only be modified by users in the group "system:serviceaccounts:kube-superuser"
+
+Note: The above are hypothetical for now since there has been no decision on
+protection rules for system CRDs. The below example is only for demonstration
+purposes.
+```yaml
+apiVersion: apiserver.config.k8s.io/v1alpha1
+kind: AuthorizationConfiguration
+authorizers:
+  - type: Webhook
+    name: system-crd-protector
+    webhook:
+      unauthorizedTTL: 30s
+      timeout: 3s
+      subjectAccessReviewVersion: v1
+      failurePolicy: Deny
+      connectionInfo:
+        type: KubeConfig
+        kubeConfigFile: /kube-system-authz-webhook.yaml
+      matchConditions:
+      # only send resource requests to the webhook
+      - expression: has(request.resourceAttributes)
+      # only intercept requests to kube-system (assumption i)
+      - expression: request.resourceAttributes.namespace == 'kube-system'
+      # don't intercept requests from kube-system service accounts
+      - expression: !('system:serviceaccounts:kube-kube-superuser' in request.user.groups)
+      # only intercept update, delete and deletecollection requests
+      - expression: request.resourceAttributes.verb == 'update'
+      - expression: request.resourceAttributes.verb == 'delete'
+      - expression: request.resourceAttributes.verb == 'deletecollection'
+  - type: Node
+  - type: RBAC
+```
 
 #### Story 2: Preventing unnecessarily nested webhooks
 
@@ -298,10 +336,13 @@ authorizers:
       # CEL expressions have access to the contents of the SubjectAccessReview
       # in the version specified by subjectAccessReviewVersion in the request variable.
       # Documentation on CEL: https://kubernetes.io/docs/reference/using-api/cel/
-      - expression: |
-        has(request.resourceAttributes) && (request.resourceAttributes.namespace == 'kube-system')
-      - expression: |
-        !('system:serviceaccounts:kube-system' in request.user.groups)
+      #
+      # only send resource requests to the webhook
+      - expression: has(request.resourceAttributes)
+      # only intercept requests to kube-system
+      - expression: request.resourceAttributes.namespace == 'kube-system'
+      # don't intercept requests from kube-system service accounts
+      - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
   - type: Node
   - type: RBAC
   - type: Webhook
