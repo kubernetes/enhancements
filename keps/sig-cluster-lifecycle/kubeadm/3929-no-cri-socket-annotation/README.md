@@ -92,9 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [init: upload a global kubelet configuration with cri socket](#init-upload-a-global-kubelet-configuration-with-cri-socket)
   - [join: can override it using --config](#join-can-override-it-using---config)
   - [upgrade: re-download global one, but should use local kubelet configuration firstly](#upgrade-re-download-global-one-but-should-use-local-kubelet-configuration-firstly)
-  - [Proposal 1: respect a list of configuration in local kubelet configuration, and in v1.27, CRI socket is the only one](#proposal-1-respect-a-list-of-configuration-in-local-kubelet-configuration-and-in-v127-cri-socket-is-the-only-one)
-  - [Proposal 2: introduce a <code>/var/lib/kubelet/kubeadm-config.yaml</code> to maintain node specific configuration](#proposal-2-introduce-a--to-maintain-node-specific-configuration)
-  - [old version handling](#old-version-handling)
+  - [other proposal: respect a list of configuration in local kubelet configuration, and in v1.27, CRI socket is the only one](#other-proposal-respect-a-list-of-configuration-in-local-kubelet-configuration-and-in-v127-cri-socket-is-the-only-one)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -196,9 +194,15 @@ cri socket in kubelet configuration.
 
 ## Proposal
 
-1. init: upload a global kubelet configuration with cri socket
-2. join: can override it using --config
-3. upgrade: re-download global one, but should use local kubelet configuration firstly
+1. init: upload a global kubelet configuration with cri socket.
+   - the cri socket will take `--cri-socket` value and if the flag is empty, kubeadm will auto-detect it.
+   - After seting or auto-detecting, it will be set in the global kubelet configuration.
+2. join: it will use the global confugration.
+   - if it is not set in the global configuration, it will use `--cri-socket` value
+   - if it is still empty, kubeadm will auto-detect it.
+   - join will not change the global configuration, and if it is different with the global,
+     kubeadm will save it in `/var/lib/kubelet/kubeadm-config-instance.yaml`
+3. upgrade: re-download global one, but should use local kubelet configuration firstly in `kubeadm-config-instance.yaml`
 
 ### User Stories (Optional)
 
@@ -214,9 +218,11 @@ cri socket in kubelet configuration.
 
 ### init: upload a global kubelet configuration with cri socket
 
-- `kubeadm init` will not add the annotation to node.
+- `kubeadm init` will not add the annotation to node any more.
 - `kubeadm init` will check the customized `--config` at first and if no cri socket is set, it will
-  auto-detect it and save it global configuration and local as well.
+  auto-detect it and save it global configuration.
+  if `--cri-socket` is specified, we will use it in the local kubelet configuration and `kubeadm-config-instance.yaml`,
+  but it will not be saved to the global configuration.
 
 ### join: can override it using --config
 
@@ -224,12 +230,22 @@ cri socket in kubelet configuration.
 - `kubeadm join` will download the kubelet configuration from apiserver and the customized `--config`
   at first and auto-detect will work only if not set. Auto-detect may log a warning message if it may
   be misconfigured and log a general debug log if there is multi CRI-sockets.
+  if `--cri-socket` is specified, we will use it in the local kubelet configuration and `kubeadm-config-instance.yaml`,
+  but it will not be saved to the global configuration.
 
 ### upgrade: re-download global one, but should use local kubelet configuration firstly
 
 - `kubeadm upgrade` will download the kubelet configuration from apiserver and respect local one.
+- in v1.28-1.29, for backward compatibility, when `kubeadm upgrade apply`, we will read the `cri` annotation(if no annotation, we autodetect it)
+  and then patch it to the global configuration. `kubeadm upgrade node` is similar, and it will never change global configuration.
+- in v1.30+, `kubeadm upgrade apply` will not read the cri annotation any more.
+- in v1.28, for other nodes, `kubeadm upgrade node` will check if the cri annotation is diffent with the global setting.
+  if `cri-socket` is different, we will use it in the local kubelet configuration and `kubeadm-config-instance.yaml`,
+  but it will not be saved to the global configuration.
+- in v1.29 or later, `kubeadm upgrade node` will check `kubeadm-config-instance.yaml` at first and then check annoation like v1.28.
+- in v1.30+, `kubeadm upgrade node` will check `kubeadm-config-instance.yaml` and then global configuration only.
 
-### Proposal 1: respect a list of configuration in local kubelet configuration, and in v1.27, CRI socket is the only one
+### other proposal: respect a list of configuration in local kubelet configuration, and in v1.27, CRI socket is the only one
 
 During `kubeadm upgrade`, kubeadm will read the local kubelet configuration in `/var/lib/kubelet/config.yaml`.
 kubeadm also download the kubelet configuration from configmap and replace the `containerRuntimeEndpoint` and
@@ -239,31 +255,6 @@ A node-specific kubelet configuration list should be maintained in kubeadm code.
 
 - containerRuntimeEndpoint
 - imageServiceEndpoint
-
-### Proposal 2: introduce a `/var/lib/kubelet/kubeadm-config.yaml` to maintain node specific configuration
-
-We should introduce a `/var/lib/kubelet/kubeadm-config.yaml` to maintain node specific configuration.
-It is similar to `/var/lib/kubelet/kubeadm-flags.env`.
-
-```text
-KUBELET_KUBEADM_ARGS="--container-runtime-endpoint=unix:///var/run/containerd/containerd.sock --pod-infra-container-image=k8s.m.daocloud.io/pause:3.9"
-```
-
-We may introduce a feature gate "KubeadmNodeSpecificConfig" to enable the use the `/var/lib/kubelet/kubeadm-config.yaml` here.
-
-- If the feature gate is disabled, use the cri socket annotation directly.
-- If the feature gate is enabled, `/var/lib/kubelet/kubeadm-config.yaml` will be created and the cri socket will be maintained in it.
-
-[To be discussed] Another proposal is using a strategy like `--patch`. A file like `/var/lib/kubelet/kubeadm-config.patch`
-or a `kubelet.yaml`/`config.ayml` file under `/var/lib/kubelet/patch/`. (This should be removed if we make a decision).
-
-### old version handling
-
-For old version cluster upgradation with the annotation, we will not touch the annotation at first.
-
-1. in v1.28, `kubeadm upgrade` will respect the annotation and save it to local kubelet configuration or node
-   specific configuration `/var/lib/kubelet/kubeadm-config.yaml`. [TODO update according to the final decision]
-2. in v1.29, `kubeadm upgrade` will ignore the annotation.
 
 ### Test Plan
 

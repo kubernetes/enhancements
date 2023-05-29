@@ -7,9 +7,10 @@ participating-sigs:
   - sig-cluster-lifecycle
 status: provisional
 creation-date: 2023-03-30
-last-updated: 2022-04-03
+last-updated: 2022-05-29
 reviewers:
   - "@neolit123"
+  - "@chendave"
 approvers:
   - "@neolit123"
 latest-milestone: "0.0"
