@@ -288,6 +288,7 @@ For the beta version of this KEP, we begin permitting metrics to be promoted to 
 
 - We will allow bake time before promoting this feature to GA
 - At this stage, we will promote our meta-metric for registered metrics to Stable
+- We also require an update to the prometheus golang client such that we can add process start time to a header, so that scraping clients do not have to parse the entire metrics payload in order to properly process counter metrics. Please see [this PR](https://github.com/prometheus/client_golang/pull/1278) for more details.
 
 #### Deprecation
 
