@@ -339,7 +339,7 @@ type JWTAuthenticator struct {
         // Required to be unique.
         URL string `json:"url,omitempty"`
 
-        // If specified, overrides the URL used to fetch discovery information.
+        // discoveryURL if specified, overrides the URL used to fetch discovery information.
         // Format must be https://url/path.
         // Example:
         // curl oidc.oidc-namespace (.discoveryURL field)
@@ -369,24 +369,24 @@ type JWTAuthenticator struct {
 
     ```go
     type ClaimValidationRule struct {
-        // Claim is the name of a required claim.
+        // claim is the name of a required claim.
         // Same as --oidc-required-claim flag.
         // Only string claims are supported.
         // Mutually exclusive with expression and message.
         // +optional
         Claim string `json:"claim"`
-        // RequiredValue is the value of a required claim.
+        // requiredValue is the value of a required claim.
         // Same as --oidc-required-claim flag.
         // Mutually exclusive with expression and message.
         // +optional
         RequiredValue string `json:"requiredValue"`
 
-        // Expression is a logical expression that is written in CEL https://github.com/google/cel-go.
+        // expression is a logical expression that is written in CEL https://github.com/google/cel-go.
         // Must return true for the validation to pass.
         // Mutually exclusive with claim and requiredValue.
         // +optional
         Expression string `json:"expression"`
-        // Message customizes the returned error message when expression returns false.
+        // message customizes the returned error message when expression returns false.
         // Mutually exclusive with claim and requiredValue.
         // Note that messageExpression is explicitly not supported to avoid
         // misconfigured expressions from leaking JWT payload contents.
@@ -417,7 +417,7 @@ type JWTAuthenticator struct {
 
     ```go
     type ClaimMappings struct {
-        // Username represents an option for the username attribute.
+        // username represents an option for the username attribute.
         // Claim must be a singular string claim.
         // TODO: decide whether to support a distributed claim for username (what are we required to correlate between the data retrieved for distributed claims? sub? something else?). Limit distributed claim support to OIDC things with clientID validation?
         // Expression must produce a string value.
@@ -427,20 +427,20 @@ type JWTAuthenticator struct {
         //     (3) if userName.expression is set instead, result of expression is used as-is without any implicit prefix
         // (1) and (2) ensure backward compatibility with the --oidc-username-claim and --oidc-username-prefix flags
         Username PrefixedClaimOrExpression `json:"username"`
-        // Groups represents an option for the groups attribute.
+        // groups represents an option for the groups attribute.
         // Claim must be a string or string array claim.
         // Expression must produce a string or string array value.
         // "", [], missing, and null values are treated as having no groups.
         // TODO: investigate if you could make a single expression to construct groups from multiple claims. If not, maybe []PrefixedClaimOrExpression?
         // +optional
         Groups PrefixedClaimOrExpression `json:"groups,omitempty"`
-        // UID represents an option for the uid attribute.
+        // uid represents an option for the uid attribute.
         // Claim must be a singular string claim.
         // Expression must produce a string value.
         // TODO: this is net new, should it just be expression?
         // +optional
         UID ClaimOrExpression `json:"uid,omitempty"`
-        // Extra represents an option for the extra attribute.
+        // extra represents an option for the extra attribute.
         //
         // # hard-coded extra key/value
         // - key: "foo"
@@ -479,7 +479,7 @@ type JWTAuthenticator struct {
     }
 
     type ClaimOrExpression struct {
-        // Claim is the JWT claim to use.
+        // claim is the JWT claim to use.
         // Either claim or expression must be set.
         // +optional
         Claim string `json:"claim"`
@@ -490,11 +490,11 @@ type JWTAuthenticator struct {
 
 
     type PrefixedClaimOrExpression struct {
-        // Claim is the JWT claim to use.
+        // claim is the JWT claim to use.
         // Either claim or expression must be set.
         // +optional
         Claim string `json:"claim"`
-        // Prefix is prepended to claim to prevent clashes with existing names.
+        // prefix is prepended to claim to prevent clashes with existing names.
         // Mutually exclusive with expression.
         // +optional
         Prefix string `json:"prefix"`
