@@ -24,6 +24,7 @@
       - [Example without idmap mounts](#example-without-idmap-mounts)
       - [Example with idmap mounts](#example-with-idmap-mounts)
     - [Regarding the previous implementation for volumes](#regarding-the-previous-implementation-for-volumes)
+  - [Pod Security Standards (PSS) integration](#pod-security-standards-pss-integration)
   - [Unresolved](#unresolved)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -317,7 +318,7 @@ way, the Kubelet can read all the allocated mappings if it restarts.
 During alpha, to make sure we don't exhaust the host UID namespace, we will
 limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
 leaves us plenty of host UID space free and this limits is probably never hit in
-practice. See UNRESOLVED for more some UNRESOLVED info we still have on this.
+practice. See the [Unresolved section](#unresolved) for more details on this.
 
 ### Handling of volumes
 
@@ -406,6 +407,44 @@ As this is not needed anymore, it will be deleted from the interface and all
 components that implement the interface.
 
 [kubeletVolumeHost-interface]: https://github.com/kubernetes/kubernetes/blob/36450ee422d57d53a3edaf960f86b356578fe996/pkg/volume/plugins.go#L322
+
+### Pod Security Standards (PSS) integration
+
+[Pod Security Standards](https://k8s.io/docs/concepts/security/pod-security-standards)
+define three different policies to broadly cover the whole security spectrum of
+Kubernetes, while the User Namespaces feature should integrate into them. This
+will happen only if the feature is graduated to GA, which _may_ result in
+changing the `Restricted` profile to disallow host user namespaces for stateless
+Pods.
+
+The Pod Security will relax in a controlled way for pods which enable user
+namespaces. This behavior can be controlled by an API Server Feature Gate, which
+allows an early opt-in for end users. The overall burden to ensure that all
+nodes will honor user namespaces is on the cluster admin, though. The relaxation
+in detail means, that if user namespaces are enabled, then the following fields
+won't be restricted any more because they always have to refer to the user
+inside the container:
+
+- `spec.securityContext.runAsNonRoot`
+- `spec.containers[*].securityContext.runAsNonRoot`
+- `spec.initContainers[*].securityContext.runAsNonRoot`
+- `spec.ephemeralContainers[*].securityContext.runAsNonRoot`
+- `spec.securityContext.runAsUser`
+- `spec.containers[*].securityContext.runAsUser`
+- `spec.initContainers[*].securityContext.runAsUser`
+- `spec.ephemeralContainers[*].securityContext.runAsUser`
+- `spec.containers[*].securityContext.allowPrivilegeEscalation`
+- `spec.initContainers[*].securityContext.allowPrivilegeEscalation`
+- `spec.ephemeralContainers[*].securityContext.allowPrivilegeEscalation`
+- `spec.containers[*].securityContext.capabilities.drop`
+- `spec.initContainers[*].securityContext.capabilities.drop`
+- `spec.ephemeralContainers[*].securityContext.capabilities.drop`
+- `spec.containers[*].securityContext.capabilities.add`
+- `spec.initContainers[*].securityContext.capabilities.add`
+- `spec.ephemeralContainers[*].securityContext.capabilities.add`
+
+A serial test will be added to validate the functionality with the enabled
+feature gate.
 
 ### Unresolved
 
@@ -532,20 +571,27 @@ use container runtime versions that have the needed changes.
 ### Graduation Criteria
 
 ##### Alpha
+
 - Support with idmap mounts
+- Gather and address feedback from the community
+- Add API Server feature flag to integrate into [Pod Security Standards (PSS)](#pod-security-standards-pss-integration)
+- Changing restrictions on the what volumes will be allowed
 
 ##### Beta
 
 - Make plans on whether, when, and how to enable by default
+
+###### Open Questions
+
 - Should we reconsider making the mappings smaller by default?
 - Should we allow any way for users to for "more" IDs mapped? If yes, how many more and how?
 - Should we allow the user to ask for specific mappings?
 - Get review from VM container runtimes maintainers
-- Gather and address feedback from the community
 
 ##### GA
 
 - Gather and address feedback from the community
+- Fully integrate into [Pod Security Standards (PSS)](#pod-security-standards-pss-integration)
 
 ### Upgrade / Downgrade Strategy
 
