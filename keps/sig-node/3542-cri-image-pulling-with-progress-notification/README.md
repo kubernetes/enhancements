@@ -242,7 +242,8 @@ and the frequency of the updates:
 - every N bytes of the total image size being downloaded
 respectively to the type
 
-If the client did not specify the preferred notification granularity, default values can be used.
+If the client did not specify the preferred notification granularity, default values can be used,
+for instance every Gibibyte downloaded.
 
 This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
 progress and publish events to the Pod object
@@ -261,7 +262,7 @@ bogged down.
 #### Story 1
 
 The user is deploying an application to the k8s cluster, the Pod is being
-scheduled and creation of the Pod beginning. The only event occurring on the Pod
+scheduled and creation of the Pod begins. The only event occurring on the Pod
 object events list is "Pulling image", with no progress indicator, or ETA.
 
 If CRI had a possility to expose the progress and / or ETA for completing the
@@ -288,11 +289,39 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
+There should be a guidance on how the runtime should report the progress, for instance
+unpacking phase should be considered (see below).
+
+Pulling an image consists of two actions - downloading particular layer of the image
+and unpacking it. This repeats for every layer in the image, and this unpacking should be taken
+in account when runtime is reporting percentage.
+
+There is a technology that allows starting the container while it's not yet fully downloaded.
+This should not conflict with the notifications about the image downloading progress, in such case
+the Pod object will have events with pulling progress following the event of container starting
+until the image downloading completes fully, if at all.
+
+The size-granularity reporting shold be KiB or MiB based.
+
+If ImagePullProgress is enabled for kubelet but runtime does not support it, the fallback should
+use regular silent ImagePull API call.
+
 ### Risks and Mitigations
 
-The risks are minimal, introduction of new API is not affecting any other APIs. Implementation of
-kubelet taking in use the new API to monitor and publish image pulling progress events to Pod
-object are out of scope of this KEP, although kept in mind during design.
+The risks are minimal, introduction of new API is not affecting any other APIs. 
+
+Misconfiguration of image pull request progress granularity for kubelet can result in bit number
+of progress responses published by runtime into return stream. This can be mitigated by kubelet
+throttling the amount of events it publishes to Pod object (publishing less than received from
+runtime), as well as in runtime by metering amount of responses being sent within time interval.
+Intention of this KEP's CRI extension is to provide not-so-frequest updates for Kubelet (e.g. once
+a minute), while having a possibility to have more-frequest updates for cli tools (e.g. once a
+second).
+
+Runtime can be such that does not support image pull progress reporting. In this case fallback to
+regular image pulling call should happen on client side (kubelet, cli tool, other entities
+requesting image to be pulled from runtime).
+
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
 For example, consider both security and how this will impact the larger
@@ -326,7 +355,7 @@ runtime CRI image service server.
 The PullImageWithProgressRequest contains base information needed to do the image pull (image name, auth config
 and sandbox information), and it will also contain information how often the server should send progress reports.
 The CRI client can restrict the progress reporting to be time based (once every n. seconds), percent based (after
-every n. percent) or the amount of bytes downloaded which is the default one.
+every n. percent) or the size (amount of bytes/KiB/MiB downloaded). The size-based should be the default one.
 
     message PullImageWithProgressRequest {
         // Spec of the image.
@@ -340,7 +369,7 @@ every n. percent) or the amount of bytes downloaded which is the default one.
         // The interval value of the chosen granularity.
         // For time based granularity, this is the number of seconds between reports. If time interval is 0, then report is done every 60s.
         // For percent based granularity, this is the number of percent value between reports. If percent interval is 0, then report is done every 10%
-        // For the default byte based granularity, this is the number of bytes received between reports. If set to 0, then runtime will report progress as image is downloaded.
+        // For the default size based granularity, this is the number of kibibytes received between reports. If set to 0, then runtime will report progress as image is downloaded and unpacked.
         uint32 interval = 5;
     }
 
@@ -376,7 +405,7 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-The implementation PR adds a suite of unit tests.
+The implementation PR adds a suite of unit and e2e tests.
 
 ##### Prerequisite testing updates
 
@@ -435,6 +464,25 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 
 ### Graduation Criteria
+
+#### Alpha
+
+- CRI extended with the new call
+- PoC feature implemented in kubelet behind a feature flag
+- PoC feature is implemented for either cri-o or containerd runtime, does not have to be released
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from community
+- Implementation of the call for the crictl merged and released
+- Implementation of the call for cri-o runtime merged and released
+- Implementation of the call for containerd runtime merged and released
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- TBD
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -569,24 +617,30 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: ImagePullProgress
+  - Components depending on the feature gate: kubelet
+- [x] Other
+  - Describe the mechanism: the CRI-compliant runtime has to implement the call
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? - No.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). - Kubelet
+    has to be restarted to pick up new configuration
 
 ###### Does enabling the feature change any default behavior?
 
+No behaviour is impacted by this feature. Amount of events published to Pod object by Kubelet will
+increase.
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, the proposed new call is an alternative, not a replacement. The way kubelet is requesting to 
+pull an image should be possible to change through kubelet config.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -600,6 +654,9 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The events of image pull progress should appear for Pod object. Switching the feature on / off
+should only result in events with image pull progress appearing / disappearing for Pod object.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -624,6 +681,11 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+Rollout should not fail copmletely, it should fallback to existing stable PullImage call in case
+the runtime does not support PullImageWithProgress call.
+
+Rollback is disabling feature in kubelet config, no changes aside from kubelet config should be
+needed.
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -635,6 +697,8 @@ will rollout across nodes.
 -->
 
 ###### What specific metrics should inform a rollback?
+
+Runtime reporting callback is not implemented shold signify need for fallback to regular PullImage.
 
 <!--
 What signals should users be paying attention to when the feature is young
@@ -651,6 +715,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
+No.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
@@ -666,6 +731,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
+This is not workload-related feature.
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -673,6 +739,11 @@ logs or events for this purpose.
 -->
 
 ###### How can someone using this feature know that it is working for their instance?
+
+`kubectl describe pods/pod` should in events section show that:
+
+- [required] Image pulling has started, with progress reporting
+- [optional] Image pulling is at particular point
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
@@ -683,15 +754,12 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
-
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+Given the default PullImageWithProgressRequest values and the maximum supported amount of Pods needing
+to pull an image simultaneously and in parallel (worst case), kubelet is not under DoS attack by runtime.
+
+Same scenario, but kubelet is not causing apiserver load.
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -753,6 +821,9 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
+Worst case scenario should be simulated to have MAX_NODES worker nodes pulling MAX_PODS_PER_NODE
+multiplied by number of containers on average per pod to see if it will cause any significant overhead.
+
 <!--
 For alpha, this section is encouraged: reviewers should consider these questions
 and attempt to answer them.
@@ -765,6 +836,7 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
+Yes, this is exactly the idea of this KEP.
 <!--
 Describe them, providing:
   - API call type (e.g. PATCH pods)
@@ -780,6 +852,7 @@ Focusing mostly on:
 
 ###### Will enabling / using this feature result in introducing new API types?
 
+No.
 <!--
 Describe them, providing:
   - API type
@@ -789,6 +862,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
+No.
 <!--
 Describe them, providing:
   - Which API(s):
@@ -797,6 +871,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No.
 <!--
 Describe them, providing:
   - API type(s):
@@ -805,6 +880,8 @@ Describe them, providing:
 -->
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+Should not.
 
 <!--
 Look at the [existing SLIs/SLOs].
@@ -816,6 +893,8 @@ Think about adding additional work or introducing new steps in between
 -->
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+Kubelet and apiserver should be seeing insignificant increase in gRPC calls' amount.
 
 <!--
 Things to keep in mind include: additional in-memory state, additional
@@ -842,7 +921,14 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Kubelet should not fail when during image pulling an event publishing to Pod fails, this should
+be ignored by kubelet and / or retried later if events are queued to be delivered. Queueing such
+events is out of scope of this proposal.
+
 ###### What are other known failure modes?
+
+Nothing should fail, if the feature is enabled, but not working (either kubelet or runtime does
+not suppor proposed call) - the the fallback happens to the old functionality.
 
 <!--
 For each of them, fill in the following information by copying the below template:
