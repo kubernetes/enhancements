@@ -657,12 +657,12 @@ this cluster.
 #### Service Types
 
 - `ClusterIP`: This is the straightforward case most of the proposal assumes.
-  Each `EndpointSlice` in a producing cluster associated with the exported
-  service is combined with slices from other clusters to make up the clusterset
+  Each endpoint from a producing cluster associated with the exported service is
+  aggregated with endpoints from other clusters to make up the clusterset
   service. They will be imported to the cluster behind the clusterset IP, with a
   `ServiceImport` of type `ClusterSetIP`. The details on how the clusterset IP
   is allocated or how the combined slices are maintained may vary by
-  implementation; see also [EndpointSlices](#EndpointSlices).
+  implementation; see also [Tracking Endpoints](#TrackingEndpoints).
 - `ClusterIP: none` (Headless): Headless services are supported and will be
   imported with a `ServiceImport` like any other `ClusterIP` service, but do not
   configure a VIP and must be consumed via [DNS](#DNS). Their `ServiceImport`s
@@ -854,15 +854,19 @@ additional label gives additional context, which is implementation-dependent and
 may be used for instance to uniquely identify the cluster registry with which a
 cluster is registered.
 
-### EndpointSlices
-
-_Optional to create, but specification defined if present._
+### Tracking Endpoints
 
 The specific mechanism by which the `mcs-controller` maintains references to the
 individual backends for an aggregated service is an implementation detail not
 fully prescribed by this specification. Implementations may depend on a higher
 level (possibly vendor-specific) API, offload to a load balancer or xDS server
-(like Envoy), or use Kubernetes networking APIs.
+(like Envoy), or use Kubernetes networking APIs. If the implementation depends
+on Kubernetes networking APIs, specifically `EndpointSlice` objects, they must
+conform to the specification in the following section.
+
+#### Using `EndpointSlice` objects to track endpoints
+
+_Optional to create, but specification defined if present._
 
 If an implementation does create `discovery.k8s.io/v1 EndpointSlice`s, they must
 conform to the following structure. This structure was originally required as
@@ -892,7 +896,9 @@ imported for a service are not guaranteed to exactly match the originally
 exported `EndpointSlice`s, but each slice is guaranteed to map only to a single
 source cluster.
 
-The mcs-controller is responsible for managing imported `EndpointSlice`s.
+If the implementation is using `EndpointSlice`s in this way, the mcs-controller
+is responsible for managing the imported `EndpointSlice`s and making sure they
+are conformant with this section.
 
 ```yaml
 apiVersion: multicluster.k8s.io/v1alpha1
