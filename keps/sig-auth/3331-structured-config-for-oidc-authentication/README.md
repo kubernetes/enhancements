@@ -130,7 +130,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This enhancement proposal covers adding structured authentication configuration to the Kubernetes API server.
 Initially, only a `jwt` configuration will be supported, which will serve as the next iteration of the existing
-OIDC authenticator.  OIDC authentication is important part of Kubernetes, yet it has limitations in its current state.
+OIDC authenticator.  OIDC authentication is an important part of Kubernetes, yet it has limitations in its current state.
 Below we will discuss that limitation and propose solutions.
 
 # Motivation
@@ -223,10 +223,8 @@ jwt:
     uid:
       claim: 'sub'
     extra:
-    - key:
-        constant: 'client_name'  # TODO: decide if we really need this flexibility or can we just have constant keys
-      value:
-        claim: 'aud'
+    - key: 'client_name'
+      valueExpression: 'claims.some_claim'
   # TODO(enj): drop this and figure out to get from CEL
   # claimFilters:
   # - username
@@ -260,8 +258,6 @@ is `sub` required or is the requirement to just have some username field?
 Payloads with nested data are supported as well (it will be possible
 to use the `foo` value as a claim mapping):
 
-TODO(aramase): validate if CEL can work with multiple level of nesting
-
 ```json
 {
   "custom": {
@@ -290,7 +286,7 @@ type AuthenticationConfiguration struct {
 
     // jwt is a list of OIDC providers to authenticate Kubernetes users.
     // For an incoming token, each JWT authenticator will be attempted in
-    // the order in which it is specifcied in this list.  Note however that
+    // the order in which it is specified in this list.  Note however that
     // other authenticators may run before or after the JWT authenticators.
     // The specific position of JWT authenticators in relation to other
     // authenticators is neither defined nor stable across releases.  Since
@@ -325,7 +321,7 @@ type JWTAuthenticator struct {
     // ClaimsFilter []string `json:"claimFilters,omitempty"`
 
     // userInfoValidationRules are rules that are applied to final userInfo before completing authentication.
-    // These allow invariants to be applied to incoming identites such as preventing the
+    // These allow invariants to be applied to incoming identities such as preventing the
     // use of the system: prefix that is commonly used by Kubernetes components.
     // +optional
     UserInfoValidationRules []UserInfoValidationRule `json:"userInfoValidationRules,omitempty"`
@@ -446,36 +442,38 @@ type JWTAuthenticator struct {
         UID ClaimOrExpression `json:"uid,omitempty"`
         // Extra represents an option for the extra attribute.
         //
-        // TODO: examples for this?
+        // # hard-coded extra key/value
+        // - key: "foo"
+        //   valueExpression: "bar"
         //
-        // # known key, value from claim
-        // - key: "example.com/myextrakey"
-        //   value:
-        //     claim: "hd"
+        // hard-coded key, value copying claim value
+        // - key: "foo"
+        //   valueExpression: "claims.some_claim"
         //
-        // # known key, value constructed by expression
-        // - key: "example.com/myextrakey"
-        //   value:
-        //     expression: claims.someclaim+":"+claims.someclaim
+        // hard-coded key, value derived from claim value
+        // - key: "admin"
+        //   valueExpression: '(has(claims.is_admin) && claims.is_admin) ? "true":""'
         //
-        // # calculated key/value pairs? CEL returns [{key,value}, {key,[value, value...]}, ...] and we aggregate?
-        // TODO: ask joe/cici about CEL constructing/returning complex types
+        // If multiple mappings have the same key, the result will be a concatenation of all values.
+        // If the value is empty, the extra mapping will not be present.
+        //
+        // possible future way to pull multiple extra values out via expression.
+        // TODO: confirm cel comprehensions/mapping is powerful enough to transform
+        // the input claims into a filtered / transformed map[string][]string output):
+        // # mutually exclusive with key/valueExpression
+        //     keyAndValueExpression: '{"key":"string-value", "key2": ["value1","value2"]}'
         //
         // +optional
         Extra []ExtraMapping `json:"extra,omitempty"`
     }
 
     type ExtraMapping struct {
-        // Key is a CEL expression to extract extra attribute key.
-        // Claim must be a singular string claim.
+        // Key is a string to use as the extra attribute key.
+        Key string `json:"key"`
+        // ValueExpression is a CEL expression to extract extra attribute value.
         // Expression must produce a string value.
         // "" and null values are treated as the extra mapping not being present.
-        Key string `json:"key"`
-        // Value is a CEL expression to extract extra attribute value.
-        // Claim must be a string or string array claim.
-        // Expression must produce a string or string array value.
-        // "", [], and null values are treated as the extra mapping not being present.
-        Value ClaimOrExpression `json:"value"`
+        ValueExpression string `json:"valueExpression"`
     }
 
     type ClaimOrExpression struct {
