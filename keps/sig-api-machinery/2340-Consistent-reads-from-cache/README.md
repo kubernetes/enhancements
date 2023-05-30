@@ -20,8 +20,7 @@ read from etcd.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Consistent reads from cache](#consistent-reads-from-cache)
-    - [Use WithProgressNotify to enable automatic watch updates](#use-withprogressnotify-to-enable-automatic-watch-updates)
-    - [Determining if etcd is sending progress notify events](#determining-if-etcd-is-sending-progress-notify-events)
+    - [Use RequestProgress to enable automatic watch updates](#use-requestprogress-to-enable-automatic-watch-updates)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Progress notify interval selection](#progress-notify-interval-selection)
@@ -39,8 +38,6 @@ read from etcd.
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
-- [Rejected alternatives](#rejected-alternatives)
-    - [Use WatchProgressRequest to request watch updates when needed](#use-watchprogressrequest-to-request-watch-updates-when-needed)
 - [Potential Future Improvements](#potential-future-improvements)
 <!-- /toc -->
 
@@ -51,15 +48,17 @@ Consistent reads may be served from cache so long as:
 - The data in the watch cache no older than the latest "revision" just from etcd
 
 etcd watches support "progress events", which provide an updated revision and a
-guarantee that all future watch events will be newer than the that revision.  If
-an etcd watch is configured with `WithProgressNotify` enabled, etcd
-automatically sends progress events at a regular interval. The "progress events"
-allow a etcd watcher to know how up-to-date the watch stream is relative a
-particular revision.
+guarantee that all future watch events will be newer than the that revision. 
+Etcd client can request a progress notification from server. The progress 
+notification allow the etcd watcher to know how up-to-date the watch stream 
+is. This is thanks to [bookmarkable] property of etcd watch that guarantees that
+all events with revision below progress notification have been delivered.
 
 This KEP summarizes how we can take advantage of progress events efficiently
 determine how up-to-date kubernetes watch caches are then serve reads from the
 watch cache when they are sufficiently up-to-date.
+
+[bookmarkable]: https://etcd.io/docs/v3.6/learning/api_guarantees/#watch-apis
 
 ## Motivation
 
@@ -117,32 +116,32 @@ serves the resourceVersion="0" list requests from reflectors today.
 
 Guard this by a `WatchCacheConsistentReads` feature gate.
 
-#### Use WithProgressNotify to enable automatic watch updates
+This alternative requires using `WatchProgressRequest` which is only available in etcd 3.4+, and so would
+require we make the kube-apiserver aware of etcd's minor version, which is described in more detail later.
 
-Create etcd watches with `WithProgressNotify` enabled (available in all etcd 3.x versions).
+<<[UNRESOLVED @serathius]>>
+Propose a method to make kube-apiserver aware of etcd version:
+* Flag providing etcd version to kube-apiserver `--storage-backend=etcd3.4`
+* Flag to enable/disable the feature `--allow-using-progress-notify`
+* Have kube-apiserver check cluster version in etcd `/version` endpoint. 
+  Retry the check logic if `WatchProgressRequest` fails.
+<<[/UNRESOLVED]>>
 
-When `WithProgressNotify` is enabled on an etcd watch, etcd sends progress
-events to the watch automatically. By default etcd sends progress events every
-10 minutes, which is not frequent enough to be useful for our needs, so we will
-modify etcd to send them more frequently.
+#### Use RequestProgress to enable automatic watch updates
 
-When an consistent LIST request is received and the watch cache is enabled:
+When a consistent LIST request is received and the watch cache is enabled:
 
-- Get the current revision from etcd for the resource type being served. The returned revision is strongly consistent (guaranteed to be the latest revision via a quorum read).
+- Get the current revision from etcd for the resource type being served. Use 
+  an etcd range request against a known empty range with limit=1 to ensure returned revision is strongly consistent.
+- If the cache already has the current revision, serve the request from cache. If not,
+  - Send a `WatchProgressRequest` to etcd on the watch channel that the watch cache is consuming.
 - Use the existing `waitUntilFreshAndBlock` function in the watch cache to wait briefly for the watch to catch up to the current revision.
 - If the block times out, the request will result in rejection. (see "What if the watch cache is stale?" section for details)
-
-To get the revsion we have some options:
-
-- Use an etcd range request with `WithCount` enabled so etcd return only a count and revision
-- Use an etcd range request against a known empty range with limit=1 as an additional guard (since etcd does not allow for limit=0)
 
 Consistent GET requests will continue to be served directly from etcd. We will
 only serve consistent LIST requests from cache.
 
-Important: We are planning to set the progress notify interval to 250ms, which will introduce up to 250ms latency to consistent LIST requests.
-
-Optional: For some (but not all) of the etcd progress watch events, also create a
+For the etcd progress notification, we will create a
 kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
 reflectors and shared informers are kept up-to-date. The benefit of this is that
 it minimizes the chance that these clients will end up with an out-of-date
@@ -150,26 +149,11 @@ resource version and need to relist (which can impact scalability). See [Watch
 Bookmarks](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190206-watch-bookmark.md)
 for details.
 
-#### Determining if etcd is sending progress notify events
-
-It is possible to automatically determine if etcd is sending progress notify events.
-Each watch cache could keep track of when it received the last progress notify event.
-If it has been sufficiently long since the last one was received, or if none have
-ever been received, the watch cache should assume etcd is not sending progress notify,
-and not attempt to serve consistent reads from cache, falling back to serving
-the reads directly from etcd.
-
 ### Risks and Mitigations
 
-Configuring etcd to send progress notify events may have performance implications.
-@mm4tt and @wojtek-t have run [some
-experiments](https://github.com/kubernetes/kubernetes/pull/86769) that suggest
-that a progress notify interval of 50ms results in a noticeable increase in both
-etcd and kube-apiserver CPU utilization and some increased kube-apiserver serving
-latency. We intend to address this by first trying a 250ms progress notify interval,
-if ths performs well we will use that as our interval. If not, we will dig in
-to figure out why the events are impacting performance and see if we can optimize
-it away.
+<<[UNRESOLVED @serathius]>>
+Validate performance implications of using `WatchProgressRequest`.
+<<[/UNRESOLVED]>>
 
 ## Design Details
 
@@ -246,10 +230,10 @@ continuations")[https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9
 The watch cache is designed to only serve LIST requests at [the latest resource version is has
 available](https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9b39e77a9b94f478d3a3134/staging/src/k8s.io/apiserver/pkg/storage/cacher/watch_cache.go#L115).
 
-To supporting watch cache pagination:
+To support watch cache pagination:
 - The watch cache would to keep a comparable resource version history to the
   default etcd compaction history of 5 minutes.
-- The watch cache would need to be resturctured so that is can serve LIST for
+- The watch cache would need to be resturctured so that it can serve LIST for
   the resource versions it has returned continuation tokens to clients for.
 
 Both of these are major changes, and would require scalability validation.
@@ -386,53 +370,6 @@ Allow clients to manage the initial resource version they provide to reflectors,
 - Clients that transition to use resourceVersion=”” will pay a high scale/performance cost
 - We don't expect clients to attempt to keep track of the last resourceVersion they observed. If they do attempt this, we are concerned that they might get it wrong and introduce subtle and difficult to debug issues as a result.
 
-## Rejected alternatives
-
-#### Use WatchProgressRequest to request watch updates when needed
-
-etcd 3.4+ provides a `WatchProgressRequest` request that can be made on a watch channel. When requested,
-
-etcd will send a progress event on that watch as soon as possible.
-
-When an consistent read request is received and the watch cache is enabled:
-- Get the current revision from etcd using a range read with limit=0, just like in alternative 1.
-- If the cache already has the current revision, serve the request from cache
-- If the current revision is not in the cache:
-  - Send a `WatchProgressRequest` to etcd on the watch channel that the watch cache is consuming.
-- Use the existing waitUntilFreshAndBlock function in the watch cache to wait for the watch to catch up to the current revision
-- If the block times out, skip the cache and serve the request directly from storage.
-
-This alternative requires using `WatchProgressRequest` which is only available in etcd 3.4+, and so would
-require we make the kube-apiserver aware of etcd's minor version, which is described in more detail later.
-
-Make the kube-apiserver aware of etcd's minor version:
-
-This is only needed if we go with Alternative 2 (Use WatchProgressRequest to
-request watch updates when needed) since Alterative 1 is compatible with all
-etcd 3.x versions.
-
-Allow the etcd minor version to be specified in the kube-apiserver
-`--storage-backend` flag, e.g. `--storage-backend=etcd3.4`.  When client
-connections to etcd servers are established (and maybe periodically after that
-as well), check the current etcd version (via the etcd 'version' API) and warn
-the user if the version is older than the version of etcd provided in the
-flag.
-
-if `--storage-backend=etcd3` is provided, the minor etcd version will default to
-the detected etcd version minor version. This is for ease of use, since
-defaulting to `etcd3.0` would require additional configuration management by
-administrators. To make this safe, if the api-server gets an error when making a
-request that is enabled for newer etcd versions, it should warn in the logs that
-there might be an etcd version mismatch and fallback to the etcd functionality
-supported by all etcd 3.x versions.
-
-Also, Due to etcd upgrades and downgrades, there is no way to automatically
-detect the etcd version is a way that is guaranteed to be always correct, so the
-administrator must be able to set the version to a desired version.
-
-In addition to etcd minor version detection, all features requiring features
-introduced at a specific etcd minor version will have feature gates and will go
-through the usual kubernetes stability levels promotions (alpha, beta, GA).
 
 ## Potential Future Improvements
 
