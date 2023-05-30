@@ -103,7 +103,9 @@ After considering these trade-offs, we propose to move forward with Option 1 for
 
 ## Design Details
 
-The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/7024beeeeb1f2e4cde93805a137cd7ad92fec466/pkg/controller/cronjob/utils.go#L188) function, to add the job scheduled timestamp as the job annotation `batch.kubernetes.io/cronjob-scheduled-timestamp`. The scheduled timestamp is represented in `RFC3339` form and is in `UTC`.
+The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/7024beeeeb1f2e4cde93805a137cd7ad92fec466/pkg/controller/cronjob/utils.go#L188) function, to add the job scheduled timestamp as the job annotation `batch.kubernetes.io/cronjob-scheduled-timestamp`. The scheduled timestamp is represented in `RFC3339`.
+
+For the scheduled timestamp's timezone, the initial thought was to use `UTC` as it's used as the primary one for less confusion. However, since the `job` object has a `spec.timeZone`, it was a better to use the same timezone within the same object. If the job `spec.timeZone` is not set or `nil`, the annotation will use the `UTC` timezone as a default.
 
 ### Test Plan
 
@@ -229,8 +231,9 @@ N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
+- [X] Metrics
   - Metric name:
+  - `job_creation_skew_duration_seconds`.
   - [Optional] Aggregation method:
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
