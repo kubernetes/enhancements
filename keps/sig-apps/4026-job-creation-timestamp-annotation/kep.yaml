@@ -27,7 +27,6 @@ milestone:
 feature-gates:
   - name: JobCreationAnnotation
     components:
-      - kube-apiserver
       - kube-controller-manager
 disable-supported: true
 

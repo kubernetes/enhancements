@@ -61,13 +61,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently, there is no supported way to get the original/expected initial scheduled timestamp for the job. This KEP proposes to set the the original scheduled time, `CreationTimestamp`, as an annotation in the job metadata.
+Currently, there is no supported way to get the original/expected initial scheduled timestamp for the job created from a cronjob. This KEP proposes to set the the original scheduled time as an annotation in the job metadata.
 
 ## Motivation
 
 ### Goals
 
-- Set job creation timestamp as an annotation on the job.
+- Set job schedule timestamp as an annotation on the job.
 - Adding the annotation should not be disruptive to existing workloads.
 
 ### Non-Goals
@@ -96,10 +96,10 @@ Using this strategy, either none of the jobs have this annotation, or all of the
 1. Inject the annotation on *all jobs* (jobs existing prior to feature enablement and jobs created after feature enablement). However, retroactively modifying jobs of existing workloads would risk being too disruptive to existing workloads which may have logic depending on job annotations, so this option should not be considered.
 
 Both options 1 and 2 will not be disruptive to existing workloads. Option 1 is more straightforward and does not risk locking us into adding this somewhat
-hacky annotation to Jobs indefinitely like Option 2 does. On the other hand, outside of the cluster downgrade edge case, Option 2 will
-ensure consistency within a single CronJob and therefore a more predictable user experience.
+hacky annotation to jobs indefinitely like Option 2 does. On the other hand, outside of the cluster downgrade edge case, Option 2 will
+ensure consistency within a single job and therefore a more predictable user experience.
 
-After considering these trade-offs, we propose to move forward with Option 1 for simplicity and to avoid being stuck adding this annotation to Jobs. In addition, the downside of existing workloads having only a subset of jobs with the new annotation will not cause any serious issues.
+After considering these trade-offs, we propose to move forward with Option 1 for simplicity and to avoid being stuck adding this annotation to jobs. In addition, the downside of existing workloads having only a subset of jobs with the new annotation will not cause any serious issues.
 
 ## Design Details
 
