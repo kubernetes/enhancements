@@ -67,22 +67,22 @@ Currently, there is no supported way to get the original/expected initial schedu
 
 ### Goals
 
-- Set job schedule timestamp as an annotation on the job.
+- Set job scheduled timestamp as an annotation on the job.
 - Adding the annotation should not be disruptive to existing workloads.
 
 ### Non-Goals
 
 ## Proposal
 
-At a high level, the proposal is to modify the CronJob controller to set the job creation timestamp as a job annotation. The details of this are outlined in the Design Details section below.
+At a high level, the proposal is to modify the CronJob controller to set the job scheduled timestamp as a job annotation. The details of this are outlined in the Design Details section below.
 
-Job creation timestamp annotation: `batch.kubernetes.io/cronjob-scheduled-timestamp`
+Job scheduled timestamp annotation: `batch.kubernetes.io/cronjob-scheduled-timestamp`
 
 ### User Stories (Optional)
 
 #### Story 1
 
-As a user, I would like to get the job's creation timestamp that this job was expected to be running.
+As a user, I would like to get the job's scheduled timestamp that this job was expected to be running.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -103,7 +103,7 @@ After considering these trade-offs, we propose to move forward with Option 1 for
 
 ## Design Details
 
-The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/7024beeeeb1f2e4cde93805a137cd7ad92fec466/pkg/controller/cronjob/utils.go#L188) function, to add the job creation timestamp as the job annotation `batch.kubernetes.io/cronjob-scheduled-timestamp`. The creation timestamp is represented in `RFC3339` form and is in `UTC`.
+The CronJob controller will only need a minor update to the [getJobFromTemplate2](https://github.com/kubernetes/kubernetes/blob/7024beeeeb1f2e4cde93805a137cd7ad92fec466/pkg/controller/cronjob/utils.go#L188) function, to add the job scheduled timestamp as the job annotation `batch.kubernetes.io/cronjob-scheduled-timestamp`. The scheduled timestamp is represented in `RFC3339` form and is in `UTC`.
 
 ### Test Plan
 
@@ -133,7 +133,7 @@ existing annotation which other things may depend on, for example).
 
 #### Beta
 
-- Feature implemented behind the `JobCreationAnnotation` feature gate.
+- Feature implemented behind the `JobsScheduledAnnotation` feature gate.
 - Unit and integration tests passing.
 
 #### GA
@@ -159,7 +159,7 @@ the changes to each controller are self-contained.
 
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: JobCreationAnnotation
+  - Feature gate name: JobScheduledAnnotation
   - Components depending on the feature gate:
 - [ ] Other
   - Describe the mechanism:
@@ -175,11 +175,11 @@ No.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. If the feature gate is disabled, the CronJob controller will not add the
-creation timestamp as an annotation.
+scheduled timestamp as an annotation.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The CronJob controller will begin adding the creation timestamp as an annotation to jobs created while the feature is enabled, and existing jobs will be unaffected.
+The CronJob controller will begin adding the scheduled timestamp as an annotation to jobs created while the feature is enabled, and existing jobs will be unaffected.
 
 ###### Are there any tests for feature enablement/disablement?
 
