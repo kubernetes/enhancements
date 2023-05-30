@@ -454,7 +454,8 @@ type JWTAuthenticator struct {
         // - key: "admin"
         //   valueExpression: '(has(claims.is_admin) && claims.is_admin) ? "true":""'
         //
-        // If multiple mappings have the same key, the result will be a concatenation of all values.
+        // If multiple mappings have the same key, the result will be a concatenation of all values
+        // with the order preserved.
         // If the value is empty, the extra mapping will not be present.
         //
         // possible future way to pull multiple extra values out via expression.
@@ -468,11 +469,12 @@ type JWTAuthenticator struct {
     }
 
     type ExtraMapping struct {
-        // Key is a string to use as the extra attribute key.
+        // key is a string to use as the extra attribute key.
         Key string `json:"key"`
-        // ValueExpression is a CEL expression to extract extra attribute value.
-        // Expression must produce a string value.
-        // "" and null values are treated as the extra mapping not being present.
+        // valueExpression is a CEL expression to extract extra attribute value.
+        // valueExpression must produce a string or string array value.
+        // "", [], and null values are treated as the extra mapping not being present.
+        // Empty string values contained within a string array are filtered out.
         ValueExpression string `json:"valueExpression"`
     }
 
