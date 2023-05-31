@@ -403,6 +403,24 @@ Beta:
   are spending dialing out.
 - Ensure we have metrics on each existing egress use case.
 
+GA:
+
+- TBD
+- Documentation is GA quality.
+- Protocol simplification: [#462](https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/462)
+- Post-dial instrumentation: [#410](https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/410)
+- Overload protection.
+  * Proxy client use.
+  * Agent connections.
+- Version skew test coverage.
+- Benchmarks and stress tests: [#366](https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/366)
+- Efficiency improvements? [#180](https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/180), [#236](https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/236)
+- Dynamic Server count.
+  * Complete Server half: [#273](https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/273)
+  * Agent propogation: [#358](https://github.com/kubernetes-sigs/apiserver-network-proxy/issues/358)
+- Version v1 EgressSelectorConfiguration.
+- Tag and release a 1.0 version.
+
 ## Implementation History
 
 - Feature went Alpha in 1.16 with limited functionality. It will cover the log
