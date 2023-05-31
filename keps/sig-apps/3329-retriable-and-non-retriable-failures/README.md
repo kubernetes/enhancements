@@ -1279,7 +1279,7 @@ condition makes it easier to determine if a failed pod should be restarted):
 - DeletionByTaintManager (Pod evicted by kube-controller-manager due to taints)
 - EvictionByEvictionAPI (Pod deleted by Eviction API)
 - DeletionByPodGC (an orphaned Pod deleted by pod GC)
-- TerminationByKubelet (Pod terminated due to graceful node shutdown or node resource pressure).
+- TerminationByKubelet (Pod terminated due to graceful node shutdown, node resource pressure, or Kubelet preemption for critical pods).
 
 The already existing `status.conditions` field in Pod will be used by kubernetes
 components to append a dedicated condition.
@@ -1712,6 +1712,10 @@ Second iteration:
  - Extend Kubelet to mark as failed pending terminating pods (see: [Marking pods as Failed](#marking-pods-as-failed)).
  - Extend the feature documentation to explain transitioning of pending and
    terminating pods into `Failed` phase.
+
+Third iteration (1.28):
+- Add `DisruptionTarget` condition for pods which are preempted by Kubelet to make room for critical pods.
+  Also, backport this fix to 1.26 and 1.27 release branches, and update the user-facing documentation to reflect this change.
 
 #### GA
 
@@ -2250,7 +2254,13 @@ No change from existing behavior of the Job controller.
     - Detection: Observe that the pods are not deleted when a node is tainted with `NoExecute`
     - Mitigations: disable `PodDisruptionConditions`
     - Testing: Discovered bugs are covered by unit and integration tests.
-
+  - `DisruptionTarget` condition is not added to pods preempted by Kubelet when scheduling a critical pod. As a consequence
+     there is no way to handle such pod failures with pod failure policy.
+    - Known bug in 1.26.0-5 and 1.27.0-2
+    - Bugs: described in [Add DisruptionTarget condition when preempting for critical pod](https://github.com/kubernetes/kubernetes/pull/117586)
+    - Detection: Observe failed pods with reason `Preempting`, and message `Preempted in order to admit critical pod`, but without `DisruptionTarget` condition.
+    - Mitigations: upgrade to a fixed version (1.26.6+, 1.27.3+ or 1.28+). Alternatively, set higher `backoffLimit` for Jobs.
+    - Testing: Discovered bug is covered by an integration test.
 <!--
 For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
@@ -2327,6 +2337,9 @@ technics apply):
 - 2023-01-03: PR "Fix clearing of rate-limiter for the queue of checks for cleaning stale pod disruption conditions" ([link](https://github.com/kubernetes/kubernetes/pull/114770))
 - 2023-01-09: PR "Adjust DisruptionTarget condition message to do not include preemptor pod metadata" ([link](https://github.com/kubernetes/kubernetes/pull/114914))
 - 2023-01-13: PR "PodGC should not add DisruptionTarget condition for pods which are in terminal phase" ([link](https://github.com/kubernetes/kubernetes/pull/115056))
+- 2023-03-17: PR "Give terminal phase correctly to all pods that will not be restarted" ([link](https://github.com/kubernetes/kubernetes/pull/115331))
+- 2023-03-18: PR "API-initiated eviction: handle deleteOptions correctly" ([link](https://github.com/kubernetes/kubernetes/pull/116554))
+- 2023-05-23: PR "Add DisruptionTarget condition when preempting for critical pod" ([link](https://github.com/kubernetes/kubernetes/pull/117586))
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
