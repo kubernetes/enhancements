@@ -208,6 +208,7 @@ know that this has succeeded?
 
 - Extend CRI to provide image pulling progress API that can be utilized by client
 tools (crictl pull), or machinery (kubelet pulling the image)
+- Implement PoC / draft for CRI PullImageWithProgress call to runtime in Kubelet for API review purposes
 
 ### Non-Goals
 
@@ -233,16 +234,14 @@ We propose introducing new (additional, not replacing old one) API for requestin
 that will return stream with periodic updates sent through it to the client. The image pull
 request parameters will contain the type of update the client wants to receive aobut the progress:
 - time-based
-- percentage-based
 - size-based
 
 and the frequency of the updates:
 - every N seconds
-- every N percents of total image size being downloaded
-- every N bytes of the total image size being downloaded
+- every N Kibibytes of the total image size being downloaded
 respectively to the type
 
-If the client did not specify the preferred notification granularity, default values can be used,
+If the client did not specify the preferred notification granularity, default values should be used,
 for instance every Gibibyte downloaded.
 
 This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
@@ -293,8 +292,7 @@ There should be a guidance on how the runtime should report the progress, for in
 unpacking phase should be considered (see below).
 
 Pulling an image consists of two actions - downloading particular layer of the image
-and unpacking it. This repeats for every layer in the image, and this unpacking should be taken
-in account when runtime is reporting percentage.
+and unpacking it. This repeats for every layer in the image.
 
 There is a technology that allows starting the container while it's not yet fully downloaded.
 This should not conflict with the notifications about the image downloading progress, in such case
@@ -310,7 +308,7 @@ use regular silent ImagePull API call.
 
 The risks are minimal, introduction of new API is not affecting any other APIs. 
 
-Misconfiguration of image pull request progress granularity for kubelet can result in bit number
+Misconfiguration of image pull request granularity for kubelet can result in big number
 of progress responses published by runtime into return stream. This can be mitigated by kubelet
 throttling the amount of events it publishes to Pod object (publishing less than received from
 runtime), as well as in runtime by metering amount of responses being sent within time interval.
@@ -354,8 +352,8 @@ runtime CRI image service server.
 
 The PullImageWithProgressRequest contains base information needed to do the image pull (image name, auth config
 and sandbox information), and it will also contain information how often the server should send progress reports.
-The CRI client can restrict the progress reporting to be time based (once every n. seconds), percent based (after
-every n. percent) or the size (amount of bytes/KiB/MiB downloaded). The size-based should be the default one.
+The CRI client can restrict the progress reporting to be time-based (e.g. once every n. seconds),
+or based on size (amount of bytes/KiB/MiB downloaded). The size-based should be the default one.
 
     message PullImageWithProgressRequest {
         // Spec of the image.
@@ -367,9 +365,8 @@ every n. percent) or the size (amount of bytes/KiB/MiB downloaded). The size-bas
         // Granularity type of the progress reports
         PullImageProgressGranularity granularity_type = 4;
         // The interval value of the chosen granularity.
-        // For time based granularity, this is the number of seconds between reports. If time interval is 0, then report is done every 60s.
-        // For percent based granularity, this is the number of percent value between reports. If percent interval is 0, then report is done every 10%
-        // For the default size based granularity, this is the number of kibibytes received between reports. If set to 0, then runtime will report progress as image is downloaded and unpacked.
+        // For time-based granularity, this is the number of seconds between reports. If time interval is 0, the progress shouhld be sent every 60s.
+        // For size-based granularity, this is the number of kibibytes received between reports. If set to 0, then runtime will decide when to report progress as image is downloaded and unpacked.
         uint32 interval = 5;
     }
 
