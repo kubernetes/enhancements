@@ -9,8 +9,6 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
-    - [Story 3](#story-3)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Implementation](#implementation)
@@ -99,18 +97,13 @@ We propose adding a new sleep action for the PreStop hook, which will pause the 
 ### User Stories (Optional)
 
 #### Story 1
-As a Kubernetes user, I want to configure my container to sleep for a specific duration before termination so that it can gracefully release resources and connections.
-
-#### Story 2
-As a Kubernetes user, I want to configure my container to sleep before termination to ensure a smooth transition in my service mesh or load balancer.
-
-#### Story 3
-As a Kubernetes user, I want to configure my container to sleep before termination to provide a buffer period for external monitoring and alerting systems.
+As a Kubernetes user, I want to configure my container to sleep for a specific duration during terminating with grace.And I want to do it without needing a sleep binary in my image.
 
 ### Risks and Mitigations
 
-One potential risk of adding a sleep action to the preStop hook is that it may increase the time it takes for a pod to terminate, which can affect the overall availability of the application.
-To mitigate this risk, users will be encouraged to specify a reasonable duration for the sleep action that allows the container to perform any necessary cleanup actions without significantly delaying pod termination. It's recommended that users set the duration to a value that is less than or equal to the terminationGracePeriodSeconds specified in the pod's spec. Additionally, users should be aware that setting a duration that is too long may cause the pod to fail during rolling updates or during eviction due to node failures. Documentation and examples will be provided to help users understand how to use the sleep action effectively and avoid potential issues.
+One potential risk is that if the sleep duration is longer than terminationGracePeriodSeconds, container will be killed before sleep action finishes, and can cause unpredictable consequences.
+To mitigate this risk, validations will be added to ensure sleep duration is less or equal to terminationGracePeriodSeconds.But grace period can be reduced at runtime, so this's a partial solution.
+Documentation and examples will be provided to help users understand how to use the sleep action effectively and avoid potential issues.
 
 ## Design Details
 
@@ -162,6 +155,7 @@ to implement this enhancement.
 - Test that the runSleepHandler function sleeps for the correct duration when given a valid duration value.
 - Test that the runSleepHandler function returns without error when given a valid duration value.
 - Test that the validation returns an error when given an invalid duration value (e.g., a negative value).
+- Test that the validation returns an error when given duration is longer than the termination graceperiod.
 - Test that the runSleepHandler function returns immediately when given a duration of zero.
 
 ##### Integration tests
