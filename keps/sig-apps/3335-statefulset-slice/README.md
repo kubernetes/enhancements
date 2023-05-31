@@ -139,10 +139,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
@@ -390,7 +390,7 @@ In the main control loop, StatefulSet will attempt to create pod replicas `[k, N
 *   When scaling down pods: If ordinal `j` exists but is not in range `[k, N+k-1]`), pod `j` will be terminated.
 **RollingUpdate Partition Changes**
 
-Since `ordinals.start` changes the offset of the replica ordinals, this affects the `partition` field used for RollingUpdate. As `partition` specifies an ordinal index, the partition field must be in the range `[k, N+k-1]`, to be valid. 
+Since `ordinals.start` changes the offset of the replica ordinals, this affects the `partition` field used for RollingUpdate. As `partition` specifies an ordinal index, the partition field must be in the range `[k, N+k-1]`, to be valid.
 
 ### Test Plan
 
