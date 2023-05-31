@@ -152,14 +152,17 @@ Verified that the API server accepts the pod or podTemplate with the expanded
 DNS config and the kubelet accepts the resolv.conf or pod with the expanded DNS
 config.
 
+- `k8s.io/kubernetes/pkg/kubelet/network/dns/dns.go`: `2023/04/22` - `68.7%`
+
 ##### Integration tests
 
 No integration tests are planned.
 
 ##### e2e tests
 
-Will add an e2e test to ensure that the pod with the expanded DNS config can be
-created and run successfully.
+Tests in `test/e2e/network/dns.go`:
+
+- [It] [sig-network] DNS should work with the pod containing more than 6 DNS search paths and longer than 256 search list characters: [results](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-kind-e2e-parallel&test=should%20work%20with%20the%20pod%20containing%20more%20than%206%20DNS%20search%20paths%20and%20longer%20than%20256%20search%20list%20characters)
 
 ### Graduation Criteria
 
@@ -221,7 +224,7 @@ the expanded DNS configuration.
 
 Yes, the feature can be disabled by disabling the feature gate.
 
-Before disabling the feature gate, is is recommended to remove objects
+Before disabling the feature gate, it is recommended to remove objects
 containing podsTemplate with the expanded DNS config as newly created pods will
 be rejected by the apiserver.
 
@@ -356,6 +359,12 @@ The DNS lookup time can be increased, but it will be negligible.
 
 No
 
+- **Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?**
+
+No, this cannot result in resource exhaustion of node resources as setting
+longer DNS search list to `/etc/resolv.conf` only affects the process running
+inside the container.
+
 ### Troubleshooting
 
 - **How does this feature react if the API server and/or etcd is unavailable?**
@@ -384,6 +393,10 @@ merged](https://github.com/kubernetes/kubernetes/pull/100651)
 merged](https://github.com/kubernetes/website/pull/28096)
 - 2022-01-12: [Docs updated to add requirements for the
 feature](https://github.com/kubernetes/website/pull/31305)
+- 2022-08-15: [Beta implementation
+merged](https://github.com/kubernetes/kubernetes/pull/112824)
+- 2022-08-22: [Beta docs
+merged](https://github.com/kubernetes/website/pull/37364)
 
 ## Drawbacks
 
