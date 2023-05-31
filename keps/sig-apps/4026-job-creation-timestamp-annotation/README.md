@@ -88,18 +88,7 @@ As a user, I would like to get the job's scheduled timestamp that this job was e
 
 ### Risks and Mitigations
 
-One thing that must be considered is how enabling this new feature will interact with existing workloads. There are a couple of options:
-
-1. Only inject the job annotation for *newly created CronJobs*. We can track this by annotating newly created CronJobs to distinguish existing ones from newly created ones.
-Using this strategy, either none of the jobs have this annotation, or all of them do, which will provide a more consistent user experience. However, in the case of a cluster downgrade to a version without this feature, new jobs would start getting created without this annotation again.
-
-1. Inject the annotation on *all jobs* (jobs existing prior to feature enablement and jobs created after feature enablement). However, retroactively modifying jobs of existing workloads would risk being too disruptive to existing workloads which may have logic depending on job annotations, so this option should not be considered.
-
-Both options 1 and 2 will not be disruptive to existing workloads. Option 1 is more straightforward and does not risk locking us into adding this somewhat
-hacky annotation to jobs indefinitely like Option 2 does. On the other hand, outside of the cluster downgrade edge case, Option 2 will
-ensure consistency within a single job and therefore a more predictable user experience.
-
-After considering these trade-offs, we propose to move forward with Option 1 for simplicity and to avoid being stuck adding this annotation to jobs. In addition, the downside of existing workloads having only a subset of jobs with the new annotation will not cause any serious issues.
+CronJobs are always working with the assumption that the changes apply only to newly created jobs after the change. Therefore, the change will be to inject the annotation for newly created Jobs from CronJobs for when the feature is on. This will nicely play with downgrade and doesn't introduce unnecessary complexity.
 
 ## Design Details
 
@@ -135,7 +124,7 @@ existing annotation which other things may depend on, for example).
 
 #### Beta
 
-- Feature implemented behind the `JobsScheduledAnnotation` feature gate.
+- Feature implemented behind the `CronJobsScheduledAnnotation` feature gate.
 - Unit and integration tests passing.
 
 #### GA
