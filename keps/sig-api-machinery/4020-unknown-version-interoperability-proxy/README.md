@@ -248,7 +248,7 @@ or get a 503 (which it handles safely).
 This controller seeks to empty all objects from a namespace when it is deleted.
 Discovery failures cause NLC to be unable to tell if objects of a given resource
 are present in a namespace. It fails safe, meaning it refuses to delete the
-namespace until it can verify it is empty: this causes slowness deleteing
+namespace until it can verify it is empty: this causes slowness deleting
 namespaces that is a common source of complaint.
 
 Additionally, if the NLC knows about a resource that the apiserver it is talking
