@@ -328,7 +328,7 @@ How the masterlease reconciler will be used is as follows:
 
 3. We will also expose the IP and port information of the kube-apiservers as annotations in APIserver identity lease object for visibility/debugging purposes
 
-4. We will also use an egress dialer for network connections made to peer kube-apiservers. For this, will create a new type for the network context to be used for peer kube-apiserver connections ([xref](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/apis/apiserver/types.go#L55-L71))
+4. We will also use an egress dialer for network connections made to peer kube-apiservers. For this, will create a new type for the network context to be used for peer kube-apiserver connections ([xref](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/apis/apiserver/types.go#L56-L71))
 
 #### Proxy transport between apiservers and authn
 
@@ -574,12 +574,6 @@ well as the [existing list] of feature gates.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: UnknownVersionInteroperabilityProxy
   - Components depending on the feature gate: kube-apiserver
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -691,7 +685,7 @@ logs or events for this purpose.
 -->
 
 The following metrics could be used to see if the feature is in use:
-- kubernetes_uvip_count
+- kubernetes_uvip_total
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -704,7 +698,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- Metrics like kubernetes_uvip_count can be used to check how many requests were proxied to remote apiserver
+- Metrics like kubernetes_uvip_total can be used to check how many requests were proxied to remote apiserver
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -723,6 +717,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+None have been identified.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -731,7 +726,7 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: `kubernetes_uvip_count`
+  - Metric name: `kubernetes_uvip_total`
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -842,6 +837,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+When handling a request in the handler chain of the kube-aggregator, the StorageVersion informer will be used to look up which API servers can serve the requested resource. 
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
