@@ -164,7 +164,7 @@ Before promoting to beta at least a single e2e test should also be added in
 
 ##### e2e tests
 
-- missing
+- kubectl events should show event when pod is created: [test grid](https://storage.googleapis.com/k8s-triage/index.html?sig=cli&test=kubectl%20events)
 
 ### Graduation Criteria
 
@@ -178,7 +178,7 @@ Once the experimental kubectl events command is implemented, this can be rolled 
 
 ##### GA
 
-- [ ] Address all major issues and bugs raised by community members
+- [x] Address all major issues and bugs raised by community members
 
 ### Upgrade / Downgrade Strategy
 
@@ -311,6 +311,10 @@ No.
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -336,6 +340,7 @@ None.
 - *2020-01-16* - Initial KEP draft
 - *2021-09-06* - Updated KEP with the new template and mark implementable for alpha implementation.
 - *2022-09-21* - Updated KEP for beta promotion.
+- *2023-05-17* - Updated KEP for stable promotion. 
 
 ## Alternatives
 
