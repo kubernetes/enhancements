@@ -210,7 +210,7 @@ API server change:
     with the resources it can serve and receiving a request for a resource
     that is not yet available on that apiserver).
 
-* Discovery merging.
+* Discovery merging:
 
   - During upgrade or downgrade, it may be the case that no apiserver has a
     complete list of available resources. To fix the problems mentioned, it's
@@ -324,7 +324,7 @@ How the masterlease reconciler will be used is as follows:
 
 1. We will use the already existing IP in Endpoints.Subsets.Addresses of the masterlease by default
 
-2. For users with network configurations that would not allow Endpoints.Subsets.Addresses to be reachable from a kube-apiserver, we will introduce a new --advertise-peer-ip flag to kube-apiserver. We will store its value as an annotation on the masterlease and use this to route the request to the right destination server
+2. For users with network configurations that would not allow Endpoints.Subsets.Addresses to be reachable from a kube-apiserver, we will introduce a new --bind-peer-ip flag to kube-apiserver. We will store its value as an annotation on the masterlease and use this to route the request to the right destination server
 
 3. We will also expose the IP and port information of the kube-apiservers as annotations in APIserver identity lease object for visibility/debugging purposes
 
@@ -356,7 +356,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[X] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -685,7 +685,7 @@ logs or events for this purpose.
 -->
 
 The following metrics could be used to see if the feature is in use:
-- kubernetes_uvip_total
+- kubernetes_uvip_proxied_request_total
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -698,7 +698,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- Metrics like kubernetes_uvip_total can be used to check how many requests were proxied to remote apiserver
+- Metrics like kubernetes_uvip_proxied_request_total can be used to check how many requests were proxied to remote apiserver
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -726,7 +726,7 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: `kubernetes_uvip_total`
+  - Metric name: `kubernetes_uvip_proxied_request_total`
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
