@@ -5,7 +5,7 @@ authors:
   - "@sunnylovestiramisu"
 owning-sig: sig-storage
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2023-01-24
 reviewers:
   - "@msau42"
@@ -28,16 +28,18 @@ latest-milestone: "1.28"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.28"
-  beta: "v1.29"
-  stable: "v1.30"
+  beta: 
+  stable: 
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: VolumeProvisionedIO
+  - name: VolumeAttributesClass
     components:
+      - external-provisioner
       - external-resizer
       - kube-apiserver
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
