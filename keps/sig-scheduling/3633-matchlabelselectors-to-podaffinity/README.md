@@ -274,7 +274,7 @@ metadata:
 #### Story 2
 
 Let's say all Pods on each tenant get `tenant` label via a controller or a manifest management tool like Helm. 
-And, the cluster admin now wants to achieve exclusive 1:1 tenant to domain placement.
+Although the value of `tenant` label is unknown when composing the workload's manifest, the cluster admin still wants to achieve exclusive 1:1 tenant to domain placement.
 
 By applying the following affinity globally using a mutating webhook, the cluster admin can ensure that the Pods from the same tenant will land on the same domain exclusively, meaning Pods from other `tenants` won't land on the same domain. 
 
@@ -282,20 +282,20 @@ By applying the following affinity globally using a mutating webhook, the cluste
 affinity:
   podAffinity:      # ensures the pods of this tenant land on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
-      - matchLabelSelectors:
-          - key: tenant
-            operator: In
-        topologyKey: node-pool
+    - matchLabelSelectors:
+        - key: tenant
+          operator: In
+      topologyKey: node-pool
   podAntiAffinity:  # ensures only Pods from this tenant lands on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
-      - matchLabelSelectors:
-          - key: tenant
-            operator: NotIn
-      - labelSelector:
-          matchExpressions:
-          - key: tenant
-            operator: Exists
-        topologyKey: node-pool
+    - matchLabelSelectors:
+        - key: tenant
+          operator: NotIn
+      labelSelector:
+        matchExpressions:
+        - key: tenant
+          operator: Exists
+      topologyKey: node-pool
 ```
 
 ### Notes/Constraints/Caveats (Optional)
@@ -360,16 +360,16 @@ type MatchLabelSelector struct {
 }
 
 type PodAffinityTerm struct {
-	LabelSelector *metav1.LabelSelector
-	Namespaces []string
-	TopologyKey string
-	NamespaceSelector *metav1.LabelSelector
+  LabelSelector *metav1.LabelSelector
+  Namespaces []string
+  TopologyKey string
+  NamespaceSelector *metav1.LabelSelector
 
-	// MatchLabelSelectors is a set of pod label keys to select the group of existing pods 
+  // MatchLabelSelectors is a set of pod label keys to select the group of existing pods 
   // which pods will be taken into consideration for the incoming pod's pod (anti) affinity. 
   // The default value is empty.
-	// +optional
-	MatchLabelSelectors []strinMatchLabelSelectorg
+  // +optional
+  MatchLabelSelectors []strinMatchLabelSelectorg
 }
 ```
 
@@ -377,6 +377,53 @@ When a Pod is created, kube-apiserver will obtain the labels from the pod
 labels by the key in `MatchLabelSelectors.Key`, and merge to `LabelSelector` of `PodAffinityTerm` depending on `Operator`:
 - If Operator is `In`, `key in (value)` is merged with LabelSelector. 
 - If Operator is `NotIn`, `key notin (value)` is merged with LabelSelector. 
+
+Only `In` and `NotIn` are supported in `Operator` of `MatchLabelSelectors`,
+and kube-apiserver rejects other operators (`Exist` and `DoesNotExist`).
+
+For example, when this sample Pod is created,
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample
+  namespace: sample-namespace
+  labels:
+    tenant: tenant-a
+...
+  affinity:
+    podAntiAffinity:  
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - matchLabelSelectors:
+          - key: tenant
+            operator: NotIn
+        labelSelector:
+          matchExpressions:
+          - key: tenant
+            operator: Exists
+        topologyKey: node-pool
+```
+
+kube-apiserver modifies the labelSelector like the following:
+
+```diff
+affinity:
+  podAntiAffinity:  
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - matchLabelSelectors:
+          - key: tenant
+            operator: NotIn
+        labelSelector:
+          matchExpressions:
+          - key: tenant
+            operator: Exists
++         - key: tenant
++           operator: NotIn
++           values: 
++             - tenant-a
+        topologyKey: node-pool
+```
 
 ### Test Plan
 
@@ -966,6 +1013,10 @@ information to express the idea and why it was not acceptable.
 Implement new enum values `ExistsWithSameValue` and `ExistsWithDifferentValue` in LabelSelector.
 - `ExistsWithSameValue`: look up the label value keyed with the key specified in the labelSelector, and match with Pods which have the same label value on the key.
 - `ExistsWithDifferentValue`:  look up the label value keyed with the key specified in the labelSelector, and match with Pods which have the same label key, but with the different label value on the key.
+
+But, this idea is rejected because: 
+- it's difficult to prepare all existing clients to handle new enums.
+- labelSelector is going to be required to know who has this labelSelector to handle these new enums, and it's a tough road to change all code handling labelSelector.
 
 #### Example
 
