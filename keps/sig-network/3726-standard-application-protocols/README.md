@@ -144,8 +144,8 @@ Those common protocols will be well defined strings prefixed with ‘kubernetes.
 
 ### New Standard Protocols
 - 'kubernetes.io/h2c'
-- 'kubernetes.io/websocket'
-- 'kubernetes.io/websocket-secure'
+- 'kubernetes.io/ws'
+- 'kubernetes.io/wss'
 
 ### Risks and Mitigations
 
@@ -178,8 +178,8 @@ type ServicePort struct {
   //
   // * Kubernetes-defined prefixed names:
   //   * 'kubernetes.io/h2c' - HTTP/2 over cleartext as described in https://www.rfc-editor.org/rfc/rfc7540
-  //   * 'kubernetes.io/websocket' - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
-  //   * 'kubernetes.io/websocket-secure' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
+  //   * 'kubernetes.io/ws'  - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
+  //   * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
   //
   // * Other protocols should use implementation-defined prefixed names such as
   // mycompany.com/my-custom-protocol.
