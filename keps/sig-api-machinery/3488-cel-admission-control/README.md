@@ -1316,25 +1316,29 @@ Note that `matchConditions` and `validations` look similar, but `matchConditions
 
 #### CEL Expression Composition
 
+Expression Composition is a technique to define a set of variables each from
+a given expression and allow validation expressions to refer the variables.
+
 ##### Use Cases
+
+###### Reusing/memorizing an expensive computation and lazy evaluation
+
+For a CEL expression that takes a significant time to evaluate, especially
+these that cost O(N^2) time or worse, it would be nice to only run it once
+and only when necessary. If multiple validation expressions used the same
+expression, that expression could be refactored out into a variable.
+Because of the evaluation of a composited variable is lazy, if the value of some variable
+does not affect the result of an expression due to boolean short-circuit evaluation,
+the variable can be omitted and does not incur runtime cost.
 
 ###### Code re-use for complicated expressions
 
 A CEL expression may not be computationally expensive, but could still be
 intricate enough that copy-pasting could prove to be a bad decision later on
-in time. With the addition of the `messageExpression` field, more copy-pasting
-is expected as well. If a sufficiently complex expression ended up copy-pasted everywhere,
-and then needs to be updated somehow, it will need that update in every place
-it was copy-pasted. A variable, on the other hand, will only need to be updated
-in one place.
-
-###### Reusing/memoizing an expensive computation
-
-For a CEL expression that runs in O(n^2) time or worse (or otherwise
-takes a significant amount of time to execute), it would be nice to only run
-it when necessary. For instance, if multiple validation expressions used the
-same expensive expression, that expression could be refactored out into a
-variable.
+in time. For example, a sub-expression is likely used both in the validation and
+to format `messageExpression`. If a sufficiently complex expression ended up
+copy-pasted everywhere, and then needs to be updated somehow, it will need that update in every place
+it was copy-pasted. A variable, on the other hand, will only need to be updated in one place.
 
 ##### Variables
 
@@ -1343,18 +1347,17 @@ assignment. This can result in redundant code to traverse maps/arrays or
 dereference particular fields.
 
 We can support this in much the same way as cel-policy-template `terms`. These
-can be lazily evaluated while the validation expressions are evaluated
-(cel-policy-template does this).
+can be lazily evaluated when they are resolved during the evaluation of
+the main expression (cel-policy-template does this).
 
-A policy can include an additional `variables` section. This is an array
+The policy spec now has an additional `variables` section. This is an array
 containing one or more `name` and `expression` pairs, which can be used/re-used by
 the policy's validation expressions. These results are memoized on a
 per-validation basis, so if multiple expressions use the same spec variables,
 the expression that calculates the variable's value will only run once.
 
 The variables can be accessed as members of `variables`, which is an object
-that is exposed to CEL expressions (both validation expressions as well as
-other variables).
+that is exposed to CEL expressions (both validation expressions and other variables).
 
 For example:
 
@@ -1370,15 +1373,15 @@ For example:
 ```
 
 Variable names must be valid CEL names. What constitutes a
-valid CEL name can be found at CEL's [language definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax) under `IDENT`.
-This validity is checked at write time.
+valid CEL name can be found at CEL[language definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)
+under `IDENT`. This validity is checked when the policy is being created or updated.
 
 For per-policy runtime cost limit purposes, variables count towards the runtime cost limit
 once per policy. The cost of each variable is computed when it is first evaluated in an
 expression, mirroring how the cost limit would be calculated if the variable's
 expression was embedded verbatim.  If the runtime cost limit is exceeded in the
 process, then evaluation halts. No individual variable or expression will be listed as the
-cause in the resulting message. Whether or not the request actually fails depends on the failure policy,
+cause in the resulting message. Whether the request actually fails depends on the failure policy,
 however. For subsequent uses, inclusion of the variable has zero effect on the runtime
 cost limit. If the variable evaluates to an array or some other iterable, and some expression
 iterates on it, that of course contributes to the cost limit, but simply including the variable does
@@ -1387,16 +1390,13 @@ not add the underlying expression's cost again.
 Variables are also subject to the per-expression runtime cost limit. Exceeding the per-expression
 runtime cost limit is always attributed to the variable, unlike the per-policy limit.
 
-Variables can only reference other variables that
-have been previously defined in the `variables` section, so circular references
-are not allowed.
+Variables can only reference other variables that have been previously defined in the `variables` section.
+This will have a side effect of making the order of the variable definitions matter but prevents circular reference. 
 
-If an error ocurrs during variable evaluation, then the expression
-that caused it to be evaluated (since variable are always
-lazily-evaluated) also finishes with an error. Evaluation for that
-variable is not attempted again during the same validation; if any other
-expressions attempt to evaluate a variable that already failed an evaluation
-attempt, they will also be considered to have failed.
+Both the result and potential error of a variable evaluation are memorized.
+If an error occurs during variable evaluation, then every validation expression
+that caused it to be evaluated (since variable are always lazily-evaluated)
+also finishes with an error, and the variable evaluation will not retry.
 
 #### Secondary Authz
 
