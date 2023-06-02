@@ -194,7 +194,6 @@ TODO:
 - distributed claims with fancier resolution requirements (such as access tokens as input)
 - implementation detail: we should probably parse the `iss` claim out once
 - should audit annotations be set on validation failure?
-- should we introduce implicit checks that assure at least one of uid/username are nonempty?
 - decide what error should be returned if CEL eval fails at runtime
   `500 Internal Sever Error` seem appropriate but authentication can only do `401`
 
@@ -225,10 +224,6 @@ jwt:
     extra:
     - key: 'client_name'
       valueExpression: 'claims.some_claim'
-  # TODO(enj): drop this and figure out to get from CEL
-  # claimFilters:
-  # - username
-  # - roles
   userInfoValidationRules:
   - rule: "!userInfo.username.startsWith('system:')"
     message: username cannot used reserved system: prefix
@@ -340,9 +335,19 @@ type JWTAuthenticator struct {
         URL string `json:"url,omitempty"`
 
         // discoveryURL if specified, overrides the URL used to fetch discovery information.
+        // This is in scenarios where the well-known and jwks endpoints are hosted locally in the cluster.
         // Format must be https://url/path.
+        //
+        // The connections from the API server to service will run over a secure HTTPS connection
+        // by prefixing https: to the service name in the API URL, but they will not validate the
+        // certificate provided by the HTTPS endpoint nor provide client credentials. So while the
+        // connection will be encrypted, it will not provide any guarantees of integrity.
+        // These connections are not currently safe to run over untrusted or public networks.
+        // xref: https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/#api-server-to-nodes-pods-and-services
+        //
         // Example:
-        // curl oidc.oidc-namespace (.discoveryURL field)
+        // This is the discovery url that's exposed using kubernetes service 'oidc' in namespace 'oidc-namespace'.
+        // curl https://oidc.oidc-namespace (.discoveryURL field)
         // {
         //     issuer: "https://oidc.example.com" (.url field)
         // }
@@ -420,7 +425,7 @@ type JWTAuthenticator struct {
         // username represents an option for the username attribute.
         // Claim must be a singular string claim.
         // TODO: decide whether to support a distributed claim for username (what are we required to correlate between the data retrieved for distributed claims? sub? something else?). Limit distributed claim support to OIDC things with clientID validation?
-        // Expression must produce a string value.
+        // Expression must produce a string value that must be non-empty.
         // Possible prefixes based on the config:
         //     (1) if userName.prefix = "-", no prefix will be added to the username
         //     (2) if userName.prefix = "" and userName.claim != "email", prefix will be "<issuer.url>#"
@@ -432,6 +437,21 @@ type JWTAuthenticator struct {
         // Expression must produce a string or string array value.
         // "", [], missing, and null values are treated as having no groups.
         // TODO: investigate if you could make a single expression to construct groups from multiple claims. If not, maybe []PrefixedClaimOrExpression?
+        // For input claim:
+        // {
+        //     "claims": {
+        //     "roles":"foo,bar",
+        //     "other_roles":"baz,qux"
+        //     "is_admin": true
+        //     }
+        // }
+        // To concatenate lists:
+        //     claims.roles.split(",") + claims.other_roles.split(",")
+        // Constructing single item list and concatenating lists:
+        //     claims.roles.split(",") + ["hardcoded_group"]
+        //     claims.roles.split(",") + (claims.is_admin ? ["admin"]:[])
+        // Type check and wrap in a list if needed:
+        //     (type(claims.string_or_list_claim) == string ? [claims.string_or_list_claim] : claims.string_or_list_claim) + ["hardcoded_group"]
         // +optional
         Groups PrefixedClaimOrExpression `json:"groups,omitempty"`
         // uid represents an option for the uid attribute.
@@ -544,6 +564,26 @@ type JWTAuthenticator struct {
       client_name: kubernetes
     ```
 
+    For distributed claims:
+
+    ```json
+        claims = {
+          "foo":"bar",
+          "foo.bar": "...",
+          "true": "...",
+          "_claim_names": {
+            "groups": "group_source"
+           },
+           "_claim_sources": {
+            "group_source": {"endpoint": "https://example.com/claim_source"}
+           }
+        }
+    ```
+
+    - For claim names containing `.`, we can reference using `claims["foo.bar"]`
+    - TODO: can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
+       - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
+
 ### CEL
 
 * CEL runtime should be compiled only once if structured authentication config option is enabled.
@@ -552,14 +592,26 @@ type JWTAuthenticator struct {
   * `claims` for JWT claims (payload)
 * One variable will be available to use in `userInfoValidationRules`:
   * `userInfo` with the same schema as [authentication.k8s.io/v1, Kind=UserInfo](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#userinfo-v1-authentication-k8s-io)
-* To make working with strings more convenient, `strings` and `encoding`
-  [CEL extensions](https://github.com/google/cel-go/tree/v0.9.0/ext) will be enabled,
-  e.g, to be able to split a string with comma separated fields and use them as a single array.
+* The standard Kubernetes CEL environment, including extension libraries, will be used.
+  * Current environment:
+    * [Extension libraries](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiserver/pkg/cel/library/libraries.go#L26)
+    * [Base environment](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/compilation.go#L83)
+  * The encoding library needs to be added to the environment since it's currently not used. Doing so will help keep CEL consistent across the API.
 * Benchmarks are required to see how different CEL expressions affects authentication time.
+  * There will be a upper bound of 5s for the CEL expression evaluation.
 * Caching will be used to prevent having to execute the CEL expressions on every request.
     - TODO decide what the behavior of the token cache will be on config reload
     - TODO should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
       this requires awareness of key rotation to implement safely
+* TODO: decide how to safe guard access to fields that might not exist or stop existing at any moment.
+  * Using `has()` to guard access to fields.
+  * Could we do some kind of defaulting for fields that don't exist?
+
+> Notes from PR review (jpbetz):
+>
+> You can pass a context to CEL and cancel runtime evaluation if the context is canceled. This causes the CEL expression to halt execution promptly and evaluate to an error.
+> You can also put a runtime limit (measured in abstract cost units that are hardware and wall clock independent) on CEL expressions to bound running time.
+> (There is also a way to set a limit for the estimated cost, which is computed statically on compiled CEL programs if you know the worst case size of the input data, but this might be overkill for this feature)
 
 ### Flags
 
@@ -796,7 +848,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-The feature should work 99.9% of the time (SLOs for actual requests should not change in any way compared to the flag-based OIDC configuration).
+SLOs for actual requests should not change in any way compared to the flag-based OIDC configuration.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
