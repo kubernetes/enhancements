@@ -101,9 +101,7 @@ As a Kubernetes user, I want to configure my container to sleep for a specific d
 
 ### Risks and Mitigations
 
-One potential risk is that if the sleep duration is longer than terminationGracePeriodSeconds, container will be killed before sleep action finishes, and can cause unpredictable consequences.
-To mitigate this risk, validations will be added to ensure sleep duration is less or equal to terminationGracePeriodSeconds.But grace period can be reduced at runtime, so this's a partial solution.
-Documentation and examples will be provided to help users understand how to use the sleep action effectively and avoid potential issues.
+N/A
 
 ## Design Details
 
@@ -170,7 +168,7 @@ N/A
 
 - Sleep duration boundary testing
   1. Create a simple pod with a container that runs a long-running process.
-  2. Add a preStop hook to the container configuration, using the new sleepAction with various sleep durations, including:0 seconds (minimum allowed value), values slightly above the minimum allowed value (to test edge cases).
+  2. Add a preStop hook to the container configuration, using the new sleepAction with various sleep durations, including:1 seconds (minimum allowed value), values slightly above the minimum allowed value (to test edge cases).
   3. For each sleep duration, delete the pod and observe the time it takes for the container to terminate.
   4. Verify that the container sleeps for the specified duration before it is terminated.
 
@@ -178,11 +176,11 @@ N/A
   1. Create a simple pod with a container that runs a long-running process.
   2. Add a preStop hook to the container configuration, using the new sleepAction with a specified sleep duration (e.g., 5 seconds).
   3. Set the termination grace period to various values, including:
-     - Less than the sleep duration
      - Equal to the sleep duration
      - Greater than the sleep duration
+     - Greater than the sleep duration, but reduced to less than the sleep duration at runtime
   4. For each termination grace period value, delete the pod and observe the time it takes for the container to terminate.
-  5. Verify that the container is terminated gracefully after the configured sleep duration.
+  5. Verify that the container is terminated after the min(sleep, grace).
 
 ### Graduation Criteria
 
