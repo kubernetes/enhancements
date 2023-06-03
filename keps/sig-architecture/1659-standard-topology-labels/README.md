@@ -133,7 +133,7 @@ today.
 ### Reserve a label prefix
 
 Label prefixes allow us to group labels on common origin and meaning.  We
-propose to document somewhere (TBD) that the prefix "topology.kuberntes.io" is
+propose to document somewhere (TBD) that the prefix "topology.kubernetes.io" is
 explicitly reserved for use in defining metadata about the physical or logical
 connectivity and grouping of Kubernetes nodes (and other things), and the
 associated behavioral and failure properties of those groups.
