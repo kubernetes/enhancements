@@ -43,5 +43,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - deleting_pods_total
-  - deleting_pods_error_total
+  - force_delete_pods_total
+  - force_delete_pod_errors_total

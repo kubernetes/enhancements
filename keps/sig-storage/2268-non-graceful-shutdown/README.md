@@ -408,11 +408,12 @@ Pick one more of these and delete the rest.
 -->
   - [X] Metrics
     - Metric name: 
-      - We added new metrics `deleting_pods_total`, `deleting_pods_error_total`
-      in Pod GC Controller.
-      For Attach Detach Controller, there's already a metric:
-      `attachdetach_controller_forced_detaches`
-      There is also a `kube_node_spec_taint` in [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/node-metrics.md) that is a metric for the taint of a Kubernetes cluster node.
+      - New metrics are added in Pod GC Controller:
+        - `force_delete_pods_total`, the number of pods that are being forcefully deleted since the Pod GC Controller started.
+        - `force_delete_pod_errors_total`, the number of errors encountered when forcefully deleting the pods since the Pod GC Controller started.
+      - For Attach Detach Controller, there's already a metric:
+        - `attachdetach_controller_forced_detaches`, the number of times the Attach Detach Controller performed a forced detach.
+      - There is also a `kube_node_spec_taint` in [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/node-metrics.md) that is a metric for the taint of a Kubernetes cluster node.
     - [Optional] Aggregation method:
     - Components exposing the metric:
   - [X] Other (treat as last resort)
@@ -685,6 +686,7 @@ For each of them, fill in the following information by copying the below templat
 - 2021-12-03: Removed `SafeDetach` flag. Requires a user to add the `out-of-service` taint when he/she knows the node is shutdown.
 - Kubernetes v1.24: moved to alpha.
 - Kubernete v1.26: moved to beta.
+- Kubernete v1.28: moved to stable.
 
 ## Alternatives
 
