@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
 status: implementable
-creation-date: 2023-05-22
+creation-date: 2023-06-06
 reviewers:
   - "@soltysh"
 approvers:
@@ -25,7 +25,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: CronJobCreationAnnotation
+  - name: JobScheduledAnnotation
     components:
       - kube-controller-manager
 disable-supported: true
