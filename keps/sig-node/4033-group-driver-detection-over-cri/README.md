@@ -622,7 +622,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Kubelet and CRI version.
+Kubelet and container runtime version.
 
 ###### How can someone using this feature know that it is working for their instance?
 
