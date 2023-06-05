@@ -156,7 +156,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement adds the ability for the container runtime to tell kubelet
+This enhancement adds the ability for the container runtime to instruct kubelet
 which cgroup driver to use. This removes the need for specifying cgroup driver
 in the kubelet configuration and eliminates the possibility of misaligned
 cgroup driver configuration between the kubelet and the runtime.
@@ -216,7 +216,7 @@ This might be a good place to talk about core concepts and how they relate.
 ### Risks and Mitigations
 
 Field adoption could be considered a risk, though the CRI implementations work
-closely with SIG-Node and the feature will move along with CRI implementation
+closely with SIG Node and the feature will move along with CRI implementation
 adoption.
 
 ## Design Details
@@ -502,7 +502,7 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-No feature gate required–the fields are all SIG-Node internal and have simple
+No feature gate required–the fields are all SIG Node internal and have simple
 fallbacks.
 
 ###### Does enabling the feature change any default behavior?
@@ -877,7 +877,7 @@ Make kubelet the configuration point for cgroup driver so that kubelet would
 inform the runtime which cgroup driver to use. This could be achieved e.g.
 without any changes to the CRI API by the CRI implementation guessing the
 cgroup driver based on the path of the CgroupParent of the pod, passed down in
-the RunPodSandboxRequest. However, SIG-Node has decided that the CRI
+the RunPodSandboxRequest. However, SIG Node has decided that the CRI
 implementation should begin to be the source of truth for low-level choices
 like this, and thus this approach was chosen.
 
