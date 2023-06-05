@@ -1,0 +1,39 @@
+title: Sandbox image pinning from CRI
+kep-number: 4056
+authors:
+  - "@sohankunkerkar"
+  - "@haircommander"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: implementable
+creation-date: 2023-06-06
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also: []
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.28"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.28"
+  beta: "v1.xx"
+  stable: "v1.yy"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: []
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics: []
