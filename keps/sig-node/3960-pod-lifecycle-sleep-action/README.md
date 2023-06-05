@@ -187,12 +187,12 @@ N/A
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial unit/integration tests completed and enabled
+- Initial unit/e2e tests completed and enabled
 
 #### Beta
 
 - Gather feedback from developers and surveys
-- Additional e2e tests are completed
+- Additional e2e tests are completed(if needed)
 
 #### GA
 
