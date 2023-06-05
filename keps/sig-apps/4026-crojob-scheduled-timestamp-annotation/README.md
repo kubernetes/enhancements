@@ -149,7 +149,7 @@ the changes to each controller are self-contained.
 
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `JobScheduledAnnotation`
+  - Feature gate name: `CronJobCreationAnnotation`
   - Components depending on the feature gate: The feature gate will only enable the new annotation to be added to the newly created Jobs.
 - [ ] Other
   - Describe the mechanism: N/A.
