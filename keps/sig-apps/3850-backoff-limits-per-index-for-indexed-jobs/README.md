@@ -15,6 +15,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
     - [The Job object too big](#the-job-object-too-big)
   - [Expotential backoff delay issue](#expotential-backoff-delay-issue)
+  - [Too fast Job status updates](#too-fast-job-status-updates)
 - [Design Details](#design-details)
   - [Job API](#job-api)
   - [Tracking the number of failures per index](#tracking-the-number-of-failures-per-index)
@@ -328,6 +329,33 @@ fallback to the pod's creation time.
 This fix can be considered a preparatory PR before the KEP, as to some extent
 is solves the preexisting issue.
 
+### Too fast Job status updates
+
+In this KEP the Job controller needs to keep updating the new status field
+`.status.failedIndexes` to reflect the current status of the Job. This can raise
+concerns of overwhelming the API server with status updates.
+
+First, observe that the new field does not entail additional Job status updates.
+When a pod terminates (either failure or success), it triggers Job status update
+to increment the `status.failed` or `.status.succeeded` counter fields. These
+updates are also used to update the pre-existing `status.completedIndexes`
+field, and the new `status.failedIndexes` field.
+
+Second, in order to mitigate this risk there is already a mechanism present in
+the Job controller, to bulk Job status updates per Job.
+
+The way the mechanism works is that Job controller maintains a queue of `syncJob`
+invocations per job
+(see [in code](https://github.com/kubernetes/kubernetes/blob/72a3990728b2a8979effb37b9800beb3117349f6/pkg/controller/job/job_controller.go#L118)).
+New items are added to the queue with a delay (1s for pod events, such as:
+delete, add, update). The delay allows for deduplication of the sync per Job.
+
+One place to queue a new item in the queue, specific to this KEP, is when
+the expotential backoff delay hasn't elapsed for any index (allowing pod
+recreation), then we requeue the next Job status update. The delay is computed
+as minimum of all delays computed for all indexes requiring pod recreation,
+but not less that 1s.
+
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
 For example, consider both security and how this will impact the larger
@@ -412,6 +440,9 @@ type JobStatus struct {
   FailedIndexes *string
 }
 ```
+
+Note that, the `PodFailurePolicyAction` type is already defined in master with
+three possible enum values: `Ignore`, `FailJob` and `Count` (see [here](https://github.com/kubernetes/kubernetes/blob/72a3990728b2a8979effb37b9800beb3117349f6/pkg/apis/batch/types.go#L113-L131)).
 
 We allow to specify custom `.spec.backoffLimit` and `.spec.backoffLimitPerIndex`.
 This allows for a controlled downgrade. Also, when `.spec.backoffLimitPerIndex`
@@ -1103,7 +1134,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-However, we don't expect this increase to be captured by existing
+We don't expect this increase to be captured by existing
 [SLO/SLIs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md).
 
 <!--
