@@ -3016,6 +3016,7 @@ GA:
 - [ ] Satisfaction with LIST and WATCH support.
 - [ ] APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that there is another level of concern that APF does not attempt to address, which is mismatch between the throughput that various controllers can sustain.
 - [ ] Satisfaction that the interface is sufficient to support tuning of capacity and resource costs.
+- [ ] Setting `--enable-priority-and-fairness` to `false` disables deeply, including suppressing both the config supplying and config consuming controllers.
 
 ### Upgrade / Downgrade Strategy
 
