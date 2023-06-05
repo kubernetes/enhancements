@@ -25,7 +25,6 @@
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
@@ -111,7 +110,8 @@ to implement this enhancement.
 
 ##### Integration tests
 
-Unit tests will ensure the new annotation is correctly added to jobs, and integration tests will verify that the annotation is only added to jobs from newly created CronJobs, not existing workloads.
+- Unit tests will ensure the new annotation is correctly added to jobs.
+- The integration test should ensure the annotation is present when the feature is on and missing when off. It will also verify that the annotation is only added to jobs from newly created CronJobs, not existing workloads.
 
 ##### e2e tests
 
@@ -119,8 +119,7 @@ E2E tests will not provide any additional coverage that isn't already covered by
 
 ### Graduation Criteria
 
-The feature will be released directly in Beta state since there is no benefit in having an alpha release, since we are simply adding a new annotation so there is very little risk (unlike removing an
-existing annotation which other things may depend on, for example).
+The feature will be released directly in Beta state since there is no benefit in having an alpha release, since we are simply adding a new annotation so there is very little risk.
 
 #### Beta
 
@@ -150,18 +149,17 @@ the changes to each controller are self-contained.
 
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: JobScheduledAnnotation
-  - Components depending on the feature gate:
+  - Feature gate name: `JobScheduledAnnotation`
+  - Components depending on the feature gate: The feature gate will only enable the new annotation to be added to the newly created Jobs.
 - [ ] Other
-  - Describe the mechanism:
+  - Describe the mechanism: N/A.
   - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    plane? No
+  - Will enabling / disabling the feature require downtime or re-provisioning of a node? No
 
 ###### Does enabling the feature change any default behavior?
 
-No.
+The newly created job objects will contain a new annotation `CronJobsScheduledAnnotation`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -180,12 +178,11 @@ We plan to add unit tests.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-It will not impact already running workloads.
+This change will not impact the rollout or rollback fail. It also will not impact the already running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-- Users can monitor queue related metrics (e.g., queue depth and work duration) to make sure they aren't growing.
-- For CronJobs, users can also monitor `job_creation_skew_duration_seconds`.
+- Users can monitor CronJobs metrics `job_creation_skew_duration_seconds` and `cronjob_controller_rate_limiter_use`, `cronjob_job_creation_skew`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -195,13 +192,9 @@ The feature will be tested manually prior to beta launch.
 
 No.
 
-### Monitoring Requirements
-
-N/A
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-- Check if CronJobs have the annotation `batch.kubernetes.io/cronjob-scheduled-timestamp`.
+Randomly checking the CronJobs annotation `batch.kubernetes.io/cronjob-scheduled-timestamp` is sufficient. For monitoring purposes, we can rely on pre-existing metrics which monitor both the cronjob queue and the job creation skew, which should provide sufficient signal if the controller is working as expected. For small clusters, checking  the annotation will determine the feature is used.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -211,8 +204,6 @@ N/A
   - Condition name:
   - Other field:
     - `.metadata.annotations['batch.kubernetes.io/cronjob-scheduled-timestamp']`
-- [ ] Other (treat as last resort)
-  - Details:
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -222,17 +213,19 @@ N/A
 
 - [X] Metrics
   - Metric name:
+  - `cronjob_job_creation_skew`.
+  - `cronjob_controller_rate_limiter_use`.
   - `job_creation_skew_duration_seconds`.
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+No.
 
 ### Scalability
 
@@ -250,11 +243,8 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-New job annotation of size 34B plus value of size N where N is the number of digits in the job ordinal.
+New job annotation of size 34B plus value of size N where N is the number of digits in the job.
 Worst case for N would be the max number of jobs per node * max number of nodes.
-Per the docs on [large clusters](https://kubernetes.io/docs/setup/best-practices/cluster-large/), this would be 110 pods/node * 5000 nodes = 550,000 (6 digits).
-
-Hence, max annotation size would be 34 + 6 = 40B.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -282,7 +272,7 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-- 2023-05-22: KEP published
+- 2023-06-06: KEP published
 
 ## Implementation History
 
