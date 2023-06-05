@@ -61,7 +61,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently, there is no supported way to get the original/expected initial scheduled timestamp for the job created from a cronjob. This KEP proposes to set the the original scheduled time as an annotation in the job metadata.
+Currently, there is no supported way to get the original/expected initial scheduled timestamp for the job created from a cronjob. This KEP proposes to set the original scheduled time as an annotation in the job metadata.
 
 ## Motivation
 
