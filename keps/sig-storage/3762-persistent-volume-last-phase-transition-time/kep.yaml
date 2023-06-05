@@ -4,12 +4,13 @@ authors:
   - "@RomanBednar"
 owning-sig: sig-storage
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2023-01-20
+last-updated: 2023-06-01
 reviewers:
   - "@jsafrane"
 approvers:
-  - TBD
+  - "@jsafrane"
 
 see-also:
 replaces:
