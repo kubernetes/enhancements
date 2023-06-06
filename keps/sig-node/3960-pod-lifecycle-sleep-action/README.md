@@ -9,6 +9,7 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
+    - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Implementation](#implementation)
@@ -67,7 +68,55 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes the addition of a new sleep action for the PreStop lifecycle hook in Kubernetes, allowing containers to pause for a specified duration before termination. This enhancement aims to provide a more straightforward way to manage graceful shutdowns and improve the overall lifecycle management of containers.
+This KEP proposes the addition of a new sleep action for the PreStop lifecycle hook in Kubernetes, allowing containers to pause for a specified duration before termination. This enhancement aims to provide a more straightforward way to manage graceful shutdowns and improve the overall lifecycle management of containers, and to handle new connections from clients that have not yet finished endpoint termination during the pod termination.
+
+An example:
+
+To use this feature to achieve zero downtime for nginx, we need to deploy a deployment with sleep prestop hook and a service.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.16.1
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    targetPort: 80
+```
+
+- Restart/Update this deployment
+- A delete pod event is sended to notifies the kubelet and the Endpoint Controller (which manages the Service endpoints) simultaneously.
+- PreStop hook starts, which will delay the shutdown sequence by 5 seconds. During this time, the Endpoint Controller will remove the terminating pod, and the traffic will be sent to other running pods.
+- When the timeout of 5 seconds ended, the old pod is killed, and new pods will be created. There is no traffic sent to the terminating pod during the update.
 
 ## Motivation
 
@@ -99,6 +148,9 @@ We propose adding a new sleep action for the PreStop hook, which will pause the 
 #### Story 1
 As a Kubernetes user, I want to configure my container to sleep for a specific duration during terminating with grace.And I want to do it without needing a sleep binary in my image.
 
+#### Story 2
+As a Kubernetes user, I want to configure my nginx service to be able to run with zero downtime.Previously,I use `command: ["/bin/sh","-c","sleep 20"]` in prestop hook with exec command to delay the shutdown,and let the Endpoint Controller remove the pod first. But this requires me to have a sleep binary in my image, and I want to do this more conveniently.
+
 ### Risks and Mitigations
 
 N/A
@@ -118,7 +170,7 @@ type SleepAction struct {
 -  Adding a Sleep field to the LifecycleHandler struct, which represents the duration in seconds that the container should sleep before being terminated during the preStop hook.
 ```go
 type LifecycleHandler struct {
-	// Sleep pauses further lifecycle progress for a defined time period.
+	// Sleep represents the duration in seconds that the container should sleep before being terminated. If the container terminates before the sleep finishes, this action will be interrupted.
 	Sleep *SleepAction
 }
 ```
@@ -137,7 +189,17 @@ func (hr *handlerRunner) Run(ctx context.Context, containerID kubecontainer.Cont
 }
 
 func (hr *handlerRunner) runSleepHandler(ctx context.Context, seconds int32) {
-        time.Sleep(time.Duration(seconds) * time.Second)
+    c := time.After(time.Duration(seconds) * time.Second)
+    select {
+    case <-ctx.Done():
+        // early termination
+        // some logs
+        return
+    case <-c:
+        // sleep expired
+        // some logs
+        return
+    }
 }
 ```
 ### Test Plan
@@ -165,12 +227,20 @@ N/A
   2. Add a preStop hook to the container configuration, using the new sleepAction with a specified sleep duration (e.g., 5 seconds).
   3. Delete the pod and observe the time it takes for the container to terminate.
   4. Verify that the container sleeps for the specified duration before it is terminated.
+  5. Verify that the container keeps executing code while sleeping.
 
 - Sleep duration boundary testing
   1. Create a simple pod with a container that runs a long-running process.
   2. Add a preStop hook to the container configuration, using the new sleepAction with various sleep durations, including:1 seconds (minimum allowed value), values slightly above the minimum allowed value (to test edge cases).
   3. For each sleep duration, delete the pod and observe the time it takes for the container to terminate.
   4. Verify that the container sleeps for the specified duration before it is terminated.
+  5. Verify that the container keeps executing code while sleeping.
+
+- Container exit/crash testing
+  1. Create a simple pod with a container that will exit soon.
+  2. Add a preStop hook to the container configuration, using the new sleepAction with a specified sleep duration longer than the container's lifecycle.
+  3. Exit the container and observe the time it takes for the pod to terminate.
+  4. Verify that the pod be deleted successfully without waiting for the entire sleep duration.
 
 - Interaction with termination grace period
   1. Create a simple pod with a container that runs a long-running process.
@@ -188,6 +258,7 @@ N/A
 
 - Feature implemented behind a feature flag
 - Initial unit/e2e tests completed and enabled
+- Documentation is added to demonstrate why this is useful in nginx scenario and how exactly nginx needs to be configured.
 
 #### Beta
 
@@ -358,4 +429,4 @@ N/A
 
 ## Alternatives
 
-N/A
+Another way to run `sleep` in a container is to use `exec` command in `preStop hook` like `command: ["/bin/sh","-c","sleep 20"]`. However this requires a sleep binariy in the image. We should offer sleep as a first-class thing.
