@@ -97,6 +97,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Ephemeral vs. persistent ResourceClaims lifecycle](#ephemeral-vs-persistent-resourceclaims-lifecycle)
   - [Coordinating resource allocation through the scheduler](#coordinating-resource-allocation-through-the-scheduler)
   - [Resource allocation and usage flow](#resource-allocation-and-usage-flow)
+  - [Scheduled pods with unallocated or unreserved claims](#scheduled-pods-with-unallocated-or-unreserved-claims)
   - [API](#api)
     - [resource.k8s.io](#resourcek8sio)
     - [core](#core)
@@ -1118,6 +1119,49 @@ If a Pod references multiple claims managed by the same driver, then the driver
 can combine updating `podSchedulingContext.claims[*].unsuitableNodes` for all
 of them, after considering all claims.
 
+### Scheduled pods with unallocated or unreserved claims
+
+There are several scenarios where a Pod might be scheduled (= `pod.spec.nodeName`
+set) while the claims that it depends on are not allocated or not reserved for
+it:
+
+* A user might manually create a pod with `pod.spec.nodeName` already set.
+* Some special cluster might use its own scheduler and schedule pods without
+  using kube-scheduler.
+* The feature might have been disabled in kube-scheduler while scheduling
+  a pod with claims.
+
+The kubelet is refusing to run such pods and reports the situation through
+an event (see below). It's an error scenario that should better be avoided.
+
+Users should avoid this situation by not scheduling pods manually. If they need
+it for some reason, they can use a node selector which matches only the desired
+node and then let kube-scheduler do the normal scheduling.
+
+Custom schedulers should emulate the behavior of kube-scheduler and ensure that
+claims are allocated and reserved before setting `pod.spec.nodeName`.
+
+The last scenario might occur during a downgrade or because of an
+administrator's mistake. Administrators can fix this by deleting such pods or
+ensuring that claims are usable by them. The latter is work that can be
+automated in kube-controller-manager:
+
+- If `pod.spec.nodeName` is set, kube-controller-manager can be sure that
+  kube-scheduler is not doing anything for the pod.
+- If such a pod has unallocated claims, kube-controller-manager can
+  create a `PodSchedulingContext` with only the `spec.selectedNode` field set
+  to the name of the node chosen for the pod. There is no need to list
+  suitable nodes because that choice is permanent, so resource drivers don't
+  need check for unsuitable nodes. All that they can do is to (re)try allocating
+  the claim until that succeeds.
+- If such a pod has allocated claims that are not reserved for it yet,
+  then kube-controller-manager can (re)try to reserve the claim until
+  that succeeds.
+
+Once all of those steps are complete, kubelet will notice that the claims are
+ready and run the pod. Until then it will keep checking periodically, just as
+it does for other reasons that prevent a pod from running.
+
 ### API
 
 The PodSpec gets extended. To minimize the changes in core/v1, all new types
@@ -1748,6 +1792,12 @@ be handled through a generic informer or simply polling.
 In addition to updating `claim.status.reservedFor`, kube-controller-manager also deletes
 ResourceClaims that are owned by a completed pod to ensure that they
 get deallocated as soon as possible once they are not needed anymore.
+
+Finally, kube-controller-manager tries to make pods runnable that were
+[scheduled to a node
+prematurely](#scheduled-pods-with-unallocated-or-unreserved-claims) by
+triggering allocation and reserving claims when it is certain that
+kube-scheduler is not going to handle that.
 
 ### kube-scheduler
 
