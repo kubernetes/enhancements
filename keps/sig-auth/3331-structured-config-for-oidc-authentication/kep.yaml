@@ -1,4 +1,3 @@
-name: 3331-structured-authentication-config
 title: Structured authentication config
 kep-number: "3331"
 authors:
@@ -11,7 +10,7 @@ reviewers:
 approvers:
 - "@liggitt"
 creation-date: "2022-06-02"
-status: provisional
+status: implementable
 stage: alpha
 latest-milestone: "v1.28"
 milestone:
