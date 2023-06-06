@@ -440,9 +440,9 @@ type JWTAuthenticator struct {
         // For input claim:
         // {
         //     "claims": {
-        //     "roles":"foo,bar",
-        //     "other_roles":"baz,qux"
-        //     "is_admin": true
+        //         "roles":"foo,bar",
+        //         "other_roles":"baz,qux"
+        //         "is_admin": true
         //     }
         // }
         // To concatenate lists:
