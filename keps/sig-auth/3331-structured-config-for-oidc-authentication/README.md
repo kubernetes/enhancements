@@ -656,7 +656,11 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubeapiserver/options/authentication.go`: `2023-06-06` - `74.7`
+- `k8s.io/kubernetes/pkg/kubeapiserver/authenticator/config.go`: `2023-06-06` - `0.0`
+- `k8s.io/apiserver/plugin/pkg/authenticator/token/oidc`: `2023-06-06` - `84`
+
+Note that as of 2023-06-06, the existing OIDC authenticator has no integration or e2e tests.
 
 ##### Integration tests
 
