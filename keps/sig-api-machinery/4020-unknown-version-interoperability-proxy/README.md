@@ -1,63 +1,3 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-4020: Unknown Version Interoperability Proxy
 
 <!--
@@ -109,6 +49,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Network location of apiservers](#network-location-of-apiservers)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -130,16 +71,16 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -204,7 +145,7 @@ API server change:
 
   - If the request is for a group/version/resource the apiserver doesn't have
     locally (we can use the StorageVersion API), it will proxy the request to
-    one of the apiservers that is listed in the object. If an apiserver fails
+    one of the apiservers that is listed in the [ServerStorageVersion](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/apis/apiserverinternal/types.go#L64) object. If an apiserver fails
     to respond, then we will return a 503 (there is a small
     possibility of a race between the controller registering the apiserver
     with the resources it can serve and receiving a request for a resource
@@ -270,25 +211,34 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-Cluster admins might not read the release notes and realize they should enable
-network/firewall connectivity between apiservers. In this case clients will
-receive 503s instead of transparently being proxied. 503 is still safer than
-today's behavior.
+1. **Network connectivity isues between apiservers**
+    
+    Cluster admins might not read the release notes and realize they should enable network/firewall connectivity between apiservers. In this case clients will receive 503s instead of transparently being proxied. 503 is still safer than today's behavior. We will clearly document the steps needed to enable the feature and also include steps to verify that the feature is working as intended. Looking at the following exposed metrics can help wth that 
+    1. `kubernetes_uvip_proxied_request_total` to monitor the number of UVIP-proxies requests. This metric can tell us the number of requests that were successfully proxied and the ones that failed
+    2. `apiserver_request_total` to check the success/error status of the requests
 
-Requests will consume egress bandwidth for 2 apiservers when proxied. We can cap
-the number if needed, but upgrades aren't that frequent and few resources are
-changed on releases, so these requests should not be common. We will count them
-with a metric.
+2. **Increase in egress bandwidth**
+    
+    Requests will consume egress bandwidth for 2 apiservers when proxied. We can cap the number if needed, but upgrades aren't that frequent and few resources are changed on releases, so these requests should not be common. We will count them with a metric.
 
-There could be a large volume of requests for a specific resource which might result in the identified apiserver being unable to serve the proxied requests. This scenario should not occur too frequently, since resource types which have large request volume should not be added or removed during an upgrade -- that would cause other problems, too.
+3. **Increase in request traffic directed at destination kube-apiserver**
 
-We should ensure at most one proxy, rather than proxying the request over and over again (if the source apiserver has an incorrect understanding of what the destination apiserver can serve).
+    There could be a large volume of requests for a specific resource which might result in the identified apiserver being unable to serve the proxied requests. This scenario should not occur too frequently, since resource types which have large request volume should not be added or removed during an upgrade - that would cause other problems, too.
 
-To prevent server-side request forgeries we will not give control over information about apiserver IP/endpoint and the trust bundle (used to authenticate server while proxying) to users via REST APIs.
+4. **Indefinite rerouting of the request**
+    
+    We should ensure at most one proxy, rather than proxying the request over and over again (if the source apiserver has an incorrect understanding of what the destination apiserver can serve). To do this, we will add a new header such as `X-Kubernetes-UVIP-Rerouted:true` to the  request once it is determined that the request cannot be served by the local apiserver and should therefore be proxied.  
+    We will remove this header after the request is received by the destination apiserver (i.e. after the proxy has happened once) at which point it will be served locally.
+
+5. **Putting IP/endpoint and trust bundle control in user hands in REST APIs**
+    
+    To prevent server-side request forgeries we will not give control over information about apiserver IP/endpoint and the trust bundle (used to authenticate server while proxying) to users via REST APIs.
 
 ## Design Details
 
 ### Aggregation Layer
+
+![Alt text](https://user-images.githubusercontent.com/26771552/244544622-8ade44db-b22b-4f26-880d-3eee5bc1f913.png?raw=true "Optional Title")
 
 1. A new filter will be added to the [handler chain] of the aggregation layer. This filter will maintain an internal map with the key being the group-version-resource and the value being a list of server IDs of apiservers that are capable of serving that group-version-resource
    1. This internal map is populated using an informer for StorageVersion objects. An event handler will be added for this informer that will get the apiserver ID of the requested group-version-resource and update the internal map accordingly
@@ -296,7 +246,7 @@ To prevent server-side request forgeries we will not give control over informati
 2. This filter will pass on the request to the next handler in the local aggregator chain, if:
    1. It is a non resource request
    2. The StorageVersion informer cache hasn't synced yet or if `StorageVersionManager.Completed()` has returned false. We will serve error 503 in this case
-   3. The request has a header that indicates that this request has been proxied once already. If for some reason the resource is not found locally, we will serve error 503
+   3. The request has a header `X-Kubernetes-UVIP-Rerouted:true` that indicates that this request has been proxied once already. If for some reason the resource is not found locally, we will serve error 503
    4. No StorageVersion was retrieved for it, meaning the request is for an aggregated API or for a custom resource
    5. If the local apiserver ID is found in the list of serviceable-by server IDs from the internal map
 
@@ -306,39 +256,53 @@ To prevent server-side request forgeries we will not give control over informati
 
 5. If the proxy call fails for network issues or any reason, we serve 503 with error `Error while proxying request to destination apiserver`
 
+6. We will also add a poststarthook for the apiserver to ensure that it does not start serving requests until we are done creating/updating SV objects
+
 [handler chain]:https://github.com/kubernetes/kubernetes/blob/fc8f5a64106c30c50ee2bbcd1d35e6cd05f63b00/staging/src/k8s.io/apiserver/pkg/server/config.go#L639
 
 #### StorageVersion enhancement needed
 
 StorageVersion API currently tells us whether a particular StorageVersion can be read from etcd by the listed apiserver. We will enhance this API to also include apiserver ID of the server that can serve this StorageVersion.
 
+With the enhancement, the new [ServerStorageVersion](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/apis/apiserverinternal/types.go#L62-L73) object will have this structure
+
+```
+type ServerStorageVersion struct {
+  // The ID of the reporting API server.
+  APIServerID string
+	
+  // The API server encodes the object to this version 
+  // when persisting it in the backend (e.g., etcd).
+  EncodingVersion string
+
+  // The API server can decode objects encoded in these versions.
+  // The encodingVersion must be included in the decodableVersions.
+  DecodableVersions []string
+
+  // Versions that can be served by the reporting API server
+  ServedVersions []string
+}
+```
+
 #### Identifying destination apiserver's network location
 
-We will use the already existing [masterlease reconciler](https://github.com/kubernetes/kubernetes/blob/master/pkg/controlplane/reconcilers/lease.go) to store/retrieve the IPs and ports for kube-apiservers. Major reasons to use this are
+We will be performing dual writes of the ip and port information of the apiservers in:
 
-1. masterlease reconciler already stores kube-apiserver IPs currently
-2. this information is not exposed to users in an API that can be used maliciously
-3. existing code to handle lifecycle of the masterleases is convenient
+1. A clone of the [endpoint reconciler's masterlease](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controlplane/reconcilers/lease.go) which would be read by apiservers to proxy the request to a peer. We will use a separate reconciler loop to do these writes to avoid modifying the existing endpoint reconciler
 
-How the masterlease reconciler will be used is as follows:
+2. [APIServerIdentity Lease object](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controlplane/instance.go#L559-L577) for users to view this information for debugging
 
-1. We will use the already existing IP in Endpoints.Subsets.Addresses of the masterlease by default
-
-2. For users with network configurations that would not allow Endpoints.Subsets.Addresses to be reachable from a kube-apiserver, we will introduce a new --bind-peer-ip flag to kube-apiserver. We will store its value as an annotation on the masterlease and use this to route the request to the right destination server
-
-3. We will also expose the IP and port information of the kube-apiservers as annotations in APIserver identity lease object for visibility/debugging purposes
-
-4. We will also use an egress dialer for network connections made to peer kube-apiservers. For this, will create a new type for the network context to be used for peer kube-apiserver connections ([xref](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/apis/apiserver/types.go#L56-L71))
+3. We will use an egress dialer for network connections made to peer kube-apiservers. For this, will create a new type for the network context to be used for peer kube-apiserver connections ([xref](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/apis/apiserver/types.go#L56-L71))
 
 #### Proxy transport between apiservers and authn
 
 For the mTLS between source and destination apiservers, we will do the following
 
-1. For server authentication by the client (source apiserver) : the client needs to validate the server certs (presented by the destination apiserver), for which it will 
-   1. look at the CA bundle of the authority that signed those certs. We will introduce a new flag --peer-ca-file that must be passed to the kube-apiserver to verify the other kube-apiserver's server certs 
+1. For server authentication by the client (source apiserver) : the client needs to validate the [server certs](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/server/options/serving.go#L59) (presented by the destination apiserver), for which it will 
+   1. look at the CA bundle of the authority that signed those certs. We will introduce a new flag --peer-ca-file that **is required be passed (for this feature)** to the kube-apiserver that will be used to verify the presented server certs
    2. look at the ServerName `kubernetes.default.svc` for SNI to verify server certs against
 
-2. For client authentication by the server (destination apiserver) : destination apiserver will check the source apiserver certs to determine that the proxy request is from an authenticated client. The destination apiserver will use requestheader authentication (and NOT client cert authentication) for this using the kube-aggregator proxy client cert/key and the --requestheader-client-ca-file passed to the apiserver upon bootstrap
+2. The server (destination apiserver) will check the client (source apiserver) certs to determine that the proxy request is from an authenticated client. We will use requestheader authentication (and NOT client cert authentication) for this. The client (source apiserver) will provide the [proxy-client certfiles](https://github.com/kubernetes/kubernetes/blob/release-1.27/cmd/kube-apiserver/app/options/options.go#L222-L233) to the server (destination apiserver) which will verify the presented certs using the CA bundle provided in the [--requestheader-client-ca-file](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/server/options/authentication.go#L125-L128) passed to the apiserver upon bootstrap
 
 ### Discovery Merging
 TODO: detailed description of discovery merging. (not scheduled until beta.)
@@ -403,8 +367,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 In the first alpha phase, the integration tests are expected to be added for:
 
 - The behavior with feature gate turned on/off
+- Request is proxied to an apiserver that is able to handle it
 - Validation where an apiserver tries to serve a request that has already been proxied once
-- Validation where an apiserver tries to call a peer but actually calls itself (to simulate a networking configuration where this happens on accident), and the test fails
+- Validation where an apiserver tries to call a peer but actually calls itself (to simulate a networking configuration where this happens on accident), and the test fails with error 503
+- Validation where a request that cannot be served by any apiservers is received, and is passed on locally that eventually gets handled by the NotFound handler resulting in 404 error
+- Validation where apiserver is mis configured and is proxied to an incorrect peer resulting in 503 error 
 
 ##### e2e tests
 
@@ -431,6 +398,7 @@ We will test the feature mostly in integration test and unit test. We may add e2
 #### Beta
 
 - Discovery document merging implemented
+- Use egress dialer for network connections made to peer kube-apiservers
 
 #### GA
 
@@ -899,6 +867,7 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+None.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -925,6 +894,34 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+### Network location of apiservers
+
+1. Use [endpoint reconciler's masterlease](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controlplane/reconcilers/lease.go) 
+    1. We will use the already existing IP in Endpoints.Subsets.Addresses of the masterlease by default
+    2. For users with network configurations that would not allow Endpoints.Subsets.Addresses to be reachable from a kube-apiserver, we will introduce a new optional --bind-peer-ip flag to kube-apiserver. We will store its value as an annotation on the masterlease and use this to route the request to the right destination server
+    3. We will also need to store the apiserver identity as an annotation in the masterlease so that we can map the identity of the apiserver to its IP
+    4. We will also expose the IP and port information of the kube-apiservers as annotations in APIserver identity lease object for visibility/debugging purposes
+
+* Pros
+  1. Masterlease reconciler already stores kube-apiserver IPs currently
+  2. This information is not exposed to users in an API that can be used maliciously
+  3. Existing code to handle lifecycle of the masterleases is convenient
+
+* Cons
+  1. using masterlease will include making some changes to the legacy code that does the endpoint reconciliation which is known to be brittle
+
+2. Use [coordination.v1.Lease](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/client-go/informers/coordination/v1/lease.go) 
+    1. By default, we can store the [External Address](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/server/config.go#L149) of apiservers as labels in the [APIServerIdentity Lease](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controlplane/instance.go#L559-L577) objects. 
+    2. If `--peer-bind-address` flag is specified for the kube-apiserver, we will store its value in the APIServerIdentity Lease label
+    3. We will retrieve this information in the UVIP handler using an informer cache for these lease objects 
+
+* Pros
+  1. Simpler solution, does not modify any legacy code that can cause unintended bugs
+  2. Since in approach 1 we decided we want to store the apiserver IP, port in the APIServerIdentity lease object anyway for visibility to the user, we will be just making this change once in the APIServerIdentity lease instead of both here and in masterleases
+
+* Cons 
+  1. If we take this approach, there is a risk of giving the user control of the apiserver IP, port information. This can lead to apiservers routing a request to a rogue IP:port specified in the lease object.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
