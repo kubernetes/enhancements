@@ -1,0 +1,35 @@
+title: Controller name
+kep-number: 4040
+authors:
+  - "@mwielgus"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-autoscaling
+status: implementable
+creation-date: 2023-05-29
+reviewers:
+  - "@alculquicondor"
+approvers:
+  - "@soltysh"
+  - "@gjtempleton"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.28"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "1.28"
+
+feature-gates:
+  - name: ControllerName
+    components:
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
