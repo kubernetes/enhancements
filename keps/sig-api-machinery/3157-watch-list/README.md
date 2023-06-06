@@ -625,6 +625,14 @@ extending the production code to implement this enhancement.
 - k8s.io/client-go/tools/cache/reflector: 02/02/2023 - 88,6%
 
 ##### Integration tests
+
+<!--
+Integration tests are contained in k8s.io/kubernetes/test/integration.
+Integration tests allow control of the configuration parameters used to start the binaries under test.
+This is different from e2e tests which do not allow configuration of parameters.
+Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
+-->
+
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
