@@ -458,31 +458,30 @@ Extend the `ListOptions` struct with the following field:
 type ListOptions struct {
     ...
 
-    // SendInitialEvents, when set together with Watch option,
-    // begin the watch stream with synthetic init events to build the
-    // whole state of all resources followed by a synthetic "Bookmark"
-    // event containing a ResourceVersion after which the server
-    // continues streaming events.
-    //
-    // When SendInitialEvents option is set, we require ResourceVersionMatch
-    // option to also be set. The semantic of the watch request is as following:
-    // - ResourceVersionMatch = NotOlderThan
-    //   It starts with sending initial events for all objects (at some resource
-    //   version), potentially followed by an event stream until the state
-    //   becomes synced to a resource version as fresh as the one provided by
-    //   the ResourceVersion option. At this point, a synthetic bookmark event
-    //   is send and watch stream is continued to be send.
-    //   If RV is unset, this is interpreted as "consistent read" and the
-    //   bookmark event is send when the state is synced at least to the moment
-    //   when request started being processed.
-    // - ResourceVersionMatch = Exact
-    //   Unsupported error is returned.
-    // - ResourceVersionMatch unset (or set to any other value)
-    //   BadRequest error is returned.
-    //
-    // Defaults to true if ResourceVersion="" or ResourceVersion="0" (for backward
-    // compatibility reasons) and to false otherwise.
-    SendInitialEvents bool
+        // `sendInitialEvents=true` may be set together with `watch=true`.
+	// In that case, the watch stream will begin with synthetic events to
+	// produce the current state of objects in the collection. Once all such
+	// events have been sent, a synthetic "Bookmark" event  will be sent.
+	// The bookmark will report the ResourceVersion (RV) corresponding to the
+	// set of objects, and be marked with `"k8s.io/initial-events-end": "true"` annotation.
+	// Afterwards, the watch stream will proceed as usual, sending watch events
+	// corresponding to changes (subsequent to the RV) to objects watched.
+	//
+	// When `sendInitialEvents` option is set, we require `resourceVersionMatch`
+	// option to also be set. The semantic of the watch request is as following:
+	// - `resourceVersionMatch` = NotOlderThan
+	//   is interpreted as "data at least as new as the provided `resourceVersion`"
+	//   and the bookmark event is send when the state is synced
+	//   to a `resourceVersion` at least as fresh as the one provided by the ListOptions.
+	//   If `resourceVersion` is unset, this is interpreted as "consistent read" and the
+	//   bookmark event is send when the state is synced at least to the moment
+	//   when request started being processed.
+	// - `resourceVersionMatch` set to any other value or unset
+	//   Invalid error is returned.
+	//
+	// Defaults to true if `resourceVersion=""` or `resourceVersion="0"` (for backward
+	// compatibility reasons) and to false otherwise.
+        SendInitialEvents *bool
 }
 ```
 
@@ -658,9 +657,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha
 
-- The Feature is implemented behind `ConsistentWatchList` feature flag
+- The Feature is implemented behind `WatchList` feature flag
 - Initial e2e tests completed and enabled
 - Scalability/Performance tests confirm gains of this feature
+- Metrics are added to the kube-apiserver (see the [monitoring-requirements](#monitoring-requirements) section for more details)
+- Implement `SendInitialEvents` for `watch` requests in the etcd storage implementation
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -795,7 +796,7 @@ Pick one of these and delete the rest.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ConsistentWatchList
+  - Feature gate name: WatchList
   - Components depending on the feature gate: the kube-apiserver
 - [ ] Other
   - Describe the mechanism:
