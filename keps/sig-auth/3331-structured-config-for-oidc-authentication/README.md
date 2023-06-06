@@ -194,7 +194,6 @@ TODO:
 - distributed claims with fancier resolution requirements (such as access tokens as input)
 - implementation detail: we should probably parse the `iss` claim out once
 - should audit annotations be set on validation failure?
-- should we introduce implicit checks that assure at least one of uid/username are nonempty?
 - decide what error should be returned if CEL eval fails at runtime
   `500 Internal Sever Error` seem appropriate but authentication can only do `401`
 
@@ -225,10 +224,6 @@ jwt:
     extra:
     - key: 'client_name'
       valueExpression: 'claims.some_claim'
-  # TODO(enj): drop this and figure out to get from CEL
-  # claimFilters:
-  # - username
-  # - roles
   userInfoValidationRules:
   - rule: "!userInfo.username.startsWith('system:')"
     message: username cannot used reserved system: prefix
@@ -337,16 +332,28 @@ type JWTAuthenticator struct {
         // Same value as the --oidc-issuer-url flag.
         // Used to fetch discovery information unless overridden by discoveryURL.
         // Required to be unique.
-        URL string `json:"url,omitempty"`
+        // Note that egress selection configuration is not used for this network connection.
+        // TODO: decide if we want to support egress selection configuration and how to do so.
+        URL string `json:"url"`
 
         // discoveryURL if specified, overrides the URL used to fetch discovery information.
+        // This is for scenarios where the well-known and jwks endpoints are hosted at a different
+        // location than the issuer (such as locally in the cluster).
         // Format must be https://url/path.
+        //
         // Example:
-        // curl oidc.oidc-namespace (.discoveryURL field)
+        // A discovery url that is exposed using kubernetes service 'oidc' in namespace 'oidc-namespace'.
+        // certificateAuthority is used to verify the TLS connection and the hostname on the leaf certifcation
+        // must be set to 'oidc.oidc-namespace'.
+        //
+        // curl https://oidc.oidc-namespace (.discoveryURL field)
         // {
         //     issuer: "https://oidc.example.com" (.url field)
         // }
+        //
         // Required to be unique.
+        // Note that egress selection configuration is not used for this network connection.
+        // TODO: decide if we want to support egress selection configuration and how to do so.
         // +optional
         DiscoveryURL *string `json:"discoveryURL,omitempty"`
 
@@ -420,7 +427,7 @@ type JWTAuthenticator struct {
         // username represents an option for the username attribute.
         // Claim must be a singular string claim.
         // TODO: decide whether to support a distributed claim for username (what are we required to correlate between the data retrieved for distributed claims? sub? something else?). Limit distributed claim support to OIDC things with clientID validation?
-        // Expression must produce a string value.
+        // Expression must produce a string value that must be non-empty.
         // Possible prefixes based on the config:
         //     (1) if userName.prefix = "-", no prefix will be added to the username
         //     (2) if userName.prefix = "" and userName.claim != "email", prefix will be "<issuer.url>#"
@@ -432,6 +439,21 @@ type JWTAuthenticator struct {
         // Expression must produce a string or string array value.
         // "", [], missing, and null values are treated as having no groups.
         // TODO: investigate if you could make a single expression to construct groups from multiple claims. If not, maybe []PrefixedClaimOrExpression?
+        // For input claim:
+        // {
+        //     "claims": {
+        //         "roles":"foo,bar",
+        //         "other_roles":"baz,qux"
+        //         "is_admin": true
+        //     }
+        // }
+        // To concatenate lists:
+        //     claims.roles.split(",") + claims.other_roles.split(",")
+        // Constructing single item list and concatenating lists:
+        //     claims.roles.split(",") + ["hardcoded_group"]
+        //     claims.roles.split(",") + (claims.is_admin ? ["admin"]:[])
+        // Type check and wrap in a list if needed:
+        //     (type(claims.string_or_list_claim) == string ? [claims.string_or_list_claim] : claims.string_or_list_claim) + ["hardcoded_group"]
         // +optional
         Groups PrefixedClaimOrExpression `json:"groups,omitempty"`
         // uid represents an option for the uid attribute.
@@ -544,6 +566,26 @@ type JWTAuthenticator struct {
       client_name: kubernetes
     ```
 
+    For distributed claims:
+
+    ```json
+        claims = {
+          "foo":"bar",
+          "foo.bar": "...",
+          "true": "...",
+          "_claim_names": {
+            "groups": "group_source"
+           },
+           "_claim_sources": {
+            "group_source": {"endpoint": "https://example.com/claim_source"}
+           }
+        }
+    ```
+
+    - For claim names containing `.`, we can reference using `claims["foo.bar"]`
+    - TODO: can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
+       - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
+
 ### CEL
 
 * CEL runtime should be compiled only once if structured authentication config option is enabled.
@@ -552,14 +594,26 @@ type JWTAuthenticator struct {
   * `claims` for JWT claims (payload)
 * One variable will be available to use in `userInfoValidationRules`:
   * `userInfo` with the same schema as [authentication.k8s.io/v1, Kind=UserInfo](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#userinfo-v1-authentication-k8s-io)
-* To make working with strings more convenient, `strings` and `encoding`
-  [CEL extensions](https://github.com/google/cel-go/tree/v0.9.0/ext) will be enabled,
-  e.g, to be able to split a string with comma separated fields and use them as a single array.
+* The standard Kubernetes CEL environment, including extension libraries, will be used.
+  * Current environment:
+    * [Extension libraries](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiserver/pkg/cel/library/libraries.go#L26)
+    * [Base environment](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/compilation.go#L83)
+  * The encoding library needs to be added to the environment since it's currently not used. Doing so will help keep CEL consistent across the API.
 * Benchmarks are required to see how different CEL expressions affects authentication time.
+  * There will be a upper bound of 5s for the CEL expression evaluation.
 * Caching will be used to prevent having to execute the CEL expressions on every request.
     - TODO decide what the behavior of the token cache will be on config reload
     - TODO should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
       this requires awareness of key rotation to implement safely
+* TODO: decide how to safe guard access to fields that might not exist or stop existing at any moment.
+  * Using `has()` to guard access to fields.
+  * Could we do some kind of defaulting for fields that don't exist?
+
+> Notes from PR review (jpbetz):
+>
+> You can pass a context to CEL and cancel runtime evaluation if the context is canceled. This causes the CEL expression to halt execution promptly and evaluate to an error.
+> You can also put a runtime limit (measured in abstract cost units that are hardware and wall clock independent) on CEL expressions to bound running time.
+> (There is also a way to set a limit for the estimated cost, which is computed statically on compiled CEL programs if you know the worst case size of the input data, but this might be overkill for this feature)
 
 ### Flags
 
@@ -711,11 +765,11 @@ No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes.
+Yes.  Note that if the `--oidc-*` flags were previously in use, they must be restored for OIDC authentication to function correctly.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No impact.
+No impact (generally speaking, authentication does not cause persisted state in the cluster).
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -732,6 +786,7 @@ It cannot fail until a bug in kube-apiserver connected to parsing structured con
 Possible consequences are:
 * A cluster administrator rolls out the feature with the addition of some validation rules that may allow access to previously restricted users.
 * Other cluster components can depend on claim validations. Rolling back would mean losing validation functionality.
+* If the cluster admin fails to restore any previously in-use `--oidc-*` flags on a rollback, OIDC authentication will not function.
 
 ###### What specific metrics should inform a rollback?
 
@@ -760,6 +815,7 @@ TBA
 
 * There will be a corresponding message in kube-apiserver logs.
 * By checking the kube-apiserver flags.
+* By checking the metrics emitted by the kube-apiserver.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -796,7 +852,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-The feature should work 99.9% of the time (SLOs for actual requests should not change in any way compared to the flag-based OIDC configuration).
+SLOs for actual requests should not change in any way compared to the flag-based OIDC configuration.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
