@@ -662,6 +662,15 @@ extending the production code to implement this enhancement.
 
 Note that as of 2023-06-06, the existing OIDC authenticator has no integration or e2e tests.
 
+Unit tests will be expanded to cover the new feature set of this KEP:
+
+- Structured config (including valdation)
+- CEL based expressions
+- Multiple client ID support
+- Discovery URL overrides
+- Automatic config reload
+- Multiple authenticators
+
 ##### Integration tests
 
 <!--
@@ -672,7 +681,12 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- test: link to test coverage
+Integration tests will cover parts of the new feature set as well:
+
+- CEL based expressions
+- Automatic config reload
+- Multiple authenticators
+
 
 ##### e2e tests
 
@@ -686,7 +700,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- test: link to test coverage
+e2e tests will focus on testing a broad set of features together with "real" OIDC
+providers such as Okta, Azure AD, etc:
+
+- CEL based expressions
+- Multiple client ID support
+- Discovery URL overrides
+- Multiple authenticators
 
 ### Graduation Criteria
 
