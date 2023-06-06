@@ -765,11 +765,11 @@ No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes.
+Yes.  Note that if the `--oidc-*` flags were previously in use, they must be restored for OIDC authentication to function correctly.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No impact.
+No impact (generally speaking, authentication does not cause persisted state in the cluster).
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -786,6 +786,7 @@ It cannot fail until a bug in kube-apiserver connected to parsing structured con
 Possible consequences are:
 * A cluster administrator rolls out the feature with the addition of some validation rules that may allow access to previously restricted users.
 * Other cluster components can depend on claim validations. Rolling back would mean losing validation functionality.
+* If the cluster admin fails to restore any previously in-use `--oidc-*` flags on a rollback, OIDC authentication will not function.
 
 ###### What specific metrics should inform a rollback?
 
@@ -814,6 +815,7 @@ TBA
 
 * There will be a corresponding message in kube-apiserver logs.
 * By checking the kube-apiserver flags.
+* By checking the metrics emitted by the kube-apiserver.
 
 ###### How can someone using this feature know that it is working for their instance?
 
