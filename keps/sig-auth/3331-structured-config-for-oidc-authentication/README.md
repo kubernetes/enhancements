@@ -332,26 +332,28 @@ type JWTAuthenticator struct {
         // Same value as the --oidc-issuer-url flag.
         // Used to fetch discovery information unless overridden by discoveryURL.
         // Required to be unique.
-        URL string `json:"url,omitempty"`
+        // Note that egress selection configuration is not used for this network connection.
+        // TODO: decide if we want to support egress selection configuration and how to do so.
+        URL string `json:"url"`
 
         // discoveryURL if specified, overrides the URL used to fetch discovery information.
-        // This is in scenarios where the well-known and jwks endpoints are hosted locally in the cluster.
+        // This is for scenarios where the well-known and jwks endpoints are hosted at a different
+        // location than the issuer (such as locally in the cluster).
         // Format must be https://url/path.
         //
-        // The connections from the API server to service will run over a secure HTTPS connection
-        // by prefixing https: to the service name in the API URL, but they will not validate the
-        // certificate provided by the HTTPS endpoint nor provide client credentials. So while the
-        // connection will be encrypted, it will not provide any guarantees of integrity.
-        // These connections are not currently safe to run over untrusted or public networks.
-        // xref: https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/#api-server-to-nodes-pods-and-services
-        //
         // Example:
-        // This is the discovery url that's exposed using kubernetes service 'oidc' in namespace 'oidc-namespace'.
+        // A discovery url that is exposed using kubernetes service 'oidc' in namespace 'oidc-namespace'.
+        // certificateAuthority is used to verify the TLS connection and the hostname on the leaf certifcation
+        // must be set to 'oidc.oidc-namespace'.
+        //
         // curl https://oidc.oidc-namespace (.discoveryURL field)
         // {
         //     issuer: "https://oidc.example.com" (.url field)
         // }
+        //
         // Required to be unique.
+        // Note that egress selection configuration is not used for this network connection.
+        // TODO: decide if we want to support egress selection configuration and how to do so.
         // +optional
         DiscoveryURL *string `json:"discoveryURL,omitempty"`
 
