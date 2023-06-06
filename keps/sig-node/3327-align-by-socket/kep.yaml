@@ -12,7 +12,7 @@ reviewers:
   - "@swatisehgal"
   - "@fromanirh"
 approvers:
-  - "@sig-node-leads"
+  - "@sig-node-tech-leads"
 see-also:
   - "keps/sig-node/2902-cpumanager-distribute-cpus-policy-option"
 replaces: []

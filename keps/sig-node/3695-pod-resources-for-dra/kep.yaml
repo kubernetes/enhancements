@@ -10,7 +10,7 @@ reviewers:
   - "@ffromani"
   - "@swatisehgal"
 approvers:
-  - "@sig-node-leads"
+  - "@sig-node-tech-leads"
 see-also:
   - "keps/sig-node/2403-pod-resources-allocatable-resources"
   - "keps/sig-node/606-compute-device-assignment/"

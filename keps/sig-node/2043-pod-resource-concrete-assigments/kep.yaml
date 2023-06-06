@@ -15,7 +15,7 @@ reviewers:
   - "@renaudwastaken"
   - "@dashpole"
 approvers:
-  - "@sig-node-leads"
+  - "@sig-node-tech-leads"
 see-also:
   - "keps/sig-node/606-compute-device-assignment/"
 replaces: []
