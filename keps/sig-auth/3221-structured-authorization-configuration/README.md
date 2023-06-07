@@ -449,7 +449,7 @@ total invocation counts across the following labels.
 - `name`
 - `code` {"incomplete_request", "bad_response"}
 
-3. `apiserver_authorization_step_webhook_duration_seconds`
+3. `apiserver_authorization_webhook_evaluations_duration_seconds`
 
 This is a Histogram metric that will track the total round trip time of the requests to the webhook.
 
