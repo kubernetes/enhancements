@@ -153,7 +153,7 @@ be achieved through Authorization Webhooks. However since `kube-apiserver`
 only allows specifying a single webhook, this would result in cluster
 administrators being not able to specify their own. Support for multiple
 webhooks would make this possible. Moreover, RBAC rules can't be used here
-since RBAC allows to one add permissions but not deny them. We won't be able
+since RBAC allows one to add permissions but not deny them. We won't be able
 to add restrictions on 'non-system' users only for a set of resources using
 RBAC; 'non-system' users here refers to anyone who shouldn't be able to
 update/delete the protected set of CRDs.
@@ -202,11 +202,52 @@ Consider a system administrator who would like to apply a set of validations
 to certain requests before handing it off to webhooks defined using frameworks
 like Open Policy Agent.
 
-They would have to nested webhooks within the one added to the auth chain to
+They would have to run nested webhooks within the one added to the auth chain to
 have the intended effect. This enhancement allows the administrator to configure
 this behaviour via a structured API and invoke the additional webhook only when
 relevant. This also allows administrators to define `failurePolicy` behaviours for
 separate webhooks, leading to more predictable outcomes.
+
+The below example is only for demonstration purposes.
+```yaml
+apiVersion: apiserver.config.k8s.io/v1alpha1
+kind: AuthorizationConfiguration
+authorizers:
+  - type: Webhook
+    webhook:
+      unauthorizedTTL: 30s
+      timeout: 3s
+      subjectAccessReviewVersion: v1
+      failurePolicy: Deny
+      connectionInfo:
+        type: KubeConfig
+        kubeConfigFile: /kube-system-authz-webhook.yaml
+      matchConditions:
+      # only send resource requests to the webhook
+      - expression: has(request.resourceAttributes)
+      # only intercept requests to kube-system
+      - expression: request.resourceAttributes.namespace == 'kube-system'
+      # don't intercept requests from kube-system service accounts
+      - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
+  - type: Node
+  - type: RBAC
+  - type: Webhook
+    webhook:
+      unauthorizedTTL: 30s
+      timeout: 3s
+      subjectAccessReviewVersion: v1
+      failurePolicy: Deny
+      connectionInfo:
+        type: KubeConfig
+        kubeConfigFile: /opa-kube-system-authz-webhook.yaml
+      matchConditions:
+      # only send resource requests to the webhook
+      - expression: has(request.resourceAttributes)
+      # only intercept requests to kube-system
+      - expression: request.resourceAttributes.namespace == 'kube-system'
+      # don't intercept requests from kube-system service accounts
+      - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
+```
 
 #### Story 3: Denying requests on certain scenarios
 
@@ -249,7 +290,8 @@ will not be able to start. This can be mitigated by fixing the malformed values.
 We would like to introduce a structured file format which allows authorization
 to be configured using a flag (`--authorization-config-file`) which accepts a
 path to a file on the disk. Setting both `--authorization-config-file` and
-configuring an authorization webhook will not be allowed. If the user does that,
+configuring an authorization webhook using the `--authorization-webhook-*` 
+command line flags will not be allowed. If the user does that,
 there will be an error and API Server would exit right away.
 
 The configuration would be validated at startup and the API server will fail to
@@ -259,7 +301,8 @@ The API server will periodically reload the configuration. If it changes, the
 new configuration will be used for the Authorizer chain. If the new configuration
 is invalid, the last known valid configuration will be used. Logging and metrics
 would be used to signal success/failure of a config reload so that cluster admins
-can have observability over this process.
+can have observability over this process. Reload must not add or remove Node or RBAC 
+authorizers. They can be reordered, but cannot be added or removed.
 
 The proposed structure is illustrated below:
 
@@ -321,7 +364,7 @@ authorizers:
         # Path to KubeConfigFile for connection info
         # Required, if connectionInfo.Type is KubeConfig
         kubeConfigFile: /kube-system-authz-webhook.yaml
-      	# matchConditions is a list of conditions that must be met for a request to be sent to this
+        # matchConditions is a list of conditions that must be met for a request to be sent to this
         # webhook. An empty list of matchConditions matches all requests.
         # There are a maximum of 64 match conditions allowed.
         #
@@ -377,9 +420,8 @@ to the authz webhook for which the expression has been defined. The user would h
 to a `request` variable containing a `SubjectAccessReview` object in the version specified
 by `subjectAccessReviewVersion`.
 
-The code path for enabling the above will only be triggered if the feature flag will
-be enabled until the time the feature flag is removed and configuring authorizer
-through a file becomes GA.
+The code path for enabling the above will only be triggered if the feature flag is enabled until 
+the feature flag is removed and this feature graduates to GA.
 
 ### Monitoring
 
@@ -458,14 +500,14 @@ We should benchmark the cost of some common CEL expressions inside
 ##### Integration tests
 
 Integration tests would be added to ensure the following:
-- Authorization of requests work in the existing flag based mode (feature flag
-turned off)
+- Authorization of requests work in the existing command line flag 
+based mode (feature flag turned off)
 - Authorization of requests work with an apiserver bootstrapped with
 authorization configuration file (feature flag turned on)
-    - without an webhook
-    - with an webhook - successful request
-    - with an webhook - error on request with `failurePolicy: Deny`
-    - with an webhook - error on request with `failurePolicy: NoOpinion`
+    - without a webhook
+    - with a webhook - successful request
+    - with a webhook - error on request with `failurePolicy: Deny`
+    - with a webhook - error on request with `failurePolicy: NoOpinion`
 
 There will be a mix and match of various authorization mechanisms to ensure all
 desired functionality works.
@@ -592,7 +634,7 @@ Or, they can look at the metrics exposed by `kube-apiserver`.
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 The amount of errors denoted by `apiserver_authorization_step_webhook_error_total`
-is within reasonable limits. A rising value indicate issues with either the
+is within reasonable limits. A rising value indicates issues with either the
 authorizer chain or the webhook itself.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
