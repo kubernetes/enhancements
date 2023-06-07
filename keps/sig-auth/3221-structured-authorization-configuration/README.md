@@ -422,6 +422,10 @@ to the authz webhook for which the expression has been defined. The user would h
 to a `request` variable containing a `SubjectAccessReview` object in the version specified
 by `subjectAccessReviewVersion`.
 
+When no matchConditions are satisfied for a request, the webhook would be skipped. In such
+situations, the decision is logged in the audit log with the `webhook_skipped` annotation.
+Benefit of this is that resource and user info will also be logged.
+
 The code path for enabling the above will only be triggered if the feature flag is enabled until
 the feature flag is removed and this feature graduates to GA.
 
