@@ -441,14 +441,13 @@ Labels {along with possible values}:
 **Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook{,_<name>}`.
 If there is only one webhook, there would be no `_<name>` suffix.
 
-2. `apiserver_authorization_step_webhook_invocations_total`
+2. `apiserver_authorization_webhook_evaluations_total`
 
 This will be incremented on round-trip of an authorization webhook. It will track
 total invocation counts across the following labels.
 
 - `name`
-- `code` {2xx, 4xx, 5xx}
-- `decision` {Allow, Deny, NoOpinion}
+- `code` {"incomplete_request", "bad_response"}
 
 3. `apiserver_authorization_step_webhook_duration_total_seconds`
 
