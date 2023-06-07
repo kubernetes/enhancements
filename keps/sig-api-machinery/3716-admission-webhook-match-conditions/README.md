@@ -374,10 +374,7 @@ cases outlined above will be added.
 
 - Add E2E test coverage
 - Resolve resource constraints validation
-
-<<[UNRESOLVED resource constraints ]>>
-Additional beta requirements TBD
-<<[/UNRESOLVED]>>
+- Webhook Accessors smart recompilation
 
 #### GA
 
