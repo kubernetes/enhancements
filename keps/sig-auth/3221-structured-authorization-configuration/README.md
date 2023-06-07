@@ -299,9 +299,11 @@ start if the configuration is invalid.
 
 The API server will periodically reload the configuration. If it changes, the
 new configuration will be used for the Authorizer chain. If the new configuration
-is invalid, the last known valid configuration will be used. Logging and metrics
-would be used to signal success/failure of a config reload so that cluster admins
-can have observability over this process. Reload must not add or remove Node or RBAC
+is invalid, the last known valid configuration will be used. The reloader will also
+check if the webhook exists, thereby preventing any typo/misconfiguration with the
+Webhook resulting in bad Authorizer config. Logging and metrics would be used to
+signal success/failure of a config reload so that cluster admins can have
+observability over this process.Reload must not add or remove Node or RBAC
 authorizers. They can be reordered, but cannot be added or removed.
 
 The proposed structure is illustrated below:
