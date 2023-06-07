@@ -631,18 +631,18 @@ Or, they can look at the metrics exposed by `kube-apiserver`.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Other
-  - Details: They can look at the metrics if `apiserver_authorization_step_invocations_total` is increasing.
+  - Details: They can look at the metrics if `apiserver_authorization_decisions_total` is increasing.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-The amount of errors denoted by `apiserver_authorization_step_webhook_error_total`
+The total number of `apiserver_authorization_step_webhook_error_total` metric with failure code
 is within reasonable limits. A rising value indicates issues with either the
 authorizer chain or the webhook itself.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `apiserver_authorization_step_invocations_total`
+  - Metric name: `apiserver_authorization_decisions_total`
   - Components exposing the metric: kube-apiserver
 
 If the cluster administrator has defined an authorizer chain and the above metric
