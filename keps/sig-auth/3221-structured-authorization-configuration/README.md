@@ -469,9 +469,10 @@ Labels {along with possible values}:
 - `code` {4xx, 5xx}
 - `decision` {Deny, NoOpinion}
 
-5. `apiserver_authorization_step_configuration_reload_failure_count`
+5. `apiserver_authorization_configuration_reload_last_timestamp_seconds`
 
-This metric would track the number of times the configuration has been reloaded.
+The last time in seconds when an authorization reload was performed.
+- `status` {success, fail}
 
 ### Test Plan
 
