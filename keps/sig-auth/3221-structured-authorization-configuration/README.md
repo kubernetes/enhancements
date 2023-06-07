@@ -290,7 +290,7 @@ will not be able to start. This can be mitigated by fixing the malformed values.
 We would like to introduce a structured file format which allows authorization
 to be configured using a flag (`--authorization-config-file`) which accepts a
 path to a file on the disk. Setting both `--authorization-config-file` and
-configuring an authorization webhook using the `--authorization-webhook-*` 
+configuring an authorization webhook using the `--authorization-webhook-*`
 command line flags will not be allowed. If the user does that,
 there will be an error and API Server would exit right away.
 
@@ -301,7 +301,7 @@ The API server will periodically reload the configuration. If it changes, the
 new configuration will be used for the Authorizer chain. If the new configuration
 is invalid, the last known valid configuration will be used. Logging and metrics
 would be used to signal success/failure of a config reload so that cluster admins
-can have observability over this process. Reload must not add or remove Node or RBAC 
+can have observability over this process. Reload must not add or remove Node or RBAC
 authorizers. They can be reordered, but cannot be added or removed.
 
 The proposed structure is illustrated below:
@@ -420,21 +420,21 @@ to the authz webhook for which the expression has been defined. The user would h
 to a `request` variable containing a `SubjectAccessReview` object in the version specified
 by `subjectAccessReviewVersion`.
 
-The code path for enabling the above will only be triggered if the feature flag is enabled until 
+The code path for enabling the above will only be triggered if the feature flag is enabled until
 the feature flag is removed and this feature graduates to GA.
 
 ### Monitoring
 
 We will add the following 4 metrics:
 
-1. `apiserver_authorization_step_invocations_total`
+1. `apiserver_authorization_decisions_total`
 
 This will be incremented on round-trip of an authorizer. It will track total
 authorization decision invocations across the following labels.
 
 Labels {along with possible values}:
 - `mode` {<authorizer_name>}
-- `decision` {Allow, Deny, NoOpinion}
+- `decision` {Allow, Deny}
 
 **Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook{,_<name>}`.
 If there is only one webhook, there would be no `_<name>` suffix.
@@ -500,7 +500,7 @@ We should benchmark the cost of some common CEL expressions inside
 ##### Integration tests
 
 Integration tests would be added to ensure the following:
-- Authorization of requests work in the existing command line flag 
+- Authorization of requests work in the existing command line flag
 based mode (feature flag turned off)
 - Authorization of requests work with an apiserver bootstrapped with
 authorization configuration file (feature flag turned on)
