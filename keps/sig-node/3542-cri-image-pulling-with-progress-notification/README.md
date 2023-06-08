@@ -136,10 +136,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -235,7 +235,8 @@ nitty-gritty.
 -->
 We propose introducing new (additional, not replacing old one) API for requesting image pull,
 that will return stream with periodic updates sent through it to the client. The image pull
-request parameters will contain the type of update the client wants to receive aobut the progress:
+request parameters will contain the type of granularty based on which the client wants to receive
+updates about the progress:
 - time-based
 - size-based
 
@@ -244,8 +245,15 @@ and the frequency of the updates:
 - every N Kibibytes of the total image size being downloaded
 respectively to the type
 
+If / when it is possible to reliably determine percentage of the progress in the runtime,
+percentage-based granularity type can be introduced then.
+
 If the client did not specify the preferred notification granularity, default values should be used,
 for instance every Gibibyte downloaded.
+
+For kubelet we propose the default granularity to be time-based with 30 seconds interval, so
+Pod object will get an event with image pulling progress every 30 seconds.
+The granularity type and interval should be configurable through kubelet-config.
 
 This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
 progress and publish events to the Pod object
@@ -309,14 +317,14 @@ use regular silent ImagePull API call.
 
 ### Risks and Mitigations
 
-The risks are minimal, introduction of new API is not affecting any other APIs. 
+The risks are minimal, introduction of new API is not affecting any other APIs.
 
 Misconfiguration of image pull request granularity for kubelet can result in big number
 of progress responses published by runtime into return stream. This can be mitigated by kubelet
 throttling the amount of events it publishes to Pod object (publishing less than received from
 runtime), as well as in runtime by metering amount of responses being sent within time interval.
-Intention of this KEP's CRI extension is to provide not-so-frequest updates for Kubelet (e.g. once
-a minute), while having a possibility to have more-frequest updates for cli tools (e.g. once a
+Intention of this KEP's CRI extension is to provide not-so-frequent updates for Kubelet (e.g. once
+a minute), while having a possibility to have more-frequent updates for cli tools (e.g. once a
 second).
 
 Runtime can be such that does not support image pull progress reporting. In this case fallback to
@@ -359,18 +367,14 @@ The CRI client can restrict the progress reporting to be time-based (e.g. once e
 or based on size (amount of bytes/KiB/MiB downloaded). The size-based should be the default one.
 
     message PullImageWithProgressRequest {
-        // Spec of the image.
-        ImageSpec image = 1;
-        // Authentication configuration for pulling the image.
-        AuthConfig auth = 2;
-        // Config of the PodSandbox, which is used to pull image in PodSandbox context.
-        PodSandboxConfig sandbox_config = 3;
+        // Include original non-progress request structure.
+        PullImageRequest request = 1;
         // Granularity type of the progress reports
-        PullImageProgressGranularity granularity_type = 4;
-        // The interval value of the chosen granularity.
-        // For time-based granularity, this is the number of seconds between reports. If time interval is 0, the progress shouhld be sent every 60s.
-        // For size-based granularity, this is the number of kibibytes received between reports. If set to 0, then runtime will decide when to report progress as image is downloaded and unpacked.
-        uint32 interval = 5;
+        PullImageProgressGranularity granularity_type = 2;
+        // The interval value of the choosen granularity.
+        // For time based granularity, this is the number of seconds between reports. If time interval is 0, then runtime default report interval is used.
+        // For size based granularity, this is the number of bytes received between reports. If set to 0, then runtime default report interval is used.
+        UInt64Value interval = 3;
     }
 
 If the connection succeeds, the PullImageWithProgress() will return a gRPC stream to the caller and let it
@@ -639,7 +643,7 @@ automations, so be extremely careful here.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the proposed new call is an alternative, not a replacement. The way kubelet is requesting to 
+Yes, the proposed new call is an alternative, not a replacement. The way kubelet is requesting to
 pull an image should be possible to change through kubelet config.
 
 <!--
