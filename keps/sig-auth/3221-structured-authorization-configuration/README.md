@@ -472,7 +472,6 @@ Labels {along with possible values}:
 
 - `name`
 - `code` {"incomplete_request", "bad_response"}
-- `decision` {NoOpinion}
 
 5. `apiserver_authorization_configuration_reload_last_timestamp_seconds`
 
@@ -595,6 +594,13 @@ The behaviour is the same as when the feature is enabled for the first time.
 We will have extensive unit tests during feature implementation. There would be tests
 for the Authorizer chain in both the old and new configuration scenarios.
 
+We will add integration tests to validate the enablement/disablement flow.
+  - When the feature is disabled, only the existing command line flag `--authorization-webhook-*`
+based mode is allowed.
+  - When the feature is enable, setting both `--authorization-config-file` and
+configuring an authorization webhook using the `--authorization-webhook-*`
+command line flags should return an error.
+
 ### Rollout, Upgrade and Rollback Planning
 
 > Note: This section is required when targeting Beta to a release.
@@ -690,7 +696,7 @@ None
 
 ### Scalability
 
-> Note: This section is good-to-have to Alpha.
+> Note: This section is good-to-have for Alpha.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -731,7 +737,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-There would a very small addition to the memory used by the API Server and
+No. There would be very minimal addition to the memory used by the API Server and
 number of log entries written to the disk. During the Alpha implementation,
 the small impact will be measured and rationalized to keep the addition
 minimal. The addition would be well within the scalability limits and
