@@ -305,7 +305,7 @@ Authorizer config. If healthcheck on the webhook failed, the last known good
 config will be used. In the next iteration of reload, if webhook is found to be
 healthy, the new config will be used. Logging and metrics would be used to
 signal success/failure of a config reload so that cluster admins can have
-observability over this process.Reload must not add or remove Node or RBAC
+observability over this process. Reload must not add or remove Node or RBAC
 authorizers. They can be reordered, but cannot be added or removed.
 
 The proposed structure is illustrated below:
@@ -592,9 +592,12 @@ The behaviour is the same as when the feature is enabled for the first time.
 
 ###### Are there any tests for feature enablement/disablement?
 
-> //TODO: How do we ensure functionality in the absence of e2e-framework not having support for feature gates?
+We will have extensive unit tests during feature implementation. There would be tests
+for the Authorizer chain in both the old and new configuration scenarios.
 
 ### Rollout, Upgrade and Rollback Planning
+
+> Note: This section is required when targeting Beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -625,7 +628,8 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-> //TODO: To be elaborated more during Beta graduation.
+> Note: To be elaborated more during Beta graduation since this section
+must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -686,13 +690,15 @@ None
 
 ### Scalability
 
+> Note: This section is good-to-have to Alpha.
+
 ###### Will enabling / using this feature result in any new API calls?
 
-No.
+No. No additional calls will be made to the Kubernetes API Server.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No.
+Yes, but these are types for defining configuration and are not served.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -725,7 +731,11 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-No.
+There would a very small addition to the memory used by the API Server and
+number of log entries written to the disk. During the Alpha implementation,
+the small impact will be measured and rationalized to keep the addition
+minimal. The addition would be well within the scalability limits and
+thresholds.
 
 ### Troubleshooting
 
@@ -739,6 +749,9 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+
+> Note: To be elaborated more during Beta graduation since this section
+must be completed when targeting beta to a release.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
