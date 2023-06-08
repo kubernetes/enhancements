@@ -179,7 +179,7 @@ Alpha should provide basic functionality covered with tests described above.
 
 #### Beta -> GA Graduation
 
-==TODO==
+  - support for aggregated apiservers
 
 **For non-optional features moving to GA, the graduation criteria must include
 [conformance tests].**
