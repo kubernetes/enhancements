@@ -297,13 +297,13 @@ there will be an error and API Server would exit right away.
 The configuration would be validated at startup and the API server will fail to
 start if the configuration is invalid.
 
-The API server will periodically reload the configuration. If it changes, the
-new configuration will be used for the Authorizer chain. If the new configuration
-is invalid, the last known valid configuration will be used. The reloader will also
-check if the webhook is healthy, thereby preventing any typo/misconfiguration with the
-Webhook resulting in bad Authorizer config. If healthcheck on the wehobook failed, the 
-last known good config will be used. The time-based loop will try later and when webhook 
-health comes back, the new config will be used. Logging and metrics would be used to
+The API server will periodically reload the configuration at a specific time
+interval. If it changes, the new configuration will be used for the Authorizer
+chain. The reloader will also check if the webhook is healthy, thereby
+preventing any typo/misconfiguration with the Webhook resulting in bad
+Authorizer config. If healthcheck on the webhook failed, the last known good
+config will be used. In the next iteration of reload, if webhook is found to be
+healthy, the new config will be used. Logging and metrics would be used to
 signal success/failure of a config reload so that cluster admins can have
 observability over this process.Reload must not add or remove Node or RBAC
 authorizers. They can be reordered, but cannot be added or removed.
@@ -465,7 +465,7 @@ Labels {along with possible values}:
 
 4. `apiserver_authorization_webhook_evaluations_fail_open_total`
 
-This metric will be incremented when a webhook returns `code != errAuthzWebhookOKCode` and 
+This metric will be incremented when a webhook returns `code != errAuthzWebhookOKCode` and
 decision on error is not set to `deny`.
 
 Labels {along with possible values}:
