@@ -215,8 +215,6 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-No.
-
 ## Proposal
 
 <!--
@@ -230,7 +228,7 @@ nitty-gritty.
 
 Add a new field `maxRestartTimesOnFailure` to the `pod.spec`. `maxRestartTimesOnFailure` only applies
 when `restartPolicy` is set to `OnFailure`. As a result, the restart times of a Pod
-will be controlled by `maxRestartTimesOnFailure`.
+will be controlled by `maxRestartTimesOnFailure`, when a Pod hits the value+1, it will be marked as `Failed`.
 
 ### User Stories (Optional)
 
@@ -280,14 +278,18 @@ like `Never`, then the Job API no longer needs to consider these logics anymore.
 to record the retires number, which looks not elegant.
 
 Pros:
-  * Reduce the maintenance cost of Job API
+  * BackoffLimitPerIndex can reuse this functionality and no longer need to consider the restart times per index.
+  Specifically, it can avoid to use the annotation anymore, and works at a high level control by watching the pod status.
 
 Cons:
-  * The boundary of restartPolicy `Never` and `OnFailure` is vaguely.
+  * If we support max restart times with `restartPolicy=Never`, it semantically means _we can never
+  restart the pod until we met the restart times. Then there's little difference with `restartPolicy=OnFailure`.
 
 #### Caveats
 
-- Pod's maxRestartTimesOnFailure is somehow conflict with Job's backoffLimit, we'll respect the first one who hit the line.
+- When a Job's template is set with restartPolicy=OnFailure, and `backoffLimit` is greater than `maxRestartTimesOnFailure`,
+then pod may fall into failure when it hits the `maxRestartTimesOnFailure`+1, Job will create a new pod rather than restore
+the original failed pod. This is not a break change because not breaking the API semantics but something we should notice.
 
 ### Risks and Mitigations
 
@@ -307,6 +309,8 @@ Consider including folks who also work outside the SIG or subproject.
 E.g. we set the `maxRestartTimesOnFailure=3`, and the network shakes with 4 times, the service will stuck
 in a failed state forever after 3 restarts, so end-users should be careful when configuring this field.
 However, this problem also exists in Job's backoffLimit, which is default to 6.
+- Even a well-written application can be restarted for several times in a long-running time, then we mark it as
+failed is somehow a little rude.
 
 ## Design Details
 
@@ -339,7 +343,22 @@ In runtime, we'll check the sum of `RestartCount` of
 all containers [`Status`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/runtime.go#L306-L335)
 packaged by Pod in function [`ShouldContainerBeRestarted`](https://github.com/kubernetes/kubernetes/blob/451e1fa8bcff38b87504eebd414948e505526d01/pkg/kubelet/container/helpers.go#L63-L96).
 If the value is greater than the `maxRestartTimesOnFailure`, return false indicating the Pod should not restart again.
-We'll add a new error named `ExceedMaxRestartTimes` as the reason of Pod's failure state.
+Pod will be marked as `Failed` and we'll update the condition like:
+
+```
+  - lastProbeTime: null
+    lastTransitionTime: "2023-06-06T06:41:53Z"
+    message:
+    reason: ExceedMaxRestartTimes
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2023-06-06T08:43:35Z"
+    reason: ExceedMaxRestartTimes
+    status: "False"
+    type: ContainersReady
+    ...
+```
 
 ### Test Plan
 
@@ -364,8 +383,6 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
-
-No.
 
 ##### Unit tests
 
@@ -541,7 +558,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-The apiserver's version should be consistent with the kubelet version, or this feature
+The kubelet version should be consistent with the api-server version, or this feature
 will not work.
 
 ## Production Readiness Review Questionnaire
@@ -655,13 +672,8 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-Yes, since this feature should be enabled both by apiserver and kubelet, if we only
-successfully roll back the apiserver, the kubelet will fail to update pod for `maxRestartTimeOnFailure`
-is unknown to apiserver.
-
-Also, in HA clusters, if we only rollback parts of api-servers, pods with `maxRestartTimesOnFailure` set
-will still be impacted. But finally if the rollback finished, the running workloads will
-recover as expected.
+Because kubelet will not upgrade/downgrade until api-server ready, so this will not impact
+running workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -671,8 +683,8 @@ that might indicate a serious problem?
 -->
 
 When we set the restartPolicy=OnFailure and set a specific maxRestartTimesOnFailure number,
-but Pod restarts for more than the number.
-Or the `pod_exceed_restart_times_size` is always zero, but we do have Pods failed for exceeding the restart times.
+but Pod restarts times is not equal to the number.
+Or we can refer to the metric `pod_exceed_restart_times_size` for comparison.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -846,7 +858,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Yes.
+Yes, because we added a new field.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -923,8 +935,6 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-None.
-
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
@@ -948,8 +958,6 @@ test plan and graduation criteria.
 <!--
 Why should this KEP _not_ be implemented?
 -->
-
-We have to re-implement this feature in other workloads if we need.
 
 ## Alternatives
 
