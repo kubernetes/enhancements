@@ -300,8 +300,10 @@ start if the configuration is invalid.
 The API server will periodically reload the configuration. If it changes, the
 new configuration will be used for the Authorizer chain. If the new configuration
 is invalid, the last known valid configuration will be used. The reloader will also
-check if the webhook exists, thereby preventing any typo/misconfiguration with the
-Webhook resulting in bad Authorizer config. Logging and metrics would be used to
+check if the webhook is healthy, thereby preventing any typo/misconfiguration with the
+Webhook resulting in bad Authorizer config. If healthcheck on the wehobook failed, the 
+last known good config will be used. The time-based loop will try later and when webhook 
+health comes back, the new config will be used. Logging and metrics would be used to
 signal success/failure of a config reload so that cluster admins can have
 observability over this process.Reload must not add or remove Node or RBAC
 authorizers. They can be reordered, but cannot be added or removed.
@@ -439,7 +441,7 @@ This will be incremented on round-trip of an authorizer. It will track total
 authorization decision invocations across the following labels.
 
 Labels {along with possible values}:
-- `mode` {<authorizer_name>}
+- `mode` {<authorizer_name>} # when authorizer is a webhook, prepend `webhook_`
 - `decision` {Allow, Deny}
 
 **Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook{,_<name>}`.
@@ -461,19 +463,20 @@ Labels {along with possible values}:
 - `name`
 - `code` {"incomplete_request", "bad_response", "ok"}
 
-4. `apiserver_authorization_step_webhook_error_total`
+4. `apiserver_authorization_webhook_evaluations_fail_open_total`
 
-This metric will be incremented when a webhook returns a 4xx or 5xx (erroneous) response.
+This metric will be incremented when a webhook returns `code != errAuthzWebhookOKCode` and 
+decision on error is not set to `deny`.
 
 Labels {along with possible values}:
 
 - `name`
-- `code` {4xx, 5xx}
-- `decision` {Deny, NoOpinion}
+- `code` {"incomplete_request", "bad_response"}
+- `decision` {NoOpinion}
 
 5. `apiserver_authorization_configuration_reload_last_timestamp_seconds`
 
-The last time in seconds when an authorization reload was performed.
+This Gauge metric will record last time in seconds when an authorization reload was performed.
 - `status` {success, fail}
 
 ### Test Plan
@@ -638,7 +641,7 @@ Or, they can look at the metrics exposed by `kube-apiserver`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-The total number of `apiserver_authorization_step_webhook_error_total` metric with failure code
+The total number of `apiserver_authorization_webhook_evaluations_fail_open_total` metric with failure code
 is within reasonable limits. A rising value indicates issues with either the
 authorizer chain or the webhook itself.
 
