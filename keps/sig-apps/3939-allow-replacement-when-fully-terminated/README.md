@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3939: Allow for recreation of pods once fully terminated
+# KEP-3939: Allow replacement of Pods in a Job when fully terminated
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -88,11 +88,14 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2](#story-2)
     - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [When are pods deleted](#when-are-pods-deleted)
+    - [The default job controller behavior](#the-default-job-controller-behavior)
+    - [When Pods enter a terminating state](#when-pods-enter-a-terminating-state)
+  - [Exponential Backoff for Pod Failures](#exponential-backoff-for-pod-failures)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Pods are not guaranteed to transition to a terminal phase](#pods-are-not-guaranteed-to-transition-to-a-terminal-phase)
 - [Design Details](#design-details)
   - [Job API Definition](#job-api-definition)
+    - [Defaulting and validation](#defaulting-and-validation)
   - [Implementation](#implementation)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -217,7 +220,7 @@ to track the number of terminating pods to calculate quotas.
 ### Goals
 
 - Job controller should allow for flexibility in waiting for pods to be fully terminated before
-  creating new ones
+  creating replacement Pods
 - Job controller will have a new status field where we include the number of terminating pods.
 
 ### Non-Goals
@@ -226,14 +229,18 @@ to track the number of terminating pods to calculate quotas.
 
 ## Proposal
 
-The Job controller gets a list of active pods.  Active pods usually mean pods that have not been registered for deletion.  
+The Job controller gets a list of active pods.  Active pods are pods that don't
+have a terminal phase (`Succeeded` or `Failed`) and are not terminating 
+(have a `deletionTimestamp`)
 In this KEP, we will consider terminating pods to be separate from active and failed.  
-In the job controller, we should include a field that states the number of terminating pods.  
+As an opt-in behavior, the job controller can use the active and terminating
+pods to determine whether replacement Pods are needed.
 
 We propose two new API fields:
 
-1) A field in Spec that allows for opt-in behavior of whether to wait for terminating pods to finish before recreating.
-2) A new field in Status for tracking the number of terminating pods.
+1. A field in Spec that allows for opt-in behavior of whether to wait for
+   terminating pods to finish before creating replacement pods.
+2. A new field in Status for tracking the number of terminating pods.
 
 ### User Stories (Optional)
 
@@ -265,7 +272,7 @@ See [Kueue: Account for terminating pods when doing preemption](https://github.c
 
 Based on the [proposed API](#job-api-definition) below, the behavior of the
 job controller prior to this KEP is equivalent to
-`recreatePodsWhen: TerminatingOrFailed`.
+`podReplacementPolicy: TerminatingOrFailed`.
 
 This behavior has the following semantic problems:
 - A terminating Pod might gracefully terminate as Succeeded, but it counts
@@ -275,8 +282,8 @@ This behavior has the following semantic problems:
   Pod might be terminated due to the policy.
 
 In a Job v2 API, we should consider having the default behavior equivalent to
-`recreatePodsWhen: Failed`, given the above problems.
-We could even consider removing the proposed field `recreatePodsWhen`.
+`podReplacementPolicy: Failed`, given the above problems.
+We could even consider removing the proposed field `podReplacementPolicy`.
 
 But for backwards compatibility, in v1, we have to introduce a change of
 behavior as opt-in.
@@ -299,13 +306,13 @@ a terminal `phase` (`Succeeded` or `Failed`).
 ### Exponential Backoff for Pod Failures
 
 The job controller implements backoff delays to prevent fast recreation of
-continuosly failing Pods.
+continuously failing Pods.
 
 This behavior is internal (not configurable through the API) and it's orthogonal
 to this KEP. The behavior will be preserved as follows:
-- When `recreatePodsWhen: TerminatingOrFailed`, the backoff period counts from
+- When `podReplacementPolicy: TerminatingOrFailed`, the backoff period counts from
   the time the Pod is terminating or Failed.
-- When `recreatePodsWhen: Failed`, the backoff period counts from the time the
+- When `podReplacementPolicy: Failed`, the backoff period counts from the time the
   Pod is Failed.
 
 ### Risks and Mitigations
@@ -325,8 +332,8 @@ As a consequence, it will never be replaced, so the whole job will be stuck from
 When PodDisruptionConditions is enabled, the PodGC transitions the Pod to phase Failed in this scenario.
 
 Due to the above issues, we propose the following mitigation:
-Set phase=Failed when PodDisruptionConditions is enabled OR JobRecreatePodsWhenFailed is enabled in kubelet and PodGC.
-When JobRecreatePodsWhenFailed is enabled, but PodDisruptionConditions is disabled, we would just set the phase, but without adding the condition.
+Set phase=Failed when PodDisruptionConditions is enabled OR JobPodReplacementPolicy is enabled in kubelet and PodGC.
+When JobPodReplacementPolicy is enabled, but PodDisruptionConditions is disabled, we would just set the phase, but without adding the condition.
 
 ## Design Details
 
@@ -338,33 +345,39 @@ At the JobSpec level, we are adding a new enum field:
 // This field controls when we recreate pods
 // Default will be TerminatingOrFailed ie recreate pods when they are failed
 // +enum 
-type RecreatePodsWhen string
+type PodReplacementPolicy string
 const (
- // This policy recreates pods when they are marked as terminating (have a
- // deletion timestamp) or reach the terminal phase `Failed`.
- // When `.spec.podFailurePolicy` is not in use, terminating pods count towards
- // `.status.failed`.
- TerminatingOrFailed RecreatePodsWhen = "TerminatingOrFailed"
- // This policy creates replacement Pods only when the previous ones reach
- // the terminal phase `Failed`.
- Failed              RecreatePodsWhen = "Failed"
+ // TerminatingOrFailed is a policy that creates replacement pods when they are
+ // marked as terminating (have a deletion timestamp) or reach the terminal
+ // phase `Failed`.
+ // Terminating pods count towards `.status.failed`, even if they later reach
+ // the terminal phase `Succeeded`.
+ TerminatingOrFailed PodReplacementPolicy = "TerminatingOrFailed"
+ // Failed is a policy that creates replacement Pods only when the previously
+ // created Pods reach the terminal phase `Failed`.
+ Failed PodReplacementPolicy = "Failed"
 )
 ```
 
 ```golang
 type JobSpec struct{
   ...
- // RecreatePodsWhen specifies when pods should be recreated. Possible values are:
- // - TerminatingOrFailed means to recreate when a pod is either terminating or failed
- // - Failed means to wait until pods are fully terminated or failed before recreating
+ // podReplacementPolicy specifies when to create replacement Pods. Possible values are:
+ // - TerminatingOrFailed means to create a replacement Pod when the previously
+ //   created Pod is terminating or failed.
+ // - Failed means to wait until a previously created Pod is fully terminated
+ //   before creating a replacement Pod.
  //
- // TerminatingOrFailed is the default.
+ // When using podFailurePolicy, the default value is Failed and this is the
+ // only allowed policy.
+ // When not using podFailurePolicy, the default value is TerminatingOrFailed.
  // +optional
- RecreatePodsWhen *RecreatePodsWhen
+ PodReplacementPolicy *PodReplacementPolicy
 }
 ```
 
-In order to track terminating pods separately from failed, we need to include a new field in the JobStatus.
+In order to offer visibility of the number of terminating pods, we include a new
+field in the JobStatus.
 
 ```golang
 type JobStatus struct {
@@ -375,7 +388,15 @@ type JobStatus struct {
 }
 ```
 
-We will allow only opt-in behavior for this feature so we will fall back to `TerminatingOrFailed` for `RecreatePodsWhen`.  
+#### Defaulting and validation
+
+Defaulting of `podReplacementPolicy` will depend on whether `podFailurePolicy`
+is in use:
+- when `podFailurePolicy` is in use, the default value is `Failed`.
+- when `podFailurePolicy` is not in use, the default value is `TerminatingOrFailed`.
+
+When `podFailurePolicy` is in use, the only allowed value for `podFailurePolicy`
+is `Failed`.
 
 ### Implementation
 
@@ -383,18 +404,21 @@ As part of this KEP, we need to track pods that are terminating (`deletionTimest
 
 The following algorithm could be used:
 
-1. Count the number of pods that are active (Pending or Running) and not terminating.
+1. Count the number of pods that are active and not terminating.
 2. Count the number of terminating pods.
 3. In `manageJob` we will count expected pods as:
-  - when `recreatePodsWhen: Failed` then `expectedPods = active + terminating`.
-  - when `recreatePodsWhen: TerminatingOrFailed` then `expectedPods = active`.
+  - when `podReplacementPolicy: Failed` then `expectedPods = active + terminating`.
+  - when `podReplacementPolicy: TerminatingOrFailed` then `expectedPods = active`.
 4. Use the expected number of pods to decide whether to recreate.
 
 In Indexed completion mode, the tracking of pods is per index.
 
-The field `Status.terminating` will include the number of terminating pods.
+The controller updates the field `Status.terminating` with the number of terminating pods.
+For backwards compatibility, when `podReplacementPolicy: TerminatingOrFailed`,
+the number of failed pods includes the terminating pods.
 
-We will update the Status field in the same API call where we update the number of active Pods, so it should not require any extra API calls.  
+The controller updates the terminating field in the same API call where it
+updates other counters, so it should not require any extra API calls.  
 
 ### Test Plan
 
@@ -429,10 +453,10 @@ implementing this enhancement to ensure the enhancements have also solid foundat
    b. Recreate pods only once pod is fully terminated (ie `Failed`)
    c. Verify existing behavior with `TerminatingOrFailed`
    d. If feature is off verify existing behavior
-   e. Count terminating pods even if terminating Pod considered failed when `PodDisruptionConditions` is disabled
-   f. Count terminating pods even if terminating Pod not considered failed when PodDisruptionConditions is enabled
+   e. Count terminating pods even if terminating Pod considered failed when `JobPodReplacementPolicy` is disabled
+   f. Count terminating pods even if terminating Pod not considered failed when `JobPodReplacementPolicy` is enabled
 - `gc_controller.go`: `April 3rd 2023` - `82.4`
-   a. Set `PodPhase` to `failed` when `JobRecreatePodsWhenFailed` true but `PodDisruptionConditions` is false
+   a. Set `PodPhase` to `failed` when `JobPodReplacementPolicy` true but `PodDisruptionConditions` is false
 
 ##### Integration tests
 
@@ -447,21 +471,21 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We will add the following integration test for the Job controller:
 
-Case with `JobRecreatePodsWhenFailed` on and `podsRecreateWhen: Failed`
+Case with `JobPodReplacementPolicy` on and `podReplacementPolicy: Failed`
 
   1. Job starts pods that takes a while to terminate
   2. Delete pods
   3. Verify that `terminating` is tracked
   4. Verify that pod creation only occurs once pod is fully terminated.
 
-Case with `JobRecreatePodsWhenFailed` on and `podsRecreateWhen: TerminatingOrFailed`
+Case with `JobPodReplacementPolicy` on and `podReplacementPolicy: TerminatingOrFailed`
 
   1. Job starts pods that takes a while to terminate
   2. Delete pods
   3. Verify that `terminating` is tracked
   4. Verify that pod creation only occurs once deletion happens.
 
-Case With `JobRecreatePodsWhenFailed` off
+Case With `JobPodReplacementPolicy` off
 
   1. Job starts pods that takes a while to terminate
   2. Delete pods
@@ -473,7 +497,7 @@ Tests will verify counting of terminating fields regardless of `PodDisruptionCon
 
 ##### e2e tests
 
-Generally the only tests that are useful for this feature are when `PodRecreateWhen: Failed`.
+Generally the only tests that are useful for this feature are when `PodReplacementPolicy: Failed`.
 
 An example job spec that can reproduce this issue is below:
 
@@ -486,7 +510,7 @@ spec:
   completions: 1
   parallelism: 1
   backoffLimit: 2
-  recreatePodsWhen: Failed
+  podReplacementPolicy: Failed
   template:
     spec:
       restartPolicy: Never
@@ -498,7 +522,7 @@ spec:
 
 A e2e test can verify that deletion will not trigger a new pod creation until the exiting pod is fully deleted.  
 
-If `recreatePodsWhen: TerminatingOrFailed` is specified we would test that pod creation happens closely after deletion.
+If `podReplacementPolicy: TerminatingOrFailed` is specified we would test that pod creation happens closely after deletion.
 
 <!--
 This question should be filled when targeting a release.
@@ -529,11 +553,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### GA
 
 - Address reviews and bug reports from Beta users
-- Lock the `JobRecreatePodsWhenFailed` feature-gate to true
+- Lock the `JobPodReplacementPolicy` feature-gate to true
 
 #### Deprecation
 
-- Remove `JobRecreatePodsWhenFailed` feature-gate in GA+2.
+- Remove `JobPodReplacementPolicy` feature-gate in GA+2.
 
 ### Upgrade / Downgrade Strategy
 
@@ -597,12 +621,12 @@ This section must be completed when targeting alpha to a release.
 #### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: JobRecreatePodsWhenFailed
+  - Feature gate name: JobPodReplacementPolicy
   - Components depending on the feature gate: kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-For enabling JobRecreatePodsWhenFailed:
+For enabling JobPodReplacementPolicy:
 
 a) Count the number of terminating pods and populate in JobStatus
 b) With `RecreationPodsWhen: Failed` specified, pods will only be recreated when they are fully terminated.
@@ -764,7 +788,8 @@ No
 
 #### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-For Job API, we are adding a enum field named `RecreatePodsWhen` which takes either a `TerminateOrFailed` or `Failed`
+For Job API, we are adding a enum field named `PodReplacementPolicy` which takes
+either a `TerminatingOrFailed` or `Failed`
 
 - API type(s): enum
 - Estimated increase in size: 8B

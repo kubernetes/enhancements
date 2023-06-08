@@ -18,6 +18,9 @@ approvers:
   - "@deads2k"
   - "@dchen1107"
 
+see-also:
+  - "/keps/sig-apps/3939-allow-replacement-when-fully-terminated"
+
 # The target maturity stage in the current dev cycle for this KEP.
 stage: beta
 
