@@ -255,6 +255,19 @@ For kubelet we propose the default granularity to be time-based with 30 seconds 
 Pod object will get an event with image pulling progress every 30 seconds.
 The granularity type and interval should be configurable through kubelet-config.
 
+Suggested new Kubelet config fields are these:
+
+      // ImagePullProgressType is the type of ImagePullProgressInterval.
+      // Default: "time"
+      // +optional
+      ImagePullProgressType string `json:"ImagePullProgressType,omitempty"`
+      // ImagePullProgressInterval is an interval of type ImagePullProgressType, based on which the
+      // runtime should send back to kubelet image pulling progress reports, that will be published
+      // as Pod events.
+      // Default: 30
+      // +optional
+      ImagePullProgressInterval uint64 `json:"ImagePullProgressType,omitempty"`
+
 This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
 progress and publish events to the Pod object
 
@@ -371,7 +384,7 @@ or based on size (amount of bytes/KiB/MiB downloaded). The size-based should be 
         PullImageRequest request = 1;
         // Granularity type of the progress reports
         PullImageProgressGranularity granularity_type = 2;
-        // The interval value of the choosen granularity.
+        // The interval value of the chosen granularity.
         // For time based granularity, this is the number of seconds between reports. If time interval is 0, then runtime default report interval is used.
         // For size based granularity, this is the number of bytes received between reports. If set to 0, then runtime default report interval is used.
         UInt64Value interval = 3;
