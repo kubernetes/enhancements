@@ -346,12 +346,19 @@ A new optional field `MatchLabelSelectors` is introduced to `PodAffinityTerm`.
 ```go
 type LabelSelectorOperator string
 
+// Only `In` and `NotIn` are expected for LabelSelectorOperator.
+const (
+  InLabelSelectorOperator    LabelSelectorOperator = "In"
+  NotInLabelSelectorOperator LabelSelectorOperator = "NotIn"
+)
+
 type MatchLabelSelector struct {
   // Key is used to lookup value from the incoming pod labels, 
   // and that key-value label is merged with `LabelSelector`.
   // Key that doesn't exist in the incoming pod labels will be ignored. 
   Key  string
   // Operator defines how key-value, fetched via the above `Keys`, is merged into LabelSelector.
+  // Only `In` and `NotIn` are expected.
   // If Operator is `In`, `key in (value)` is merged with LabelSelector. 
   // If Operator is `NotIn`, `key notin (value)` is merged with LabelSelector. 
   //
