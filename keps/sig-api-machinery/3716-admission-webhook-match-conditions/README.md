@@ -54,10 +54,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -374,10 +374,8 @@ cases outlined above will be added.
 
 - Add E2E test coverage
 - Resolve resource constraints validation
-
-<<[UNRESOLVED resource constraints ]>>
-Additional beta requirements TBD
-<<[/UNRESOLVED]>>
+- Smart reload/recompile of Webhook Accessors, see [issue](https://github.com/kubernetes/kubernetes/issues/116588)
+- ValidatingAdmissionPolicy is promoted to Beta.
 
 #### GA
 
@@ -491,12 +489,15 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+In general, rollout / rollback should not fail since the feature is not enabled by default.
+However, there are risks on rollback if webhook preconditions was enabled and then unexpectedly
+disabled on rollback.
+
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+- `webhook_admission_match_condition_evaluation_errors_total` is high
+- `webhook_admission_match_condition_exclusions_total` is too high or too low
+- `webhook_admission_match_condition_evaluation_seconds` is high
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -506,11 +507,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Not yet, but manual testing should be completed and documented prior to beta.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -537,6 +542,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The metric `webhook_admission_match_condition_exclusions_total` should indicate if the precondition
+is used to exclude objects from invoking webhooks.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -548,13 +556,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
+- [X] Other (treat as last resort)
   - Details:
+     * Check the preconditions field in the webhook object and check the `webhook_admission_match_condition_exclusions_total` metric for exclusions
+     * Check `webhook_admission_match_condition_evaluation_errors_total`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -573,18 +578,22 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+* Only negligible impact to admission latency due to evaluation of CEL rules
+* CEL evaluation time (`webhook_admission_match_condition_evaluation_seconds`)
+* CEL evaluation errors (`webhook_admission_match_condition_evaluation_errors_total`)
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [X] Metrics
   - Metric name:
+     - `webhook_admission_match_condition_evaluation_seconds`
+     - `webhook_admission_match_condition_evaluation_errors_total`
   - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -592,6 +601,10 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Yes, the following metrics will be considered for Beta which will improve observability of this feature:
+* `webhook_admission_match_condition_evaluation_seconds`
+* `webhook_admission_match_condition_exclusions_total`
 
 ### Dependencies
 
@@ -615,6 +628,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No
 
 ### Scalability
 
@@ -643,6 +658,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -652,6 +669,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No, this feature only adds new fields to existing webhook APIs
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -659,6 +678,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -669,6 +690,13 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
+Yes, it can increase size of webhook configuration objects. There is a limit in place for the number of preconditions
+a webhook can have, however, webhook objects can still increase in size significantly if large expressions are used.
+
+- API types(s): ValidatingWebhookConfiguration, MutatingWebhookConfiguration
+  Estimated increase in size: depends on size of CEL expressions, but should be negligible in most cases
+  Estimated amount of new objects: none
+
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 <!--
@@ -676,9 +704,12 @@ Look at the [existing SLIs/SLOs].
 
 Think about adding additional work or introducing new steps in between
 (e.g. need to do X to start a container), etc. Please describe the details.
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Yes, it can impact latency SLI/SLO if evaluating CEL expressions add significant latency.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -688,9 +719,10 @@ non-trivial computations, excessive access to disks (including increased log
 volume), significant amount of data sent and/or received over network, etc.
 This through this both in small and large cases, again with respect to the
 [supported limits].
-
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+Yes, it has potential to increase CPU usage in kube-apiserver if there is a webhook intercepting many requests with many precondition rules.
 
 ### Troubleshooting
 
@@ -709,6 +741,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A -- since the feature is part of kube-apiserver.
+
 ###### What are other known failure modes?
 
 <!--
@@ -724,7 +758,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+N/A
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Feature can be disabled per webhook by removing preconditions or for all webhooks by disabling the feature gate in kube-apiserver.
 
 ## Implementation History
 
