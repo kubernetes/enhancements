@@ -127,18 +127,15 @@ post-start-hook and expired leases will be garbage collected by the `start-kube-
 post-start-hook in kube-apiserver. The refresh rate, lease duration will be configurable through kube-apiserver
 flags
 
-The format of the lease will be `kube-apiserver-<hash-using-hostname>`. A hash based on the hostname is used for two reasons:
+The format of the lease will be `apiserver-<hash-using-hostname>`. A hash based on the hostname is used for two reasons:
 1. To ensure that a `kube-apiserver` that is restarting will attempt to obtain its previous lease, avoiding system churn when a kube-apiserver Lease is garbage collected.
 2. Avoiding the need to truncate the lease name when using longer hostnames that exceed the 64 character limit for object names, which can lead to naming conflicts.
 
 Each lease will have a `kubernetes.io/hostname` label with the actual hostname seen by kube-apiserver which cluster admins
 can use to determine which kube-apiserver owns a Lease object. However, the holder identity of the
 lease (`lease.spec.holderIdentity`) will be uniquely generated per start-up, which can be used as an indicator for
-ownership churn of the lease. All kube-apiserver leases will also have a component label `k8s.io/component=kube-apiserver`.
-
-In the future, we may consider providing a flag in `kube-apiserver` to override the lease name, but we don't anticipate
-needing this today.
-
+ownership churn of the lease. All leases will also have a `apiserver.kubernetes.io/identity` label, to uniquely distinguish
+leases between kube-apiserver or extension apiservers.
 
 ### Test Plan
 
@@ -167,6 +164,8 @@ Proposed e2e tests:
 - an e2e test that restarts a kube-apiserver and validates that a new Lease is created
   with a newly generated ID and the old lease is garbage collected
 
+See [apiserver_identity.go](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apimachinery/apiserver_identity.go) for currently implemented e2e tests.
+
 ### Graduation Criteria
 
 Alpha should provide basic functionality covered with tests described above.
@@ -179,7 +178,7 @@ Alpha should provide basic functionality covered with tests described above.
 
 #### Beta -> GA Graduation
 
-  - support for aggregated apiservers
+  - support for aggregated apiservers (with sufficient integration/e2e test coverage)
 
 **For non-optional features moving to GA, the graduation criteria must include
 [conformance tests].**
