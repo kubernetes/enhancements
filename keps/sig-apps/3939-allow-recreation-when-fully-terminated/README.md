@@ -261,16 +261,52 @@ See [Kueue: Account for terminating pods when doing preemption](https://github.c
 
 ### Notes/Constraints/Caveats (Optional)
 
-#### When are pods deleted
+#### The default job controller behavior
 
-Pods can be deleted by several controllers, which we typically refer to as
-disruptions, such as: kubelet eviction, scheduler preemption, API eviction, etc.
+Based on the [proposed API](#job-api-definition) below, the behavior of the
+job controller prior to this KEP is equivalent to
+`recreatePodsWhen: TerminatingOrFailed`.
+
+This behavior has the following semantic problems:
+- A terminating Pod might gracefully terminate as Succeeded, but it counts
+  towards `.status.failed` as soon as it's terminating.
+- When using podFailurePolicy, the controller might create a replacement Pod
+  before being able to evaluate the terminal state of the Pod. The replacement
+  Pod might be terminated due to the policy.
+
+In a Job v2 API, we should consider having the default behavior equivalent to
+`recreatePodsWhen: Failed`, given the above problems.
+We could even consider removing the proposed field `recreatePodsWhen`.
+
+But for backwards compatibility, in v1, we have to introduce a change of
+behavior as opt-in.
+
+#### When Pods enter a terminating state
+
+Pods can be marked for termination by several controllers, which we typically
+refer to as disruptions, such as: kubelet eviction, scheduler preemption, API eviction, etc.
 
 The job controller itself can delete running Pods, in the following scenarios:
 
 1. A job is over the `activeDeadlineSeconds`.  
 1. When the number of Pod failures reaches the `backoffLimit`.
 1. With `PodFailurePolicy` active and `FailJob` is set as the action.
+
+In all these situations, the Pod initially gets a `deletionTimestamp`
+and we interpret the pod as "terminating". Once the pod terminates, it gets
+a terminal `phase` (`Succeeded` or `Failed`).
+
+### Exponential Backoff for Pod Failures
+
+The job controller implements backoff delays to prevent fast recreation of
+continuosly failing Pods.
+
+This behavior is internal (not configurable through the API) and it's orthogonal
+to this KEP. The behavior will be preserved as follows:
+- When `recreatePodsWhen: TerminatingOrFailed`, the backoff period counts from
+  the time the Pod is terminating or Failed.
+- When `recreatePodsWhen: Failed`, the backoff period counts from the time the
+  Pod is Failed.
 
 ### Risks and Mitigations
 
@@ -304,11 +340,13 @@ At the JobSpec level, we are adding a new enum field:
 // +enum 
 type RecreatePodsWhen string
 const (
- // This is a field that recreates pods when they are marked as terminating or failed
- // ie this means that as soon as pods get marked for deletion they will be recreated
-
+ // This policy recreates pods when they are marked as terminating (have a
+ // deletion timestamp) or reach the terminal phase `Failed`.
+ // When `.spec.podFailurePolicy` is not in use, terminating pods count towards
+ // `.status.failed`.
  TerminatingOrFailed RecreatePodsWhen = "TerminatingOrFailed"
- // Only recreate pods when they are marked as failed.
+ // This policy creates replacement Pods only when the previous ones reach
+ // the terminal phase `Failed`.
  Failed              RecreatePodsWhen = "Failed"
 )
 ```
@@ -345,10 +383,14 @@ As part of this KEP, we need to track pods that are terminating (`deletionTimest
 
 The following algorithm could be used:
 
-1. Count the number of pods that are active (Pending or Running)
-2. If `recreatePodsWhen=Failed` and feature is on, then we will count the number of terminating pods
-3. In `manageJob` we will count expected pods against the number of pods not in terminal state:  `numberOfPods = active + terminating`
-4. `numberOfPods` can be used to signal whether or not creation is needed
+1. Count the number of pods that are active (Pending or Running) and not terminating.
+2. Count the number of terminating pods.
+3. In `manageJob` we will count expected pods as:
+  - when `recreatePodsWhen: Failed` then `expectedPods = active + terminating`.
+  - when `recreatePodsWhen: TerminatingOrFailed` then `expectedPods = active`.
+4. Use the expected number of pods to decide whether to recreate.
+
+In Indexed completion mode, the tracking of pods is per index.
 
 The field `Status.terminating` will include the number of terminating pods.
 
