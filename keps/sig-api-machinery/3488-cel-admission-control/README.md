@@ -1190,18 +1190,24 @@ are included with the key provided. E.g.:
 
 #### Per namespace policy params
 
-Currently the policies and bindings are only allowed to be cluster scoped.
-We want to support per namespace configuration with namespace scoped param resources.
+Validating admission policies and bindings are cluster scoped.
+
+We want to enable a clusters to be able to parameterize a policy
+on a per-namespace using a resource contained in the namespace.
 
 (Thanks for the input from @dead2k)
-This sort of mapping allows:
-- A cluster-admin can write a single resource to say, “this is the policy I want in all my namespaces”.
-- If namespace admins can read the param resources, but not write that resource, they can understand the limitations they currently have.
-- A single lenient cluster policy and cluster policybinding can enforce the minimum constraint, and a single cluster policy with a cluster policybinding pointing to a namespace level param can further restrict.
 
-A new optional field `namespaceParamRef` could be added inside ValidatingAdmissionPolicyBinding to support such use case.
-In contrast, a namespace scoped policybinding will require creation and maintenance of both policybindings and parameters
-in every namespace to enforce the policy itself, versus the single policybinding and many parameters.
+The goal is to enable:
+- A cluster-admin to write a single policy to say, “this is the policy I want in
+  all my namespaces”.
+- A namespace admins that can read the param resources, but not write the params
+  resource, to understand the limitations they currently have.
+- A single lenient cluster policy and binding to enforce a minimum constraint,
+  and a single cluster policy and binding pointing to a namespace level params
+  to further restrict the policy for a particular namespace.
+
+To implement this, a new optional field `namespaceParamRef` will be added to
+ValidatingAdmissionPolicyBinding:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1alpha1
@@ -1212,16 +1218,45 @@ spec:
   policyName: "demo-policy.example.com"
   namespaceParamRef:
     name: "param-resource.example.com"
-    failAction: “allow”
+    failAction: “Allow”
   validationActions: [Deny]
 ```
 
-- a new optional field `namespaceParamRef` is added as a peer to `paramRef`. User has to choose one for parameterization.
-  It allows users to configure param resource per namespace.
-- failAction defines the behavior when the param resource cannot be found in current namespace.
-  Set to `allow` will ignore the validation and let the request through. Set to `deny` will fail the validation if specific param resource not found.
-- if the resource be validated on is a cluster scoped resource and have `namespaceParamRef` set, return error.
-- the existing behavior should not be affected.
+The `namespaceParamRef` may either specify an exact name, or may specify a label selector to locate
+the param resource in a namespace. For example:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "demo-binding-test.example.com"
+spec:
+  policyName: "demo-policy.example.com"
+  namespaceParamRef:
+    selector:
+      matchLabels:
+        policy: demo-policy 
+    failAction: “Allow”
+  validationActions: [Deny]
+```
+
+Note that with a label selector, multiple param resource may match, in which
+case the policy is evaluated for each param resource; the admission request must
+be allowed by the policy for all the param resources to be admitted.
+
+Implementation details:
+
+- `namespaceParamRef` and `paramRef` are members of a union; if one of the
+  fields is set, the other must be unset.
+- `failAction` defines the behavior when the param resource cannot be found in a
+  namespace. Set to `Allow` to admit all requests even when there is no params
+  resources found, and policy is not evaluated. Set to `Deny` to fail admission
+  if no param resources are found. (Note from jpbetz: this could be
+  implemented without introducing a new field. For "allow" add a `params != null`
+  `matchCondition`, for deny, add `params != null` as the first expression)
+- if the `paramKind` of the policy referred to by `policyName` is cluster scoped,
+  and `namespaceParamRef` set, the binding is considered mis-configured, and the
+  `failureMode` applies.
 
 #### Match Conditions
 
