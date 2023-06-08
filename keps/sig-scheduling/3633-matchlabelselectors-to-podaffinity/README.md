@@ -369,7 +369,7 @@ type PodAffinityTerm struct {
   // which pods will be taken into consideration for the incoming pod's pod (anti) affinity. 
   // The default value is empty.
   // +optional
-  MatchLabelSelectors []strinMatchLabelSelectorg
+  MatchLabelSelectors []MatchLabelSelector
 }
 ```
 
