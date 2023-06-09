@@ -3014,6 +3014,7 @@ GA:
 - [x] API annotations properly support strategic merge patch.
 - [x] Design and implement borrowing between priority levels.
 - [ ] Satisfaction with LIST and WATCH support.
+- [ ] Implement borrowing by exempt priority levels.
 - [ ] APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that there is another level of concern that APF does not attempt to address, which is mismatch between the throughput that various controllers can sustain.
 - [ ] Satisfaction that the interface is sufficient to support tuning of capacity and resource costs.
 
