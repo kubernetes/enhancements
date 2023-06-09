@@ -9,7 +9,7 @@ creation-date: "2021-08-26"
 reviewers:
   - "@fromani"
 approvers:
-  - "@sig-node-leads"
+  - "@sig-node-tech-leads"
 see-also:
   - "keps/sig-node/2625-cpumanager-policies-thread-placement"
 replaces: []
