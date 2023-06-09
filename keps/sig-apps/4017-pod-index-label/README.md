@@ -283,8 +283,6 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-<<[UNRESOLVED how this change will interact with existing workloads]>>
-
 One thing that must be considered is how enabling this new feature will interact with existing workloads. There are a couple of options:
 
 1. Only inject the label on *newly created pods*, so an existing StatefulSet/Indexed Jobs may include pods with the label and some without it. 
@@ -305,9 +303,6 @@ ensure consistency within a single StatefulSet/Indexed Job and therefore a more 
 
 After considering these trade-offs, I propose we move forward with Option 1 for simplicity and to avoid being stuck adding this annotation to 
 StatefulSets/Indexed Jobs. In addition, the downside of existing workloads having only a subset of pods with the new label will not cause any serious issues.
-
-<<[/UNRESOLVED]>>
-
 
 ## Design Details
 
