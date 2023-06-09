@@ -767,9 +767,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 New pod label of size 34B plus value of size N where N is the number of digits in the pod ordinal. 
-Worst case for N would be the max number of pods per node * max number of nodes. Per the docs on [large clusters](https://kubernetes.io/docs/setup/best-practices/cluster-large/) this would be 110 pods/node * 5000 nodes = 550,000 (6 digits).
-
-So max label size would be 34 + 6 = 40B.
+Worst case for N would be the max number of pods per cluster. Per the docs on [large clusters](https://kubernetes.io/docs/setup/best-practices/cluster-large/) this is 150,000 (6 digits). So max label size would be 34 + 6 = 40B.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
