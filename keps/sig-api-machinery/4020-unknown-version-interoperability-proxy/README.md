@@ -214,7 +214,7 @@ This might be a good place to talk about core concepts and how they relate.
 1. **Network connectivity isues between apiservers**
     
     Cluster admins might not read the release notes and realize they should enable network/firewall connectivity between apiservers. In this case clients will receive 503s instead of transparently being proxied. 503 is still safer than today's behavior. We will clearly document the steps needed to enable the feature and also include steps to verify that the feature is working as intended. Looking at the following exposed metrics can help wth that 
-    1. `kubernetes_uvip_proxied_request_total` to monitor the number of UVIP-proxies requests. This metric can tell us the number of requests that were successfully proxied and the ones that failed
+    1. `kubernetes_apiserver_rerouted_request_total` to monitor the number of (UVIP) proxied requests. This metric can tell us the number of requests that were successfully proxied and the ones that failed
     2. `apiserver_request_total` to check the success/error status of the requests
 
 2. **Increase in egress bandwidth**
@@ -227,7 +227,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 4. **Indefinite rerouting of the request**
     
-    We should ensure at most one proxy, rather than proxying the request over and over again (if the source apiserver has an incorrect understanding of what the destination apiserver can serve). To do this, we will add a new header such as `X-Kubernetes-UVIP-Rerouted:true` to the  request once it is determined that the request cannot be served by the local apiserver and should therefore be proxied.  
+    We should ensure at most one proxy, rather than proxying the request over and over again (if the source apiserver has an incorrect understanding of what the destination apiserver can serve). To do this, we will add a new header such as `X-Kubernetes-APIServer-Rerouted:true` to the  request once it is determined that the request cannot be served by the local apiserver and should therefore be proxied.  
     We will remove this header after the request is received by the destination apiserver (i.e. after the proxy has happened once) at which point it will be served locally.
 
 5. **Putting IP/endpoint and trust bundle control in user hands in REST APIs**
@@ -246,7 +246,7 @@ This might be a good place to talk about core concepts and how they relate.
 2. This filter will pass on the request to the next handler in the local aggregator chain, if:
    1. It is a non resource request
    2. The StorageVersion informer cache hasn't synced yet or if `StorageVersionManager.Completed()` has returned false. We will serve error 503 in this case
-   3. The request has a header `X-Kubernetes-UVIP-Rerouted:true` that indicates that this request has been proxied once already. If for some reason the resource is not found locally, we will serve error 503
+   3. The request has a header `X-Kubernetes-APIServer-Rerouted:true` that indicates that this request has been proxied once already. If for some reason the resource is not found locally, we will serve error 503
    4. No StorageVersion was retrieved for it, meaning the request is for an aggregated API or for a custom resource
    5. If the local apiserver ID is found in the list of serviceable-by server IDs from the internal map
 
@@ -299,7 +299,7 @@ We will be performing dual writes of the ip and port information of the apiserve
 For the mTLS between source and destination apiservers, we will do the following
 
 1. For server authentication by the client (source apiserver) : the client needs to validate the [server certs](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/server/options/serving.go#L59) (presented by the destination apiserver), for which it will 
-   1. look at the CA bundle of the authority that signed those certs. We will introduce a new flag --peer-ca-file that **is required be passed (for this feature)** to the kube-apiserver that will be used to verify the presented server certs
+   1. look at the CA bundle of the authority that signed those certs. We will introduce a new flag --peer-ca-file for the kube-apiserver that will be used to verify the presented server certs. If this flag is not specified, the requests will fail with error 503
    2. look at the ServerName `kubernetes.default.svc` for SNI to verify server certs against
 
 2. The server (destination apiserver) will check the client (source apiserver) certs to determine that the proxy request is from an authenticated client. We will use requestheader authentication (and NOT client cert authentication) for this. The client (source apiserver) will provide the [proxy-client certfiles](https://github.com/kubernetes/kubernetes/blob/release-1.27/cmd/kube-apiserver/app/options/options.go#L222-L233) to the server (destination apiserver) which will verify the presented certs using the CA bundle provided in the [--requestheader-client-ca-file](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/server/options/authentication.go#L125-L128) passed to the apiserver upon bootstrap
@@ -653,7 +653,7 @@ logs or events for this purpose.
 -->
 
 The following metrics could be used to see if the feature is in use:
-- kubernetes_uvip_proxied_request_total
+- kubernetes_apiserver_rerouted_request_total
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -666,7 +666,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- Metrics like kubernetes_uvip_proxied_request_total can be used to check how many requests were proxied to remote apiserver
+- Metrics like kubernetes_apiserver_rerouted_request_total can be used to check how many requests were proxied to remote apiserver
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -694,7 +694,7 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: `kubernetes_uvip_proxied_request_total`
+  - Metric name: `kubernetes_apiserver_rerouted_request_total`
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -914,7 +914,7 @@ Why should this KEP _not_ be implemented?
 2. Use [coordination.v1.Lease](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/client-go/informers/coordination/v1/lease.go) 
     1. By default, we can store the [External Address](https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/apiserver/pkg/server/config.go#L149) of apiservers as labels in the [APIServerIdentity Lease](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controlplane/instance.go#L559-L577) objects. 
     2. If `--peer-bind-address` flag is specified for the kube-apiserver, we will store its value in the APIServerIdentity Lease label
-    3. We will retrieve this information in the UVIP handler using an informer cache for these lease objects 
+    3. We will retrieve this information in the new UVIP handler using an informer cache for these lease objects 
 
 * Pros
   1. Simpler solution, does not modify any legacy code that can cause unintended bugs
