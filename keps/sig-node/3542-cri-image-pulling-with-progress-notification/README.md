@@ -258,15 +258,22 @@ The granularity type and interval should be configurable through kubelet-config.
 Suggested new Kubelet config fields are these:
 
       // ImagePullProgressType is the type of ImagePullProgressInterval.
+      // Supported values are
+      // - "time" for tunrime to report progress every ImagePullProgressInterval seconds
+      // - "size" for runtime to report progress every ImagePullProgressInterval <binarySI quantity> (e.g. 1Gi)
       // Default: "time"
       // +optional
       ImagePullProgressType string `json:"ImagePullProgressType,omitempty"`
-      // ImagePullProgressInterval is an interval of type ImagePullProgressType, based on which the
-      // runtime should send back to kubelet image pulling progress reports, that will be published
-      // as Pod events.
+      // ImagePullProgressInterval is a quantity value of how often the runtime should send back to
+      // kubelet image pulling progress reports, that will be published as Pod events.
+      // This option is used together with ImagePullProgressType in ImageService to fill Interval and
+      // GranularityType fields respectively in PullImageWithProgressRequest in CRI PullImageWithProgress.
+      // ImagePullProgressInterval is treated as seconds if ImagePullProgressType is "time".
+      // ImagePullProgressInterval is treated as binarySI quantity if ImagePullProgressType is "size".
+      // call.
       // Default: 30
       // +optional
-      ImagePullProgressInterval uint64 `json:"ImagePullProgressType,omitempty"`
+      ImagePullProgressInterval string `json:"ImagePullProgressType,omitempty"`
 
 This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
 progress and publish events to the Pod object
