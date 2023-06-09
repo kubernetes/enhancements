@@ -43,5 +43,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - force_delete_pods_total
-  - force_delete_pod_errors_total
+  - force_delete_pods_total{reason="out-of-service|terminated|orphaned|unscheduled"}
+  - force_delete_pod_errors_total{reason="out-of-service|terminated|orphaned|unscheduled"}

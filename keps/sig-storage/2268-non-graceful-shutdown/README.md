@@ -409,13 +409,13 @@ Pick one more of these and delete the rest.
   - [X] Metrics
     - Metric name: 
       - New metrics are added in Pod GC Controller:
-        - `force_delete_pods_total`, the number of pods that are being forcefully deleted since the Pod GC Controller started.
-        - `force_delete_pod_errors_total`, the number of errors encountered when forcefully deleting the pods since the Pod GC Controller started.
+        - `force_delete_pods_total{reason="out-of-service|terminated|orphaned|unscheduled"}`, the number of pods that are being forcefully deleted since the Pod GC Controller started.
+        - `force_delete_pod_errors_total{reason="out-of-service|terminated|orphaned|unscheduled"}`, the number of errors encountered when forcefully deleting the pods since the Pod GC Controller started.
       - For Attach Detach Controller, there's already a metric:
         - `attachdetach_controller_forced_detaches`, the number of times the Attach Detach Controller performed a forced detach.
       - There is also a `kube_node_spec_taint` in [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/node-metrics.md) that is a metric for the taint of a Kubernetes cluster node.
     - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - Components exposing the metric: kube-controller-manager
   - [X] Other (treat as last resort)
     - Details:
       - Check whether the workload moved to a different running node
