@@ -109,6 +109,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+  - [Alpha](#alpha-1)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -345,8 +346,14 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-New unit test will be added to image_manager_test.go.
-- `k8s.io/kubernetes/pkg/kubelet/images/puller.go`: `01/05/2023` - `100.0`
+New unit test is added to image_manager_test.go along with Alpha implementation.
+- `k8s.io/kubernetes/pkg/kubelet/images/image_manager.go`: `05/29/2023` - `97.3`
+
+Unit test covers the following cases:
+
+1. Kubelet allows the number of image pull requests to be sent to container runtime, if the number equals to or below `MaxParallelImagePulls`.
+2. Kubelet blocks further image pull requests from being sent to container runtime, if `MaxParallelImagePulls` is hit.
+3. If a certain number of image pulls get stuck, other image pull requests can still be sent to container runtime.
 
 ##### Integration tests
 
@@ -374,7 +381,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-A new node_e2e test with  `serialize-image-pulls==false` will be added to make sure that when maxParallelImagePulls is reached, all further image pulls will be blocked.
+A new node_e2e test with  `serialize-image-pulls==false` will be added test parallel image pull limits. 
+1. When maxParallelImagePulls is reached, all further image pulls will be blocked. 
+2. Verify the behavior when the same image is pulled in parallel, which will happen when image pull policy is `Always`.
 
 - <test>: <link to test coverage>
 
@@ -385,6 +394,7 @@ A new node_e2e test with  `serialize-image-pulls==false` will be added to make s
 
 #### Beta
 - Gather feedback from developers and surveys
+- Add e2e test to cover the parallel image pull case
 
 #### GA
 - Gather feedback from real-world usage from kubernetes vendors.
@@ -585,6 +595,7 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 This section must be completed when targeting beta to a release.
 -->
 
+
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -597,12 +608,21 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+This is an opt-in feature, and it does not change any default behavior. If there is any bug in this feature, image pulls might fail.
+No running workloads will be imapcted.
+
+Note that when changing MaxParallelImagePulls, kubelet restart is required. Since the parallel image pull counter
+is maintained in memory, restarting kubelet will reset the counter and potentially allow more image pulls than the limit.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+In worst case, image pulls might fail. Users can monitor image pull k8s events and `runtime_operations_errors_total` metric to see if there is an increase
+of image pull failures. 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -612,11 +632,32 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+This is an opt-in feature, and it does not change any default behavior. We manually tested enabling and disabling this feature by changing kubelet config and
+restarting kubelet.
+
+The manual test steps are as following:
+
+1. Create an one-node 1.27 k8s cluster, which has MaxParallelImagePulls support but the value is nil (no limit) by default.
+2. Manually change the MaxParallelImagePulls setting by SSH-ing to the node and adding the following to the kubelet config:
+```
+serializeImagePulls: false
+maxParallelImagePulls: 2
+```
+3. Deploy three pods, each with a different container image to the one-node cluster. All the three images are 5GB. The relatively-big size makes sure there is enough time between image pulling events, and makes it easier for us to observe the behavior.
+4. Observe the k8s events by running `kubectl get events`, and observe that exactly two images finish pulling first, and then the remaining one image finishes.
+5. Manually change the MaxParallelImagePulls setting by SSH-ing to the node again and removing the `serializeImagePulls` entry and `maxParallelImagePulls` entry.
+6. Deploy two pods, each with a different container image to the cluster. Both of the two images are 5GB, and they are different images from the three images deployed in step 3.
+7. Observe the k8s events by running `kubectl get events`, and observe that exactly one image finishes pulling first, and then the remaining one image finishes.
+
+
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -634,6 +675,10 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Image pulling is managed by kubelet, and does not affect how workloads run. That said, when parallel image pulling is enabled (SerialImagePulls is set to false), an operator will observe that
+a pod could start while kubelet is still pulling images for another pod.
+
+To observe the effect of different `MaxParallelImagePulls` settings, please refer to the next section.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -646,13 +691,11 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Events
+  - Event Reason: Pulling
+
+Assuming `MaxParallelImagePulls` is set to _X_, an operator can look at the container runtime log, and see _X_ PullImageRequests sent to container runtime at the same time.
+If the image pulls take roughly the same amount of time, an operator can see k8s event and see _X_ images finish pulling at roughly the same time.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -677,14 +720,18 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
+We can rely on the existing metrics on image pull to determine if this feature has any impact on image pulling. 
+
+- [X] Metrics
+  - Metric name: kubelet_runtime_operations_errors_total
+  - [Optional] Aggregation method: operation_type=pull_image
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
@@ -698,6 +745,8 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+No.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -817,7 +866,11 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A. This feature does not rely on any component other than kubelet.
+
 ###### What are other known failure modes?
+
+No known failure modes.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -834,6 +887,9 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+If this feature impact image pulling. The user should unset MaxParallelImagePulls (i.e. setting MaxParallelImagePulls to nil), 
+or set SerialImagePulls to true to enable serial image pulling.
+
 ## Implementation History
 
 <!--
@@ -846,6 +902,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+### Alpha
+
+Alpha feature was implemented in 1.27.
 
 ## Drawbacks
 
