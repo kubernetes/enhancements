@@ -630,6 +630,8 @@ and add `MatchLabelSelectors` on their PodAffinity/PodAntiAffinity.
 kube-apiserver will ignore `MatchLabelSelectors` in PodAffinity/PodAntiAffinity,
 and thus, kube-scheduler will also do nothing with it.
 
+But, we leave the existing `MatchLabelSelectors` and `LabelSelector` created from `MatchLabelSelectors` as it is.
+
 ### Version Skew Strategy
 
 <!--
@@ -724,7 +726,8 @@ In terms of Stable versions, users can choose to opt-out by not setting the
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Scheduling of new Pods is affected. (Scheduled Pods aren't affected.)
+Scheduling of new Pods created with `MatchLabelSelectors` is affected. 
+But, all the existing Pods aren't affected.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1000,6 +1003,7 @@ Major milestones might include:
 -->
 
  - 2022-11-09: Initial KEP PR is submitted.
+ - 2023-05-14 / 2023-06-08: PRs to change it from MatchLabelKeys to MatchLabelSelector are submitted. (to satisfy the user story 2)
 
 ## Drawbacks
 
