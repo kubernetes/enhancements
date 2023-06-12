@@ -7,20 +7,23 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
+  - sig-network
 status: provisional
 creation-date: 2021-11-30
 reviewers:
   - "@mrunalp"
   - "@adisky"
+  - "@aojea"
+  - "@SergeyKanzhelev"
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 stage: alpha
-latest-milestone: "v1.26"
+latest-milestone: "v1.28"
 milestone:
-  alpha: "v1.26"
-  beta: "v1.27"
-  stable: "v1.29"
+  alpha: "v1.28"
+  beta: "v1.29"
+  stable: "v1.30"
 feature-gates:
   - name: SubSecondProbes
     components:
