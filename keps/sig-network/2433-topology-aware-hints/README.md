@@ -298,7 +298,7 @@ implemented directly by kube-proxy.
 ### EndpointSlice Controller
 
 When the `TopologyAwareHints` feature gate is enabled and the annotation is set
-to `Auto` or `ProportionalByCore` for a Service, the EndpointSlice controller
+to `Auto` or `ProportionalZoneCPU` for a Service, the EndpointSlice controller
 will add hints to EndpointSlices. These hints will indicate where an endpoint
 should be consumed by proxy implementations to enable topology aware routing.
 
@@ -309,12 +309,12 @@ This KEP starts with the following heuristics:
 | Heuristic Name | Description |
 |-|-|
 | Auto | EndpointSlice controller and/or underlying dataplane can choose the heuristic used. |
-| ProportionalByCore | Endpoints will be allocated to each zone proportionally, based on the allocatable Node CPU cores in each zone. |
+| ProportionalZoneCPU | Endpoints will be allocated to each zone proportionally, based on the allocatable Node CPU cores in each zone. |
 | PreferZone | Hints are always populated to represent the zone the endpoint is in. |
 
 In the future, additional heuristics may be added. Until that point, "Auto" will
 be the only configurable value. In most clusters, that will translate to
-`ProportionalByCore` unless the underlying dataplane has a better approach
+`ProportionalZoneCPU` unless the underlying dataplane has a better approach
 available.
 
 ### Identifying Zones
