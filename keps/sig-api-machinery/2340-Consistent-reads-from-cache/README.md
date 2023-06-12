@@ -29,9 +29,10 @@ read from etcd.
     - [Option: Serve 1st page of paginated requests from the watch cache](#option-serve-1st-page-of-paginated-requests-from-the-watch-cache)
     - [Future work: Enable pagination in the watch cache](#future-work-enable-pagination-in-the-watch-cache)
   - [Test Plan](#test-plan)
-      - [Correctness Tests](#correctness-tests)
-      - [Performance Tests](#performance-tests)
-      - [Scalability Tests](#scalability-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -118,6 +119,9 @@ serves the resourceVersion="0" list requests from reflectors today.
 
 - Remove all true quorum reads.
 - Serving pagination continuation from watch cache.
+<<[UNRESOLVED @deads]>>
+- Avoid allowing true quorum reads. We should think carefully about this, see: https://github.com/kubernetes/enhancements/pull/1404#discussion_r381528406
+<<[/UNRESOLVED]>>
 
 ## Proposal
 
@@ -143,26 +147,33 @@ When a consistent LIST request is received and the watch cache is enabled:
 Consistent GET requests will continue to be served directly from etcd. We will
 only serve consistent LIST requests from cache.
 
-As a consequence of this number of etcd progress notification will increase
-number. [Watch Bookmarks KEP] utilized etcd periodic progress notifications to
-notify kube-apiserver clients of their progress. It used periodic watch
-notifications that are naturally limited on etcd side. To maintain the same
-behavior we will limit watch bookmarks to send them only one per 5 seconds.
-
 [getCurrentResourceVersionFromStorage]: https://github.com/kubernetes/kubernetes/blob/3f247e59edfd4083242ad7271d076a38291760ff/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L1246-L1278
 [Watch-List KEP]: /keps/sig-api-machinery/3157-watch-list
-[Watch Bookmarks KEP]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/956-watch-bookmark
 
 ### Risks and Mitigations
 
 ### Dependency on manual watch progress notifications
 
-<<[UNRESOLVED @serathius]>>
-Validate performance implications of using `WatchProgressRequest`.
-<<[/UNRESOLVED]>>
+Progress notify is requested on client, so all watchers opened with this client
+will get the notification. This is not a problem for Kubernetes as we maintain
+one client per resource type, but could cause an issue if we attempt to reuse
+the client across resource types (kubernetes/kubernetes#114458). This issue can
+be mitigated by having multiple grpc watch streams within a single etcd client.
+
+When etcd opens a watch it assigns it a stream based on its [context metadata].
+So by default all watches opened on single client share single grpc stream.
+To implement reusing etcd for multiple resources we should consider adding
+unique metadata for each resource, forcing etcd client to create a separate
+grpc for each of them. This way requesting progress notification on a specific
+resource will result in only that single watch being notified.
+
+[context metadata]: https://github.com/etcd-io/etcd/blob/a6ab774458411a6c0ea08f5df97e4dcc9a836345/client/v3/watch.go#L1070-L1075
 
 <<[UNRESOLVED @serathius]>>
-Propose how kube-apiserver should fallback if etcd watch notification doesn't work:
+Propose how kube-apiserver should fallback if etcd watch notification doesn't work.
+Progress notification was introduced v3.4 etcd release but was affected by bug
+etcd-io/etcd#15220 that was fixed in v3.4.25 and v3.5.8.
+
 * Flag providing etcd version to kube-apiserver `--storage-backend=etcd3.4`
 * Flag to enable/disable the feature `--allow-using-progress-notify`
 * Have kube-apiserver check cluster version in etcd `/version` endpoint.
@@ -208,70 +219,37 @@ be handled.
 
 #### Future work: Enable pagination in the watch cache
 
-The problem is that the watch cache ("isn't able to perform
-continuations")[https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9b39e77a9b94f478d3a3134/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L595].
-The watch cache is designed to only serve LIST requests at [the latest resource version is has
-available](https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9b39e77a9b94f478d3a3134/staging/src/k8s.io/apiserver/pkg/storage/cacher/watch_cache.go#L115).
-
-To support watch cache pagination:
-- The watch cache would to keep a comparable resource version history to the
-  default etcd compaction history of 5 minutes.
-- The watch cache would need to be resturctured so that it can serve LIST for
-  the resource versions it has returned continuation tokens to clients for.
-
-Both of these are major changes, and would require scalability validation.
-
-Potential approach:
-
-- Watch cache is getting LIST request with pagination
-- List everything from the internal cache and have pointers to those objects
-- Return first LIMIT of those, and in the internal map store the remaining ones indexed by "continuation token" that we just generated
-- GC the items from this map after N seconds from insertion
-- Continuation is set in the request, we lookup that map and return next LIMIT items, if the item doesn't exist in the map we (either fallback to etcd or return an error - probably the former)
-
-Memory would need to be somehow bound with this approach.
+Ongoing work to support pagination in watch cache: https://github.com/kubernetes/kubernetes/issues/108003
 
 ### Test Plan
 
-##### Correctness Tests
+##### Prerequisite testing updates
 
-- Verify that we don't violate the linerizability guranentees of consistent reads:
-  - Unit test with a mock storage backend (instead of an actual etcd) that
-    various orderings of progress notify events and "current revision" response
-    result in the watch cache serving consistent read requests correctly
-  - Soak test to ensure that consistent reads always return data at resource
-    versions no older that previous writes occurred at. In either e2e tests,
-    scalability tests or a dedicated tester that we run for an extended
-    duration, we can add a checker that periodically performs writes and
-    consistent reads and ensure the read resource versions are not older than
-    the resource versions of the writes.
-  - Introduce e2e test that run both with etcd progress notify events enabled
-    and disable to ensure both configurations work correctly (both with this
-    feature enabled and disabled)
+scalability tests verifying that introducing etcd progress notify events
+don't degrade performance/scalability and verifying that there are substantial
+benefits to enabling consistent reads from cache.
 
-##### Performance Tests
+##### Unit tests
 
-- Benchmark consistent reads from cache against consistent reads from etcd for:
-  - list result sizes of 1, 10, ..., 100000
-  - object sizes of 5kb, 25kb, 100kb
-  - measure latency and throughput
-  - document results in this KEP
+Unit test with a mock storage backend (instead of an actual etcd) that
+various orderings of progress notify events and "current revision" response
+result in the watch cache serving consistent read requests correctly
 
-##### Scalability Tests
+- `k8s.io/kubernetes/vendor/k8s.io/apiserver/pkg/storage`: `12.06.2023` - `75`
 
-- 5k scalability tests verifying that introducing etcd progress notify events
-  don't degrade performance/scailability (early results available here:
-  https://github.com/kubernetes/kubernetes/pull/86769)
-- 5k scalability tests verifying that there are substantial scalability benefits
-  to enabling consistent reads from cache for the pod list from kubelet use case
-  - Latency output contains what we need to ensure the impact to latency of
-    delaying consistent reads for the progress notify interval is what we expect
-    (~250ms more latency for these requests on average)
-  - Scalability output contains what we need to ensure we are within SLOs and
-    our scalability goals
-  - Since pod list requests were previously served from the watch cache (but
-    without a consistency guarantee), we expect scalability to be roughly the
-    same as baseline (but with the benefit of improved correctness)
+##### Integration tests
+
+##### e2e tests
+
+Introduce e2e test that run both with etcd progress notify events enabled
+and disable to ensure both configurations work correctly (both with this
+feature enabled and disabled)
+
+Benchmark consistent reads from cache against consistent reads from etcd for:
+- list result sizes of 1, 10, ..., 100000
+- object sizes of 5kb, 25kb, 100kb
+- measure latency and throughput
+- document results in this KEP
 
 ### Graduation Criteria
 
@@ -283,6 +261,9 @@ Memory would need to be somehow bound with this approach.
 
 #### Beta
 
+- Implement an escape hatch to force list from etcd.
+- Implement a fallback mechanism
+- Performance validation
 
 #### GA
 
@@ -316,20 +297,12 @@ Yes
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+No impact, new requests will be served from watch cache.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+No changes in API types, based on the PRR instructions those tests are not
+needed.
 
 ### Rollout, Upgrade and Rollback Planning
 
