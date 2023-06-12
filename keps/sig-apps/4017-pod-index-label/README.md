@@ -286,8 +286,7 @@ Consider including folks who also work outside the SIG or subproject.
 One thing that must be considered is how enabling this new feature will interact with existing workloads. There are a couple of options:
 
 1. Only inject the label on *newly created pods*, so an existing StatefulSet/Indexed Jobs may include pods with the label and some without it. 
-This means for the user to utilize the label via the downward API, or to use the label for pod selection, they will need to recreate 
-the StatefulSet so the label is present on all pods.
+This means for the user to utilize the label via the downward API, or to use the label for pod selection, they will need to recreate the StatefulSet so the label is present on all pods.
 
 2. Inject the label only on pods for *newly created StatefulSets/Indexed Jobs*. We can track this by annotating newly created StatefulSets/Indexed Jobs 
 to distinguish existing ones from newly created ones. Using this strategy, for a given StatefulSet/IndexedJob, either none of the pods have this label, or all 
@@ -406,8 +405,10 @@ We will release the feature directly in Beta state since there is no benefit in 
 existing label which other things may depend on, for example).
 
 #### Beta
-Feature implemented behind the `PodIndexLabel` feature gate.
-Unit and integration tests passing.
+- Feature implemented behind the `PodIndexLabel` feature gate.
+- Unit and integration tests passing.
+- Docs are clear that it is managed by the workload controller(s), and it is NOT guaranteed for every pod.
+- Docs are clear about what happens if two pods get the same value (it is set by workload controllers, nothing in the API system will prevent collisions from happening).
 
 #### GA
 Fix any potentially reported bugs.
@@ -444,7 +445,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-No changes required to existing cluster to use this feature.
+After a user upgrades their cluster to a version which supports this feature (and has the feature gate
+enabled) the user will need to redeploy their StatefulSets / Indexed Jobs so that all pods have the pod index label,
+since after the upgrade only newly created pods will have this pod index label added. 
 
 ### Version Skew Strategy
 
@@ -512,6 +515,8 @@ well as the [existing list] of feature gates.
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: PodIndexLabel
   - Components depending on the feature gate:
+    - StatefulSet controller
+    - Job controller
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -525,7 +530,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-No.
+Yes - when we start setting a new label, if someone is doing deep-equal comparison, those will start failing.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -591,6 +596,18 @@ that might indicate a serious problem?
 -->
 - Users can monitor queue related metrics (e.g., queue depth and work duration) to make sure they aren't growing.
 - For Indexed Jobs, users can also monitor `job_sync_duration_seconds`.
+- For StatefulSets: the `kube_statefulset_status_replicas` metric can be monitored against the
+`kube_statefulset_replicas` metric to check the expected number of replicas to
+the actual number of pods matched by this StatefulSet's selector. If there is
+a divergence between these fields during steady state operations, this can
+indicate that the number of replicas being created by the StatefulSet do not
+match the expected number of replicas.
+
+On a large scale (across a large number of StatefulSets) the distribution of the
+ratio of these two metrics should not change when enabling this feature. If this
+ratio changes significantly after enabling this feature, it could indicate a problem
+and could indicate a rollback is necessary.
+
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -664,21 +681,32 @@ high level (needs more precise definitions) those may be things like:
 
 These goals will help you determine what you need to measure (SLIs) in the next question.
 -->
-- 99% percentile over day for Job syncs is <= 15s for a client-side 50 QPS
+- Jobs: 99% percentile over day for Job syncs is <= 15s for a client-side 50 QPS
   limit.
+- StatefulSets: the ratio of `kube_statefulset_status_replicas`/`kube_statefulset_replicas` should be near 1.0, although as unhealthy replicas are often an application error rather than a problem with the stateful set controller, this will need to be tuned by an operator on a per-cluster basis.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
+Jobs:
+  - Metric name: `job_sync_duration_seconds`, `job_sync_total`.
+  - Components exposing the metric: `kube-controller-manager`
 
-- [] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+StatefulSets:
+  - Metric name: `statefulset_reconcile_delay`
+    - [Optional] Aggregation method: `quantile`
+    - Components exposing the metric: `pkg/controller/statefulset`
+  - Metric name: `kube_statefulset_replicas`
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `pkg/controller/statefulset`
+  - Metric name: `kube_statefulset_status_replicas`
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `pkg/controller/statefulset`
+  - Metric name: `kube_statefulset_ordinals_start`
+    - [Optional] Aggregation method: `gauge`
+    - Components exposing the metric: `pkg/controller/statefulset`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
