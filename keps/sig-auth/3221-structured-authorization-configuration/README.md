@@ -287,8 +287,8 @@ will not be able to start. This can be mitigated by fixing the malformed values.
 ## Design Details
 
 We would like to introduce a structured file format which allows authorization
-to be configured using a flag (`--authorization-config-file`) which accepts a
-path to a file on the disk. Setting both `--authorization-config-file` and
+to be configured using a flag (`--authorization-config`) which accepts a
+path to a file on the disk. Setting both `--authorization-config` and
 configuring an authorization webhook using the `--authorization-webhook-*`
 command line flags will not be allowed. If the user does that,
 there will be an error and API Server would exit right away.
@@ -577,7 +577,7 @@ Not applicable.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate
-  - Feature gate name: `AuthorizationConfigFromFile`
+  - Feature gate name: `AuthorizationConfig`
   - Components depending on the feature gate:
         - kube-apiserver
 
@@ -591,7 +591,7 @@ Yes, the feature can be disabled once enabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-When the feature is re-enabled, `--authorization-config-file` flag should be present.
+When the feature is re-enabled, `--authorization-config` flag should be present.
 The behaviour is the same as when the feature is enabled for the first time.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -602,7 +602,7 @@ for the Authorizer chain in both the old and new configuration scenarios.
 We will add integration tests to validate the enablement/disablement flow.
   - When the feature is disabled, only the existing command line flag `--authorization-webhook-*`
 based mode is allowed.
-  - When the feature is enable, setting both `--authorization-config-file` and
+  - When the feature is enable, setting both `--authorization-config` and
 configuring an authorization webhook using the `--authorization-webhook-*`
 command line flags should return an error.
 
@@ -648,7 +648,7 @@ must be completed when targeting beta to a release.
 ###### How can an operator determine if the feature is in use by workloads?
 
 The cluster administrators can check the flags passed to the `kube-apiserver` if
-they have access to the control plane nodes. If the `--authorization-config-file`
+they have access to the control plane nodes. If the `--authorization-config`
 is set to a valid authorization configuration file, the feature is being used.
 Or, they can look at the metrics exposed by `kube-apiserver`.
 
