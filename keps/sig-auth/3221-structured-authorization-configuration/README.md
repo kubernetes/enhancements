@@ -88,12 +88,13 @@ is unreachable.
 - Define a configuration file format for configuring Kubernetes API Server
 Authorization chain.
 - Allow ordered definition of authorization modes.
-- Allow definition of multiple webhooks in the authorization chain.
+- Allow definition of multiple webhooks in the authorization chain while all 
+other types of authorizers should only be specified once. 
 - Allow resource/user based pre-filtering of webhooks using CEL to prevent unnecessary
 invocations.
 - Enable user to define the policy when a webhook can't be reached due to
 network errors etc.
-- Enable hot reload of the configuration.
+- Enable automatic reload of the configuration.
 
 ### Non-Goals
 
@@ -187,11 +188,9 @@ authorizers:
       # only intercept requests to kube-system (assumption i)
       - expression: request.resourceAttributes.namespace == 'kube-system'
       # don't intercept requests from kube-system service accounts
-      - expression: !('system:serviceaccounts:kube-kube-superuser' in request.user.groups)
-      # only intercept update, delete and deletecollection requests
-      - expression: request.resourceAttributes.verb == 'update'
-      - expression: request.resourceAttributes.verb == 'delete'
-      - expression: request.resourceAttributes.verb == 'deletecollection'
+      - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
+      # only intercept update, delete or deletecollection requests
+      - expression: request.resourceAttributes.verb in ['update', 'delete','deletecollection']
   - type: Node
   - type: RBAC
 ```
@@ -252,7 +251,7 @@ authorizers:
 #### Story 3: Denying requests on certain scenarios
 
 The authorizer chain should be powerful enough to deny anyone making a request
-if certain conditions are satisfied.
+if certain conditions are satisfied, except for the `system:masters` user group.
 
 #### Story 4: Controlling access of a privileged RBAC role
 
@@ -298,7 +297,8 @@ The configuration would be validated at startup and the API server will fail to
 start if the configuration is invalid.
 
 The API server will periodically reload the configuration at a specific time
-interval. If it changes, the new configuration will be used for the Authorizer
+interval. If it or any of referenced files change, and the new configuration
+passes validation, then the new configuration will be used for the Authorizer
 chain. The reloader will also check if the webhook is healthy, thereby
 preventing any typo/misconfiguration with the Webhook resulting in bad
 Authorizer config. If healthcheck on the webhook failed, the last known good
@@ -322,10 +322,10 @@ authorizers:
       # Name used to describe the webhook
       # This is explicitly used in monitoring machinery for metrics
       # Note:
-      #   - Do exercise caution when setting the value
       #   - If not specified, the default would be set to ""
       #   - If there are multiple webhooks in the authorizer chain,
       #     this field is required
+      #   - Validation for this field is similar to how K8s labels are validated today.
       name: super-important-kube-system-authorizer
       # The duration to cache 'authorized' responses from the webhook
       # authorizer.
@@ -373,11 +373,11 @@ authorizers:
         # There are a maximum of 64 match conditions allowed.
         #
         # The exact matching logic is (in order):
-        #   1. If ANY matchCondition evaluates to FALSE, the webhook is skipped.
-        #   2. If ALL matchConditions evaluate to TRUE, the webhook is called.
-        #   3. If any matchCondition evaluates to an error (but none are FALSE):
-        #      - If failurePolicy=Deny, reject the request
-        #      - If failurePolicy=NoOpinion, the error is ignored and the webhook is skipped
+        #   1. If at least one matchCondition evaluates to FALSE, then the webhook is skipped.
+        #   2. If ALL matchConditions evaluate to TRUE, then the webhook is called.
+        #   3. If at least one matchCondition evaluates to an error (but none are FALSE):
+        #      - If failurePolicy=Deny, then the webhook rejects the request
+        #      - If failurePolicy=NoOpinion, then the error is ignored and the webhook is skipped
       matchConditions:
       # expression represents the expression which will be evaluated by CEL. Must evaluate to bool.
       # CEL expressions have access to the contents of the SubjectAccessReview
@@ -405,7 +405,7 @@ authorizers:
 ```
 
 Validation will allow multiple authorizers of type "Webhook" to be added to the
-config, but one authorizer each for other types. The ordering of this chain will
+config, but at most one authorizer each for other types. The ordering of this chain will
 be decided by the order specified in the file.
 
 The keys `kubeConfigFile`, `authorizedTTL`, `unauthorizedTTL` and
@@ -425,11 +425,11 @@ to a `request` variable containing a `SubjectAccessReview` object in the version
 by `subjectAccessReviewVersion`.
 
 When no matchConditions are satisfied for a request, the webhook would be skipped. In such
-situations, the decision is logged in the audit log with the `webhook_skipped` annotation.
+situations, the decision is logged in the audit log with the `webhookskipped.k8s.io` annotation.
 Benefit of this is that resource and user info will also be logged.
 
-The code path for enabling the above will only be triggered if the feature flag is enabled until
-the feature flag is removed and this feature graduates to GA.
+The code path for enabling the above will only be triggered if the feature flag is enabled
+while the feature is in alpha and beta.
 
 ### Monitoring
 
@@ -445,7 +445,9 @@ Labels {along with possible values}:
 - `decision` {Allow, Deny}
 
 **Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook{,_<name>}`.
-If there is only one webhook, there would be no `_<name>` suffix.
+If there is only one webhook and no name specified, there would be no `_<name>` suffix.
+If the webhook has a named specified, even if there is only one webhook, then the name
+should be in the metrics and exposed via the metrics endpoint.
 
 2. `apiserver_authorization_webhook_evaluations_total`
 
@@ -515,6 +517,9 @@ authorization configuration file (feature flag turned on)
     - with a webhook - successful request
     - with a webhook - error on request with `failurePolicy: Deny`
     - with a webhook - error on request with `failurePolicy: NoOpinion`
+- Automatic reload periodically checks for changes in the configuration
+and validates the new configuration and ensures the webhook is healthy
+before the new config can be used.
 
 There will be a mix and match of various authorization mechanisms to ensure all
 desired functionality works.
@@ -609,6 +614,9 @@ command line flags should return an error.
 
 A rollout can fail when the authorization configuration file being passed doesn't
 exist or is invalid.
+
+A rollback can fail if the admins failed to set the existing command line flag
+`--authorization-webhook-*`.
 
 Already running workloads won't be impacted but cluster users won't be able to
 access the control plane if the cluster is single-node.
