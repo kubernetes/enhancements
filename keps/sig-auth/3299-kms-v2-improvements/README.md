@@ -562,6 +562,10 @@ No.
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. One socket is used per KMS plugin and old connections are closed after new connections have been created/validated for health during an automatic reload of `EncryptionConfiguration`.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
