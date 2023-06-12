@@ -16,13 +16,16 @@
   - [Kube-Proxy](#kube-proxy)
   - [EndpointSlice Controller](#endpointslice-controller)
 - [Heuristics](#heuristics)
-  - [Proportional CPU Heuristic](#proportional-cpu-heuristic)
-    - [Assumptions](#assumptions)
-    - [Identifying Zones](#identifying-zones)
+  - [Identifying Zones](#identifying-zones)
     - [Excluding Control Plane Nodes](#excluding-control-plane-nodes)
-    - [Example](#example)
     - [Overload](#overload)
     - [Handling Node Updates](#handling-node-updates)
+  - [Proportional CPU Heuristic](#proportional-cpu-heuristic)
+    - [Assumptions](#assumptions)
+    - [Example](#example)
+  - [PreferZone Heuristic](#preferzone-heuristic)
+    - [Assumptions](#assumptions-1)
+    - [Example](#example-1)
   - [Additional Heuristics](#additional-heuristics)
   - [Future Expansion](#future-expansion)
   - [Test Plan](#test-plan)
@@ -307,26 +310,14 @@ This KEP starts with the following heuristics:
 |-|-|
 | Auto | EndpointSlice controller and/or underlying dataplane can choose the heuristic used. |
 | ProportionalByCore | Endpoints will be allocated to each zone proportionally, based on the allocatable Node CPU cores in each zone. |
+| PreferZone | Hints are always populated to represent the zone the endpoint is in. |
 
 In the future, additional heuristics may be added. Until that point, "Auto" will
 be the only configurable value. In most clusters, that will translate to
 `ProportionalByCore` unless the underlying dataplane has a better approach
 available.
 
-### Proportional CPU Heuristic
-#### Assumptions
-
-- Incoming traffic is proportional to the number of allocatable CPU cores in a
-  zone. Although this is an imperfect metric, it is the best available way of
-  predicting how much traffic will be received in a zone. If we are unable to
-  derive the number of allocatable cores in a zone we will fall back to the
-  number of nodes in that zone.
-- Service capacity is proportional to the number of endpoints in a zone. This
-  assumes that each endpoint has equivalent capacity. Although this is not
-  always true, it usually is. We can explore ways to deal with variable capacity
-  endpoints in the future.
-
-#### Identifying Zones
+### Identifying Zones
 
 The EndpointSlice controller reads the standard `topology.kubernetes.io/zone`
 label on Nodes to determine which zone a Pod is running in. Kube-Proxy would be
@@ -339,23 +330,6 @@ calculating allocatable cores in a zone:
 
 * `node-role.kubernetes.io/control-plane`
 * `node-role.kubernetes.io/master`
-
-#### Example
-
-zone-a: 20 CPU cores
-zone-b: 16 CPU cores
-zone-c: 14 CPU cores
-
-In this scenario, the following proportion of endpoints would be allocated for
-each Service:
-
-zone-a: 40%
-zone-b: 32%
-zone-c: 28%
-
-When allocating endpoints to meet this distribution, keeping endpoints in the
-same zone will be prioritized. When same-zone endpoints are exhausted, endpoints
-will be taken from zones that have excess capacity.
 
 #### Overload
 
@@ -392,6 +366,57 @@ of the following scenarios:
 1. A deleted Node results in a Service exceeding the overload threshold.
 2. A new Node results in a Service that is able to achieve an endpoint
    distribution below 20% for the first time.
+
+### Proportional CPU Heuristic
+
+#### Assumptions
+
+- Incoming traffic is proportional to the number of allocatable CPU cores in a
+  zone. Although this is an imperfect metric, it is the best available way of
+  predicting how much traffic will be received in a zone. If we are unable to
+  derive the number of allocatable cores in a zone we will fall back to the
+  number of nodes in that zone.
+- Service capacity is proportional to the number of endpoints in a zone. This
+  assumes that each endpoint has equivalent capacity. Although this is not
+  always true, it usually is. We can explore ways to deal with variable capacity
+  endpoints in the future.
+#### Example
+
+zone-a: 20 CPU cores
+zone-b: 16 CPU cores
+zone-c: 14 CPU cores
+
+In this scenario, the following proportion of endpoints would be allocated for
+each Service:
+
+zone-a: 40%
+zone-b: 32%
+zone-c: 28%
+
+When allocating endpoints to meet this distribution, keeping endpoints in the
+same zone will be prioritized. When same-zone endpoints are exhausted, endpoints
+will be taken from zones that have excess capacity.
+
+### PreferZone Heuristic
+
+#### Assumptions
+
+- Endpoints are distributed per zone proportionally to the expected traffic capacity.
+
+This heuristic will route traffic to the endpoints existing in the zone without any overflow.
+Dataplanes will fall back to cluster-wide routing if there are no endpoints with hints for the
+zone the dataplane is running in.
+There is risk of blackholing traffic or traffic imbalance if the endpoint distribution is incorrect.
+
+#### Example
+
+zone-a: 2 endpoints
+zone-b: 0 endpoint
+zone-c: 3 endpoints
+
+In this scenario, traffic generated in zona-a or zone-c will be routed only to the endpoints existing
+in their corresponding zone. Traffic from zone-b, since does not have any endpoint, will fall back to
+cluster wide routing and will be routed to endpoints in zone-a and zone-c.
 
 ### Additional Heuristics
 To enable additional heuristics to be added in the future, we will:
