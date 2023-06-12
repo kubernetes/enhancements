@@ -71,18 +71,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -252,6 +252,7 @@ to implement this enhancement.
 ##### Unit tests
 
 - `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `09-23-2022` - `92.4`
+- `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `06-12-2023` - `93.2`
 
 ##### Integration tests
 
@@ -301,6 +302,12 @@ In 1.26 we are releasing this feature to Alpha. We propose the following managem
 When an option graduates, its visibility should be moved to be controlled by the corresponding feature-flag.
 The introduction of these feature gates gives us the ability to move the option to beta and later stable without implying that all available options are stable.
 This approach is similliar to graduation criteria for `CPUManagerPolicyOptions` introduced [here](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2625-cpumanager-policies-thread-placement#graduation-criteria-of-options).
+
+In 1.28 this feature is being promoted to Beta. We propose following changes to TopologyManager policy options default visibility:
+
+- `TopologyManagerPolicyOptions` feature flag for enabling/disabling the entire feature will be enabled by default.
+- `TopologyManagerPolicyBetaOptions` feature flag for enabling/disabling beta options will be enabled by default.
+- `prefer-closest-numa-nodes` will be moved to Beta options.
 
 The graduation Criteria of options is described below:
 
@@ -378,7 +385,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Inspect the kubelet configuration of the nodes: check feature gate and usage of the new option
+Inspect the kubelet configuration of the nodes: check feature gate and usage of the new option.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -434,14 +441,26 @@ No.
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
 N/A.
 
 ###### What are other known failure modes?
 
-TBD.
+There are 2 scenarios where Kubelet may fail to start due to using this feature:
+
+- Bad policy option name or using policy option without enabling appropriate feature flag. we are emitting appropriate error message for this case, 
+  Kubelet will fail to start and print error message what happened. To recover one just have to provide fix policy option name or disable/enable feature flags.
+
+- Cadvisor is not exposing distances for NUMA domains. In this case Kubelet will fail with `error getting NUMA distances from cadvisor` message.
+  Reading NUMA distances is only performed when `prefer-clostest-numa-nodes` option is specified. 
+  To recover one has to either disable `TopologyManagerPolicyOptions` feature-flag or stop using `prefer-closest-numa-nodes` option.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -450,3 +469,4 @@ N/A.
 ## Implementation History
 
 - 2021-09-26: KEP created
+- 2023-06-12: KEP updated for Beta release
