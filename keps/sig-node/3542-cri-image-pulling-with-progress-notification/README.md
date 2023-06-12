@@ -1,80 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-3542: CRI Image Pulling with Progress Notification
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -86,6 +10,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -115,20 +40,6 @@ tags, and then generate with `hack/update-toc.sh`.
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
@@ -157,123 +68,103 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
+Intoruce new CRI API call for downloading a container image with possibility of pulling progress
+reports being sent back to requestor and / or no-progress timeout. It shold be possible to use
+both the progress reporting and no-progress timtout together as well as separately. For instance,
+the runtime should send back a message every N seconds of image pulling progress with information
+on how much data was downloaded and what is the current estimated total size of download, and
+report a failure at any point after M consecutive seconds of no data being downloaded.
 
 ## Motivation
 
 In High Performance Computing and other specialized environments container
-images often get extremely big. Pulling such images even over high speed
+images often get extremely big. Pulling several such images even over high speed
 links can take a lot of time, tens of minutes or more. This often results
 in a bad user experience when deploying a workload triggers pulling such
 an image as a side-effect. For a long time the user has no visibility to
 how creating the workload progresses, or if it progresses at all.
 
 Introducing a new CRI ImageService RPC call for pulling images with a
-streaming progress notification response would provide the low-level
-building blocks to improve this situation.
-
-
-
-
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+streaming progress notification response and timing out once a timeout without
+data transfer was reached would provide the low-level building blocks to improve this situation.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
 - Extend CRI to provide image pulling progress API that can be utilized by client
 tools (crictl pull), or machinery (kubelet pulling the image)
-- Implement PoC / draft for CRI PullImageWithProgress call to runtime in Kubelet for API review purposes
+- Implement PoC / draft for CRI PullImageWithProgress call to runtime in Kubelet, hidden behind
+FeatureGate, disable by default
 
 ### Non-Goals
 
-- implementation of utilization of proposed interface additions by the
-client-tools and / or k8s services
-
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Complete implementation of utilization of proposed interface additions in the client-tools and / or runtimes
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
 We propose introducing new (additional, not replacing old one) API for requesting image pull,
-that will return stream with periodic updates sent through it to the client. The image pull
-request parameters will contain the type of granularty based on which the client wants to receive
-updates about the progress:
-- time-based
-- size-based
+that will return stream with periodic updates sent through it to the client until completion or
+a timeout without download progress is reached.
 
-and the frequency of the updates:
-- every N seconds
-- every N Kibibytes of the total image size being downloaded
-respectively to the type
+The image pull request parameters will contain:
+
+- the type of granularty based on which the client wants to receive updates about the progress:
+  - time-based
+  - size-based
+  - none
+- frequency of the updates (if any) respectively to the granularity type:
+  - every N seconds
+  - every N Kibibytes of the total image size being downloaded
+- no-progress timeout
+  - number of seconds during which if completely no data transfer was ongoing, failure should be reported
+
 
 If / when it is possible to reliably determine percentage of the progress in the runtime,
 percentage-based granularity type can be introduced then.
 
 If the client did not specify the preferred notification granularity, default values should be used,
-for instance every Gibibyte downloaded.
+for instance every Gibibyte downloaded or every 60 seconds of time spent downloading an image.
 
 For kubelet we propose the default granularity to be time-based with 30 seconds interval, so
-Pod object will get an event with image pulling progress every 30 seconds.
-The granularity type and interval should be configurable through kubelet-config.
+Pod object will get an event with image pulling progress every 30 seconds, and setting minimum 
+frequency limits:
+- 10 seconds for the time-baesd frequency
+- 1 Gibibyte for size-based frequency
+
+The default no-progress timeout for kubelet is suggested to be 10 seconds.
+
+The granularity type, interval, and no-progress timeout should be configurable through kubelet-config.
 
 Suggested new Kubelet config fields are these:
 
-      // ImagePullProgressType is the type of ImagePullProgressInterval.
-      // Supported values are
-      // - "time" for tunrime to report progress every ImagePullProgressInterval seconds
-      // - "size" for runtime to report progress every ImagePullProgressInterval <binarySI quantity> (e.g. 1Gi)
-      // Default: "time"
-      // +optional
-      ImagePullProgressType string `json:"ImagePullProgressType,omitempty"`
-      // ImagePullProgressInterval is a quantity value of how often the runtime should send back to
-      // kubelet image pulling progress reports, that will be published as Pod events.
-      // This option is used together with ImagePullProgressType in ImageService to fill Interval and
-      // GranularityType fields respectively in PullImageWithProgressRequest in CRI PullImageWithProgress.
-      // ImagePullProgressInterval is treated as seconds if ImagePullProgressType is "time".
-      // ImagePullProgressInterval is treated as binarySI quantity if ImagePullProgressType is "size".
-      // call.
-      // Default: 30
-      // +optional
-      ImagePullProgressInterval string `json:"ImagePullProgressType,omitempty"`
+       // ImagePullProgressType is the type of ImagePullProgressInterval.
+       // Supported values are
+       // - "time" for tunrime to report progress every ImagePullProgressInterval seconds
+       // - "size" for runtime to report progress every ImagePullProgressInterval <binarySI quantity> (e.g. 1Gi)
+       // - "none" for no progress reporteds
+       // Default: "time"
+       // +optional
+       ImagePullProgressType string `json:"ImagePullProgressType,omitempty"`
+       // ImagePullProgressInterval is a quantity value of how often the runtime should send back to
+       // kubelet image pulling progress reports, that will be published as Pod events.
+       // This option is used together with ImagePullProgressType in ImageService to fill Interval and
+       // GranularityType fields respectively in PullImageWithProgressRequest in CRI PullImageWithProgress.
+       // ImagePullProgressInterval is treated as seconds if ImagePullProgressType is "time".
+       // ImagePullProgressInterval is treated as binarySI quantity if ImagePullProgressType is "size".
+       // call.
+       // Minimum:
+       //   - 10  for "time" ImagePullProgressType
+       //   - 1Gi for "size" ImagePullProgressType
+       // Default: 30
+       // +optional
+       ImagePullProgressInterval string `json:"ImagePullProgressType,omitempty"`
+       // NoProgressTimeout is a number of seconds after which stalled image download should be reported
+       // as an error.
+       // Supported values are:
+       // - 0 for infinity, effectively no timeout
+       // - positive number up to 4294967295 (uint32 max number, approx. 136 years)
+       // Default: 10
+       NoProgressTimeout int32 `json:"NoProgressTimeout,omitempty"`
+
 
 This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
 progress and publish events to the Pod object
@@ -281,13 +172,6 @@ progress and publish events to the Pod object
 See design detail below.
 
 ### User Stories (Optional)
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
 
 #### Story 1
 
@@ -310,14 +194,14 @@ is ongoing - no indication is possible to show based on CRI itself. At least
 containerd runtime is already providing such information based on the
 `ctr image pull docker.io/library/busybox:latest`.
 
-### Notes/Constraints/Caveats (Optional)
+#### Story 3
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+Particular registry is blocked by a firewall in the organization where the Kubernetes cluster is
+running, and workload is trying to use an image that is impossible to download without explicit
+network error. Pod in such situation will be pending the image download for a long time, which can
+be shortened to a no-progress timeout set in ImagePullWithProgress call.
+
+### Notes/Constraints/Caveats (Optional)
 
 There should be a guidance on how the runtime should report the progress, for instance
 unpacking phase should be considered (see below).
@@ -330,7 +214,7 @@ This should not conflict with the notifications about the image downloading prog
 the Pod object will have events with pulling progress following the event of container starting
 until the image downloading completes fully, if at all.
 
-The size-granularity reporting shold be KiB or MiB based.
+The size-granularity reporting shold preferably be in apimachinery quantity value, e.g. 970Mi.
 
 If ImagePullProgress is enabled for kubelet but runtime does not support it, the fallback should
 use regular silent ImagePull API call.
@@ -351,26 +235,7 @@ Runtime can be such that does not support image pull progress reporting. In this
 regular image pulling call should happen on client side (kubelet, cli tool, other entities
 requesting image to be pulled from runtime).
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 Following new CRI streaming API call is proposed:
 
@@ -395,6 +260,7 @@ or based on size (amount of bytes/KiB/MiB downloaded). The size-based should be 
         // For time based granularity, this is the number of seconds between reports. If time interval is 0, then runtime default report interval is used.
         // For size based granularity, this is the number of bytes received between reports. If set to 0, then runtime default report interval is used.
         UInt64Value interval = 3;
+        UInt32Value no_progress_timeout = 4;
     }
 
 If the connection succeeds, the PullImageWithProgress() will return a gRPC stream to the caller and let it
@@ -413,17 +279,6 @@ much image has been downloaded so far.
 
 
 ### Test Plan
-
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
 
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
