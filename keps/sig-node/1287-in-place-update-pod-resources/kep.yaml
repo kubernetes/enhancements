@@ -32,7 +32,7 @@ replaces:
 
 stage: "alpha"
 
-latest-milestone: "v1.27"
+latest-milestone: "v1.28"
 
 milestone:
   alpha: "v1.27"
