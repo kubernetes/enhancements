@@ -299,6 +299,8 @@ This might be a good place to talk about core concepts and how they relate.
 - In terms of backwards compatibility, this flag's default will always be false.
 - If user cancels deletion, exit code will be 0.
 - This flag will not be used with `--raw` flag. 
+- Set of filtered objects may be changed and user might need to execute multiple subsequent delete commands. 
+Likeliness of this issue especially increases with user waits long between previewing and the confirming.
 
 ### Risks and Mitigations
 
@@ -594,7 +596,9 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-No, users can only use this feature via enabling environment variable.
+No, users can only use this feature via enabling environment variable. In addition to that,
+there will be a test case to assure that users will not be able to use this feature without
+setting environment variable.
 
 ### Rollout, Upgrade and Rollback Planning
 
