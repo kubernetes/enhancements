@@ -80,7 +80,7 @@ authorizer.
 Cluster administrators should be able to specify more than one authorization
 webhook in the API Server handler chain. They also need to be able to
 declaratively configure the authorizer chain using a configuration file. It
-should also be easy to say when to Deny requests, for example, when a webhook
+should also be easy to say when to deny requests, for example, when a webhook
 is unreachable.
 
 ### Goals
@@ -256,7 +256,7 @@ if certain conditions are satisfied, except for the `system:masters` user group.
 #### Story 4: Controlling access of a privileged RBAC role
 
 Certain users associated with a privileged role might need to have their access
-scoped to certain namespaces. Having ordered authorisation modes allows the
+scoped to certain namespaces. Having ordered authorization modes allows the
 administrator to add a webhook restricting certain user tokens before RBAC
 grants access to the user.
 
@@ -278,7 +278,7 @@ webhook request can be skipped.
 
 - In HA clusters, there may be a skew in how the `kube-apiserver` processes in
 each are configured. This may create inconsistencies. Mitigation is to have the
-cluster bootstrapper handle such scenarios.
+cluster administrator handle such scenarios.
 - In case an administrator enables this feature and the webhook kubeconfig file
 is invalid or doesn't exist at the specified path, `kube-apiserver` on that node
 will not be able to start. This can be mitigated by fixing the malformed values.
@@ -631,7 +631,9 @@ TBD.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-None.
+Existing command line flags will be marked as deprecated and config file will take
+precedence over the old flags once this feature graduates to GA. Then for GA + 3 releases,
+the existing command line flags will be removed.
 
 ### Monitoring Requirements
 
@@ -655,7 +657,10 @@ Or, they can look at the metrics exposed by `kube-apiserver`.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Other
-  - Details: They can look at the metrics if `apiserver_authorization_decisions_total` is increasing.
+  - Details: Since this feature introduced the `name` field to the webhook authorizer,
+  users can first specify a value in the `name` field of the AuthorizationConfiguration.
+  Then look at the `apiserver_authorization_webhook_evaluations_total` metrics to ensure the
+  count for the named webhook authorizer is increasing.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
