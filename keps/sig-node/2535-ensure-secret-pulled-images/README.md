@@ -61,7 +61,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We will add support in kubelet for the pullIfNotPresent image pull policy, for
+We will add support in kubelet for the `pullIfNotPresent` image pull policy, for
 ensuring images pulled with pod imagePullSecrets are re-authenticated for other
 pods that do not have the same imagePullSecret/auths used to successfully pull
 the images in the first place.
@@ -87,6 +87,8 @@ order to use a present image.
 
 This means that the image pull policy alwaysPull would no longer be required in
 every scenario to ensure image access rights by pods.
+
+*** The issue and these changes improving the security posture without requiring the forcing of pull always, will be documented in the kubernetes image pull policy documentation. The new feature gate should also be documented in release notes. ***
 
 ## Motivation
 
@@ -159,11 +161,11 @@ to set the feature gate to true to gain these this Secure by Default benefit.
 ### Risks and Mitigations
 
 Image authentications with a registry may expire. To mitigate expirations a
-a timeout could be used to force re-authentication. The timeout could be a
+a timeout will be used to force re-authentication. The timeout could be a
 container runtime feature or a `kubelet` feature. If at the container runtime,
 images would not be present during the EnsureImagesExist step, thus would have
 to be pulled and authenticated if necessary. This timeout feature will be
-implemented in beta.
+implemented in alpha.
 
 Since images can be pre-loaded, loaded outside the `kubelet` process, and
 garbage collected.. the list of images that required authentication in `kubelet`
@@ -180,13 +182,19 @@ or expect preloaded images since boot.
 
 Kubelet will track, in memory, a hash map for the credentials that were successfully used to pull an image. It has been decided that the hash map will be persisted to disk, in alpha.
 
+The persisted "cache" will undergo cleanup operations on a timely basis (by default once an hour).
+
+The persistence of the on storage cache is mainly for restarting kubelet and/or node reboot.
+
+The max size of the cache will scale with the number of unique cache entries * the number of unique images that have not been garbage collected. It is not expected that this will be a significant number of bytes. Will be verified by actual use in Alpha and subsequent metrics in Beta.
+
 See `/var/lib/kubelet/image_manager_state` in [kubernetes/kubernetes#114847](https://github.com/kubernetes/kubernetes/pull/114847)
 
 > ```
 > {
 >   "images": {
 >     "sha256:eb6cbbefef909d52f4b2b29f8972bbb6d86fc9dba6528e65aad4f119ce469f7a": {
->       "authHash": {
+>       "authHash": { ** per review comment use SHA256 here vs hash **
 >         "115b8808c3e7f073": {
 >           "ensured": true,
 >           "dueDate": "2023-05-30T05:26:53.76740982+08:00"
@@ -203,7 +211,7 @@ See PR linked above for detailed design / behavior documentation.
 ### Test Plan
 
 For alpha, exhaustive Kubelet unit tests will be provided. Functions affected by the feature gate will be run with the feature gate on and with the feature gate off. Unit buckets will be provided for:
-- HashAuth - (new, small) returns a hash code for a CRI pull image auth [link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-ca08601dfd2fdf846f066d0338dc332beddd5602ab3a71b8fac95b419842da63R704-R751)
+- HashAuth - (new, small) returns a hash code for a CRI pull image auth [link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-ca08601dfd2fdf846f066d0338dc332beddd5602ab3a71b8fac95b419842da63R704-R751) ** per review comment will use SHA256 **
 - shouldPullImage - (modified, large sized change) determines if image should be pulled based on presence, and image pull policy, and now with the feature gate on if the image has been pulled/ensured by a secret. A unit test bucket did not exist for this function. The unit bucket will cover a matrix for:
 ```
 	pullIfNotPresent := &v1.Container{
@@ -230,7 +238,7 @@ For alpha, exhaustive Kubelet unit tests will be provided. Functions affected by
 ```
 [TestShouldPullImage link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-7297f08c72da9bf6479e80c03b45e24ea92ccb11c0031549e51b51f88a91f813R311-R438)
 
-PersistHashMeta()
+PersistHashMeta() ** will be persisting SHA256 entries vs hash **
 
 At beta we should revisit if integration buckets are warranted for e2e node and/or cri-tools/critest, and after gathering feedback.
 
@@ -244,16 +252,21 @@ At beta we should revisit if integration buckets are warranted for e2e node and/
 #### Deprecation
 
 N/A in alpha
+TBD subsequent to alpha
 
 ### Upgrade / Downgrade Strategy
 
 ### Version Skew Strategy
 
 N/A for alpha
+TBD subsequent to alpha
 
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
+- At Alpha this feature will be disabled by default with a feature gate.
+- At Beta this feature will be enabled by default with the feature gate.
+- At GA the ability to gate the feature will be removed leaving the feature enabled.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -274,39 +287,43 @@ Yes.
 
 Will go back to working as designed.
 
+enj comment: Admin would need to go back to whatever old way they were using to enforce this image pull auth check. And also, as the feature is rolling out to kubelets (which is slow), they need to retain any API server based checks until rollout has completed.
+
 ###### Are there any tests for feature enablement/disablement?
 
 Yes, tests run both enabled and disabled.
 
 ### Rollout, Upgrade and Rollback Planning
-N/A
+TBD
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-N/A
+TBD
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+TBD needed for Beta
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+TBD
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-N/A
+TBD
 
 ### Monitoring Requirements
 
-N/A
+TBD
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Can check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
+For alpha can check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
 using the pull if not present image pull policy. Will show up as network events. Though only the manifests will be
 revalidated against the container image repository, large contents will not be pulled. Thus one could monitor traffic
 to the registry.
+
+For beta will add metrics allowing an admin to determine how often an image has been reauthenticated to an image registry because of cache expiration or due to reuse across pods that have different authentication information. Success metrics will also be provided highlighting cache hits.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -319,19 +336,19 @@ where the image is present and the image pull policy is if not present.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+TBD
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A
+TBD
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N/A
+TBD needed for Beta
 
 ### Dependencies
 
-N/A for alpha
+TBD
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -339,7 +356,7 @@ No.
 
 ### Scalability
 
-N/A
+TBD
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -370,15 +387,15 @@ When switched on see above.
 
 ### Troubleshooting
 
-N/A
+TBD
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A
+TBD
 
 ###### What are other known failure modes?
 
-N/A
+TBD
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -386,11 +403,11 @@ Check logs.
 
 ## Implementation History
 
-tbd
+TBD
 
 ## Drawbacks [optional]
 
-Why should this KEP _not_ be implemented. N/A
+Why should this KEP _not_ be implemented. TBD
 
 ## Alternatives [optional]
 
@@ -402,4 +419,4 @@ ensure the image instead of kubelet.
 
 ## Infrastructure Needed [optional]
 
-tbd
+TBD
