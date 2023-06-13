@@ -1,0 +1,26 @@
+title: Structured authentication config
+kep-number: "3331"
+authors:
+- "@nabokihms"
+- "@enj"
+- "@aramase"
+owning-sig: sig-auth
+reviewers:
+- "@liggitt"
+approvers:
+- "@liggitt"
+creation-date: "2022-06-02"
+status: implementable
+stage: alpha
+latest-milestone: "v1.28"
+milestone:
+  alpha: "v1.28"
+  beta: "v1.29"
+  stable: "v1.31"
+feature-gates:
+- name: StructuredAuthenticationConfiguration
+  components:
+  - kube-apiserver
+disable-supported: true
+metrics:
+- "TODO"
