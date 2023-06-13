@@ -1658,8 +1658,11 @@ Goals:
 - Parity with admission webhook metrics
   - Should include counter of deny, warn and audit violations
   - Label by {policy, policy binding, validation expression} identifiers 
-- Counters for number of policy defintions and policy bindings in cluster
+- Counters for number of policy definitions and policy bindings in cluster
   - Label by state (active vs. error), enforcement action (deny, warn)
+- Counters for Variable Composition
+  - Should include counter of variable resolutions to measure time saved.
+  - Label by policy identifier
 
 Granularity:
 
