@@ -276,7 +276,8 @@ job controller prior to this KEP is equivalent to
 
 This behavior has the following semantic problems:
 - A terminating Pod might gracefully terminate as Succeeded, but it counts
-  towards `.status.failed` as soon as it's terminating.
+  towards `.status.failed` as soon as it's terminating and it's not reclassified
+  upon termination.
 - When using podFailurePolicy, the controller might create a replacement Pod
   before being able to evaluate the terminal state of the Pod. The replacement
   Pod might be terminated due to the policy.
@@ -321,7 +322,9 @@ to this KEP. The behavior will be preserved as follows:
 
 One area of contention is how this KEP will work with [3329-retriable-and-non-retriable-failures](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/3329-retriable-and-non-retriable-failures/README.md).
 
-In 3329, there was a decision to make kubelet transition pods to failed before deleting them. This is feature toggled guarded by `PodDisruptionCondition`.  
+In 3329, there was a decision to make kubelet transition pods to failed before deleting them.
+This is feature toggled guarded by `PodDisruptionCondition`, which in addition to
+setting the phase to Failed, it adds a `DisruptionTarget` condition.
 This means that when this feature is turned on, the job controller is able to count pods as failed only when they are fully terminated, as it is guaranteed that all pods will reach a terminal state (Failed or Succeeded).
 Note that a terminating pod is not considered active either.
 If `PodDisruptionCondition` is turned off, then the job controller considers the pod as failed as soon as it is terminating (has a deletion timestamp), because there is no guarantee that the pod will transition to phase=Failed.
@@ -332,8 +335,11 @@ As a consequence, it will never be replaced, so the whole job will be stuck from
 When PodDisruptionConditions is enabled, the PodGC transitions the Pod to phase Failed in this scenario.
 
 Due to the above issues, we propose the following mitigation:
-Set phase=Failed when PodDisruptionConditions is enabled OR JobPodReplacementPolicy is enabled in kubelet and PodGC.
-When JobPodReplacementPolicy is enabled, but PodDisruptionConditions is disabled, we would just set the phase, but without adding the condition.
+- If `PodDisruptionConditions` OR `JobPodReplacementPolicy` are enabled, set
+  phase=Failed in kubelet and podGC before deleting a Pod.
+- If `JobPodReplacmentPolicy` is enabled, but `PodDisruptionConditions` is
+  disabled, the controllers only set the pahse, but do not add a
+  `DisruptionTarget` condition.
 
 ## Design Details
 
@@ -492,6 +498,21 @@ Case With `JobPodReplacementPolicy` off
   3. Verify that `terminating` is not tracked
   4. Verify that pod creation only occurs once deletion happens.
 
+Case for disable and reenable `JobPodReplacementPolicy`
+
+  1. Create Job with `podReplacementPolicy: Failed`
+  1. Job starts pods that takes a while to terminate
+  1. Restart controller and disable `JobPodReplacementPolicy`
+  1. Delete some pods
+  1. Verify that terminating pods count as failed and pods are recreated.
+  1. Restart controller and reenable `JobPodReplacementPolicy`
+  1. Terminate pods with phase Succeeded.
+  1. Verify that pods still count as failed.
+  1. Delete remaining Pods.
+  1. Verify that `terminating` is tracked.
+  1. Verify that pod creation only occurs once pod is fully terminated.
+  1. Verify that pod creation only occurs once deletion happens.
+
 To cover cases with `PodDisruptionCondition` we really only need to worry about tracking terminating fields.  
 Tests will verify counting of terminating fields regardless of `PodDisruptionCondition` being on or off.  
 
@@ -622,21 +643,32 @@ This section must be completed when targeting alpha to a release.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: JobPodReplacementPolicy
-  - Components depending on the feature gate: kube-controller-manager
+  - Components depending on the feature gate:
+    - kube-apiserver (for field control)
+    - kube-controller-manager (for main functionality)
+    - kubelet (for supporting functionality: transition to phase=Failed)
 
 ###### Does enabling the feature change any default behavior?
 
-For enabling JobPodReplacementPolicy:
+Yes,
 
-a) Count the number of terminating pods and populate in JobStatus
-b) With `RecreationPodsWhen: Failed` specified, pods will only be recreated when they are fully terminated.
-
-This could potentially make jobs (where pods are terminated) slower due to waiting for terminating pods
-to be fully deleted.
+a. Count the number of terminating pods and populate in JobStatus
+b. Set phase=Failed in kubelet and pod-GC before deleting a Pod object
+   (behavior also present when related `PodDisruptionConditions` is enabled)
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes.
+
+When the feature is disabled:
+- the apiserver:
+  - Discards the value of `podReplacementPolicy` for new objects.
+  - Preserves the value of `podRepacementPolicy` for existing objects.
+- the job controller:
+  - processes the Job as `podReplacementPolicy: TerminatingOrFailed` (the existing behavior)
+  - stops tracking terminating pods, sets the value of `.status.terminating` to
+    `nil` in the next Job sync.
+
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
@@ -650,11 +682,19 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Terminating pods will no longer be tracked so terminating pods will be considered deleted and new pods will be created without waiting.
+The job controller will respect the value of `podReplacementPolicy` for new
+events (new Pods becoming terminating or failed).
+
+If `podReplacementPolicy: Failed` and there are currently terminating Pod(s) that
+were already considered Failed before reenabling the feature, they won't be
+re-evaluated.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. Unit tests will include the fields off/on and verify tracking of terminating pods.  
+No, but we will add unit and integration tests for feature enablement and disablement.  
+
+An integration test verifies disable and reenable.
+See [integration tests](#integration-tests) for details.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -663,9 +703,6 @@ This section must be completed when targeting beta to a release.
 -->
 
 #### How can a rollout or rollback fail? Can it impact already running workloads?
-
-A rollback will essentially fallback to previous behavior.  In this case,
-it would be existing pods will now be created as soon as they are terminating.  
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -679,7 +716,7 @@ will rollout across nodes.
 
 #### What specific metrics should inform a rollback?
 
-- job_syncs_total
+- job_syncs_total, exposed by kube-controller-manager
   - If the number of syncs increases it could mean that we have an increased number of failures.
 <!--
 What signals should users be paying attention to when the feature is young
