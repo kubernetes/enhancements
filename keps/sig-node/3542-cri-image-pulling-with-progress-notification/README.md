@@ -70,7 +70,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Introduce new CRI API call for downloading a container image with possibility of pulling progress
 reports being sent back to requestor and / or no-progress timeout. It shold be possible to use
-both the progress reporting and no-progress timtout together as well as separately. For instance,
+both the progress reporting and no-progress timeout together as well as separately. For instance,
 the runtime should send back a message every N seconds of image pulling progress with information
 on how much data was downloaded and what is the current estimated total size of download, and
 report a failure at any point after M consecutive seconds of no data being downloaded.
