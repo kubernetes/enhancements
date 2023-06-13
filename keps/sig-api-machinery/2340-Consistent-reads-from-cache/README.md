@@ -22,7 +22,8 @@ read from etcd.
   - [Consistent reads from cache](#consistent-reads-from-cache)
     - [Use RequestProgress to enable automatic watch updates](#use-requestprogress-to-enable-automatic-watch-updates)
   - [Risks and Mitigations](#risks-and-mitigations)
-  - [Dependency on manual watch progress notifications](#dependency-on-manual-watch-progress-notifications)
+  - [Performance](#performance)
+  - [Etcd compatibility](#etcd-compatibility)
   - [What if the watch cache is stale?](#what-if-the-watch-cache-is-stale)
 - [Design Details](#design-details)
   - [Pagination](#pagination)
@@ -119,9 +120,6 @@ serves the resourceVersion="0" list requests from reflectors today.
 
 - Remove all true quorum reads.
 - Serving pagination continuation from watch cache.
-<<[UNRESOLVED @deads]>>
-- Avoid allowing true quorum reads. We should think carefully about this, see: https://github.com/kubernetes/enhancements/pull/1404#discussion_r381528406
-<<[/UNRESOLVED]>>
 
 ## Proposal
 
@@ -152,7 +150,7 @@ only serve consistent LIST requests from cache.
 
 ### Risks and Mitigations
 
-### Dependency on manual watch progress notifications
+### Performance
 
 Progress notify is requested on client, so all watchers opened with this client
 will get the notification. This is not a problem for Kubernetes as we maintain
@@ -164,30 +162,44 @@ When etcd opens a watch it assigns it a stream based on its [context metadata].
 So by default all watches opened on single client share single grpc stream.
 To implement reusing etcd for multiple resources we should consider adding
 unique metadata for each resource, forcing etcd client to create a separate
-grpc for each of them. This way requesting progress notification on a specific
-resource will result in only that single watch being notified.
+grpc stream for each of them. This way requesting progress notification on a
+specific resource will result in only that single watch being notified.
 
 [context metadata]: https://github.com/etcd-io/etcd/blob/a6ab774458411a6c0ea08f5df97e4dcc9a836345/client/v3/watch.go#L1070-L1075
 
-<<[UNRESOLVED @serathius]>>
-Propose how kube-apiserver should fallback if etcd watch notification doesn't work.
-Progress notification was introduced v3.4 etcd release but was affected by bug
-etcd-io/etcd#15220 that was fixed in v3.4.25 and v3.5.8.
+### Etcd compatibility
 
-* Flag providing etcd version to kube-apiserver `--storage-backend=etcd3.4`
-* Flag to enable/disable the feature `--allow-using-progress-notify`
+Progress notification was introduced to etcd in v3.4 (4 year release), still
+only recently community discovered a bug [etcd-io/etcd#15220] that could cause a
+race between sending an event and progress notification with the same revision.
+The bug was only fixed in v3.4.25 and v3.5.8 (2 months old), and could cause
+client missing an event.
+
+For Alpha feature will be only available under a feature gate, and we will
+depend on documenting the minimal required etcd version in feature gate
+description.
+
+[etcd-io/etcd#15220]: https://github.com/etcd-io/etcd/issues/15220
+
+<<[UNRESOLVED @serathius]>>
+For Beta propose how kube-apiserver should behave if user is running 
+older/affected etcd version.
+
+Options for Beta:
+* Ask user to proviede etcd version to kube-apiserver `--storage-backend=etcd3.4.25`
+* Make the feature opt-in with flag `--allow-using-progress-notify`
 * Have kube-apiserver check cluster version in etcd `/version` endpoint.
   Retry the check logic if `WatchProgressRequest` fails.
 * Fallback to reading from etcd if no progress notification within `X` seconds.
-  <<[/UNRESOLVED]>>
+<<[/UNRESOLVED]>>
 
 ### What if the watch cache is stale?
 
 This design requires wait for a watch cache to catch up to the needed revision
 for consistent reads. If the cache doesn't catch up within some time limit we
-either fail the request for have a fallback.
+either fail the request or have a fallback.
 
-If the fallback it to forward consistent reads to etcd, a cascading failure
+If the fallback is to forward consistent reads to etcd, a cascading failure
 is likely to occur if caches become stale and a large number of read requests
 are forwarded to etcd.
 
@@ -235,7 +247,8 @@ Unit test with a mock storage backend (instead of an actual etcd) that
 various orderings of progress notify events and "current revision" response
 result in the watch cache serving consistent read requests correctly
 
-- `k8s.io/kubernetes/vendor/k8s.io/apiserver/pkg/storage`: `12.06.2023` - `75`
+- `k8s.io/kubernetes/vendor/k8s.io/apiserver/pkg/storage/cacher`: `13.06.2023` - `84`
+- `k8s.io/kubernetes/vendor/k8s.io/apiserver/pkg/storage/etcd3`: `12.06.2023` - `75`
 
 ##### Integration tests
 
@@ -258,12 +271,12 @@ Benchmark consistent reads from cache against consistent reads from etcd for:
 - Feature is implemented behind a feature gate
 - Unpaginated LIST requests is served from watch cache
 - First page of paginated requests is served from watch cache
+- Feature performance is validated via scalability tests
 
 #### Beta
 
-- Implement an escape hatch to force list from etcd.
-- Implement a fallback mechanism
-- Performance validation
+- Implement a per-request opt-out from quorum read
+- Implement a fallback if user is running older/affected etcd version
 
 #### GA
 
@@ -293,7 +306,7 @@ No, we only change implementation details of apiserver watch cache usage.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes
+Yes, by disabling the feature gate (given it's in-memory feature nothing else is needed).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
