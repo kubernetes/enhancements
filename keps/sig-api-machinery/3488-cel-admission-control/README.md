@@ -1372,7 +1372,7 @@ For example:
     - expression: "variables.itemMetadataNames.exists(name, name == 'required')"
 ```
 
-Variable names must be valid CEL names. What constitutes a
+Variable names must be valid CEL names and must be unique among all variables. What constitutes a
 valid CEL name can be found at CEL[language definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md#syntax)
 under `IDENT`. This validity is checked when the policy is being created or updated.
 
