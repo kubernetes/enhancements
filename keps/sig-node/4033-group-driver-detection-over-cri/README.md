@@ -167,7 +167,7 @@ The responsibility of managing the Linux cgroups is currently split between the
 kubelet and the container runtime. Kubelet takes care of the pod (sandbox)
 level cgroups whereas the runtime is responsible for per-container cgroups.
 There currently are two different low-level management interfaces for cgroups:
-maninpulating the cgroupfs directly or using the systemd system management
+manipulating the cgroupfs directly or using the systemd system management
 daemon to manage them. Currently, both the kubelet and the container runtime
 has a configuration setting for selecting the cgroup driver (cgroupfs or
 systemd). These settings must be in sync, both kubelet and the runtime
@@ -230,7 +230,8 @@ used.
  message RuntimeStatus {
      // List of current observed runtime conditions.
      repeated RuntimeCondition conditions = 1;
-+    // Configuration settings of the runtime
++    // Configuration settings of the runtime. This field contains global
++    // runtime configuration options that are not specific to runtime handlers.
 +    RuntimeConfiguration configuration = 2;
  }
  
@@ -264,9 +265,7 @@ will take precedence over cgroupDriver setting from the kubelet config (or
 `--cgroup-driver` command line flag). If the runtime does not provide
 information about the cgroup driver, then kubelet will fall back to using its
 own configuration (`cgroupDriver` from kubeletConfig or the `--cgroup-driver`
-flag). Further, the kubeletConfig field and `--cgroup-driver` flag will be
-marked as deprecated, to be dropped when the runtimes the Kubelet is supported
-to run with all support the flag.
+flag).
 
 Kubelet startup is modified so that connection to the CRI server (container
 runtime) is established and RuntimeStatus is queried before initializing the
@@ -622,7 +621,10 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Kubelet and container runtime version.
+Kubelet and container runtime version. The
+[`crictl`](https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/) tool
+can be used to determine if the container runtime supports the feature (`crictl
+info`).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -839,7 +841,7 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-Same that exist today: Kubelet and the CRI server (container runtime) not
+Same that exists today: Kubelet and the CRI server (container runtime) not
 agreeing on the CgroupDriver while one of them doesn’t support the feature.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
