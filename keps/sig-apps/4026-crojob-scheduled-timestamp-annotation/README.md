@@ -150,7 +150,7 @@ the changes to each controller are self-contained.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `CronJobCreationAnnotation`
-  - Components depending on the feature gate: The feature gate will only enable the new annotation to be added to the newly created Jobs.
+  - Components depending on the feature gate: `kube-controller-manager`
 - [ ] Other
   - Describe the mechanism: N/A.
   - Will enabling / disabling the feature require downtime of the control
@@ -159,7 +159,7 @@ the changes to each controller are self-contained.
 
 ###### Does enabling the feature change any default behavior?
 
-The newly created job objects will contain a new annotation `CronJobsScheduledAnnotation`.
+The jobs newly created by cronjob controller will contain a new annotation `CronJobsScheduledAnnotation`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -243,8 +243,8 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-New job annotation of size 34B plus value of size N where N is the number of digits in the job.
-Worst case for N would be the max number of jobs per node * max number of nodes.
+Yes,a new job annotation of size 25B plus value of size N, where N is the number of jobs.
+** Worst case for N would be the max number of jobs per node * max number of nodes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
