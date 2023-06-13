@@ -275,12 +275,13 @@ Benchmark consistent reads from cache against consistent reads from etcd for:
 
 #### Beta
 
-- Implement a per-request opt-out from quorum read
+- Implement a per-request opt-out [discussion](https://github.com/kubernetes/enhancements/pull/1404#discussion_r381528406)
 - Implement a fallback if user is running older/affected etcd version
+- Feature is enabled by default
 
 #### GA
 
-- Feature is enabled by default
+TBD
 
 ### Upgrade / Downgrade Strategy
 
