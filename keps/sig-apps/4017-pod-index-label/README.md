@@ -515,8 +515,7 @@ well as the [existing list] of feature gates.
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: PodIndexLabel
   - Components depending on the feature gate:
-    - StatefulSet controller
-    - Job controller
+    - kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -530,7 +529,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Yes - when we start setting a new label, if someone is doing deep-equal comparison, those will start failing.
+Yes, a new label is added to pods created for StatefulSet (statefulset.kubernetes.io/pod-index) and Indexed Jobs (batch.kubernetes.io/job-completion-index)
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -545,7 +544,7 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 Yes. If the feature gate is disabled, the StatefulSet/Job controller will not add the
-pod index as a label.
+pod index as a label. Already existing pods will not be modified.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -566,7 +565,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-We plan to add unit and integration tests. 
+Given that this feature doesn't introduce any new API field, enablement/disablement tests will not provide reasonable value and won't be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -697,16 +696,16 @@ Jobs:
 StatefulSets:
   - Metric name: `statefulset_reconcile_delay`
     - [Optional] Aggregation method: `quantile`
-    - Components exposing the metric: `pkg/controller/statefulset`
+    - Components exposing the metric: `kube-controller-manager`
   - Metric name: `kube_statefulset_replicas`
     - [Optional] Aggregation method: `gauge`
-    - Components exposing the metric: `pkg/controller/statefulset`
+    - Components exposing the metric: `kube-controller-manager`
   - Metric name: `kube_statefulset_status_replicas`
     - [Optional] Aggregation method: `gauge`
-    - Components exposing the metric: `pkg/controller/statefulset`
+    - Components exposing the metric: `kube-controller-manager`
   - Metric name: `kube_statefulset_ordinals_start`
     - [Optional] Aggregation method: `gauge`
-    - Components exposing the metric: `pkg/controller/statefulset`
+    - Components exposing the metric: `kube-controller-manager`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -847,11 +846,10 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
-N/A
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A
+Pods cannot be created, this feature doesn't change it though
 
 ###### What are other known failure modes?
 
