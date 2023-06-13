@@ -627,10 +627,8 @@ and add `MatchLabelSelectors` on their PodAffinity/PodAntiAffinity.
 
 **Downgrade**
 
-kube-apiserver will ignore `MatchLabelSelectors` in PodAffinity/PodAntiAffinity,
-and thus, kube-scheduler will also do nothing with it.
-
-But, we leave the existing `MatchLabelSelectors` and `LabelSelector` created from `MatchLabelSelectors` as it is.
+kube-apiserver will reject Pod creation with `MatchLabelSelectors` in PodAffinity/PodAntiAffinity. 
+But, regarding existing Pods, we leave `MatchLabelSelectors` and `LabelSelector` created from `MatchLabelSelectors` even after downgraded.
 
 ### Version Skew Strategy
 
@@ -726,8 +724,8 @@ In terms of Stable versions, users can choose to opt-out by not setting the
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Scheduling of new Pods created with `MatchLabelSelectors` is affected. 
-But, all the existing Pods aren't affected.
+Scheduling of newly created pods with MatchLabelSelector set is affected.
+All already existing pods are unafected.
 
 ###### Are there any tests for feature enablement/disablement?
 
