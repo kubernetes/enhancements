@@ -338,7 +338,7 @@ Due to the above issues, we propose the following mitigation:
 - If `PodDisruptionConditions` OR `JobPodReplacementPolicy` are enabled, set
   phase=Failed in kubelet and podGC before deleting a Pod.
 - If `JobPodReplacmentPolicy` is enabled, but `PodDisruptionConditions` is
-  disabled, the controllers only set the pahse, but do not add a
+  disabled, the kubelet and podGC only set the phase, but do not add a
   `DisruptionTarget` condition.
 
 ## Design Details
@@ -655,6 +655,9 @@ Yes,
 a. Count the number of terminating pods and populate in JobStatus
 b. Set phase=Failed in kubelet and pod-GC before deleting a Pod object
    (behavior also present when related `PodDisruptionConditions` is enabled)
+c. As part of closely related KEP-3329, we will default `podReplacementPolicy`
+   to Failed if podFailurePolicy is set which, as described above, will change
+   the way of handling terminating pods.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
