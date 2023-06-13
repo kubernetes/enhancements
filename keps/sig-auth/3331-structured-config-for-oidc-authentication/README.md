@@ -715,13 +715,14 @@ providers such as Okta, Azure AD, etc:
 - Feature implemented behind a feature flag
 - Unit tests to validate CEL semantics
 - Unit tests for config validation
-- Initial e2e tests completed and enabled
+- Initial integration tests completed and enabled
 
 #### Beta
 
 - Gather feedback
 - Complete benchmarks
 - Add metrics
+- Initial e2e test with an external provider completed and enabled
 
 #### GA
 
