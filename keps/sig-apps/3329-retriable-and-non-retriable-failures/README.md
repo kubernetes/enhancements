@@ -887,7 +887,7 @@ not modified while Job controller matches them against the pod failure policy.
 Additionally, it is necessary to avoid the creation of a replacement Pod if the
 previously created Pod becomes terminating (has a `deletionTimestamp` but is
 not `Failed` nor `Succeeded` yet), or we might create replacement Pods that
-will violate the Job pod failure policy once the terminating Pod terminates.
+wouldn't be created if the pod failure policy was applied against the terminated Pod.
 
 There are scenarios in which a pod gets stuck in a non-terminal phase,
 but is doomed to be failed, as it is terminating (has `deletionTimestamp` set, also
