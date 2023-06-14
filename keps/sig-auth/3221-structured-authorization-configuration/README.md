@@ -577,7 +577,7 @@ Not applicable.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate
-  - Feature gate name: `AuthorizationConfig`
+  - Feature gate name: `StructuredAuthorizationConfig`
   - Components depending on the feature gate:
         - kube-apiserver
 
