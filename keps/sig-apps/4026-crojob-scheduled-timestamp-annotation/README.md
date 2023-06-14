@@ -27,7 +27,6 @@
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
-  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
