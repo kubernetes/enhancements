@@ -331,7 +331,7 @@ Test manually
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-Yes
+No
 
 ### Monitoring Requirements
 
