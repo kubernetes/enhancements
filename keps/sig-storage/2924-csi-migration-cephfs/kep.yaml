@@ -12,9 +12,9 @@ approvers:
   - "@msau42"
 editor: "@Jiawei0227"
 creation-date: 2022-01-27
-last-updated: 2022-01-27
+last-updated: 2023-05-28
 disable-supported: true
-status: implementable
+status: withdrawn
 see-also:
   - "https://github.com/kubernetes/design-proposals-archive/blob/master/storage/csi-migration.md"
 replaces:
@@ -25,7 +25,7 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.26"
+latest-milestone: "v1.28"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
