@@ -1,4 +1,4 @@
-# KEP-127: Support User Namespaces in stateless pods
+# KEP-127: Support User Namespaces
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -18,8 +18,8 @@
 - [Design Details](#design-details)
   - [Pod.spec changes](#podspec-changes)
   - [CRI changes](#cri-changes)
-  - [Support for stateless pods](#support-for-stateless-pods)
-  - [Handling of stateless volumes](#handling-of-stateless-volumes)
+  - [Support for pods](#support-for-pods)
+  - [Handling of volumes](#handling-of-volumes)
     - [Example of how idmap mounts work](#example-of-how-idmap-mounts-work)
       - [Example without idmap mounts](#example-without-idmap-mounts)
       - [Example with idmap mounts](#example-with-idmap-mounts)
@@ -75,7 +75,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP adds support to use user-namespaces in stateless pods.
+This KEP adds support to use user-namespaces.
 
 ## Motivation
 
@@ -130,7 +130,6 @@ Here we use UIDs, but the same applies for GIDs.
   the pod (not valid in the host).
 - Benefit from the security hardening that user namespaces provide against some
   of the future unknown runtime and kernel vulnerabilities.
-- Support only stateless pods
 
 ### Non-Goals
 
@@ -141,16 +140,15 @@ Here we use UIDs, but the same applies for GIDs.
 - Implement all the very nice use cases that user namespaces allows. The goal
   here is to allow them as incremental improvements, not implement all the
   possible ideas related with user namespaces.
-- Support stateful pods
 
 [kubelet-userns]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2033-kubelet-in-userns-aka-rootless
 
 ## Proposal
 
 This KEP adds a new `hostUsers` field  to `pod.Spec` to allow to enable/disable
-using user namespaces for stateless pods.
+using user namespaces.
 
-This proposal aims to support running stateless pods inside user namespaces.
+This proposal aims to support running pods inside user namespaces.
 
 This mitigates all the vulnerabilities listed in the motivation section.
 
@@ -288,20 +286,10 @@ message Mount {
 }
 ```
 
-### Support for stateless pods
+### Support for pods
 
-Make pods "without" volumes work with user namespaces. This is activated via the
-bool `pod.spec.HostUsers` and can only be set to `false` on pods which use
-either no volumes or only volumes of the following types:
-
- - configmap
- - secret
- - downwardAPI
- - emptyDir
- - projected
-
-This list of volumes was chosen as they can't be used to share files with other
-pods.
+Make pods work with user namespaces. This is activated via the
+bool `pod.spec.HostUsers`.
 
 The mapping length will be 65536, mapping the range 0-65535 to the pod. This wide
 range makes sure most workloads will work fine. Additionally, we don't need to
@@ -331,10 +319,7 @@ limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
 leaves us plenty of host UID space free and this limits is probably never hit in
 practice. See UNRESOLVED for more some UNRESOLVED info we still have on this.
 
-### Handling of stateless volumes
-
-Only the aforementioned volume types are supported. If other volume types are
-used, a clear error is thrown during API validation of the pod.spec.
+### Handling of volumes
 
 When the volumes used are supported, the kubelet will set the `uid_mappings` and
 `gid_mappings` in the CRI `Mount message`. It will use the same mappings the
@@ -919,7 +904,7 @@ kernels, but the SLO will be excluded in that case.
 
 The SLO that might be affected is:
 
-> Startup latency of schedulable stateless pods, excluding time to pull images and run init containers, measured from pod creation timestamp to when all its containers are reported as started and observed via watch, measured as 99th percentile over last 5 minutes
+> Startup latency of schedulable pods, excluding time to pull images and run init containers, measured from pod creation timestamp to when all its containers are reported as started and observed via watch, measured as 99th percentile over last 5 minutes
 
 The rootfs needs to be accessible by the user in the user namespace the pod is.
 As every pod might run as a different user, we only know the mapping for a pod
@@ -1135,8 +1120,7 @@ mapping and have different runtimes pick different mappings. While KEP authors
 disagree on this, we still need to discuss it and settle on something.  This was
 [raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
 
-For stateless pods with 64k mappings this is not an issue. This was considered
-something to discuss for pods with volumes (out of scope of this KEP).
+This is not a blocker for the KEP, but it is something that can be changed later on.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
