@@ -651,8 +651,8 @@ Each compliant CRI implementation must:
 
 Below is the proposed strategy for doing so:
 
-1. The Alpha release will focus solely on `/stats/summary` endpoint, and `/metrics/cadvisor` support will follow in Beta.
-2. For the Beta release, add initial support for CRI implementations to report these metrics
+1. The Alpha release will add support for both `/stats/summary` endpoint and `/metrics/cadvisor` endpoint.
+2. For the Beta release, add support for CRI implementations to report these metrics
     - Initial research on the set of metrics required should be done. This will, possibly, allow the community to declare metrics that are not required to be moved to the CRI implementations.
     - Testing on how performant cAdvisor+Kubelet are today should be done, to find a target, acceptable threshold of performance for the CRI implementations
     - Creation of tests verifying the metrics are reported correctly should be created and verified with the existing cAdvisor implementation.
@@ -808,7 +808,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Conformance tests for the fields in `/metrics/cadvisor` should be created.
 - Validate performance impact of this feature is within allowable margin (or non-existent, ideally).
 	- The CRI stats implementation should perform better than they did with CRI+cAdvisor.
-- cAdvisor stats provider may be marked as deprecated (depending on stability of new CRI based implementations).
+- cAdvisor stats provider will be marked as deprecated, as well as the cAdvisor providing the metrics endpoint `/metrics/cadvisor`.
+- Write migration documentation for entities relying on metrics from `/metrics/cadvisor`.
+- Windows stats and metrics will be added.
 
 #### Beta -> GA Graduation
 
@@ -1028,6 +1030,17 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
     This will not happen anymore.
   - The CRI implementation may scrape the metrics less efficiently than cAdvisor currently does. This should be measured and evaluated as a requirement of Beta.
 
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+It is possible the CRI implementation could use more memory or CPU for the metrics gathering than cAdvisor does. In this case,
+one of those resources could be in jepordy of being exhausted. However, it is a explicit goal of beta criteria (and graduation generally)
+to prevent such regressions, so this feature will not be on by default if this is possible.
+
+It's also worth noting that both of the CRI implementations are maintained in a similar fashion as cAdvisor: out-of-tree but by many
+Kubernetes maintainers, and so the risk of this happening with this feature is similar to the risk of it happening now.
+
+
 ### Troubleshooting
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
@@ -1055,6 +1068,8 @@ _This section must be completed when targeting beta graduation to a release._
 2022-01-25: KEP targeted at Beta in 1.24
 2022-04-20: KEP deemed not ready for Beta in 1.24
 2022-06-13: Move some Beta criteria to Alpha criteria in 1.25
+2022-12-09: Retarget KEP to alpha in 1.26
+2023-05-19: KEP targeted at Beta in 1.28
 
 ## Drawbacks
 
