@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3633: Introduce MatchLabelSelectors to PodAffinity and PodAntiAffinity
+# KEP-3633: Introduce MatchLabelKeys and MismatchLabelKeys to PodAffinity and PodAntiAffinity
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -178,7 +178,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This KEP proposes introducing a complementary field `MatchLabelSelectors` to `PodAffinityTerm`.
+This KEP proposes introducing a complementary field `MatchLabelKeys` to `PodAffinityTerm`.
 This enables users to finely control the scope where Pods are expected to co-exist (PodAffinity)
 or not (PodAntiAffinity), on top of the existing `LabelSelector`.
 
@@ -210,7 +210,7 @@ The same issue applies to other scheduling directives as well. For example, Matc
 
 ### Goals
 
-- Introduce `MatchLabelSelectors` in `PodAffinityTerm` to let users define the scope where Pods are evaluated in required and preferred Pod(Anti)Affinity.
+- Introduce `MatchLabelKeys` and `MismatchLabelKeys` in `PodAffinityTerm` to let users define the scope where Pods are evaluated in required and preferred Pod(Anti)Affinity.
 
 ### Non-Goals
 
@@ -219,7 +219,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Apply additional internal labels when evaluating `MatchLabelSelectors`
+- Apply additional internal labels when evaluating `MatchLabelKeys` or `MismatchLabelKeys`
 
 ## Proposal
 
@@ -266,9 +266,8 @@ metadata:
             values:
             - database
         topologyKey: topology.kubernetes.io/zone
-        matchLabelSelectors: # ADDED
-        - key: pod-template-hash
-          operator: In
+        matchLabelKeys: # ADDED
+        - pod-template-hash
 ```
 
 #### Story 2
@@ -282,15 +281,13 @@ By applying the following affinity globally using a mutating webhook, the cluste
 affinity:
   podAffinity:      # ensures the pods of this tenant land on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
-    - matchLabelSelectors:
-        - key: tenant
-          operator: In
+    - matchLabelKeys:
+        - tenant
       topologyKey: node-pool
   podAntiAffinity:  # ensures only Pods from this tenant lands on the same node pool
     requiredDuringSchedulingIgnoredDuringExecution:
-    - matchLabelSelectors:
-        - key: tenant
-          operator: NotIn
+    - mismatchLabelKeys:
+        - tenant
       labelSelector:
         matchExpressions:
         - key: tenant
@@ -328,7 +325,7 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 In addition to using `pod-template-hash` added by the Deployment controller, 
-users can also provide the customized key in `MatchLabelSelectors.Key` to identify 
+users can also provide the customized key in `matchLabelKeys` to identify 
 which pods should be grouped. If so, the user needs to ensure that it is 
 correct and not duplicated with other unrelated workloads.
 
@@ -341,17 +338,16 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-A new optional field `MatchLabelSelectors` is introduced to `PodAffinityTerm`.
+A new optional fields `matchLabelKeys` and `mismatchLabelKeys` are introduced to `PodAffinityTerm`.
 
 ```go
-type LabelSelectorOperator string
-
 type MatchLabelSelector struct {
   // Key is used to lookup value from the incoming pod labels, 
   // and that key-value label is merged with `LabelSelector`.
   // Key that doesn't exist in the incoming pod labels will be ignored. 
   Key  string
   // Operator defines how key-value, fetched via the above `Keys`, is merged into LabelSelector.
+  // Only `In` and `NotIn` are expected.
   // If Operator is `In`, `key in (value)` is merged with LabelSelector. 
   // If Operator is `NotIn`, `key notin (value)` is merged with LabelSelector. 
   //
@@ -365,21 +361,30 @@ type PodAffinityTerm struct {
   TopologyKey string
   NamespaceSelector *metav1.LabelSelector
 
-  // MatchLabelSelectors is a set of pod label keys to select the group of existing pods 
-  // which pods will be taken into consideration for the incoming pod's pod (anti) affinity. 
-  // The default value is empty.
-  // +optional
-  MatchLabelSelectors []strinMatchLabelSelectorg
+	// MatchLabelKeys is a set of pod label keys to select which pods will
+	// be taken into consideration. The keys are used to lookup values from the
+	// incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+	// to select the group of existing pods which pods will be taken into consideration 
+	// for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming 
+	// pod labels will be ignored. The default value is empty.
+	// +optional
+	MatchLabelKeys []string
+  // MismatchLabelKeys is a set of pod label keys to select which pods will 
+	// be taken into consideration. The keys are used to lookup values from the
+	// incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+	// to select the group of existing pods which pods will be taken into consideration 
+	// for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming 
+	// pod labels will be ignored. The default value is empty.
+	// +optional
+	MismatchLabelKeys []string
 }
 ```
 
 When a Pod is created, kube-apiserver will obtain the labels from the pod 
-labels by the key in `MatchLabelSelectors.Key`, and merge to `LabelSelector` of `PodAffinityTerm` depending on `Operator`:
-- If Operator is `In`, `key in (value)` is merged with LabelSelector. 
-- If Operator is `NotIn`, `key notin (value)` is merged with LabelSelector. 
-
-Only `In` and `NotIn` are supported in `Operator` of `MatchLabelSelectors`,
-and kube-apiserver rejects other operators (`Exist` and `DoesNotExist`).
+labels by the key in `matchLabelKeys` or `mismatchLabelKeys`, 
+and merge to `LabelSelector` of `PodAffinityTerm` depending on field:
+- If `matchLabelKeys`, `key in (value)` is merged with LabelSelector. 
+- If `mismatchLabelKeys`, `key notin (value)` is merged with LabelSelector. 
 
 For example, when this sample Pod is created,
 
@@ -395,9 +400,8 @@ metadata:
   affinity:
     podAntiAffinity:  
       requiredDuringSchedulingIgnoredDuringExecution:
-      - matchLabelSelectors:
-          - key: tenant
-            operator: NotIn
+      - mismatchLabelKeys:
+          - tenant
         labelSelector:
           matchExpressions:
           - key: tenant
@@ -411,9 +415,8 @@ kube-apiserver modifies the labelSelector like the following:
 affinity:
   podAntiAffinity:  
     requiredDuringSchedulingIgnoredDuringExecution:
-      - matchLabelSelectors:
-          - key: tenant
-            operator: NotIn
+      - mismatchLabelKeys:
+          - tenant
         labelSelector:
           matchExpressions:
           - key: tenant
@@ -484,9 +487,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 - These tests will be added.
-  - `MatchLabelSelectors` in `PodAffinity` (both in Filter and Score) works as expected.
-  - `MatchLabelSelectors` in `PodAntiAffinity` (both in Filter and Score) works as expected.
-  - `MatchLabelSelectors` with the feature gate enabled/disabled.
+  - `matchLabelKeys`/`mismatchLabelKeys` in `PodAffinity` (both in Filter and Score) works as expected.
+  - `matchLabelKeys`/`mismatchLabelKeys` in `PodAntiAffinity` (both in Filter and Score) works as expected.
+  - `matchLabelKeys`/`mismatchLabelKeys` with the feature gate enabled/disabled.
 
 **Filter**
 - `k8s.io/kubernetes/test/integration/scheduler/filters/filters_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadFilter
@@ -616,12 +619,12 @@ The previous PodAffinity/PodAntiAffinity behavior will not be broken. Users can 
 their Pod specs as it is.
 
 To use this enhancement, users need to enable the feature gate (during this feature is in the alpha.),
-and add `MatchLabelSelectors` on their PodAffinity/PodAntiAffinity.
+and add `matchLabelKeys`/`mismatchLabelKeys` on their PodAffinity/PodAntiAffinity.
 
 **Downgrade**
 
-kube-apiserver will ignore `MatchLabelSelectors` in PodAffinity/PodAntiAffinity,
-and thus, kube-scheduler will also do nothing with it.
+kube-apiserver will reject Pod creation with `matchLabelKeys`/`mismatchLabelKeys` in PodAffinity/PodAntiAffinity. 
+But, regarding existing Pods, we leave `matchLabelKeys`/`mismatchLabelKeys` and generated `LabelSelector` even after downgraded.
 
 ### Version Skew Strategy
 
@@ -683,7 +686,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `MatchLabelSelectorsInPodAffinity`
+  - Feature gate name: `MatchLabelKeysInPodAffinity`
   - Components depending on the feature gate: `kube-apiserver`
 - [ ] Other
 
@@ -712,12 +715,13 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 The feature can be disabled in Alpha and Beta versions
 by restarting kube-apiserver the feature-gate off.
 In terms of Stable versions, users can choose to opt-out by not setting the
-`MatchLabelSelectors` field.
+`matchLabelKeys`/`mismatchLabelKeys` field.
 
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Scheduling of new Pods is affected. (Scheduled Pods aren't affected.)
+Scheduling of newly created pods with MatchLabelSelector set is affected.
+All already existing pods are unafected.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -993,6 +997,7 @@ Major milestones might include:
 -->
 
  - 2022-11-09: Initial KEP PR is submitted.
+ - 2023-05-14 / 2023-06-08: PRs to change it from MatchLabelKeys to MatchLabelSelector are submitted. (to satisfy the user story 2)
 
 ## Drawbacks
 
